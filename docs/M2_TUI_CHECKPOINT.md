@@ -9,7 +9,7 @@
 - Abrir, crear, Save, Save As, Save All, cerrar con decisión por cambios y reabrir pestaña.
 - Edición byte-safe a través de M1: texto, newline, tab, backspace/delete, cursor y selección.
 - Undo/redo, cut/copy/paste/select-all.
-- Duplicate selection/line, Delete Line, Move Line Up/Down y Toggle Line Comment.
+- Duplicate selection/line, Delete Line, Move Line Up/Down y Toggle Comment. Para ABL, Ctrl+/ inserta/retira /* ... */ en línea o selección; Ctrl+Shift+/ fuerza bloque. Tab/Shift+Tab gestionan sangría.
 - Find/Replace de documento, flags case/whole-word, resultados y replace current/all.
 - Tabs y shortcuts centralizados.
 - Menús que muestran el shortcut derivado del `KeyMap`.
@@ -42,13 +42,24 @@
 
 Problems y Output aún son texto sin ubicación estructurada. No fingimos navegación a línea/archivo hasta que el proveedor de tareas/Progress entregue diagnósticos tipados.
 
+## Checkpoint: comandos de productividad ABL
+
+- Ctrl+D = Duplicar y Ctrl+Shift+D = Eliminar línea; Database/Schema se reasignó a Ctrl+Alt+D.
+- Tab = Indentar y Shift+Tab = Desindentar, solo con foco de editor.
+- Ctrl+/ = Comentar/descomentar código; Ctrl+Shift+/ = Alternar bloque.
+- ABL usa /* ... */ y el cambio se realiza sobre el Document, sin invocar Progress.
+- Se añadieron tests de regresión para encoding legacy, BOM, selección multilineal y atajos.
+- **La implementación aún no ha sido compilada en el entorno actual**; conforme D13, CI remoto se difiere a M5.
+- Alcance detallado: [comandos ABL](ABL_EDITOR_COMMAND_SCOPE.md) y [Search Plus](M2_SEARCH_PLUS.md).
+
 ## Pendiente para cerrar M2A
 
 1. Find/Replace in Project real sobre la raíz abierta, con límites y exclusiones claras.
 2. Modelo de tareas no bloqueante para Build/Progress que pueda alimentar Output/Problems sin ejecutar la integración real antes de M3.
 3. Navegación estructurada desde Problems cuando exista `file + line + column`.
-4. Revisión manual en terminal real de todas las combinaciones de foco/atajos.
-5. Ajustes acumulados de compilación/formato se endurecen en M5, conforme D13; no se consume GitHub Actions durante M2–M4.
+4. Modo columna rectangular auténtico con posiciones visuales, clipboard y undo transaccional.
+5. Revisión manual en terminal real de todas las combinaciones de foco/atajos.
+6. Ajustes acumulados de compilación/formato se endurecen en M5, conforme D13; no se consume GitHub Actions durante M2–M4.
 
 ## Restricciones deliberadas
 
