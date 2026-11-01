@@ -1,4 +1,5 @@
 use crate::focus::PrimaryFocus;
+use jc_languages::by_id;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -193,6 +194,9 @@ impl CommandRegistry {
 fn always(_: &CommandContext) -> bool {
     true
 }
+fn never(_: &CommandContext) -> bool {
+    false
+}
 fn has_document(ctx: &CommandContext) -> bool {
     ctx.has_document
 }
@@ -213,6 +217,15 @@ fn selection(ctx: &CommandContext) -> bool {
 }
 fn paste(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.clipboard_has_text
+}
+fn line_comment(ctx: &CommandContext) -> bool {
+    ctx.has_document
+        && ctx
+            .active_language
+            .as_deref()
+            .and_then(by_id)
+            .and_then(|profile| profile.line_comment)
+            .is_some()
 }
 fn project(ctx: &CommandContext) -> bool {
     ctx.has_project
@@ -271,7 +284,7 @@ pub fn default_registry() -> CommandRegistry {
             EditToggleLineComment,
             Edit,
             "Toggle Line Comment",
-            has_document
+            line_comment
         ),
         spec!(SearchFind, Search, "Find", has_document),
         spec!(SearchReplace, Search, "Replace", has_document),
@@ -281,7 +294,7 @@ pub fn default_registry() -> CommandRegistry {
         spec!(SearchReplaceProject, Search, "Replace in Project", project),
         spec!(SearchToggleCase, Search, "Match Case", always),
         spec!(SearchToggleWholeWord, Search, "Whole Word", always),
-        spec!(SearchToggleRegex, Search, "Regular Expression", always),
+        spec!(SearchToggleRegex, Search, "Regular Expression", never),
         spec!(PaletteOpen, Tools, "Command Palette…", always),
         spec!(TabNext, Navigation, "Next Tab", has_document),
         spec!(TabPrevious, Navigation, "Previous Tab", has_document),
@@ -295,9 +308,9 @@ pub fn default_registry() -> CommandRegistry {
         spec!(Tab8, Navigation, "Tab 8", has_document),
         spec!(Tab9, Navigation, "Last Tab", has_document),
         spec!(ViewExplorer, View, "Explorer", always),
-        spec!(ViewDatabase, View, "Database / Schema", always),
-        spec!(ViewGit, View, "Git", always),
-        spec!(ViewSymbols, View, "Symbols", has_document),
+        spec!(ViewDatabase, View, "Database / Schema", never),
+        spec!(ViewGit, View, "Git", never),
+        spec!(ViewSymbols, View, "Symbols", never),
         spec!(ViewToggleBottomPanel, View, "Toggle Bottom Panel", always),
         spec!(ViewTerminal, View, "Terminal", terminal),
         spec!(ViewProblems, View, "Problems", always),
