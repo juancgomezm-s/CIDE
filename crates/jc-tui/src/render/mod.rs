@@ -132,25 +132,44 @@ fn draw_sidebar(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, h
     match app.panels.sidebar() {
         SidebarView::Explorer => {
             let mut row = y + 1;
-            if let Some(root) = &app.project_root {
-                screen.text(x + 1, row, &clip(&format!("{}", root.display()), width - 2));
-                row += 1;
-            }
-            for tab in app.workbench.tabs().tabs() {
-                if row >= y + height {
-                    break;
-                }
-                let marker = if app.workbench.tabs().active_id() == Some(tab.id) {
-                    '>'
+            if let (Some(root), Some(directory)) = (app.explorer.root(), app.explorer.directory()) {
+                let relative = directory.strip_prefix(root).unwrap_or(directory);
+                let location = if relative.as_os_str().is_empty() {
+                    ".".to_owned()
                 } else {
-                    ' '
+                    relative.display().to_string()
                 };
-                let text = format!(
-                    "{marker} {}{}",
-                    tab.title,
-                    if tab.dirty { " *" } else { "" }
+                screen.text_styled(
+                    x + 1,
+                    row,
+                    &clip(&location, width - 2),
+                    CellStyle::Dim,
                 );
-                screen.text(x + 1, row, &clip(&text, width - 2));
+                row += 1;
+            } else {
+                screen.text_styled(x + 1, row, "Open Folder to browse", CellStyle::Dim);
+                return;
+            }
+
+            let available = usize::from((y + height).saturating_sub(row));
+            let selected = app.explorer.selected();
+            let start = selected.saturating_sub(available.saturating_sub(1));
+            for (index, entry) in app
+                .explorer
+                .entries()
+                .iter()
+                .enumerate()
+                .skip(start)
+                .take(available)
+            {
+                let marker = if entry.is_dir { "▸ " } else { "  " };
+                let text = format!("{marker}{}", entry.name);
+                let style = if focused && index == selected {
+                    CellStyle::Reverse
+                } else {
+                    CellStyle::Normal
+                };
+                screen.text_styled(x + 1, row, &clip(&text, width - 2), style);
                 row += 1;
             }
         }
@@ -280,17 +299,43 @@ fn draw_bottom(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, he
             .matches
             .iter()
             .enumerate()
-            .map(|(i, range)| format!("{}: bytes {}..{}", i + 1, range.start, range.end))
+            .map(|(i, range)| {
+                app.workbench.search_match_position(i).map_or_else(
+                    || format!("{}: bytes {}..{}", i + 1, range.start, range.end),
+                    |position| {
+                        format!(
+                            "{}: Ln {} Col {} (bytes {}..{})",
+                            i + 1,
+                            position.line + 1,
+                            position.column + 1,
+                            range.start,
+                            range.end
+                        )
+                    },
+                )
+            })
             .collect(),
         BottomPanel::Terminal => vec!["Embedded shell is not active in this milestone.".to_owned()],
     };
     let available = usize::from(height.saturating_sub(1));
-    let start = rows.len().saturating_sub(available);
-    for (offset, line) in rows[start..].iter().enumerate() {
-        screen.text(
+    let selected = app.bottom_selected.min(rows.len().saturating_sub(1));
+    let start = if focused {
+        selected.saturating_sub(available.saturating_sub(1))
+    } else {
+        rows.len().saturating_sub(available)
+    };
+    for (offset, line) in rows.iter().skip(start).take(available).enumerate() {
+        let index = start + offset;
+        let style = if focused && index == selected {
+            CellStyle::Reverse
+        } else {
+            CellStyle::Normal
+        };
+        screen.text_styled(
             x + 1,
             y + 1 + offset as u16,
             &clip(line, width.saturating_sub(2)),
+            style,
         );
     }
 }

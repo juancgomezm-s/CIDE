@@ -1,6 +1,6 @@
 use super::{Workbench, WorkbenchError};
 use jc_files::FileError;
-use jc_text::encode;
+use jc_text::{encode, TextIndex, TextPosition};
 use std::ops::Range;
 
 impl Workbench {
@@ -138,6 +138,27 @@ impl Workbench {
 
     pub fn find_previous(&mut self) -> Result<Option<Range<usize>>, WorkbenchError> {
         self.find(false)
+    }
+
+    pub fn select_search_match(&mut self, index: usize) -> Result<bool, WorkbenchError> {
+        let Some(range) = self.search.matches.get(index).cloned() else {
+            return Ok(false);
+        };
+        self.search.current = Some(index);
+        let document = self
+            .active_document_mut()
+            .ok_or(WorkbenchError::NoDocument)?;
+        document.anchor = Some(range.start);
+        document.cursor = range.end;
+        Ok(true)
+    }
+
+    pub fn search_match_position(&self, index: usize) -> Option<TextPosition> {
+        let range = self.search.matches.get(index)?;
+        let decoded = self.active_decoded()?;
+        TextIndex::new(&decoded)
+            .source_byte_to_position(range.start)
+            .ok()
     }
 
     fn find(&mut self, forward: bool) -> Result<Option<Range<usize>>, WorkbenchError> {

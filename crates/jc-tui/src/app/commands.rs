@@ -109,6 +109,10 @@ impl TuiApp {
 
     fn show_bottom(&mut self, panel: BottomPanel) {
         self.panels.show_bottom(panel);
+        self.bottom_selected = match panel {
+            BottomPanel::SearchResults => self.workbench.search().current.unwrap_or(0),
+            _ => 0,
+        };
         let _ = self.focus.focus(PrimaryFocus::BottomPanel, &self.panels);
     }
 }

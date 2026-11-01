@@ -1,8 +1,9 @@
+use super::explorer::ExplorerAction;
 use super::TuiApp;
 use crate::input::{is_action_event, is_plain_text, to_stroke};
 use crate::state::UiOverlay;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
-use jc_app::{KeyScope, PrimaryFocus, Resolution};
+use jc_app::{BottomPanel, KeyScope, PrimaryFocus, Resolution, SidebarView};
 
 impl TuiApp {
     pub fn handle_event(&mut self, event: Event) {
@@ -72,23 +73,86 @@ impl TuiApp {
     }
 
     fn handle_sidebar_key(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Up => {
-                self.workbench.previous_tab();
+        if self.panels.sidebar() != SidebarView::Explorer {
+            if key.code == KeyCode::Enter {
+                let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
             }
-            KeyCode::Down => {
-                self.workbench.next_tab();
+            return;
+        }
+
+        match key.code {
+            KeyCode::Up => self.explorer.move_selection(-1),
+            KeyCode::Down => self.explorer.move_selection(1),
+            KeyCode::Home => self.explorer.select_first(),
+            KeyCode::End => self.explorer.select_last(),
+            KeyCode::Left | KeyCode::Backspace => match self.explorer.parent() {
+                Ok(true) => self.status = "Explorer: parent folder".to_owned(),
+                Ok(false) => {}
+                Err(error) => self.status = error,
+            },
+            KeyCode::Right => match self.explorer.enter_directory() {
+                Ok(ExplorerAction::DirectoryChanged) => {
+                    self.status = "Explorer: folder opened".to_owned()
+                }
+                Ok(_) => {}
+                Err(error) => self.status = error,
+            },
+            KeyCode::Enter => self.activate_explorer_entry(),
+            KeyCode::Char('r') if key.modifiers.is_empty() => match self.explorer.refresh() {
+                Ok(()) => self.status = "Explorer refreshed".to_owned(),
+                Err(error) => self.status = error,
+            },
+            _ => {}
+        }
+    }
+
+    fn activate_explorer_entry(&mut self) {
+        match self.explorer.activate() {
+            Ok(ExplorerAction::OpenFile(path)) => match self.open_path(path) {
+                Ok(()) => {
+                    if matches!(self.overlay, UiOverlay::None) {
+                        let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+                    }
+                    self.status = "File opened".to_owned();
+                }
+                Err(error) => self.status = error,
+            },
+            Ok(ExplorerAction::DirectoryChanged) => {
+                self.status = "Explorer: folder opened".to_owned()
+            }
+            Ok(ExplorerAction::None) => {}
+            Err(error) => self.status = error,
+        }
+    }
+
+    fn handle_bottom_key(&mut self, key: KeyEvent) {
+        let count = match self.panels.bottom() {
+            BottomPanel::Problems => self.workbench.problems().len(),
+            BottomPanel::Output => self.workbench.output().len(),
+            BottomPanel::SearchResults => self.workbench.search().matches.len(),
+            BottomPanel::Terminal => 1,
+        };
+        match key.code {
+            KeyCode::Up => self.bottom_selected = self.bottom_selected.saturating_sub(1),
+            KeyCode::Down if count > 0 => {
+                self.bottom_selected = (self.bottom_selected + 1).min(count - 1)
+            }
+            KeyCode::Home => self.bottom_selected = 0,
+            KeyCode::End if count > 0 => self.bottom_selected = count - 1,
+            KeyCode::Enter if self.panels.bottom() == BottomPanel::SearchResults => {
+                match self.workbench.select_search_match(self.bottom_selected) {
+                    Ok(true) => {
+                        let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+                        self.status = format!("Search result {}", self.bottom_selected + 1);
+                    }
+                    Ok(false) => self.status = "No search result selected".to_owned(),
+                    Err(error) => self.status = error.to_string(),
+                }
             }
             KeyCode::Enter => {
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
             }
             _ => {}
-        }
-    }
-
-    fn handle_bottom_key(&mut self, key: KeyEvent) {
-        if key.code == KeyCode::Enter {
-            let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
         }
     }
 

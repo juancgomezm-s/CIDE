@@ -1,5 +1,6 @@
 mod commands;
 mod events;
+mod explorer;
 mod menus;
 mod overlays;
 mod paths;
@@ -24,6 +25,8 @@ pub struct TuiApp {
     pub(crate) overlay: UiOverlay,
     pub(crate) status: String,
     pub(crate) project_root: Option<PathBuf>,
+    pub(crate) explorer: explorer::ExplorerState,
+    pub(crate) bottom_selected: usize,
     should_exit: bool,
     default_encoding: Option<TextEncoding>,
 }
@@ -46,6 +49,8 @@ impl TuiApp {
             overlay: UiOverlay::None,
             status: "Ready".to_owned(),
             project_root: None,
+            explorer: explorer::ExplorerState::default(),
+            bottom_selected: 0,
             should_exit: false,
             default_encoding: options.encoding,
         };

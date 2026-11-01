@@ -33,7 +33,8 @@ impl TuiApp {
                 .map_err(|e| e.to_string()),
             PromptKind::OpenFolder => {
                 if path.is_dir() {
-                    self.project_root = Some(path);
+                    self.explorer.set_root(path)?;
+                    self.project_root = self.explorer.root().map(PathBuf::from);
                     self.panels.show_sidebar(SidebarView::Explorer);
                     Ok(())
                 } else {
