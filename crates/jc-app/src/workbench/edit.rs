@@ -39,17 +39,9 @@ impl Workbench {
             .inspection()
             .line_endings
             .preferred_bytes();
-        let text = if ending == b"
-" {
-            "
-"
-        } else if ending == b"" {
-            ""
-        } else {
-            "
-"
-        };
-        self.insert_text(text)
+        let text = String::from_utf8(ending.to_vec())
+            .expect("line-ending bytes are valid ASCII");
+        self.insert_text(&text)
     }
 
     pub fn insert_tab(&mut self) -> Result<(), WorkbenchError> {
