@@ -279,7 +279,7 @@ pub fn parse_response(bytes: &[u8]) -> Result<BridgeResponse, BridgeError> {
         return Err(config_error("bridge response must be ASCII with hex-encoded text"));
     }
     let input = std::str::from_utf8(bytes).map_err(|_| config_error("invalid response encoding"))?;
-    let mut lines = input.split_terminator('\\n').map(|line| line.strip_suffix('\\r').unwrap_or(line));
+    let mut lines = input.split_terminator('\n').map(|line| line.strip_suffix('\r').unwrap_or(line));
     let header = lines.next().ok_or_else(|| config_error("missing response header"))?;
     if header.len() > 128 * 1024 { return Err(parse_error(1, "record exceeds 128 KiB")); }
     let parts: Vec<_> = header.splitn(5, '|').collect();
