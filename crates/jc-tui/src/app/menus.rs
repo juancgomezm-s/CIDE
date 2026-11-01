@@ -16,9 +16,15 @@ impl TuiApp {
 
     pub(crate) fn switch_menu(&mut self, menu: MenuId, delta: isize) {
         let menus = self.menus.menus();
-        let Some(index) = menus.iter().position(|candidate| candidate.id == menu) else { return; };
+        let Some(index) = menus.iter().position(|candidate| candidate.id == menu) else {
+            return;
+        };
         let next = if delta < 0 {
-            if index == 0 { menus.len() - 1 } else { index - 1 }
+            if index == 0 {
+                menus.len() - 1
+            } else {
+                index - 1
+            }
         } else {
             (index + 1) % menus.len()
         };
@@ -75,20 +81,32 @@ pub(crate) fn menu_for_command(command: CommandId) -> Option<MenuId> {
 }
 
 pub(crate) fn next_selectable(entries: &[Option<CommandId>], current: usize) -> usize {
-    if entries.is_empty() { return 0; }
-    let start = if current == usize::MAX { 0 } else { (current + 1) % entries.len() };
+    if entries.is_empty() {
+        return 0;
+    }
+    let start = if current == usize::MAX {
+        0
+    } else {
+        (current + 1) % entries.len()
+    };
     for offset in 0..entries.len() {
         let index = (start + offset) % entries.len();
-        if entries[index].is_some() { return index; }
+        if entries[index].is_some() {
+            return index;
+        }
     }
     0
 }
 
 pub(crate) fn previous_selectable(entries: &[Option<CommandId>], current: usize) -> usize {
-    if entries.is_empty() { return 0; }
+    if entries.is_empty() {
+        return 0;
+    }
     for offset in 1..=entries.len() {
         let index = (current + entries.len() - (offset % entries.len())) % entries.len();
-        if entries[index].is_some() { return index; }
+        if entries[index].is_some() {
+            return index;
+        }
     }
     0
 }

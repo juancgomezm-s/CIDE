@@ -26,15 +26,15 @@ impl fmt::Display for WorkbenchError {
             Self::NoDocument => f.write_str("no active document"),
             Self::File(error) => write!(f, "{error}"),
             Self::Position(error) => write!(f, "{error}"),
-            Self::SearchEncoding => f.write_str(
-                "search text is not representable in the document encoding",
-            ),
+            Self::SearchEncoding => {
+                f.write_str("search text is not representable in the document encoding")
+            }
             Self::RegexUnavailable => {
                 f.write_str("regular-expression search is not implemented yet")
             }
-            Self::ClipboardEncoding => f.write_str(
-                "clipboard text cannot be represented in the target document encoding",
-            ),
+            Self::ClipboardEncoding => {
+                f.write_str("clipboard text cannot be represented in the target document encoding")
+            }
         }
     }
 }
@@ -186,9 +186,7 @@ impl Workbench {
 
     pub fn active_document(&self) -> Option<&EditorDocument> {
         let id = self.tabs.active_id()?;
-        self.documents
-            .iter()
-            .find(|document| document.tab_id == id)
+        self.documents.iter().find(|document| document.tab_id == id)
     }
 
     pub fn active_document_mut(&mut self) -> Option<&mut EditorDocument> {
@@ -216,10 +214,7 @@ impl Workbench {
     pub fn active_decoded(&self) -> Option<jc_text::DecodedText> {
         let document = self.active_document()?;
         let encoding = document.session.encoding()?;
-        Some(decode(
-            &document.session.document().to_bytes(),
-            encoding,
-        ))
+        Some(decode(&document.session.document().to_bytes(), encoding))
     }
 
     pub fn active_position(&self) -> Option<TextPosition> {
@@ -249,10 +244,7 @@ impl Workbench {
             can_undo: active.is_some_and(|document| document.session.document().can_undo()),
             can_redo: active.is_some_and(|document| document.session.document().can_redo()),
             has_selection: active.and_then(EditorDocument::selection).is_some(),
-            clipboard_has_text: self
-                .clipboard
-                .as_ref()
-                .is_some_and(|text| !text.is_empty()),
+            clipboard_has_text: self.clipboard.as_ref().is_some_and(|text| !text.is_empty()),
             has_project: false,
             active_language: language,
             has_progress_profile: false,
@@ -280,10 +272,7 @@ impl Workbench {
         Ok(())
     }
 
-    pub fn save_active_as(
-        &mut self,
-        path: impl Into<PathBuf>,
-    ) -> Result<(), WorkbenchError> {
+    pub fn save_active_as(&mut self, path: impl Into<PathBuf>) -> Result<(), WorkbenchError> {
         let path = path.into();
         let (tab_id, title) = {
             let document = self
@@ -311,10 +300,7 @@ impl Workbench {
         Ok(())
     }
 
-    pub fn close_active(
-        &mut self,
-        discard_dirty: bool,
-    ) -> Result<Option<TabId>, WorkbenchError> {
+    pub fn close_active(&mut self, discard_dirty: bool) -> Result<Option<TabId>, WorkbenchError> {
         let id = self.tabs.active_id().ok_or(WorkbenchError::NoDocument)?;
         if !discard_dirty
             && self
@@ -370,12 +356,9 @@ impl Workbench {
     }
 
     pub(crate) fn sync_active_tab_dirty(&mut self) {
-        let state = self.active_document().map(|document| {
-            (
-                document.tab_id,
-                document.session.document().is_modified(),
-            )
-        });
+        let state = self
+            .active_document()
+            .map(|document| (document.tab_id, document.session.document().is_modified()));
         if let Some((id, dirty)) = state {
             self.tabs.set_dirty(id, dirty);
         }

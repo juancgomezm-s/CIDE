@@ -73,9 +73,15 @@ impl TuiApp {
 
     fn handle_sidebar_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Up => { self.workbench.previous_tab(); }
-            KeyCode::Down => { self.workbench.next_tab(); }
-            KeyCode::Enter => { let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels); }
+            KeyCode::Up => {
+                self.workbench.previous_tab();
+            }
+            KeyCode::Down => {
+                self.workbench.next_tab();
+            }
+            KeyCode::Enter => {
+                let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+            }
             _ => {}
         }
     }
@@ -87,9 +93,7 @@ impl TuiApp {
     }
 
     fn handle_paste(&mut self, text: &str) {
-        if matches!(self.overlay, UiOverlay::None)
-            && self.focus.primary() == PrimaryFocus::Editor
-        {
+        if matches!(self.overlay, UiOverlay::None) && self.focus.primary() == PrimaryFocus::Editor {
             let result = self.workbench.insert_text(text);
             self.apply_result(result);
         } else {

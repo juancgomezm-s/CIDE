@@ -39,8 +39,7 @@ impl Workbench {
             .inspection()
             .line_endings
             .preferred_bytes();
-        let text = String::from_utf8(ending.to_vec())
-            .expect("line-ending bytes are valid ASCII");
+        let text = String::from_utf8(ending.to_vec()).expect("line-ending bytes are valid ASCII");
         self.insert_text(&text)
     }
 
@@ -113,9 +112,7 @@ impl Workbench {
     }
 
     fn boundaries(&self) -> Result<Vec<usize>, WorkbenchError> {
-        let document = self
-            .active_document()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -140,7 +137,10 @@ impl Workbench {
             .active_document()
             .ok_or(WorkbenchError::NoDocument)?
             .cursor;
-        Ok(self.boundaries()?.into_iter().find(|offset| *offset > cursor))
+        Ok(self
+            .boundaries()?
+            .into_iter()
+            .find(|offset| *offset > cursor))
     }
 
     pub fn move_left(&mut self, select: bool) -> Result<(), WorkbenchError> {
@@ -169,9 +169,7 @@ impl Workbench {
     }
 
     pub fn move_end(&mut self, select: bool) -> Result<(), WorkbenchError> {
-        let document = self
-            .active_document()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -192,9 +190,7 @@ impl Workbench {
     }
 
     pub fn move_vertical(&mut self, delta: isize, select: bool) -> Result<(), WorkbenchError> {
-        let document = self
-            .active_document()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -220,9 +216,7 @@ impl Workbench {
         position: TextPosition,
         select: bool,
     ) -> Result<(), WorkbenchError> {
-        let document = self
-            .active_document()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -257,9 +251,7 @@ impl Workbench {
     }
 
     pub fn copy_selection(&mut self) -> Result<(), WorkbenchError> {
-        let document = self
-            .active_document()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
         let Some(range) = document.selection() else {
             return Ok(());
         };

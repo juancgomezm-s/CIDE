@@ -26,6 +26,4 @@ pub use menu::{default_menu_model, Menu, MenuId, MenuItem, MenuModel, MenuValida
 pub use panels::{BottomPanel, PanelManager, SidebarView};
 pub use tabs::{CloseRequest, Tab, TabId, TabManager};
 
-pub use workbench::{
-    CommandOutcome, EditorDocument, SearchState, Workbench, WorkbenchError,
-};
+pub use workbench::{CommandOutcome, EditorDocument, SearchState, Workbench, WorkbenchError};

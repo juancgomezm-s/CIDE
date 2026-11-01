@@ -1,8 +1,6 @@
 use super::TuiApp;
 use crate::state::{PromptKind, ReplaceField, UiOverlay};
-use jc_app::{
-    BottomPanel, CommandId, CommandOutcome, Overlay, PrimaryFocus, SidebarView,
-};
+use jc_app::{BottomPanel, CommandId, CommandOutcome, Overlay, PrimaryFocus, SidebarView};
 
 impl TuiApp {
     pub(crate) fn dispatch(&mut self, command: CommandId) {
@@ -34,7 +32,10 @@ impl TuiApp {
             }
             CommandOutcome::ShowPalette => {
                 self.open_focus_overlay(Overlay::CommandPalette);
-                self.overlay = UiOverlay::Palette { input: String::new(), selected: 0 };
+                self.overlay = UiOverlay::Palette {
+                    input: String::new(),
+                    selected: 0,
+                };
             }
             CommandOutcome::OpenMenu(command) => self.open_menu(command),
             CommandOutcome::View(command) => self.handle_view(command),
@@ -75,13 +76,26 @@ impl TuiApp {
             ViewOutput => self.show_bottom(BottomPanel::Output),
             ViewSearchResults => self.show_bottom(BottomPanel::SearchResults),
             ViewTerminal => {
-                self.status = "Embedded shell is deferred; JC-IDE itself remains terminal-native".to_owned();
+                self.status =
+                    "Embedded shell is deferred; JC-IDE itself remains terminal-native".to_owned();
             }
-            FocusNext => { self.focus.next(&self.panels); }
-            FocusPrevious => { self.focus.previous(&self.panels); }
-            EditDuplicate | EditDeleteLine | EditMoveLineUp | EditMoveLineDown
-            | EditToggleLineComment | SearchProject | SearchReplaceProject => {
-                let label = self.registry.get(command).map_or("Command", |spec| spec.label);
+            FocusNext => {
+                self.focus.next(&self.panels);
+            }
+            FocusPrevious => {
+                self.focus.previous(&self.panels);
+            }
+            EditDuplicate
+            | EditDeleteLine
+            | EditMoveLineUp
+            | EditMoveLineDown
+            | EditToggleLineComment
+            | SearchProject
+            | SearchReplaceProject => {
+                let label = self
+                    .registry
+                    .get(command)
+                    .map_or("Command", |spec| spec.label);
                 self.status = format!("{label} is not implemented in this M2 checkpoint");
             }
             _ => {}

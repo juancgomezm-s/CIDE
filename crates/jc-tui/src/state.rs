@@ -25,19 +25,34 @@ pub enum ReplaceField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiOverlay {
     None,
-    Prompt { kind: PromptKind, input: String },
-    Find { input: String },
+    Prompt {
+        kind: PromptKind,
+        input: String,
+    },
+    Find {
+        input: String,
+    },
     Replace {
         find: String,
         replacement: String,
         field: ReplaceField,
     },
-    Palette { input: String, selected: usize },
-    Menu { menu: MenuId, selected: usize },
-    CloseDialog { tab: TabId },
+    Palette {
+        input: String,
+        selected: usize,
+    },
+    Menu {
+        menu: MenuId,
+        selected: usize,
+    },
+    CloseDialog {
+        tab: TabId,
+    },
     EncodingChoice,
 }
 
 impl Default for UiOverlay {
-    fn default() -> Self { Self::None }
+    fn default() -> Self {
+        Self::None
+    }
 }

@@ -61,7 +61,9 @@ impl TuiApp {
         render::render(self, width, height)
     }
 
-    pub fn should_exit(&self) -> bool { self.should_exit }
+    pub fn should_exit(&self) -> bool {
+        self.should_exit
+    }
 
     pub(crate) fn command_context(&self) -> jc_app::CommandContext {
         let mut context = self.workbench.context();
@@ -71,5 +73,7 @@ impl TuiApp {
         context
     }
 
-    pub(crate) fn request_exit(&mut self) { self.should_exit = true; }
+    pub(crate) fn request_exit(&mut self) {
+        self.should_exit = true;
+    }
 }

@@ -9,9 +9,11 @@ pub fn draw(app: &TuiApp, screen: &mut Screen) {
         UiOverlay::None => {}
         UiOverlay::Prompt { kind, input } => draw_prompt(screen, *kind, input),
         UiOverlay::Find { input } => draw_find(app, screen, input),
-        UiOverlay::Replace { find, replacement, field } => {
-            draw_replace(app, screen, find, replacement, *field)
-        }
+        UiOverlay::Replace {
+            find,
+            replacement,
+            field,
+        } => draw_replace(app, screen, find, replacement, *field),
         UiOverlay::Palette { input, selected } => draw_palette(app, screen, input, *selected),
         UiOverlay::Menu { menu, selected } => draw_menu(app, screen, *menu, *selected),
         UiOverlay::CloseDialog { .. } => draw_close(screen),
@@ -48,7 +50,11 @@ fn draw_find(app: &TuiApp, screen: &mut Screen, input: &str) {
         app.workbench.search().current.map_or(0, |value| value + 1),
         app.workbench.search().matches.len()
     );
-    screen.text(x + 2, y + 1, &clip(input, width.saturating_sub(flags.len() as u16 + 5)));
+    screen.text(
+        x + 2,
+        y + 1,
+        &clip(input, width.saturating_sub(flags.len() as u16 + 5)),
+    );
     let fx = x + width.saturating_sub(flags.chars().count() as u16 + 2);
     screen.text_styled(fx, y + 1, &flags, CellStyle::Dim);
     screen.set_cursor(
@@ -99,7 +105,9 @@ fn draw_palette(app: &TuiApp, screen: &mut Screen, input: &str, selected: usize)
     let available = usize::from(height.saturating_sub(4));
     let start = selected.saturating_sub(available.saturating_sub(1));
     for (row, command) in commands.iter().skip(start).take(available).enumerate() {
-        let Some(spec) = app.registry.get(*command) else { continue; };
+        let Some(spec) = app.registry.get(*command) else {
+            continue;
+        };
         let enabled = app.registry.is_enabled(*command, &context);
         let shortcut = app
             .keymap
@@ -124,9 +132,13 @@ fn draw_palette(app: &TuiApp, screen: &mut Screen, input: &str, selected: usize)
 }
 
 fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
-    let Some(model) = app.menus.get(menu) else { return; };
+    let Some(model) = app.menus.get(menu) else {
+        return;
+    };
     let context = app.command_context();
-    let entries = app.menus.entries(menu, &app.registry, &app.keymap, &context);
+    let entries = app
+        .menus
+        .entries(menu, &app.registry, &app.keymap, &context);
     let width = entries
         .iter()
         .flatten()
@@ -135,7 +147,12 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         .unwrap_or(12)
         .clamp(18, 52) as u16;
     let height = (entries.len() as u16 + 2).min(screen.height().saturating_sub(2));
-    let menu_index = app.menus.menus().iter().position(|m| m.id == menu).unwrap_or(0);
+    let menu_index = app
+        .menus
+        .menus()
+        .iter()
+        .position(|m| m.id == menu)
+        .unwrap_or(0);
     let x = app
         .menus
         .menus()
@@ -146,7 +163,11 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         .min(screen.width().saturating_sub(width));
     let y = 1;
     screen.box_outline(x, y, width, height);
-    for (index, entry) in entries.iter().take(usize::from(height.saturating_sub(2))).enumerate() {
+    for (index, entry) in entries
+        .iter()
+        .take(usize::from(height.saturating_sub(2)))
+        .enumerate()
+    {
         let row = y + 1 + index as u16;
         match entry {
             None => screen.hline(x + 1, row, width - 2, '─'),
@@ -178,7 +199,12 @@ fn draw_close(screen: &mut Screen) {
     let (x, y, width, height) = centered(screen, 58, 7);
     panel(screen, x, y, width, height, "Unsaved changes");
     screen.text(x + 2, y + 2, "The active document has unsaved changes.");
-    screen.text_styled(x + 2, y + 4, "S Save    D Don't Save    Esc Cancel", CellStyle::Dim);
+    screen.text_styled(
+        x + 2,
+        y + 4,
+        "S Save    D Don't Save    Esc Cancel",
+        CellStyle::Dim,
+    );
     screen.hide_cursor();
 }
 
@@ -190,7 +216,12 @@ fn draw_encoding(screen: &mut Screen) {
     screen.text(x + 2, y + 5, "2  ISO-8859-1");
     screen.text(x + 30, y + 4, "3  IBM850");
     screen.text(x + 30, y + 5, "4  UTF-8");
-    screen.text_styled(x + 2, y + 7, "Esc leaves the file byte-preserved but not text-editable.", CellStyle::Dim);
+    screen.text_styled(
+        x + 2,
+        y + 7,
+        "Esc leaves the file byte-preserved but not text-editable.",
+        CellStyle::Dim,
+    );
     screen.hide_cursor();
 }
 
@@ -201,8 +232,21 @@ fn panel(screen: &mut Screen, x: u16, y: u16, width: u16, height: u16, title: &s
 
 fn centered(screen: &Screen, preferred_width: u16, preferred_height: u16) -> (u16, u16, u16, u16) {
     let width = preferred_width.min(screen.width().saturating_sub(2)).max(4);
-    let height = preferred_height.min(screen.height().saturating_sub(2)).max(3);
-    ((screen.width() - width) / 2, (screen.height() - height) / 2, width, height)
+    let height = preferred_height
+        .min(screen.height().saturating_sub(2))
+        .max(3);
+    (
+        (screen.width() - width) / 2,
+        (screen.height() - height) / 2,
+        width,
+        height,
+    )
 }
 
-fn yes(value: bool) -> &'static str { if value { "x" } else { " " } }
+fn yes(value: bool) -> &'static str {
+    if value {
+        "x"
+    } else {
+        " "
+    }
+}

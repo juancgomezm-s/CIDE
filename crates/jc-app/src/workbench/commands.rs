@@ -109,16 +109,28 @@ impl Workbench {
             }
             MenuFile | MenuEdit | MenuSearch | MenuProject | MenuBuild | MenuTools | MenuView
             | MenuHelp => Ok(CommandOutcome::OpenMenu(command)),
-            ViewExplorer | ViewDatabase | ViewGit | ViewSymbols | ViewToggleBottomPanel
-            | ViewTerminal | ViewProblems | ViewOutput | ViewSearchResults | FocusNext
+            ViewExplorer
+            | ViewDatabase
+            | ViewGit
+            | ViewSymbols
+            | ViewToggleBottomPanel
+            | ViewTerminal
+            | ViewProblems
+            | ViewOutput
+            | ViewSearchResults
+            | FocusNext
             | FocusPrevious => Ok(CommandOutcome::View(command)),
             ProgressCheck | ProgressCompile | ProgressRun | ProgressRefreshSchema => {
                 Ok(CommandOutcome::Progress(command))
             }
-            FileOpenFolder | EditDuplicate | EditDeleteLine | EditMoveLineUp
-            | EditMoveLineDown | EditToggleLineComment | SearchProject | SearchReplaceProject => {
-                Ok(CommandOutcome::View(command))
-            }
+            FileOpenFolder
+            | EditDuplicate
+            | EditDeleteLine
+            | EditMoveLineUp
+            | EditMoveLineDown
+            | EditToggleLineComment
+            | SearchProject
+            | SearchReplaceProject => Ok(CommandOutcome::View(command)),
         }
     }
 }

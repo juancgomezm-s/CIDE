@@ -27,7 +27,9 @@ impl TuiApp {
                     self.close_overlay();
                     return;
                 }
-                if self.try_overlay_command(key) { return; }
+                if self.try_overlay_command(key) {
+                    return;
+                }
                 match key.code {
                     KeyCode::Backspace => {
                         input.pop();
@@ -40,7 +42,11 @@ impl TuiApp {
                     _ => {}
                 }
             }
-            UiOverlay::Replace { mut find, mut replacement, mut field } => {
+            UiOverlay::Replace {
+                mut find,
+                mut replacement,
+                mut field,
+            } => {
                 if key.code == KeyCode::Esc {
                     self.close_overlay();
                     return;
@@ -50,7 +56,11 @@ impl TuiApp {
                         ReplaceField::Find => ReplaceField::Replacement,
                         ReplaceField::Replacement => ReplaceField::Find,
                     };
-                    self.overlay = UiOverlay::Replace { find, replacement, field };
+                    self.overlay = UiOverlay::Replace {
+                        find,
+                        replacement,
+                        field,
+                    };
                     return;
                 }
                 if key.code == KeyCode::Enter {
@@ -66,7 +76,11 @@ impl TuiApp {
                             Err(error) => self.status = error.to_string(),
                         }
                     }
-                    self.overlay = UiOverlay::Replace { find, replacement, field };
+                    self.overlay = UiOverlay::Replace {
+                        find,
+                        replacement,
+                        field,
+                    };
                     return;
                 }
                 match key.code {
@@ -75,7 +89,9 @@ impl TuiApp {
                             find.pop();
                             self.update_replace_query(&find);
                         }
-                        ReplaceField::Replacement => { replacement.pop(); }
+                        ReplaceField::Replacement => {
+                            replacement.pop();
+                        }
                     },
                     KeyCode::Char(ch) if is_plain_text(key) => match field {
                         ReplaceField::Find => {
@@ -86,9 +102,16 @@ impl TuiApp {
                     },
                     _ => {}
                 }
-                self.overlay = UiOverlay::Replace { find, replacement, field };
+                self.overlay = UiOverlay::Replace {
+                    find,
+                    replacement,
+                    field,
+                };
             }
-            UiOverlay::Palette { mut input, mut selected } => match key.code {
+            UiOverlay::Palette {
+                mut input,
+                mut selected,
+            } => match key.code {
                 KeyCode::Esc => self.close_overlay(),
                 KeyCode::Up => {
                     selected = selected.saturating_sub(1);
@@ -96,7 +119,9 @@ impl TuiApp {
                 }
                 KeyCode::Down => {
                     let count = self.palette_commands(&input).len();
-                    if count > 0 { selected = (selected + 1).min(count - 1); }
+                    if count > 0 {
+                        selected = (selected + 1).min(count - 1);
+                    }
                     self.overlay = UiOverlay::Palette { input, selected };
                 }
                 KeyCode::Enter => {
@@ -179,7 +204,9 @@ impl TuiApp {
     }
 
     fn try_overlay_command(&mut self, key: KeyEvent) -> bool {
-        let Some(stroke) = to_stroke(key) else { return false; };
+        let Some(stroke) = to_stroke(key) else {
+            return false;
+        };
         let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
         let context = self.command_context();
         match self.keymap.resolve(scope, stroke, &self.registry, &context) {
@@ -222,7 +249,11 @@ impl TuiApp {
                 input.push_str(text);
                 self.update_find(input);
             }
-            UiOverlay::Replace { mut find, mut replacement, field } => {
+            UiOverlay::Replace {
+                mut find,
+                mut replacement,
+                field,
+            } => {
                 match field {
                     ReplaceField::Find => {
                         find.push_str(text);
@@ -230,7 +261,11 @@ impl TuiApp {
                     }
                     ReplaceField::Replacement => replacement.push_str(text),
                 }
-                self.overlay = UiOverlay::Replace { find, replacement, field };
+                self.overlay = UiOverlay::Replace {
+                    find,
+                    replacement,
+                    field,
+                };
             }
             UiOverlay::Palette { mut input, .. } => {
                 input.push_str(text);

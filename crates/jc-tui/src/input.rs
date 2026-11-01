@@ -38,7 +38,9 @@ pub fn to_stroke(event: KeyEvent) -> Option<KeyStroke> {
 
 pub fn is_plain_text(event: KeyEvent) -> bool {
     matches!(event.code, KeyCode::Char(_))
-        && !event.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        && !event
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
 }
 
 #[cfg(test)]
@@ -47,7 +49,10 @@ mod tests {
 
     #[test]
     fn ctrl_shortcuts_normalize_ascii_case() {
-        let event = KeyEvent::new(KeyCode::Char('S'), KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+        let event = KeyEvent::new(
+            KeyCode::Char('S'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        );
         let stroke = to_stroke(event).unwrap();
         assert_eq!(stroke.key, Key::Char('s'));
         assert!(stroke.modifiers.contains(Modifiers::CTRL));

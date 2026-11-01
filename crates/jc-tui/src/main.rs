@@ -73,6 +73,9 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(options.encoding, Some(TextEncoding::Utf8));
-        assert_eq!(options.files, vec![PathBuf::from("a.p"), PathBuf::from("b.cs")]);
+        assert_eq!(
+            options.files,
+            vec![PathBuf::from("a.p"), PathBuf::from("b.cs")]
+        );
     }
 }

@@ -32,7 +32,14 @@ pub fn render(app: &TuiApp, width: u16, height: u16) -> Screen {
         0
     };
     if sidebar_width > 0 {
-        draw_sidebar(app, &mut screen, 0, content_top, sidebar_width, content_height);
+        draw_sidebar(
+            app,
+            &mut screen,
+            0,
+            content_top,
+            sidebar_width,
+            content_height,
+        );
         screen.vline(sidebar_width, content_top, content_height, '│');
     }
     let editor_x = sidebar_width.saturating_add(u16::from(sidebar_width > 0));
@@ -95,18 +102,13 @@ fn draw_tabs(app: &TuiApp, screen: &mut Screen) {
         };
         screen.text_styled(x, 1, &label, style);
         x = x.saturating_add(label.chars().count() as u16);
-        if x >= screen.width() { break; }
+        if x >= screen.width() {
+            break;
+        }
     }
 }
 
-fn draw_sidebar(
-    app: &TuiApp,
-    screen: &mut Screen,
-    x: u16,
-    y: u16,
-    width: u16,
-    height: u16,
-) {
+fn draw_sidebar(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, height: u16) {
     let focused = app.focus.primary() == PrimaryFocus::Sidebar;
     let title = match app.panels.sidebar() {
         SidebarView::Explorer => " Explorer ",
@@ -118,9 +120,15 @@ fn draw_sidebar(
         x,
         y,
         title,
-        if focused { CellStyle::Reverse } else { CellStyle::Dim },
+        if focused {
+            CellStyle::Reverse
+        } else {
+            CellStyle::Dim
+        },
     );
-    if height <= 1 { return; }
+    if height <= 1 {
+        return;
+    }
     match app.panels.sidebar() {
         SidebarView::Explorer => {
             let mut row = y + 1;
@@ -129,9 +137,19 @@ fn draw_sidebar(
                 row += 1;
             }
             for tab in app.workbench.tabs().tabs() {
-                if row >= y + height { break; }
-                let marker = if app.workbench.tabs().active_id() == Some(tab.id) { '>' } else { ' ' };
-                let text = format!("{marker} {}{}", tab.title, if tab.dirty { " *" } else { "" });
+                if row >= y + height {
+                    break;
+                }
+                let marker = if app.workbench.tabs().active_id() == Some(tab.id) {
+                    '>'
+                } else {
+                    ' '
+                };
+                let text = format!(
+                    "{marker} {}{}",
+                    tab.title,
+                    if tab.dirty { " *" } else { "" }
+                );
                 screen.text(x + 1, row, &clip(&text, width - 2));
                 row += 1;
             }
@@ -151,46 +169,66 @@ fn draw_sidebar(
     }
 }
 
-fn draw_editor(
-    app: &TuiApp,
-    screen: &mut Screen,
-    x: u16,
-    y: u16,
-    width: u16,
-    height: u16,
-) {
-    if width < 6 || height == 0 { return; }
+fn draw_editor(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, height: u16) {
+    if width < 6 || height == 0 {
+        return;
+    }
     let Some(document) = app.workbench.active_document() else {
         screen.text(x + 2, y + 2, "JC-IDE");
-        screen.text_styled(x + 2, y + 4, "Ctrl+O Open   Ctrl+N New   Ctrl+Shift+P Commands", CellStyle::Dim);
+        screen.text_styled(
+            x + 2,
+            y + 4,
+            "Ctrl+O Open   Ctrl+N New   Ctrl+Shift+P Commands",
+            CellStyle::Dim,
+        );
         return;
     };
     let Some(decoded) = app.workbench.active_decoded() else {
-        screen.text(x + 2, y + 2, "Select source encoding: 1 CP1252 / 2 ISO-8859-1 / 3 IBM850 / 4 UTF-8");
+        screen.text(
+            x + 2,
+            y + 2,
+            "Select source encoding: 1 CP1252 / 2 ISO-8859-1 / 3 IBM850 / 4 UTF-8",
+        );
         return;
     };
-    let cursor = app.workbench.active_position().unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
+    let cursor = app
+        .workbench
+        .active_position()
+        .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
     let lines = logical_lines(&decoded);
     let number_width = (lines.len().max(1).to_string().len() as u16).clamp(3, 7);
     let text_x = x + number_width + 2;
     let text_width = width.saturating_sub(number_width + 2);
-    if text_width == 0 { return; }
+    if text_width == 0 {
+        return;
+    }
     let visible_height = usize::from(height);
-    let first_line = cursor.line.saturating_sub(visible_height.saturating_sub(1) / 2);
-    let hscroll = cursor.column.saturating_sub(usize::from(text_width).saturating_sub(2));
+    let first_line = cursor
+        .line
+        .saturating_sub(visible_height.saturating_sub(1) / 2);
+    let hscroll = cursor
+        .column
+        .saturating_sub(usize::from(text_width).saturating_sub(2));
     let selection = document.selection();
 
     for row in 0..visible_height {
         let line_index = first_line + row;
-        if line_index >= lines.len() { break; }
+        if line_index >= lines.len() {
+            break;
+        }
         let row_y = y + row as u16;
         let number = format!("{:>width$} ", line_index + 1, width = number_width as usize);
         screen.text_styled(x, row_y, &number, CellStyle::Dim);
         for (visual_col, &(ch, source_offset)) in lines[line_index].iter().enumerate() {
             if visual_col >= hscroll {
                 let target = visual_col - hscroll;
-                if target >= usize::from(text_width) { break; }
-                let style = if selection.as_ref().is_some_and(|range| contains_byte(range, source_offset)) {
+                if target >= usize::from(text_width) {
+                    break;
+                }
+                let style = if selection
+                    .as_ref()
+                    .is_some_and(|range| contains_byte(range, source_offset))
+                {
                     CellStyle::Reverse
                 } else {
                     CellStyle::Normal
@@ -213,7 +251,9 @@ fn draw_editor(
 }
 
 fn draw_bottom(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, height: u16) {
-    if height == 0 { return; }
+    if height == 0 {
+        return;
+    }
     let focused = app.focus.primary() == PrimaryFocus::BottomPanel;
     let title = match app.panels.bottom() {
         BottomPanel::Problems => " Problems ",
@@ -221,7 +261,16 @@ fn draw_bottom(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, he
         BottomPanel::SearchResults => " Search Results ",
         BottomPanel::Terminal => " Terminal ",
     };
-    screen.text_styled(x, y, title, if focused { CellStyle::Reverse } else { CellStyle::Dim });
+    screen.text_styled(
+        x,
+        y,
+        title,
+        if focused {
+            CellStyle::Reverse
+        } else {
+            CellStyle::Dim
+        },
+    );
     let rows: Vec<String> = match app.panels.bottom() {
         BottomPanel::Problems => app.workbench.problems().to_vec(),
         BottomPanel::Output => app.workbench.output().to_vec(),
@@ -238,7 +287,11 @@ fn draw_bottom(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, he
     let available = usize::from(height.saturating_sub(1));
     let start = rows.len().saturating_sub(available);
     for (offset, line) in rows[start..].iter().enumerate() {
-        screen.text(x + 1, y + 1 + offset as u16, &clip(line, width.saturating_sub(2)));
+        screen.text(
+            x + 1,
+            y + 1 + offset as u16,
+            &clip(line, width.saturating_sub(2)),
+        );
     }
 }
 
@@ -246,16 +299,34 @@ fn draw_status(app: &TuiApp, screen: &mut Screen, y: u16) {
     screen.fill_row_styled(y, ' ', CellStyle::Reverse);
     let left = if let Some(path) = app.workbench.active_path() {
         let language = detect(&path.to_string_lossy()).id;
-        let encoding = app.workbench.active_encoding().map_or("encoding?", |e| e.name());
-        let position = app.workbench.active_position().unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
-        format!(" {} | {} | {} | Ln {} Col {} ", path.display(), language, encoding, position.line + 1, position.column + 1)
+        let encoding = app
+            .workbench
+            .active_encoding()
+            .map_or("encoding?", |e| e.name());
+        let position = app
+            .workbench
+            .active_position()
+            .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
+        format!(
+            " {} | {} | {} | Ln {} Col {} ",
+            path.display(),
+            language,
+            encoding,
+            position.line + 1,
+            position.column + 1
+        )
     } else {
         " JC-IDE ".to_owned()
     };
     screen.text_styled(0, y, &clip(&left, screen.width()), CellStyle::Reverse);
     let status_width = app.status.chars().count() as u16 + 2;
     if status_width < screen.width() {
-        screen.text_styled(screen.width() - status_width, y, &format!(" {} ", app.status), CellStyle::Reverse);
+        screen.text_styled(
+            screen.width() - status_width,
+            y,
+            &format!(" {} ", app.status),
+            CellStyle::Reverse,
+        );
     }
 }
 
@@ -266,12 +337,18 @@ fn logical_lines(decoded: &jc_text::DecodedText) -> Vec<Vec<(char, usize)>> {
     while index < chars.len() {
         let ch = chars[index];
         if ch == '\r' {
-            if index + 1 < chars.len() && chars[index + 1] == '\n' { index += 1; }
+            if index + 1 < chars.len() && chars[index + 1] == '\n' {
+                index += 1;
+            }
             lines.push(Vec::new());
         } else if ch == '\n' {
             lines.push(Vec::new());
         } else {
-            let offset = decoded.source_offsets.get(index).copied().unwrap_or(decoded.content_start);
+            let offset = decoded
+                .source_offsets
+                .get(index)
+                .copied()
+                .unwrap_or(decoded.content_start);
             lines.last_mut().unwrap().push((ch, offset));
         }
         index += 1;

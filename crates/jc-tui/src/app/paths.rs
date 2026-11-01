@@ -7,7 +7,10 @@ use std::path::PathBuf;
 impl TuiApp {
     pub(crate) fn open_prompt(&mut self, kind: PromptKind) {
         self.open_focus_overlay(Overlay::Dialog);
-        self.overlay = UiOverlay::Prompt { kind, input: String::new() };
+        self.overlay = UiOverlay::Prompt {
+            kind,
+            input: String::new(),
+        };
     }
 
     pub(crate) fn submit_prompt(&mut self, kind: PromptKind, input: String) {
@@ -24,7 +27,10 @@ impl TuiApp {
                 self.workbench.new_file(path, encoding);
                 Ok(())
             }
-            PromptKind::SaveAs => self.workbench.save_active_as(path).map_err(|e| e.to_string()),
+            PromptKind::SaveAs => self
+                .workbench
+                .save_active_as(path)
+                .map_err(|e| e.to_string()),
             PromptKind::OpenFolder => {
                 if path.is_dir() {
                     self.project_root = Some(path);

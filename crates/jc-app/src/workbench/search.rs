@@ -4,10 +4,7 @@ use jc_text::encode;
 use std::ops::Range;
 
 impl Workbench {
-    pub fn set_search_query(
-        &mut self,
-        query: impl Into<String>,
-    ) -> Result<(), WorkbenchError> {
+    pub fn set_search_query(&mut self, query: impl Into<String>) -> Result<(), WorkbenchError> {
         self.search.query = query.into();
         self.rebuild_search()
     }
@@ -36,9 +33,7 @@ impl Workbench {
         if self.search.regex {
             return Err(WorkbenchError::RegexUnavailable);
         }
-        let document = self
-            .active_document()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -74,7 +69,6 @@ impl Workbench {
         Ok(())
     }
 
-
     pub fn replace_current(&mut self, replacement: &str) -> Result<bool, WorkbenchError> {
         if self.search.regex {
             return Err(WorkbenchError::RegexUnavailable);
@@ -82,7 +76,11 @@ impl Workbench {
         if self.search.matches.is_empty() {
             return Ok(false);
         }
-        let index = self.search.current.unwrap_or(0).min(self.search.matches.len() - 1);
+        let index = self
+            .search
+            .current
+            .unwrap_or(0)
+            .min(self.search.matches.len() - 1);
         let range = self.search.matches[index].clone();
         let document = self
             .active_document_mut()
@@ -174,6 +172,5 @@ fn is_word(byte: u8) -> bool {
 }
 
 fn is_word_match(bytes: &[u8], start: usize, end: usize) -> bool {
-    (start == 0 || !is_word(bytes[start - 1]))
-        && (end == bytes.len() || !is_word(bytes[end]))
+    (start == 0 || !is_word(bytes[start - 1])) && (end == bytes.len() || !is_word(bytes[end]))
 }

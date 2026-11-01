@@ -26,29 +26,48 @@ impl Screen {
         Self {
             width,
             height,
-            cells: vec![Cell { ch: ' ', style: CellStyle::Normal }; size],
+            cells: vec![
+                Cell {
+                    ch: ' ',
+                    style: CellStyle::Normal
+                };
+                size
+            ],
             cursor: None,
         }
     }
 
-    pub fn width(&self) -> u16 { self.width }
-    pub fn height(&self) -> u16 { self.height }
-    pub fn cursor(&self) -> Option<(u16, u16)> { self.cursor }
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+    pub fn height(&self) -> u16 {
+        self.height
+    }
+    pub fn cursor(&self) -> Option<(u16, u16)> {
+        self.cursor
+    }
 
     pub fn set_cursor(&mut self, x: u16, y: u16) {
         self.cursor = (x < self.width && y < self.height).then_some((x, y));
     }
 
-    pub fn hide_cursor(&mut self) { self.cursor = None; }
+    pub fn hide_cursor(&mut self) {
+        self.cursor = None;
+    }
 
     pub fn put(&mut self, x: u16, y: u16, ch: char) {
         self.put_styled(x, y, ch, CellStyle::Normal);
     }
 
     pub fn put_styled(&mut self, x: u16, y: u16, ch: char, style: CellStyle) {
-        if x >= self.width || y >= self.height { return; }
+        if x >= self.width || y >= self.height {
+            return;
+        }
         let index = usize::from(y) * usize::from(self.width) + usize::from(x);
-        self.cells[index] = Cell { ch: sanitize(ch), style };
+        self.cells[index] = Cell {
+            ch: sanitize(ch),
+            style,
+        };
     }
 
     pub fn text(&mut self, x: u16, y: u16, text: &str) {
@@ -56,10 +75,14 @@ impl Screen {
     }
 
     pub fn text_styled(&mut self, x: u16, y: u16, text: &str, style: CellStyle) {
-        if y >= self.height || x >= self.width { return; }
+        if y >= self.height || x >= self.width {
+            return;
+        }
         let mut column = x;
         for ch in text.chars() {
-            if column >= self.width { break; }
+            if column >= self.width {
+                break;
+            }
             self.put_styled(column, y, ch, style);
             column = column.saturating_add(1);
         }
@@ -70,20 +93,30 @@ impl Screen {
     }
 
     pub fn fill_row_styled(&mut self, y: u16, ch: char, style: CellStyle) {
-        if y >= self.height { return; }
-        for x in 0..self.width { self.put_styled(x, y, ch, style); }
+        if y >= self.height {
+            return;
+        }
+        for x in 0..self.width {
+            self.put_styled(x, y, ch, style);
+        }
     }
 
     pub fn hline(&mut self, x: u16, y: u16, width: u16, ch: char) {
-        for offset in 0..width { self.put(x.saturating_add(offset), y, ch); }
+        for offset in 0..width {
+            self.put(x.saturating_add(offset), y, ch);
+        }
     }
 
     pub fn vline(&mut self, x: u16, y: u16, height: u16, ch: char) {
-        for offset in 0..height { self.put(x, y.saturating_add(offset), ch); }
+        for offset in 0..height {
+            self.put(x, y.saturating_add(offset), ch);
+        }
     }
 
     pub fn box_outline(&mut self, x: u16, y: u16, width: u16, height: u16) {
-        if width < 2 || height < 2 { return; }
+        if width < 2 || height < 2 {
+            return;
+        }
         self.put(x, y, '┌');
         self.put(x + width - 1, y, '┐');
         self.put(x, y + height - 1, '└');
@@ -95,19 +128,29 @@ impl Screen {
     }
 
     pub fn cell(&self, x: u16, y: u16) -> Cell {
-        if x >= self.width || y >= self.height { return Cell::default(); }
+        if x >= self.width || y >= self.height {
+            return Cell::default();
+        }
         self.cells[usize::from(y) * usize::from(self.width) + usize::from(x)]
     }
 
     #[cfg(test)]
     pub fn row_text(&self, y: u16) -> String {
-        if y >= self.height { return String::new(); }
+        if y >= self.height {
+            return String::new();
+        }
         (0..self.width).map(|x| self.cell(x, y).ch).collect()
     }
 }
 
 fn sanitize(ch: char) -> char {
-    if ch == '\t' { '→' } else if ch.is_control() { '·' } else { ch }
+    if ch == '\t' {
+        '→'
+    } else if ch.is_control() {
+        '·'
+    } else {
+        ch
+    }
 }
 
 #[cfg(test)]
