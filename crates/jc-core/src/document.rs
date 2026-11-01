@@ -56,6 +56,7 @@ pub struct Document {
     redo: Vec<State>,
     saved_revision: u64,
     next_revision: u64,
+    history_limit: usize,
 }
 
 impl fmt::Debug for Document {
@@ -95,6 +96,7 @@ impl Document {
             redo: Vec::new(),
             saved_revision: 0,
             next_revision: 1,
+            history_limit: 1024,
         }
     }
 
@@ -115,6 +117,41 @@ impl Document {
     }
     pub fn piece_count(&self) -> usize {
         self.state.pieces.len()
+    }
+    pub fn history_limit(&self) -> usize {
+        self.history_limit
+    }
+    pub fn undo_steps(&self) -> usize {
+        self.undo.len()
+    }
+    pub fn redo_steps(&self) -> usize {
+        self.redo.len()
+    }
+    pub fn retained_added_bytes(&self) -> usize {
+        self.added.len()
+    }
+    pub fn set_history_limit(&mut self, limit: usize) {
+        self.history_limit = limit;
+        trim_history(&mut self.undo, limit);
+        trim_history(&mut self.redo, limit);
+    }
+    pub fn compact_storage(&mut self) {
+        let bytes = self.to_bytes();
+        let len = bytes.len();
+        self.original = bytes;
+        self.added.clear();
+        self.state.pieces = if len == 0 {
+            Vec::new()
+        } else {
+            vec![Piece {
+                source: Source::Original,
+                start: 0,
+                len,
+            }]
+        };
+        self.state.len = len;
+        self.undo.clear();
+        self.redo.clear();
     }
 
     pub fn chunks(&self) -> impl Iterator<Item = &[u8]> {
@@ -189,7 +226,10 @@ impl Document {
             },
         );
         self.next_revision = following_revision;
-        self.undo.push(previous);
+        if self.history_limit > 0 {
+            self.undo.push(previous);
+            trim_history(&mut self.undo, self.history_limit);
+        }
         self.redo.clear();
         Ok(())
     }
@@ -206,7 +246,10 @@ impl Document {
             return false;
         };
         let current = std::mem::replace(&mut self.state, previous);
-        self.redo.push(current);
+        if self.history_limit > 0 {
+            self.redo.push(current);
+            trim_history(&mut self.redo, self.history_limit);
+        }
         true
     }
 
@@ -215,7 +258,10 @@ impl Document {
             return false;
         };
         let current = std::mem::replace(&mut self.state, next);
-        self.undo.push(current);
+        if self.history_limit > 0 {
+            self.undo.push(current);
+            trim_history(&mut self.undo, self.history_limit);
+        }
         true
     }
 
@@ -288,6 +334,12 @@ impl Document {
             }
             position = end;
         }
+    }
+}
+
+fn trim_history(history: &mut Vec<State>, limit: usize) {
+    if history.len() > limit {
+        history.drain(..history.len() - limit);
     }
 }
 
