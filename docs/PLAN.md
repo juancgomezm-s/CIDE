@@ -43,6 +43,12 @@ La página de códigos **real de cada proyecto de producción** no se codifica g
 
 ## M2A — TUI funcional — EN DESARROLLO
 
+**Alcance de productividad ABL:** operaciones de texto y snippets ligeros en M2A; tokenización/formateo en M3; firmas, USING y herencia en M4. Ver [alcance de comandos ABL](ABL_EDITOR_COMMAND_SCOPE.md).
+
+**Search Plus es prioridad de producto:** primero documento activo, luego búsqueda en proyecto cancelable, más tarde referencias apoyadas en compilador XREF y catálogo de esquema. Ver [plan Search Plus](M2_SEARCH_PLUS.md).
+
+Atajos acordados: Ctrl+D duplicar, Ctrl+Shift+D eliminar línea, Tab/Shift+Tab sangría, Ctrl+/ comentar/descomentar, Ctrl+Shift+/ bloque. La selección columna requiere rangos rectangulares reales y fallback por Palette cuando el terminal no entrega combinaciones. No confundir código incorporado con funcionalidad ya validada.
+
 Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crossterm y contrato de aplicación compartido. La presencia de código o pruebas parciales no equivale a aceptación funcional completa. Implementar y verificar cada flujo de extremo a extremo antes de cerrar este hito.
 
 **Checkpoint actual:**
