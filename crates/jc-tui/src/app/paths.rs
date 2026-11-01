@@ -33,10 +33,10 @@ impl TuiApp {
                 .map_err(|e| e.to_string()),
             PromptKind::OpenFolder => {
                 if path.is_dir() {
-                    self.explorer.set_root(path)?;
-                    self.project_root = self.explorer.root().map(PathBuf::from);
-                    self.panels.show_sidebar(SidebarView::Explorer);
-                    Ok(())
+                    self.explorer.set_root(path).map(|()| {
+                        self.project_root = self.explorer.root().map(PathBuf::from);
+                        self.panels.show_sidebar(SidebarView::Explorer);
+                    })
                 } else {
                     Err("Folder does not exist".to_owned())
                 }
@@ -55,12 +55,16 @@ impl TuiApp {
         self.workbench
             .open_file(path, self.default_encoding)
             .map_err(|error| error.to_string())?;
+        self.ensure_encoding_choice();
+        Ok(())
+    }
+
+    pub(crate) fn ensure_encoding_choice(&mut self) {
         if self.workbench.active_encoding().is_none() {
             self.open_focus_overlay(Overlay::Dialog);
             self.overlay = UiOverlay::EncodingChoice;
             self.status = "Legacy encoding must be selected explicitly".to_owned();
         }
-        Ok(())
     }
 
     pub(crate) fn choose_encoding(&mut self, encoding: TextEncoding) {

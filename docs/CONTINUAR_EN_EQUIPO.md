@@ -2,6 +2,8 @@
 
 Copia este texto al agente de programación que vaya a trabajar directamente en el equipo Windows/Zephyrus. Debe inspeccionar el repositorio antes de modificarlo; este documento es un handoff, no una certificación de que todas las funciones están compiladas.
 
+**Actualización 2026-11-01:** el doble panel de prioridades 1–2 del prompt original ya está implementado, compilado y probado localmente. Conserva el prompt inferior como contexto del alcance original; para el estado actual consulta [M2_TUI_CHECKPOINT.md](M2_TUI_CHECKPOINT.md) y [VALIDACION.md](VALIDACION.md). No rehacer PaneManager ni el renderer. El siguiente incremento es navegación por proveedores (Outline/includes/RUN); Search Plus de proyecto y Git read-only siguen pendientes. M2A permanece abierto y aún requiere revisión manual exhaustiva. En este equipo `scripts/cargo-local.ps1` utiliza el toolchain aislado en `work/toolchain`; ambos se describen en README.
+
 ---
 
 Actúa como agente responsable de continuar **JC-IDE**, editor multilenguaje Rust, desde el estado real de mi repositorio privado `https://github.com/juancgomezm-s/JC-IDE.git`, rama `main`. Trabaja en mi entorno Windows local y realiza cambios reales sobre el repositorio.

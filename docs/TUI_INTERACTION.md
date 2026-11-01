@@ -189,11 +189,11 @@ La paleta PDSOE solo es referencia funcional; ver [alcance de comandos](ABL_EDIT
 
 Compatibilidad terminal: Ctrl+I puede equivaler a Tab; Ctrl+Shift+/ y Alt+Shift+flechas pueden no llegar diferenciados. Cada acción debe seguir disponible mediante menú o Command Palette cuando el terminal no la reporte.
 
-## Grupos de edición, navegación y Git — incremento M2 (propuesto)
+## Grupos de edición — incremento M2 implementado
 
-Existe el modelo `PaneManager` en `jc-app`, pero los atajos de esta tabla **aún no están registrados** hasta que la TUI tenga handlers y renderizado real. No presentarlos como funciones operativas.
+Estos comandos ya usan `PaneManager`, handlers y renderizado TUI. Se muestran en View y Command Palette; al enfocar un grupo desde otra área, el foco primario vuelve al editor.
 
-| Acción futura | Tecla propuesta |
+| Acción | Tecla registrada |
 |---|---|
 | Split editor into two groups | Alt+Shift+2 |
 | Return to one group | Alt+Shift+1 |
@@ -201,6 +201,16 @@ Existe el modelo `PaneManager` en `jc-app`, pero los atajos de esta tabla **aún
 | Pin/unpin active reference | Ctrl+Alt+P |
 | Link/unlink scrolling | Ctrl+Alt+L |
 | Navigate back / forward | Alt+Left / Alt+Right |
+| Open to Side (editor o archivo seleccionado en Explorer) | Ctrl+Enter |
+
+Con menos de 65 celdas disponibles en el área editorial se conserva un solo grupo visible. Focus Group 1/2 cambia el grupo mostrado, preservando el estado del otro. Pin evita sustitución por Open y Open to Side; seleccionar explícitamente una pestaña puede cambiar el documento anclado. Linked Scroll solo vincula desplazamientos verticales, sin sincronizar selecciones/carets.
+
+## Navegación de código, completado y Git — pendiente
+
+Estas teclas siguen como reservas; no se registran handlers ficticios:
+
+| Acción futura | Tecla propuesta |
+|---|---|
 | Quick Open File | Ctrl+P |
 | Go to Symbol | Ctrl+R |
 | Go to Line | Ctrl+G (ya reservado) |

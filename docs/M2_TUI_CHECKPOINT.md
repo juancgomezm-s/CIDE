@@ -52,11 +52,18 @@ Problems y Output aún son texto sin ubicación estructurada. No fingimos navega
 - **La implementación aún no ha sido compilada en el entorno actual**; conforme D13, CI remoto se difiere a M5.
 - Alcance detallado: [comandos ABL](ABL_EDITOR_COMMAND_SCOPE.md) y [Search Plus](M2_SEARCH_PLUS.md).
 
-## Checkpoint de dos grupos (pendiente de UI)
+## Checkpoint de dos grupos — 2026-11-01
 
-- Código de `PaneManager` y wiring inicial de `Workbench` agregados: Primary/Secondary, anclaje, historial atrás/adelante, scroll linked como estado y compartición por `TabId`.
-- Tests de modelo y Workbench incluidos como especificación ejecutable; **no están compilados/ejecutados en esta sesión**.
-- Todavía no hay renderer TUI doble, focos/cursor/scroll/selección completos por grupo, rebase de offsets, navegación de includes/RUN, DiffModel ni flujos Git. No presentarlos como completados.
+- Renderer TUI de Primary/Secondary, títulos con grupo activo, pin y scroll link. Dos columnas con al menos 65 celdas disponibles en el editor; por debajo se muestra solo el grupo activo sin destruir el otro.
+- Cursor, anchor/selección y viewport separados por grupo. `EditorDocument` conserva el estado de trabajo de la vista activa por compatibilidad con los comandos existentes; al cambiar foco se guarda/restaura desde `PaneManager`. El documento y undo permanecen únicos.
+- `ByteEdit` conserva únicamente rango reemplazado y longitud insertada; undo informa su geometría inversa. Workbench ajusta caret/selección inactivos e historiales por bytes. Los carets dentro de texto reemplazado colapsan al final del reemplazo; una inserción en su posición los desplaza a la derecha.
+- Split/One Group, Focus Group 1/2, Pin/Unpin, Linked Scroll, Open to Side y Back/Forward registrados centralmente y accesibles por menú/palette/teclado.
+- Open reutiliza un archivo ya abierto (ruta canónica), preservando bytes sucios e historial. Explorer admite Ctrl+Enter para abrir al lado; una referencia anclada no se sustituye por apertura automática/lateral.
+- Scroll vinculado aplica el mismo delta vertical a la otra vista, limitado a sus líneas, sin mover su cursor. No es alineación por hunks de un diff.
+- Cerrar una pestaña compartida limpia ambos grupos/historiales; cerrar el segundo grupo conserva sus documentos abiertos.
+- Pruebas de core, Workbench y eventos/render TUI ejecutadas localmente. Smoke manual en terminal Windows de menús, split, foco, pin, apertura automática, back y salida; aún falta revisión completa de terminales/atajos. Evidencia en [VALIDACION.md](VALIDACION.md).
+- Se corrigió el uso de `?` en un handler de Open Folder que retornaba `()`, el fondo transparente de overlays y el scroll de menús altos. Se aplicó rustfmt también al formato pendiente del checkpoint anterior.
+- Navegación de includes/RUN, Outline, DiffModel, Git y autocomplete siguen pendientes; M2A no está cerrado.
 - Documento de arquitectura detallado: [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
 - [Prompt de continuación desde el equipo](CONTINUAR_EN_EQUIPO.md) para completar la implementación y validarla localmente sin Actions.
 
@@ -72,7 +79,7 @@ Problems y Output aún son texto sin ubicación estructurada. No fingimos navega
 ## Restricciones deliberadas
 
 - Database/Schema corresponde a M3/M4.
-- Git y terminal embebida son servicios opcionales posteriores.
+- Git read-only/diff es un incremento pendiente de M2; escritura Git y terminal embebida siguen diferidas.
 - Regex sigue deshabilitado hasta tener un motor/contrato explícito.
 - La TUI no tiene lógica de documentos independiente de `jc-app`.
 - Este checkpoint no afirma CI verde; CI remoto está diferido hasta M5.

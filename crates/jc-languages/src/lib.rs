@@ -37,7 +37,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["p", "w", "i", "cls"],
         filenames: &[],
         line_comment: None,
-        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
         tooling_plan: ToolingPlan::ProgressBridge,
     },
     LanguageProfile {
@@ -46,7 +49,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["cs", "csx"],
         filenames: &[],
         line_comment: Some("//"),
-        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -55,7 +61,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["rs"],
         filenames: &[],
         line_comment: Some("//"),
-        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -64,7 +73,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["js", "jsx", "mjs", "cjs"],
         filenames: &[],
         line_comment: Some("//"),
-        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -73,7 +85,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["ts", "tsx", "mts", "cts"],
         filenames: &[],
         line_comment: Some("//"),
-        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -91,7 +106,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["html", "htm"],
         filenames: &[],
         line_comment: None,
-        block_comment: Some(BlockComment { start: "<!--", end: "-->" }),
+        block_comment: Some(BlockComment {
+            start: "<!--",
+            end: "-->",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -100,7 +118,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["css"],
         filenames: &[],
         line_comment: None,
-        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -109,7 +130,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["sql"],
         filenames: &[],
         line_comment: Some("--"),
-        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -118,7 +142,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["xml", "xsd", "xsl", "xslt", "csproj", "props", "targets"],
         filenames: &[],
         line_comment: None,
-        block_comment: Some(BlockComment { start: "<!--", end: "-->" }),
+        block_comment: Some(BlockComment {
+            start: "<!--",
+            end: "-->",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -136,7 +163,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["jsonc"],
         filenames: &["tsconfig.json", "jsconfig.json"],
         line_comment: Some("//"),
-        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -145,7 +175,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["md", "markdown"],
         filenames: &[],
         line_comment: None,
-        block_comment: Some(BlockComment { start: "<!--", end: "-->" }),
+        block_comment: Some(BlockComment {
+            start: "<!--",
+            end: "-->",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -172,7 +205,10 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["ps1", "psm1", "psd1"],
         filenames: &[],
         line_comment: Some("#"),
-        block_comment: Some(BlockComment { start: "<#", end: "#>" }),
+        block_comment: Some(BlockComment {
+            start: "<#",
+            end: "#>",
+        }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -266,15 +302,24 @@ mod tests {
     #[test]
     fn built_in_comments_are_capability_data_not_app_specific_conditions() {
         let abl = by_id("abl").unwrap();
-        assert_eq!(abl.preferred_comment(), Some(CommentStyle::Block(BlockComment {
-            start: "/*",
-            end: "*/",
-        })));
-        assert_eq!(by_id("csharp").unwrap().preferred_comment(), Some(CommentStyle::Line("//")));
+        assert_eq!(
+            abl.preferred_comment(),
+            Some(CommentStyle::Block(BlockComment {
+                start: "/*",
+                end: "*/",
+            }))
+        );
+        assert_eq!(
+            by_id("csharp").unwrap().preferred_comment(),
+            Some(CommentStyle::Line("//"))
+        );
         assert_eq!(by_id("xml").unwrap().block_comment.unwrap().start, "<!--");
         assert_eq!(by_id("python").unwrap().block_comment, None);
         assert_eq!(by_id("json").unwrap().preferred_comment(), None);
-        assert_eq!(by_id("powershell").unwrap().block_comment.unwrap().end, "#>");
+        assert_eq!(
+            by_id("powershell").unwrap().block_comment.unwrap().end,
+            "#>"
+        );
     }
 
     #[test]

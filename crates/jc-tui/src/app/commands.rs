@@ -4,6 +4,10 @@ use jc_app::{BottomPanel, CommandId, CommandOutcome, Overlay, PrimaryFocus, Side
 
 impl TuiApp {
     pub(crate) fn dispatch(&mut self, command: CommandId) {
+        if command == CommandId::EditorOpenToSide && self.focus.primary() == PrimaryFocus::Sidebar {
+            self.activate_explorer_entry_to_side();
+            return;
+        }
         match self.workbench.execute(command) {
             Ok(outcome) => self.handle_outcome(outcome),
             Err(error) => self.status = error.to_string(),
@@ -59,6 +63,17 @@ impl TuiApp {
     fn handle_view(&mut self, command: CommandId) {
         use CommandId::*;
         match command {
+            EditorSplitRight
+            | EditorOneGroup
+            | EditorFocusPrimary
+            | EditorFocusSecondary
+            | EditorTogglePin
+            | EditorToggleScrollLink
+            | EditorOpenToSide
+            | NavigateBack
+            | NavigateForward => {
+                let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+            }
             FileOpenFolder => self.open_prompt(PromptKind::OpenFolder),
             ViewExplorer => self.show_sidebar(SidebarView::Explorer),
             ViewDatabase => self.show_sidebar(SidebarView::Database),

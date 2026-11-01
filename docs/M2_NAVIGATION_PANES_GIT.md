@@ -1,6 +1,6 @@
 # M2–M5 — Grupos de edición, navegación y Git integrado
 
-**Estado:** especificación y checkpoint técnico. No implica que la TUI ya dibuje dos paneles, ni que Git o un LSP estén operativos.
+**Estado:** doble panel TUI implementado y validado localmente el 2026-11-01. El resto del documento incluye capacidades futuras: Git, navegación por lenguaje y LSP aún no están operativos.
 
 ## Objetivo de experiencia
 
@@ -37,7 +37,7 @@ Este dibujo es objetivo arquitectónico, **no** una captura ni evidencia de inte
 - Un documento compartido tiene una sola revisión/undo; cada vista debe tener cursor, selección visible, scroll y estado de foco propios. La capa de vistas deberá rebasar offsets al editar delante de otra vista, sin modificar la semántica del buffer.
 - La comparación Git no es un documento editable común: los lados de commit/index/HEAD son **snapshots inmutables**; la vista de resultado de merge sí es editable y guarda vía `jc-files`.
 
-**Código de arranque en M2:** `crates/jc-app/src/panes.rs` con modelo Primary/Secondary, anclaje, navegación y linked-scroll flag; `Workbench` expone métodos de grupos. El renderer y la gestión completa de cursor/scroll por vista siguen pendientes. El código nuevo aún no se ha compilado en el entorno de esta sesión.
+**Checkpoint implementado:** `PaneManager`/`Workbench` y renderer TUI con Primary/Secondary, anclaje, historial, selección/caret/viewport por grupo, scroll vertical vinculado y apertura lateral. Los offsets se reubican mediante geometría de edición/undo/redo, sin copias de documento. Validación local y límites en [VALIDACION.md](VALIDACION.md) y [M2_TUI_CHECKPOINT.md](M2_TUI_CHECKPOINT.md).
 
 ## 2. Navegación de código (universal y por proveedor)
 
@@ -118,7 +118,7 @@ Se deben probar conflictos de renombre/eliminación, EOL mixtos, fuentes legacy 
 
 ## 6. Tabla de teclado propuesta
 
-**Reservas, no todas implementadas.** Las opciones también estarán en Command Palette, porque algunas terminales no entregan ciertas combinaciones.
+Split/One Group, Focus 1/2, Pin, Linked Scroll y Back/Forward ya están registrados, además de Open to Side con Ctrl+Enter. El resto de la tabla sigue reservado. Los comandos implementados también están en Command Palette para terminales que no entregan ciertas combinaciones.
 
 | Acción | Atajo propuesto |
 |---|---|
@@ -171,9 +171,9 @@ Se deben probar conflictos de renombre/eliminación, EOL mixtos, fuentes legacy 
 
 ## 9. Deuda técnica reconocida
 
-- El `Workbench` inicial tiene un cursor por documento. El nuevo `PaneManager` registra ubicaciones por grupo, pero **no** proporciona todavía scroll/selección independientes completos ni ajustes de offsets después de ediciones.
-- El enum fijo `CommandId` aún no incluye acciones de navegación y Git; registrar sus comandos cuando exista el ejecutor real, en lugar de mostrar placeholders engañosos.
-- Aún no se implementan UI dividida, resolver de includes/RUN, autocompletado semántico, DiffModel, Git write flows ni merge editor.
-- Los artefactos nuevos de M2 no tienen compilación verificada; ejecutar validación **local dirigida** al continuar desde el equipo. GitHub Actions permanece dormido hasta M5.
+- `EditorDocument` conserva campos de cursor/selección/scroll como estado de trabajo de la vista activa; `PaneManager` guarda/restaura por grupo. Los accesos de bajo nivel que muten `FileSession` fuera de Workbench no deben saltarse el rebase.
+- Scroll se mide por líneas y columnas escalares del renderer actual. No se promete ancho Unicode/grafemas completo, scroll de diff por hunks ni tabs por grupo (la barra de pestañas sigue siendo global).
+- Resolver de includes/RUN, Outline, completado, DiffModel, Git read-only/write y merge siguen pendientes. Sus comandos se registrarán al tener ejecutor real.
+- El incremento doble panel está compilado y probado localmente; aún falta revisión manual exhaustiva de combinaciones/terminales. GitHub Actions permanece dormido hasta M5 y M2A sigue abierto.
 
 Consulte también [TUI_INTERACTION.md](TUI_INTERACTION.md), [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md), [M2_SEARCH_PLUS.md](M2_SEARCH_PLUS.md) y [PLAN.md](PLAN.md).

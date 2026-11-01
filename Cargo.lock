@@ -63,6 +63,7 @@ dependencies = [
 name = "jc-app"
 version = "0.1.0"
 dependencies = [
+ "jc-core",
  "jc-files",
  "jc-languages",
  "jc-text",

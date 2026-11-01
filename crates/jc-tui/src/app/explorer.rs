@@ -141,7 +141,11 @@ impl ExplorerState {
             right
                 .is_dir
                 .cmp(&left.is_dir)
-                .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+                .then_with(|| {
+                    left.name
+                        .to_ascii_lowercase()
+                        .cmp(&right.name.to_ascii_lowercase())
+                })
                 .then_with(|| left.name.cmp(&right.name))
         });
         self.entries = entries;
@@ -191,7 +195,10 @@ mod tests {
         assert!(explorer.entries()[0].is_dir);
         assert_eq!(explorer.entries()[1].name, "a.p");
         assert_eq!(explorer.entries()[2].name, "z.p");
-        assert_eq!(explorer.enter_directory().unwrap(), ExplorerAction::DirectoryChanged);
+        assert_eq!(
+            explorer.enter_directory().unwrap(),
+            ExplorerAction::DirectoryChanged
+        );
         assert_eq!(explorer.entries()[0].name, "nested.p");
         assert!(explorer.parent().unwrap());
         assert!(!explorer.parent().unwrap());

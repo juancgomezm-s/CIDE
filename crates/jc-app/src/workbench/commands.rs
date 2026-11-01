@@ -112,6 +112,47 @@ impl Workbench {
                 Ok(CommandOutcome::None)
             }
             PaletteOpen => Ok(CommandOutcome::ShowPalette),
+            EditorSplitRight
+            | EditorOneGroup
+            | EditorFocusPrimary
+            | EditorFocusSecondary
+            | EditorTogglePin
+            | EditorToggleScrollLink
+            | EditorOpenToSide
+            | NavigateBack
+            | NavigateForward => {
+                match command {
+                    EditorSplitRight => {
+                        self.split_editor_right();
+                    }
+                    EditorOneGroup => {
+                        self.close_split_editor();
+                    }
+                    EditorFocusPrimary => {
+                        self.focus_editor_pane(crate::PaneId::Primary);
+                    }
+                    EditorFocusSecondary => {
+                        self.focus_editor_pane(crate::PaneId::Secondary);
+                    }
+                    EditorTogglePin => {
+                        self.toggle_reference_pin();
+                    }
+                    EditorToggleScrollLink => {
+                        self.toggle_scroll_link();
+                    }
+                    EditorOpenToSide => {
+                        self.open_active_to_side();
+                    }
+                    NavigateBack => {
+                        self.navigation_back();
+                    }
+                    NavigateForward => {
+                        self.navigation_forward();
+                    }
+                    _ => unreachable!(),
+                }
+                Ok(CommandOutcome::View(command))
+            }
             TabNext => {
                 self.next_tab();
                 Ok(CommandOutcome::None)

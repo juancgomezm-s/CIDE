@@ -59,7 +59,7 @@ Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crosst
 - menús, palette, foco y pestañas ya consumen el contrato central;
 - CI remoto permanece dormido hasta M5; este checkpoint no se declara validado por Actions.
 
-**Nuevo incremento M2A — dos grupos de editor, navegación y Git read-only:** se incorporó un modelo inicial `PaneManager` con Primary/Secondary, referencia anclada, ubicación por bytes, historial atrás/adelante por grupo y toggle de scroll vinculado. Todavía falta conectarlo al renderer TUI, conservar cursor/scroll/selección por vista, navegar símbolos e includes y construir diffs. Las acciones de Git con escritura (stage/commit/push/pull/merge) quedan en M5. Ver [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
+**Incremento M2A — dos grupos funcionales (2026-11-01):** `PaneManager` ya está conectado al renderer TUI, comandos, menús y palette. Cursor, selección y viewport se conservan por grupo; las ediciones/undo/redo ajustan posiciones de la otra vista e historial sin duplicar documentos. Incluye pin, apertura lateral, back/forward, scroll vertical vinculado y fallback al grupo activo con poco ancho. Hay pruebas locales y smoke test en terminal Windows; véase [VALIDACION.md](VALIDACION.md). Siguen pendientes símbolos/includes, Git read-only/diffs y revisión manual completa. Git con escritura permanece en M5. Ver [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
 
 **Pendiente para cerrar M2A:** búsqueda/reemplazo de proyecto, integración estructurada de Problems/Output con tareas Progress, revisión manual completa de teclado en terminal real y cualquier corrección de compilación/formato acumulada para hardening M5.
 

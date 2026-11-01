@@ -4,7 +4,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M2A en desarrollo — TUI con comandos de edición ABL, controles de sangría y plan de búsqueda prioritaria. Cambios recientes aún requieren validación local; GUI pendiente.**
+**Estado: M2A en desarrollo — TUI con doble panel, referencia anclable, navegación por grupo y edición compartida; incremento validado localmente en Windows. GUI, navegación de símbolos y Search Plus de proyecto pendientes.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
@@ -56,7 +56,17 @@ Los offsets del núcleo son bytes, no caracteres ni columnas visuales. `jc-text`
 
 ## Checkpoint de navegación en M2A
 
-Se añadió un `PaneManager` **en código fuente** al modelo de aplicación común, con dos grupos (Primary/Secondary), ubicación por byte, pin/unpin de referencia, back/forward por grupo y estado de scroll vinculado; las vistas comparten `TabId` y `FileSession`. No existe aún un renderer TUI de dos columnas ni un motor Git de diff/merge operativo. Este código sigue pendiente de validación local.
+La TUI dibuja dos grupos Primary/Secondary con cursor, selección y viewport independientes. Comparten `TabId`, `FileSession` y undo; los offsets se ajustan al editar y deshacer. Pin/unpin, scroll vertical vinculado, apertura lateral y back/forward se ejecutan desde el registro central, menús y palette. En terminales estrechas se muestra el grupo activo conservando el otro. Git/diff, símbolos e includes/RUN siguen pendientes; M2A permanece abierto.
+
+En este equipo se preparó Rust 1.85.1 dentro de `work/toolchain`, sin cambiar el PATH del usuario. El wrapper PowerShell también admite un Cargo ya instalado:
+
+```powershell
+.\scripts\cargo-local.ps1 run -p jc-tui --locked --offline
+.\scripts\cargo-local.ps1 test -p jc-app -p jc-core -p jc-tui --locked --offline
+.\scripts\cargo-local.ps1 fmt --all '--' --check
+```
+
+`work/` está ignorado por Git; en un clon nuevo se necesita instalar Rust. El wrapper no descarga herramientas. Las pruebas de guardado seguro requieren permitir hard links y `ReplaceFileW`; un sandbox que los bloquee puede devolver acceso denegado.
 
 La especificación de doble panel, Outline, navegación de includes/RUN, autocompletado y Git está en [M2_NAVIGATION_PANES_GIT.md](docs/M2_NAVIGATION_PANES_GIT.md). Para retomar desde una PC Windows usa el [prompt de continuación](docs/CONTINUAR_EN_EQUIPO.md).
 

@@ -75,6 +75,15 @@ pub enum CommandId {
     ViewProblems,
     ViewOutput,
     ViewSearchResults,
+    EditorSplitRight,
+    EditorOneGroup,
+    EditorFocusPrimary,
+    EditorFocusSecondary,
+    EditorTogglePin,
+    EditorToggleScrollLink,
+    EditorOpenToSide,
+    NavigateBack,
+    NavigateForward,
 
     FocusNext,
     FocusPrevious,
@@ -115,6 +124,7 @@ pub struct CommandContext {
     pub reference_pinned: bool,
     pub nav_back_available: bool,
     pub nav_forward_available: bool,
+    pub can_open_to_side: bool,
 }
 
 impl Default for CommandContext {
@@ -138,6 +148,7 @@ impl Default for CommandContext {
             reference_pinned: false,
             nav_back_available: false,
             nav_forward_available: false,
+            can_open_to_side: false,
         }
     }
 }
@@ -211,6 +222,18 @@ fn never(_: &CommandContext) -> bool {
 }
 fn has_document(ctx: &CommandContext) -> bool {
     ctx.has_document
+}
+fn split(ctx: &CommandContext) -> bool {
+    ctx.has_document && ctx.split_editor
+}
+fn nav_back(ctx: &CommandContext) -> bool {
+    ctx.nav_back_available
+}
+fn nav_forward(ctx: &CommandContext) -> bool {
+    ctx.nav_forward_available
+}
+fn open_to_side(ctx: &CommandContext) -> bool {
+    ctx.can_open_to_side
 }
 fn dirty_document(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.document_dirty
@@ -299,12 +322,7 @@ pub fn default_registry() -> CommandRegistry {
         spec!(EditDeleteLine, Edit, "Delete Line", has_document),
         spec!(EditMoveLineUp, Edit, "Move Line Up", has_document),
         spec!(EditMoveLineDown, Edit, "Move Line Down", has_document),
-        spec!(
-            EditToggleLineComment,
-            Edit,
-            "Toggle Comment",
-            line_comment
-        ),
+        spec!(EditToggleLineComment, Edit, "Toggle Comment", line_comment),
         spec!(
             EditToggleBlockComment,
             Edit,
@@ -343,6 +361,20 @@ pub fn default_registry() -> CommandRegistry {
         spec!(ViewProblems, View, "Problems", always),
         spec!(ViewOutput, View, "Output", always),
         spec!(ViewSearchResults, View, "Search Results", always),
+        spec!(EditorSplitRight, View, "Split Right", has_document),
+        spec!(EditorOneGroup, View, "One Group", split),
+        spec!(
+            EditorFocusPrimary,
+            Navigation,
+            "Focus Group 1",
+            has_document
+        ),
+        spec!(EditorFocusSecondary, Navigation, "Focus Group 2", split),
+        spec!(EditorTogglePin, View, "Pin / Unpin Reference", split),
+        spec!(EditorToggleScrollLink, View, "Link / Unlink Scroll", split),
+        spec!(EditorOpenToSide, Navigation, "Open to Side", open_to_side),
+        spec!(NavigateBack, Navigation, "Navigate Back", nav_back),
+        spec!(NavigateForward, Navigation, "Navigate Forward", nav_forward),
         spec!(FocusNext, Navigation, "Focus Next Area", always),
         spec!(FocusPrevious, Navigation, "Focus Previous Area", always),
         spec!(ProgressCheck, Build, "Check Syntax", abl),

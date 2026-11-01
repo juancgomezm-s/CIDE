@@ -46,6 +46,15 @@ struct State {
     pieces: Vec<Piece>,
     len: usize,
     revision: u64,
+    edit: Option<ByteEdit>,
+}
+
+/// Geometry of a single edit, in source bytes before it.
+/// Undo reports the inverse geometry; no source text is copied or interpreted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ByteEdit {
+    pub replaced: Range<usize>,
+    pub inserted_len: usize,
 }
 
 pub struct Document {
@@ -57,6 +66,7 @@ pub struct Document {
     saved_revision: u64,
     next_revision: u64,
     history_limit: usize,
+    last_edit: Option<ByteEdit>,
 }
 
 impl fmt::Debug for Document {
@@ -91,12 +101,14 @@ impl Document {
                 pieces,
                 len,
                 revision: 0,
+                edit: None,
             },
             undo: Vec::new(),
             redo: Vec::new(),
             saved_revision: 0,
             next_revision: 1,
             history_limit: 1024,
+            last_edit: None,
         }
     }
 
@@ -108,6 +120,9 @@ impl Document {
     }
     pub fn revision(&self) -> u64 {
         self.state.revision
+    }
+    pub fn last_edit(&self) -> Option<&ByteEdit> {
+        self.last_edit.as_ref()
     }
     pub fn is_modified(&self) -> bool {
         self.state.revision != self.saved_revision
@@ -185,6 +200,7 @@ impl Document {
     }
 
     pub fn replace(&mut self, range: Range<usize>, bytes: &[u8]) -> Result<(), EditError> {
+        self.last_edit = None;
         self.validate_range(&range)?;
         if self.range_matches(&range, bytes) {
             return Ok(());
@@ -217,12 +233,17 @@ impl Document {
         self.append_range(range.end..self.len(), &mut pieces);
 
         self.added.extend_from_slice(bytes);
+        let edit = ByteEdit {
+            replaced: range,
+            inserted_len: bytes.len(),
+        };
         let previous = std::mem::replace(
             &mut self.state,
             State {
                 pieces,
                 len: new_len,
                 revision: self.next_revision,
+                edit: Some(edit.clone()),
             },
         );
         self.next_revision = following_revision;
@@ -231,6 +252,7 @@ impl Document {
             trim_history(&mut self.undo, self.history_limit);
         }
         self.redo.clear();
+        self.last_edit = Some(edit);
         Ok(())
     }
 
@@ -242,10 +264,15 @@ impl Document {
     }
 
     pub fn undo(&mut self) -> bool {
+        self.last_edit = None;
         let Some(previous) = self.undo.pop() else {
             return false;
         };
         let current = std::mem::replace(&mut self.state, previous);
+        self.last_edit = current.edit.as_ref().map(|edit| ByteEdit {
+            replaced: edit.replaced.start..edit.replaced.start + edit.inserted_len,
+            inserted_len: edit.replaced.len(),
+        });
         if self.history_limit > 0 {
             self.redo.push(current);
             trim_history(&mut self.redo, self.history_limit);
@@ -254,10 +281,12 @@ impl Document {
     }
 
     pub fn redo(&mut self) -> bool {
+        self.last_edit = None;
         let Some(next) = self.redo.pop() else {
             return false;
         };
         let current = std::mem::replace(&mut self.state, next);
+        self.last_edit = self.state.edit.clone();
         if self.history_limit > 0 {
             self.undo.push(current);
             trim_history(&mut self.undo, self.history_limit);

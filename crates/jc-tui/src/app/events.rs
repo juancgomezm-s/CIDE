@@ -26,8 +26,7 @@ impl TuiApp {
         }
         if let Some(stroke) = to_stroke(key) {
             let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
-            let mut context = self.workbench.context();
-            context.focus = self.focus.primary();
+            let context = self.command_context();
             match self.keymap.resolve(scope, stroke, &self.registry, &context) {
                 Resolution::Enabled(command) => {
                     self.dispatch(command);
@@ -121,6 +120,29 @@ impl TuiApp {
                 self.status = "Explorer: folder opened".to_owned()
             }
             Ok(ExplorerAction::None) => {}
+            Err(error) => self.status = error,
+        }
+    }
+
+    pub(crate) fn activate_explorer_entry_to_side(&mut self) {
+        if self.panels.sidebar() != SidebarView::Explorer {
+            return;
+        }
+        match self.explorer.activate() {
+            Ok(ExplorerAction::OpenFile(path)) => {
+                match self
+                    .workbench
+                    .open_file_to_side(path, self.default_encoding)
+                {
+                    Ok(_) => {
+                        let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+                        self.ensure_encoding_choice();
+                        self.status = "File opened to side".to_owned();
+                    }
+                    Err(error) => self.status = error.to_string(),
+                }
+            }
+            Ok(_) => {}
             Err(error) => self.status = error,
         }
     }

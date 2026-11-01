@@ -7,6 +7,7 @@ publish = false
 description = "UI-independent command, keymap, focus, menu and tab model for JC-IDE"
 
 [dependencies]
+jc-core = { path = "../jc-core" }
 jc-files = { path = "../jc-files" }
 jc-languages = { path = "../jc-languages" }
 jc-text = { path = "../jc-text" }

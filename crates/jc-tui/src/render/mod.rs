@@ -3,11 +3,11 @@ mod overlays;
 use crate::app::TuiApp;
 use crate::screen::{CellStyle, Screen};
 use crate::state::UiOverlay;
-use jc_app::{BottomPanel, PrimaryFocus, SidebarView};
+use jc_app::{BottomPanel, PaneId, PrimaryFocus, SidebarView};
 use jc_languages::detect;
 use std::ops::Range;
 
-pub fn render(app: &TuiApp, width: u16, height: u16) -> Screen {
+pub fn render(app: &mut TuiApp, width: u16, height: u16) -> Screen {
     let mut screen = Screen::new(width, height);
     if width < 40 || height < 10 {
         screen.text(0, 0, "JC-IDE: terminal too small (minimum 40x10)");
@@ -44,14 +44,47 @@ pub fn render(app: &TuiApp, width: u16, height: u16) -> Screen {
     }
     let editor_x = sidebar_width.saturating_add(u16::from(sidebar_width > 0));
     let editor_width = width.saturating_sub(editor_x);
-    draw_editor(
-        app,
-        &mut screen,
-        editor_x,
-        content_top,
-        editor_width,
-        content_height,
+    // Keep both groups alive when space only permits the focused one.
+    let two_columns = app.workbench.panes().is_split() && editor_width >= 65;
+    let pane_width = if two_columns {
+        (editor_width - 1) / 2
+    } else {
+        editor_width
+    };
+    let number_width = app.workbench.active_decoded().map_or(3, |decoded| {
+        (logical_lines(&decoded).len().max(1).to_string().len() as u16).clamp(3, 7)
+    });
+    app.workbench.reveal_active_pane(
+        usize::from(content_height.saturating_sub(1)),
+        usize::from(pane_width.saturating_sub(number_width + 2)),
     );
+    if two_columns {
+        draw_editor(
+            app,
+            &mut screen,
+            PaneId::Primary,
+            (editor_x, content_top, pane_width, content_height),
+        );
+        screen.vline(editor_x + pane_width, content_top, content_height, '│');
+        draw_editor(
+            app,
+            &mut screen,
+            PaneId::Secondary,
+            (
+                editor_x + pane_width + 1,
+                content_top,
+                editor_width - pane_width - 1,
+                content_height,
+            ),
+        );
+    } else {
+        draw_editor(
+            app,
+            &mut screen,
+            app.workbench.panes().active(),
+            (editor_x, content_top, editor_width, content_height),
+        );
+    }
 
     if bottom_height > 0 {
         screen.hline(0, content_bottom, width, '─');
@@ -139,12 +172,7 @@ fn draw_sidebar(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, h
                 } else {
                     relative.display().to_string()
                 };
-                screen.text_styled(
-                    x + 1,
-                    row,
-                    &clip(&location, width - 2),
-                    CellStyle::Dim,
-                );
+                screen.text_styled(x + 1, row, &clip(&location, width - 2), CellStyle::Dim);
                 row += 1;
             } else {
                 screen.text_styled(x + 1, row, "Open Folder to browse", CellStyle::Dim);
@@ -188,31 +216,72 @@ fn draw_sidebar(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, h
     }
 }
 
-fn draw_editor(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, height: u16) {
+fn draw_editor(app: &TuiApp, screen: &mut Screen, pane: PaneId, area: (u16, u16, u16, u16)) {
+    let (x, y, width, height) = area;
     if width < 6 || height == 0 {
         return;
     }
-    let Some(document) = app.workbench.active_document() else {
+    let Some(view) = app.workbench.panes().view(pane) else {
+        return;
+    };
+    let active = pane == app.workbench.panes().active();
+    let document = view
+        .location()
+        .and_then(|location| app.workbench.document_by_tab(location.tab));
+    let title = document
+        .and_then(|doc| doc.session.path().file_name())
+        .map_or("Empty", |name| name.to_str().unwrap_or("<file>"));
+    let header = format!(
+        "{} Group {}: {}{}{}",
+        if active { ">" } else { " " },
+        if pane == PaneId::Primary { 1 } else { 2 },
+        title,
+        if view.is_pinned() { " [PIN]" } else { "" },
+        if app.workbench.panes().scroll_linked() {
+            " [LINK]"
+        } else {
+            ""
+        }
+    );
+    screen.text_styled(
+        x,
+        y,
+        &clip(&header, width),
+        if active {
+            CellStyle::Reverse
+        } else {
+            CellStyle::Dim
+        },
+    );
+    let y = y + 1;
+    let height = height.saturating_sub(1);
+    let Some(document) = document else {
         screen.text(x + 2, y + 2, "JC-IDE");
         screen.text_styled(
             x + 2,
             y + 4,
-            "Ctrl+O Open   Ctrl+N New   Ctrl+Shift+P Commands",
+            &clip(
+                "Ctrl+O Open   Ctrl+N New   Ctrl+Shift+P Commands",
+                width.saturating_sub(2),
+            ),
             CellStyle::Dim,
         );
         return;
     };
-    let Some(decoded) = app.workbench.active_decoded() else {
+    let Some(decoded) = app.workbench.decoded_for_tab(document.tab_id) else {
         screen.text(
             x + 2,
             y + 2,
-            "Select source encoding: 1 CP1252 / 2 ISO-8859-1 / 3 IBM850 / 4 UTF-8",
+            &clip(
+                "Select source encoding via command dialog",
+                width.saturating_sub(2),
+            ),
         );
         return;
     };
     let cursor = app
         .workbench
-        .active_position()
+        .position_for_pane(pane)
         .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
     let lines = logical_lines(&decoded);
     let number_width = (lines.len().max(1).to_string().len() as u16).clamp(3, 7);
@@ -222,13 +291,9 @@ fn draw_editor(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, he
         return;
     }
     let visible_height = usize::from(height);
-    let first_line = cursor
-        .line
-        .saturating_sub(visible_height.saturating_sub(1) / 2);
-    let hscroll = cursor
-        .column
-        .saturating_sub(usize::from(text_width).saturating_sub(2));
-    let selection = document.selection();
+    let first_line = view.scroll_line().min(lines.len().saturating_sub(1));
+    let hscroll = view.scroll_column();
+    let selection = app.workbench.selection_for_pane(pane);
 
     for row in 0..visible_height {
         let line_index = first_line + row;
@@ -258,6 +323,7 @@ fn draw_editor(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, he
     }
 
     if app.focus.primary() == PrimaryFocus::Editor
+        && active
         && cursor.line >= first_line
         && cursor.line < first_line + visible_height
         && cursor.column >= hscroll
@@ -428,8 +494,8 @@ mod tests {
 
     #[test]
     fn empty_app_renders_without_panicking() {
-        let app = TuiApp::new(crate::state::LaunchOptions::default());
-        let screen = render(&app, 80, 24);
+        let mut app = TuiApp::new(crate::state::LaunchOptions::default());
+        let screen = render(&mut app, 80, 24);
         assert!((0..screen.height()).any(|row| screen.row_text(row).contains("JC-IDE")));
         let _ = Workbench::default();
     }

@@ -176,9 +176,18 @@ fn abl_comment_and_duplicate_delete_shortcuts_resolve_consistently() {
     ctx.active_language = Some("abl".to_owned());
     for (stroke, command) in [
         (KeyStroke::ctrl(Key::Char('d')), CommandId::EditDuplicate),
-        (KeyStroke::ctrl_shift(Key::Char('d')), CommandId::EditDeleteLine),
-        (KeyStroke::ctrl(Key::Char('/')), CommandId::EditToggleLineComment),
-        (KeyStroke::ctrl_shift(Key::Char('/')), CommandId::EditToggleBlockComment),
+        (
+            KeyStroke::ctrl_shift(Key::Char('d')),
+            CommandId::EditDeleteLine,
+        ),
+        (
+            KeyStroke::ctrl(Key::Char('/')),
+            CommandId::EditToggleLineComment,
+        ),
+        (
+            KeyStroke::ctrl_shift(Key::Char('/')),
+            CommandId::EditToggleBlockComment,
+        ),
     ] {
         assert_eq!(
             keymap.resolve(KeyScope::Editor, stroke, &registry, &ctx),

@@ -65,6 +65,9 @@ impl KeyStroke {
     pub const fn ctrl_alt(key: Key) -> Self {
         Self::new(Modifiers::CTRL.union(Modifiers::ALT), key)
     }
+    pub const fn alt_shift(key: Key) -> Self {
+        Self::new(Modifiers::ALT.union(Modifiers::SHIFT), key)
+    }
 }
 
 impl fmt::Display for KeyStroke {
@@ -259,7 +262,11 @@ pub fn default_keymap() -> KeyMap {
         bind(Editor, KeyStroke::alt(Up), EditMoveLineUp),
         bind(Editor, KeyStroke::alt(Down), EditMoveLineDown),
         bind(Editor, KeyStroke::ctrl(c('/')), EditToggleLineComment),
-        bind(Editor, KeyStroke::ctrl_shift(c('/')), EditToggleBlockComment),
+        bind(
+            Editor,
+            KeyStroke::ctrl_shift(c('/')),
+            EditToggleBlockComment,
+        ),
         bind(Editor, KeyStroke::ctrl(c('f')), SearchFind),
         bind(Editor, KeyStroke::ctrl(c('h')), SearchReplace),
         bind(Editor, KeyStroke::plain(f(3)), SearchFindNext),
@@ -277,6 +284,16 @@ pub fn default_keymap() -> KeyMap {
         bind(Replace, KeyStroke::alt(c('w')), SearchToggleWholeWord),
         bind(Replace, KeyStroke::alt(c('r')), SearchToggleRegex),
         bind(Global, KeyStroke::ctrl_shift(c('p')), PaletteOpen),
+        bind(Global, KeyStroke::alt_shift(c('2')), EditorSplitRight),
+        bind(Global, KeyStroke::alt_shift(c('1')), EditorOneGroup),
+        bind(Global, KeyStroke::ctrl(c('1')), EditorFocusPrimary),
+        bind(Global, KeyStroke::ctrl(c('2')), EditorFocusSecondary),
+        bind(Global, KeyStroke::ctrl_alt(c('p')), EditorTogglePin),
+        bind(Global, KeyStroke::ctrl_alt(c('l')), EditorToggleScrollLink),
+        bind(Editor, KeyStroke::ctrl(Enter), EditorOpenToSide),
+        bind(Sidebar, KeyStroke::ctrl(Enter), EditorOpenToSide),
+        bind(Global, KeyStroke::alt(Left), NavigateBack),
+        bind(Global, KeyStroke::alt(Right), NavigateForward),
         bind(Global, KeyStroke::ctrl(Tab), TabNext),
         bind(Global, KeyStroke::ctrl_shift(Tab), TabPrevious),
         bind(Global, KeyStroke::ctrl(PageDown), TabNext),

@@ -25,7 +25,7 @@ El mismo `CommandRegistry`, `KeyMap`, `MenuModel` y modelo de foco gobiernan TUI
 - `jc-languages` ya contiene perfiles de 18 lenguajes. **Primer paso implementado en fuente:** delimitadores de comentario de bloque y línea son metadatos de los perfiles, consultados por `jc-app` sin verificar `language.id == "abl"`.
 - `jc-progress` ya aísla el protocolo de AVM/diagnósticos, aunque todavía no está envuelto por un contrato de extensión dinámica y sus auxiliares ABL requieren pruebas en instalaciones reales.
 
-El modelo inicial `PaneManager` y el historial de navegación por grupo pertenecen a la capa universal `jc-app`. Los providers ABL/C#/Rust solo contribuyen destinos de símbolos; Git es otro proveedor transversal de snapshots/diffs, no una extensión de sintaxis. Ver [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
+El modelo `PaneManager`, el estado de las vistas y el historial por grupo pertenecen a la capa universal `jc-app`; la TUI ya consume dos grupos. Los providers ABL/C#/Rust solo contribuirán destinos de símbolos; Git será otro proveedor transversal de snapshots/diffs, no una extensión de sintaxis. Ver [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
 
 Los comandos `ProgressCheck`, `ProgressCompile`, `ProgressRun` y `ProgressRefreshSchema` siguen presentes en el enum fijo de `jc-app`; son **deuda de modularización**, no una API de extensión implementada. Se migrarán al registro de contribuciones del paquete ABL cuando exista el contrato estable. No crear una segunda ruta de ejecución mientras tanto.
 

@@ -146,6 +146,7 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         .max()
         .unwrap_or(12)
         .clamp(18, 52) as u16;
+    let width = width.min(screen.width().saturating_sub(2));
     let height = (entries.len() as u16 + 2).min(screen.height().saturating_sub(2));
     let menu_index = app
         .menus
@@ -162,13 +163,12 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         .sum::<u16>()
         .min(screen.width().saturating_sub(width));
     let y = 1;
+    clear_area(screen, x, y, width, height);
     screen.box_outline(x, y, width, height);
-    for (index, entry) in entries
-        .iter()
-        .take(usize::from(height.saturating_sub(2)))
-        .enumerate()
-    {
-        let row = y + 1 + index as u16;
+    let available = usize::from(height.saturating_sub(2));
+    let start = selected.saturating_sub(available.saturating_sub(1));
+    for (index, entry) in entries.iter().enumerate().skip(start).take(available) {
+        let row = y + 1 + (index - start) as u16;
         match entry {
             None => screen.hline(x + 1, row, width - 2, '─'),
             Some(entry) => {
@@ -226,8 +226,15 @@ fn draw_encoding(screen: &mut Screen) {
 }
 
 fn panel(screen: &mut Screen, x: u16, y: u16, width: u16, height: u16, title: &str) {
+    clear_area(screen, x, y, width, height);
     screen.box_outline(x, y, width, height);
     screen.text_styled(x + 2, y, &format!(" {title} "), CellStyle::Reverse);
+}
+
+fn clear_area(screen: &mut Screen, x: u16, y: u16, width: u16, height: u16) {
+    for row in y..y.saturating_add(height) {
+        screen.hline(x, row, width, ' ');
+    }
 }
 
 fn centered(screen: &Screen, preferred_width: u16, preferred_height: u16) -> (u16, u16, u16, u16) {

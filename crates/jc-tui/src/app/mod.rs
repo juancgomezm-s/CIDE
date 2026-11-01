@@ -4,6 +4,8 @@ mod explorer;
 mod menus;
 mod overlays;
 mod paths;
+#[cfg(test)]
+mod tests;
 
 use crate::render;
 use crate::screen::Screen;
@@ -62,7 +64,7 @@ impl TuiApp {
         app
     }
 
-    pub fn render(&self, width: u16, height: u16) -> Screen {
+    pub fn render(&mut self, width: u16, height: u16) -> Screen {
         render::render(self, width, height)
     }
 
@@ -75,6 +77,14 @@ impl TuiApp {
         context.focus = self.focus.primary();
         // Project-aware search is not enabled until its provider exists.
         context.has_project = false;
+        if context.focus == jc_app::PrimaryFocus::Sidebar {
+            context.can_open_to_side = self.panels.sidebar() == jc_app::SidebarView::Explorer
+                && self
+                    .explorer
+                    .entries()
+                    .get(self.explorer.selected())
+                    .is_some_and(|entry| !entry.is_dir);
+        }
         context
     }
 

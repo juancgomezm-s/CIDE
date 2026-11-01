@@ -4,6 +4,7 @@
 //! remain owned by Workbench. Both UI frontends consume the same pane model.
 
 use crate::TabId;
+use jc_core::ByteEdit;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneId {
@@ -35,6 +36,9 @@ impl NavLocation {
 #[derive(Debug, Clone, Default)]
 pub struct PaneView {
     location: Option<NavLocation>,
+    anchor: Option<usize>,
+    scroll_line: usize,
+    scroll_column: usize,
     pinned: bool,
     back: Vec<NavLocation>,
     forward: Vec<NavLocation>,
@@ -52,6 +56,15 @@ fn push_limited(stack: &mut Vec<NavLocation>, location: NavLocation) {
 }
 
 impl PaneView {
+    pub fn anchor(&self) -> Option<usize> {
+        self.anchor
+    }
+    pub fn scroll_line(&self) -> usize {
+        self.scroll_line
+    }
+    pub fn scroll_column(&self) -> usize {
+        self.scroll_column
+    }
     pub fn location(&self) -> Option<NavLocation> {
         self.location
     }
@@ -76,6 +89,9 @@ impl PaneView {
             push_limited(&mut self.back, previous);
         }
         self.location = Some(destination);
+        self.anchor = None;
+        self.scroll_line = 0;
+        self.scroll_column = 0;
         self.forward.clear();
     }
 
@@ -85,6 +101,7 @@ impl PaneView {
             push_limited(&mut self.forward, current);
         }
         self.location = Some(previous);
+        self.anchor = None;
         Some(previous)
     }
 
@@ -94,6 +111,7 @@ impl PaneView {
             push_limited(&mut self.back, current);
         }
         self.location = Some(next);
+        self.anchor = None;
         Some(next)
     }
 
@@ -102,6 +120,9 @@ impl PaneView {
         self.forward.retain(|location| location.tab != tab);
         if self.location.is_some_and(|location| location.tab == tab) {
             self.location = fallback;
+            self.anchor = None;
+            self.scroll_line = 0;
+            self.scroll_column = 0;
             self.pinned = false;
         }
     }
@@ -154,6 +175,9 @@ impl PaneManager {
         // Both views initially show the same document; neither owns its bytes.
         self.secondary = PaneView {
             location: self.primary.location,
+            anchor: self.primary.anchor,
+            scroll_line: self.primary.scroll_line,
+            scroll_column: self.primary.scroll_column,
             ..PaneView::default()
         };
         true
@@ -192,6 +216,41 @@ impl PaneManager {
         let pane = self.active_view_mut();
         if pane.location.is_some_and(|old| old.tab == location.tab) {
             pane.location = Some(location);
+        }
+    }
+
+    pub(crate) fn store_active_view(
+        &mut self,
+        location: NavLocation,
+        anchor: Option<usize>,
+        scroll_line: usize,
+    ) {
+        self.update_cursor(location);
+        let view = self.active_view_mut();
+        view.anchor = anchor;
+        view.scroll_line = scroll_line;
+    }
+
+    pub(crate) fn set_scroll(&mut self, pane: PaneId, line: usize, column: usize) {
+        let view = self.view_mut(pane);
+        view.scroll_line = line;
+        view.scroll_column = column;
+    }
+
+    pub(crate) fn rebase(&mut self, tab: TabId, edit: &ByteEdit) {
+        for id in [PaneId::Primary, PaneId::Secondary] {
+            let view = self.view_mut(id);
+            if let Some(location) = &mut view.location {
+                if location.tab == tab {
+                    location.byte_offset = rebase_offset(location.byte_offset, edit);
+                    view.anchor = view.anchor.map(|offset| rebase_offset(offset, edit));
+                }
+            }
+            for location in view.back.iter_mut().chain(&mut view.forward) {
+                if location.tab == tab {
+                    location.byte_offset = rebase_offset(location.byte_offset, edit);
+                }
+            }
         }
     }
 
@@ -255,6 +314,16 @@ impl PaneManager {
             PaneId::Primary => &mut self.primary,
             PaneId::Secondary => &mut self.secondary,
         }
+    }
+}
+
+fn rebase_offset(offset: usize, edit: &ByteEdit) -> usize {
+    if offset < edit.replaced.start {
+        offset
+    } else if offset >= edit.replaced.end {
+        offset - edit.replaced.len() + edit.inserted_len
+    } else {
+        edit.replaced.start + edit.inserted_len
     }
 }
 
@@ -336,7 +405,10 @@ mod tests {
         assert!(!manager.view(PaneId::Primary).unwrap().is_pinned());
         assert!(manager.view(PaneId::Secondary).unwrap().is_pinned());
         assert_eq!(manager.navigate(second, true), PaneId::Primary);
-        assert_eq!(manager.view(PaneId::Secondary).unwrap().location(), Some(first));
+        assert_eq!(
+            manager.view(PaneId::Secondary).unwrap().location(),
+            Some(first)
+        );
     }
 
     #[test]

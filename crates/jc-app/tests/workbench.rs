@@ -228,7 +228,6 @@ fn reopen_closed_tab_restores_the_same_document_session() {
     assert_eq!(bench.active_bytes().unwrap(), b"abc");
 }
 
-
 #[test]
 fn line_commands_are_real_workbench_operations() {
     let work = Workspace::new();
@@ -296,13 +295,21 @@ fn abl_toggle_comment_preserves_legacy_bytes_and_is_one_undo_step() {
     let original = b"  DISPLAY \"ni\xf1o\".\r\n";
     fs::write(&path, original).unwrap();
     let mut bench = Workbench::default();
-    bench.open_file(&path, Some(TextEncoding::Iso8859_1)).unwrap();
+    bench
+        .open_file(&path, Some(TextEncoding::Iso8859_1))
+        .unwrap();
     bench.execute(CommandId::EditToggleLineComment).unwrap();
-    assert_eq!(bench.active_bytes().unwrap(), b"  /* DISPLAY \"ni\xf1o\". */\r\n");
+    assert_eq!(
+        bench.active_bytes().unwrap(),
+        b"  /* DISPLAY \"ni\xf1o\". */\r\n"
+    );
     bench.execute(CommandId::EditToggleLineComment).unwrap();
     assert_eq!(bench.active_bytes().unwrap(), original);
     bench.undo().unwrap();
-    assert_eq!(bench.active_bytes().unwrap(), b"  /* DISPLAY \"ni\xf1o\". */\r\n");
+    assert_eq!(
+        bench.active_bytes().unwrap(),
+        b"  /* DISPLAY \"ni\xf1o\". */\r\n"
+    );
 }
 
 #[test]
@@ -315,7 +322,10 @@ fn selected_multiline_abl_comment_wraps_and_unwraps_exact_bytes() {
     bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
     bench.select_all().unwrap();
     bench.execute(CommandId::EditToggleBlockComment).unwrap();
-    assert_eq!(bench.active_bytes().unwrap(), [b"/*".as_slice(), original, b"*/".as_slice()].concat());
+    assert_eq!(
+        bench.active_bytes().unwrap(),
+        [b"/*".as_slice(), original, b"*/".as_slice()].concat()
+    );
     bench.execute(CommandId::EditToggleBlockComment).unwrap();
     assert_eq!(bench.active_bytes().unwrap(), original);
 }
@@ -330,7 +340,10 @@ fn indent_and_outdent_selected_lines_preserve_mixed_line_endings() {
     bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
     bench.select_all().unwrap();
     bench.execute(CommandId::EditIndent).unwrap();
-    assert_eq!(bench.active_bytes().unwrap(), b"    first\r\n    second\n    third");
+    assert_eq!(
+        bench.active_bytes().unwrap(),
+        b"    first\r\n    second\n    third"
+    );
     bench.execute(CommandId::EditOutdent).unwrap();
     assert_eq!(bench.active_bytes().unwrap(), original);
 }

@@ -97,8 +97,7 @@ impl Workbench {
             .map_err(FileError::from)?;
         document.cursor = range.start + bytes.len();
         document.anchor = None;
-        self.sync_active_tab_dirty();
-        self.rebuild_search()?;
+        self.after_edit()?;
         Ok(true)
     }
 
@@ -119,16 +118,20 @@ impl Workbench {
             .ok_or(FileError::EncodingRequired)?;
         let bytes = encode(replacement, encoding).map_err(FileError::from)?;
         for range in matches.iter().rev() {
-            document
+            self.active_document_mut()
+                .ok_or(WorkbenchError::NoDocument)?
                 .session
                 .document_mut()
                 .replace(range.clone(), &bytes)
                 .map_err(FileError::from)?;
+            self.rebase_after_edit();
         }
+        let document = self
+            .active_document_mut()
+            .ok_or(WorkbenchError::NoDocument)?;
         document.anchor = None;
         document.cursor = document.cursor.min(document.session.document().len());
-        self.sync_active_tab_dirty();
-        self.rebuild_search()?;
+        self.after_edit()?;
         Ok(matches.len())
     }
 

@@ -15,5 +15,5 @@
 mod document;
 mod region;
 
-pub use document::{Document, EditError};
+pub use document::{ByteEdit, Document, EditError};
 pub use region::Region;

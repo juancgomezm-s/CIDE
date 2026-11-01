@@ -70,6 +70,7 @@ pub struct EditorDocument {
     pub cursor: usize,
     pub anchor: Option<usize>,
     pub scroll_line: usize,
+    view_revision: u64,
 }
 
 impl EditorDocument {
@@ -138,12 +139,19 @@ impl Workbench {
         } else {
             location.byte_offset
         };
-        TextIndex::new(&decoded).source_byte_to_position(offset).ok()
+        TextIndex::new(&decoded)
+            .source_byte_to_position(offset)
+            .ok()
     }
 
     fn record_active_pane_cursor(&mut self) {
         if let Some(document) = self.active_document() {
-            self.panes.update_cursor(NavLocation::new(document.tab_id, document.cursor));
+            let (location, anchor, scroll) = (
+                NavLocation::new(document.tab_id, document.cursor),
+                document.anchor,
+                document.scroll_line,
+            );
+            self.panes.store_active_view(location, anchor, scroll);
         }
     }
 
@@ -151,9 +159,12 @@ impl Workbench {
         if !self.tabs.select(location.tab) {
             return false;
         }
+        let view = self.panes.view(self.panes.active()).expect("active view");
+        let (anchor, scroll) = (view.anchor(), view.scroll_line());
         if let Some(document) = self.active_document_mut() {
             document.cursor = location.byte_offset.min(document.session.document().len());
-            document.anchor = None;
+            document.anchor = anchor;
+            document.scroll_line = scroll;
         }
         let _ = self.rebuild_search();
         true
@@ -161,9 +172,9 @@ impl Workbench {
 
     fn select_opened_tab(&mut self, tab: TabId, offset: usize, automatic: bool) {
         self.record_active_pane_cursor();
-        self.panes.navigate(NavLocation::new(tab, offset), automatic);
-        let _ = self.tabs.select(tab);
-        let _ = self.rebuild_search();
+        self.panes
+            .navigate(NavLocation::new(tab, offset), automatic);
+        self.restore_location(NavLocation::new(tab, offset));
     }
 
     pub fn split_editor_right(&mut self) -> bool {
@@ -173,7 +184,10 @@ impl Workbench {
 
     pub fn close_split_editor(&mut self) -> bool {
         self.record_active_pane_cursor();
-        let primary = self.panes.view(PaneId::Primary).and_then(|pane| pane.location());
+        let primary = self
+            .panes
+            .view(PaneId::Primary)
+            .and_then(|pane| pane.location());
         if !self.panes.close_secondary() {
             return false;
         }
@@ -184,6 +198,9 @@ impl Workbench {
     }
 
     pub fn focus_editor_pane(&mut self, pane: PaneId) -> bool {
+        if pane == self.panes.active() {
+            return self.active_document().is_some();
+        }
         self.record_active_pane_cursor();
         let Some(location) = self.panes.focus(pane) else {
             return false;
@@ -201,24 +218,137 @@ impl Workbench {
 
     pub fn navigation_back(&mut self) -> bool {
         self.record_active_pane_cursor();
-        self.panes.go_back().is_some_and(|location| self.restore_location(location))
+        self.panes
+            .go_back()
+            .is_some_and(|location| self.restore_location(location))
     }
 
     pub fn navigation_forward(&mut self) -> bool {
         self.record_active_pane_cursor();
-        self.panes.go_forward().is_some_and(|location| self.restore_location(location))
+        self.panes
+            .go_forward()
+            .is_some_and(|location| self.restore_location(location))
     }
 
     pub fn jump_to_location(&mut self, tab: TabId, offset: usize) -> bool {
         let Some(document) = self.document_by_tab(tab) else {
             return false;
         };
-        if offset > document.session.document().len() {
+        if offset > document.session.document().len()
+            || self
+                .decoded_for_tab(tab)
+                .is_some_and(|decoded| !decoded.source_offsets.contains(&offset))
+        {
             return false;
         }
         self.record_active_pane_cursor();
         self.panes.navigate(NavLocation::new(tab, offset), true);
         self.restore_location(NavLocation::new(tab, offset))
+    }
+
+    /// Open the current document beside this group; a pinned target is preserved.
+    pub fn open_active_to_side(&mut self) -> bool {
+        let Some(tab) = self.tabs.active_id() else {
+            return false;
+        };
+        let offset = self.active_document().map_or(0, |doc| doc.cursor);
+        self.prepare_side_target();
+        self.jump_to_location(tab, offset)
+    }
+
+    fn prepare_side_target(&mut self) {
+        self.split_editor_right();
+        let other = match self.panes.active() {
+            PaneId::Primary => PaneId::Secondary,
+            PaneId::Secondary => PaneId::Primary,
+        };
+        if !self.panes.view(other).is_some_and(|view| view.is_pinned()) {
+            self.focus_editor_pane(other);
+        }
+    }
+
+    pub fn open_file_to_side(
+        &mut self,
+        path: impl Into<PathBuf>,
+        encoding: Option<TextEncoding>,
+    ) -> Result<TabId, WorkbenchError> {
+        self.open_file_with_target(path.into(), encoding, true)
+    }
+
+    pub fn selection_for_pane(&self, pane: PaneId) -> Option<Range<usize>> {
+        if pane == self.panes.active() {
+            return self.active_document()?.selection();
+        }
+        let view = self.panes.view(pane)?;
+        let cursor = view.location()?.byte_offset;
+        let anchor = view.anchor()?;
+        (anchor != cursor).then_some(anchor.min(cursor)..anchor.max(cursor))
+    }
+
+    /// Reveal the caret in the active viewport. Other viewports move only when
+    /// linked scrolling is enabled, by the same vertical delta (not caret sync).
+    pub fn reveal_active_pane(&mut self, rows: usize, columns: usize) {
+        let Some(position) = self.active_position() else {
+            return;
+        };
+        self.record_active_pane_cursor();
+        let active = self.panes.active();
+        let view = self.panes.view(active).expect("active view");
+        let old_line = view.scroll_line();
+        let mut line = old_line;
+        let mut column = view.scroll_column();
+        if position.line < line {
+            line = position.line;
+        } else if position.line >= line.saturating_add(rows.max(1)) {
+            line = position.line + 1 - rows.max(1);
+        }
+        if position.column < column {
+            column = position.column;
+        } else if position.column >= column.saturating_add(columns.max(1)) {
+            column = position.column + 1 - columns.max(1);
+        }
+        self.panes.set_scroll(active, line, column);
+        if self.panes.scroll_linked() {
+            let other = if active == PaneId::Primary {
+                PaneId::Secondary
+            } else {
+                PaneId::Primary
+            };
+            let view = self.panes.view(other).expect("split view");
+            let other_line = if line >= old_line {
+                view.scroll_line().saturating_add(line - old_line)
+            } else {
+                view.scroll_line().saturating_sub(old_line - line)
+            };
+            let max_line = view
+                .location()
+                .and_then(|loc| self.decoded_for_tab(loc.tab))
+                .map_or(0, |decoded| {
+                    TextIndex::new(&decoded).line_count().saturating_sub(1)
+                });
+            self.panes
+                .set_scroll(other, other_line.min(max_line), view.scroll_column());
+        }
+        if let Some(doc) = self.active_document_mut() {
+            doc.scroll_line = line;
+        }
+    }
+
+    pub(crate) fn rebase_after_edit(&mut self) {
+        let Some(document) = self.active_document_mut() else {
+            return;
+        };
+        let revision = document.session.document().revision();
+        if revision == document.view_revision {
+            return;
+        }
+        document.view_revision = revision;
+        let tab = document.tab_id;
+        let edit = document.session.document().last_edit().cloned();
+        if let Some(edit) = edit {
+            self.panes.rebase(tab, &edit);
+        }
+        self.record_active_pane_cursor();
     }
 
     pub fn search(&self) -> &SearchState {
@@ -256,8 +386,33 @@ impl Workbench {
         path: impl Into<PathBuf>,
         encoding: Option<TextEncoding>,
     ) -> Result<TabId, WorkbenchError> {
-        let path = path.into();
+        self.open_file_with_target(path.into(), encoding, false)
+    }
+
+    fn open_file_with_target(
+        &mut self,
+        path: PathBuf,
+        encoding: Option<TextEncoding>,
+        to_side: bool,
+    ) -> Result<TabId, WorkbenchError> {
+        if let Ok(canonical) = std::fs::canonicalize(&path) {
+            if let Some(document) = self.documents.iter().find(|document| {
+                std::fs::canonicalize(document.session.path()).ok().as_ref() == Some(&canonical)
+            }) {
+                let (tab, cursor) = (document.tab_id, document.cursor);
+                if to_side {
+                    self.prepare_side_target();
+                }
+                self.select_opened_tab(tab, cursor, true);
+                return Ok(tab);
+            }
+        }
         let session = FileSession::open(&path, encoding)?;
+        // Read failures leave the current group, selection and history intact.
+        let first_side_open = to_side && self.active_document().is_none();
+        if to_side && !first_side_open {
+            self.prepare_side_target();
+        }
         self.record_active_pane_cursor();
         let cursor = session
             .inspection()
@@ -272,9 +427,14 @@ impl Workbench {
             cursor,
             anchor: None,
             scroll_line: 0,
+            view_revision: 0,
         });
         self.panes.navigate(NavLocation::new(tab_id, cursor), true);
         let _ = self.rebuild_search();
+        if first_side_open {
+            self.split_editor_right();
+            self.focus_editor_pane(PaneId::Secondary);
+        }
         Ok(tab_id)
     }
 
@@ -290,6 +450,7 @@ impl Workbench {
             cursor: 0,
             anchor: None,
             scroll_line: 0,
+            view_revision: 0,
         });
         self.panes.navigate(NavLocation::new(tab_id, 0), true);
         let _ = self.rebuild_search();
@@ -364,9 +525,13 @@ impl Workbench {
             can_reopen_closed_tab: self.tabs.can_reopen() && !self.closed_documents.is_empty(),
             terminal_available: false,
             split_editor: self.panes.is_split(),
-            reference_pinned: self.panes.view(self.panes.active()).is_some_and(|pane| pane.is_pinned()),
+            reference_pinned: self
+                .panes
+                .view(self.panes.active())
+                .is_some_and(|pane| pane.is_pinned()),
             nav_back_available: self.panes.can_back(),
             nav_forward_available: self.panes.can_forward(),
+            can_open_to_side: active.is_some(),
             ..CommandContext::default()
         }
     }
@@ -417,6 +582,7 @@ impl Workbench {
     }
 
     pub fn close_active(&mut self, discard_dirty: bool) -> Result<Option<TabId>, WorkbenchError> {
+        self.record_active_pane_cursor();
         let id = self.tabs.active_id().ok_or(WorkbenchError::NoDocument)?;
         if !discard_dirty
             && self
@@ -444,10 +610,20 @@ impl Workbench {
                 .map(|document| NavLocation::new(tab, document.cursor))
         });
         self.panes.forget_tab(id, fallback);
+        if let Some(location) = self
+            .panes
+            .view(self.panes.active())
+            .and_then(|view| view.location())
+        {
+            self.restore_location(location);
+        } else {
+            let _ = self.rebuild_search();
+        }
         Ok(None)
     }
 
     pub fn reopen_closed(&mut self) -> bool {
+        self.record_active_pane_cursor();
         let Some(document) = self.closed_documents.pop() else {
             return false;
         };
@@ -458,7 +634,8 @@ impl Workbench {
         }
         let cursor = document.cursor;
         self.documents.push(document);
-        self.panes.navigate(NavLocation::new(expected, cursor), false);
+        self.panes
+            .navigate(NavLocation::new(expected, cursor), false);
         let _ = self.rebuild_search();
         true
     }
@@ -469,8 +646,11 @@ impl Workbench {
             return false;
         }
         if let Some(tab) = self.tabs.active_id() {
-            let offset = self.document_by_tab(tab).map_or(0, |document| document.cursor);
+            let offset = self
+                .document_by_tab(tab)
+                .map_or(0, |document| document.cursor);
             self.panes.navigate(NavLocation::new(tab, offset), false);
+            self.restore_location(NavLocation::new(tab, offset));
         }
         let _ = self.rebuild_search();
         true
@@ -479,8 +659,11 @@ impl Workbench {
     pub fn next_tab(&mut self) -> Option<TabId> {
         self.record_active_pane_cursor();
         let tab = self.tabs.next_tab()?;
-        let offset = self.document_by_tab(tab).map_or(0, |document| document.cursor);
+        let offset = self
+            .document_by_tab(tab)
+            .map_or(0, |document| document.cursor);
         self.panes.navigate(NavLocation::new(tab, offset), false);
+        self.restore_location(NavLocation::new(tab, offset));
         let _ = self.rebuild_search();
         Some(tab)
     }
@@ -488,8 +671,11 @@ impl Workbench {
     pub fn previous_tab(&mut self) -> Option<TabId> {
         self.record_active_pane_cursor();
         let tab = self.tabs.previous_tab()?;
-        let offset = self.document_by_tab(tab).map_or(0, |document| document.cursor);
+        let offset = self
+            .document_by_tab(tab)
+            .map_or(0, |document| document.cursor);
         self.panes.navigate(NavLocation::new(tab, offset), false);
+        self.restore_location(NavLocation::new(tab, offset));
         let _ = self.rebuild_search();
         Some(tab)
     }
@@ -500,8 +686,11 @@ impl Workbench {
             return false;
         }
         if let Some(tab) = self.tabs.active_id() {
-            let offset = self.document_by_tab(tab).map_or(0, |document| document.cursor);
+            let offset = self
+                .document_by_tab(tab)
+                .map_or(0, |document| document.cursor);
             self.panes.navigate(NavLocation::new(tab, offset), false);
+            self.restore_location(NavLocation::new(tab, offset));
         }
         let _ = self.rebuild_search();
         true
