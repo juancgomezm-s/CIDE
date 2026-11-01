@@ -287,6 +287,26 @@ impl Workbench {
         Ok(())
     }
 
+    pub fn save_active_as(
+        &mut self,
+        path: impl Into<PathBuf>,
+    ) -> Result<(), WorkbenchError> {
+        let path = path.into();
+        let (tab_id, title) = {
+            let document = self
+                .active_document_mut()
+                .ok_or(WorkbenchError::NoDocument)?;
+            document.session.save_as(path)?;
+            (
+                document.tab_id,
+                title_for_path(document.session.path(), "<file>"),
+            )
+        };
+        self.tabs.set_title(tab_id, title);
+        self.tabs.set_dirty(tab_id, false);
+        Ok(())
+    }
+
     pub fn save_all(&mut self) -> Result<(), WorkbenchError> {
         for document in &mut self.documents {
             if document.session.document().is_modified() {
