@@ -334,3 +334,31 @@ fn indent_and_outdent_selected_lines_preserve_mixed_line_endings() {
     bench.execute(CommandId::EditOutdent).unwrap();
     assert_eq!(bench.active_bytes().unwrap(), original);
 }
+
+#[test]
+fn block_comment_preserves_utf8_bom_even_with_select_all() {
+    let work = Workspace::new();
+    let path = work.path("bom.p");
+    fs::write(&path, b"\xef\xbb\xbfDISPLAY x.").unwrap();
+    let mut bench = Workbench::default();
+    bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+    bench.select_all().unwrap();
+    bench.execute(CommandId::EditToggleLineComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"\xef\xbb\xbf/*DISPLAY x.*/");
+    bench.execute(CommandId::EditToggleLineComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"\xef\xbb\xbfDISPLAY x.");
+}
+
+#[test]
+fn selected_csharp_lines_comment_and_uncomment_as_one_edit() {
+    let work = Workspace::new();
+    let path = work.path("multi.cs");
+    fs::write(&path, b"one\r\n  two\n").unwrap();
+    let mut bench = Workbench::default();
+    bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+    bench.select_all().unwrap();
+    bench.execute(CommandId::EditToggleLineComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"// one\r\n  // two\n");
+    bench.execute(CommandId::EditToggleLineComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"one\r\n  two\n");
+}

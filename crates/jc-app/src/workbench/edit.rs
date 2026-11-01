@@ -381,6 +381,9 @@ impl Workbench {
         let Some(comment) = language.line_comment else {
             return Ok(());
         };
+        if let Some(selection) = self.active_document().and_then(EditorDocument::selection) {
+            return self.toggle_selected_line_comments(comment, selection);
+        }
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let line = self.line_slice(position.line)?;
         let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
@@ -436,6 +439,64 @@ impl Workbench {
     /// ABL uses /* ... */; HTML/XML/Markdown use <!-- ... -->.
     /// A selection is wrapped as one block; without a selection the current
     /// line's non-indent content is toggled.
+    fn toggle_selected_line_comments(
+        &mut self,
+        comment: &str,
+        selection: Range<usize>,
+    ) -> Result<(), WorkbenchError> {
+        let doc = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let encoding = doc.session.encoding().ok_or(FileError::EncodingRequired)?;
+        let source = doc.session.document().to_bytes();
+        let prefix = encode(comment, encoding).map_err(FileError::from)?;
+        let decoded = decode(&source, encoding);
+        let index = TextIndex::new(&decoded);
+        let first = index.source_byte_to_position(selection.start.max(decoded.content_start))?;
+        let last = index.source_byte_to_position(selection.end)?;
+        let last_line = if last.column == 0 && last.line > first.line {
+            last.line - 1
+        } else {
+            last.line
+        };
+        let slices = (first.line..=last_line)
+            .map(|line| self.line_slice(line))
+            .collect::<Result<Vec<_>, _>>()?;
+        let all_commented = slices.iter().all(|slice| {
+            let body = &source[slice.content.clone()];
+            let indent = body.iter()
+                .position(|byte| !matches!(*byte, b' ' | b'\t'))
+                .unwrap_or(body.len());
+            body[indent..].starts_with(&prefix)
+        });
+        let start = slices[0].content.start;
+        let end = slices.last().map_or(start, |slice| slice.separator.end);
+        let mut replacement = Vec::new();
+        for slice in slices {
+            let body = &source[slice.content.clone()];
+            let indent = body.iter()
+                .position(|byte| !matches!(*byte, b' ' | b'\t'))
+                .unwrap_or(body.len());
+            replacement.extend_from_slice(&body[..indent]);
+            if all_commented {
+                let mut consumed = prefix.len();
+                if body.get(indent + consumed) == Some(&b' ') {
+                    consumed += 1;
+                }
+                replacement.extend_from_slice(&body[indent + consumed..]);
+            } else {
+                replacement.extend_from_slice(&prefix);
+                replacement.push(b' ');
+                replacement.extend_from_slice(&body[indent..]);
+            }
+            replacement.extend_from_slice(&source[slice.separator]);
+        }
+        let size = replacement.len();
+        let doc = self.active_document_mut().ok_or(WorkbenchError::NoDocument)?;
+        doc.session.document_mut().replace(start..end, &replacement).map_err(FileError::from)?;
+        doc.anchor = Some(start);
+        doc.cursor = start + size;
+        self.after_edit()
+    }
+
     pub fn toggle_block_comment(&mut self) -> Result<(), WorkbenchError> {
         let path = self.active_path().ok_or(WorkbenchError::NoDocument)?;
         let language = detect(&path.to_string_lossy());
@@ -444,7 +505,14 @@ impl Workbench {
         };
         let selection = self.active_document().and_then(EditorDocument::selection);
         let original_cursor = self.active_document().ok_or(WorkbenchError::NoDocument)?.cursor;
-        let range = if let Some(range) = selection.clone() {
+        let range = if let Some(mut range) = selection.clone() {
+            // Preserve a UTF-8 BOM at the start of the file, even for Select All.
+            let inspection = self.active_document()
+                .ok_or(WorkbenchError::NoDocument)?
+                .session.inspection();
+            if range.start < inspection.probe.bom_len {
+                range.start = inspection.probe.bom_len;
+            }
             range
         } else {
             let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
@@ -470,7 +538,7 @@ impl Workbench {
             && middle.len() >= start_marker.len() + end_marker.len();
 
         let mut replacement = Vec::with_capacity(bytes.len() + start_marker.len() + end_marker.len() + 2);
-        let mut cursor_prefix_delta = 0isize;
+        let cursor_prefix_delta: isize;
         if is_wrapped {
             replacement.extend_from_slice(&bytes[..start]);
             let mut inside = &middle[start_marker.len()..middle.len() - end_marker.len()];
@@ -536,7 +604,7 @@ impl Workbench {
         let index = TextIndex::new(&decoded);
         let cursor = document.cursor;
         let (first_line, last_line) = if let Some(range) = &selected {
-            let first = index.source_byte_to_position(range.start)?;
+            let first = index.source_byte_to_position(range.start.max(decoded.content_start))?;
             let last = index.source_byte_to_position(range.end)?;
             let end = if last.column == 0 && last.line > first.line {
                 last.line - 1
