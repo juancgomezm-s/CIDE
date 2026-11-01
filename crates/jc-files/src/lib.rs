@@ -213,16 +213,17 @@ impl FileSession {
         if state != ExternalState::Unchanged {
             return Err(FileError::ExternalModification(state));
         }
-        self.write_current()
+        let create_only = self.disk_fingerprint.is_none();
+        self.write_current(create_only)
     }
 
     pub fn force_save(&mut self) -> Result<(), FileError> {
-        self.write_current()
+        self.write_current(false)
     }
 
-    fn write_current(&mut self) -> Result<(), FileError> {
+    fn write_current(&mut self, create_only: bool) -> Result<(), FileError> {
         let bytes = self.document.to_bytes();
-        atomic_replace_with(&self.path, |file| file.write_all(&bytes))?;
+        atomic_replace_with(&self.path, create_only, |file| file.write_all(&bytes))?;
         self.disk_fingerprint = Some(Fingerprint::of(&bytes));
         self.document.mark_saved();
         Ok(())
@@ -231,6 +232,7 @@ impl FileSession {
 
 fn atomic_replace_with(
     target: &Path,
+    create_only: bool,
     write: impl FnOnce(&mut File) -> io::Result<()>,
 ) -> io::Result<()> {
     let parent = target
@@ -269,7 +271,11 @@ fn atomic_replace_with(
         temporary_file.flush()?;
         temporary_file.sync_all()?;
         drop(temporary_file);
-        replace_path(&temporary_path, target)?;
+        if create_only {
+            commit_new_path(&temporary_path, target)?;
+        } else {
+            replace_path(&temporary_path, target)?;
+        }
         sync_parent(parent)?;
         Ok(())
     })();
@@ -278,6 +284,12 @@ fn atomic_replace_with(
         let _ = fs::remove_file(&temporary_path);
     }
     operation
+}
+
+fn commit_new_path(temporary: &Path, target: &Path) -> io::Result<()> {
+    fs::hard_link(temporary, target)?;
+    fs::remove_file(temporary)?;
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -365,7 +377,7 @@ mod tests {
         let dir = test_dir();
         let target = dir.join("source.p");
         fs::write(&target, b"original\r\n").unwrap();
-        let result = atomic_replace_with(&target, |file| {
+        let result = atomic_replace_with(&target, false, |file| {
             file.write_all(b"partial")?;
             Err(io::Error::other("simulated failure"))
         });
