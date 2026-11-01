@@ -221,7 +221,7 @@ pub fn encode(text: &str, encoding: TextEncoding) -> Result<Vec<u8>, EncodeError
 }
 
 fn cp1252_decode(byte: u8) -> Option<u32> {
-    if byte < 0x80 || byte >= 0xa0 {
+    if !(0x80..0xa0).contains(&byte) {
         return Some(byte as u32);
     }
     const TABLE: [Option<u32>; 32] = [
