@@ -458,7 +458,7 @@ impl Workbench {
             last.line
         };
         let slices = (first.line..=last_line)
-            .map(|line| self.line_slice(line))
+            .map(|line| slice_from_index(&index, line, source.len()))
             .collect::<Result<Vec<_>, _>>()?;
         let all_commented = slices.iter().all(|slice| {
             let body = &source[slice.content.clone()];
@@ -616,11 +616,10 @@ impl Workbench {
             let position = index.source_byte_to_position(cursor)?;
             (position.line, position.line)
         };
-        let mut slices = Vec::new();
-        for line in first_line..=last_line {
-            slices.push(self.line_slice(line)?);
-        }
         let source = document.session.document().to_bytes();
+        let slices = (first_line..=last_line)
+            .map(|line| slice_from_index(&index, line, source.len()))
+            .collect::<Result<Vec<_>, _>>()?;
         let begin = slices[0].content.start;
         let end = slices.last().map_or(begin, |slice| slice.separator.end);
         let mut replacement = Vec::new();
@@ -701,28 +700,9 @@ impl Workbench {
             .session
             .encoding()
             .ok_or(FileError::EncodingRequired)?;
-        let decoded = decode(&document.session.document().to_bytes(), encoding);
-        let index = TextIndex::new(&decoded);
-        let length = index
-            .line_len(line)
-            .ok_or(PositionError::LineOutOfRange(line))?;
-        let start = index.position_to_source_byte(TextPosition { line, column: 0 })?;
-        let content_end = index.position_to_source_byte(TextPosition {
-            line,
-            column: length,
-        })?;
-        let separator_end = if line + 1 < index.line_count() {
-            index.position_to_source_byte(TextPosition {
-                line: line + 1,
-                column: 0,
-            })?
-        } else {
-            document.session.document().len()
-        };
-        Ok(LineSlice {
-            content: start..content_end,
-            separator: content_end..separator_end,
-        })
+        let bytes = document.session.document().to_bytes();
+        let decoded = decode(&bytes, encoding);
+        slice_from_index(&TextIndex::new(&decoded), line, bytes.len())
     }
 
     pub fn select_all(&mut self) -> Result<(), WorkbenchError> {
@@ -799,4 +779,31 @@ fn block_delimiters(language: &str) -> Option<(&'static [u8], &'static [u8])> {
         "html" | "xml" | "markdown" => Some((b"<!--", b"-->")),
         _ => None,
     }
+}
+
+fn slice_from_index(
+    index: &TextIndex,
+    line: usize,
+    document_len: usize,
+) -> Result<LineSlice, WorkbenchError> {
+    let length = index
+        .line_len(line)
+        .ok_or(PositionError::LineOutOfRange(line))?;
+    let start = index.position_to_source_byte(TextPosition { line, column: 0 })?;
+    let content_end = index.position_to_source_byte(TextPosition {
+        line,
+        column: length,
+    })?;
+    let separator_end = if line + 1 < index.line_count() {
+        index.position_to_source_byte(TextPosition {
+            line: line + 1,
+            column: 0,
+        })?
+    } else {
+        document_len
+    };
+    Ok(LineSlice {
+        content: start..content_end,
+        separator: content_end..separator_end,
+    })
 }
