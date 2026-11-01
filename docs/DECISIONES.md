@@ -111,3 +111,15 @@ Las herramientas ABL de formato/lexing/USING/OO/XREF/AVM se trasladarán concept
 Las extensiones internas de lenguaje M3/M4 **no equivalen** al sistema de plugins externos/Sublime post-M5. No crear host Python, cargador dinámico ni sandbox completo antes de la fase acordada.
 
 La búsqueda textual, edición de columnas, undo y snippets engine pertenecen al nivel universal; cada lenguaje aporta patrones, plantillas y semántica. Ver `docs/EXTENSION_ARCHITECTURE.md`. D13 mantiene CI remoto diferido hasta M5.
+
+## D17 — Dos grupos de editor, navegación y Git transversal
+
+**Aceptada en M2 como arquitectura; implementación parcial.** JC-IDE tendrá dos grupos de edición visibles simultáneamente en TUI/GUI, con estados de cursor/scroll/foco separados por grupo y `TabId`/`Document`/undo únicos. Una referencia anclada no se sustituye por navegación automática. La vinculación de scroll es independiente del anclaje. Historial de saltos atrás/adelante por grupo, inicialmente acotado a 128 ubicaciones.
+
+Los `NavigationTarget`, Outline, Go to Definition, Open to Side y autocomplete son **universales**; cada proveedor de lenguaje resuelve símbolos. Progress ABL aporta includes, RUN, PROPATH y referencias XREF cuando hay evidencia. Las llamadas dinámicas permanecen no resueltas cuando no se pueda determinar el destino estáticamente.
+
+Git es un proveedor transversal bajo demanda, no una función exclusiva de ABL. Los diffs de archivos/revisiones y snapshots inmutables se preparan en M2. Stage/unstage, commit, fetch/pull/push, branches, merge y resolución de conflictos en tres vías se implementan en M5 con confirmaciones y garantías de integridad. No ejecutar operaciones Git destructivas como efecto de navegar.
+
+No se duplican procesos ni historiales para una segunda vista. Mantener la frontera de la decisión D16 y el aplazamiento de CI de D13.
+
+Ver `docs/M2_NAVIGATION_PANES_GIT.md` y el prompt reproducible `docs/CONTINUAR_EN_EQUIPO.md`.

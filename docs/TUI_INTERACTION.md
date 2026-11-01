@@ -188,3 +188,27 @@ implementaciones distintas de pestañas o paneles.
 La paleta PDSOE solo es referencia funcional; ver [alcance de comandos](ABL_EDITOR_COMMAND_SCOPE.md). El modo columna debe modelar selección rectangular real por columna visual y no una selección lineal decorativa. El plan de búsqueda prioritaria se describe en [Search Plus](M2_SEARCH_PLUS.md).
 
 Compatibilidad terminal: Ctrl+I puede equivaler a Tab; Ctrl+Shift+/ y Alt+Shift+flechas pueden no llegar diferenciados. Cada acción debe seguir disponible mediante menú o Command Palette cuando el terminal no la reporte.
+
+## Grupos de edición, navegación y Git — incremento M2 (propuesto)
+
+Existe el modelo `PaneManager` en `jc-app`, pero los atajos de esta tabla **aún no están registrados** hasta que la TUI tenga handlers y renderizado real. No presentarlos como funciones operativas.
+
+| Acción futura | Tecla propuesta |
+|---|---|
+| Split editor into two groups | Alt+Shift+2 |
+| Return to one group | Alt+Shift+1 |
+| Focus primary / secondary group | Ctrl+1 / Ctrl+2 |
+| Pin/unpin active reference | Ctrl+Alt+P |
+| Link/unlink scrolling | Ctrl+Alt+L |
+| Navigate back / forward | Alt+Left / Alt+Right |
+| Quick Open File | Ctrl+P |
+| Go to Symbol | Ctrl+R |
+| Go to Line | Ctrl+G (ya reservado) |
+| Go to Definition / Peek | F12 / Alt+F12 |
+| Find References | Shift+F12 |
+| Manual completion | Ctrl+Space |
+| Git sidebar | Ctrl+Shift+G (ya reservado) |
+
+El anclaje impide que una navegación automática sustituya la referencia en el grupo anclado; scroll vinculado y navegación atrás/adelante son estados independientes. Abrir al lado usa otro grupo sin duplicar documento. Para terminales que no reportan Ctrl+1/2, Ctrl+Space u otras teclas, la Command Palette provee acceso. Git no ejecuta acciones remotas sin consentimiento y la resolución de conflictos se diseña como merge de tres vías.
+
+Contrato completo: [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).

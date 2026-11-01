@@ -52,6 +52,14 @@ Problems y Output aún son texto sin ubicación estructurada. No fingimos navega
 - **La implementación aún no ha sido compilada en el entorno actual**; conforme D13, CI remoto se difiere a M5.
 - Alcance detallado: [comandos ABL](ABL_EDITOR_COMMAND_SCOPE.md) y [Search Plus](M2_SEARCH_PLUS.md).
 
+## Checkpoint de dos grupos (pendiente de UI)
+
+- Código de `PaneManager` y wiring inicial de `Workbench` agregados: Primary/Secondary, anclaje, historial atrás/adelante, scroll linked como estado y compartición por `TabId`.
+- Tests de modelo y Workbench incluidos como especificación ejecutable; **no están compilados/ejecutados en esta sesión**.
+- Todavía no hay renderer TUI doble, focos/cursor/scroll/selección completos por grupo, rebase de offsets, navegación de includes/RUN, DiffModel ni flujos Git. No presentarlos como completados.
+- Documento de arquitectura detallado: [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
+- [Prompt de continuación desde el equipo](CONTINUAR_EN_EQUIPO.md) para completar la implementación y validarla localmente sin Actions.
+
 ## Pendiente para cerrar M2A
 
 1. Find/Replace in Project real sobre la raíz abierta, con límites y exclusiones claras.

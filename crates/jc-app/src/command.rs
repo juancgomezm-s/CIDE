@@ -110,6 +110,11 @@ pub struct CommandContext {
     pub has_database_schema: bool,
     pub can_reopen_closed_tab: bool,
     pub terminal_available: bool,
+    // Shared pane navigation state; keymap handlers are connected by the frontend.
+    pub split_editor: bool,
+    pub reference_pinned: bool,
+    pub nav_back_available: bool,
+    pub nav_forward_available: bool,
 }
 
 impl Default for CommandContext {
@@ -129,6 +134,10 @@ impl Default for CommandContext {
             has_database_schema: false,
             can_reopen_closed_tab: false,
             terminal_available: false,
+            split_editor: false,
+            reference_pinned: false,
+            nav_back_available: false,
+            nav_forward_available: false,
         }
     }
 }

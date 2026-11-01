@@ -59,6 +59,8 @@ Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crosst
 - menús, palette, foco y pestañas ya consumen el contrato central;
 - CI remoto permanece dormido hasta M5; este checkpoint no se declara validado por Actions.
 
+**Nuevo incremento M2A — dos grupos de editor, navegación y Git read-only:** se incorporó un modelo inicial `PaneManager` con Primary/Secondary, referencia anclada, ubicación por bytes, historial atrás/adelante por grupo y toggle de scroll vinculado. Todavía falta conectarlo al renderer TUI, conservar cursor/scroll/selección por vista, navegar símbolos e includes y construir diffs. Las acciones de Git con escritura (stage/commit/push/pull/merge) quedan en M5. Ver [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
+
 **Pendiente para cerrar M2A:** búsqueda/reemplazo de proyecto, integración estructurada de Problems/Output con tareas Progress, revisión manual completa de teclado en terminal real y cualquier corrección de compilación/formato acumulada para hardening M5.
 
 **Criterios de aceptación:**
@@ -73,19 +75,19 @@ Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crosst
 
 Elegir tecnología gráfica con mediciones y consumir el mismo `jc-app`.
 
-**Criterios de aceptación:** abrir/editar/guardar, mouse, portapapeles, IME, accesibilidad, pestañas y paneles sin duplicar comandos ni lógica de aplicación.
+**Criterios de aceptación:** abrir/editar/guardar, mouse, portapapeles, IME, accesibilidad, pestañas y paneles sin duplicar comandos ni lógica de aplicación. La GUI consume exactamente el mismo PaneManager (Split, Pin, navegación, DiffModel), añadiendo Ctrl+Click y drag en lugar de su propia lógica.
 
 ## M3 — Entorno Progress funcional
 
-Estabilizar el contrato interno de capacidades para vincular proveedores de lenguaje sin introducir una runtime genérica de plugins; comenzar el paquete integrado opcional `progress.abl`, manteniendo el puente existente `jc-progress`. Validar OpenEdge 10.0B y 11.7, includes, PROPATH, aliases, code pages, compilación y ejecución en contexto real. La AVM solo se ejecutará a petición del usuario.
+Estabilizar el contrato interno de capacidades para vincular proveedores de lenguaje sin introducir una runtime genérica de plugins; comenzar el paquete integrado opcional `progress.abl`, manteniendo el puente existente `jc-progress`. Validar OpenEdge 10.0B y 11.7, includes, PROPATH, aliases, code pages, compilación y ejecución en contexto real. Resolver includes `{...}` y RUN estáticos desde el perfil del proyecto sin ejecutar el programa para navegar; señalar destinos dinámicos como inciertos. La AVM solo se ejecutará a petición del usuario.
 
 ## M4 — Esquema y asistencia ABL
 
-Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, navegación, completado de tablas/campos/índices y análisis contextual incremental. Buscar/seleccionar/editar sigue siendo responsabilidad genérica de `jc-app` y Search Plus; XREF, imports USING y jerarquía OO son aportaciones del proveedor ABL.
+Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, navegación, completado inteligente de tablas/campos/índices y análisis contextual incremental. Añadir Outline/Breadcrumb/Go to Definition/Open to Side mediante `NavigationTarget` universal y proveedores por lenguaje. Buscar/seleccionar/editar sigue siendo responsabilidad genérica de `jc-app` y Search Plus; XREF, imports USING y jerarquía OO son aportaciones del proveedor ABL.
 
 ## M5 — Servicios opcionales, hardening y CI
 
-Git, proveedores semánticos/LSP, tareas e integración con OmniCore, todos bajo demanda. Hardening del contrato de proveedores internos de lenguaje y sus contribuciones al registro central; búsqueda de proyecto permanece priorizada en M2A.
+Git completo (stage/unstage por hunk, commit, fetch, pull, push, ramas, merge y resolución BASE/OURS/THEIRS/RESULT), proveedores semánticos/LSP, tareas e integración con OmniCore, todos bajo demanda. Construir los flujos de Git con confirmaciones y protección de archivos modificados; el visor read-only se adelanta a M2A. Hardening del contrato de proveedores internos de lenguaje y sus contribuciones al registro central; búsqueda de proyecto permanece priorizada en M2A.
 
 **CI pertenece a M5.** Hasta iniciar M5 no se ejecutará GitHub Actions automáticamente en `push` ni `pull_request`, ni se usará CI remoto para perseguir fallos intermedios de M2–M4. El workflow queda conservado únicamente como `workflow_dispatch` manual y no debe invocarse antes de M5 salvo autorización explícita del propietario.
 

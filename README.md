@@ -54,6 +54,12 @@ cargo run -p jc-cli --offline -- edit entrada.p 0 0 F1 copia-editada.p
 
 Los offsets del núcleo son bytes, no caracteres ni columnas visuales. `jc-text` realiza las conversiones de coordenadas de forma explícita y `jc-files` implementa el ciclo de guardado seguro/atómico para el futuro frontend. La CLI de demostración conserva sus salidas `create_new` deliberadamente.
 
+## Checkpoint de navegación en M2A
+
+Se añadió un `PaneManager` **en código fuente** al modelo de aplicación común, con dos grupos (Primary/Secondary), ubicación por byte, pin/unpin de referencia, back/forward por grupo y estado de scroll vinculado; las vistas comparten `TabId` y `FileSession`. No existe aún un renderer TUI de dos columnas ni un motor Git de diff/merge operativo. Este código sigue pendiente de validación local.
+
+La especificación de doble panel, Outline, navegación de includes/RUN, autocompletado y Git está en [M2_NAVIGATION_PANES_GIT.md](docs/M2_NAVIGATION_PANES_GIT.md). Para retomar desde una PC Windows usa el [prompt de continuación](docs/CONTINUAR_EN_EQUIPO.md).
+
 ## Política de CI
 
 El CI remoto se reserva para **M5 (hardening)**. Durante M2–M4 GitHub Actions no se dispara automáticamente por push/PR y no debe utilizarse como bucle de depuración de código todavía inestable. El workflow permanece manual y dormido hasta M5; la validación intermedia se hace local cuando el entorno lo permite.
@@ -99,7 +105,9 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 9. [M2A: checkpoint TUI](docs/M2_TUI_CHECKPOINT.md)
 10. [Comandos ABL: alcance realista](docs/ABL_EDITOR_COMMAND_SCOPE.md)
 11. [Search Plus: búsqueda prioritaria](docs/M2_SEARCH_PLUS.md)
-12. [Post-M5: compatibilidad Sublime Text](docs/POST_M5_SUBLIME_COMPAT.md)
+12. [M2: doble panel, navegación y Git](docs/M2_NAVIGATION_PANES_GIT.md)
+13. [Prompt para continuar desde el equipo](docs/CONTINUAR_EN_EQUIPO.md)
+14. [Post-M5: compatibilidad Sublime Text](docs/POST_M5_SUBLIME_COMPAT.md)
 
 ## Procedencia y licencia
 

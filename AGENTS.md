@@ -49,3 +49,12 @@ Keep `docs/VALIDACION.md` consistent with observed evidence and material limitat
 - The current `Progress*` commands in the fixed enum are migration debt, not evidence of an extension loader. Keep them functional/disabled according to context until namespaced registration is implemented.
 - Extension-proposed edits must eventually validate the expected document revision and apply as a single undo transaction; no provider writes directly into buffers or disk.
 - Do not run GitHub Actions while developing M2–M4; M5 owns remote CI/hardening.
+
+## M2A dual-pane checkpoint and local continuation
+
+- Start by reading `docs/M2_NAVIGATION_PANES_GIT.md` and `docs/CONTINUAR_EN_EQUIPO.md`.
+- `PaneManager` in `jc-app` holds two groups, pin, navigation history and a scroll-link flag. UI rendering, per-view caret/scroll rebasing, ABL include/RUN navigation, completion, diff and Git write operations are **not** finished.
+- Never clone `Document`, `FileSession` or undo history to implement split views. Both groups refer to the same `TabId`; committed Git snapshots are immutable separate read models.
+- Pin and scroll linkage are independent. Navigation history is per group; keyboard commands are registered centrally only once a working handler exists.
+- Git status/diff can start read-only during M2; stage/unstage/commit/push/pull/merge and three-way conflict resolution belong to M5 and must require explicit user action.
+- Use local Rust formatting/tests for validation when available; do not activate or run GitHub Actions during M2–M4.
