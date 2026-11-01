@@ -88,11 +88,13 @@ elimina: abre `Unsaved changes` con `S = Save`, `D = Don't Save`, `Esc = Cancel`
 | Cut / Copy / Paste | Ctrl+X / Ctrl+C / Ctrl+V |
 | Select all | Ctrl+A |
 | Duplicate selection/line | Ctrl+D |
-| Delete line | Ctrl+Shift+K |
+| Delete line | Ctrl+Shift+D |
 | Move line | Alt+Up / Alt+Down |
-| Toggle line comment | Ctrl+/ |
+| Toggle Comment (ABL usa /* ... */) | Ctrl+/ |
+| Toggle Block Comment | Ctrl+Shift+/ |
+| Indent / Outdent | Tab / Shift+Tab |
 
-Movimiento de cursor, selección con Shift, Home/End, PageUp/PageDown, Backspace/Delete, Enter y Tab ya pasan por el `Workbench` sobre las coordenadas/encoding de M1. El frontend no mantiene un segundo buffer ni un segundo undo.
+El movimiento, la selección y la edición pasan por Workbench con las coordenadas/encoding de M1. Tab/Shift+Tab son acciones de sangría solamente en Editor; F6 mantiene el control del foco. La TUI no mantiene otro buffer ni otro undo.
 
 ## Buscar
 
@@ -103,6 +105,8 @@ Movimiento de cursor, selección con Shift, Home/End, PageUp/PageDown, Backspace
 | Next / Previous | F3 / Shift+F3 |
 | Find in Project | Ctrl+Shift+F |
 | Replace in Project | Ctrl+Shift+H |
+| Go to Line (pendiente) | Ctrl+G |
+| Find selected next/previous (pendiente) | Ctrl+F3 / Ctrl+Shift+F3 |
 
 En la barra Find: `Enter` siguiente, `Shift+Enter` anterior, `Alt+C` case,
 `Alt+W` whole word, `Alt+R` regex y `Esc` cierra.
@@ -112,7 +116,7 @@ En la barra Find: `Enter` siguiente, `Shift+Enter` anterior, `Alt+C` case,
 | Vista | Atajo |
 |---|---|
 | Explorer | Ctrl+Shift+E |
-| Database / Schema | Ctrl+Shift+D |
+| Database / Schema | Ctrl+Alt+D |
 | Git | Ctrl+Shift+G |
 | Toggle bottom panel | Ctrl+J |
 | Terminal | Ctrl+` |
@@ -174,7 +178,13 @@ implementaciones distintas de pestañas o paneles.
 - el menú obtiene el shortcut del mismo keymap que usa el teclado;
 - `Esc` cierra overlays antes de volver al editor;
 - F6 solo visita áreas visibles;
-- `Tab` plano no es un shortcut global ni del editor;
+- Tab y Shift+Tab no son atajos globales de foco: se reservan al scope Editor para sangría;
 - los shortcuts de Progress se deshabilitan fuera de contexto;
 - una pestaña sucia exige una decisión antes de cerrarse;
 - los overrides contextuales son comprobables y explícitos.
+
+## Productividad ABL, modo columna y búsqueda
+
+La paleta PDSOE solo es referencia funcional; ver [alcance de comandos](ABL_EDITOR_COMMAND_SCOPE.md). El modo columna debe modelar selección rectangular real por columna visual y no una selección lineal decorativa. El plan de búsqueda prioritaria se describe en [Search Plus](M2_SEARCH_PLUS.md).
+
+Compatibilidad terminal: Ctrl+I puede equivaler a Tab; Ctrl+Shift+/ y Alt+Shift+flechas pueden no llegar diferenciados. Cada acción debe seguir disponible mediante menú o Command Palette cuando el terminal no la reporte.
