@@ -1,26 +1,33 @@
 # Arquitectura
 
-JC-IDE separa deliberadamente el editor, los lenguajes y los proveedores externos.
+JC-IDE separa cuatro responsabilidades: almacenamiento de documentos, modelo de aplicación, proveedores de lenguaje y presentación.
 
 ## Capas
 
 - **jc-core**: documento byte-preserving, piece table, revisiones, undo/redo y regiones.
-- **jc-languages**: perfiles y detección. No ejecuta LSP ni compiladores.
-- **jc-progress**: contrato explícito para usar una instalación real de OpenEdge/ABL.
-- **UI**: pendiente. Debe permanecer fuera del núcleo y cargar servicios bajo demanda.
+- **jc-app**: comandos, keymap contextual, foco, menús, pestañas, paneles y diálogos. No dibuja nada.
+- **jc-languages**: perfiles y detección; no inicia servicios por reconocer una extensión.
+- **jc-progress**: integración explícita con una instalación real de OpenEdge.
+- **jc-tui / jc-gui**: frontends futuros que consumen el mismo jc-app y jc-core.
 
-## Regla de codificación
+La regla central es que una acción de negocio existe una sola vez como `CommandId`. Un menú, una tecla, la command palette o un botón gráfico resuelven el mismo comando. Los frontends no mantienen atajos duplicados ni implementaciones paralelas de guardar, compilar, buscar o navegar pestañas.
 
-El archivo en disco es una secuencia de bytes. La página de códigos es metadato del documento/proyecto. El renderizador y los servicios convierten de forma explícita en sus límites; el núcleo no normaliza UTF-8, CRLF, BOM ni salto final.
+## TUI y GUI
 
-## Coordenadas
+La TUI se implementará primero como consumidor del modelo común porque fuerza a definir correctamente teclado, foco y estados. La GUI utilizará el mismo registro de comandos y las mismas condiciones de disponibilidad.
 
-Se distinguen offsets de byte, caracteres Unicode, grafemas, posiciones LSP UTF-16, columnas visuales y posiciones reportadas por compiladores. No son intercambiables.
+El contrato normativo de la TUI está en [TUI_INTERACTION.md](TUI_INTERACTION.md).
+
+## Codificación y coordenadas
+
+El documento canónico contiene bytes. La página de códigos es metadato explícito. El núcleo no normaliza UTF-8, CRLF, BOM ni salto final.
+
+Se distinguen offsets de byte, caracteres decodificados, grafemas, columnas visuales, posiciones LSP y posiciones reportadas por compiladores. Las conversiones ocurren en límites explícitos.
 
 ## Ligereza
 
-El editor debe poder abrir y editar sin iniciar Progress, Git, LSP o agentes. Los servicios pesados se activan bajo demanda y se mide el consumo total, no solo el proceso de UI.
+Abrir y editar no requiere Progress, Git, LSP, terminal ni agentes. Los servicios se activan bajo demanda y su consumo se mide junto con el proceso principal.
 
 ## Interfaz Windows
 
-Pendiente de decisión entre renderizado nativo/propio y componentes existentes como Scintilla. Cualquier elección deberá medirse en memoria, arranque, IME, accesibilidad y archivos grandes.
+La tecnología gráfica sigue pendiente de medición. La decisión entre un renderer/control propio y un componente existente como Scintilla debe considerar memoria, arranque, IME, accesibilidad y archivos grandes, no únicamente el lenguaje de implementación.

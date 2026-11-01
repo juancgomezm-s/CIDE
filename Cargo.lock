@@ -3,6 +3,10 @@
 version = 3
 
 [[package]]
+name = "jc-app"
+version = "0.1.0"
+
+[[package]]
 name = "jc-cli"
 version = "0.1.0"
 dependencies = [

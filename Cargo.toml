@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/jc-core", "crates/jc-languages", "crates/jc-progress", "crates/jc-cli"]
+members = ["crates/jc-core", "crates/jc-languages", "crates/jc-progress", "crates/jc-app", "crates/jc-cli"]
 resolver = "2"
 
 [profile.release]

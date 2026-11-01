@@ -16,6 +16,7 @@ real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 | Selecciones | Port parcial de `Region` de Lime Text, con procedencia y licencia conservadas |
 | `jc-languages` | 18 perfiles y detección por extensión/nombre de archivo |
 | `jc-progress` | Construcción de argumentos sin shell, solicitudes ASCII y parser acotado de diagnósticos/esquema |
+| `jc-app` | Registro central de comandos, keymap contextual, foco, menús, pestañas, paneles y diálogos compartidos por TUI/GUI |
 | Auxiliares ABL | Código experimental para comprobar/compilar y exportar esquema; requiere pruebas con Progress real |
 | `jc-cli` | Inspección de archivos, copia exacta, edición de bytes a copia nueva, demo de undo/redo, preparación de solicitudes y validación de respuestas Progress |
 | Documentación | Resumen, investigación, arquitectura, decisiones, hitos, lenguajes y evidencia de validación |
@@ -86,7 +87,8 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 3. [Arquitectura](docs/ARQUITECTURA.md)
 4. [Decisiones y pendientes](docs/DECISIONES.md)
 5. [Investigación de Lime Text, PIEW y Progress](docs/INVESTIGACION.md)
-6. [Validación observada y límites](docs/VALIDACION.md)
+6. [Contrato de interacción TUI](docs/TUI_INTERACTION.md)
+7. [Validación observada y límites](docs/VALIDACION.md)
 
 ## Procedencia y licencia
 

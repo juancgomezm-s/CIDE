@@ -1,47 +1,53 @@
 # Registro de decisiones
 
-Las decisiones aceptadas describen requisitos o dirección arquitectónica. Las pendientes requieren información o pruebas; no son capacidades implícitas de M0.
-
 ## D01 — Núcleo de edición independiente
 
-**Aceptada.** Rust se usa para el núcleo inicial. Los documentos y operaciones no dependen de widgets ni de una sesión de Progress. La interfaz concreta sigue pendiente.
+**Aceptada.** Rust se usa para el núcleo inicial. Documentos y operaciones no dependen de widgets ni de una sesión de Progress.
 
-## D02 — Bytes como representación canónica inicial
+## D02 — Bytes como representación canónica
 
-**Aceptada para el prototipo.** Los fuentes del usuario no son UTF-8 y todavía no conocemos su página exacta. La representación debe conservar bytes arbitrarios. Una piece table permite mantener fragmentos originales, pero necesita una capa de interpretación para operaciones textuales y visuales.
-
-**Consecuencia:** no adoptar Ropey como almacenamiento directo de esos archivos sin una decisión explícita sobre conversión y conservación. Tampoco equiparar offset de byte con columna visual.
+**Aceptada.** Los fuentes no se pueden asumir UTF-8. El almacenamiento conserva bytes y las conversiones textuales son explícitas.
 
 ## D03 — Reutilización selectiva de Lime
 
-**Aceptada.** Portar comportamientos pequeños con pruebas y procedencia identificada. No portar automáticamente el buffer de runas, los canales por consulta, el editor global ni la integración Python/Sublime. Cada componente derivado mantiene los avisos correspondientes.
+**Aceptada.** Solo se portan comportamientos pequeños, probables y atribuibles. No se porta el editor completo ni su compatibilidad Python/Sublime.
 
-**Pendiente:** decisión del propietario sobre la licencia del código nuevo. Esta documentación no asigna una licencia general al proyecto.
+## D04 — Progress como proveedor de compilación
 
-## D04 — Progress como proveedor de compilación y ejecución
+**Aceptada.** La instalación seleccionada por proyecto es la autoridad para sintaxis, compilación y resolución estática de esquema.
 
-**Aceptada.** Un adaptador y auxiliares ABL coordinan la instalación seleccionada por proyecto. La validación de sintaxis real pertenece al compilador de esa instalación. JC-IDE no implementa el protocolo propietario de la BD ni un compilador ABL propio.
+## D05 — Catálogo local de esquema
 
-**Consecuencia:** preservar el contexto de conexión, versión, includes, arranque y codificación; verificar compatibilidad por versión. Los resultados de documentación o pruebas Rust no certifican los auxiliares ABL.
+**Aceptada.** La navegación y el completado consultarán metadatos locales actualizables sin mantener obligatoriamente una conexión permanente.
 
-## D05 — Catálogo de esquema local
+## D06 — Servicios opcionales
 
-**Aceptada.** La escritura y las sugerencias consultan metadatos locales actualizables. La extracción se realiza bajo demanda. Un `.df` es una fuente posible del catálogo; no sustituye por sí solo una BD de esquema para el compilador.
-
-## D06 — Servicios opcionales y consumo observable
-
-**Aceptada.** El editor abre archivos sin requerir Progress, Git, LSP ni agentes activos. Se medirá el consumo de cada proceso y el total. La posibilidad de mantener una AVM abierta es una optimización posterior con coste explícito.
+**Aceptada.** Progress, Git, LSP, terminal y agentes se inician bajo demanda y no forman parte del consumo basal.
 
 ## D07 — Interfaz Windows
 
-**Pendiente.** Evaluar una interfaz nativa con motor Rust frente a un componente existente como Scintilla. Si se adopta Scintilla, documentar que el motor de edición es C++ y redefinir el alcance del núcleo Rust. Los presupuestos de memoria no prueban por adelantado cuál opción será mejor.
+**Pendiente.** Se medirá interfaz/renderizado propio frente a componentes existentes antes de comprometer la arquitectura gráfica.
 
 ## D08 — Integración con OmniCore
 
-**Diferida.** OmniCore conserva su núcleo C# y sus contratos de sesión/agentes. La integración futura intercambiará solicitudes, revisiones y resultados. Las modificaciones propuestas deberán respetar la codificación y mostrarse como diffs. No se unifica automáticamente el undo de documentos con la reversión de tareas de agentes.
+**Diferida.** OmniCore conserva su núcleo C# y contratos propios. JC-IDE podrá intercambiar revisiones y cambios sin fusionar los dos historiales de undo.
 
 ## D09 — Multilenguaje desde la base
 
-**Aceptada por requisito explícito.** ABL tiene prioridad de integración y no exclusividad. El registro inicial contempla ABL, C#, Rust, JavaScript/TypeScript, Python, HTML/CSS, SQL, XML, JSON, Markdown y texto plano. Cada proveedor mantiene sus capacidades y dependencias; el núcleo de bytes no incorpora reglas de un lenguaje concreto.
+**Aceptada.** ABL tiene prioridad de integración pero no exclusividad. Los proveedores de lenguaje permanecen fuera del núcleo de bytes.
 
-**Consecuencia:** distinguir identificación/perfiles de resaltado, parsing, LSP y depuración. Los servicios externos se inician cuando se necesitan y la codificación se conserva por archivo.
+## D10 — TUI y GUI comparten modelo de aplicación
+
+**Aceptada.** Se crea `jc-app` como capa sin UI con `CommandRegistry`, `KeyMap`, `FocusManager`, menús, pestañas, paneles y diálogos.
+
+Reglas vinculantes:
+
+- ningún widget define su propia combinación de teclas para una acción de negocio;
+- menú y shortcut consultan el mismo `CommandId`;
+- los bindings contextuales pueden sombrear uno global únicamente por scope explícito;
+- `Esc` cierra primero overlays y después devuelve el foco al editor;
+- `F6`/Shift+F6 recorren solo áreas primarias visibles;
+- `Tab` simple no cambia de área ni pestaña;
+- cerrar una pestaña sucia exige una decisión explícita;
+- comandos Progress permanecen deshabilitados fuera de contexto;
+- TUI y GUI deben consumir este modelo común, no duplicarlo.
