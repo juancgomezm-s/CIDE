@@ -179,3 +179,22 @@ fn command_outcomes_keep_ui_prompts_out_of_widgets() {
         CommandOutcome::ShowPalette
     );
 }
+
+
+#[test]
+fn replace_current_and_all_use_the_document_encoding() {
+    let work = Workspace::new();
+    let path = work.path("replace.p");
+    fs::write(&path, b"nino nino").unwrap();
+
+    let mut bench = Workbench::default();
+    bench.open_file(&path, Some(TextEncoding::Iso8859_1)).unwrap();
+    bench.set_search_query("nino").unwrap();
+    assert_eq!(bench.find_next().unwrap(), Some(0..4));
+    assert!(bench.replace_current("niño").unwrap());
+    assert_eq!(bench.active_bytes().unwrap(), b"ni\xf1o nino");
+
+    bench.set_search_query("nino").unwrap();
+    assert_eq!(bench.replace_all("café").unwrap(), 1);
+    assert_eq!(bench.active_bytes().unwrap(), b"ni\xf1o caf\xe9");
+}
