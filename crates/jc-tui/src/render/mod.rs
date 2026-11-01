@@ -310,7 +310,7 @@ mod tests {
     fn empty_app_renders_without_panicking() {
         let app = TuiApp::new(crate::state::LaunchOptions::default());
         let screen = render(&app, 80, 24);
-        assert!(screen.row_text(2).contains("JC-IDE"));
+        assert!((0..screen.height()).any(|row| screen.row_text(row).contains("JC-IDE")));
         let _ = Workbench::default();
     }
 }

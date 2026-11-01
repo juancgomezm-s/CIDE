@@ -99,6 +99,7 @@ impl Screen {
         self.cells[usize::from(y) * usize::from(self.width) + usize::from(x)]
     }
 
+    #[cfg(test)]
     pub fn row_text(&self, y: u16) -> String {
         if y >= self.height { return String::new(); }
         (0..self.width).map(|x| self.cell(x, y).ch).collect()
