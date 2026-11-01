@@ -41,9 +41,9 @@ Núcleo byte-preserving, undo/redo, perfiles multilenguaje, puente Progress inic
 La página de códigos **real de cada proyecto de producción** no se codifica globalmente en JC-IDE: se registra en el perfil del proyecto. Esto evita convertir una incertidumbre de configuración en una heurística destructiva. Véase [M1_FILES_TEXT.md](M1_FILES_TEXT.md).
 
 
-## M2A — TUI funcional
+## M2A — TUI funcional — EN DESARROLLO
 
-Implementar `jc-tui` sobre `jc-app`.
+Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crossterm y contrato de aplicación compartido. La presencia de código y CI verde no equivale a aceptación funcional completa. Implementar y verificar cada flujo de extremo a extremo antes de cerrar este hito.
 
 **Criterios de aceptación:**
 - uso completo por teclado;
@@ -53,7 +53,7 @@ Implementar `jc-tui` sobre `jc-app`.
 - Progress Check/Compile/Run/Schema presentan diagnósticos sin bloquear edición;
 - el frontend no crea un segundo buffer ni su propio undo.
 
-## M2B — GUI Windows mínima
+## M2B — GUI Windows mínima — PENDIENTE
 
 Elegir tecnología gráfica con mediciones y consumir el mismo `jc-app`.
 
