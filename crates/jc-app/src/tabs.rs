@@ -51,6 +51,14 @@ impl TabManager {
         id
     }
 
+    pub fn set_title(&mut self, id: TabId, title: impl Into<String>) -> bool {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return false;
+        };
+        tab.title = title.into();
+        true
+    }
+
     pub fn set_dirty(&mut self, id: TabId, dirty: bool) -> bool {
         let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
             return false;
