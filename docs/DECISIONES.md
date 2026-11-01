@@ -78,3 +78,12 @@ Hasta M5:
 - si un entorno no permite compilar/probar, se documenta como pendiente en vez de usar CI remoto como sustituto.
 
 En M5 se realiza el hardening transversal y se vuelve a habilitar la matriz automática Windows/Linux una vez que las capas principales hayan dejado de cambiar estructuralmente.
+
+
+## D14 — Compatibilidad Sublime solo después de M5
+
+**Aceptada.** El soporte de plugins, extensiones y paquetes de Sublime Text se implementará únicamente después de cerrar M5.
+
+No se incorporará una runtime Python ni una capa de compatibilidad Sublime durante M2–M5. El trabajo post-M5 debe mantenerse como adaptador sobre `jc-app`, `jc-languages` y los frontends, sin introducir dependencias de Sublime en `jc-core`.
+
+La compatibilidad será por niveles y con capacidades explícitas. Los recursos declarativos se priorizan sobre la ejecución de código; los plugins Python requerirán sandbox, permisos y una API de compatibilidad limitada y versionada.

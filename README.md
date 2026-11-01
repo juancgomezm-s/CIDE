@@ -94,6 +94,7 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 6. [Contrato de interacción TUI](docs/TUI_INTERACTION.md)
 7. [M1: archivos, encoding y posiciones](docs/M1_FILES_TEXT.md)
 8. [Validación observada y límites](docs/VALIDACION.md)
+9. [Post-M5: compatibilidad Sublime Text](docs/POST_M5_SUBLIME_COMPAT.md)
 
 ## Procedencia y licencia
 

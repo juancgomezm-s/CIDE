@@ -82,6 +82,14 @@ Durante M2–M4 la validación es local y dirigida: ejecutar solo las pruebas/bu
 - smoke tests representativos de TUI, archivos y adaptadores que ya estén funcionalmente terminados;
 - corregir en esa fase las incompatibilidades acumuladas entre plataformas, en lugar de pagar ese coste después de cada épica.
 
+## Anexo post-M5 — Compatibilidad con Sublime Text
+
+Después de cerrar M5 se abrirá un trabajo separado para compatibilidad con plugins, extensiones y paquetes de Sublime Text. **No forma parte de M5 y no debe condicionar M2–M5.**
+
+La estrategia será incremental: primero formatos declarativos de bajo riesgo, después carga de paquetes y finalmente una capa de compatibilidad controlada para plugins Python. El objetivo no es clonar Sublime Text ni prometer compatibilidad binaria/API total, sino reutilizar una parte material de su ecosistema sin romper la arquitectura de JC-IDE.
+
+Especificación: [POST_M5_SUBLIME_COMPAT.md](POST_M5_SUBLIME_COMPAT.md).
+
 ## Presupuestos exploratorios
 
 - editor base: objetivo inicial <50 MiB de memoria privada;
