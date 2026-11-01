@@ -137,12 +137,54 @@ fn ctrl_tab_and_ctrl_page_down_share_one_semantic_command() {
 }
 
 #[test]
-fn plain_tab_is_never_a_global_or_editor_action_shortcut() {
+fn tab_and_shift_tab_are_editor_indentation_not_global_focus() {
     let keymap = default_keymap();
+    let registry = default_registry();
+    let mut ctx = editor_context();
+    ctx.has_document = true;
+    assert_eq!(
+        keymap.resolve(
+            KeyScope::Editor,
+            KeyStroke::plain(Key::Tab),
+            &registry,
+            &ctx,
+        ),
+        Resolution::Enabled(CommandId::EditIndent)
+    );
+    assert_eq!(
+        keymap.resolve(
+            KeyScope::Editor,
+            KeyStroke::shift(Key::Tab),
+            &registry,
+            &ctx,
+        ),
+        Resolution::Enabled(CommandId::EditOutdent)
+    );
     assert!(!keymap.bindings().iter().any(|binding| {
-        matches!(binding.scope, KeyScope::Global | KeyScope::Editor)
-            && binding.stroke == KeyStroke::plain(Key::Tab)
+        binding.scope == KeyScope::Global
+            && (binding.stroke == KeyStroke::plain(Key::Tab)
+                || binding.stroke == KeyStroke::shift(Key::Tab))
     }));
+}
+
+#[test]
+fn abl_comment_and_duplicate_delete_shortcuts_resolve_consistently() {
+    let keymap = default_keymap();
+    let registry = default_registry();
+    let mut ctx = editor_context();
+    ctx.has_document = true;
+    ctx.active_language = Some("abl".to_owned());
+    for (stroke, command) in [
+        (KeyStroke::ctrl(Key::Char('d')), CommandId::EditDuplicate),
+        (KeyStroke::ctrl_shift(Key::Char('d')), CommandId::EditDeleteLine),
+        (KeyStroke::ctrl(Key::Char('/')), CommandId::EditToggleLineComment),
+        (KeyStroke::ctrl_shift(Key::Char('/')), CommandId::EditToggleBlockComment),
+    ] {
+        assert_eq!(
+            keymap.resolve(KeyScope::Editor, stroke, &registry, &ctx),
+            Resolution::Enabled(command)
+        );
+    }
 }
 
 #[test]
