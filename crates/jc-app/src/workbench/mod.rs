@@ -99,6 +99,7 @@ pub enum CommandOutcome {
 pub struct Workbench {
     pub(crate) tabs: TabManager,
     pub(crate) documents: Vec<EditorDocument>,
+    closed_documents: Vec<EditorDocument>,
     pub(crate) search: SearchState,
     pub(crate) clipboard: Option<String>,
     output: Vec<String>,
@@ -256,7 +257,7 @@ impl Workbench {
             active_language: language,
             has_progress_profile: false,
             has_database_schema: false,
-            can_reopen_closed_tab: self.tabs.can_reopen(),
+            can_reopen_closed_tab: self.tabs.can_reopen() && !self.closed_documents.is_empty(),
             terminal_available: false,
             ..CommandContext::default()
         }
@@ -324,9 +325,32 @@ impl Workbench {
         {
             return Ok(Some(id));
         }
-        self.documents.retain(|document| document.tab_id != id);
+        if let Some(index) = self
+            .documents
+            .iter()
+            .position(|document| document.tab_id == id)
+        {
+            let document = self.documents.remove(index);
+            self.closed_documents.push(document);
+            if self.closed_documents.len() > 32 {
+                self.closed_documents.remove(0);
+            }
+        }
         let _ = self.tabs.discard_and_close(id);
         Ok(None)
+    }
+
+    pub fn reopen_closed(&mut self) -> bool {
+        let Some(document) = self.closed_documents.pop() else {
+            return false;
+        };
+        let expected = document.tab_id;
+        if self.tabs.reopen_last() != Some(expected) {
+            self.closed_documents.push(document);
+            return false;
+        }
+        self.documents.push(document);
+        true
     }
 
     pub fn select_tab(&mut self, one_based: usize) -> bool {
