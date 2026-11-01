@@ -43,7 +43,7 @@ La página de códigos **real de cada proyecto de producción** no se codifica g
 
 ## M2A — TUI funcional — EN DESARROLLO
 
-**Alcance de productividad ABL:** operaciones de texto y snippets ligeros en M2A; tokenización/formateo en M3; firmas, USING y herencia en M4. Ver [alcance de comandos ABL](ABL_EDITOR_COMMAND_SCOPE.md).
+**Alcance de productividad ABL:** la edición y el snippet engine son universales; el contenido ABL y sus servicios especializados pertenecerán a una extensión de lenguaje interna y opcional. Tokenización/formateo se prepara en M3; firmas, USING y herencia en M4. Ver [arquitectura de extensiones](EXTENSION_ARCHITECTURE.md) y [comandos ABL](ABL_EDITOR_COMMAND_SCOPE.md).
 
 **Search Plus es prioridad de producto:** primero documento activo, luego búsqueda en proyecto cancelable, más tarde referencias apoyadas en compilador XREF y catálogo de esquema. Ver [plan Search Plus](M2_SEARCH_PLUS.md).
 
@@ -77,15 +77,15 @@ Elegir tecnología gráfica con mediciones y consumir el mismo `jc-app`.
 
 ## M3 — Entorno Progress funcional
 
-Validar OpenEdge 10.0B y 11.7, includes, PROPATH, aliases, code pages, compilación y ejecución en contexto real.
+Estabilizar el contrato interno de capacidades para vincular proveedores de lenguaje sin introducir una runtime genérica de plugins; comenzar el paquete integrado opcional `progress.abl`, manteniendo el puente existente `jc-progress`. Validar OpenEdge 10.0B y 11.7, includes, PROPATH, aliases, code pages, compilación y ejecución en contexto real. La AVM solo se ejecutará a petición del usuario.
 
 ## M4 — Esquema y asistencia ABL
 
-Catálogo local, navegación, completado de tablas/campos/índices y análisis contextual incremental.
+Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, navegación, completado de tablas/campos/índices y análisis contextual incremental. Buscar/seleccionar/editar sigue siendo responsabilidad genérica de `jc-app` y Search Plus; XREF, imports USING y jerarquía OO son aportaciones del proveedor ABL.
 
 ## M5 — Servicios opcionales, hardening y CI
 
-Git, búsquedas de proyecto, proveedores semánticos/LSP, tareas e integración con OmniCore, todos bajo demanda.
+Git, proveedores semánticos/LSP, tareas e integración con OmniCore, todos bajo demanda. Hardening del contrato de proveedores internos de lenguaje y sus contribuciones al registro central; búsqueda de proyecto permanece priorizada en M2A.
 
 **CI pertenece a M5.** Hasta iniciar M5 no se ejecutará GitHub Actions automáticamente en `push` ni `pull_request`, ni se usará CI remoto para perseguir fallos intermedios de M2–M4. El workflow queda conservado únicamente como `workflow_dispatch` manual y no debe invocarse antes de M5 salvo autorización explícita del propietario.
 

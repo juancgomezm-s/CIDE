@@ -11,6 +11,14 @@
 - Las transformaciones con impacto semántico exigen parser/metadatos; si no existen, el comando permanece deshabilitado en lugar de simular éxito.
 - Los asistentes destructivos requieren vista previa de diff y consentimiento.
 
+## Frontera entre comandos universales y extensión ABL
+
+Los comandos de duplicar/borrar/mover líneas, sangría, búsqueda, selección columna y el motor de Toggle Comment son **universales**. El perfil ABL aporta los delimitadores `/* ... */`, no un handler de edición especial. Los snippets se resuelven con un motor genérico y plantillas aportadas por la extensión.
+
+Las funciones `Correct Case`, `Expand Keywords`, `Correct Indentation`, `Organize USING`, `Update Function Prototypes`, generadores OO y servicios de AVM/XREF/esquema son responsabilidad de la extensión interna opcional `progress.abl`, nunca de `jc-app`. Todavía **no existe** un cargador genérico ni un paquete operativo con ese ID: se define la separación y se implementará por etapas.
+
+Contrato: [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
+
 ## A — M2A: operaciones sin AVM
 
 | Comando | Alcance | Estado |

@@ -4,6 +4,10 @@
 
 Este anexo define una línea de evolución posterior al roadmap principal. Su objetivo es permitir que JC-IDE aproveche una parte significativa del ecosistema de Sublime Text sin convertir al editor en una reimplementación de Sublime ni introducir su modelo de plugins dentro del núcleo.
 
+## Relación con extensiones internas
+
+El contrato de capacidades de lenguaje se prepara en M2–M5 para que `progress.abl` y otros proveedores usen comandos centrales. Este anexo es distinto: **solo después de M5** se permitirá cargar extensiones de terceros, paquetes Sublime y plugins Python mediante host aislado. Ver [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
+
 ## Principios
 
 1. **El core no conoce Sublime.** `jc-core`, `jc-text` y `jc-files` permanecen independientes.

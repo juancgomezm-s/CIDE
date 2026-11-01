@@ -8,9 +8,11 @@ JC-IDE separa cuatro responsabilidades: almacenamiento de documentos, modelo de 
 - **jc-text**: interpretación explícita de encoding, line endings y coordenadas sin poseer los bytes canónicos.
 - **jc-files**: ciclo de vida de archivo, conflictos externos, creación segura y reemplazo atómico.
 - **jc-app**: comandos, keymap contextual, foco, menús, pestañas, paneles y diálogos. No dibuja nada.
-- **jc-languages**: perfiles y detección; no inicia servicios por reconocer una extensión.
-- **jc-progress**: integración explícita con una instalación real de OpenEdge.
+- **jc-languages**: perfiles, detección y metadatos declarativos de capacidades (por ejemplo, comentarios). No inicia servicios por reconocer una extensión.
+- **jc-progress**: integración explícita con una instalación real de OpenEdge; candidata a adaptador de la extensión interna `progress.abl`.
 - **jc-tui / jc-gui**: frontends futuros que consumen el mismo jc-app y jc-core.
+
+La separación entre núcleo universal, capacidades por lenguaje y extensiones internas está definida en [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
 
 La regla central es que una acción de negocio existe una sola vez como `CommandId`. Un menú, una tecla, la command palette o un botón gráfico resuelven el mismo comando. Los frontends no mantienen atajos duplicados ni implementaciones paralelas de guardar, compilar, buscar o navegar pestañas.
 

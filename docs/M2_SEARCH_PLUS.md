@@ -26,6 +26,12 @@ La búsqueda debe ser más poderosa que la del editor típico, pero ejecutarse *
 
 **Presupuesto inicial de diseño, no benchmark:** mostrar 1,000 resultados, máximo configurable 10,000 antes de requerir refinar; cota de bytes por archivo y cancelación inmediata. No reintentar búsquedas ilimitadamente.
 
+## Capacidad transversal y extensiones
+
+El motor `SearchController`, la búsqueda textual/regex, filtros y presentación de resultados pertenecen al editor. Los símbolos, referencias XREF y consultas a esquema son **proveedores semánticos de extensión**: `progress.abl` cuando hay ABL, `csharp.dotnet` para C# u otro proveedor para Rust/Python. Ningún proveedor puede reemplazar el historial, navegación o motor de búsqueda base.
+
+Ver [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
+
 ## S2 — Búsqueda ABL semántica: M3-M4
 
 - PROCEDURE, FUNCTION, clases, métodos, variables y definiciones.

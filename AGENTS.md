@@ -39,3 +39,13 @@ Keep `docs/VALIDACION.md` consistent with observed evidence and material limitat
 - Search Plus should use bounded, cancelable scans and typed results, with no permanent indexer by default.
 - Treat M2 edits as unvalidated unless compiled/tested locally; GitHub Actions remains dormant until M5.
 - Read docs/ABL_EDITOR_COMMAND_SCOPE.md and docs/M2_SEARCH_PLUS.md.
+
+## Multi-language architecture boundary
+
+- Read `docs/EXTENSION_ARCHITECTURE.md` before adding language-specific features.
+- Universal operations (byte editing, selection, undo/redo, search, indentation mechanics, column mode, menus and keymaps) belong to generic core/application code.
+- Language-specific delimiters are profile metadata in `jc-languages`. Do not add `if language == "abl"` cases to `jc-app` for syntax rules.
+- ABL tokens, templates, USING, OO code actions, XREF, schema and AVM integrations must be moved to/provided by the optional internal `progress.abl` extension when that provider API is ready. No Python or external plugin host before post-M5.
+- The current `Progress*` commands in the fixed enum are migration debt, not evidence of an extension loader. Keep them functional/disabled according to context until namespaced registration is implemented.
+- Extension-proposed edits must eventually validate the expected document revision and apply as a single undo transaction; no provider writes directly into buffers or disk.
+- Do not run GitHub Actions while developing M2–M4; M5 owns remote CI/hardening.

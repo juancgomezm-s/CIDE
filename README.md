@@ -91,6 +91,7 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 2. [Plan por hitos y criterios de aceptación](docs/PLAN.md)
 3. [Arquitectura](docs/ARQUITECTURA.md)
 4. [Decisiones y pendientes](docs/DECISIONES.md)
+   - [Arquitectura de extensiones multilenguaje](docs/EXTENSION_ARCHITECTURE.md)
 5. [Investigación de Lime Text, PIEW y Progress](docs/INVESTIGACION.md)
 6. [Contrato de interacción TUI](docs/TUI_INTERACTION.md)
 7. [M1: archivos, encoding y posiciones](docs/M1_FILES_TEXT.md)

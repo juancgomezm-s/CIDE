@@ -8,12 +8,25 @@ pub enum ToolingPlan {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BlockComment {
+    pub start: &'static str,
+    pub end: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommentStyle {
+    Line(&'static str),
+    Block(BlockComment),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LanguageProfile {
     pub id: &'static str,
     pub name: &'static str,
     pub extensions: &'static [&'static str],
     pub filenames: &'static [&'static str],
     pub line_comment: Option<&'static str>,
+    pub block_comment: Option<BlockComment>,
     pub tooling_plan: ToolingPlan,
 }
 
@@ -24,6 +37,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["p", "w", "i", "cls"],
         filenames: &[],
         line_comment: None,
+        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
         tooling_plan: ToolingPlan::ProgressBridge,
     },
     LanguageProfile {
@@ -32,6 +46,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["cs", "csx"],
         filenames: &[],
         line_comment: Some("//"),
+        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -40,6 +55,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["rs"],
         filenames: &[],
         line_comment: Some("//"),
+        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -48,6 +64,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["js", "jsx", "mjs", "cjs"],
         filenames: &[],
         line_comment: Some("//"),
+        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -56,6 +73,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["ts", "tsx", "mts", "cts"],
         filenames: &[],
         line_comment: Some("//"),
+        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -64,6 +82,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["py", "pyw", "pyi"],
         filenames: &[],
         line_comment: Some("#"),
+        block_comment: None,
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -72,6 +91,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["html", "htm"],
         filenames: &[],
         line_comment: None,
+        block_comment: Some(BlockComment { start: "<!--", end: "-->" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -80,6 +100,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["css"],
         filenames: &[],
         line_comment: None,
+        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -88,6 +109,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["sql"],
         filenames: &[],
         line_comment: Some("--"),
+        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -96,6 +118,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["xml", "xsd", "xsl", "xslt", "csproj", "props", "targets"],
         filenames: &[],
         line_comment: None,
+        block_comment: Some(BlockComment { start: "<!--", end: "-->" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -104,6 +127,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["json"],
         filenames: &[],
         line_comment: None,
+        block_comment: None,
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -112,6 +136,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["jsonc"],
         filenames: &["tsconfig.json", "jsconfig.json"],
         line_comment: Some("//"),
+        block_comment: Some(BlockComment { start: "/*", end: "*/" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -120,6 +145,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["md", "markdown"],
         filenames: &[],
         line_comment: None,
+        block_comment: Some(BlockComment { start: "<!--", end: "-->" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -128,6 +154,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["toml"],
         filenames: &[],
         line_comment: Some("#"),
+        block_comment: None,
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -136,6 +163,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["yaml", "yml"],
         filenames: &[],
         line_comment: Some("#"),
+        block_comment: None,
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -144,6 +172,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["ps1", "psm1", "psd1"],
         filenames: &[],
         line_comment: Some("#"),
+        block_comment: Some(BlockComment { start: "<#", end: "#>" }),
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -152,6 +181,7 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["sh", "bash", "zsh"],
         filenames: &[".bashrc", ".zshrc"],
         line_comment: Some("#"),
+        block_comment: None,
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
@@ -160,9 +190,22 @@ pub static PROFILES: &[LanguageProfile] = &[
         extensions: &["txt", "log"],
         filenames: &[],
         line_comment: None,
+        block_comment: None,
         tooling_plan: ToolingPlan::LocalOnly,
     },
 ];
+
+impl LanguageProfile {
+    /// The preferred editor comment operation is a property of the language,
+    /// never a hardcoded check for Progress in jc-app.
+    pub fn preferred_comment(&self) -> Option<CommentStyle> {
+        if let Some(prefix) = self.line_comment {
+            Some(CommentStyle::Line(prefix))
+        } else {
+            self.block_comment.map(CommentStyle::Block)
+        }
+    }
+}
 
 pub fn by_id(id: &str) -> Option<&'static LanguageProfile> {
     PROFILES
@@ -218,6 +261,20 @@ mod tests {
         assert_eq!(detect(r"C:\project\tsconfig.json").id, "jsonc");
         assert_eq!(detect("/project/package.json").id, "json");
         assert_eq!(detect(".bashrc").id, "shell");
+    }
+
+    #[test]
+    fn built_in_comments_are_capability_data_not_app_specific_conditions() {
+        let abl = by_id("abl").unwrap();
+        assert_eq!(abl.preferred_comment(), Some(CommentStyle::Block(BlockComment {
+            start: "/*",
+            end: "*/",
+        })));
+        assert_eq!(by_id("csharp").unwrap().preferred_comment(), Some(CommentStyle::Line("//")));
+        assert_eq!(by_id("xml").unwrap().block_comment.unwrap().start, "<!--");
+        assert_eq!(by_id("python").unwrap().block_comment, None);
+        assert_eq!(by_id("json").unwrap().preferred_comment(), None);
+        assert_eq!(by_id("powershell").unwrap().block_comment.unwrap().end, "#>");
     }
 
     #[test]

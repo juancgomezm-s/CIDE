@@ -222,20 +222,20 @@ fn paste(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.clipboard_has_text
 }
 fn block_comment(ctx: &CommandContext) -> bool {
-    ctx.has_document && matches!(
-        ctx.active_language.as_deref(),
-        Some("abl" | "csharp" | "rust" | "javascript" | "typescript" | "css" | "sql" | "jsonc" | "html" | "xml" | "markdown")
-    )
+    ctx.has_document
+        && ctx
+            .active_language
+            .as_deref()
+            .and_then(by_id)
+            .is_some_and(|profile| profile.block_comment.is_some())
 }
 fn line_comment(ctx: &CommandContext) -> bool {
-    block_comment(ctx)
-        || (ctx.has_document
-            && ctx
-                .active_language
-                .as_deref()
-                .and_then(by_id)
-                .and_then(|profile| profile.line_comment)
-                .is_some())
+    ctx.has_document
+        && ctx
+            .active_language
+            .as_deref()
+            .and_then(by_id)
+            .is_some_and(|profile| profile.preferred_comment().is_some())
 }
 fn project(ctx: &CommandContext) -> bool {
     ctx.has_project

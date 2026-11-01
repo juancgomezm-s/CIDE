@@ -99,3 +99,15 @@ Atajos de edición: Ctrl+D duplicar, Ctrl+Shift+D borrar línea, Tab/Shift+Tab s
 La política D13 sigue vigente: no consumir CI remoto antes de M5 salvo autorización explícita.
 
 Documentación: docs/ABL_EDITOR_COMMAND_SCOPE.md y docs/M2_SEARCH_PLUS.md.
+
+## D16 — Extensiones especializadas sin contaminar el núcleo
+
+**Aceptada.** JC-IDE tiene tres capas: operaciones universales de editor, capacidades declarativas del perfil de lenguaje y extensiones especializadas opcionales. El núcleo no debe importar Progress, C# ni ninguna implementación de toolchain.
+
+El primer desacoplamiento de código coloca los delimitadores de comentario y su preferencia en `jc-languages`; `jc-app` consume esa capacidad sin listas de lenguajes ni caso especial ABL.
+
+Las herramientas ABL de formato/lexing/USING/OO/XREF/AVM se trasladarán conceptualmente al paquete interno `progress.abl`. Los `Progress*` del enum actual son deuda identificada: cuando exista un registro de contribuciones namespaced se migrarán sin romper los shortcuts de la TUI.
+
+Las extensiones internas de lenguaje M3/M4 **no equivalen** al sistema de plugins externos/Sublime post-M5. No crear host Python, cargador dinámico ni sandbox completo antes de la fase acordada.
+
+La búsqueda textual, edición de columnas, undo y snippets engine pertenecen al nivel universal; cada lenguaje aporta patrones, plantillas y semántica. Ver `docs/EXTENSION_ARCHITECTURE.md`. D13 mantiene CI remoto diferido hasta M5.

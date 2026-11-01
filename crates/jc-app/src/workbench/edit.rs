@@ -375,7 +375,7 @@ impl Workbench {
     pub fn toggle_line_comment(&mut self) -> Result<(), WorkbenchError> {
         let path = self.active_path().ok_or(WorkbenchError::NoDocument)?;
         let language = detect(&path.to_string_lossy());
-        if language.id == "abl" || (language.line_comment.is_none() && block_delimiters(language.id).is_some()) {
+        if language.line_comment.is_none() && language.block_comment.is_some() {
             return self.toggle_block_comment();
         }
         let Some(comment) = language.line_comment else {
@@ -500,9 +500,11 @@ impl Workbench {
     pub fn toggle_block_comment(&mut self) -> Result<(), WorkbenchError> {
         let path = self.active_path().ok_or(WorkbenchError::NoDocument)?;
         let language = detect(&path.to_string_lossy());
-        let Some((start_marker, end_marker)) = block_delimiters(language.id) else {
+        let Some(markers) = language.block_comment else {
             return Ok(());
         };
+        let start_marker = markers.start.as_bytes();
+        let end_marker = markers.end.as_bytes();
         let selection = self.active_document().and_then(EditorDocument::selection);
         let original_cursor = self.active_document().ok_or(WorkbenchError::NoDocument)?.cursor;
         let range = if let Some(mut range) = selection.clone() {
@@ -771,15 +773,6 @@ impl Workbench {
     }
 }
 
-fn block_delimiters(language: &str) -> Option<(&'static [u8], &'static [u8])> {
-    match language {
-        "abl" | "csharp" | "rust" | "javascript" | "typescript" | "css" | "sql" | "jsonc" => {
-            Some((b"/*", b"*/"))
-        }
-        "html" | "xml" | "markdown" => Some((b"<!--", b"-->")),
-        _ => None,
-    }
-}
 
 fn slice_from_index(
     index: &TextIndex,
