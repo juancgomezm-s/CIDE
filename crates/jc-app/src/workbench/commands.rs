@@ -28,6 +28,10 @@ impl Workbench {
                     Ok(CommandOutcome::None)
                 }
             }
+            FileReopenClosed => {
+                self.reopen_closed();
+                Ok(CommandOutcome::None)
+            }
             FileExit => Ok(CommandOutcome::ExitRequested),
             EditUndo => {
                 self.undo()?;
@@ -111,7 +115,7 @@ impl Workbench {
             ProgressCheck | ProgressCompile | ProgressRun | ProgressRefreshSchema => {
                 Ok(CommandOutcome::Progress(command))
             }
-            FileOpenFolder | FileReopenClosed | EditDuplicate | EditDeleteLine | EditMoveLineUp
+            FileOpenFolder | EditDuplicate | EditDeleteLine | EditMoveLineUp
             | EditMoveLineDown | EditToggleLineComment | SearchProject | SearchReplaceProject => {
                 Ok(CommandOutcome::View(command))
             }
