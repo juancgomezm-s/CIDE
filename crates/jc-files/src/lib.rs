@@ -73,6 +73,9 @@ impl fmt::Display for FileError {
             Self::EncodingRequired => {
                 write!(f, "an explicit encoding is required for text insertion")
             }
+            Self::TargetExists(path) => {
+                write!(f, "target already exists: {}", path.display())
+            }
             Self::Encode(error) => write!(f, "{error}"),
             Self::Edit(error) => write!(f, "{error}"),
         }
