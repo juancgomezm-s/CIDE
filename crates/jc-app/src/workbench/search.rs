@@ -74,6 +74,66 @@ impl Workbench {
         Ok(())
     }
 
+
+    pub fn replace_current(&mut self, replacement: &str) -> Result<bool, WorkbenchError> {
+        if self.search.regex {
+            return Err(WorkbenchError::RegexUnavailable);
+        }
+        if self.search.matches.is_empty() {
+            return Ok(false);
+        }
+        let index = self.search.current.unwrap_or(0).min(self.search.matches.len() - 1);
+        let range = self.search.matches[index].clone();
+        let document = self
+            .active_document_mut()
+            .ok_or(WorkbenchError::NoDocument)?;
+        let encoding = document
+            .session
+            .encoding()
+            .ok_or(FileError::EncodingRequired)?;
+        let bytes = encode(replacement, encoding).map_err(FileError::from)?;
+        document
+            .session
+            .document_mut()
+            .replace(range.clone(), &bytes)
+            .map_err(FileError::from)?;
+        document.cursor = range.start + bytes.len();
+        document.anchor = None;
+        self.sync_active_tab_dirty();
+        self.rebuild_search()?;
+        Ok(true)
+    }
+
+    pub fn replace_all(&mut self, replacement: &str) -> Result<usize, WorkbenchError> {
+        if self.search.regex {
+            return Err(WorkbenchError::RegexUnavailable);
+        }
+        let matches = self.search.matches.clone();
+        if matches.is_empty() {
+            return Ok(0);
+        }
+        let document = self
+            .active_document_mut()
+            .ok_or(WorkbenchError::NoDocument)?;
+        let encoding = document
+            .session
+            .encoding()
+            .ok_or(FileError::EncodingRequired)?;
+        let bytes = encode(replacement, encoding).map_err(FileError::from)?;
+        for range in matches.iter().rev() {
+            document
+                .session
+                .document_mut()
+                .replace(range.clone(), &bytes)
+                .map_err(FileError::from)?;
+        }
+        document.anchor = None;
+        document.cursor = document.cursor.min(document.session.document().len());
+        self.sync_active_tab_dirty();
+        self.rebuild_search()?;
+        Ok(matches.len())
+    }
+
     pub fn find_next(&mut self) -> Result<Option<Range<usize>>, WorkbenchError> {
         self.find(true)
     }
