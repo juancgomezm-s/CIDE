@@ -63,14 +63,14 @@ impl TabManager {
         true
     }
 
-    pub fn next(&mut self) -> Option<TabId> {
+    pub fn next_tab(&mut self) -> Option<TabId> {
         if self.tabs.is_empty() { self.active = None; return None; }
         let index = (self.active.unwrap_or(0) + 1) % self.tabs.len();
         self.active = Some(index);
         self.active_id()
     }
 
-    pub fn previous(&mut self) -> Option<TabId> {
+    pub fn previous_tab(&mut self) -> Option<TabId> {
         if self.tabs.is_empty() { self.active = None; return None; }
         let current = self.active.unwrap_or(0);
         let index = if current == 0 { self.tabs.len() - 1 } else { current - 1 };

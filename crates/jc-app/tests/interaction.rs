@@ -181,8 +181,8 @@ fn tab_navigation_wraps_and_alt_9_semantics_can_select_last() {
     let two = tabs.open("2");
     let three = tabs.open("3");
     assert_eq!(tabs.active_id(), Some(three));
-    assert_eq!(tabs.next(), Some(one));
-    assert_eq!(tabs.previous(), Some(three));
+    assert_eq!(tabs.next_tab(), Some(one));
+    assert_eq!(tabs.previous_tab(), Some(three));
     assert!(tabs.select_index(2));
     assert_eq!(tabs.active_id(), Some(two));
     assert!(tabs.select_last());
