@@ -29,3 +29,13 @@ Use tests that check observable behavior and regressions, not tests that duplica
 Do not describe ABL scripts as verified until they have actually compiled and run on the stated OpenEdge version.
 Do not claim a GUI, parser, LSP, debugger, RAM target, or Windows validation merely because a profile or plan exists.
 Keep `docs/VALIDACION.md` consistent with observed evidence and material limitations.
+
+## M2A — Lightweight ABL commands
+
+- ABL Toggle Comment defaults to /* ... */ on lines and selections. Keep source encoding, BOM, EOL, and one logical undo step.
+- Ctrl+D duplicates, Ctrl+Shift+D deletes the line. Tab/Shift+Tab indent/outdent only in Editor; other focused controls keep their navigation semantics.
+- Database/Schema shortcut is Ctrl+Alt+D to avoid conflict with Delete Line.
+- Column mode must represent rectangular visual positions and support correct clipboard/undo before being enabled.
+- Search Plus should use bounded, cancelable scans and typed results, with no permanent indexer by default.
+- Treat M2 edits as unvalidated unless compiled/tested locally; GitHub Actions remains dormant until M5.
+- Read docs/ABL_EDITOR_COMMAND_SCOPE.md and docs/M2_SEARCH_PLUS.md.
