@@ -53,7 +53,7 @@ impl From<PositionError> for WorkbenchError {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SearchState {
     pub query: String,
     pub matches: Vec<Range<usize>>,
@@ -61,19 +61,6 @@ pub struct SearchState {
     pub case_sensitive: bool,
     pub whole_word: bool,
     pub regex: bool,
-}
-
-impl Default for SearchState {
-    fn default() -> Self {
-        Self {
-            query: String::new(),
-            matches: Vec::new(),
-            current: None,
-            case_sensitive: false,
-            whole_word: false,
-            regex: false,
-        }
-    }
 }
 
 #[derive(Debug)]
