@@ -20,9 +20,21 @@ name = "jc-core"
 version = "0.1.0"
 
 [[package]]
+name = "jc-files"
+version = "0.1.0"
+dependencies = [
+ "jc-core",
+ "jc-text",
+]
+
+[[package]]
 name = "jc-languages"
 version = "0.1.0"
 
 [[package]]
 name = "jc-progress"
+version = "0.1.0"
+
+[[package]]
+name = "jc-text"
 version = "0.1.0"
