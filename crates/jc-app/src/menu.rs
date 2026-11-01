@@ -183,6 +183,10 @@ pub fn default_menu_model() -> MenuModel {
                 command(EditMoveLineUp),
                 command(EditMoveLineDown),
                 command(EditToggleLineComment),
+                command(EditToggleBlockComment),
+                SEP,
+                command(EditIndent),
+                command(EditOutdent),
             ],
         ),
         menu(

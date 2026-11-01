@@ -288,3 +288,49 @@ fn toggle_line_comment_uses_the_language_profile() {
     bench.execute(CommandId::EditToggleLineComment).unwrap();
     assert_eq!(bench.active_bytes().unwrap(), b"    value();\n");
 }
+
+#[test]
+fn abl_toggle_comment_preserves_legacy_bytes_and_is_one_undo_step() {
+    let work = Workspace::new();
+    let path = work.path("legacy.p");
+    let original = b"  DISPLAY \"ni\xf1o\".\r\n";
+    fs::write(&path, original).unwrap();
+    let mut bench = Workbench::default();
+    bench.open_file(&path, Some(TextEncoding::Iso8859_1)).unwrap();
+    bench.execute(CommandId::EditToggleLineComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"  /* DISPLAY \"ni\xf1o\". */\r\n");
+    bench.execute(CommandId::EditToggleLineComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), original);
+    bench.undo().unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"  /* DISPLAY \"ni\xf1o\". */\r\n");
+}
+
+#[test]
+fn selected_multiline_abl_comment_wraps_and_unwraps_exact_bytes() {
+    let work = Workspace::new();
+    let path = work.path("block.p");
+    let original = b"FOR EACH Customer:\r\n    DISPLAY Customer.Name.\r\nEND.";
+    fs::write(&path, original).unwrap();
+    let mut bench = Workbench::default();
+    bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+    bench.select_all().unwrap();
+    bench.execute(CommandId::EditToggleBlockComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), [b"/*".as_slice(), original, b"*/".as_slice()].concat());
+    bench.execute(CommandId::EditToggleBlockComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), original);
+}
+
+#[test]
+fn indent_and_outdent_selected_lines_preserve_mixed_line_endings() {
+    let work = Workspace::new();
+    let path = work.path("indent.p");
+    let original = b"first\r\nsecond\nthird";
+    fs::write(&path, original).unwrap();
+    let mut bench = Workbench::default();
+    bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+    bench.select_all().unwrap();
+    bench.execute(CommandId::EditIndent).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"    first\r\n    second\n    third");
+    bench.execute(CommandId::EditOutdent).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), original);
+}

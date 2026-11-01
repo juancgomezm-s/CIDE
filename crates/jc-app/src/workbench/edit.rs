@@ -374,7 +374,11 @@ impl Workbench {
 
     pub fn toggle_line_comment(&mut self) -> Result<(), WorkbenchError> {
         let path = self.active_path().ok_or(WorkbenchError::NoDocument)?;
-        let Some(comment) = detect(&path.to_string_lossy()).line_comment else {
+        let language = detect(&path.to_string_lossy());
+        if language.id == "abl" || (language.line_comment.is_none() && block_delimiters(language.id).is_some()) {
+            return self.toggle_block_comment();
+        }
+        let Some(comment) = language.line_comment else {
             return Ok(());
         };
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
@@ -425,6 +429,165 @@ impl Workbench {
             }
         }
         document.anchor = None;
+        self.after_edit()
+    }
+
+    /// Toggle block delimiters without converting source encoding or line endings.
+    /// ABL uses /* ... */; HTML/XML/Markdown use <!-- ... -->.
+    /// A selection is wrapped as one block; without a selection the current
+    /// line's non-indent content is toggled.
+    pub fn toggle_block_comment(&mut self) -> Result<(), WorkbenchError> {
+        let path = self.active_path().ok_or(WorkbenchError::NoDocument)?;
+        let language = detect(&path.to_string_lossy());
+        let Some((start_marker, end_marker)) = block_delimiters(language.id) else {
+            return Ok(());
+        };
+        let selection = self.active_document().and_then(EditorDocument::selection);
+        let original_cursor = self.active_document().ok_or(WorkbenchError::NoDocument)?.cursor;
+        let range = if let Some(range) = selection.clone() {
+            range
+        } else {
+            let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
+            let line = self.line_slice(position.line)?;
+            let source = self.active_document()
+                .ok_or(WorkbenchError::NoDocument)?
+                .session.document().to_bytes();
+            let relative = source[line.content.clone()].iter()
+                .position(|byte| !matches!(*byte, b' ' | b'\t'))
+                .unwrap_or(line.content.len());
+            (line.content.start + relative)..line.content.end
+        };
+        let source = self.active_document()
+            .ok_or(WorkbenchError::NoDocument)?
+            .session.document().to_bytes();
+        let bytes = &source[range.clone()];
+        let start = bytes.iter().position(|byte| !matches!(*byte, b' ' | b'\t' | b'\r' | b'\n'))
+            .unwrap_or(bytes.len());
+        let end = bytes.iter().rposition(|byte| !matches!(*byte, b' ' | b'\t' | b'\r' | b'\n'))
+            .map_or(start, |offset| offset + 1);
+        let middle = &bytes[start..end];
+        let is_wrapped = middle.starts_with(start_marker) && middle.ends_with(end_marker)
+            && middle.len() >= start_marker.len() + end_marker.len();
+
+        let mut replacement = Vec::with_capacity(bytes.len() + start_marker.len() + end_marker.len() + 2);
+        let mut cursor_prefix_delta = 0isize;
+        if is_wrapped {
+            replacement.extend_from_slice(&bytes[..start]);
+            let mut inside = &middle[start_marker.len()..middle.len() - end_marker.len()];
+            if selection.is_none() {
+                if inside.starts_with(b" ") { inside = &inside[1..]; }
+                if inside.ends_with(b" ") { inside = &inside[..inside.len() - 1]; }
+            }
+            replacement.extend_from_slice(inside);
+            replacement.extend_from_slice(&bytes[end..]);
+            cursor_prefix_delta = -((start_marker.len() + usize::from(selection.is_none())) as isize);
+        } else {
+            replacement.extend_from_slice(&bytes[..start]);
+            replacement.extend_from_slice(start_marker);
+            if selection.is_none() { replacement.push(b' '); }
+            replacement.extend_from_slice(middle);
+            if selection.is_none() { replacement.push(b' '); }
+            replacement.extend_from_slice(end_marker);
+            replacement.extend_from_slice(&bytes[end..]);
+            cursor_prefix_delta = (start_marker.len() + usize::from(selection.is_none())) as isize;
+        }
+        let new_length = replacement.len();
+        let document = self.active_document_mut().ok_or(WorkbenchError::NoDocument)?;
+        document.session.document_mut().replace(range.clone(), &replacement).map_err(FileError::from)?;
+        if let Some(previous) = selection {
+            // Keep the block selected, ready for a second toggle.
+            let reversed = document.anchor == Some(previous.end);
+            if reversed {
+                document.anchor = Some(range.start + new_length);
+                document.cursor = range.start;
+            } else {
+                document.anchor = Some(range.start);
+                document.cursor = range.start + new_length;
+            }
+        } else {
+            let original_relative = original_cursor.saturating_sub(range.start);
+            let shifted = if cursor_prefix_delta >= 0 {
+                original_relative.saturating_add(cursor_prefix_delta as usize)
+            } else {
+                original_relative.saturating_sub((-cursor_prefix_delta) as usize)
+            };
+            document.cursor = range.start + shifted.min(new_length);
+            document.anchor = None;
+        }
+        self.after_edit()
+    }
+
+    pub fn indent_lines(&mut self) -> Result<(), WorkbenchError> {
+        self.adjust_indentation(true)
+    }
+
+    pub fn outdent_lines(&mut self) -> Result<(), WorkbenchError> {
+        self.adjust_indentation(false)
+    }
+
+    fn adjust_indentation(&mut self, indent: bool) -> Result<(), WorkbenchError> {
+        let selected = self.active_document().and_then(EditorDocument::selection);
+        if indent && selected.is_none() {
+            return self.insert_tab();
+        }
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let encoding = document.session.encoding().ok_or(FileError::EncodingRequired)?;
+        let decoded = decode(&document.session.document().to_bytes(), encoding);
+        let index = TextIndex::new(&decoded);
+        let cursor = document.cursor;
+        let (first_line, last_line) = if let Some(range) = &selected {
+            let first = index.source_byte_to_position(range.start)?;
+            let last = index.source_byte_to_position(range.end)?;
+            let end = if last.column == 0 && last.line > first.line {
+                last.line - 1
+            } else {
+                last.line
+            };
+            (first.line, end)
+        } else {
+            let position = index.source_byte_to_position(cursor)?;
+            (position.line, position.line)
+        };
+        let mut slices = Vec::new();
+        for line in first_line..=last_line {
+            slices.push(self.line_slice(line)?);
+        }
+        let source = document.session.document().to_bytes();
+        let begin = slices[0].content.start;
+        let end = slices.last().map_or(begin, |slice| slice.separator.end);
+        let mut replacement = Vec::new();
+        let mut first_delta = 0isize;
+        for (line_idx, slice) in slices.iter().enumerate() {
+            let body = &source[slice.content.clone()];
+            let consumed = if indent {
+                replacement.extend_from_slice(b"    ");
+                0
+            } else if body.starts_with(b"\t") {
+                1
+            } else {
+                body.iter().take(4).take_while(|byte| **byte == b' ').count()
+            };
+            if line_idx == 0 {
+                first_delta = if indent { 4 } else { -(consumed as isize) };
+            }
+            replacement.extend_from_slice(&body[consumed..]);
+            replacement.extend_from_slice(&source[slice.separator.clone()]);
+        }
+        if &source[begin..end] == replacement.as_slice() { return Ok(()); }
+        let new_length = replacement.len();
+        let document = self.active_document_mut().ok_or(WorkbenchError::NoDocument)?;
+        document.session.document_mut().replace(begin..end, &replacement).map_err(FileError::from)?;
+        if selected.is_some() {
+            document.anchor = Some(begin);
+            document.cursor = begin + new_length;
+        } else {
+            document.anchor = None;
+            document.cursor = if first_delta >= 0 {
+                cursor.saturating_add(first_delta as usize)
+            } else {
+                cursor.saturating_sub((-first_delta) as usize).max(begin)
+            }.min(document.session.document().len());
+        }
         self.after_edit()
     }
 
@@ -557,5 +720,15 @@ impl Workbench {
             document.anchor = None;
         }
         self.after_edit()
+    }
+}
+
+fn block_delimiters(language: &str) -> Option<(&'static [u8], &'static [u8])> {
+    match language {
+        "abl" | "csharp" | "rust" | "javascript" | "typescript" | "css" | "sql" | "jsonc" => {
+            Some((b"/*", b"*/"))
+        }
+        "html" | "xml" | "markdown" => Some((b"<!--", b"-->")),
+        _ => None,
     }
 }

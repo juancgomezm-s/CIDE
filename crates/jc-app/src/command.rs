@@ -38,6 +38,9 @@ pub enum CommandId {
     EditMoveLineUp,
     EditMoveLineDown,
     EditToggleLineComment,
+    EditToggleBlockComment,
+    EditIndent,
+    EditOutdent,
 
     SearchFind,
     SearchReplace,
@@ -218,14 +221,21 @@ fn selection(ctx: &CommandContext) -> bool {
 fn paste(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.clipboard_has_text
 }
+fn block_comment(ctx: &CommandContext) -> bool {
+    ctx.has_document && matches!(
+        ctx.active_language.as_deref(),
+        Some("abl" | "csharp" | "rust" | "javascript" | "typescript" | "css" | "sql" | "jsonc" | "html" | "xml" | "markdown")
+    )
+}
 fn line_comment(ctx: &CommandContext) -> bool {
-    ctx.has_document
-        && ctx
-            .active_language
-            .as_deref()
-            .and_then(by_id)
-            .and_then(|profile| profile.line_comment)
-            .is_some()
+    block_comment(ctx)
+        || (ctx.has_document
+            && ctx
+                .active_language
+                .as_deref()
+                .and_then(by_id)
+                .and_then(|profile| profile.line_comment)
+                .is_some())
 }
 fn project(ctx: &CommandContext) -> bool {
     ctx.has_project
@@ -283,9 +293,17 @@ pub fn default_registry() -> CommandRegistry {
         spec!(
             EditToggleLineComment,
             Edit,
-            "Toggle Line Comment",
+            "Toggle Comment",
             line_comment
         ),
+        spec!(
+            EditToggleBlockComment,
+            Edit,
+            "Toggle Block Comment",
+            block_comment
+        ),
+        spec!(EditIndent, Edit, "Indent", has_document),
+        spec!(EditOutdent, Edit, "Outdent", has_document),
         spec!(SearchFind, Search, "Find", has_document),
         spec!(SearchReplace, Search, "Replace", has_document),
         spec!(SearchFindNext, Search, "Find Next", has_document),

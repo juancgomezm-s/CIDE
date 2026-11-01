@@ -77,6 +77,18 @@ impl Workbench {
                 self.toggle_line_comment()?;
                 Ok(CommandOutcome::None)
             }
+            EditToggleBlockComment => {
+                self.toggle_block_comment()?;
+                Ok(CommandOutcome::None)
+            }
+            EditIndent => {
+                self.indent_lines()?;
+                Ok(CommandOutcome::None)
+            }
+            EditOutdent => {
+                self.outdent_lines()?;
+                Ok(CommandOutcome::None)
+            }
             SearchFind => Ok(CommandOutcome::ShowFind),
             SearchReplace => Ok(CommandOutcome::ShowReplace),
             SearchFindNext => {
