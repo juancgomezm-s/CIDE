@@ -90,8 +90,8 @@ fn path_line<'a>(path: &'a Path, field: &str) -> Result<&'a str, BridgeError> {
     let windows_absolute = bytes.len() >= 3
         && bytes[0].is_ascii_alphabetic()
         && bytes[1] == b':'
-        && matches!(bytes[2], b'/' | b'\');
-    let unc = value.starts_with("\\");
+        && matches!(bytes[2], b'/' | b'\\');
+    let unc = value.starts_with("\\\\");
     if !(path.is_absolute() || windows_absolute || unc) {
         return Err(config_error(format!("{field} must be an absolute path")));
     }
