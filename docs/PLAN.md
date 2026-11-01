@@ -45,6 +45,16 @@ La página de códigos **real de cada proyecto de producción** no se codifica g
 
 Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crossterm y contrato de aplicación compartido. La presencia de código o pruebas parciales no equivale a aceptación funcional completa. Implementar y verificar cada flujo de extremo a extremo antes de cerrar este hito.
 
+**Checkpoint actual:**
+- edición real sobre `Workbench`, sin buffer/undo paralelo;
+- Explorer de proyecto navegable y restringido a su raíz;
+- resultados de búsqueda navegables desde el panel inferior;
+- Duplicate/Delete Line/Move Line/Toggle Comment implementados como comandos reales;
+- menús, palette, foco y pestañas ya consumen el contrato central;
+- CI remoto permanece dormido hasta M5; este checkpoint no se declara validado por Actions.
+
+**Pendiente para cerrar M2A:** búsqueda/reemplazo de proyecto, integración estructurada de Problems/Output con tareas Progress, revisión manual completa de teclado en terminal real y cualquier corrección de compilación/formato acumulada para hardening M5.
+
 **Criterios de aceptación:**
 - uso completo por teclado;
 - abrir/guardar/cerrar, pestañas, búsqueda, sidebar, panel inferior y command palette;

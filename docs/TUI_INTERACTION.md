@@ -1,8 +1,6 @@
 # Contrato de interacción de la TUI
 
-Este documento es normativo para `jc-tui`. La TUI todavía no existe: primero se
-formalizan comandos, foco, menús y atajos en `jc-app` para evitar que cada widget
-invente su propio comportamiento.
+Este documento es normativo para `jc-tui`. La TUI ya existe como frontend en desarrollo y debe obedecer los comandos, foco, menús y atajos definidos en `jc-app`; ningún widget puede inventar un comportamiento paralelo.
 
 ## Principios
 
@@ -94,9 +92,7 @@ elimina: abre `Unsaved changes` con `S = Save`, `D = Don't Save`, `Esc = Cancel`
 | Move line | Alt+Up / Alt+Down |
 | Toggle line comment | Ctrl+/ |
 
-Movimiento de cursor, selección con Shift, Home/End y edición de texto se definirán en
-el input policy del editor; no se implementan en M0.5 porque dependen del modelo de
-coordenadas/encoding de M1.
+Movimiento de cursor, selección con Shift, Home/End, PageUp/PageDown, Backspace/Delete, Enter y Tab ya pasan por el `Workbench` sobre las coordenadas/encoding de M1. El frontend no mantiene un segundo buffer ni un segundo undo.
 
 ## Buscar
 
@@ -124,6 +120,23 @@ En la barra Find: `Enter` siguiente, `Shift+Enter` anterior, `Alt+C` case,
 Dentro del panel inferior exclusivamente:
 
 `Alt+1 Problems`, `Alt+2 Output`, `Alt+3 Search Results`, `Alt+4 Terminal`.
+
+### Explorer
+
+Cuando la vista Explorer tiene un proyecto abierto:
+
+- `Up/Down`: mover selección;
+- `Home/End`: primero/último elemento;
+- `Right`: entrar en el directorio seleccionado;
+- `Left` o `Backspace`: subir un directorio sin poder abandonar la raíz del proyecto;
+- `Enter`: abrir archivo o entrar en directorio;
+- `R`: refrescar la carpeta actual.
+
+Los directorios se ordenan antes que los archivos. La navegación resuelve rutas canónicas y rechaza salir de la raíz mediante enlaces o rutas indirectas.
+
+### Bottom panel
+
+`Up/Down` y `Home/End` mueven la selección del panel. En `Search Results`, `Enter` lleva al match seleccionado y devuelve el foco al editor. Problems/Output conservan selección visual, pero la navegación a diagnóstico se habilitará cuando M3/M4 aporten ubicaciones estructuradas.
 
 ## Progress ABL
 

@@ -19,6 +19,7 @@ real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 | `jc-languages` | 18 perfiles y detección por extensión/nombre de archivo |
 | `jc-progress` | Construcción de argumentos sin shell, solicitudes ASCII y parser acotado de diagnósticos/esquema |
 | `jc-app` | Registro central de comandos, keymap contextual, foco, menús, pestañas, paneles y diálogos compartidos por TUI/GUI |
+| `jc-tui` | Frontend terminal en M2A: edición, tabs, overlays, Explorer, resultados, menús y command palette |
 | Auxiliares ABL | Código experimental para comprobar/compilar y exportar esquema; requiere pruebas con Progress real |
 | `jc-cli` | Inspección de archivos, copia exacta, edición de bytes a copia nueva, demo de undo/redo, preparación de solicitudes y validación de respuestas Progress |
 | Documentación | Resumen, investigación, arquitectura, decisiones, hitos, lenguajes y evidencia de validación |
@@ -94,7 +95,8 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 6. [Contrato de interacción TUI](docs/TUI_INTERACTION.md)
 7. [M1: archivos, encoding y posiciones](docs/M1_FILES_TEXT.md)
 8. [Validación observada y límites](docs/VALIDACION.md)
-9. [Post-M5: compatibilidad Sublime Text](docs/POST_M5_SUBLIME_COMPAT.md)
+9. [M2A: checkpoint TUI](docs/M2_TUI_CHECKPOINT.md)
+10. [Post-M5: compatibilidad Sublime Text](docs/POST_M5_SUBLIME_COMPAT.md)
 
 ## Procedencia y licencia
 
