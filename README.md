@@ -1,2 +1,2 @@
 # JC-IDE
-ligth IDE texy editor core
+ligth IDE text editor core
