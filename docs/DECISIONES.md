@@ -87,3 +87,15 @@ En M5 se realiza el hardening transversal y se vuelve a habilitar la matriz auto
 No se incorporará una runtime Python ni una capa de compatibilidad Sublime durante M2–M5. El trabajo post-M5 debe mantenerse como adaptador sobre `jc-app`, `jc-languages` y los frontends, sin introducir dependencias de Sublime en `jc-core`.
 
 La compatibilidad será por niveles y con capacidades explícitas. Los recursos declarativos se priorizan sobre la ejecución de código; los plugins Python requerirán sandbox, permisos y una API de compatibilidad limitada y versionada.
+
+## D15 — Productividad ABL y Search Plus
+
+**Aceptada.** JC-IDE no reproducirá todos los asistentes PDSOE. Se separan comandos de edición local, plantillas/lexing por versión y análisis semántico; las capacidades caras se cargan bajo demanda.
+
+Atajos de edición: Ctrl+D duplicar, Ctrl+Shift+D borrar línea, Tab/Shift+Tab sangría, Ctrl+/ comentar/descomentar y Ctrl+Shift+/ bloque cuando el lenguaje lo soporta. ABL usa por defecto /* ... */. La selección de columna requiere semántica rectangular real; no basta una selección visual falsa.
+
+**Search Plus** tendrá prioridad funcional sobre los asistentes OO complejos. Búsqueda en proyecto cancelable, streaming y resultados tipados; índice y agentes opcionales. Los cambios masivos requieren vista previa y control de versiones de archivos.
+
+La política D13 sigue vigente: no consumir CI remoto antes de M5 salvo autorización explícita.
+
+Documentación: docs/ABL_EDITOR_COMMAND_SCOPE.md y docs/M2_SEARCH_PLUS.md.
