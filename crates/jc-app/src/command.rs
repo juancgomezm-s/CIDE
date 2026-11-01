@@ -182,8 +182,7 @@ impl CommandRegistry {
     }
 
     pub fn is_enabled(&self, id: CommandId, context: &CommandContext) -> bool {
-        self.get(id)
-            .is_some_and(|spec| (spec.enabled)(context))
+        self.get(id).is_some_and(|spec| (spec.enabled)(context))
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &CommandSpec> {
@@ -191,17 +190,39 @@ impl CommandRegistry {
     }
 }
 
-fn always(_: &CommandContext) -> bool { true }
-fn has_document(ctx: &CommandContext) -> bool { ctx.has_document }
-fn dirty_document(ctx: &CommandContext) -> bool { ctx.has_document && ctx.document_dirty }
-fn dirty_documents(ctx: &CommandContext) -> bool { ctx.dirty_documents > 0 }
-fn can_undo(ctx: &CommandContext) -> bool { ctx.has_document && ctx.can_undo }
-fn can_redo(ctx: &CommandContext) -> bool { ctx.has_document && ctx.can_redo }
-fn selection(ctx: &CommandContext) -> bool { ctx.has_document && ctx.has_selection }
-fn paste(ctx: &CommandContext) -> bool { ctx.has_document && ctx.clipboard_has_text }
-fn project(ctx: &CommandContext) -> bool { ctx.has_project }
-fn reopen(ctx: &CommandContext) -> bool { ctx.can_reopen_closed_tab }
-fn terminal(ctx: &CommandContext) -> bool { ctx.terminal_available }
+fn always(_: &CommandContext) -> bool {
+    true
+}
+fn has_document(ctx: &CommandContext) -> bool {
+    ctx.has_document
+}
+fn dirty_document(ctx: &CommandContext) -> bool {
+    ctx.has_document && ctx.document_dirty
+}
+fn dirty_documents(ctx: &CommandContext) -> bool {
+    ctx.dirty_documents > 0
+}
+fn can_undo(ctx: &CommandContext) -> bool {
+    ctx.has_document && ctx.can_undo
+}
+fn can_redo(ctx: &CommandContext) -> bool {
+    ctx.has_document && ctx.can_redo
+}
+fn selection(ctx: &CommandContext) -> bool {
+    ctx.has_document && ctx.has_selection
+}
+fn paste(ctx: &CommandContext) -> bool {
+    ctx.has_document && ctx.clipboard_has_text
+}
+fn project(ctx: &CommandContext) -> bool {
+    ctx.has_project
+}
+fn reopen(ctx: &CommandContext) -> bool {
+    ctx.can_reopen_closed_tab
+}
+fn terminal(ctx: &CommandContext) -> bool {
+    ctx.terminal_available
+}
 fn abl(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.is_abl() && ctx.has_progress_profile
 }
@@ -231,19 +252,27 @@ pub fn default_registry() -> CommandRegistry {
         spec!(FileClose, File, "Close", has_document),
         spec!(FileReopenClosed, File, "Reopen Closed Tab", reopen),
         spec!(FileExit, File, "Exit", always),
-
         spec!(EditUndo, Edit, "Undo", can_undo),
         spec!(EditRedo, Edit, "Redo", can_redo),
         spec!(EditCut, Edit, "Cut", selection),
         spec!(EditCopy, Edit, "Copy", selection),
         spec!(EditPaste, Edit, "Paste", paste),
         spec!(EditSelectAll, Edit, "Select All", has_document),
-        spec!(EditDuplicate, Edit, "Duplicate Selection/Line", has_document),
+        spec!(
+            EditDuplicate,
+            Edit,
+            "Duplicate Selection/Line",
+            has_document
+        ),
         spec!(EditDeleteLine, Edit, "Delete Line", has_document),
         spec!(EditMoveLineUp, Edit, "Move Line Up", has_document),
         spec!(EditMoveLineDown, Edit, "Move Line Down", has_document),
-        spec!(EditToggleLineComment, Edit, "Toggle Line Comment", has_document),
-
+        spec!(
+            EditToggleLineComment,
+            Edit,
+            "Toggle Line Comment",
+            has_document
+        ),
         spec!(SearchFind, Search, "Find", has_document),
         spec!(SearchReplace, Search, "Replace", has_document),
         spec!(SearchFindNext, Search, "Find Next", has_document),
@@ -253,9 +282,7 @@ pub fn default_registry() -> CommandRegistry {
         spec!(SearchToggleCase, Search, "Match Case", always),
         spec!(SearchToggleWholeWord, Search, "Whole Word", always),
         spec!(SearchToggleRegex, Search, "Regular Expression", always),
-
         spec!(PaletteOpen, Tools, "Command Palette…", always),
-
         spec!(TabNext, Navigation, "Next Tab", has_document),
         spec!(TabPrevious, Navigation, "Previous Tab", has_document),
         spec!(Tab1, Navigation, "Tab 1", has_document),
@@ -267,7 +294,6 @@ pub fn default_registry() -> CommandRegistry {
         spec!(Tab7, Navigation, "Tab 7", has_document),
         spec!(Tab8, Navigation, "Tab 8", has_document),
         spec!(Tab9, Navigation, "Last Tab", has_document),
-
         spec!(ViewExplorer, View, "Explorer", always),
         spec!(ViewDatabase, View, "Database / Schema", always),
         spec!(ViewGit, View, "Git", always),
@@ -277,15 +303,17 @@ pub fn default_registry() -> CommandRegistry {
         spec!(ViewProblems, View, "Problems", always),
         spec!(ViewOutput, View, "Output", always),
         spec!(ViewSearchResults, View, "Search Results", always),
-
         spec!(FocusNext, Navigation, "Focus Next Area", always),
         spec!(FocusPrevious, Navigation, "Focus Previous Area", always),
-
         spec!(ProgressCheck, Build, "Check Syntax", abl),
         spec!(ProgressCompile, Build, "Compile", abl),
         spec!(ProgressRun, Build, "Run", abl),
-        spec!(ProgressRefreshSchema, Build, "Refresh Database Schema", abl_project),
-
+        spec!(
+            ProgressRefreshSchema,
+            Build,
+            "Refresh Database Schema",
+            abl_project
+        ),
         spec!(MenuFile, Menu, "File Menu", always),
         spec!(MenuEdit, Menu, "Edit Menu", always),
         spec!(MenuSearch, Menu, "Search Menu", always),

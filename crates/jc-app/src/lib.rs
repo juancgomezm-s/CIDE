@@ -13,10 +13,14 @@ mod menu;
 mod panels;
 mod tabs;
 
-pub use command::{default_registry, CommandCategory, CommandContext, CommandId, CommandRegistry, CommandSpec};
+pub use command::{
+    default_registry, CommandCategory, CommandContext, CommandId, CommandRegistry, CommandSpec,
+};
 pub use dialog::{DialogAction, DialogButton, DialogKind, DialogSpec};
 pub use focus::{EscapeOutcome, FocusManager, Overlay, PrimaryFocus};
-pub use keymap::{default_keymap, Binding, Key, KeyMap, KeyMapError, KeyScope, KeyStroke, Modifiers, Resolution};
+pub use keymap::{
+    default_keymap, Binding, Key, KeyMap, KeyMapError, KeyScope, KeyStroke, Modifiers, Resolution,
+};
 pub use menu::{default_menu_model, Menu, MenuId, MenuItem, MenuModel, MenuValidationError};
 pub use panels::{BottomPanel, PanelManager, SidebarView};
 pub use tabs::{CloseRequest, Tab, TabId, TabManager};

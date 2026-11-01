@@ -39,13 +39,23 @@ impl Default for FocusManager {
 }
 
 impl FocusManager {
-    pub fn primary(&self) -> PrimaryFocus { self.primary }
-    pub fn active_overlay(&self) -> Option<Overlay> { self.overlays.last().copied() }
-    pub fn overlays(&self) -> &[Overlay] { &self.overlays }
+    pub fn primary(&self) -> PrimaryFocus {
+        self.primary
+    }
+    pub fn active_overlay(&self) -> Option<Overlay> {
+        self.overlays.last().copied()
+    }
+    pub fn overlays(&self) -> &[Overlay] {
+        &self.overlays
+    }
 
     pub fn focus(&mut self, focus: PrimaryFocus, panels: &PanelManager) -> bool {
-        if focus == PrimaryFocus::Sidebar && !panels.sidebar_visible() { return false; }
-        if focus == PrimaryFocus::BottomPanel && !panels.bottom_visible() { return false; }
+        if focus == PrimaryFocus::Sidebar && !panels.sidebar_visible() {
+            return false;
+        }
+        if focus == PrimaryFocus::BottomPanel && !panels.bottom_visible() {
+            return false;
+        }
         self.primary = focus;
         true
     }
@@ -82,9 +92,16 @@ impl FocusManager {
             return self.primary;
         }
         let mut order = vec![PrimaryFocus::Editor];
-        if panels.sidebar_visible() { order.push(PrimaryFocus::Sidebar); }
-        if panels.bottom_visible() { order.push(PrimaryFocus::BottomPanel); }
-        let current = order.iter().position(|value| *value == self.primary).unwrap_or(0);
+        if panels.sidebar_visible() {
+            order.push(PrimaryFocus::Sidebar);
+        }
+        if panels.bottom_visible() {
+            order.push(PrimaryFocus::BottomPanel);
+        }
+        let current = order
+            .iter()
+            .position(|value| *value == self.primary)
+            .unwrap_or(0);
         let next = if forward {
             (current + 1) % order.len()
         } else if current == 0 {

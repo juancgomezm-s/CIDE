@@ -1,8 +1,16 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DialogKind { UnsavedChanges, ConfirmExit }
+pub enum DialogKind {
+    UnsavedChanges,
+    ConfirmExit,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DialogAction { Save, Discard, Cancel, Confirm }
+pub enum DialogAction {
+    Save,
+    Discard,
+    Cancel,
+    Confirm,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DialogButton {
@@ -26,9 +34,21 @@ impl DialogSpec {
             title: "Unsaved changes".into(),
             message: format!("{document} has unsaved changes."),
             buttons: vec![
-                DialogButton { mnemonic: 's', label: "Save", action: DialogAction::Save },
-                DialogButton { mnemonic: 'd', label: "Don't Save", action: DialogAction::Discard },
-                DialogButton { mnemonic: '\u{1b}', label: "Cancel", action: DialogAction::Cancel },
+                DialogButton {
+                    mnemonic: 's',
+                    label: "Save",
+                    action: DialogAction::Save,
+                },
+                DialogButton {
+                    mnemonic: 'd',
+                    label: "Don't Save",
+                    action: DialogAction::Discard,
+                },
+                DialogButton {
+                    mnemonic: '\u{1b}',
+                    label: "Cancel",
+                    action: DialogAction::Cancel,
+                },
             ],
         }
     }
@@ -43,9 +63,10 @@ impl DialogSpec {
 
     pub fn has_unique_mnemonics(&self) -> bool {
         for (index, button) in self.buttons.iter().enumerate() {
-            if self.buttons[index + 1..].iter().any(|other| {
-                other.mnemonic.eq_ignore_ascii_case(&button.mnemonic)
-            }) {
+            if self.buttons[index + 1..]
+                .iter()
+                .any(|other| other.mnemonic.eq_ignore_ascii_case(&button.mnemonic))
+            {
                 return false;
             }
         }

@@ -12,8 +12,12 @@ impl Modifiers {
     pub const ALT: Self = Self(2);
     pub const SHIFT: Self = Self(4);
 
-    pub const fn union(self, other: Self) -> Self { Self(self.0 | other.0) }
-    pub const fn contains(self, other: Self) -> bool { self.0 & other.0 == other.0 }
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -40,11 +44,21 @@ pub struct KeyStroke {
 }
 
 impl KeyStroke {
-    pub const fn new(modifiers: Modifiers, key: Key) -> Self { Self { modifiers, key } }
-    pub const fn plain(key: Key) -> Self { Self::new(Modifiers::NONE, key) }
-    pub const fn ctrl(key: Key) -> Self { Self::new(Modifiers::CTRL, key) }
-    pub const fn alt(key: Key) -> Self { Self::new(Modifiers::ALT, key) }
-    pub const fn shift(key: Key) -> Self { Self::new(Modifiers::SHIFT, key) }
+    pub const fn new(modifiers: Modifiers, key: Key) -> Self {
+        Self { modifiers, key }
+    }
+    pub const fn plain(key: Key) -> Self {
+        Self::new(Modifiers::NONE, key)
+    }
+    pub const fn ctrl(key: Key) -> Self {
+        Self::new(Modifiers::CTRL, key)
+    }
+    pub const fn alt(key: Key) -> Self {
+        Self::new(Modifiers::ALT, key)
+    }
+    pub const fn shift(key: Key) -> Self {
+        Self::new(Modifiers::SHIFT, key)
+    }
     pub const fn ctrl_shift(key: Key) -> Self {
         Self::new(Modifiers::CTRL.union(Modifiers::SHIFT), key)
     }
@@ -55,9 +69,15 @@ impl KeyStroke {
 
 impl fmt::Display for KeyStroke {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.modifiers.contains(Modifiers::CTRL) { f.write_str("Ctrl+")?; }
-        if self.modifiers.contains(Modifiers::ALT) { f.write_str("Alt+")?; }
-        if self.modifiers.contains(Modifiers::SHIFT) { f.write_str("Shift+")?; }
+        if self.modifiers.contains(Modifiers::CTRL) {
+            f.write_str("Ctrl+")?;
+        }
+        if self.modifiers.contains(Modifiers::ALT) {
+            f.write_str("Alt+")?;
+        }
+        if self.modifiers.contains(Modifiers::SHIFT) {
+            f.write_str("Shift+")?;
+        }
         match self.key {
             Key::Char(c) => write!(f, "{}", c.to_ascii_uppercase()),
             Key::Function(n) => write!(f, "F{n}"),
@@ -116,7 +136,12 @@ pub struct Binding {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyMapError {
     UnknownCommand(CommandId),
-    Duplicate { scope: KeyScope, stroke: KeyStroke, first: CommandId, second: CommandId },
+    Duplicate {
+        scope: KeyScope,
+        stroke: KeyStroke,
+        first: CommandId,
+        second: CommandId,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,8 +157,12 @@ pub struct KeyMap {
 }
 
 impl KeyMap {
-    pub fn new(bindings: Vec<Binding>) -> Self { Self { bindings } }
-    pub fn bindings(&self) -> &[Binding] { &self.bindings }
+    pub fn new(bindings: Vec<Binding>) -> Self {
+        Self { bindings }
+    }
+    pub fn bindings(&self) -> &[Binding] {
+        &self.bindings
+    }
 
     pub fn validate(&self, registry: &CommandRegistry) -> Vec<KeyMapError> {
         let mut errors = Vec::new();
@@ -167,9 +196,11 @@ impl KeyMap {
             .bindings
             .iter()
             .find(|binding| binding.scope == scope && binding.stroke == stroke)
-            .or_else(|| self.bindings.iter().find(|binding| {
-                binding.scope == KeyScope::Global && binding.stroke == stroke
-            }))
+            .or_else(|| {
+                self.bindings
+                    .iter()
+                    .find(|binding| binding.scope == KeyScope::Global && binding.stroke == stroke)
+            })
             .map(|binding| binding.command);
         match command {
             Some(id) if registry.is_enabled(id, context) => Resolution::Enabled(id),
@@ -179,16 +210,24 @@ impl KeyMap {
     }
 
     pub fn shortcuts_for(&self, command: CommandId) -> impl Iterator<Item = &Binding> {
-        self.bindings.iter().filter(move |binding| binding.command == command)
+        self.bindings
+            .iter()
+            .filter(move |binding| binding.command == command)
     }
 
     pub fn primary_shortcut(&self, command: CommandId) -> Option<KeyStroke> {
-        self.shortcuts_for(command).next().map(|binding| binding.stroke)
+        self.shortcuts_for(command)
+            .next()
+            .map(|binding| binding.stroke)
     }
 }
 
 fn bind(scope: KeyScope, stroke: KeyStroke, command: CommandId) -> Binding {
-    Binding { scope, stroke, command }
+    Binding {
+        scope,
+        stroke,
+        command,
+    }
 }
 
 pub fn default_keymap() -> KeyMap {
@@ -207,7 +246,6 @@ pub fn default_keymap() -> KeyMap {
         bind(Global, KeyStroke::ctrl(c('w')), FileClose),
         bind(Global, KeyStroke::ctrl_shift(c('t')), FileReopenClosed),
         bind(Global, KeyStroke::alt(f(4)), FileExit),
-
         bind(Editor, KeyStroke::ctrl(c('z')), EditUndo),
         bind(Editor, KeyStroke::ctrl(c('y')), EditRedo),
         bind(Editor, KeyStroke::ctrl(c('x')), EditCut),
@@ -219,14 +257,12 @@ pub fn default_keymap() -> KeyMap {
         bind(Editor, KeyStroke::alt(Up), EditMoveLineUp),
         bind(Editor, KeyStroke::alt(Down), EditMoveLineDown),
         bind(Editor, KeyStroke::ctrl(c('/')), EditToggleLineComment),
-
         bind(Editor, KeyStroke::ctrl(c('f')), SearchFind),
         bind(Editor, KeyStroke::ctrl(c('h')), SearchReplace),
         bind(Editor, KeyStroke::plain(f(3)), SearchFindNext),
         bind(Editor, KeyStroke::shift(f(3)), SearchFindPrevious),
         bind(Global, KeyStroke::ctrl_shift(c('f')), SearchProject),
         bind(Global, KeyStroke::ctrl_shift(c('h')), SearchReplaceProject),
-
         bind(Find, KeyStroke::plain(Enter), SearchFindNext),
         bind(Find, KeyStroke::shift(Enter), SearchFindPrevious),
         bind(Find, KeyStroke::alt(c('c')), SearchToggleCase),
@@ -237,9 +273,7 @@ pub fn default_keymap() -> KeyMap {
         bind(Replace, KeyStroke::alt(c('c')), SearchToggleCase),
         bind(Replace, KeyStroke::alt(c('w')), SearchToggleWholeWord),
         bind(Replace, KeyStroke::alt(c('r')), SearchToggleRegex),
-
         bind(Global, KeyStroke::ctrl_shift(c('p')), PaletteOpen),
-
         bind(Global, KeyStroke::ctrl(Tab), TabNext),
         bind(Global, KeyStroke::ctrl_shift(Tab), TabPrevious),
         bind(Global, KeyStroke::ctrl(PageDown), TabNext),
@@ -253,7 +287,6 @@ pub fn default_keymap() -> KeyMap {
         bind(Global, KeyStroke::alt(c('7')), Tab7),
         bind(Global, KeyStroke::alt(c('8')), Tab8),
         bind(Global, KeyStroke::alt(c('9')), Tab9),
-
         bind(Global, KeyStroke::ctrl_shift(c('e')), ViewExplorer),
         bind(Global, KeyStroke::ctrl_shift(c('d')), ViewDatabase),
         bind(Global, KeyStroke::ctrl_shift(c('g')), ViewGit),
@@ -263,15 +296,12 @@ pub fn default_keymap() -> KeyMap {
         bind(BottomPanel, KeyStroke::alt(c('2')), ViewOutput),
         bind(BottomPanel, KeyStroke::alt(c('3')), ViewSearchResults),
         bind(BottomPanel, KeyStroke::alt(c('4')), ViewTerminal),
-
         bind(Global, KeyStroke::plain(f(6)), FocusNext),
         bind(Global, KeyStroke::shift(f(6)), FocusPrevious),
-
         bind(Global, KeyStroke::plain(f(5)), ProgressRun),
         bind(Global, KeyStroke::plain(f(7)), ProgressCheck),
         bind(Global, KeyStroke::ctrl(f(7)), ProgressCompile),
         bind(Global, KeyStroke::shift(f(7)), ProgressRefreshSchema),
-
         bind(Global, KeyStroke::alt(c('f')), MenuFile),
         bind(Global, KeyStroke::alt(c('e')), MenuEdit),
         bind(Global, KeyStroke::alt(c('s')), MenuSearch),

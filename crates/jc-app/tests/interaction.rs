@@ -60,7 +60,12 @@ fn save_binding_remains_visible_but_disabled_when_document_is_clean() {
     ctx.document_dirty = false;
     ctx.dirty_documents = 0;
     assert_eq!(
-        keymap.resolve(KeyScope::Editor, KeyStroke::ctrl(Key::Char('s')), &registry, &ctx),
+        keymap.resolve(
+            KeyScope::Editor,
+            KeyStroke::ctrl(Key::Char('s')),
+            &registry,
+            &ctx
+        ),
         Resolution::Disabled(CommandId::FileSave)
     );
 }
@@ -71,18 +76,33 @@ fn progress_shortcuts_require_abl_and_a_progress_profile() {
     let keymap = default_keymap();
     let mut ctx = editor_context();
     assert_eq!(
-        keymap.resolve(KeyScope::Editor, KeyStroke::plain(Key::Function(7)), &registry, &ctx),
+        keymap.resolve(
+            KeyScope::Editor,
+            KeyStroke::plain(Key::Function(7)),
+            &registry,
+            &ctx
+        ),
         Resolution::Enabled(CommandId::ProgressCheck)
     );
     ctx.active_language = Some("rust".into());
     assert_eq!(
-        keymap.resolve(KeyScope::Editor, KeyStroke::plain(Key::Function(7)), &registry, &ctx),
+        keymap.resolve(
+            KeyScope::Editor,
+            KeyStroke::plain(Key::Function(7)),
+            &registry,
+            &ctx
+        ),
         Resolution::Disabled(CommandId::ProgressCheck)
     );
     ctx.active_language = Some("abl".into());
     ctx.has_progress_profile = false;
     assert_eq!(
-        keymap.resolve(KeyScope::Editor, KeyStroke::ctrl(Key::Function(7)), &registry, &ctx),
+        keymap.resolve(
+            KeyScope::Editor,
+            KeyStroke::ctrl(Key::Function(7)),
+            &registry,
+            &ctx
+        ),
         Resolution::Disabled(CommandId::ProgressCompile)
     );
 }
@@ -133,7 +153,10 @@ fn escape_closes_transient_layers_before_returning_to_editor() {
     assert!(focus.focus(PrimaryFocus::BottomPanel, &panels));
     focus.open_overlay(Overlay::Find);
     focus.open_overlay(Overlay::Dialog);
-    assert_eq!(focus.escape(), EscapeOutcome::ClosedOverlay(Overlay::Dialog));
+    assert_eq!(
+        focus.escape(),
+        EscapeOutcome::ClosedOverlay(Overlay::Dialog)
+    );
     assert_eq!(focus.escape(), EscapeOutcome::ClosedOverlay(Overlay::Find));
     assert_eq!(focus.escape(), EscapeOutcome::FocusedEditor);
     assert_eq!(focus.primary(), PrimaryFocus::Editor);
@@ -163,11 +186,14 @@ fn dirty_tabs_cannot_close_without_an_explicit_choice() {
     assert!(tabs.set_dirty(second, true));
     assert_eq!(tabs.request_close(second), CloseRequest::NeedsSave(second));
     assert_eq!(tabs.tabs().len(), 2);
-    assert_eq!(tabs.discard_and_close(second), CloseRequest::Closed(Tab {
-        id: second,
-        title: "two.p".into(),
-        dirty: true,
-    }));
+    assert_eq!(
+        tabs.discard_and_close(second),
+        CloseRequest::Closed(Tab {
+            id: second,
+            title: "two.p".into(),
+            dirty: true,
+        })
+    );
     assert_eq!(tabs.active_id(), Some(first));
     assert!(tabs.can_reopen());
     assert_eq!(tabs.reopen_last(), Some(second));
@@ -195,13 +221,19 @@ fn unsaved_dialog_has_stable_unique_keyboard_choices() {
     assert!(dialog.has_unique_mnemonics());
     assert_eq!(dialog.resolve_mnemonic('S'), Some(DialogAction::Save));
     assert_eq!(dialog.resolve_mnemonic('d'), Some(DialogAction::Discard));
-    assert_eq!(dialog.resolve_mnemonic('\u{1b}'), Some(DialogAction::Cancel));
+    assert_eq!(
+        dialog.resolve_mnemonic('\u{1b}'),
+        Some(DialogAction::Cancel)
+    );
     assert_eq!(dialog.resolve_mnemonic('x'), None);
 }
 
 #[test]
 fn display_strings_are_stable_and_human_readable() {
-    assert_eq!(KeyStroke::ctrl_shift(Key::Char('p')).to_string(), "Ctrl+Shift+P");
+    assert_eq!(
+        KeyStroke::ctrl_shift(Key::Char('p')).to_string(),
+        "Ctrl+Shift+P"
+    );
     assert_eq!(KeyStroke::alt(Key::Function(4)).to_string(), "Alt+F4");
     assert_eq!(KeyStroke::ctrl(Key::Char('`')).to_string(), "Ctrl+`");
 }

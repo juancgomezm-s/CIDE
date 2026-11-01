@@ -8,7 +8,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action { Check, Compile, Schema }
+pub enum Action {
+    Check,
+    Compile,
+    Schema,
+}
 
 impl Action {
     pub fn as_str(self) -> &'static str {
@@ -68,10 +72,16 @@ impl fmt::Display for BridgeError {
 impl std::error::Error for BridgeError {}
 
 fn config_error(message: impl Into<String>) -> BridgeError {
-    BridgeError { line: None, message: message.into() }
+    BridgeError {
+        line: None,
+        message: message.into(),
+    }
 }
 fn parse_error(line: usize, message: impl Into<String>) -> BridgeError {
-    BridgeError { line: Some(line), message: message.into() }
+    BridgeError {
+        line: Some(line),
+        message: message.into(),
+    }
 }
 
 fn ascii_line<'a>(value: &'a str, field: &str) -> Result<&'a str, BridgeError> {
@@ -84,7 +94,9 @@ fn ascii_line<'a>(value: &'a str, field: &str) -> Result<&'a str, BridgeError> {
 }
 
 fn path_line<'a>(path: &'a Path, field: &str) -> Result<&'a str, BridgeError> {
-    let value = path.to_str().ok_or_else(|| config_error(format!("{field} must be an ASCII path")))?;
+    let value = path
+        .to_str()
+        .ok_or_else(|| config_error(format!("{field} must be an ASCII path")))?;
     ascii_line(value, field)?;
     let bytes = value.as_bytes();
     let windows_absolute = bytes.len() >= 3
@@ -102,9 +114,13 @@ fn code_page(value: &str, field: &str) -> Result<(), BridgeError> {
     if value.is_empty()
         || value.len() > 64
         || !value.as_bytes()[0].is_ascii_alphanumeric()
-        || !value.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
     {
-        return Err(config_error(format!("{field} must be an explicit Progress code-page name")));
+        return Err(config_error(format!(
+            "{field} must be an explicit Progress code-page name"
+        )));
     }
     Ok(())
 }
@@ -114,7 +130,9 @@ impl BridgeRequest {
         let output = path_line(&self.output_dir, "output_dir")?;
         let source = match (&self.action, &self.source) {
             (Action::Schema, None) => "",
-            (Action::Schema, Some(_)) => return Err(config_error("schema requests must not specify source")),
+            (Action::Schema, Some(_)) => {
+                return Err(config_error("schema requests must not specify source"))
+            }
             (_, Some(path)) => path_line(path, "source")?,
             (_, None) => return Err(config_error("check/compile requests require source")),
         };
@@ -127,7 +145,8 @@ impl BridgeRequest {
 {propath}
 ",
             self.action.as_str()
-        ).into_bytes())
+        )
+        .into_bytes())
     }
 
     pub fn response_path(&self) -> PathBuf {
@@ -165,15 +184,25 @@ pub fn build_command(
         OsString::from("-param"),
         request_file.as_os_str().to_owned(),
     ]);
-    Ok(CommandSpec { executable: profile.executable.clone(), args })
+    Ok(CommandSpec {
+        executable: profile.executable.clone(),
+        args,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncodedText(pub Vec<u8>);
-impl EncodedText { pub fn as_bytes(&self) -> &[u8] { &self.0 } }
+impl EncodedText {
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Severity { Error, Warning }
+pub enum Severity {
+    Error,
+    Warning,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
@@ -186,7 +215,10 @@ pub struct Diagnostic {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchemaRecord {
-    Table { database: EncodedText, table: EncodedText },
+    Table {
+        database: EncodedText,
+        table: EncodedText,
+    },
     Field {
         database: EncodedText,
         table: EncodedText,
@@ -214,7 +246,10 @@ pub enum SchemaRecord {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompletionStatus { Ok, Error }
+pub enum CompletionStatus {
+    Ok,
+    Error,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BridgeResponse {
@@ -238,28 +273,42 @@ fn text(field: &str, line: usize) -> Result<EncodedText, BridgeError> {
     if field.len() % 2 != 0 || field.len() > 65534 {
         return Err(parse_error(line, "invalid hexadecimal text length"));
     }
-    let bytes = field.as_bytes().chunks_exact(2).map(|pair| match (nibble(pair[0]), nibble(pair[1])) {
-        (Some(hi), Some(lo)) => Ok(hi * 16 + lo),
-        _ => Err(parse_error(line, "invalid hexadecimal text")),
-    }).collect::<Result<Vec<_>, _>>()?;
+    let bytes = field
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| match (nibble(pair[0]), nibble(pair[1])) {
+            (Some(hi), Some(lo)) => Ok(hi * 16 + lo),
+            _ => Err(parse_error(line, "invalid hexadecimal text")),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(EncodedText(bytes))
 }
 
 fn optional_text(field: &str, line: usize) -> Result<Option<EncodedText>, BridgeError> {
-    if field == "-" { Ok(None) } else { text(field, line).map(Some) }
+    if field == "-" {
+        Ok(None)
+    } else {
+        text(field, line).map(Some)
+    }
 }
 
 fn number(field: &str, line: usize) -> Result<u32, BridgeError> {
     if field.is_empty() || !field.bytes().all(|b| b.is_ascii_digit()) {
         return Err(parse_error(line, "invalid unsigned integer"));
     }
-    field.parse().map_err(|_| parse_error(line, "integer overflow"))
+    field
+        .parse()
+        .map_err(|_| parse_error(line, "integer overflow"))
 }
 
 fn position(field: &str, line: usize) -> Result<Option<u32>, BridgeError> {
-    if field == "-" { return Ok(None); }
+    if field == "-" {
+        return Ok(None);
+    }
     let value = number(field, line)?;
-    if value == 0 { return Err(parse_error(line, "positions are one-based or '-'")); }
+    if value == 0 {
+        return Err(parse_error(line, "positions are one-based or '-'"));
+    }
     Ok(Some(value))
 }
 
@@ -276,15 +325,27 @@ pub fn parse_response(bytes: &[u8]) -> Result<BridgeResponse, BridgeError> {
         return Err(config_error("bridge response exceeds 32 MiB"));
     }
     if !bytes.is_ascii() {
-        return Err(config_error("bridge response must be ASCII with hex-encoded text"));
+        return Err(config_error(
+            "bridge response must be ASCII with hex-encoded text",
+        ));
     }
-    let input = std::str::from_utf8(bytes).map_err(|_| config_error("invalid response encoding"))?;
-    let mut lines = input.split_terminator('\n').map(|line| line.strip_suffix('\r').unwrap_or(line));
-    let header = lines.next().ok_or_else(|| config_error("missing response header"))?;
-    if header.len() > 128 * 1024 { return Err(parse_error(1, "record exceeds 128 KiB")); }
+    let input =
+        std::str::from_utf8(bytes).map_err(|_| config_error("invalid response encoding"))?;
+    let mut lines = input
+        .split_terminator('\n')
+        .map(|line| line.strip_suffix('\r').unwrap_or(line));
+    let header = lines
+        .next()
+        .ok_or_else(|| config_error("missing response header"))?;
+    if header.len() > 128 * 1024 {
+        return Err(parse_error(1, "record exceeds 128 KiB"));
+    }
     let parts: Vec<_> = header.splitn(5, '|').collect();
     if parts.len() != 4 || parts[0] != "JCIDE" || parts[1] != "1" {
-        return Err(parse_error(1, "expected JCIDE|1|cpinternal_hex|cpstream_hex"));
+        return Err(parse_error(
+            1,
+            "expected JCIDE|1|cpinternal_hex|cpstream_hex",
+        ));
     }
     let cpinternal = String::from_utf8(text(parts[2], 1)?.0)
         .map_err(|_| parse_error(1, "non-ASCII code-page name"))?;
@@ -297,8 +358,12 @@ pub fn parse_response(bytes: &[u8]) -> Result<BridgeResponse, BridgeError> {
     let mut status = None;
     for (offset, line) in lines.enumerate() {
         let line_number = offset + 2;
-        if status.is_some() { return Err(parse_error(line_number, "data after END record")); }
-        if line.len() > 128 * 1024 { return Err(parse_error(line_number, "record exceeds 128 KiB")); }
+        if status.is_some() {
+            return Err(parse_error(line_number, "data after END record"));
+        }
+        if line.len() > 128 * 1024 {
+            return Err(parse_error(line_number, "record exceeds 128 KiB"));
+        }
         let p: Vec<_> = line.splitn(9, '|').collect();
         match p.first().copied().unwrap_or("") {
             "DIAG" if p.len() == 6 => diagnostics.push(Diagnostic {
@@ -340,17 +405,30 @@ pub fn parse_response(bytes: &[u8]) -> Result<BridgeResponse, BridgeError> {
                 field: text(p[5], line_number)?,
                 ascending: flag(p[6], line_number)?,
             }),
-            "END" if p.len() == 2 => status = Some(match p[1] {
-                "OK" => CompletionStatus::Ok,
-                "ERROR" => CompletionStatus::Error,
-                _ => return Err(parse_error(line_number, "invalid END status")),
-            }),
-            _ => return Err(parse_error(line_number, "unknown record or wrong field count")),
+            "END" if p.len() == 2 => {
+                status = Some(match p[1] {
+                    "OK" => CompletionStatus::Ok,
+                    "ERROR" => CompletionStatus::Error,
+                    _ => return Err(parse_error(line_number, "invalid END status")),
+                })
+            }
+            _ => {
+                return Err(parse_error(
+                    line_number,
+                    "unknown record or wrong field count",
+                ))
+            }
         }
     }
     let status = status.ok_or_else(|| config_error("incomplete response: missing END record"))?;
     if status == CompletionStatus::Ok && diagnostics.iter().any(|d| d.severity == Severity::Error) {
         return Err(config_error("END|OK contradicts error diagnostics"));
     }
-    Ok(BridgeResponse { cpinternal, cpstream, diagnostics, schema, status })
+    Ok(BridgeResponse {
+        cpinternal,
+        cpstream,
+        diagnostics,
+        schema,
+        status,
+    })
 }

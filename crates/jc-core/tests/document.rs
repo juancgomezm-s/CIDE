@@ -148,7 +148,9 @@ fn consecutive_appends_coalesce_adjacent_added_bytes() {
 
 #[test]
 fn output_error_is_reported_without_marking_document_saved() {
-    struct FailingWriter { remaining: usize }
+    struct FailingWriter {
+        remaining: usize,
+    }
     impl Write for FailingWriter {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             if self.remaining == 0 {
@@ -158,12 +160,16 @@ fn output_error_is_reported_without_marking_document_saved() {
             self.remaining -= n;
             Ok(n)
         }
-        fn flush(&mut self) -> io::Result<()> { Ok(()) }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
     }
     let mut document = Document::from_bytes(b"abc".to_vec());
     document.insert(1, b"xy").unwrap();
     let revision = document.revision();
-    assert!(document.write_to(&mut FailingWriter { remaining: 2 }).is_err());
+    assert!(document
+        .write_to(&mut FailingWriter { remaining: 2 })
+        .is_err());
     assert_eq!(document.to_bytes(), b"axybc");
     assert_eq!(document.revision(), revision);
     assert!(document.is_modified());
@@ -191,12 +197,16 @@ fn deterministic_edits_match_an_independent_flat_buffer_history() {
             0 => {
                 let expected = cursor > 0;
                 assert_eq!(document.undo(), expected);
-                if expected { cursor -= 1; }
+                if expected {
+                    cursor -= 1;
+                }
             }
             1 => {
                 let expected = cursor + 1 < snapshots.len();
                 assert_eq!(document.redo(), expected);
-                if expected { cursor += 1; }
+                if expected {
+                    cursor += 1;
+                }
             }
             2 => {
                 document.mark_saved();
@@ -222,7 +232,15 @@ fn deterministic_edits_match_an_independent_flat_buffer_history() {
         assert_eq!(document.len(), snapshots[cursor].0.len(), "step {step}");
         assert_eq!(document.revision(), snapshots[cursor].1, "step {step}");
         assert_eq!(document.can_undo(), cursor > 0, "step {step}");
-        assert_eq!(document.can_redo(), cursor + 1 < snapshots.len(), "step {step}");
-        assert_eq!(document.is_modified(), snapshots[cursor].1 != saved_revision, "step {step}");
+        assert_eq!(
+            document.can_redo(),
+            cursor + 1 < snapshots.len(),
+            "step {step}"
+        );
+        assert_eq!(
+            document.is_modified(),
+            snapshots[cursor].1 != saved_revision,
+            "step {step}"
+        );
     }
 }

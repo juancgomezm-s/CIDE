@@ -2,10 +2,22 @@ use crate::command::{CommandContext, CommandId, CommandRegistry};
 use crate::keymap::{KeyMap, KeyStroke};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum MenuId { File, Edit, Search, Project, Build, Tools, View, Help }
+pub enum MenuId {
+    File,
+    Edit,
+    Search,
+    Project,
+    Build,
+    Tools,
+    View,
+    Help,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MenuItem { Command(CommandId), Separator }
+pub enum MenuItem {
+    Command(CommandId),
+    Separator,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Menu {
@@ -17,8 +29,15 @@ pub struct Menu {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuValidationError {
-    UnknownCommand { menu: MenuId, command: CommandId },
-    DuplicateMnemonic { first: MenuId, second: MenuId, mnemonic: char },
+    UnknownCommand {
+        menu: MenuId,
+        command: CommandId,
+    },
+    DuplicateMnemonic {
+        first: MenuId,
+        second: MenuId,
+        mnemonic: char,
+    },
     LeadingSeparator(MenuId),
     TrailingSeparator(MenuId),
     ConsecutiveSeparator(MenuId),
@@ -33,12 +52,20 @@ pub struct MenuEntryView {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MenuModel { menus: Vec<Menu> }
+pub struct MenuModel {
+    menus: Vec<Menu>,
+}
 
 impl MenuModel {
-    pub fn new(menus: Vec<Menu>) -> Self { Self { menus } }
-    pub fn menus(&self) -> &[Menu] { &self.menus }
-    pub fn get(&self, id: MenuId) -> Option<&Menu> { self.menus.iter().find(|menu| menu.id == id) }
+    pub fn new(menus: Vec<Menu>) -> Self {
+        Self { menus }
+    }
+    pub fn menus(&self) -> &[Menu] {
+        &self.menus
+    }
+    pub fn get(&self, id: MenuId) -> Option<&Menu> {
+        self.menus.iter().find(|menu| menu.id == id)
+    }
 
     pub fn validate(&self, registry: &CommandRegistry) -> Vec<MenuValidationError> {
         let mut errors = Vec::new();
@@ -66,7 +93,10 @@ impl MenuModel {
             for item in &menu.items {
                 if let MenuItem::Command(command) = item {
                     if !registry.contains(*command) {
-                        errors.push(MenuValidationError::UnknownCommand { menu: menu.id, command: *command });
+                        errors.push(MenuValidationError::UnknownCommand {
+                            menu: menu.id,
+                            command: *command,
+                        });
                     }
                 }
             }
@@ -81,57 +111,139 @@ impl MenuModel {
         keymap: &KeyMap,
         context: &CommandContext,
     ) -> Vec<Option<MenuEntryView>> {
-        let Some(menu) = self.get(id) else { return Vec::new(); };
-        menu.items.iter().map(|item| match item {
-            MenuItem::Separator => None,
-            MenuItem::Command(command) => registry.get(*command).map(|spec| MenuEntryView {
-                command: *command,
-                label: spec.label,
-                shortcut: keymap.primary_shortcut(*command),
-                enabled: registry.is_enabled(*command, context),
-            }),
-        }).collect()
+        let Some(menu) = self.get(id) else {
+            return Vec::new();
+        };
+        menu.items
+            .iter()
+            .map(|item| match item {
+                MenuItem::Separator => None,
+                MenuItem::Command(command) => registry.get(*command).map(|spec| MenuEntryView {
+                    command: *command,
+                    label: spec.label,
+                    shortcut: keymap.primary_shortcut(*command),
+                    enabled: registry.is_enabled(*command, context),
+                }),
+            })
+            .collect()
     }
 }
 
 fn menu(id: MenuId, title: &'static str, mnemonic: char, items: &[MenuItem]) -> Menu {
-    Menu { id, title, mnemonic, items: items.to_vec() }
+    Menu {
+        id,
+        title,
+        mnemonic,
+        items: items.to_vec(),
+    }
 }
-fn command(id: CommandId) -> MenuItem { MenuItem::Command(id) }
+fn command(id: CommandId) -> MenuItem {
+    MenuItem::Command(id)
+}
 const SEP: MenuItem = MenuItem::Separator;
 
 pub fn default_menu_model() -> MenuModel {
     use CommandId::*;
     use MenuId::*;
     MenuModel::new(vec![
-        menu(File, "File", 'f', &[
-            command(FileNew), command(FileOpen), command(FileOpenFolder), SEP,
-            command(FileSave), command(FileSaveAs), command(FileSaveAll), SEP,
-            command(FileClose), command(FileReopenClosed), SEP, command(FileExit),
-        ]),
-        menu(Edit, "Edit", 'e', &[
-            command(EditUndo), command(EditRedo), SEP,
-            command(EditCut), command(EditCopy), command(EditPaste), command(EditSelectAll), SEP,
-            command(EditDuplicate), command(EditDeleteLine), command(EditMoveLineUp),
-            command(EditMoveLineDown), command(EditToggleLineComment),
-        ]),
-        menu(Search, "Search", 's', &[
-            command(SearchFind), command(SearchReplace), command(SearchFindNext),
-            command(SearchFindPrevious), SEP, command(SearchProject), command(SearchReplaceProject),
-        ]),
-        menu(Project, "Project", 'p', &[
-            command(ViewExplorer), command(ViewDatabase), command(ViewSymbols),
-        ]),
-        menu(Build, "Build", 'b', &[
-            command(ProgressCheck), command(ProgressCompile), SEP,
-            command(ProgressRun), SEP, command(ProgressRefreshSchema),
-        ]),
-        menu(Tools, "Tools", 't', &[command(PaletteOpen), command(ViewTerminal)]),
-        menu(View, "View", 'v', &[
-            command(ViewExplorer), command(ViewDatabase), command(ViewGit), command(ViewSymbols), SEP,
-            command(ViewProblems), command(ViewOutput), command(ViewSearchResults),
-            command(ViewToggleBottomPanel),
-        ]),
+        menu(
+            File,
+            "File",
+            'f',
+            &[
+                command(FileNew),
+                command(FileOpen),
+                command(FileOpenFolder),
+                SEP,
+                command(FileSave),
+                command(FileSaveAs),
+                command(FileSaveAll),
+                SEP,
+                command(FileClose),
+                command(FileReopenClosed),
+                SEP,
+                command(FileExit),
+            ],
+        ),
+        menu(
+            Edit,
+            "Edit",
+            'e',
+            &[
+                command(EditUndo),
+                command(EditRedo),
+                SEP,
+                command(EditCut),
+                command(EditCopy),
+                command(EditPaste),
+                command(EditSelectAll),
+                SEP,
+                command(EditDuplicate),
+                command(EditDeleteLine),
+                command(EditMoveLineUp),
+                command(EditMoveLineDown),
+                command(EditToggleLineComment),
+            ],
+        ),
+        menu(
+            Search,
+            "Search",
+            's',
+            &[
+                command(SearchFind),
+                command(SearchReplace),
+                command(SearchFindNext),
+                command(SearchFindPrevious),
+                SEP,
+                command(SearchProject),
+                command(SearchReplaceProject),
+            ],
+        ),
+        menu(
+            Project,
+            "Project",
+            'p',
+            &[
+                command(ViewExplorer),
+                command(ViewDatabase),
+                command(ViewSymbols),
+            ],
+        ),
+        menu(
+            Build,
+            "Build",
+            'b',
+            &[
+                command(ProgressCheck),
+                command(ProgressCompile),
+                SEP,
+                command(ProgressRun),
+                SEP,
+                command(ProgressRefreshSchema),
+            ],
+        ),
+        menu(
+            Tools,
+            "Tools",
+            't',
+            &[command(PaletteOpen), command(ViewTerminal)],
+        ),
+        menu(
+            View,
+            "View",
+            'v',
+            &[
+                command(ViewExplorer),
+                command(ViewDatabase),
+                command(ViewGit),
+                command(ViewSymbols),
+                SEP,
+                command(ViewProblems),
+                command(ViewOutput),
+                command(ViewSearchResults),
+                command(ViewToggleBottomPanel),
+            ],
+        ),
         menu(Help, "Help", 'h', &[]),
     ])
 }

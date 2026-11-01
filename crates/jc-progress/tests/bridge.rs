@@ -46,15 +46,15 @@ fn rejects_unknown_or_ambiguous_request_transport_inputs() {
     let mut request = BridgeRequest {
         action: Action::Check,
         source: None,
-        output_dir: PathBuf::from("/tmp/job"),
+        output_dir: PathBuf::from(r"C:\\tmp\\job"),
         propath: None,
     };
     assert!(request.encode().is_err());
     request.source = Some(PathBuf::from("relative.p"));
     assert!(request.encode().is_err());
-    request.source = Some(PathBuf::from("/src/año.p"));
+    request.source = Some(PathBuf::from(r"C:\\src\\año.p"));
     assert!(request.encode().is_err());
-    request.source = Some(PathBuf::from("/src/a.p"));
+    request.source = Some(PathBuf::from(r"C:\\src\\a.p"));
     request.propath = Some("/src\ncompile".into());
     assert!(request.encode().is_err());
     request.propath = None;
@@ -67,17 +67,17 @@ fn rejects_unknown_or_ambiguous_request_transport_inputs() {
 #[test]
 fn code_pages_are_mandatory_and_not_silently_defaulted() {
     let mut profile = ProgressProfile {
-        executable: PathBuf::from("/opt/progress/bin/_progres"),
+        executable: PathBuf::from(r"C:\\Progress\\bin\\_progres.exe"),
         parameter_file: None,
         ini_file: None,
         cpstream: "".into(),
         cpinternal: "ISO8859-1".into(),
     };
-    assert!(build_command(&profile, Path::new("/jc/bridge.p"), Path::new("/tmp/request")).is_err());
+    assert!(build_command(&profile, Path::new(r"C:\\jc\\bridge.p"), Path::new(r"C:\\tmp\\request")).is_err());
     profile.cpstream = "IBM850 -p other.p".into();
-    assert!(build_command(&profile, Path::new("/jc/bridge.p"), Path::new("/tmp/request")).is_err());
+    assert!(build_command(&profile, Path::new(r"C:\\jc\\bridge.p"), Path::new(r"C:\\tmp\\request")).is_err());
     profile.cpstream = "IBM850".into();
-    assert!(build_command(&profile, Path::new("/jc/bridge.p"), Path::new("/tmp/request")).is_ok());
+    assert!(build_command(&profile, Path::new(r"C:\\jc\\bridge.p"), Path::new(r"C:\\tmp\\request")).is_ok());
 }
 
 #[test]

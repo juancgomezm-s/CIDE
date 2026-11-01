@@ -15,11 +15,21 @@ pub struct Region {
 }
 
 impl Region {
-    pub const fn new(a: usize, b: usize) -> Self { Self { a, b } }
-    pub fn begin(self) -> usize { self.a.min(self.b) }
-    pub fn end(self) -> usize { self.a.max(self.b) }
-    pub fn len(self) -> usize { self.end() - self.begin() }
-    pub fn is_empty(self) -> bool { self.a == self.b }
+    pub const fn new(a: usize, b: usize) -> Self {
+        Self { a, b }
+    }
+    pub fn begin(self) -> usize {
+        self.a.min(self.b)
+    }
+    pub fn end(self) -> usize {
+        self.a.max(self.b)
+    }
+    pub fn len(self) -> usize {
+        self.end() - self.begin()
+    }
+    pub fn is_empty(self) -> bool {
+        self.a == self.b
+    }
 
     pub fn contains(self, position: usize) -> bool {
         position >= self.begin() && position <= self.end()
@@ -42,14 +52,20 @@ impl Region {
             return Self::default();
         }
         let overlap = Self::new(self.begin().max(other.begin()), self.end().min(other.end()));
-        if overlap.is_empty() { Self::default() } else { overlap }
+        if overlap.is_empty() {
+            Self::default()
+        } else {
+            overlap
+        }
     }
 
     pub fn intersects(self, other: Self) -> bool {
         self == other || !self.intersection(other).is_empty()
     }
 
-    pub fn byte_range(self) -> Range<usize> { self.begin()..self.end() }
+    pub fn byte_range(self) -> Range<usize> {
+        self.begin()..self.end()
+    }
 }
 
 impl fmt::Display for Region {
