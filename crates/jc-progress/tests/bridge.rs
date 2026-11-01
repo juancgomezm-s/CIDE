@@ -20,14 +20,21 @@ fn paths_with_spaces_remain_single_arguments_and_no_shell_is_used() {
         &profile,
         Path::new(r"C:\JC IDE\jc-bridge.p"),
         Path::new(r"C:\JC IDE\job 1,dev\request.txt"),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(spec.executable, profile.executable);
     assert_eq!(spec.args[1], OsString::from(r"C:\ERP Test\progress.ini"));
     assert_eq!(spec.args[3], OsString::from(r"C:\ERP Test\startup.pf"));
-    assert_eq!(spec.args.last().unwrap(), &OsString::from(r"C:\JC IDE\job 1,dev\request.txt"));
+    assert_eq!(
+        spec.args.last().unwrap(),
+        &OsString::from(r"C:\JC IDE\job 1,dev\request.txt")
+    );
     let command = spec.to_command();
     assert_eq!(command.get_program(), profile.executable);
-    assert_eq!(command.get_args().collect::<Vec<_>>(), spec.args.iter().map(|s| s.as_os_str()).collect::<Vec<_>>());
+    assert_eq!(
+        command.get_args().collect::<Vec<_>>(),
+        spec.args.iter().map(|s| s.as_os_str()).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -73,11 +80,26 @@ fn code_pages_are_mandatory_and_not_silently_defaulted() {
         cpstream: "".into(),
         cpinternal: "ISO8859-1".into(),
     };
-    assert!(build_command(&profile, Path::new(r"C:\\jc\\bridge.p"), Path::new(r"C:\\tmp\\request")).is_err());
+    assert!(build_command(
+        &profile,
+        Path::new(r"C:\\jc\\bridge.p"),
+        Path::new(r"C:\\tmp\\request")
+    )
+    .is_err());
     profile.cpstream = "IBM850 -p other.p".into();
-    assert!(build_command(&profile, Path::new(r"C:\\jc\\bridge.p"), Path::new(r"C:\\tmp\\request")).is_err());
+    assert!(build_command(
+        &profile,
+        Path::new(r"C:\\jc\\bridge.p"),
+        Path::new(r"C:\\tmp\\request")
+    )
+    .is_err());
     profile.cpstream = "IBM850".into();
-    assert!(build_command(&profile, Path::new(r"C:\\jc\\bridge.p"), Path::new(r"C:\\tmp\\request")).is_ok());
+    assert!(build_command(
+        &profile,
+        Path::new(r"C:\\jc\\bridge.p"),
+        Path::new(r"C:\\tmp\\request")
+    )
+    .is_ok());
 }
 
 #[test]
@@ -88,7 +110,10 @@ fn legacy_bytes_and_record_delimiters_survive_response_parsing() {
     assert_eq!(result.cpstream, "IBM850");
     assert_eq!(result.status, CompletionStatus::Error);
     assert_eq!(result.diagnostics[0].severity, Severity::Error);
-    assert_eq!(result.diagnostics[0].message.as_bytes(), &[0xe1, 0xff, 0, b'|', b'\n']);
+    assert_eq!(
+        result.diagnostics[0].message.as_bytes(),
+        &[0xe1, 0xff, 0, b'|', b'\n']
+    );
     assert_eq!(result.diagnostics[0].row, Some(7));
 }
 
@@ -98,14 +123,26 @@ fn schema_carries_fields_indexes_and_distinguishes_unknown_from_empty() {
     let result = parse_response(source.as_bytes()).unwrap();
     assert_eq!(result.schema.len(), 4);
     match &result.schema[1] {
-        SchemaRecord::Field { extent, format, label, .. } => {
+        SchemaRecord::Field {
+            extent,
+            format,
+            label,
+            ..
+        } => {
             assert_eq!(*extent, 2);
             assert_eq!(format.as_ref().unwrap().as_bytes(), b"");
             assert_eq!(*label, None);
         }
         _ => panic!("expected field"),
     }
-    assert!(matches!(&result.schema[3], SchemaRecord::IndexField { ascending: false, sequence: 1, .. }));
+    assert!(matches!(
+        &result.schema[3],
+        SchemaRecord::IndexField {
+            ascending: false,
+            sequence: 1,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -125,7 +162,10 @@ fn incomplete_malformed_or_contradictory_results_are_never_successful() {
         "UNKNOWN|a\nEND|OK\n",
         "DIAG|error|999999999999999|1|-|61\nEND|ERROR\n",
     ] {
-        assert!(parse_response(format!("{HEADER}{body}").as_bytes()).is_err(), "accepted {body:?}");
+        assert!(
+            parse_response(format!("{HEADER}{body}").as_bytes()).is_err(),
+            "accepted {body:?}"
+        );
     }
     assert!(parse_response(b"JCIDE|2|61|62\nEND|OK\n").is_err());
     assert!(parse_response(b"JCIDE|1|61|62\nDIAG|error|-|-|-|\xff\nEND|ERROR\n").is_err());
