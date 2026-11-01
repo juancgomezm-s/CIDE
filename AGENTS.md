@@ -14,12 +14,15 @@ Read `README.md`, `docs/DECISIONES.md`, and the relevant milestone in `docs/PLAN
 
 ## Development
 
+Local validation commands, used selectively when the local toolchain is available:
+
 - `cargo fmt --all -- --check`
 - `cargo test --workspace --locked --offline`
 - `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`
 - `cargo build --workspace --release --locked --offline`
 
-The Rust crates intentionally use only the standard library and workspace crates in M0.
+**CI policy: GitHub Actions is deferred to M5.** Do not enable `push` or `pull_request` triggers, do not invoke the manual workflow, and do not spend remote CI runs chasing intermediate M2–M4 failures unless the repository owner explicitly asks for one. If this environment lacks Rust or another required dependency, record the validation gap and continue with best-effort development.
+
 Introduce dependencies only when they solve a concrete requirement and record the cost/benefit.
 Use tests that check observable behavior and regressions, not tests that duplicate implementation details.
 

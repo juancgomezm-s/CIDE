@@ -4,7 +4,7 @@ Los hitos son secuenciales por evidencia, no por fechas.
 
 ## M0 — Base verificable
 
-Núcleo byte-preserving, undo/redo, perfiles multilenguaje, puente Progress inicial, documentación y CI.
+Núcleo byte-preserving, undo/redo, perfiles multilenguaje, puente Progress inicial, documentación y pruebas de base.
 
 ## M0.5 — Contrato de interacción
 
@@ -43,7 +43,7 @@ La página de códigos **real de cada proyecto de producción** no se codifica g
 
 ## M2A — TUI funcional — EN DESARROLLO
 
-Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crossterm y contrato de aplicación compartido. La presencia de código y CI verde no equivale a aceptación funcional completa. Implementar y verificar cada flujo de extremo a extremo antes de cerrar este hito.
+Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crossterm y contrato de aplicación compartido. La presencia de código o pruebas parciales no equivale a aceptación funcional completa. Implementar y verificar cada flujo de extremo a extremo antes de cerrar este hito.
 
 **Criterios de aceptación:**
 - uso completo por teclado;
@@ -67,9 +67,20 @@ Validar OpenEdge 10.0B y 11.7, includes, PROPATH, aliases, code pages, compilaci
 
 Catálogo local, navegación, completado de tablas/campos/índices y análisis contextual incremental.
 
-## M5 — Servicios opcionales
+## M5 — Servicios opcionales, hardening y CI
 
 Git, búsquedas de proyecto, proveedores semánticos/LSP, tareas e integración con OmniCore, todos bajo demanda.
+
+**CI pertenece a M5.** Hasta iniciar M5 no se ejecutará GitHub Actions automáticamente en `push` ni `pull_request`, ni se usará CI remoto para perseguir fallos intermedios de M2–M4. El workflow queda conservado únicamente como `workflow_dispatch` manual y no debe invocarse antes de M5 salvo autorización explícita del propietario.
+
+Durante M2–M4 la validación es local y dirigida: ejecutar solo las pruebas/builds necesarias cuando exista toolchain disponible. Si el entorno de desarrollo no permite validarlas, se registra la limitación y se continúa; no se consume CI para compensarla.
+
+**Criterios de aceptación de CI en M5:**
+- estabilizar primero la arquitectura y los flujos funcionales de M2–M4;
+- reactivar entonces CI automático para `push`/`pull_request`;
+- matriz Windows/Linux para formato, tests, Clippy y release build;
+- smoke tests representativos de TUI, archivos y adaptadores que ya estén funcionalmente terminados;
+- corregir en esa fase las incompatibilidades acumuladas entre plataformas, en lugar de pagar ese coste después de cada épica.
 
 ## Presupuestos exploratorios
 

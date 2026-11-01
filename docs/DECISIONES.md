@@ -63,3 +63,18 @@ La code page real pertenece al perfil del proyecto/documento. Los bytes no inter
 **Aceptada en M1.** La sesión conserva una huella de contenido de la versión abierta/guardada. Antes de un Save normal compara el disco y rechaza cambios o eliminación externos.
 
 El contenido se escribe a un temporal del mismo directorio, se sincroniza y después se publica. Archivos existentes usan reemplazo atómico por plataforma; archivos nuevos usan creación no-clobber. `force_save` es la única ruta del núcleo que permite sobrescribir deliberadamente una versión externa.
+
+
+## D13 — CI diferido hasta M5
+
+**Aceptada.** GitHub Actions no forma parte del ciclo de construcción de M2, M3 o M4. Ejecutar CI completo después de cada cambio consume recursos y obliga a estabilizar repetidamente interfaces que todavía están evolucionando.
+
+Hasta M5:
+
+- los workflows no se disparan por `push` ni `pull_request`;
+- el workflow existente queda disponible solo mediante `workflow_dispatch` y no se invoca sin autorización explícita del propietario;
+- los agentes no deben reactivar CI para resolver errores intermedios;
+- la validación se hace local y de forma proporcional al cambio cuando el toolchain esté disponible;
+- si un entorno no permite compilar/probar, se documenta como pendiente en vez de usar CI remoto como sustituto.
+
+En M5 se realiza el hardening transversal y se vuelve a habilitar la matriz automática Windows/Linux una vez que las capas principales hayan dejado de cambiar estructuralmente.

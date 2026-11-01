@@ -4,7 +4,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M1 cerrado — núcleo de archivos/texto y contrato de interacción listos. Todavía no hay TUI/GUI funcional.**
+**Estado: M2A en desarrollo — núcleo de archivos/texto e interacción cerrados; TUI funcional en construcción. GUI pendiente.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
@@ -52,6 +52,10 @@ cargo run -p jc-cli --offline -- edit entrada.p 0 0 F1 copia-editada.p
 ```
 
 Los offsets del núcleo son bytes, no caracteres ni columnas visuales. `jc-text` realiza las conversiones de coordenadas de forma explícita y `jc-files` implementa el ciclo de guardado seguro/atómico para el futuro frontend. La CLI de demostración conserva sus salidas `create_new` deliberadamente.
+
+## Política de CI
+
+El CI remoto se reserva para **M5 (hardening)**. Durante M2–M4 GitHub Actions no se dispara automáticamente por push/PR y no debe utilizarse como bucle de depuración de código todavía inestable. El workflow permanece manual y dormido hasta M5; la validación intermedia se hace local cuando el entorno lo permite.
 
 ## Varios lenguajes
 

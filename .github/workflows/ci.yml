@@ -1,9 +1,8 @@
-name: Rust foundation
+name: M5 CI (deferred)
 
+# CI is intentionally dormant until milestone M5.
+# Do not add push/pull_request triggers before M5 without explicit owner approval.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
