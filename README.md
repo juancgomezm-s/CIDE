@@ -4,7 +4,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M2A en desarrollo — núcleo de archivos/texto e interacción cerrados; TUI funcional en construcción. GUI pendiente.**
+**Estado: M2A en desarrollo — TUI con comandos de edición ABL, controles de sangría y plan de búsqueda prioritaria. Cambios recientes aún requieren validación local; GUI pendiente.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
@@ -96,7 +96,9 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 7. [M1: archivos, encoding y posiciones](docs/M1_FILES_TEXT.md)
 8. [Validación observada y límites](docs/VALIDACION.md)
 9. [M2A: checkpoint TUI](docs/M2_TUI_CHECKPOINT.md)
-10. [Post-M5: compatibilidad Sublime Text](docs/POST_M5_SUBLIME_COMPAT.md)
+10. [Comandos ABL: alcance realista](docs/ABL_EDITOR_COMMAND_SCOPE.md)
+11. [Search Plus: búsqueda prioritaria](docs/M2_SEARCH_PLUS.md)
+12. [Post-M5: compatibilidad Sublime Text](docs/POST_M5_SUBLIME_COMPAT.md)
 
 ## Procedencia y licencia
 
