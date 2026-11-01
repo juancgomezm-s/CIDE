@@ -151,12 +151,17 @@ impl Workbench {
     ) -> Result<TabId, WorkbenchError> {
         let path = path.into();
         let session = FileSession::open(&path, encoding)?;
+        let cursor = session
+            .inspection()
+            .decoded
+            .as_ref()
+            .map_or(0, |decoded| decoded.content_start);
         let title = title_for_path(&path, "<file>");
         let tab_id = self.tabs.open(title);
         self.documents.push(EditorDocument {
             tab_id,
             session,
-            cursor: 0,
+            cursor,
             anchor: None,
             scroll_line: 0,
         });
