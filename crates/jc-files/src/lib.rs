@@ -373,6 +373,17 @@ mod tests {
     }
 
     #[test]
+    fn create_only_commit_never_overwrites_an_existing_target() {
+        let dir = test_dir();
+        let target = dir.join("source.p");
+        fs::write(&target, b"external").unwrap();
+        let result = atomic_replace_with(&target, true, |file| file.write_all(b"mine"));
+        assert!(result.is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"external");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn failed_writer_never_replaces_the_original() {
         let dir = test_dir();
         let target = dir.join("source.p");
