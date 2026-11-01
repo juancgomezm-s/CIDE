@@ -85,13 +85,7 @@ impl TuiApp {
             FocusPrevious => {
                 self.focus.previous(&self.panels);
             }
-            EditDuplicate
-            | EditDeleteLine
-            | EditMoveLineUp
-            | EditMoveLineDown
-            | EditToggleLineComment
-            | SearchProject
-            | SearchReplaceProject => {
+            SearchProject | SearchReplaceProject => {
                 let label = self
                     .registry
                     .get(command)

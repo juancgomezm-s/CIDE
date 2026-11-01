@@ -57,6 +57,26 @@ impl Workbench {
                 self.select_all()?;
                 Ok(CommandOutcome::None)
             }
+            EditDuplicate => {
+                self.duplicate_selection_or_line()?;
+                Ok(CommandOutcome::None)
+            }
+            EditDeleteLine => {
+                self.delete_line()?;
+                Ok(CommandOutcome::None)
+            }
+            EditMoveLineUp => {
+                self.move_line_up()?;
+                Ok(CommandOutcome::None)
+            }
+            EditMoveLineDown => {
+                self.move_line_down()?;
+                Ok(CommandOutcome::None)
+            }
+            EditToggleLineComment => {
+                self.toggle_line_comment()?;
+                Ok(CommandOutcome::None)
+            }
             SearchFind => Ok(CommandOutcome::ShowFind),
             SearchReplace => Ok(CommandOutcome::ShowReplace),
             SearchFindNext => {
@@ -123,14 +143,9 @@ impl Workbench {
             ProgressCheck | ProgressCompile | ProgressRun | ProgressRefreshSchema => {
                 Ok(CommandOutcome::Progress(command))
             }
-            FileOpenFolder
-            | EditDuplicate
-            | EditDeleteLine
-            | EditMoveLineUp
-            | EditMoveLineDown
-            | EditToggleLineComment
-            | SearchProject
-            | SearchReplaceProject => Ok(CommandOutcome::View(command)),
+            FileOpenFolder | SearchProject | SearchReplaceProject => {
+                Ok(CommandOutcome::View(command))
+            }
         }
     }
 }

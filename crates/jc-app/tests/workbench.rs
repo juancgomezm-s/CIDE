@@ -227,3 +227,64 @@ fn reopen_closed_tab_restores_the_same_document_session() {
     assert_eq!(bench.tabs().active_id(), Some(tab));
     assert_eq!(bench.active_bytes().unwrap(), b"abc");
 }
+
+
+#[test]
+fn line_commands_are_real_workbench_operations() {
+    let work = Workspace::new();
+    let path = work.path("lines.txt");
+    fs::write(&path, b"one\ntwo\nthree").unwrap();
+
+    let mut bench = Workbench::default();
+    bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+    bench.move_vertical(1, false).unwrap();
+
+    bench.execute(CommandId::EditMoveLineUp).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"two\none\nthree");
+    assert_eq!(
+        bench.active_position(),
+        Some(TextPosition { line: 0, column: 0 })
+    );
+
+    bench.execute(CommandId::EditMoveLineDown).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"one\ntwo\nthree");
+    assert_eq!(
+        bench.active_position(),
+        Some(TextPosition { line: 1, column: 0 })
+    );
+
+    bench.execute(CommandId::EditDeleteLine).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"one\nthree");
+}
+
+#[test]
+fn duplicate_line_handles_final_line_without_a_terminal_newline() {
+    let work = Workspace::new();
+    let path = work.path("duplicate.txt");
+    fs::write(&path, b"value").unwrap();
+
+    let mut bench = Workbench::default();
+    bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+    bench.execute(CommandId::EditDuplicate).unwrap();
+
+    assert_eq!(bench.active_bytes().unwrap(), b"value\r\nvalue");
+    assert_eq!(
+        bench.active_position(),
+        Some(TextPosition { line: 1, column: 0 })
+    );
+}
+
+#[test]
+fn toggle_line_comment_uses_the_language_profile() {
+    let work = Workspace::new();
+    let path = work.path("comment.cs");
+    fs::write(&path, b"    value();\n").unwrap();
+
+    let mut bench = Workbench::default();
+    bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+    bench.execute(CommandId::EditToggleLineComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"    // value();\n");
+
+    bench.execute(CommandId::EditToggleLineComment).unwrap();
+    assert_eq!(bench.active_bytes().unwrap(), b"    value();\n");
+}
