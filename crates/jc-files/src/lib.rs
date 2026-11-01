@@ -52,6 +52,7 @@ pub enum FileError {
     Io(io::Error),
     ExternalModification(ExternalState),
     EncodingRequired,
+    TargetExists(PathBuf),
     Encode(EncodeError),
     Edit(EditError),
 }
@@ -224,9 +225,37 @@ impl FileSession {
         self.write_current(false)
     }
 
+    pub fn save_as(&mut self, path: impl Into<PathBuf>) -> Result<(), FileError> {
+        let path = path.into();
+        if path == self.path {
+            return self.save();
+        }
+        if path.exists() {
+            return Err(FileError::TargetExists(path));
+        }
+        self.write_to_path(&path, true)?;
+        self.path = path;
+        Ok(())
+    }
+
+    pub fn force_save_as(&mut self, path: impl Into<PathBuf>) -> Result<(), FileError> {
+        let path = path.into();
+        if path == self.path {
+            return self.force_save();
+        }
+        self.write_to_path(&path, false)?;
+        self.path = path;
+        Ok(())
+    }
+
     fn write_current(&mut self, create_only: bool) -> Result<(), FileError> {
+        let path = self.path.clone();
+        self.write_to_path(&path, create_only)
+    }
+
+    fn write_to_path(&mut self, path: &Path, create_only: bool) -> Result<(), FileError> {
         let bytes = self.document.to_bytes();
-        atomic_replace_with(&self.path, create_only, |file| file.write_all(&bytes))?;
+        atomic_replace_with(path, create_only, |file| file.write_all(&bytes))?;
         self.disk_fingerprint = Some(Fingerprint::of(&bytes));
         self.document.mark_saved();
         Ok(())
