@@ -113,7 +113,7 @@ pub struct FileSession {
     document: Document,
     encoding: Option<TextEncoding>,
     encoding_source: EncodingSource,
-    disk_fingerprint: Fingerprint,
+    disk_fingerprint: Option<Fingerprint>,
 }
 
 impl FileSession {
@@ -126,8 +126,18 @@ impl FileSession {
             document: Document::from_bytes(bytes.clone()),
             encoding: inspection.probe.encoding,
             encoding_source: inspection.probe.source,
-            disk_fingerprint: Fingerprint::of(&bytes),
+            disk_fingerprint: Some(Fingerprint::of(&bytes)),
         })
+    }
+
+    pub fn new(path: impl Into<PathBuf>, encoding: TextEncoding) -> Self {
+        Self {
+            path: path.into(),
+            document: Document::default(),
+            encoding: Some(encoding),
+            encoding_source: EncodingSource::Explicit,
+            disk_fingerprint: None,
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -181,14 +191,20 @@ impl FileSession {
     }
 
     pub fn external_state(&self) -> Result<ExternalState, FileError> {
-        match fs::read(&self.path) {
-            Ok(bytes) => Ok(if Fingerprint::of(&bytes) == self.disk_fingerprint {
+        match (self.disk_fingerprint, fs::read(&self.path)) {
+            (Some(expected), Ok(bytes)) => Ok(if Fingerprint::of(&bytes) == expected {
                 ExternalState::Unchanged
             } else {
                 ExternalState::Changed
             }),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(ExternalState::Missing),
-            Err(error) => Err(FileError::Io(error)),
+            (Some(_), Err(error)) if error.kind() == io::ErrorKind::NotFound => {
+                Ok(ExternalState::Missing)
+            }
+            (None, Err(error)) if error.kind() == io::ErrorKind::NotFound => {
+                Ok(ExternalState::Unchanged)
+            }
+            (None, Ok(_)) => Ok(ExternalState::Changed),
+            (_, Err(error)) => Err(FileError::Io(error)),
         }
     }
 
@@ -197,20 +213,17 @@ impl FileSession {
         if state != ExternalState::Unchanged {
             return Err(FileError::ExternalModification(state));
         }
-        self.write_current(false)
+        self.write_current()
     }
 
     pub fn force_save(&mut self) -> Result<(), FileError> {
-        self.write_current(true)
+        self.write_current()
     }
 
-    fn write_current(&mut self, allow_missing: bool) -> Result<(), FileError> {
-        if !allow_missing && !self.path.exists() {
-            return Err(FileError::ExternalModification(ExternalState::Missing));
-        }
+    fn write_current(&mut self) -> Result<(), FileError> {
         let bytes = self.document.to_bytes();
         atomic_replace_with(&self.path, |file| file.write_all(&bytes))?;
-        self.disk_fingerprint = Fingerprint::of(&bytes);
+        self.disk_fingerprint = Some(Fingerprint::of(&bytes));
         self.document.mark_saved();
         Ok(())
     }
