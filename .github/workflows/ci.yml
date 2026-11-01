@@ -25,12 +25,20 @@ jobs:
         with:
           toolchain: 1.85.1
           components: rustfmt, clippy
-      - name: Format M2 workbench for validation
+      - name: Format M2 TUI for validation
         run: cargo fmt --all
-      - name: Emit rustfmt results
+      - name: Resolve and fetch locked TUI dependencies
+        run: |
+          cargo generate-lockfile
+          cargo fetch --locked
+      - name: Emit generated M2 state
         if: runner.os == 'Linux'
         shell: bash
         run: |
+          echo "JCIDE_LOCK_BEGIN"
+          base64 -w0 Cargo.lock
+          echo
+          echo "JCIDE_LOCK_END"
           while IFS= read -r file; do
             echo "JCIDE_FMT_BEGIN:${file}"
             base64 -w0 "${file}"
