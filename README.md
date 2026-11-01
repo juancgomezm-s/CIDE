@@ -4,7 +4,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M0 — base técnica ejecutable por consola. Todavía no hay interfaz gráfica.**
+**Estado: M1 cerrado — núcleo de archivos/texto y contrato de interacción listos. Todavía no hay TUI/GUI funcional.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
@@ -12,7 +12,9 @@ real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
 | Componente | Implementado en esta base |
 |---|---|
-| `jc-core` | Piece table de bytes, insertar/borrar/reemplazar, deshacer/rehacer, revisiones y punto guardado |
+| `jc-core` | Piece table de bytes, edición, revisiones, undo/redo acotado y compactación explícita |
+| `jc-text` | UTF-8/Windows-1252/ISO-8859-1/IBM850, decodificación no destructiva, line endings y byte↔línea/columna |
+| `jc-files` | Sesión de archivo, detección de cambios externos, guardado atómico y creación no-clobber |
 | Selecciones | Port parcial de `Region` de Lime Text, con procedencia y licencia conservadas |
 | `jc-languages` | 18 perfiles y detección por extensión/nombre de archivo |
 | `jc-progress` | Construcción de argumentos sin shell, solicitudes ASCII y parser acotado de diagnósticos/esquema |
@@ -23,7 +25,7 @@ real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
 El núcleo y los otros crates usan únicamente la biblioteca estándar de Rust y dependencias
 internas del workspace. La piece table usa un vector de fragmentos en esta primera versión;
-las operaciones recorren O(P) fragmentos. El historial no tiene todavía límite ni compactación.
+las operaciones recorren O(P) fragmentos. El historial tiene límite configurable (1024 por defecto) y el almacenamiento añadido puede compactarse explícitamente.
 
 ## Empezar
 
@@ -49,9 +51,7 @@ Insertar un byte `F1` en la posición 0 de una **copia nueva**, conservando el o
 cargo run -p jc-cli --offline -- edit entrada.p 0 0 F1 copia-editada.p
 ```
 
-Los offsets son bytes, no caracteres ni columnas visuales. La CLI rechaza sobrescribir
-un archivo de salida existente. Una escritura fallida puede dejar una copia parcial;
-el guardado atómico de documentos existentes sigue pendiente.
+Los offsets del núcleo son bytes, no caracteres ni columnas visuales. `jc-text` realiza las conversiones de coordenadas de forma explícita y `jc-files` implementa el ciclo de guardado seguro/atómico para el futuro frontend. La CLI de demostración conserva sus salidas `create_new` deliberadamente.
 
 ## Varios lenguajes
 
@@ -88,7 +88,8 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 4. [Decisiones y pendientes](docs/DECISIONES.md)
 5. [Investigación de Lime Text, PIEW y Progress](docs/INVESTIGACION.md)
 6. [Contrato de interacción TUI](docs/TUI_INTERACTION.md)
-7. [Validación observada y límites](docs/VALIDACION.md)
+7. [M1: archivos, encoding y posiciones](docs/M1_FILES_TEXT.md)
+8. [Validación observada y límites](docs/VALIDACION.md)
 
 ## Procedencia y licencia
 

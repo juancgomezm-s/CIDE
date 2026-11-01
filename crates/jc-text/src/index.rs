@@ -18,8 +18,12 @@ pub enum PositionError {
 impl fmt::Display for PositionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::SourceOffsetNotBoundary(offset) => write!(f, "source byte {offset} is not a text boundary"),
-            Self::InsideLineEnding(offset) => write!(f, "source byte {offset} is inside a line ending"),
+            Self::SourceOffsetNotBoundary(offset) => {
+                write!(f, "source byte {offset} is not a text boundary")
+            }
+            Self::InsideLineEnding(offset) => {
+                write!(f, "source byte {offset} is inside a line ending")
+            }
             Self::LineOutOfRange(line) => write!(f, "line {line} is out of range"),
             Self::ColumnOutOfRange { line, column } => {
                 write!(f, "column {column} is out of range for line {line}")
@@ -77,7 +81,10 @@ impl TextIndex {
             .source_offsets
             .binary_search(&offset)
             .map_err(|_| PositionError::SourceOffsetNotBoundary(offset))?;
-        let line = self.line_starts.partition_point(|start| *start <= scalar).saturating_sub(1);
+        let line = self
+            .line_starts
+            .partition_point(|start| *start <= scalar)
+            .saturating_sub(1);
         if scalar > self.line_ends[line] {
             return Err(PositionError::InsideLineEnding(offset));
         }

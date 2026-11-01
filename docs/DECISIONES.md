@@ -51,3 +51,15 @@ Reglas vinculantes:
 - cerrar una pestaña sucia exige una decisión explícita;
 - comandos Progress permanecen deshabilitados fuera de contexto;
 - TUI y GUI deben consumir este modelo común, no duplicarlo.
+
+## D11 — Encoding legacy explícito, nunca inferido destructivamente
+
+**Aceptada en M1.** UTF-8 puede identificarse por BOM o por una secuencia válida; ASCII se marca como compatible pero ambiguo. Si los bytes no son UTF-8, JC-IDE no decide entre Windows-1252, ISO-8859-1, IBM850 u otra code page por frecuencia de caracteres.
+
+La code page real pertenece al perfil del proyecto/documento. Los bytes no interpretables permanecen en el documento y se reportan como incidencias. La inserción de texto es estricta: si el encoding seleccionado no representa un carácter, la edición falla antes de modificar el buffer.
+
+## D12 — Guardado con conflicto explícito y reemplazo atómico
+
+**Aceptada en M1.** La sesión conserva una huella de contenido de la versión abierta/guardada. Antes de un Save normal compara el disco y rechaza cambios o eliminación externos.
+
+El contenido se escribe a un temporal del mismo directorio, se sincroniza y después se publica. Archivos existentes usan reemplazo atómico por plataforma; archivos nuevos usan creación no-clobber. `force_save` es la única ruta del núcleo que permite sobrescribir deliberadamente una versión externa.

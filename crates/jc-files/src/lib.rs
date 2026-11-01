@@ -6,9 +6,7 @@
 //! it, and replaces the target atomically on supported platforms.
 
 use jc_core::{Document, EditError};
-use jc_text::{
-    encode, inspect_text, EncodeError, EncodingSource, TextEncoding, TextInspection,
-};
+use jc_text::{encode, inspect_text, EncodeError, EncodingSource, TextEncoding, TextInspection};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -71,7 +69,9 @@ impl fmt::Display for FileError {
             Self::ExternalModification(ExternalState::Unchanged) => {
                 write!(f, "unexpected unchanged external state")
             }
-            Self::EncodingRequired => write!(f, "an explicit encoding is required for text insertion"),
+            Self::EncodingRequired => {
+                write!(f, "an explicit encoding is required for text insertion")
+            }
             Self::Encode(error) => write!(f, "{error}"),
             Self::Edit(error) => write!(f, "{error}"),
         }
@@ -117,7 +117,10 @@ pub struct FileSession {
 }
 
 impl FileSession {
-    pub fn open(path: impl Into<PathBuf>, explicit: Option<TextEncoding>) -> Result<Self, FileError> {
+    pub fn open(
+        path: impl Into<PathBuf>,
+        explicit: Option<TextEncoding>,
+    ) -> Result<Self, FileError> {
         let path = path.into();
         let bytes = fs::read(&path)?;
         let inspection = inspect_text(&bytes, explicit);
@@ -251,7 +254,11 @@ fn atomic_replace_with(
             file_name.to_string_lossy(),
             std::process::id()
         ));
-        match OpenOptions::new().write(true).create_new(true).open(&candidate) {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
             Ok(file) => {
                 temporary = Some((candidate, file));
                 break;
@@ -260,8 +267,9 @@ fn atomic_replace_with(
             Err(error) => return Err(error),
         }
     }
-    let (temporary_path, mut temporary_file) = temporary
-        .ok_or_else(|| io::Error::new(io::ErrorKind::AlreadyExists, "unable to allocate save file"))?;
+    let (temporary_path, mut temporary_file) = temporary.ok_or_else(|| {
+        io::Error::new(io::ErrorKind::AlreadyExists, "unable to allocate save file")
+    })?;
 
     let operation = (|| {
         if let Ok(metadata) = fs::metadata(target) {

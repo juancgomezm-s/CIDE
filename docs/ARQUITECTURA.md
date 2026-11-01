@@ -4,7 +4,9 @@ JC-IDE separa cuatro responsabilidades: almacenamiento de documentos, modelo de 
 
 ## Capas
 
-- **jc-core**: documento byte-preserving, piece table, revisiones, undo/redo y regiones.
+- **jc-core**: documento byte-preserving, piece table, revisiones, undo/redo acotado, compactación y regiones.
+- **jc-text**: interpretación explícita de encoding, line endings y coordenadas sin poseer los bytes canónicos.
+- **jc-files**: ciclo de vida de archivo, conflictos externos, creación segura y reemplazo atómico.
 - **jc-app**: comandos, keymap contextual, foco, menús, pestañas, paneles y diálogos. No dibuja nada.
 - **jc-languages**: perfiles y detección; no inicia servicios por reconocer una extensión.
 - **jc-progress**: integración explícita con una instalación real de OpenEdge.
@@ -20,7 +22,7 @@ El contrato normativo de la TUI está en [TUI_INTERACTION.md](TUI_INTERACTION.md
 
 ## Codificación y coordenadas
 
-El documento canónico contiene bytes. La página de códigos es metadato explícito. El núcleo no normaliza UTF-8, CRLF, BOM ni salto final.
+El documento canónico contiene bytes. La página de códigos es metadato explícito. `jc-text` puede interpretar UTF-8, Windows-1252, ISO-8859-1 e IBM850, pero no convierte el almacenamiento. Un legacy ambiguo exige selección de proyecto/documento. El núcleo no normaliza CRLF, BOM ni salto final.
 
 Se distinguen offsets de byte, caracteres decodificados, grafemas, columnas visuales, posiciones LSP y posiciones reportadas por compiladores. Las conversiones ocurren en límites explícitos.
 

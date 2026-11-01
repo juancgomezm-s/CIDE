@@ -245,7 +245,6 @@ fn deterministic_edits_match_an_independent_flat_buffer_history() {
     }
 }
 
-
 #[test]
 fn history_limit_bounds_undo_and_redo_steps() {
     let mut document = Document::default();

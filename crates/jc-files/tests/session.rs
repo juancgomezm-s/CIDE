@@ -57,7 +57,10 @@ fn unknown_legacy_encoding_requires_explicit_selection_before_text_insertion() {
 
     let mut session = FileSession::open(&path, None).unwrap();
     assert_eq!(session.encoding(), None);
-    assert_eq!(session.encoding_source(), EncodingSource::UndeterminedLegacy);
+    assert_eq!(
+        session.encoding_source(),
+        EncodingSource::UndeterminedLegacy
+    );
     assert!(matches!(
         session.insert_text(0, "x"),
         Err(FileError::EncodingRequired)
@@ -138,7 +141,6 @@ fn deletion_is_reported_as_an_external_conflict() {
     ));
     assert!(!path.exists());
 }
-
 
 #[test]
 fn new_session_creates_file_only_when_name_is_still_free() {

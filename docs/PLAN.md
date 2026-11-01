@@ -19,9 +19,27 @@ Núcleo byte-preserving, undo/redo, perfiles multilenguaje, puente Progress inic
 - shortcuts de Progress deshabilitados fuera de ABL/perfil;
 - especificación normativa en `docs/TUI_INTERACTION.md`.
 
-## M1 — Archivo y texto interpretado
+## M1 — Archivo y texto interpretado — ✅ CERRADO
 
-Identificar las codificaciones reales, guardado seguro, posiciones textuales, detección de cambios externos y límites del historial.
+**Alcance cerrado:** interpretación explícita de fuentes sin convertir el almacenamiento canónico, guardado seguro, posiciones textuales, cambios externos y límites del historial.
+
+**Criterios cumplidos:**
+
+- UTF-8 se reconoce por BOM o validez; un archivo ASCII se marca como compatible/ambiguo y no como prueba de una code page concreta.
+- Un archivo legacy que no sea UTF-8 **no se adivina**. El proyecto/documento debe seleccionar explícitamente Windows-1252, ISO-8859-1 o IBM850; el catálogo es ampliable.
+- Decodificar nunca modifica los bytes canónicos. Secuencias inválidas se muestran como incidencias con su rango de bytes.
+- Insertar texto usa encoding estricto: un carácter no representable produce error y no altera el documento.
+- CRLF, LF, CR, mezcla de finales y presencia/ausencia de newline final se inspeccionan sin normalización.
+- Existe mapeo comprobado entre offset de byte y posición lógica línea/columna, incluyendo UTF-8 multibyte y CRLF.
+- `FileSession` detecta contenido modificado o eliminado externamente antes de guardar.
+- Guardado existente usa temporal en el mismo directorio + flush/fsync + reemplazo atómico: `rename` en Unix y `ReplaceFileW` en Windows.
+- Archivos nuevos usan commit no-clobber; un nombre creado por otro proceso no se sobrescribe silenciosamente.
+- Un fallo durante la escritura deja intacto el archivo original.
+- Undo/redo queda limitado a 1024 pasos por defecto, configurable incluso a cero; la piece table expone compactación explícita del buffer añadido.
+- Matriz Windows/Ubuntu validada con tests, Clippy sin warnings, release build y demo.
+
+La página de códigos **real de cada proyecto de producción** no se codifica globalmente en JC-IDE: se registra en el perfil del proyecto. Esto evita convertir una incertidumbre de configuración en una heurística destructiva. Véase [M1_FILES_TEXT.md](M1_FILES_TEXT.md).
+
 
 ## M2A — TUI funcional
 
