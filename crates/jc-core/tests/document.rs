@@ -244,3 +244,53 @@ fn deterministic_edits_match_an_independent_flat_buffer_history() {
         );
     }
 }
+
+
+#[test]
+fn history_limit_bounds_undo_and_redo_steps() {
+    let mut document = Document::default();
+    document.set_history_limit(3);
+    for byte in b"abcdef" {
+        document.insert(document.len(), &[*byte]).unwrap();
+    }
+    assert_eq!(document.undo_steps(), 3);
+    assert_eq!(document.history_limit(), 3);
+    assert!(document.undo());
+    assert!(document.undo());
+    assert!(document.undo());
+    assert!(!document.undo());
+    assert_eq!(document.to_bytes(), b"abc");
+    assert_eq!(document.redo_steps(), 3);
+    assert!(document.redo());
+    assert!(document.redo());
+    assert!(document.redo());
+    assert_eq!(document.to_bytes(), b"abcdef");
+}
+
+#[test]
+fn zero_history_limit_disables_undo_without_affecting_edits() {
+    let mut document = Document::from_bytes(b"abc".to_vec());
+    document.set_history_limit(0);
+    document.insert(3, b"d").unwrap();
+    assert_eq!(document.to_bytes(), b"abcd");
+    assert_eq!(document.undo_steps(), 0);
+    assert!(!document.undo());
+}
+
+#[test]
+fn compaction_reclaims_added_storage_and_preserves_dirty_state() {
+    let mut document = Document::from_bytes(b"abc".to_vec());
+    document.insert(1, b"XYZ").unwrap();
+    assert!(document.retained_added_bytes() >= 3);
+    assert!(document.is_modified());
+    let bytes = document.to_bytes();
+    let revision = document.revision();
+    document.compact_storage();
+    assert_eq!(document.to_bytes(), bytes);
+    assert_eq!(document.revision(), revision);
+    assert_eq!(document.retained_added_bytes(), 0);
+    assert_eq!(document.piece_count(), 1);
+    assert_eq!(document.undo_steps(), 0);
+    assert_eq!(document.redo_steps(), 0);
+    assert!(document.is_modified());
+}
