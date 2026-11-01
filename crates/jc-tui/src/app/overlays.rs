@@ -1,4 +1,4 @@
-use super::commands::{next_selectable, previous_selectable};
+use super::menus::{next_selectable, previous_selectable};
 use super::TuiApp;
 use crate::input::{is_plain_text, to_stroke};
 use crate::state::{ReplaceField, UiOverlay};
