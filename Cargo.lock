@@ -5,6 +5,11 @@ version = 3
 [[package]]
 name = "jc-app"
 version = "0.1.0"
+dependencies = [
+ "jc-files",
+ "jc-languages",
+ "jc-text",
+]
 
 [[package]]
 name = "jc-cli"
