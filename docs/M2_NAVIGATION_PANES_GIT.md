@@ -2,6 +2,8 @@
 
 **Estado:** doble panel TUI implementado y validado localmente el 2026-11-01. El resto del documento incluye capacidades futuras: Git, navegación por lenguaje y LSP aún no están operativos.
 
+**Precedencia de diseño:** D18 y [ARQUITECTURA.md](ARQUITECTURA.md) corrigen el modelo transitorio de este checkpoint. Antes de ampliar funciones se implementa M2-F: identidades documento/vista/grupo, una sola propiedad de selección/viewport y transacciones. La [auditoría](AUDITORIA_ECODE_ARQUITECTURA.md) distingue evidencia funcional de deuda arquitectónica.
+
 ## Objetivo de experiencia
 
 JC-IDE debe aproximarse a la experiencia de navegación de Sublime Text con un único `Workbench` byte-preserving: dos grupos simultáneos de edición, referencias anclables, navegación atrás/adelante, explorador izquierdo, símbolos e includes navegables y una experiencia Git integrada para comparar, revisar y resolver conflictos. TUI y GUI comparten comandos, estado, history y servicios de lenguaje. Una extensión aporta semántica, no un segundo editor.
@@ -29,11 +31,11 @@ Este dibujo es objetivo arquitectónico, **no** una captura ni evidencia de inte
 ## 1. Modelo de grupos: una fuente de verdad
 
 - Máximo inicial: **dos grupos**, Primary y Secondary. Ningún panel duplica `FileSession`, `Document` ni undo/redo.
-- Cada grupo conserva un `NavLocation(TabId, byte_offset)`, estado anclado y stacks atrás/adelante **independientes**; los movimientos ordinarios de cursor no llenan el historial de saltos.
+- Cada grupo conserva estado anclado y stacks atrás/adelante **independientes**; los movimientos ordinarios de cursor no llenan el historial de saltos. El checkpoint usa `NavLocation(TabId, byte_offset)`; F1 migra a identidad de documento/revisión y vista/destino explícitos, sin confundir pestaña con documento.
 - Al abrir Split Right, ambos grupos apuntan inicialmente al mismo documento. Al navegar a otro archivo se reemplaza el grupo activo, salvo que esté anclado; en ese caso se usa el otro grupo.
 - Solo un grupo puede estar anclado como referencia para evitar que dos grupos bloqueen la navegación automática. Un salto explícito sigue estando permitido.
 - **Pin** significa preservar el documento referenciado frente a navegación automática. **Linked scroll** es otro ajuste independiente: empareja desplazamiento de vistas comparables, no cambia el historial.
-- Cerrar el segundo grupo no cierra su documento ni descarta sus cambios. Cerrar una pestaña elimina sus ubicaciones de todos los historiales y evita referencias colgantes.
+- Cerrar el segundo grupo no descarta cambios. En F1, cerrar una pestaña/vista elimina esa referencia; el documento sigue vivo mientras otra vista lo use y cerrar la última exige resolver cambios pendientes. El checkpoint actual cierra por `TabId` compartido; se migra junto con el modelo de identidad, sin referencias colgantes en historiales.
 - Un documento compartido tiene una sola revisión/undo; cada vista debe tener cursor, selección visible, scroll y estado de foco propios. La capa de vistas deberá rebasar offsets al editar delante de otra vista, sin modificar la semántica del buffer.
 - La comparación Git no es un documento editable común: los lados de commit/index/HEAD son **snapshots inmutables**; la vista de resultado de merge sí es editable y guarda vía `jc-files`.
 
@@ -41,7 +43,7 @@ Este dibujo es objetivo arquitectónico, **no** una captura ni evidencia de inte
 
 ## 2. Navegación de código (universal y por proveedor)
 
-**Núcleo genérico:** `NavigationTarget` contiene URI/ruta, `DocumentId/TabId` cuando ya está abierto, rango fuente en bytes, línea/columna opcionales, origen de evidencia y confianza. Acciones: Open, Open to Side, Peek, Go to Definition, Find References, Back, Forward, Next/Previous Symbol, Breadcrumb, Outline.
+**Núcleo genérico:** `NavigationTarget` contiene URI/ruta, `DocumentId` y revisión cuando ya está abierto, rango fuente en bytes, línea/columna opcionales con convención explícita, origen de evidencia y confianza. El destino de presentación (grupo/vista) es independiente. Acciones: Open, Open to Side, Peek, Go to Definition, Find References, Back, Forward, Next/Previous Symbol, Breadcrumb, Outline.
 
 **Resolución por lenguaje:** `jc-languages` aporta perfil/capacidades; los proveedores internos aportan símbolos y resolución:
 
@@ -171,7 +173,7 @@ Split/One Group, Focus 1/2, Pin, Linked Scroll y Back/Forward ya están registra
 
 ## 9. Deuda técnica reconocida
 
-- `EditorDocument` conserva campos de cursor/selección/scroll como estado de trabajo de la vista activa; `PaneManager` guarda/restaura por grupo. Los accesos de bajo nivel que muten `FileSession` fuera de Workbench no deben saltarse el rebase.
+- `EditorDocument` conserva campos de cursor/selección/scroll como estado de trabajo de la vista activa; `PaneManager` guarda/restaura por grupo. D18 clasifica esto como deuda a retirar en F1: la vista será su único propietario y las mutaciones pasarán por transacciones/notificaciones completas.
 - Scroll se mide por líneas y columnas escalares del renderer actual. No se promete ancho Unicode/grafemas completo, scroll de diff por hunks ni tabs por grupo (la barra de pestañas sigue siendo global).
 - Resolver de includes/RUN, Outline, completado, DiffModel, Git read-only/write y merge siguen pendientes. Sus comandos se registrarán al tener ejecutor real.
 - El incremento doble panel está compilado y probado localmente; aún falta revisión manual exhaustiva de combinaciones/terminales. GitHub Actions permanece dormido hasta M5 y M2A sigue abierto.

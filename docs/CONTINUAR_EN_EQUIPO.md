@@ -1,60 +1,44 @@
-# Prompt de continuación local — JC-IDE, M2A
+# Continuación local — fundamentos de JC-IDE
 
-Copia este texto al agente de programación que vaya a trabajar directamente en el equipo Windows/Zephyrus. Debe inspeccionar el repositorio antes de modificarlo; este documento es un handoff, no una certificación de que todas las funciones están compiladas.
+Actualizado el 2026-11-01 después de la auditoría ecode/eepp. Este texto sustituye el handoff anterior que priorizaba terminar splits y después includes/RUN. La rama local auditada es `m2a/dual-pane-tui`; su base funcional es `d5eccfc`. No asumir que está integrada en `main` o publicada.
 
-**Actualización 2026-11-01:** el doble panel de prioridades 1–2 del prompt original ya está implementado, compilado y probado localmente. Conserva el prompt inferior como contexto del alcance original; para el estado actual consulta [M2_TUI_CHECKPOINT.md](M2_TUI_CHECKPOINT.md) y [VALIDACION.md](VALIDACION.md). No rehacer PaneManager ni el renderer. El siguiente incremento es navegación por proveedores (Outline/includes/RUN); Search Plus de proyecto y Git read-only siguen pendientes. M2A permanece abierto y aún requiere revisión manual exhaustiva. En este equipo `scripts/cargo-local.ps1` utiliza el toolchain aislado en `work/toolchain`; ambos se describen en README.
+## Instrucción para continuar
 
----
+Continúa JC-IDE en Windows desde el estado real del clon. El objetivo es una base de edición eficiente y una GUI con dirección visual de Sublime Text; ecode es una referencia adicional de lógica, no un motor que deba copiarse entero. La siguiente implementación es **M2-F / F1**, no más asistentes ni sincronizaciones de cursor.
 
-Actúa como agente responsable de continuar **JC-IDE**, editor multilenguaje Rust, desde el estado real de mi repositorio privado `https://github.com/juancgomezm-s/JC-IDE.git`, rama `main`. Trabaja en mi entorno Windows local y realiza cambios reales sobre el repositorio.
+1. Inspecciona `git status`, rama y log. Conserva cambios locales; no hagas reset/clean ni sustituyas la rama por `main`. Consulta el remoto solo si hace falta para integrar; no dispares Actions.
+2. Lee `AGENTS.md`, `README.md`, `docs/AUDITORIA_ECODE_ARQUITECTURA.md`, `docs/ARQUITECTURA.md`, `docs/PLAN.md`, `docs/DECISIONES.md`, `docs/TUI_INTERACTION.md`, `docs/EXTENSION_ARCHITECTURE.md` y `docs/VALIDACION.md`.
+3. Revisa `jc-core/document.rs`, `jc-text/index.rs`, `jc-app/panes.rs`, `jc-app/tabs.rs`, `jc-app/workbench/*` y `jc-tui/app/paths.rs`/`render/mod.rs` (todos bajo `crates/*/src/`). El ejemplo `crates/jc-app/examples/audit_baseline.rs` reproduce fallos y mide dos operaciones; no es una prueba de aprobación.
+4. Usa `scripts/cargo-local.ps1` si el toolchain aislado sigue disponible; no modifica el PATH. Valida localmente y registra resultados. El sandbox puede bloquear hard links/ReplaceFileW en pruebas de archivo; no cambies el algoritmo para hacerlas pasar.
 
-## Primer paso obligatorio
+## Qué existe y qué falta
 
-1. Localiza el clon de JC-IDE. Si no existe, clónalo en la carpeta de proyectos acordada. Haz `git status`, `git fetch` y revisa `git log -5 --oneline`. **No uses `reset --hard`, `clean -fd` ni sobrescribas cambios locales sin consentimiento**.
-2. Lee `AGENTS.md`, `README.md`, `docs/PLAN.md`, `docs/TUI_INTERACTION.md`, `docs/EXTENSION_ARCHITECTURE.md`, `docs/M2_TUI_CHECKPOINT.md`, `docs/M2_NAVIGATION_PANES_GIT.md` y `docs/M2_SEARCH_PLUS.md` antes de tocar código.
-3. Inspecciona `crates/jc-app/src/panes.rs`, `crates/jc-app/src/workbench/mod.rs`, `crates/jc-app/src/tabs.rs`, `crates/jc-tui/src/render/mod.rs` y `crates/jc-tui/src/app/events.rs`.
-4. Comprueba localmente `cargo fmt --all -- --check`, `cargo test -p jc-app`, `cargo check -p jc-tui` y después los tests dirigidos a lo que modifiques. Corrige los errores encontrados, sin fingir resultados y sin disparar GitHub Actions.
-5. No reactivar ni ejecutar GitHub Actions en M2–M4; **CI remoto y hardening integral pertenecen a M5**, por decisión D13.
+Existe core byte-preserving, codecs explícitos, sesión/guardado seguro, perfiles, comandos/keymap/foco y TUI con dos grupos, pin, back/forward, selección/viewport y undo compartido. El incremento funcional obtuvo 78 pruebas y smoke ConPTY en Windows; esa evidencia no cubre los defectos posteriores de la auditoría.
 
-## Qué existe al comenzar
+La arquitectura todavía duplica estado de vista, decodifica/indexa archivos completos en operaciones frecuentes y aplica replace-all como varios undos. CRLF admite una posición de caret inválida; dirty/reabrir es inconsistente; la transición de elección legacy requiere corrección. No hay GUI, motor de proyecto cancelable, resolver ABL, DiffModel ni AVM validada.
 
-- Core byte-preserving (`jc-core`), codificaciones explícitas (`jc-text`), guardado seguro (`jc-files`).
-- `jc-app`: Workbench, CommandRegistry, KeyMap, MenuModel, Tabs, foco, búsqueda y operaciones de edición.
-- `jc-tui` inicial: terminal con crossterm, Explorer, búsqueda, menús y panel inferior.
-- `jc-languages`: 18 perfiles y delimitadores de comentarios declarativos.
-- `jc-progress`: puente de solicitudes/diagnósticos, sin validación de helpers ABL en AVM.
-- **Checkpoint nuevo:** `PaneManager` y métodos de Workbench para Primary/Secondary, pin de referencia, historial atrás/adelante y flag de scroll vinculado. Tiene pruebas de modelo y Workbench, pero no se debe asumir compilado.
-- **No están hechos:** renderer doble TUI, scroll/cursor/selección completos por vista, resolución inteligente de includes/RUN, autocomplete semántico, DiffModel, motor Git de escritura o merge 3 vías.
+## Primer incremento: F1
 
-## Tu primer objetivo: cerrar el incremento de doble panel de M2A
+- Separar `DocumentId`, `ViewId` y grupo. Un documento/sesión/undo; selecciones y viewport exclusivamente en la vista. Eliminar campos espejo de `EditorDocument` y ciclos guardar/restaurar usados para simular esa separación. La barra de pestañas pasa a ser presentación por grupo según el contrato nuevo.
+- Introducir `EditBatch` con revisión esperada y validación completa previa. Un commit, un undo y un `ChangeSet` que permite reubicar todas las vistas; undo/redo emiten mapas completos. Retirar accesos de consumidores que muten contenido evitando la notificación.
+- Centralizar límites de edición textual: no caret ni borrado parcial dentro de CRLF; conservar bytes y distinguir offsets de columnas/grafemas. No sustituir CRLF por LF para simplificar.
+- Corregir apertura/elección de encoding y cierre/descarte/reapertura con transiciones explícitas. Dirty se deriva del documento. No restaurar texto descartado mientras se muestra una pestaña limpia.
+- Migrar consumidores y quitar la ruta antigua en el mismo incremento. Mantener operativa la TUI; no conservar dos motores finales.
 
-**Prioridad 1 — validar y terminar el modelo.** Asegura que dos grupos puedan mostrar el mismo TabId y la misma FileSession, que cada grupo conserve foco/cursor/scroll/selección propios, que el anclaje no sea reemplazado al navegar y que atrás/adelante use un historial independiente por grupo. Corrige la reubicación de offsets al editar contenido visible en dos grupos y el cierre de pestañas abiertas simultáneamente. El historial de undo debe seguir siendo uno por documento. Mantén un máximo de dos grupos inicialmente.
+Aceptación: replace-all de varias coincidencias se revierte en un undo; lote inválido/obsoleto deja estado intacto; bytes/BOM/EOL/encoding se preservan; caret CRLF válido; dos vistas comparten contenido/undo sin mezclar selección; cierre de una vista no destruye la otra; dirty y elección legacy correctos. Añadir regresiones observables para estos casos y ejecutar pruebas proporcionales al cambio.
 
-**Prioridad 2 — conectar el renderer TUI.** Divide la región central en Primary y Secondary sin duplicar Workbench. Respeta los anchos de terminal; cuando el ancho no alcance, muestra un grupo y permite alternar, sin destruir el otro. Dibuja título de cada grupo, activo, indicador de pin y scroll link; permite Focus Group 1/2. Agrega acciones reales Split Right, One Group, Pin/Unpin, Linked Scroll, Navigate Back/Forward al CommandRegistry/KeyMap/MenuModel/Palette. No registres atajos sin handler funcional. Fallback por Palette para terminales que no transmitan combinaciones. Prueba navegación únicamente por teclado y preserva F6, Ctrl+D, Ctrl+Shift+D, Tab/Shift+Tab, Ctrl+F/H, F7 y Alt+1…9 existentes.
+## Después de F1
 
-**Prioridad 3 — navegación lateral y símbolos.** Amplía Explorer hacia Outline/Breadcrumb genérico, con resultados tipados. Define un resolver por proveedor: para ABL, detectar con lexer ligero `{customer.i}` y `RUN orders.p` estáticos, resolver usando ruta fuente + PROPATH/perfil de proyecto, mostrar múltiples candidatos y marcar dinámicos/no resueltos. Un `F12` o Enter debe abrir el destino en el grupo no anclado; Alt+F12 Peek y Alt+Left/Right historial. No ejecutar AVM ni BD para navegar; esas integraciones llegarán en M3/M4. No fingir referencias semánticas donde solo hay heurística.
+F2 incorpora acceso a segmentos e índices incrementales/cachés con presupuesto, y compara estructuras de almacenamiento bajo carga antes de elegir. F3 separa actualización de render, dibuja solo lo visible, emite diffs de terminal y recibe jobs versionados/cancelables. Medir p50/p95, trabajo recorrido y memoria desde ahora, sin CI remoto.
 
-**Prioridad 4 — Git read-only en M2.** Implementa una capa independiente que use Git CLI instalado, sin invocaciones de shell concatenadas, para status/log y diffs worktree/index/HEAD/commit; muestra cambios en sidebar Git y abre diff lado a lado en los dos grupos. Mantén modelos de snapshots inmutables y resultados tipados. El stage/unstage, commit, fetch/pull/push, ramas, merge y resolución BASE/OURS/THEIRS/RESULT quedan planificados para M5, con confirmación y control de conflictos. No hagas push, merge ni modificación de ramas de negocio como efecto de navegar.
+Tras estabilizar F1/F2, prototipar GUI con el mismo motor y la escena visual acordada. Search Plus de proyecto y navegación/Git read-only se construyen sobre F1–F3; la integración Progress real permanece en M3/M4. Git con escritura y CI en M5; plugins Sublime/Python post-M5.
 
-**Prioridad 5 — preparar autocomplete y Search Plus.** Define interfaces universales de Symbol/Completion/NavigationTarget en la capa común sin meter reglas ABL en el core. El proveedor ABL aportará keywords, nombres de includes/procedures y luego tablas/campos desde caché local; otros lenguajes podrán aportar LSP opcional. Búsquedas de proyecto deben ser cancelables, acotadas y respetar encodings legacy. No iniciar procesos ni indexación residente por defecto.
+## Límites y entrega
 
-## Invariantes
+- No introducir pérdidas de bytes, normalización silenciosa ni encoding inferido destructivamente.
+- No iniciar AVM, LSP, agentes o indexadores permanentes para abrir/editar.
+- Mantener Ctrl+D duplicar, Ctrl+Shift+D borrar línea y reglas contextuales de foco.
+- No disparar GitHub Actions ni publicar/mezclar cambios como efecto de pruebas.
+- Entregar código y regresiones del incremento, evidencia local, límites, documentación coherente y commit local sin reescribir historial. No declarar cerrados M2 ni las metas de RAM/latencia sin evidencia.
 
-- TUI y GUI comparten Workbench, PaneManager, CommandRegistry y KeyMap.
-- Core nunca importa `jc-progress`, una runtime Python ni una extensión específica.
-- Guardado/edición preserva los bytes originales, codepages legacy, BOM y EOL. Ninguna modificación silenciosa por caracteres inválidos.
-- Una edición multiposición produce una sola transacción lógica de undo.
-- No inventar disponibilidad: comandos sin implementación se deshabilitan.
-- La integración de plugins externos/Sublime se mantiene **post-M5**; las capacidades de lenguaje internas sí pueden prepararse ahora.
-- Sin uso de GitHub Actions hasta M5 salvo mi autorización expresa.
-
-## Entregables
-
-1. Código compilable con validación **local** y pruebas dirigidas que demuestren split/pin/back/forward/restore, apertura lateral, mismo documento en dos grupos y ausencia de corrupción del undo.
-2. Un resumen de cambios y limitaciones reales; no marcar M2A cerrada si aún faltan funciones.
-3. Actualización de `docs/M2_TUI_CHECKPOINT.md`, `docs/TUI_INTERACTION.md` y el plan cuando el código avance.
-4. Commits Git con mensajes claros, sin reescribir mi historial ni pisar modificaciones locales. Al finalizar, explica rama/commit y qué hay que revisar antes de integrar a main.
-
-Comienza inspeccionando y validando el checkpoint existente; no reconstruyas el editor desde cero.
-
----
+Si la implementación requiere cambiar un contrato de la arquitectura, documenta el motivo y su coste; no añadas una sincronización compensatoria y la presentes como cierre del problema.

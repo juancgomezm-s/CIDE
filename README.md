@@ -4,7 +4,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M2A en desarrollo — TUI con doble panel, referencia anclable, navegación por grupo y edición compartida; incremento validado localmente en Windows. GUI, navegación de símbolos y Search Plus de proyecto pendientes.**
+**Estado: M2 en desarrollo — TUI funcional con doble panel; prioridad actual M2-F: propiedad de vistas, transacciones e índices eficientes. La auditoría local encontró fallos pendientes de undo/CRLF/estado y costes lineales por tecla. GUI con dirección visual de Sublime Text, símbolos y Search Plus de proyecto pendientes.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
@@ -24,9 +24,7 @@ real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 | `jc-cli` | Inspección de archivos, copia exacta, edición de bytes a copia nueva, demo de undo/redo, preparación de solicitudes y validación de respuestas Progress |
 | Documentación | Resumen, investigación, arquitectura, decisiones, hitos, lenguajes y evidencia de validación |
 
-El núcleo y los otros crates usan únicamente la biblioteca estándar de Rust y dependencias
-internas del workspace. La piece table usa un vector de fragmentos en esta primera versión;
-las operaciones recorren O(P) fragmentos. El historial tiene límite configurable (1024 por defecto) y el almacenamiento añadido puede compactarse explícitamente.
+El núcleo usa la biblioteca estándar de Rust; el frontend terminal usa crossterm. La piece table usa un vector de fragmentos en esta primera versión; las operaciones recorren O(P) fragmentos. El historial tiene límite configurable de pasos (1024 por defecto), no de bytes retenidos; la compactación explícita elimina el historial. La [auditoría de arquitectura y ecode](docs/AUDITORIA_ECODE_ARQUITECTURA.md) documenta los límites y el plan de sustitución.
 
 ## Empezar
 
@@ -57,6 +55,8 @@ Los offsets del núcleo son bytes, no caracteres ni columnas visuales. `jc-text`
 ## Checkpoint de navegación en M2A
 
 La TUI dibuja dos grupos Primary/Secondary con cursor, selección y viewport independientes. Comparten `TabId`, `FileSession` y undo; los offsets se ajustan al editar y deshacer. Pin/unpin, scroll vertical vinculado, apertura lateral y back/forward se ejecutan desde el registro central, menús y palette. En terminales estrechas se muestra el grupo activo conservando el otro. Git/diff, símbolos e includes/RUN siguen pendientes; M2A permanece abierto.
+
+Ese comportamiento conserva estado mediante campos espejo entre documento y panel. M2-F reemplazará esa propiedad y la decodificación completa por operación antes de sumar funciones; las pruebas del checkpoint no certifican el diseño final. Véanse [arquitectura de destino](docs/ARQUITECTURA.md) y [plan corregido](docs/PLAN.md).
 
 En este equipo se preparó Rust 1.85.1 dentro de `work/toolchain`, sin cambiar el PATH del usuario. El wrapper PowerShell también admite un Cargo ya instalado:
 
@@ -108,7 +108,7 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 3. [Arquitectura](docs/ARQUITECTURA.md)
 4. [Decisiones y pendientes](docs/DECISIONES.md)
    - [Arquitectura de extensiones multilenguaje](docs/EXTENSION_ARCHITECTURE.md)
-5. [Investigación de Lime Text, PIEW y Progress](docs/INVESTIGACION.md)
+5. [Investigación de Lime Text, PIEW, ecode y Progress](docs/INVESTIGACION.md)
 6. [Contrato de interacción TUI](docs/TUI_INTERACTION.md)
 7. [M1: archivos, encoding y posiciones](docs/M1_FILES_TEXT.md)
 8. [Validación observada y límites](docs/VALIDACION.md)
@@ -118,6 +118,7 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 12. [M2: doble panel, navegación y Git](docs/M2_NAVIGATION_PANES_GIT.md)
 13. [Prompt para continuar desde el equipo](docs/CONTINUAR_EN_EQUIPO.md)
 14. [Post-M5: compatibilidad Sublime Text](docs/POST_M5_SUBLIME_COMPAT.md)
+15. [Auditoría de arquitectura, ecode y baseline local](docs/AUDITORIA_ECODE_ARQUITECTURA.md)
 
 ## Procedencia y licencia
 

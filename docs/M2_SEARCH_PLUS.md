@@ -2,6 +2,8 @@
 
 La búsqueda debe ser más poderosa que la del editor típico, pero ejecutarse **bajo demanda**, sin servidor remoto, AVM, LSP o indexador obligatorios.
 
+**Orden actualizado 2026-11-01:** S0/S1 dependen de M2-F de [PLAN.md](PLAN.md). El replace-all actual produce varios pasos de undo y el panel recalcula posiciones sobre todo el documento por coincidencia; no se consideran cerrados esos contratos. La [auditoría de ecode y JC-IDE](AUDITORIA_ECODE_ARQUITECTURA.md) aporta evidencia y referencias para la sustitución.
+
 ## S0 — Archivo activo: M2A
 
 - Ctrl+F: búsqueda incremental; F3 y Shift+F3: siguiente/anterior.
@@ -23,6 +25,8 @@ La búsqueda debe ser más poderosa que la del editor típico, pero ejecutarse *
 - Resultados con archivo, línea, columna, snippet y rango de bytes.
 - Replace in Files con diff agrupado, confirmación y verificación de conflictos de disco.
 - Uso opcional de ripgrep cuando resulte apropiado; fallback propio.
+
+Los resultados incluyen generación de consulta y revisión/huella de origen. Preferir snapshots de documentos abiertos sucios al disco. Workers, colas, bytes examinados y lotes tienen cuotas; el panel virtualiza filas y no decodifica todo el archivo por resultado. Cancelar/cambiar consulta descarta entregas anteriores y libera snapshots. Un reemplazo usa una transacción por documento y valida cambios de disco por archivo: no se promete atomicidad global del proyecto.
 
 **Presupuesto inicial de diseño, no benchmark:** mostrar 1,000 resultados, máximo configurable 10,000 antes de requerir refinar; cota de bytes por archivo y cancelación inmediata. No reintentar búsquedas ilimitadamente.
 

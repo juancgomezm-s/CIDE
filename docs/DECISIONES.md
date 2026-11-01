@@ -123,3 +123,17 @@ Git es un proveedor transversal bajo demanda, no una función exclusiva de ABL. 
 No se duplican procesos ni historiales para una segunda vista. Mantener la frontera de la decisión D16 y el aplazamiento de CI de D13.
 
 Ver `docs/M2_NAVIGATION_PANES_GIT.md` y el prompt reproducible `docs/CONTINUAR_EN_EQUIPO.md`.
+
+## D18 — Fundamentos antes de expansión; ecode como referencia adicional
+
+**Aceptada como dirección de diseño el 2026-11-01; implementación F1–F3 pendiente.** La auditoría de la base `d5eccfc` reproduce fallos de undo multiposición, caret CRLF, estado de reapertura y costes de movimiento/posición proporcionales al archivo. Las pruebas funcionales previas no equivalen a aceptación arquitectónica.
+
+Conservar bytes canónicos, encoding explícito, sesiones/guardado, comandos y fronteras de lenguaje. Sustituir propiedad duplicada de cursor/selección/viewport por vistas con identidad propia; introducir transacciones y mapas de cambio completos; después acceso incremental, presupuestos de memoria y render visible. Cada migración retira la ruta anterior, sin mantener otro motor de edición.
+
+Esta decisión precisa D17: el documento tiene `DocumentId`; cada presentación tiene `ViewId`, dentro de un grupo. Compartir el `TabId` actual es una implementación transitoria, no el contrato final. Undo de contenido sigue único por documento y selección/viewport únicos por vista.
+
+ecode/eepp aporta evidencia de flujos y estructuras, no una obligación de copiar su stack ni normalización textual. Sublime Text continúa como referencia visual. Medir localmente desde M2 y prototipar GUI tras estabilizar F1/F2, antes de completar toda la asistencia ABL. No elegir árbol/rope, GPU ni perfil release por reputación: comparar cargas, latencia y memoria.
+
+M2 prepara y valida el contrato de tareas con un proveedor de prueba; la ejecución Progress real pertenece a M3. Se mantienen D13 (CI en M5), D14 (plugins Sublime post-M5) y D16 (proveedores opcionales). Corregir defectos conocidos de datos/edición ahora no depende de habilitar CI.
+
+Evidencia y alcance: [AUDITORIA_ECODE_ARQUITECTURA.md](AUDITORIA_ECODE_ARQUITECTURA.md). Contratos: [ARQUITECTURA.md](ARQUITECTURA.md). Orden y criterios: [PLAN.md](PLAN.md).

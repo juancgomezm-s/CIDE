@@ -2,12 +2,14 @@
 
 **Estado:** en desarrollo. Este documento registra implementación, no cierre de épica.
 
+**Revisión de arquitectura 2026-11-01:** el incremento compila y sus pruebas pasaron, pero la [auditoría posterior](AUDITORIA_ECODE_ARQUITECTURA.md) reproduce fallos de replace-all/undo, caret CRLF y dirty al reabrir, además de costes lineales. El siguiente paso es M2-F de [PLAN.md](PLAN.md), antes de ampliar navegación/servicios. La propiedad duplicada de estado descrita abajo es transitoria y debe retirarse.
+
 ## Implementado
 
 - `jc-tui` como frontend terminal basado en crossterm.
 - Un único `Workbench` de `jc-app` posee documentos, cursor, selección, búsqueda, clipboard y undo/redo.
 - Abrir, crear, Save, Save As, Save All, cerrar con decisión por cambios y reabrir pestaña.
-- Edición byte-safe a través de M1: texto, newline, tab, backspace/delete, cursor y selección.
+- Edición sobre bytes a través de M1: texto, newline, tab, backspace/delete, cursor y selección; pendiente corregir límites textuales CRLF según la auditoría.
 - Undo/redo, cut/copy/paste/select-all.
 - Duplicate selection/line, Delete Line, Move Line Up/Down y Toggle Comment. Para ABL, Ctrl+/ inserta/retira /* ... */ en línea o selección; Ctrl+Shift+/ fuerza bloque. Tab/Shift+Tab gestionan sangría.
 - Find/Replace de documento, flags case/whole-word, resultados y replace current/all.
@@ -17,7 +19,7 @@
 - Foco Editor/Sidebar/BottomPanel y overlays.
 - Explorer de proyecto con navegación por teclado, refresh y restricción a la raíz.
 - Bottom panel con selección; Search Results navega al match y devuelve foco al editor.
-- Selección explícita de encoding legacy cuando M1 no puede determinarlo.
+- Selección explícita de encoding legacy cuando M1 no puede determinarlo; la apertura por prompt tiene una transición defectuosa identificada en la auditoría.
 
 ## Teclas del Explorer
 
@@ -49,7 +51,7 @@ Problems y Output aún son texto sin ubicación estructurada. No fingimos navega
 - Ctrl+/ = Comentar/descomentar código; Ctrl+Shift+/ = Alternar bloque.
 - ABL usa /* ... */ y el cambio se realiza sobre el Document, sin invocar Progress.
 - Se añadieron tests de regresión para encoding legacy, BOM, selección multilineal y atajos.
-- **La implementación aún no ha sido compilada en el entorno actual**; conforme D13, CI remoto se difiere a M5.
+- La compilación y pruebas locales posteriores están registradas en el checkpoint de dos grupos y [VALIDACION.md](VALIDACION.md); no validan AVM ni todo el alcance futuro. Conforme D13, CI remoto se difiere a M5.
 - Alcance detallado: [comandos ABL](ABL_EDITOR_COMMAND_SCOPE.md) y [Search Plus](M2_SEARCH_PLUS.md).
 
 ## Checkpoint de dos grupos — 2026-11-01
@@ -69,12 +71,14 @@ Problems y Output aún son texto sin ubicación estructurada. No fingimos navega
 
 ## Pendiente para cerrar M2A
 
+Primero completar M2-F: una propiedad por vista, transacciones y notificación completa, límites textuales correctos, índices/cachés acotados, render visible y tareas versionadas. No usar el éxito de los tests anteriores como sustituto de esa aceptación.
+
 1. Find/Replace in Project real sobre la raíz abierta, con límites y exclusiones claras.
 2. Modelo de tareas no bloqueante para Build/Progress que pueda alimentar Output/Problems sin ejecutar la integración real antes de M3.
 3. Navegación estructurada desde Problems cuando exista `file + line + column`.
 4. Modo columna rectangular auténtico con posiciones visuales, clipboard y undo transaccional.
 5. Revisión manual en terminal real de todas las combinaciones de foco/atajos.
-6. Ajustes acumulados de compilación/formato se endurecen en M5, conforme D13; no se consume GitHub Actions durante M2–M4.
+6. Validar localmente cada incremento y corregir defectos conocidos de integridad/edición; la matriz transversal se endurece en M5, conforme D13. No consumir GitHub Actions durante M2–M4.
 
 ## Restricciones deliberadas
 
