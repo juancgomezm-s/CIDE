@@ -76,6 +76,12 @@ impl TextIndex {
         self.line_starts.len()
     }
 
+    pub fn line_len(&self, line: usize) -> Option<usize> {
+        let start = *self.line_starts.get(line)?;
+        let end = *self.line_ends.get(line)?;
+        Some(end - start)
+    }
+
     pub fn source_byte_to_position(&self, offset: usize) -> Result<TextPosition, PositionError> {
         let scalar = self
             .source_offsets

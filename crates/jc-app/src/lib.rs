@@ -12,6 +12,7 @@ mod keymap;
 mod menu;
 mod panels;
 mod tabs;
+mod workbench;
 
 pub use command::{
     default_registry, CommandCategory, CommandContext, CommandId, CommandRegistry, CommandSpec,
@@ -24,3 +25,7 @@ pub use keymap::{
 pub use menu::{default_menu_model, Menu, MenuId, MenuItem, MenuModel, MenuValidationError};
 pub use panels::{BottomPanel, PanelManager, SidebarView};
 pub use tabs::{CloseRequest, Tab, TabId, TabManager};
+
+pub use workbench::{
+    CommandOutcome, EditorDocument, SearchState, Workbench, WorkbenchError,
+};
