@@ -1,0 +1,11 @@
+target/
+/work/
+*.r
+*.log
+*.tmp
+*.local.toml
+*.local.pf
+*.local.ini
+.env
+.env.*
+!.env.example

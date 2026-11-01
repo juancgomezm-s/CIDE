@@ -1,0 +1,16 @@
+[package]
+name = "jc-cli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+publish = false
+description = "Headless validation CLI for the JC-IDE prototype"
+
+[[bin]]
+name = "jc-ide"
+path = "src/main.rs"
+
+[dependencies]
+jc-core = { path = "../jc-core" }
+jc-languages = { path = "../jc-languages" }
+jc-progress = { path = "../jc-progress" }

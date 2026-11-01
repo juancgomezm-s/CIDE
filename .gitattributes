@@ -1,0 +1,9 @@
+# Git must not recode the legacy source files this editor is intended to handle.
+* -text
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Cargo.lock text eol=lf
+/progress/abl/*.p text eol=crlf
