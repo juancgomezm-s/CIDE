@@ -198,3 +198,19 @@ fn replace_current_and_all_use_the_document_encoding() {
     assert_eq!(bench.replace_all("café").unwrap(), 1);
     assert_eq!(bench.active_bytes().unwrap(), b"ni\xf1o caf\xe9");
 }
+
+
+#[test]
+fn reopen_closed_tab_restores_the_same_document_session() {
+    let work = Workspace::new();
+    let path = work.path("reopen.txt");
+    fs::write(&path, b"abc").unwrap();
+
+    let mut bench = Workbench::default();
+    let tab = bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+    assert_eq!(bench.close_active(false).unwrap(), None);
+    assert!(bench.context().can_reopen_closed_tab);
+    assert!(bench.reopen_closed());
+    assert_eq!(bench.tabs().active_id(), Some(tab));
+    assert_eq!(bench.active_bytes().unwrap(), b"abc");
+}
