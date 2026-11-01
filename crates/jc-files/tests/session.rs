@@ -138,3 +138,32 @@ fn deletion_is_reported_as_an_external_conflict() {
     ));
     assert!(!path.exists());
 }
+
+
+#[test]
+fn new_session_creates_file_only_when_name_is_still_free() {
+    let work = Workspace::new();
+    let path = work.path("new.p");
+    let mut session = FileSession::new(&path, TextEncoding::Iso8859_1);
+    session.insert_text(0, "niño\r\n").unwrap();
+    assert_eq!(session.external_state().unwrap(), ExternalState::Unchanged);
+    session.save().unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"ni\xf1o\r\n");
+    assert!(!session.document().is_modified());
+}
+
+#[test]
+fn new_session_refuses_to_overwrite_a_file_that_appeared_after_creation() {
+    let work = Workspace::new();
+    let path = work.path("race.p");
+    let mut session = FileSession::new(&path, TextEncoding::Utf8);
+    session.insert_text(0, "mine").unwrap();
+    fs::write(&path, b"someone else").unwrap();
+
+    assert_eq!(session.external_state().unwrap(), ExternalState::Changed);
+    assert!(matches!(
+        session.save(),
+        Err(FileError::ExternalModification(ExternalState::Changed))
+    ));
+    assert_eq!(fs::read(&path).unwrap(), b"someone else");
+}
