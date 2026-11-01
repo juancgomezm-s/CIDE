@@ -186,8 +186,7 @@ fn draw_editor(
         let row_y = y + row as u16;
         let number = format!("{:>width$} ", line_index + 1, width = number_width as usize);
         screen.text_styled(x, row_y, &number, CellStyle::Dim);
-        let mut visual_col = 0usize;
-        for &(ch, source_offset) in &lines[line_index] {
+        for (visual_col, &(ch, source_offset)) in lines[line_index].iter().enumerate() {
             if visual_col >= hscroll {
                 let target = visual_col - hscroll;
                 if target >= usize::from(text_width) { break; }
@@ -198,7 +197,6 @@ fn draw_editor(
                 };
                 screen.put_styled(text_x + target as u16, row_y, ch, style);
             }
-            visual_col += 1;
         }
     }
 
