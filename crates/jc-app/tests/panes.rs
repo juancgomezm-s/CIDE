@@ -118,29 +118,26 @@ fn selection_and_scroll_survive_focus_changes_on_a_shared_document() {
     bench.insert_text(&"abcdef\n".repeat(40)).unwrap();
     bench.move_home(false).unwrap();
     bench.reveal_active_pane(5, 20);
-    let primary_scroll = bench.active_document().unwrap().scroll_line;
+    let primary_scroll = bench.active_editor().unwrap().scroll_line;
     bench.split_editor_right();
     bench.focus_editor_pane(PaneId::Secondary);
     bench.move_vertical(-30, false).unwrap();
     bench.move_right(true).unwrap();
     bench.reveal_active_pane(5, 20);
-    let secondary_cursor = bench.active_document().unwrap().cursor;
-    let secondary_selection = bench.active_document().unwrap().selection();
-    let secondary_scroll = bench.active_document().unwrap().scroll_line;
+    let secondary_cursor = bench.active_editor().unwrap().cursor;
+    let secondary_selection = bench.active_editor().unwrap().selection();
+    let secondary_scroll = bench.active_editor().unwrap().scroll_line;
     assert_ne!(primary_scroll, secondary_scroll);
     bench.focus_editor_pane(PaneId::Primary);
-    assert_eq!(bench.active_document().unwrap().scroll_line, primary_scroll);
-    assert_eq!(bench.active_document().unwrap().selection(), None);
+    assert_eq!(bench.active_editor().unwrap().scroll_line, primary_scroll);
+    assert_eq!(bench.active_editor().unwrap().selection(), None);
     bench.focus_editor_pane(PaneId::Secondary);
-    assert_eq!(bench.active_document().unwrap().cursor, secondary_cursor);
+    assert_eq!(bench.active_editor().unwrap().cursor, secondary_cursor);
     assert_eq!(
-        bench.active_document().unwrap().selection(),
+        bench.active_editor().unwrap().selection(),
         secondary_selection
     );
-    assert_eq!(
-        bench.active_document().unwrap().scroll_line,
-        secondary_scroll
-    );
+    assert_eq!(bench.active_editor().unwrap().scroll_line, secondary_scroll);
 }
 
 #[test]
@@ -161,13 +158,13 @@ fn edits_and_shared_undo_rebase_the_other_groups_selection_and_history() {
     bench.redo().unwrap();
     assert_eq!(bench.selection_for_pane(PaneId::Secondary), Some(3..5));
     bench.focus_editor_pane(PaneId::Secondary);
-    assert_eq!(bench.active_document().unwrap().selection(), Some(3..5));
+    assert_eq!(bench.active_editor().unwrap().selection(), Some(3..5));
     bench.jump_to_location(tab, 8);
     bench.focus_editor_pane(PaneId::Primary);
     bench.insert_text("x").unwrap();
     bench.focus_editor_pane(PaneId::Secondary);
     assert!(bench.navigation_back());
-    assert_eq!(bench.active_document().unwrap().cursor, 6);
+    assert_eq!(bench.active_editor().unwrap().cursor, 6);
     assert!(!bench.jump_to_location(tab, 5)); // inside é
 }
 
@@ -194,7 +191,7 @@ fn linked_scroll_moves_viewports_without_moving_the_other_caret() {
 }
 
 #[test]
-fn open_to_side_preserves_a_pinned_target_and_closing_a_shared_tab_clears_both() {
+fn open_to_side_preserves_pin_and_closing_one_view_preserves_shared_document() {
     let mut bench = Workbench::default();
     let reference = bench.new_file(scratch("side-reference.txt"), TextEncoding::Utf8);
     bench.split_editor_right();
@@ -221,14 +218,28 @@ fn open_to_side_preserves_a_pinned_target_and_closing_a_shared_tab_clears_both()
     assert_eq!(bench.panes().active(), PaneId::Secondary);
     assert_eq!(bench.tabs().tabs().len(), 2);
     bench.close_active(true).unwrap();
-    for pane in [PaneId::Primary, PaneId::Secondary] {
-        assert_eq!(
-            bench.panes().view(pane).unwrap().location().unwrap().tab,
-            reference
-        );
-        bench.focus_editor_pane(pane);
-        assert!(!bench.navigation_forward());
-    }
+    assert_eq!(bench.active_bytes().unwrap(), b"");
+    assert_eq!(bench.tabs().tabs().len(), 2);
+    assert_eq!(
+        bench
+            .panes()
+            .view(PaneId::Primary)
+            .unwrap()
+            .location()
+            .unwrap()
+            .tab,
+        target
+    );
+    assert_eq!(
+        bench
+            .panes()
+            .view(PaneId::Secondary)
+            .unwrap()
+            .location()
+            .unwrap()
+            .tab,
+        reference
+    );
 }
 
 #[test]

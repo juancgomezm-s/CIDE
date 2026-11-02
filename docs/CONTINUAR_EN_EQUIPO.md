@@ -1,10 +1,10 @@
 # Continuación local — fundamentos de JC-IDE
 
-Actualizado el 2026-11-01 después de la auditoría ecode/eepp. Este texto sustituye el handoff anterior que priorizaba terminar splits y después includes/RUN. La rama local auditada es `m2a/dual-pane-tui`; su base funcional es `d5eccfc`. No asumir que está integrada en `main` o publicada.
+Actualizado el 2026-11-01 después de implementar F1 sobre la auditoría ecode/eepp (`d7dcb69`). Este texto sustituye el handoff anterior que priorizaba terminar splits y después includes/RUN. La rama local es `m2a/dual-pane-tui`; consulta su log para el commit de F1. No asumir que está integrada en `main` o publicada.
 
 ## Instrucción para continuar
 
-Continúa JC-IDE en Windows desde el estado real del clon. El objetivo es una base de edición eficiente y una GUI con dirección visual de Sublime Text; ecode es una referencia adicional de lógica, no un motor que deba copiarse entero. La siguiente implementación es **M2-F / F1**, no más asistentes ni sincronizaciones de cursor.
+Continúa JC-IDE en Windows desde el estado real del clon. El objetivo es una base de edición eficiente y una GUI con dirección visual de Sublime Text; ecode es una referencia adicional de lógica, no un motor que deba copiarse entero. **F1 ya está implementado y validado**; lee [su checkpoint](F1_DOCUMENT_VIEWS_TRANSACTIONS.md). La siguiente implementación es **M2-F / F2**, acceso por rangos, índices y presupuestos de memoria.
 
 1. Inspecciona `git status`, rama y log. Conserva cambios locales; no hagas reset/clean ni sustituyas la rama por `main`. Consulta el remoto solo si hace falta para integrar; no dispares Actions.
 2. Lee `AGENTS.md`, `README.md`, `docs/AUDITORIA_ECODE_ARQUITECTURA.md`, `docs/ARQUITECTURA.md`, `docs/PLAN.md`, `docs/DECISIONES.md`, `docs/TUI_INTERACTION.md`, `docs/EXTENSION_ARCHITECTURE.md` y `docs/VALIDACION.md`.
@@ -15,9 +15,9 @@ Continúa JC-IDE en Windows desde el estado real del clon. El objetivo es una ba
 
 Existe core byte-preserving, codecs explícitos, sesión/guardado seguro, perfiles, comandos/keymap/foco y TUI con dos grupos, pin, back/forward, selección/viewport y undo compartido. El incremento funcional obtuvo 78 pruebas y smoke ConPTY en Windows; esa evidencia no cubre los defectos posteriores de la auditoría.
 
-La arquitectura todavía duplica estado de vista, decodifica/indexa archivos completos en operaciones frecuentes y aplica replace-all como varios undos. CRLF admite una posición de caret inválida; dirty/reabrir es inconsistente; la transición de elección legacy requiere corrección. No hay GUI, motor de proyecto cancelable, resolver ABL, DiffModel ni AVM validada.
+F1 eliminó la propiedad duplicada de cursor/selección/viewport; replace-all es una transacción. CRLF, dirty al reabrir y elección legacy están cubiertos por regresiones. Todavía se decodifican/indexan archivos completos en operaciones frecuentes. No hay GUI, motor de proyecto cancelable, resolver ABL, DiffModel ni AVM validada.
 
-## Primer incremento: F1
+## F1 implementado: contrato que se debe conservar
 
 - Separar `DocumentId`, `ViewId` y grupo. Un documento/sesión/undo; selecciones y viewport exclusivamente en la vista. Eliminar campos espejo de `EditorDocument` y ciclos guardar/restaurar usados para simular esa separación. La barra de pestañas pasa a ser presentación por grupo según el contrato nuevo.
 - Introducir `EditBatch` con revisión esperada y validación completa previa. Un commit, un undo y un `ChangeSet` que permite reubicar todas las vistas; undo/redo emiten mapas completos. Retirar accesos de consumidores que muten contenido evitando la notificación.
@@ -25,7 +25,7 @@ La arquitectura todavía duplica estado de vista, decodifica/indexa archivos com
 - Corregir apertura/elección de encoding y cierre/descarte/reapertura con transiciones explícitas. Dirty se deriva del documento. No restaurar texto descartado mientras se muestra una pestaña limpia.
 - Migrar consumidores y quitar la ruta antigua en el mismo incremento. Mantener operativa la TUI; no conservar dos motores finales.
 
-Aceptación: replace-all de varias coincidencias se revierte en un undo; lote inválido/obsoleto deja estado intacto; bytes/BOM/EOL/encoding se preservan; caret CRLF válido; dos vistas comparten contenido/undo sin mezclar selección; cierre de una vista no destruye la otra; dirty y elección legacy correctos. Añadir regresiones observables para estos casos y ejecutar pruebas proporcionales al cambio.
+Aceptación cubierta por pruebas locales: replace-all de varias coincidencias se revierte en un undo; lote inválido/obsoleto deja estado intacto; bytes/BOM/EOL/encoding se preservan; caret CRLF válido; dos vistas comparten contenido/undo sin mezclar selección; cierre de una vista no destruye la otra; dirty y elección legacy correctos. Añadir regresiones observables para estos casos y ejecutar pruebas proporcionales al cambio.
 
 ## Después de F1
 

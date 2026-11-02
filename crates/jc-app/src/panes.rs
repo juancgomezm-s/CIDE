@@ -1,17 +1,13 @@
-//! Two editor groups and independent navigation history.
-//!
-//! This holds only TabId + byte offsets. The canonical document and undo stack
-//! remain owned by Workbench. Both UI frontends consume the same pane model.
-
+//! Groups own persistent views; documents and their history live in Workbench.
 use crate::TabId;
-use jc_core::ByteEdit;
+use jc_core::ChangeSet;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PaneId {
+    #[default]
     Primary,
     Secondary,
 }
-
 impl PaneId {
     fn other(self) -> Self {
         match self {
@@ -21,12 +17,13 @@ impl PaneId {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ViewId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NavLocation {
     pub tab: TabId,
     pub byte_offset: usize,
 }
-
 impl NavLocation {
     pub const fn new(tab: TabId, byte_offset: usize) -> Self {
         Self { tab, byte_offset }
@@ -34,155 +31,167 @@ impl NavLocation {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct ViewState {
+    pub cursor: usize,
+    pub anchor: Option<usize>,
+    pub scroll_line: usize,
+    pub scroll_column: usize,
+}
+impl ViewState {
+    pub fn selection(&self) -> Option<std::ops::Range<usize>> {
+        let anchor = self.anchor?;
+        (anchor != self.cursor).then_some(anchor.min(self.cursor)..anchor.max(self.cursor))
+    }
+}
+#[derive(Debug, Clone)]
+struct EditorView {
+    id: ViewId,
+    tab: TabId,
+    state: ViewState,
+}
+#[derive(Debug, Clone, Default)]
 pub struct PaneView {
-    location: Option<NavLocation>,
-    anchor: Option<usize>,
-    scroll_line: usize,
-    scroll_column: usize,
+    views: Vec<EditorView>,
+    active: Option<ViewId>,
     pinned: bool,
     back: Vec<NavLocation>,
     forward: Vec<NavLocation>,
 }
-
 const HISTORY_LIMIT: usize = 128;
-
-fn push_limited(stack: &mut Vec<NavLocation>, location: NavLocation) {
-    if stack.last() != Some(&location) {
-        stack.push(location);
+fn push_limited(stack: &mut Vec<NavLocation>, loc: NavLocation) {
+    if stack.last() != Some(&loc) {
+        stack.push(loc);
         if stack.len() > HISTORY_LIMIT {
             stack.remove(0);
         }
     }
 }
-
 impl PaneView {
+    fn editor(&self) -> Option<&EditorView> {
+        self.views.iter().find(|v| Some(v.id) == self.active)
+    }
+    fn editor_mut(&mut self) -> Option<&mut EditorView> {
+        self.views.iter_mut().find(|v| Some(v.id) == self.active)
+    }
+    pub fn view_id(&self) -> Option<ViewId> {
+        self.active
+    }
+    pub fn state(&self) -> Option<&ViewState> {
+        Some(&self.editor()?.state)
+    }
     pub fn anchor(&self) -> Option<usize> {
-        self.anchor
+        self.state()?.anchor
     }
     pub fn scroll_line(&self) -> usize {
-        self.scroll_line
+        self.state().map_or(0, |s| s.scroll_line)
     }
     pub fn scroll_column(&self) -> usize {
-        self.scroll_column
+        self.state().map_or(0, |s| s.scroll_column)
     }
     pub fn location(&self) -> Option<NavLocation> {
-        self.location
+        let v = self.editor()?;
+        Some(NavLocation::new(v.tab, v.state.cursor))
     }
-
     pub fn is_pinned(&self) -> bool {
         self.pinned
     }
-
     pub fn can_go_back(&self) -> bool {
         !self.back.is_empty()
     }
-
     pub fn can_go_forward(&self) -> bool {
         !self.forward.is_empty()
     }
-
-    fn navigate(&mut self, destination: NavLocation) {
-        if self.location == Some(destination) {
-            return;
-        }
-        if let Some(previous) = self.location {
-            push_limited(&mut self.back, previous);
-        }
-        self.location = Some(destination);
-        self.anchor = None;
-        self.scroll_line = 0;
-        self.scroll_column = 0;
-        self.forward.clear();
-    }
-
-    fn back(&mut self) -> Option<NavLocation> {
-        let previous = self.back.pop()?;
-        if let Some(current) = self.location {
-            push_limited(&mut self.forward, current);
-        }
-        self.location = Some(previous);
-        self.anchor = None;
-        Some(previous)
-    }
-
-    fn forward(&mut self) -> Option<NavLocation> {
-        let next = self.forward.pop()?;
-        if let Some(current) = self.location {
-            push_limited(&mut self.back, current);
-        }
-        self.location = Some(next);
-        self.anchor = None;
-        Some(next)
-    }
-
-    fn forget_tab(&mut self, tab: TabId, fallback: Option<NavLocation>) {
-        self.back.retain(|location| location.tab != tab);
-        self.forward.retain(|location| location.tab != tab);
-        if self.location.is_some_and(|location| location.tab == tab) {
-            self.location = fallback;
-            self.anchor = None;
-            self.scroll_line = 0;
-            self.scroll_column = 0;
-            self.pinned = false;
+    fn select(&mut self, loc: NavLocation, next: &mut u64, jump: bool) {
+        if let Some(view) = self.views.iter_mut().find(|v| v.tab == loc.tab) {
+            self.active = Some(view.id);
+            if jump {
+                view.state.cursor = loc.byte_offset;
+                view.state.anchor = None;
+            }
+        } else {
+            let id = ViewId(*next);
+            *next += 1;
+            self.views.push(EditorView {
+                id,
+                tab: loc.tab,
+                state: ViewState {
+                    cursor: loc.byte_offset,
+                    ..ViewState::default()
+                },
+            });
+            self.active = Some(id);
         }
     }
 }
-
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PaneManager {
     secondary_open: bool,
     active: PaneId,
     primary: PaneView,
     secondary: PaneView,
     scroll_linked: bool,
+    next_view: u64,
 }
-
-// Default group is primary. The secondary group exists only after SplitRight.
-impl Default for PaneId {
+impl Default for PaneManager {
     fn default() -> Self {
-        Self::Primary
+        Self {
+            secondary_open: false,
+            active: PaneId::Primary,
+            primary: PaneView::default(),
+            secondary: PaneView::default(),
+            scroll_linked: false,
+            next_view: 1,
+        }
     }
 }
-
 impl PaneManager {
     pub fn is_split(&self) -> bool {
         self.secondary_open
     }
-
     pub fn active(&self) -> PaneId {
         self.active
     }
-
-    pub fn view(&self, pane: PaneId) -> Option<&PaneView> {
-        if pane == PaneId::Secondary && !self.secondary_open {
+    pub fn view(&self, id: PaneId) -> Option<&PaneView> {
+        if id == PaneId::Secondary && !self.secondary_open {
             return None;
         }
-        Some(match pane {
+        Some(match id {
             PaneId::Primary => &self.primary,
             PaneId::Secondary => &self.secondary,
         })
     }
-
+    fn view_mut(&mut self, id: PaneId) -> &mut PaneView {
+        match id {
+            PaneId::Primary => &mut self.primary,
+            PaneId::Secondary => &mut self.secondary,
+        }
+    }
+    pub(crate) fn active_state_mut(&mut self) -> Option<&mut ViewState> {
+        Some(&mut self.view_mut(self.active).editor_mut()?.state)
+    }
+    pub(crate) fn remembered_cursor(&self, tab: TabId) -> Option<usize> {
+        self.view(self.active)
+            .and_then(|p| p.views.iter().find(|v| v.tab == tab))
+            .map(|v| v.state.cursor)
+    }
     pub fn scroll_linked(&self) -> bool {
         self.scroll_linked && self.secondary_open
     }
-
     pub fn split_right(&mut self) -> bool {
         if self.secondary_open {
             return false;
         }
         self.secondary_open = true;
-        // Both views initially show the same document; neither owns its bytes.
-        self.secondary = PaneView {
-            location: self.primary.location,
-            anchor: self.primary.anchor,
-            scroll_line: self.primary.scroll_line,
-            scroll_column: self.primary.scroll_column,
-            ..PaneView::default()
-        };
+        if let Some(source) = self.primary.editor().cloned() {
+            self.secondary.select(
+                NavLocation::new(source.tab, source.state.cursor),
+                &mut self.next_view,
+                false,
+            );
+            self.secondary.editor_mut().unwrap().state = source.state;
+        }
         true
     }
-
     pub fn close_secondary(&mut self) -> bool {
         if !self.secondary_open {
             return false;
@@ -193,85 +202,75 @@ impl PaneManager {
         self.scroll_linked = false;
         true
     }
-
-    pub fn focus(&mut self, pane: PaneId) -> Option<NavLocation> {
-        let location = self.view(pane)?.location()?;
-        self.active = pane;
-        Some(location)
+    pub fn focus(&mut self, id: PaneId) -> Option<NavLocation> {
+        let loc = self.view(id)?.location()?;
+        self.active = id;
+        Some(loc)
     }
-
-    pub fn navigate(&mut self, location: NavLocation, automatic: bool) -> PaneId {
-        let target = if automatic && self.secondary_open && self.active_view().is_pinned() {
+    pub fn navigate(&mut self, loc: NavLocation, automatic: bool) -> PaneId {
+        let target = if automatic && self.secondary_open && self.view(self.active).unwrap().pinned {
             self.active.other()
         } else {
             self.active
         };
-        self.view_mut(target).navigate(location);
+        let previous = self.view(target).and_then(PaneView::location);
+        let mut next = self.next_view;
+        let group = self.view_mut(target);
+        if previous != Some(loc) {
+            if let Some(prev) = previous {
+                push_limited(&mut group.back, prev);
+            }
+            group.forward.clear();
+        }
+        group.select(loc, &mut next, automatic);
+        self.next_view = next;
         self.active = target;
         target
     }
-
-    /// Remember a cursor move without creating a navigation-history entry.
-    pub fn update_cursor(&mut self, location: NavLocation) {
-        let pane = self.active_view_mut();
-        if pane.location.is_some_and(|old| old.tab == location.tab) {
-            pane.location = Some(location);
+    pub fn update_cursor(&mut self, loc: NavLocation) {
+        if let Some(v) = self.view_mut(self.active).editor_mut() {
+            if v.tab == loc.tab {
+                v.state.cursor = loc.byte_offset;
+            }
         }
     }
-
-    pub(crate) fn store_active_view(
-        &mut self,
-        location: NavLocation,
-        anchor: Option<usize>,
-        scroll_line: usize,
-    ) {
-        self.update_cursor(location);
-        let view = self.active_view_mut();
-        view.anchor = anchor;
-        view.scroll_line = scroll_line;
+    pub(crate) fn set_scroll(&mut self, id: PaneId, line: usize, column: usize) {
+        if let Some(v) = self.view_mut(id).editor_mut() {
+            v.state.scroll_line = line;
+            v.state.scroll_column = column;
+        }
     }
-
-    pub(crate) fn set_scroll(&mut self, pane: PaneId, line: usize, column: usize) {
-        let view = self.view_mut(pane);
-        view.scroll_line = line;
-        view.scroll_column = column;
-    }
-
-    pub(crate) fn rebase(&mut self, tab: TabId, edit: &ByteEdit) {
+    pub(crate) fn rebase(&mut self, tab: TabId, change: &ChangeSet, include_active: bool) {
+        let active = self.active;
         for id in [PaneId::Primary, PaneId::Secondary] {
-            let view = self.view_mut(id);
-            if let Some(location) = &mut view.location {
-                if location.tab == tab {
-                    location.byte_offset = rebase_offset(location.byte_offset, edit);
-                    view.anchor = view.anchor.map(|offset| rebase_offset(offset, edit));
+            let group = self.view_mut(id);
+            for v in &mut group.views {
+                if v.tab == tab && (include_active || !(id == active && Some(v.id) == group.active))
+                {
+                    v.state.cursor = change.map_offset(v.state.cursor);
+                    v.state.anchor = v.state.anchor.map(|n| change.map_offset(n));
                 }
             }
-            for location in view.back.iter_mut().chain(&mut view.forward) {
-                if location.tab == tab {
-                    location.byte_offset = rebase_offset(location.byte_offset, edit);
+            for loc in group.back.iter_mut().chain(&mut group.forward) {
+                if loc.tab == tab {
+                    loc.byte_offset = change.map_offset(loc.byte_offset);
                 }
             }
         }
     }
-
     pub fn toggle_pin(&mut self) -> Option<bool> {
         if !self.secondary_open {
             return None;
         }
         let active = self.active;
-        let pinned = {
-            let pane = self.active_view_mut();
-            pane.pinned = !pane.pinned;
-            pane.pinned
-        };
-        // Keep only one reference anchored at once: automatic navigation
-        // must always have an unpinned destination.
+        let group = self.view_mut(active);
+        group.pinned = !group.pinned;
+        let pinned = group.pinned;
         if pinned {
             self.view_mut(active.other()).pinned = false;
         }
         Some(pinned)
     }
-
     pub fn toggle_linked_scroll(&mut self) -> Option<bool> {
         if !self.secondary_open {
             return None;
@@ -279,54 +278,99 @@ impl PaneManager {
         self.scroll_linked = !self.scroll_linked;
         Some(self.scroll_linked)
     }
-
     pub fn can_back(&self) -> bool {
-        self.active_view().can_go_back()
+        self.view(self.active).unwrap().can_go_back()
     }
-
     pub fn can_forward(&self) -> bool {
-        self.active_view().can_go_forward()
+        self.view(self.active).unwrap().can_go_forward()
     }
-
     pub fn go_back(&mut self) -> Option<NavLocation> {
-        self.active_view_mut().back()
+        self.history(false)
     }
-
     pub fn go_forward(&mut self) -> Option<NavLocation> {
-        self.active_view_mut().forward()
+        self.history(true)
     }
-
+    fn history(&mut self, forward: bool) -> Option<NavLocation> {
+        let mut next = self.next_view;
+        let group = self.view_mut(self.active);
+        let loc = if forward {
+            group.forward.pop()?
+        } else {
+            group.back.pop()?
+        };
+        if let Some(current) = group.location() {
+            push_limited(
+                if forward {
+                    &mut group.back
+                } else {
+                    &mut group.forward
+                },
+                current,
+            );
+        }
+        group.select(loc, &mut next, true);
+        self.next_view = next;
+        Some(loc)
+    }
+    pub(crate) fn normalize(&mut self, tab: TabId, boundaries: &[usize]) {
+        let snap = |offset| {
+            boundaries
+                .partition_point(|&n| n <= offset)
+                .checked_sub(1)
+                .map_or_else(
+                    || boundaries.first().copied().unwrap_or(0),
+                    |i| boundaries[i],
+                )
+        };
+        for group in [&mut self.primary, &mut self.secondary] {
+            for view in &mut group.views {
+                if view.tab == tab {
+                    view.state.cursor = snap(view.state.cursor);
+                    view.state.anchor = view.state.anchor.map(|n| if n == 0 { 0 } else { snap(n) });
+                }
+            }
+            for loc in group.back.iter_mut().chain(&mut group.forward) {
+                if loc.tab == tab {
+                    loc.byte_offset = snap(loc.byte_offset);
+                }
+            }
+        }
+    }
+    pub(crate) fn view_count(&self, tab: TabId) -> usize {
+        self.primary
+            .views
+            .iter()
+            .chain(&self.secondary.views)
+            .filter(|v| v.tab == tab)
+            .count()
+    }
+    pub(crate) fn close_current(&mut self) -> Option<NavLocation> {
+        let group = self.view_mut(self.active);
+        let id = group.active?;
+        group.views.retain(|v| v.id != id);
+        group.active = group.views.last().map(|v| v.id);
+        group.pinned = false;
+        group.location()
+    }
     pub fn forget_tab(&mut self, tab: TabId, fallback: Option<NavLocation>) {
-        self.primary.forget_tab(tab, fallback);
-        self.secondary.forget_tab(tab, fallback);
-    }
-
-    fn active_view(&self) -> &PaneView {
-        self.view(self.active).expect("active pane always exists")
-    }
-
-    fn active_view_mut(&mut self) -> &mut PaneView {
-        self.view_mut(self.active)
-    }
-
-    fn view_mut(&mut self, pane: PaneId) -> &mut PaneView {
-        match pane {
-            PaneId::Primary => &mut self.primary,
-            PaneId::Secondary => &mut self.secondary,
+        for id in [PaneId::Primary, PaneId::Secondary] {
+            let mut next = self.next_view;
+            let group = self.view_mut(id);
+            let removed = group.location().is_some_and(|loc| loc.tab == tab);
+            group.views.retain(|v| v.tab != tab);
+            group.back.retain(|loc| loc.tab != tab);
+            group.forward.retain(|loc| loc.tab != tab);
+            if removed {
+                group.active = None;
+                group.pinned = false;
+                if let Some(loc) = fallback {
+                    group.select(loc, &mut next, false);
+                }
+            }
+            self.next_view = next;
         }
     }
 }
-
-fn rebase_offset(offset: usize, edit: &ByteEdit) -> usize {
-    if offset < edit.replaced.start {
-        offset
-    } else if offset >= edit.replaced.end {
-        offset - edit.replaced.len() + edit.inserted_len
-    } else {
-        edit.replaced.start + edit.inserted_len
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

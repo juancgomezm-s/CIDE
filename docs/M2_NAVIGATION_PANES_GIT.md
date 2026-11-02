@@ -2,6 +2,8 @@
 
 **Estado:** doble panel TUI implementado y validado localmente el 2026-11-01. El resto del documento incluye capacidades futuras: Git, navegación por lenguaje y LSP aún no están operativos.
 
+**Avance F1:** documento y vistas ya están separados; los grupos mantienen vistas persistentes con ViewId. El cierre elimina una vista y conserva el documento compartido. Ver [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md); las descripciones de campos espejo/cierre global de abajo son históricas.
+
 **Precedencia de diseño:** D18 y [ARQUITECTURA.md](ARQUITECTURA.md) corrigen el modelo transitorio de este checkpoint. Antes de ampliar funciones se implementa M2-F: identidades documento/vista/grupo, una sola propiedad de selección/viewport y transacciones. La [auditoría](AUDITORIA_ECODE_ARQUITECTURA.md) distingue evidencia funcional de deuda arquitectónica.
 
 ## Objetivo de experiencia

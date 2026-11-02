@@ -2,7 +2,7 @@
 
 La búsqueda debe ser más poderosa que la del editor típico, pero ejecutarse **bajo demanda**, sin servidor remoto, AVM, LSP o indexador obligatorios.
 
-**Orden actualizado 2026-11-01:** S0/S1 dependen de M2-F de [PLAN.md](PLAN.md). El replace-all actual produce varios pasos de undo y el panel recalcula posiciones sobre todo el documento por coincidencia; no se consideran cerrados esos contratos. La [auditoría de ecode y JC-IDE](AUDITORIA_ECODE_ARQUITECTURA.md) aporta evidencia y referencias para la sustitución.
+**Orden actualizado 2026-11-01:** S0/S1 dependen de M2-F de [PLAN.md](PLAN.md). F1 corrigió replace-all para usar una transacción y mapas completos. El panel aún recalcula posiciones sobre todo el documento por coincidencia: F2/F3 deben sustituir ese coste. Ver [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md). La [auditoría de ecode y JC-IDE](AUDITORIA_ECODE_ARQUITECTURA.md) aporta evidencia y referencias para la sustitución.
 
 ## S0 — Archivo activo: M2A
 

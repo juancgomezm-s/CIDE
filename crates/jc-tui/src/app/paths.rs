@@ -20,6 +20,17 @@ impl TuiApp {
             return;
         }
         let path = PathBuf::from(value);
+        if matches!(kind, PromptKind::Open) {
+            match self.workbench.open_file(path, self.default_encoding) {
+                Ok(_) => {
+                    self.close_overlay();
+                    self.status = "Ready".to_owned();
+                    self.ensure_encoding_choice();
+                }
+                Err(error) => self.status = error.to_string(),
+            }
+            return;
+        }
         let result: Result<(), String> = match kind {
             PromptKind::Open => self.open_path(path),
             PromptKind::New => {
@@ -44,8 +55,8 @@ impl TuiApp {
         };
         match result {
             Ok(()) => {
-                self.status = "Ready".to_owned();
                 self.close_overlay();
+                self.status = "Ready".to_owned();
             }
             Err(error) => self.status = error,
         }
@@ -60,7 +71,8 @@ impl TuiApp {
     }
 
     pub(crate) fn ensure_encoding_choice(&mut self) {
-        if self.workbench.active_encoding().is_none() {
+        if self.workbench.active_document().is_some() && self.workbench.active_encoding().is_none()
+        {
             self.open_focus_overlay(Overlay::Dialog);
             self.overlay = UiOverlay::EncodingChoice;
             self.status = "Legacy encoding must be selected explicitly".to_owned();

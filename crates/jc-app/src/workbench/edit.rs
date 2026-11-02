@@ -1,4 +1,4 @@
-use super::{EditorDocument, Workbench, WorkbenchError};
+use super::{Workbench, WorkbenchError};
 use jc_files::FileError;
 use jc_languages::detect;
 use jc_text::{decode, encode, PositionError, TextIndex, TextPosition};
@@ -12,9 +12,7 @@ struct LineSlice {
 
 impl Workbench {
     pub fn insert_text(&mut self, text: &str) -> Result<(), WorkbenchError> {
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -29,10 +27,11 @@ impl Workbench {
             document.cursor = selection.start + bytes.len();
             document.anchor = None;
         } else {
+            let cursor = document.cursor;
             document
                 .session
                 .document_mut()
-                .insert(document.cursor, &bytes)
+                .insert(cursor, &bytes)
                 .map_err(FileError::from)?;
             document.cursor += bytes.len();
         }
@@ -41,7 +40,7 @@ impl Workbench {
 
     pub fn insert_newline(&mut self) -> Result<(), WorkbenchError> {
         let ending = self
-            .active_document()
+            .active_editor()
             .ok_or(WorkbenchError::NoDocument)?
             .session
             .inspection()
@@ -62,9 +61,7 @@ impl Workbench {
         let Some(previous) = self.previous_boundary()? else {
             return Ok(());
         };
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         let cursor = document.cursor;
         document
             .session
@@ -82,9 +79,7 @@ impl Workbench {
         let Some(next) = self.next_boundary()? else {
             return Ok(());
         };
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         let cursor = document.cursor;
         document
             .session
@@ -95,13 +90,11 @@ impl Workbench {
     }
 
     fn delete_selection(&mut self) -> Result<bool, WorkbenchError> {
-        let selection = self.active_document().and_then(EditorDocument::selection);
+        let selection = self.active_editor().and_then(|editor| editor.selection());
         let Some(selection) = selection else {
             return Ok(false);
         };
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document
             .session
             .document_mut()
@@ -117,48 +110,33 @@ impl Workbench {
         self.rebase_after_edit();
         // Undo/redo can shorten a range before the caret. Length clamping alone
         // could leave it inside a multibyte scalar (or before the UTF-8 BOM).
-        if let Some(decoded) = self.active_decoded() {
-            if let Some(document) = self.active_document_mut() {
-                document.cursor = decoded
-                    .source_offsets
-                    .iter()
-                    .copied()
-                    .take_while(|offset| *offset <= document.cursor)
-                    .last()
-                    .unwrap_or(decoded.content_start);
-                document.anchor = document.anchor.map(|anchor| {
-                    if anchor == 0 {
-                        0
-                    } else {
-                        decoded
-                            .source_offsets
-                            .iter()
-                            .copied()
-                            .take_while(|offset| *offset <= anchor)
-                            .last()
-                            .unwrap_or(decoded.content_start)
-                    }
-                });
-            }
+        if let Some(document) = self.active_document() {
+            self.normalize_views(document.tab_id);
         }
-        self.record_active_pane_cursor();
         self.sync_active_tab_dirty();
-        self.rebuild_search()?;
+        let _ = self.rebuild_search();
         Ok(())
     }
 
     fn boundaries(&self) -> Result<Vec<usize>, WorkbenchError> {
-        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
             .ok_or(FileError::EncodingRequired)?;
-        Ok(decode(&document.session.document().to_bytes(), encoding).source_offsets)
+        let decoded = decode(&document.session.document().to_bytes(), encoding);
+        let index = TextIndex::new(&decoded);
+        Ok(decoded
+            .source_offsets
+            .iter()
+            .copied()
+            .filter(|&offset| index.source_byte_to_position(offset).is_ok())
+            .collect())
     }
 
     fn previous_boundary(&self) -> Result<Option<usize>, WorkbenchError> {
         let cursor = self
-            .active_document()
+            .active_editor()
             .ok_or(WorkbenchError::NoDocument)?
             .cursor;
         Ok(self
@@ -170,7 +148,7 @@ impl Workbench {
 
     fn next_boundary(&self) -> Result<Option<usize>, WorkbenchError> {
         let cursor = self
-            .active_document()
+            .active_editor()
             .ok_or(WorkbenchError::NoDocument)?
             .cursor;
         Ok(self
@@ -205,7 +183,7 @@ impl Workbench {
     }
 
     pub fn move_end(&mut self, select: bool) -> Result<(), WorkbenchError> {
-        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -226,7 +204,7 @@ impl Workbench {
     }
 
     pub fn move_vertical(&mut self, delta: isize, select: bool) -> Result<(), WorkbenchError> {
-        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -252,7 +230,7 @@ impl Workbench {
         position: TextPosition,
         select: bool,
     ) -> Result<(), WorkbenchError> {
-        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -263,9 +241,7 @@ impl Workbench {
     }
 
     fn move_cursor_to(&mut self, offset: usize, select: bool) -> Result<(), WorkbenchError> {
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         if select {
             if document.anchor.is_none() {
                 document.anchor = Some(document.cursor);
@@ -278,18 +254,16 @@ impl Workbench {
     }
 
     pub fn duplicate_selection_or_line(&mut self) -> Result<(), WorkbenchError> {
-        if let Some(selection) = self.active_document().and_then(EditorDocument::selection) {
+        if let Some(selection) = self.active_editor().and_then(|editor| editor.selection()) {
             let bytes = self
-                .active_document()
+                .active_editor()
                 .ok_or(WorkbenchError::NoDocument)?
                 .session
                 .document()
                 .to_bytes()[selection.clone()]
             .to_vec();
             let insert_at = selection.end;
-            let document = self
-                .active_document_mut()
-                .ok_or(WorkbenchError::NoDocument)?;
+            let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
             document
                 .session
                 .document_mut()
@@ -303,7 +277,7 @@ impl Workbench {
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let line = self.line_slice(position.line)?;
         let source = self
-            .active_document()
+            .active_editor()
             .ok_or(WorkbenchError::NoDocument)?
             .session
             .document()
@@ -311,7 +285,7 @@ impl Workbench {
         let mut duplicate = Vec::new();
         if line.separator.is_empty() {
             let ending = self
-                .active_document()
+                .active_editor()
                 .ok_or(WorkbenchError::NoDocument)?
                 .session
                 .inspection()
@@ -323,7 +297,7 @@ impl Workbench {
             duplicate.extend_from_slice(&source[line.content.start..line.separator.end]);
         }
         let insert_at = line.separator.end;
-        self.active_document_mut()
+        self.active_editor_mut()
             .ok_or(WorkbenchError::NoDocument)?
             .session
             .document_mut()
@@ -351,9 +325,7 @@ impl Workbench {
         } else {
             (line.content.start..line.separator.end, line.content.start)
         };
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document
             .session
             .document_mut()
@@ -382,7 +354,7 @@ impl Workbench {
     pub fn move_line_down(&mut self) -> Result<(), WorkbenchError> {
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let line_count = {
-            let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+            let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
             let encoding = document
                 .session
                 .encoding()
@@ -412,12 +384,12 @@ impl Workbench {
         let Some(comment) = language.line_comment else {
             return Ok(());
         };
-        if let Some(selection) = self.active_document().and_then(EditorDocument::selection) {
+        if let Some(selection) = self.active_editor().and_then(|editor| editor.selection()) {
             return self.toggle_selected_line_comments(comment, selection);
         }
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let line = self.line_slice(position.line)?;
-        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -432,9 +404,7 @@ impl Workbench {
         let indent = line.content.start + indent_relative;
         let has_comment = source[indent..line.content.end].starts_with(&prefix);
 
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         if has_comment {
             let mut end = indent + prefix.len();
             if source.get(end) == Some(&b' ') && end < line.content.end {
@@ -475,7 +445,7 @@ impl Workbench {
         comment: &str,
         selection: Range<usize>,
     ) -> Result<(), WorkbenchError> {
-        let doc = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let doc = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = doc.session.encoding().ok_or(FileError::EncodingRequired)?;
         let source = doc.session.document().to_bytes();
         let prefix = encode(comment, encoding).map_err(FileError::from)?;
@@ -523,9 +493,7 @@ impl Workbench {
             replacement.extend_from_slice(&source[slice.separator]);
         }
         let size = replacement.len();
-        let doc = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut doc = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         doc.session
             .document_mut()
             .replace(start..end, &replacement)
@@ -543,15 +511,15 @@ impl Workbench {
         };
         let start_marker = markers.start.as_bytes();
         let end_marker = markers.end.as_bytes();
-        let selection = self.active_document().and_then(EditorDocument::selection);
+        let selection = self.active_editor().and_then(|editor| editor.selection());
         let original_cursor = self
-            .active_document()
+            .active_editor()
             .ok_or(WorkbenchError::NoDocument)?
             .cursor;
         let range = if let Some(mut range) = selection.clone() {
             // Preserve a UTF-8 BOM at the start of the file, even for Select All.
             let inspection = self
-                .active_document()
+                .active_editor()
                 .ok_or(WorkbenchError::NoDocument)?
                 .session
                 .inspection();
@@ -563,7 +531,7 @@ impl Workbench {
             let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
             let line = self.line_slice(position.line)?;
             let source = self
-                .active_document()
+                .active_editor()
                 .ok_or(WorkbenchError::NoDocument)?
                 .session
                 .document()
@@ -575,7 +543,7 @@ impl Workbench {
             (line.content.start + relative)..line.content.end
         };
         let source = self
-            .active_document()
+            .active_editor()
             .ok_or(WorkbenchError::NoDocument)?
             .session
             .document()
@@ -627,9 +595,7 @@ impl Workbench {
             cursor_prefix_delta = (start_marker.len() + usize::from(selection.is_none())) as isize;
         }
         let new_length = replacement.len();
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document
             .session
             .document_mut()
@@ -667,11 +633,11 @@ impl Workbench {
     }
 
     fn adjust_indentation(&mut self, indent: bool) -> Result<(), WorkbenchError> {
-        let selected = self.active_document().and_then(EditorDocument::selection);
+        let selected = self.active_editor().and_then(|editor| editor.selection());
         if indent && selected.is_none() {
             return self.insert_tab();
         }
-        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -723,9 +689,7 @@ impl Workbench {
             return Ok(());
         }
         let new_length = replacement.len();
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document
             .session
             .document_mut()
@@ -754,7 +718,7 @@ impl Workbench {
         let first = self.line_slice(first_line)?;
         let second = self.line_slice(second_line)?;
         let source = self
-            .active_document()
+            .active_editor()
             .ok_or(WorkbenchError::NoDocument)?
             .session
             .document()
@@ -773,7 +737,7 @@ impl Workbench {
         }
 
         let end = second.separator.end.max(second.content.end);
-        self.active_document_mut()
+        self.active_editor_mut()
             .ok_or(WorkbenchError::NoDocument)?
             .session
             .document_mut()
@@ -783,7 +747,7 @@ impl Workbench {
     }
 
     fn line_slice(&self, line: usize) -> Result<LineSlice, WorkbenchError> {
-        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -794,16 +758,14 @@ impl Workbench {
     }
 
     pub fn select_all(&mut self) -> Result<(), WorkbenchError> {
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document.anchor = Some(0);
         document.cursor = document.session.document().len();
         Ok(())
     }
 
     pub fn copy_selection(&mut self) -> Result<(), WorkbenchError> {
-        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let Some(range) = document.selection() else {
             return Ok(());
         };
@@ -837,23 +799,29 @@ impl Workbench {
     }
 
     pub fn undo(&mut self) -> Result<(), WorkbenchError> {
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
-        if document.session.document_mut().undo() {
-            document.cursor = document.cursor.min(document.session.document().len());
-            document.anchor = None;
+        let editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
+        if editor.session.document_mut().undo() {
+            let change = editor
+                .session
+                .document()
+                .last_change()
+                .expect("history change");
+            editor.state.cursor = change.map_offset(editor.state.cursor);
+            editor.state.anchor = editor.state.anchor.map(|n| change.map_offset(n));
         }
         self.after_edit()
     }
 
     pub fn redo(&mut self) -> Result<(), WorkbenchError> {
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
-        if document.session.document_mut().redo() {
-            document.cursor = document.cursor.min(document.session.document().len());
-            document.anchor = None;
+        let editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
+        if editor.session.document_mut().redo() {
+            let change = editor
+                .session
+                .document()
+                .last_change()
+                .expect("history change");
+            editor.state.cursor = change.map_offset(editor.state.cursor);
+            editor.state.anchor = editor.state.anchor.map(|n| change.map_offset(n));
         }
         self.after_edit()
     }

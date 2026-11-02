@@ -2,6 +2,8 @@
 
 **Estado:** en desarrollo. Este documento registra implementación, no cierre de épica.
 
+**Checkpoint vigente:** [F1 — documentos, vistas y transacciones](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) sustituye los estados espejo, el cierre global de pestañas compartidas y los undos separados del incremento histórico descrito abajo. F2/F3 siguen pendientes.
+
 **Revisión de arquitectura 2026-11-01:** el incremento compila y sus pruebas pasaron, pero la [auditoría posterior](AUDITORIA_ECODE_ARQUITECTURA.md) reproduce fallos de replace-all/undo, caret CRLF y dirty al reabrir, además de costes lineales. El siguiente paso es M2-F de [PLAN.md](PLAN.md), antes de ampliar navegación/servicios. La propiedad duplicada de estado descrita abajo es transitoria y debe retirarse.
 
 ## Implementado

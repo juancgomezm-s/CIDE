@@ -46,11 +46,11 @@ El cierre histórico no cubre todas las rutas integradas de M2. La auditoría re
 
 ## M2-F — Fundamentos antes de ampliar funciones — PRIORIDAD ACTUAL
 
-**F0, completado en esta revisión:** evidencia estática, reproducción de fallos, baseline local y arquitectura de destino documentada. El ejemplo `audit_baseline` no certifica corrección ni modifica el editor. F1–F3 están pendientes.
+**F0, completado en esta revisión:** evidencia estática, reproducción de fallos, baseline local y arquitectura de destino documentada. El ejemplo `audit_baseline` no certifica corrección ni modifica el editor. **F1 implementado y validado localmente:** propiedad única de estado de vista, identidades separadas, lotes atómicos y correcciones de apertura/cierre/CRLF. F2/F3 siguen pendientes. El [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) precisa APIs, política de posiciones y diferencias entre el catálogo TUI y las vistas por grupo.
 
 | Incremento | Entrega concreta | Condición de salida |
 |---|---|---|
-| F1: propiedad y cambios | `DocumentId`/`ViewId`/grupos, un estado por vista, `EditBatch` atómico, `ChangeSet` completo, transiciones explícitas de apertura/cierre | Retirar cursor/scroll espejo y mutación que evita notificaciones. Un undo revierte replace-all; fallo de lote no altera nada; CRLF no admite caret interno; encoding legacy permanece seleccionable; dirty/reabrir coherentes; dos vistas comparten contenido/undo y conservan selecciones. |
+| F1: propiedad y cambios — implementado | `DocumentId`/`ViewId`/grupos, un estado por vista, `EditBatch` atómico, `ChangeSet` completo, transiciones explícitas de apertura/cierre | Retirar cursor/scroll espejo y mutación que evita notificaciones. Un undo revierte replace-all; fallo de lote no altera nada; CRLF no admite caret interno; encoding legacy permanece seleccionable; dirty/reabrir coherentes; dos vistas comparten contenido/undo y conservan selecciones. |
 | F2: acceso y memoria | Segmentos/snapshots, índice textual por revisión, cachés con cuota, presupuesto de undo por bytes | Navegación y lectura de viewport estable sin copia/decode global. Comparación de estructuras bajo la misma carga; demostrar escalado y liberación de bytes no referenciados sin perder historial prometido. |
 | F3: render y tareas | Modelo visible de solo lectura, diff de celdas, loop con eventos de jobs, resultados versionados/cancelables | Dibujar no muta Workbench; UI recibe resultados sin otra tecla; tareas obsoletas no pisan estado; pantalla/listas virtualizadas; medición de latencia completa y cancelación. |
 

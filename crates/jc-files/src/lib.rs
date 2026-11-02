@@ -151,6 +151,10 @@ impl FileSession {
         &self.path
     }
 
+    pub fn is_new(&self) -> bool {
+        self.disk_fingerprint.is_none()
+    }
+
     pub fn document(&self) -> &Document {
         &self.document
     }

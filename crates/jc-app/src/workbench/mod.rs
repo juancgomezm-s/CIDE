@@ -63,20 +63,57 @@ pub struct SearchState {
     pub regex: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DocumentId(pub u64);
+
 #[derive(Debug)]
 pub struct EditorDocument {
+    pub id: DocumentId,
     pub tab_id: TabId,
     pub session: FileSession,
-    pub cursor: usize,
-    pub anchor: Option<usize>,
-    pub scroll_line: usize,
-    view_revision: u64,
+    notified_revision: u64,
 }
 
-impl EditorDocument {
-    pub fn selection(&self) -> Option<Range<usize>> {
-        let anchor = self.anchor?;
-        (anchor != self.cursor).then_some(anchor.min(self.cursor)..anchor.max(self.cursor))
+#[derive(Debug)]
+struct ClosedDocument {
+    tab: TabId,
+    path: PathBuf,
+    encoding: Option<TextEncoding>,
+    new_file: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TextReplacement {
+    pub range: Range<usize>,
+    pub text: String,
+}
+
+/// Borrowed projection; selection lives only in the group's persistent view.
+pub struct EditorRead<'a> {
+    pub session: &'a FileSession,
+    pub tab_id: TabId,
+    pub document_id: DocumentId,
+    state: &'a crate::ViewState,
+}
+impl std::ops::Deref for EditorRead<'_> {
+    type Target = crate::ViewState;
+    fn deref(&self) -> &Self::Target {
+        self.state
+    }
+}
+struct EditorWrite<'a> {
+    session: &'a mut FileSession,
+    state: &'a mut crate::ViewState,
+}
+impl std::ops::Deref for EditorWrite<'_> {
+    type Target = crate::ViewState;
+    fn deref(&self) -> &Self::Target {
+        self.state
+    }
+}
+impl std::ops::DerefMut for EditorWrite<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.state
     }
 }
 
@@ -100,8 +137,9 @@ pub enum CommandOutcome {
 pub struct Workbench {
     pub(crate) tabs: TabManager,
     panes: PaneManager,
-    pub(crate) documents: Vec<EditorDocument>,
-    closed_documents: Vec<EditorDocument>,
+    documents: Vec<EditorDocument>,
+    closed_documents: Vec<ClosedDocument>,
+    next_document: u64,
     pub(crate) search: SearchState,
     pub(crate) clipboard: Option<String>,
     output: Vec<String>,
@@ -111,10 +149,6 @@ pub struct Workbench {
 impl Workbench {
     pub fn tabs(&self) -> &TabManager {
         &self.tabs
-    }
-
-    pub fn tabs_mut(&mut self) -> &mut TabManager {
-        &mut self.tabs
     }
 
     pub fn panes(&self) -> &PaneManager {
@@ -131,59 +165,42 @@ impl Workbench {
         Some(decode(&document.session.document().to_bytes(), encoding))
     }
 
+    fn cursor_for_tab(&self, tab: TabId) -> usize {
+        self.panes.remembered_cursor(tab).unwrap_or_else(|| {
+            self.document_by_tab(tab)
+                .and_then(|d| d.session.inspection().decoded)
+                .map_or(0, |d| d.content_start)
+        })
+    }
+
     pub fn position_for_pane(&self, pane: PaneId) -> Option<TextPosition> {
         let location = self.panes.view(pane)?.location()?;
         let decoded = self.decoded_for_tab(location.tab)?;
-        let offset = if pane == self.panes.active() {
-            self.document_by_tab(location.tab)?.cursor
-        } else {
-            location.byte_offset
-        };
+        let offset = location.byte_offset;
         TextIndex::new(&decoded)
             .source_byte_to_position(offset)
             .ok()
     }
 
-    fn record_active_pane_cursor(&mut self) {
-        if let Some(document) = self.active_document() {
-            let (location, anchor, scroll) = (
-                NavLocation::new(document.tab_id, document.cursor),
-                document.anchor,
-                document.scroll_line,
-            );
-            self.panes.store_active_view(location, anchor, scroll);
-        }
-    }
-
-    fn restore_location(&mut self, location: NavLocation) -> bool {
+    fn activate_location_document(&mut self, location: NavLocation) -> bool {
         if !self.tabs.select(location.tab) {
             return false;
-        }
-        let view = self.panes.view(self.panes.active()).expect("active view");
-        let (anchor, scroll) = (view.anchor(), view.scroll_line());
-        if let Some(document) = self.active_document_mut() {
-            document.cursor = location.byte_offset.min(document.session.document().len());
-            document.anchor = anchor;
-            document.scroll_line = scroll;
         }
         let _ = self.rebuild_search();
         true
     }
 
     fn select_opened_tab(&mut self, tab: TabId, offset: usize, automatic: bool) {
-        self.record_active_pane_cursor();
         self.panes
             .navigate(NavLocation::new(tab, offset), automatic);
-        self.restore_location(NavLocation::new(tab, offset));
+        self.activate_location_document(NavLocation::new(tab, offset));
     }
 
     pub fn split_editor_right(&mut self) -> bool {
-        self.record_active_pane_cursor();
         self.panes.split_right()
     }
 
     pub fn close_split_editor(&mut self) -> bool {
-        self.record_active_pane_cursor();
         let primary = self
             .panes
             .view(PaneId::Primary)
@@ -192,7 +209,9 @@ impl Workbench {
             return false;
         }
         if let Some(location) = primary {
-            self.restore_location(location);
+            self.activate_location_document(location);
+        } else if let Some(tab) = self.tabs.active_id() {
+            self.select_opened_tab(tab, self.cursor_for_tab(tab), false);
         }
         true
     }
@@ -201,11 +220,10 @@ impl Workbench {
         if pane == self.panes.active() {
             return self.active_document().is_some();
         }
-        self.record_active_pane_cursor();
         let Some(location) = self.panes.focus(pane) else {
             return false;
         };
-        self.restore_location(location)
+        self.activate_location_document(location)
     }
 
     pub fn toggle_reference_pin(&mut self) -> Option<bool> {
@@ -217,17 +235,15 @@ impl Workbench {
     }
 
     pub fn navigation_back(&mut self) -> bool {
-        self.record_active_pane_cursor();
         self.panes
             .go_back()
-            .is_some_and(|location| self.restore_location(location))
+            .is_some_and(|location| self.activate_location_document(location))
     }
 
     pub fn navigation_forward(&mut self) -> bool {
-        self.record_active_pane_cursor();
         self.panes
             .go_forward()
-            .is_some_and(|location| self.restore_location(location))
+            .is_some_and(|location| self.activate_location_document(location))
     }
 
     pub fn jump_to_location(&mut self, tab: TabId, offset: usize) -> bool {
@@ -235,15 +251,16 @@ impl Workbench {
             return false;
         };
         if offset > document.session.document().len()
-            || self
-                .decoded_for_tab(tab)
-                .is_some_and(|decoded| !decoded.source_offsets.contains(&offset))
+            || self.decoded_for_tab(tab).is_some_and(|decoded| {
+                TextIndex::new(&decoded)
+                    .source_byte_to_position(offset)
+                    .is_err()
+            })
         {
             return false;
         }
-        self.record_active_pane_cursor();
         self.panes.navigate(NavLocation::new(tab, offset), true);
-        self.restore_location(NavLocation::new(tab, offset))
+        self.activate_location_document(NavLocation::new(tab, offset))
     }
 
     /// Open the current document beside this group; a pinned target is preserved.
@@ -251,7 +268,7 @@ impl Workbench {
         let Some(tab) = self.tabs.active_id() else {
             return false;
         };
-        let offset = self.active_document().map_or(0, |doc| doc.cursor);
+        let offset = self.active_editor().map_or(0, |doc| doc.cursor);
         self.prepare_side_target();
         self.jump_to_location(tab, offset)
     }
@@ -276,9 +293,6 @@ impl Workbench {
     }
 
     pub fn selection_for_pane(&self, pane: PaneId) -> Option<Range<usize>> {
-        if pane == self.panes.active() {
-            return self.active_document()?.selection();
-        }
         let view = self.panes.view(pane)?;
         let cursor = view.location()?.byte_offset;
         let anchor = view.anchor()?;
@@ -291,7 +305,6 @@ impl Workbench {
         let Some(position) = self.active_position() else {
             return;
         };
-        self.record_active_pane_cursor();
         let active = self.panes.active();
         let view = self.panes.view(active).expect("active view");
         let old_line = view.scroll_line();
@@ -329,9 +342,6 @@ impl Workbench {
             self.panes
                 .set_scroll(other, other_line.min(max_line), view.scroll_column());
         }
-        if let Some(doc) = self.active_document_mut() {
-            doc.scroll_line = line;
-        }
     }
 
     pub(crate) fn rebase_after_edit(&mut self) {
@@ -339,16 +349,28 @@ impl Workbench {
             return;
         };
         let revision = document.session.document().revision();
-        if revision == document.view_revision {
+        if revision == document.notified_revision {
             return;
         }
-        document.view_revision = revision;
+        document.notified_revision = revision;
         let tab = document.tab_id;
-        let edit = document.session.document().last_edit().cloned();
-        if let Some(edit) = edit {
-            self.panes.rebase(tab, &edit);
+        let change = document.session.document().last_change().cloned();
+        if let Some(change) = change {
+            self.panes.rebase(tab, &change, false);
         }
-        self.record_active_pane_cursor();
+    }
+
+    fn normalize_views(&mut self, tab: TabId) {
+        if let Some(decoded) = self.decoded_for_tab(tab) {
+            let index = TextIndex::new(&decoded);
+            let boundaries: Vec<_> = decoded
+                .source_offsets
+                .iter()
+                .copied()
+                .filter(|&n| index.source_byte_to_position(n).is_ok())
+                .collect();
+            self.panes.normalize(tab, &boundaries);
+        }
     }
 
     pub fn search(&self) -> &SearchState {
@@ -399,7 +421,7 @@ impl Workbench {
             if let Some(document) = self.documents.iter().find(|document| {
                 std::fs::canonicalize(document.session.path()).ok().as_ref() == Some(&canonical)
             }) {
-                let (tab, cursor) = (document.tab_id, document.cursor);
+                let (tab, cursor) = (document.tab_id, self.cursor_for_tab(document.tab_id));
                 if to_side {
                     self.prepare_side_target();
                 }
@@ -413,7 +435,6 @@ impl Workbench {
         if to_side && !first_side_open {
             self.prepare_side_target();
         }
-        self.record_active_pane_cursor();
         let cursor = session
             .inspection()
             .decoded
@@ -421,13 +442,12 @@ impl Workbench {
             .map_or(0, |decoded| decoded.content_start);
         let title = title_for_path(&path, "<file>");
         let tab_id = self.tabs.open(title);
+        self.next_document += 1;
         self.documents.push(EditorDocument {
             tab_id,
             session,
-            cursor,
-            anchor: None,
-            scroll_line: 0,
-            view_revision: 0,
+            id: DocumentId(self.next_document),
+            notified_revision: 0,
         });
         self.panes.navigate(NavLocation::new(tab_id, cursor), true);
         let _ = self.rebuild_search();
@@ -441,16 +461,14 @@ impl Workbench {
     pub fn new_file(&mut self, path: impl Into<PathBuf>, encoding: TextEncoding) -> TabId {
         let path = path.into();
         let session = FileSession::new(&path, encoding);
-        self.record_active_pane_cursor();
         let title = title_for_path(&path, "untitled");
         let tab_id = self.tabs.open(title);
+        self.next_document += 1;
         self.documents.push(EditorDocument {
             tab_id,
             session,
-            cursor: 0,
-            anchor: None,
-            scroll_line: 0,
-            view_revision: 0,
+            id: DocumentId(self.next_document),
+            notified_revision: 0,
         });
         self.panes.navigate(NavLocation::new(tab_id, 0), true);
         let _ = self.rebuild_search();
@@ -458,15 +476,35 @@ impl Workbench {
     }
 
     pub fn active_document(&self) -> Option<&EditorDocument> {
-        let id = self.tabs.active_id()?;
+        let id = self.panes.view(self.panes.active())?.location()?.tab;
         self.documents.iter().find(|document| document.tab_id == id)
     }
 
-    pub fn active_document_mut(&mut self) -> Option<&mut EditorDocument> {
-        let id = self.tabs.active_id()?;
+    fn active_document_mut(&mut self) -> Option<&mut EditorDocument> {
+        let id = self.panes.view(self.panes.active())?.location()?.tab;
         self.documents
             .iter_mut()
             .find(|document| document.tab_id == id)
+    }
+
+    pub fn active_editor(&self) -> Option<EditorRead<'_>> {
+        let view = self.panes.view(self.panes.active())?;
+        let document = self.document_by_tab(view.location()?.tab)?;
+        Some(EditorRead {
+            session: &document.session,
+            tab_id: document.tab_id,
+            document_id: document.id,
+            state: view.state()?,
+        })
+    }
+
+    fn active_editor_mut(&mut self) -> Option<EditorWrite<'_>> {
+        let tab = self.panes.view(self.panes.active())?.location()?.tab;
+        let document = self.documents.iter_mut().find(|d| d.tab_id == tab)?;
+        Some(EditorWrite {
+            session: &mut document.session,
+            state: self.panes.active_state_mut()?,
+        })
     }
 
     pub fn active_path(&self) -> Option<&Path> {
@@ -491,10 +529,9 @@ impl Workbench {
     }
 
     pub fn active_position(&self) -> Option<TextPosition> {
-        let document = self.active_document()?;
         let decoded = self.active_decoded()?;
         TextIndex::new(&decoded)
-            .source_byte_to_position(document.cursor)
+            .source_byte_to_position(self.active_editor()?.cursor)
             .ok()
     }
 
@@ -516,7 +553,10 @@ impl Workbench {
                 .count(),
             can_undo: active.is_some_and(|document| document.session.document().can_undo()),
             can_redo: active.is_some_and(|document| document.session.document().can_redo()),
-            has_selection: active.and_then(EditorDocument::selection).is_some(),
+            has_selection: self
+                .active_editor()
+                .and_then(|editor| editor.selection())
+                .is_some(),
             clipboard_has_text: self.clipboard.as_ref().is_some_and(|text| !text.is_empty()),
             has_project: false,
             active_language: language,
@@ -541,6 +581,12 @@ impl Workbench {
             .ok_or(WorkbenchError::NoDocument)?
             .session
             .set_encoding(encoding);
+        let tab = self
+            .active_document()
+            .ok_or(WorkbenchError::NoDocument)?
+            .tab_id;
+        self.normalize_views(tab);
+        let _ = self.rebuild_search();
         Ok(())
     }
 
@@ -582,115 +628,185 @@ impl Workbench {
     }
 
     pub fn close_active(&mut self, discard_dirty: bool) -> Result<Option<TabId>, WorkbenchError> {
-        self.record_active_pane_cursor();
-        let id = self.tabs.active_id().ok_or(WorkbenchError::NoDocument)?;
-        if !discard_dirty
-            && self
-                .documents
-                .iter()
-                .find(|document| document.tab_id == id)
-                .is_some_and(|document| document.session.document().is_modified())
-        {
-            return Ok(Some(id));
-        }
-        if let Some(index) = self
-            .documents
-            .iter()
-            .position(|document| document.tab_id == id)
-        {
-            let document = self.documents.remove(index);
-            self.closed_documents.push(document);
-            if self.closed_documents.len() > 32 {
-                self.closed_documents.remove(0);
+        let tab = self.tabs.active_id().ok_or(WorkbenchError::NoDocument)?;
+        // Closing a presentation never discards a document used by another view.
+        if self.panes.view_count(tab) > 1 {
+            if let Some(loc) = self.panes.close_current() {
+                self.activate_location_document(loc);
+            } else {
+                let other = if self.panes.active() == PaneId::Primary {
+                    PaneId::Secondary
+                } else {
+                    PaneId::Primary
+                };
+                self.focus_editor_pane(other);
             }
+            self.rebuild_search()?;
+            return Ok(None);
         }
-        let _ = self.tabs.discard_and_close(id);
-        let fallback = self.tabs.active_id().and_then(|tab| {
-            self.document_by_tab(tab)
-                .map(|document| NavLocation::new(tab, document.cursor))
-        });
-        self.panes.forget_tab(id, fallback);
-        if let Some(location) = self
-            .panes
-            .view(self.panes.active())
-            .and_then(|view| view.location())
-        {
-            self.restore_location(location);
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        if !discard_dirty && document.session.document().is_modified() {
+            return Ok(Some(tab));
+        }
+        let closed = ClosedDocument {
+            tab,
+            path: document.session.path().to_owned(),
+            encoding: document.session.encoding(),
+            new_file: document.session.is_new(),
+        };
+        self.documents.retain(|d| d.tab_id != tab);
+        self.closed_documents.push(closed);
+        if self.closed_documents.len() > 32 {
+            self.closed_documents.remove(0);
+        }
+        self.tabs.discard_and_close(tab);
+        let fallback = self
+            .tabs
+            .active_id()
+            .map(|id| NavLocation::new(id, self.cursor_for_tab(id)));
+        self.panes.forget_tab(tab, fallback);
+        if let Some(loc) = fallback {
+            self.activate_location_document(loc);
         } else {
-            let _ = self.rebuild_search();
+            self.rebuild_search()?;
         }
         Ok(None)
     }
 
     pub fn reopen_closed(&mut self) -> bool {
-        self.record_active_pane_cursor();
-        let Some(document) = self.closed_documents.pop() else {
+        let Some(closed) = self.closed_documents.last() else {
             return false;
         };
-        let expected = document.tab_id;
+        let session = if closed.new_file {
+            FileSession::new(&closed.path, closed.encoding.unwrap_or(TextEncoding::Utf8))
+        } else {
+            let Ok(session) = FileSession::open(&closed.path, closed.encoding) else {
+                return false;
+            };
+            session
+        };
+        let expected = closed.tab;
         if self.tabs.reopen_last() != Some(expected) {
-            self.closed_documents.push(document);
             return false;
         }
-        let cursor = document.cursor;
-        self.documents.push(document);
+        self.closed_documents.pop();
+        let cursor = session
+            .inspection()
+            .decoded
+            .as_ref()
+            .map_or(0, |d| d.content_start);
+        self.next_document += 1;
+        self.documents.push(EditorDocument {
+            id: DocumentId(self.next_document),
+            tab_id: expected,
+            session,
+            notified_revision: 0,
+        });
         self.panes
             .navigate(NavLocation::new(expected, cursor), false);
         let _ = self.rebuild_search();
         true
     }
 
+    /// Validate all text and byte boundaries before publishing a transaction.
+    /// A provider can target any open document without switching focus.
+    pub fn apply_text_edits(
+        &mut self,
+        id: DocumentId,
+        expected_revision: u64,
+        edits: Vec<TextReplacement>,
+    ) -> Result<(), WorkbenchError> {
+        let document = self
+            .documents
+            .iter_mut()
+            .find(|d| d.id == id)
+            .ok_or(WorkbenchError::NoDocument)?;
+        let encoding = document
+            .session
+            .encoding()
+            .ok_or(FileError::EncodingRequired)?;
+        let decoded = decode(&document.session.document().to_bytes(), encoding);
+        let index = TextIndex::new(&decoded);
+        let mut replacements = Vec::with_capacity(edits.len());
+        for edit in edits {
+            for offset in [edit.range.start, edit.range.end] {
+                if offset != 0 {
+                    index.source_byte_to_position(offset)?;
+                }
+            }
+            replacements.push(jc_core::Replacement {
+                range: edit.range,
+                bytes: jc_text::encode(&edit.text, encoding).map_err(FileError::from)?,
+            });
+        }
+        document
+            .session
+            .document_mut()
+            .apply_batch(jc_core::EditBatch {
+                expected_revision,
+                edits: replacements,
+            })
+            .map_err(FileError::from)?;
+        let tab = document.tab_id;
+        document.notified_revision = document.session.document().revision();
+        let change = document.session.document().last_change().cloned();
+        let dirty = document.session.document().is_modified();
+        if let Some(change) = change {
+            self.panes.rebase(tab, &change, true);
+        }
+        self.normalize_views(tab);
+        self.tabs.set_dirty(tab, dirty);
+        let _ = self.rebuild_search();
+        Ok(())
+    }
+
     pub fn select_tab(&mut self, one_based: usize) -> bool {
-        self.record_active_pane_cursor();
         if !self.tabs.select_index(one_based) {
             return false;
         }
         if let Some(tab) = self.tabs.active_id() {
             let offset = self
                 .document_by_tab(tab)
-                .map_or(0, |document| document.cursor);
+                .map_or(0, |_| self.cursor_for_tab(tab));
             self.panes.navigate(NavLocation::new(tab, offset), false);
-            self.restore_location(NavLocation::new(tab, offset));
+            self.activate_location_document(NavLocation::new(tab, offset));
         }
         let _ = self.rebuild_search();
         true
     }
 
     pub fn next_tab(&mut self) -> Option<TabId> {
-        self.record_active_pane_cursor();
         let tab = self.tabs.next_tab()?;
         let offset = self
             .document_by_tab(tab)
-            .map_or(0, |document| document.cursor);
+            .map_or(0, |_| self.cursor_for_tab(tab));
         self.panes.navigate(NavLocation::new(tab, offset), false);
-        self.restore_location(NavLocation::new(tab, offset));
+        self.activate_location_document(NavLocation::new(tab, offset));
         let _ = self.rebuild_search();
         Some(tab)
     }
 
     pub fn previous_tab(&mut self) -> Option<TabId> {
-        self.record_active_pane_cursor();
         let tab = self.tabs.previous_tab()?;
         let offset = self
             .document_by_tab(tab)
-            .map_or(0, |document| document.cursor);
+            .map_or(0, |_| self.cursor_for_tab(tab));
         self.panes.navigate(NavLocation::new(tab, offset), false);
-        self.restore_location(NavLocation::new(tab, offset));
+        self.activate_location_document(NavLocation::new(tab, offset));
         let _ = self.rebuild_search();
         Some(tab)
     }
 
     pub fn last_tab(&mut self) -> bool {
-        self.record_active_pane_cursor();
         if !self.tabs.select_last() {
             return false;
         }
         if let Some(tab) = self.tabs.active_id() {
             let offset = self
                 .document_by_tab(tab)
-                .map_or(0, |document| document.cursor);
+                .map_or(0, |_| self.cursor_for_tab(tab));
             self.panes.navigate(NavLocation::new(tab, offset), false);
-            self.restore_location(NavLocation::new(tab, offset));
+            self.activate_location_document(NavLocation::new(tab, offset));
         }
         let _ = self.rebuild_search();
         true

@@ -27,13 +27,13 @@ impl Workbench {
     pub(crate) fn rebuild_search(&mut self) -> Result<(), WorkbenchError> {
         self.search.matches.clear();
         self.search.current = None;
-        if self.search.query.is_empty() || self.active_document().is_none() {
+        if self.search.query.is_empty() || self.active_editor().is_none() {
             return Ok(());
         }
         if self.search.regex {
             return Err(WorkbenchError::RegexUnavailable);
         }
-        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
@@ -44,6 +44,8 @@ impl Workbench {
             return Ok(());
         }
         let haystack = document.session.document().to_bytes();
+        let decoded = jc_text::decode(&haystack, encoding);
+        let index = TextIndex::new(&decoded);
         let case_sensitive = self.search.case_sensitive;
         let whole_word = self.search.whole_word;
         let mut matches = Vec::new();
@@ -58,7 +60,11 @@ impl Workbench {
                     .zip(&needle)
                     .all(|(a, b)| a.eq_ignore_ascii_case(b))
             };
-            if equal && (!whole_word || is_word_match(&haystack, offset, offset + needle.len())) {
+            if equal
+                && index.source_byte_to_position(offset).is_ok()
+                && index.source_byte_to_position(offset + needle.len()).is_ok()
+                && (!whole_word || is_word_match(&haystack, offset, offset + needle.len()))
+            {
                 matches.push(offset..offset + needle.len());
                 offset += needle.len();
             } else {
@@ -82,21 +88,25 @@ impl Workbench {
             .unwrap_or(0)
             .min(self.search.matches.len() - 1);
         let range = self.search.matches[index].clone();
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
             .encoding()
             .ok_or(FileError::EncodingRequired)?;
-        let bytes = encode(replacement, encoding).map_err(FileError::from)?;
-        document
-            .session
-            .document_mut()
-            .replace(range.clone(), &bytes)
-            .map_err(FileError::from)?;
-        document.cursor = range.start + bytes.len();
-        document.anchor = None;
+        let length = encode(replacement, encoding)
+            .map_err(FileError::from)?
+            .len();
+        self.apply_text_edits(
+            document.id,
+            document.session.document().revision(),
+            vec![super::TextReplacement {
+                range: range.clone(),
+                text: replacement.to_owned(),
+            }],
+        )?;
+        let mut editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
+        editor.cursor = range.start + length;
+        editor.anchor = None;
         self.after_edit()?;
         Ok(true)
     }
@@ -109,28 +119,21 @@ impl Workbench {
         if matches.is_empty() {
             return Ok(0);
         }
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
-        let encoding = document
-            .session
-            .encoding()
-            .ok_or(FileError::EncodingRequired)?;
-        let bytes = encode(replacement, encoding).map_err(FileError::from)?;
-        for range in matches.iter().rev() {
-            self.active_document_mut()
-                .ok_or(WorkbenchError::NoDocument)?
-                .session
-                .document_mut()
-                .replace(range.clone(), &bytes)
-                .map_err(FileError::from)?;
-            self.rebase_after_edit();
-        }
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
-        document.anchor = None;
-        document.cursor = document.cursor.min(document.session.document().len());
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        self.apply_text_edits(
+            document.id,
+            document.session.document().revision(),
+            matches
+                .iter()
+                .map(|range| super::TextReplacement {
+                    range: range.clone(),
+                    text: replacement.to_owned(),
+                })
+                .collect(),
+        )?;
+        self.active_editor_mut()
+            .ok_or(WorkbenchError::NoDocument)?
+            .anchor = None;
         self.after_edit()?;
         Ok(matches.len())
     }
@@ -148,9 +151,7 @@ impl Workbench {
             return Ok(false);
         };
         self.search.current = Some(index);
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document.anchor = Some(range.start);
         document.cursor = range.end;
         Ok(true)
@@ -182,9 +183,7 @@ impl Workbench {
         };
         self.search.current = Some(next);
         let range = self.search.matches[next].clone();
-        let document = self
-            .active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?;
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document.anchor = Some(range.start);
         document.cursor = range.end;
         Ok(Some(range))

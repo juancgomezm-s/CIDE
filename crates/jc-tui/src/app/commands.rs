@@ -9,7 +9,12 @@ impl TuiApp {
             return;
         }
         match self.workbench.execute(command) {
-            Ok(outcome) => self.handle_outcome(outcome),
+            Ok(outcome) => {
+                self.handle_outcome(outcome);
+                if command == CommandId::FileReopenClosed {
+                    self.ensure_encoding_choice();
+                }
+            }
             Err(error) => self.status = error.to_string(),
         }
     }

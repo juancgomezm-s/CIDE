@@ -16,18 +16,10 @@ impl Workbench {
                 self.save_all()?;
                 Ok(CommandOutcome::None)
             }
-            FileClose => {
-                let id = self.tabs.active_id().ok_or(WorkbenchError::NoDocument)?;
-                if self
-                    .active_document()
-                    .is_some_and(|doc| doc.session.document().is_modified())
-                {
-                    Ok(CommandOutcome::NeedsCloseDecision(id))
-                } else {
-                    let _ = self.close_active(true)?;
-                    Ok(CommandOutcome::None)
-                }
-            }
+            FileClose => match self.close_active(false)? {
+                Some(id) => Ok(CommandOutcome::NeedsCloseDecision(id)),
+                None => Ok(CommandOutcome::None),
+            },
             FileReopenClosed => {
                 self.reopen_closed();
                 Ok(CommandOutcome::None)

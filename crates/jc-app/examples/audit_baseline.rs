@@ -44,7 +44,7 @@ fn main() {
     app.move_right(false).unwrap();
     println!(
         "crlf_right: cursor={} logical_position={:?}",
-        app.active_document().unwrap().cursor,
+        app.active_editor().unwrap().cursor,
         app.active_position()
     );
     let tab = app.tabs().active_id().unwrap();

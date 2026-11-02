@@ -6,6 +6,28 @@ fn key(app: &mut TuiApp, code: KeyCode, modifiers: KeyModifiers) {
     app.handle_event(Event::Key(KeyEvent::new(code, modifiers)));
 }
 
+#[test]
+fn opening_legacy_from_prompt_keeps_encoding_choice_until_selection() {
+    use crate::state::PromptKind;
+    let path = std::env::temp_dir().join(format!("jc-f1-legacy-{}.p", std::process::id()));
+    std::fs::write(&path, b"ni\xf1o\r\n").unwrap();
+    let mut app = TuiApp::new(LaunchOptions::default());
+    app.open_prompt(PromptKind::Open);
+    app.submit_prompt(PromptKind::Open, path.to_str().unwrap().to_owned());
+    assert!(matches!(app.overlay, UiOverlay::EncodingChoice));
+    assert_eq!(app.workbench.active_encoding(), None);
+    app.close_overlay();
+    app.dispatch(CommandId::FileClose);
+    app.dispatch(CommandId::FileReopenClosed);
+    assert!(matches!(app.overlay, UiOverlay::EncodingChoice));
+    app.choose_encoding(TextEncoding::Iso8859_1);
+    assert!(matches!(app.overlay, UiOverlay::None));
+    assert_eq!(app.workbench.active_bytes().unwrap(), b"ni\xf1o\r\n");
+    app.workbench.insert_text("é").unwrap();
+    assert_eq!(app.workbench.active_bytes().unwrap(), b"\xe9ni\xf1o\r\n");
+    std::fs::remove_file(path).unwrap();
+}
+
 fn text(app: &mut TuiApp, value: &str) {
     for ch in value.chars() {
         key(app, KeyCode::Char(ch), KeyModifiers::NONE);

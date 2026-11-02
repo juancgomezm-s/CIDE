@@ -2,7 +2,7 @@
 
 JC-IDE separa almacenamiento de bytes, interpretación textual, estado de aplicación, servicios opcionales y presentación. Esta es la arquitectura de destino; el estado implementado y sus diferencias están en la [auditoría del 2026-11-01](AUDITORIA_ECODE_ARQUITECTURA.md).
 
-La base conserva bytes/sesiones/comandos, pero todavía copia estado entre `EditorDocument` y `PaneView`, reconstruye índices completos y no tiene transacciones multiposición. Los contratos siguientes deben reemplazar esas rutas antes de ampliar funciones; no se presentan como código ya terminado.
+F1 ya separó documento y vistas, retiró campos espejo e introdujo transacciones multiposición y mapas completos. El [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) documenta la implementación real. Índices incrementales, presupuestos de memoria, render puro y jobs continúan pendientes en F2/F3; no se presentan como terminados.
 
 ## Capas
 
@@ -21,7 +21,7 @@ La regla central es que una acción de negocio existe una sola vez como `Command
 
 ## Propiedad del estado
 
-Nombres propuestos para F1; no son APIs públicas existentes.
+Propietarios lógicos de destino: F1 los implementa mediante colecciones en Workbench y grupos; DocumentId/ViewId ya existen. Las filas de índice/snapshots/layout contienen trabajo pendiente de F2/F3.
 
 | Propietario | Contiene | No contiene |
 |---|---|---|
@@ -44,7 +44,7 @@ Un commit publica una revisión nueva y un `ChangeSet` completo: rangos anterior
 
 No exponer `document_mut()` a widgets o proveedores. Ningún consumidor puede cambiar contenido evitando la transacción. Multi-cursor, replace-all, formato y acciones de código usan el mismo camino; no se implementa atomicidad copiando todo el archivo para cada comando ni llamando a N undos desde la UI.
 
-El historial de contenido pertenece al documento. La selección que restaurará undo se define para la vista iniciadora; las demás vistas se reubican. Si esa vista ya cerró, el cambio de contenido sigue siendo válido y la política de selección debe ser determinista. Se cubre en pruebas, no mediante sincronización implícita de caret global.
+El historial de contenido pertenece al documento. F1 reubica las selecciones mediante mapas, con afinidad a la derecha y ajuste a límites válidos. Restaurar exactamente la selección previa de la vista iniciadora es una mejora de UX todavía pendiente; se añadirá con metadatos acotados, sin otro undo de contenido. En la política de destino, la selección que restaurará undo se define para la vista iniciadora; las demás vistas se reubican. Si esa vista ya cerró, el cambio de contenido sigue siendo válido y la política de selección debe ser determinista. Se cubre en pruebas, no mediante sincronización implícita de caret global.
 
 ## Acceso textual y memoria
 

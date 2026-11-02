@@ -2,6 +2,8 @@
 
 Fecha: 2026-11-01. Base de JC-IDE: `d5eccfccdfade62b6f794d48b2e3a25de945d4ca`, rama `m2a/dual-pane-tui`.
 
+**Seguimiento:** [F1 implementado](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) corrige propiedad duplicada, transacciones, CRLF y apertura/cierre. Este informe conserva los hallazgos y tiempos de la base auditada; no describe esos defectos como presentes después de F1. F2/F3 siguen pendientes.
+
 ## Dictamen
 
 La base de bytes, encoding explícito, guardado y comandos merece conservarse. La integración actual de edición/vistas/render es un prototipo funcional y todavía no una base optimizada para la GUI. Antes de ampliar navegación ABL, Git o asistentes hay que sustituir la sincronización de estados duplicados, introducir transacciones de edición y sacar la decodificación completa de las rutas de movimiento y dibujo.

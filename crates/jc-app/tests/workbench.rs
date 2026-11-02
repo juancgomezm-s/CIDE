@@ -132,7 +132,7 @@ fn search_next_and_previous_share_byte_ranges_with_selection() {
     assert_eq!(bench.search().matches, vec![0..5, 11..16]);
 
     assert_eq!(bench.find_next().unwrap(), Some(0..5));
-    assert_eq!(bench.active_document().unwrap().selection(), Some(0..5));
+    assert_eq!(bench.active_editor().unwrap().selection(), Some(0..5));
     assert_eq!(bench.find_next().unwrap(), Some(11..16));
     assert_eq!(bench.find_previous().unwrap(), Some(0..5));
 }

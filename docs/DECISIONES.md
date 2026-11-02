@@ -137,3 +137,8 @@ ecode/eepp aporta evidencia de flujos y estructuras, no una obligación de copia
 M2 prepara y valida el contrato de tareas con un proveedor de prueba; la ejecución Progress real pertenece a M3. Se mantienen D13 (CI en M5), D14 (plugins Sublime post-M5) y D16 (proveedores opcionales). Corregir defectos conocidos de datos/edición ahora no depende de habilitar CI.
 
 Evidencia y alcance: [AUDITORIA_ECODE_ARQUITECTURA.md](AUDITORIA_ECODE_ARQUITECTURA.md). Contratos: [ARQUITECTURA.md](ARQUITECTURA.md). Orden y criterios: [PLAN.md](PLAN.md).
+
+
+### D18 — Avance F1 del 2026-11-01
+
+Implementados DocumentId/ViewId, estado persistente único por vista, EditBatch/ChangeSet y propuestas textuales por revisión sin buffer mutable público. Los grupos mantienen sus vistas; el catálogo de pestañas TUI sigue visible globalmente. Se conserva una sesión/undo por documento; los cerrados retienen descriptores, no buffers. Undo/redo reubican posiciones de forma determinista; la restauración exacta de selecciones anteriores queda como mejora de UX con metadatos acotados. F2/F3 siguen pendientes. Evidencia y límites en [F1_DOCUMENT_VIEWS_TRANSACTIONS.md](F1_DOCUMENT_VIEWS_TRANSACTIONS.md).

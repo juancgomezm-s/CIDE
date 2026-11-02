@@ -10,6 +10,11 @@ pub enum EditError {
         len: usize,
     },
     CapacityOverflow,
+    StaleRevision {
+        expected: u64,
+        actual: u64,
+    },
+    OverlappingEdits,
 }
 
 impl fmt::Display for EditError {
@@ -21,6 +26,10 @@ impl fmt::Display for EditError {
                     "invalid byte range {start}..{end} for document length {len}"
                 )
             }
+            Self::StaleRevision { expected, actual } => {
+                write!(f, "expected revision {expected}, found {actual}")
+            }
+            Self::OverlappingEdits => write!(f, "overlapping or ambiguous edits"),
             Self::CapacityOverflow => write!(f, "document capacity or revision overflow"),
         }
     }
@@ -46,7 +55,7 @@ struct State {
     pieces: Vec<Piece>,
     len: usize,
     revision: u64,
-    edit: Option<ByteEdit>,
+    edit: Option<ChangeSet>,
 }
 
 /// Geometry of a single edit, in source bytes before it.
@@ -55,6 +64,58 @@ struct State {
 pub struct ByteEdit {
     pub replaced: Range<usize>,
     pub inserted_len: usize,
+}
+
+/// A replacement in the coordinates of the expected revision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Replacement {
+    pub range: Range<usize>,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditBatch {
+    pub expected_revision: u64,
+    pub edits: Vec<Replacement>,
+}
+
+/// Edits are ordered for sequential position mapping (rightmost first on commit).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChangeSet {
+    pub before_revision: u64,
+    pub after_revision: u64,
+    pub edits: Vec<ByteEdit>,
+}
+
+impl ChangeSet {
+    pub fn map_offset(&self, mut offset: usize) -> usize {
+        for edit in &self.edits {
+            offset = if offset < edit.replaced.start {
+                offset
+            } else if offset >= edit.replaced.end {
+                offset - edit.replaced.len() + edit.inserted_len
+            } else {
+                edit.replaced.start + edit.inserted_len
+            };
+        }
+        offset
+    }
+
+    pub fn inverse(&self) -> Self {
+        Self {
+            before_revision: self.after_revision,
+            after_revision: self.before_revision,
+            edits: self
+                .edits
+                .iter()
+                .rev()
+                .map(|edit| ByteEdit {
+                    replaced: edit.replaced.start..edit.replaced.start + edit.inserted_len,
+                    inserted_len: edit.replaced.len(),
+                })
+                .collect(),
+        }
+    }
 }
 
 pub struct Document {
@@ -66,7 +127,7 @@ pub struct Document {
     saved_revision: u64,
     next_revision: u64,
     history_limit: usize,
-    last_edit: Option<ByteEdit>,
+    last_edit: Option<ChangeSet>,
 }
 
 impl fmt::Debug for Document {
@@ -122,6 +183,11 @@ impl Document {
         self.state.revision
     }
     pub fn last_edit(&self) -> Option<&ByteEdit> {
+        self.last_edit
+            .as_ref()
+            .and_then(|change| (change.edits.len() == 1).then(|| &change.edits[0]))
+    }
+    pub fn last_change(&self) -> Option<&ChangeSet> {
         self.last_edit.as_ref()
     }
     pub fn is_modified(&self) -> bool {
@@ -200,50 +266,125 @@ impl Document {
     }
 
     pub fn replace(&mut self, range: Range<usize>, bytes: &[u8]) -> Result<(), EditError> {
-        self.last_edit = None;
-        self.validate_range(&range)?;
-        if self.range_matches(&range, bytes) {
+        self.apply_batch(EditBatch {
+            expected_revision: self.revision(),
+            edits: vec![Replacement {
+                range,
+                bytes: bytes.to_vec(),
+            }],
+        })
+    }
+
+    pub fn apply_batch(&mut self, mut batch: EditBatch) -> Result<(), EditError> {
+        if batch.expected_revision != self.revision() {
+            return Err(EditError::StaleRevision {
+                expected: batch.expected_revision,
+                actual: self.revision(),
+            });
+        }
+        batch
+            .edits
+            .sort_by_key(|edit| (edit.range.start, edit.range.end));
+        for edit in &batch.edits {
+            self.validate_range(&edit.range)?;
+        }
+        for pair in batch.edits.windows(2) {
+            if pair[0].range.end > pair[1].range.start || pair[0].range.start == pair[1].range.start
+            {
+                return Err(EditError::OverlappingEdits);
+            }
+        }
+        batch
+            .edits
+            .retain(|edit| !self.range_matches(&edit.range, &edit.bytes));
+        if batch.edits.is_empty() {
+            self.last_edit = None;
             return Ok(());
         }
-
-        let new_len = (self.len() - (range.end - range.start))
-            .checked_add(bytes.len())
-            .ok_or(EditError::CapacityOverflow)?;
-        self.added
-            .len()
-            .checked_add(bytes.len())
-            .ok_or(EditError::CapacityOverflow)?;
+        let mut new_len = self.len();
+        let mut added_len = 0usize;
+        for edit in &batch.edits {
+            new_len = new_len
+                .checked_sub(edit.range.len())
+                .and_then(|n| n.checked_add(edit.bytes.len()))
+                .ok_or(EditError::CapacityOverflow)?;
+            added_len = added_len
+                .checked_add(edit.bytes.len())
+                .ok_or(EditError::CapacityOverflow)?;
+        }
         let following_revision = self
             .next_revision
             .checked_add(1)
             .ok_or(EditError::CapacityOverflow)?;
-
+        // Reserve every fallible allocation before publishing bytes or history.
+        let capacity = batch
+            .edits
+            .len()
+            .checked_mul(2)
+            .and_then(|n| n.checked_add(self.piece_count()))
+            .ok_or(EditError::CapacityOverflow)?;
         let mut pieces = Vec::new();
-        self.append_range(0..range.start, &mut pieces);
-        if !bytes.is_empty() {
+        pieces
+            .try_reserve(capacity)
+            .map_err(|_| EditError::CapacityOverflow)?;
+        let mut edits = Vec::new();
+        edits
+            .try_reserve(batch.edits.len())
+            .map_err(|_| EditError::CapacityOverflow)?;
+        self.added
+            .try_reserve(added_len)
+            .map_err(|_| EditError::CapacityOverflow)?;
+        if self.history_limit > 0 {
+            self.undo
+                .try_reserve(1)
+                .map_err(|_| EditError::CapacityOverflow)?;
+        }
+        let mut position = 0;
+        let mut added_position = self.added.len();
+        for edit in &batch.edits {
+            self.append_range(position..edit.range.start, &mut pieces);
             push_coalesced(
                 &mut pieces,
                 Piece {
                     source: Source::Added,
-                    start: self.added.len(),
-                    len: bytes.len(),
+                    start: added_position,
+                    len: edit.bytes.len(),
                 },
             );
+            added_position += edit.bytes.len();
+            position = edit.range.end;
+            edits.push(ByteEdit {
+                replaced: edit.range.clone(),
+                inserted_len: edit.bytes.len(),
+            });
         }
-        self.append_range(range.end..self.len(), &mut pieces);
-
-        self.added.extend_from_slice(bytes);
-        let edit = ByteEdit {
-            replaced: range,
-            inserted_len: bytes.len(),
+        self.append_range(position..self.len(), &mut pieces);
+        edits.reverse();
+        let change = ChangeSet {
+            before_revision: self.revision(),
+            after_revision: self.next_revision,
+            edits,
         };
+        let mut state_edits = Vec::new();
+        state_edits
+            .try_reserve(change.edits.len())
+            .map_err(|_| EditError::CapacityOverflow)?;
+        state_edits.extend_from_slice(&change.edits);
+        let state_change = ChangeSet {
+            before_revision: change.before_revision,
+            after_revision: change.after_revision,
+            edits: state_edits,
+        };
+        for edit in batch.edits {
+            self.added.extend_from_slice(&edit.bytes);
+        }
         let previous = std::mem::replace(
             &mut self.state,
             State {
                 pieces,
                 len: new_len,
                 revision: self.next_revision,
-                edit: Some(edit.clone()),
+                edit: Some(state_change),
             },
         );
         self.next_revision = following_revision;
@@ -252,7 +393,7 @@ impl Document {
             trim_history(&mut self.undo, self.history_limit);
         }
         self.redo.clear();
-        self.last_edit = Some(edit);
+        self.last_edit = Some(change);
         Ok(())
     }
 
@@ -269,10 +410,7 @@ impl Document {
             return false;
         };
         let current = std::mem::replace(&mut self.state, previous);
-        self.last_edit = current.edit.as_ref().map(|edit| ByteEdit {
-            replaced: edit.replaced.start..edit.replaced.start + edit.inserted_len,
-            inserted_len: edit.replaced.len(),
-        });
+        self.last_edit = current.edit.as_ref().map(ChangeSet::inverse);
         if self.history_limit > 0 {
             self.redo.push(current);
             trim_history(&mut self.redo, self.history_limit);
