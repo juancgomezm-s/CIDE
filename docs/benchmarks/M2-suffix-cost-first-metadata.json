@@ -1,0 +1,12 @@
+{
+  "utc": "2026-11-02T19:33:52.835182+00:00",
+  "os": "Windows-11-10.0.26300-SP0",
+  "base_commit": "6cf6f13e9640d126513c7fa9fa1d5b8b1fe8848e",
+  "example_sha256": "0369228881a41215617f2ce0f39f3ec3ec1e82dc2d21e3b1f6fff9966b66efd0",
+  "binary_sha256": "547f88d818ee4275f1081ac5703fa984db88b851fef902b67ece63bd34524b15",
+  "toolchain": "Rust 1.85.1 MSVC, release, locked offline",
+  "scope": "Workbench model, cold means first model projection/layout, not filesystem cache or physical display",
+  "process_ram_measured": false,
+  "line_index_sha256": "bd1abe45b323e725ed5391433f74c5fecda1473783a491fd5c5f79ab9f8c5904",
+  "line_index_source": "committed source at base_commit; baseline collected before growth-policy change"
+}

@@ -184,7 +184,7 @@ cargo build -p jc-app --example m2_acceptance --release --locked --offline
 python -X utf8 scripts/measure-m2-model.py before
 cargo build --workspace --release --locked --offline
 cargo build -p jc-tui --example f3_console_host --release --locked --offline
-csc /nologo /codepage:65001 /out:work\m2-native.exe scripts\conpty-smoke.cs scripts\conpty-git.cs scripts\conpty-acceptance.cs
+csc /nologo /codepage:65001 /out:work\m2-native.exe scripts\conpty-smoke.cs scripts\conpty-git.cs scripts\conpty-git-metrics.cs scripts\conpty-acceptance.cs
 work\m2-native.exe . before
 ```
 

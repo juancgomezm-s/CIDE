@@ -48,6 +48,22 @@ está ligado a un Workbench y documentos, no a trabajos de proyecto sin document
 
 ## Siguiente bloque: picos/sufijos restantes y medición conjunta de Git
 
+El bloque Git/tareas/diff/TUI está guardado localmente en `6cf6f13`. El bloque
+posterior ya midió sufijos y auxiliares, y acotó el crecimiento de replace_after:
+leer M2_SUFFIX_COST_REVIEW y GIT_AUXILIARY_MEASUREMENT. Suite completa 240 pruebas,
+fmt/Clippy/release; 4914 observaciones antes y después, y nueve sesiones Git.
+No volver a ejecutar lo aprobado sin cambios o preocupación material.
+
+Frentes realmente activos al continuar: `cold_growth.rs` (ejemplo nuevo de
+distribución de primera newline por sesión) y ampliación de
+`scripts/conpty-acceptance.cs` para dense-edits (ocho documentos, newline/undo,
+retención y cierre). Sus métodos nuevos son M2_COLD_GROWTH_DISTRIBUTION y
+M2_DENSE_EDIT_EVIDENCE. Construcción delegada exclusiva, sin compilar/medir hasta
+que ambos contratos estén cerrados y el integrador reserve ventana serial. No
+atribuirles evidencia antes de ejecutarlos. El caso frío único de 8 MiB pasó de
+1,7608 a 2,1452 ms; la capacidad retenida posterior bajó ~8→4,03 MiB. Mantener
+ambos hechos y distinguir modelo, muestreo nativo e imagen física.
+
 - Construir bloques más amplios antes de validar, según pidió el usuario. Reservar
   comprobaciones intermedias para bloqueantes concretos; no repetir suites por retoques.
 - S0 está implementado: rangos cooperativos, Unicode 17 full folding, palabra,

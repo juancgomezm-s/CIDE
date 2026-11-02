@@ -1,8 +1,9 @@
 # Validación
 
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
-237 pruebas locales aprobadas al cierre (dos helpers de subproceso aparte),
-fmt/Clippy/release y recorrido ConPTY HEAD/index. Memoria/teclado global y
+240 pruebas locales aprobadas al cierre (dos helpers de subproceso aparte),
+fmt/Clippy/release, sufijos antes/después y nueve recorridos Git con contadores.
+Memoria/teclado global y
 revisión renderizada GUI pendientes. Véase el bloque final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
 
@@ -579,3 +580,37 @@ también precede a Git; **no mide memoria/latencia conjunta de auxiliares**, ni 
 una aceptación global o de pantalla física. No se repitieron benchmarks generales.
 Sin CI/push/instalaciones ni nuevos intentos GUI. Estado completo de repositorio,
 watcher, Git con escritura, backend GUI y M2A global continúan pendientes.
+
+## Bloque de sufijos, crecimiento acotado y auxiliares — 2026-11-02
+
+Construcción completa antes de la ventana de pruebas: ejemplo opt-in de Workbench,
+política de reserva de replace_after y tres regresiones Compact/Wide/promoción;
+instrumentación C# de procesos y runner/resumen de nueve sesiones Git. Sin
+dependencias nuevas, cambios de sistema, CI ni intento GUI.
+
+- `cargo test --workspace --locked --offline`: **240 aprobadas, 0 fallidas**;
+  dos helpers ignorados se invocan desde sus padres. Se conservan bytes/encoding/
+  EOL/mapas y undo en la suite completa tras el cambio productivo.
+- fmt, Clippy workspace/all-targets `-D warnings`, build release workspace y
+  ejemplo suffix_cost aprobados. csc compiló el harness completo; la etiqueta de
+  alcance de conhost se aclaró después de capturar, sin alterar sus contadores.
+- [Sufijos](M2_SUFFIX_COST_REVIEW.md): dos corridas quietas de 4914 filas cada una,
+  153 resúmenes calientes por corrida, mismo ejemplo/hash. La primera newline de
+  8 MiB ya no duplica capacidad lógica: posterior 8388792→4227256 B. Máximos de
+  scan/decode por etapa de edición 20/63 B. El sufijo sigue O(L).
+- El tiempo frío único de esa operación subió **1760,8→2145,2 µs**. P95 caliente
+  apply 601,8→574,2 µs y undo 1135,8→1131,4 µs. No se acepta aceleración general
+  ni RAM nativa por capacidad lógica; se amplía distribución fría en otro bloque.
+- [Git auxiliar](GIT_AUXILIARY_MEASUREMENT.md): nueve sesiones con release
+  `6cf6f13`, antes de cambiar crecimiento. 446 filas / 335 ciclos, Error vacío y
+  Truncated false; HEAD/index asíncronos, navegar, stale/undo, sidebar, disco/index
+  y salida limpia aprobados. Máximo privado observado editor + descendientes:
+  4,594/8,434/11,156 MiB para 4 KiB/1 MiB/(2 MiB−64 B), respectivamente. Incluye
+  conhost descendientes Git y excluye bootstrap/conhost inicial/harness. Cadencia
+  real p95 47,8086 ms y máximo 64,1638 ms: no pico real ni fotografía atómica.
+
+La captura Git y el perfil de sufijos se ejecutaron en ventanas separadas, sin
+builds/fixtures simultáneos. Los datos/hashes están enlazados desde ambos métodos.
+No se repitieron benchmarks generales ya aprobados. Quedan activos la distribución
+fría y el nuevo recorrido nativo dense-edits; su código todavía no es evidencia.
+La memoria densa nativa previa de 51,7 MiB y las puertas global/física siguen abiertas.

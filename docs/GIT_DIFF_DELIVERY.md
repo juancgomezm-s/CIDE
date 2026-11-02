@@ -149,3 +149,8 @@ las correcciones de integración y los controles afectados repetidos.
 
 Pendientes: rendimiento/RAM editor + auxiliares, estado de todo el repositorio, otras plataformas
 y aceptación global de M2A. Este bloque no implementa staging/commit/merge ni GUI.
+
+Una [primera captura posterior de editor + auxiliares](GIT_AUXILIARY_MEASUREMENT.md)
+ya registra nueve sesiones descriptivas con contadores e identidad. No cubre
+todavía el consumo conjunto global ni todos los procesos/picos breves; esos
+pendientes no se declaran cerrados por el corpus pequeño.

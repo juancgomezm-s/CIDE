@@ -224,3 +224,19 @@ filas visibles/prefijos acotados, con bytes inválidos/BOM/EOL explícitos. No e
 Git ni diff durante entrada/render. Identidad de snapshot y refresh manual, sin
 watcher ni status global. Evidencia y límites en GIT_DIFF_DELIVERY y
 GIT_DIFF_PRESENTATION; memoria conjunta de auxiliares y pantalla física pendientes.
+
+## D27 — Crecimiento de metadatos guiado por retención medida
+
+El benchmark de Workbench real detectó que splice duplicaba capacidad del índice
+para una sola newline sobre una tabla densa. Se conserva el índice único y sus
+anchos; replace_after reserva primero la longitud final más holgura proporcional
+acotada a 32 KiB lógicos, cobrando juntos los arrays Wide. No se cambia el core,
+scanner frío, shrink, mapas o promoción lossless. El ahorro es capacidad retenida
+de proyección, no RAM nativa. Un burst puede realocar más veces y el sufijo continúa
+O(L). Se registra el caso frío de 8 MiB más lento sin inferir estadística de una
+muestra. Método, antes/después y siguientes mediciones en M2_SUFFIX_COST_REVIEW.
+
+La instrumentación opt-in de Git observa editor y descendientes por identidad
+PID/creación y handles propios. Sus sumas son por ciclo de lecturas secuenciales,
+con cobertura incompleta de procesos/picos breves. No convierte una captura pequeña
+en aceptación global; GIT_AUXILIARY_MEASUREMENT conserva datos y limitaciones.

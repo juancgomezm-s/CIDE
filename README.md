@@ -70,6 +70,8 @@ En este equipo se preparó Rust 1.85.1 dentro de `work/toolchain`, sin cambiar e
 
 La [evidencia ampliada M2](docs/M2_ACCEPTANCE_EVIDENCE.md) mide corpus Unicode/legacy, muchas piezas/documentos, memoria por proceso y arranque; corrige el pico del layout frío. El [índice compacto y la recolección sin copia innecesaria](docs/M2_DENSE_LINE_METADATA.md) reducen el pico nativo denso de 71,9 a 51,7 MiB; la aceptación global sigue abierta.
 
+La [medición de sufijos](docs/M2_SUFFIX_COST_REVIEW.md) detectó y corrigió crecimiento duplicado de metadatos al insertar newline: ahora se reserva holgura acotada. En el modelo denso de 8 MiB la capacidad de proyección posterior baja de ~8 a ~4,03 MiB; no equivale a RAM privada ni mejora general de latencia. La [primera captura editor + auxiliares Git](docs/GIT_AUXILIARY_MEASUREMENT.md) aporta nueve sesiones descriptivas con límites de cobertura. Distribución fría y memoria nativa con varios documentos editados siguen en curso.
+
 La especificación de doble panel, Outline, navegación de includes/RUN, autocompletado y Git está en [M2_NAVIGATION_PANES_GIT.md](docs/M2_NAVIGATION_PANES_GIT.md). Para retomar desde una PC Windows usa el [prompt de continuación](docs/CONTINUAR_EN_EQUIPO.md).
 
 ## Search Plus de proyecto

@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Text;
 using System.Diagnostics;
+using System.Threading;
 
 public static partial class JcConPtySmoke {
     static string FixtureGit(string executable,string root,params string[] args){
@@ -32,12 +33,17 @@ public static partial class JcConPtySmoke {
         string tree=FixtureGit(git,root,"write-tree");
         string commit=FixtureGit(git,root,"commit-tree",tree,"-m","synthetic native diff");
         FixtureGit(git,root,"update-ref","HEAD",commit);
-        string staged=Path.Combine(root,"staged-object");File.WriteAllText(staged,"INDEX_ONLY\r\nStraße NIÑO\r\n",new UTF8Encoding(false));
+        string staged=Path.Combine(root,"staged-object");
+        byte[] original=File.ReadAllBytes(path);int tail=Array.IndexOf(original,(byte)'\n')+1;
+        using(var file=new FileStream(staged,FileMode.CreateNew,FileAccess.Write)){
+            byte[] first=Encoding.ASCII.GetBytes("INDEX_ONLY\r\n");file.Write(first,0,first.Length);file.Write(original,tail,original.Length-tail);
+        }
         string index=FixtureGit(git,root,"hash-object","-w","--no-filters","--","staged-object");
         FixtureGit(git,root,"update-index","--cacheinfo","100644,"+index+",source.txt");
     }
-    static void CheckGitFlow(Display display,Result result,string git,string root,string path){
+    static void CheckGitFlow(Display display,Result result,string git,string root,string path,GitAuxiliaryProbe probe){
         byte[] original=File.ReadAllBytes(path),index=File.ReadAllBytes(Path.Combine(root,".git/index"));
+        if(probe!=null)probe.Phase="prepare";
         // A single input character is exactly one edit on Windows ConPTY too.
         display.Send("Z");display.Wait(()=>display.Text().Contains("xZx"),3000);
         display.Send("\x1b"+"f");display.Wait(()=>display.Text().Contains("Exit"),3000);
@@ -45,19 +51,24 @@ public static partial class JcConPtySmoke {
         display.Send(root+"\r");display.Wait(()=>!display.Text().Contains("Open folder"),3000);
         display.Send("\x1b"+"v");display.Wait(()=>display.Text().Contains("Active File Diff"),3000);
         display.Send("\x1b[B\x1b[B\r");display.Wait(()=>display.Text().Contains("Absolute path to Git"),3000);
+        if(probe!=null)probe.Phase="head";
         display.Send(git+"\r");
         // Deliberately no further key while the JobSystem completion wakes the UI.
         display.Wait(()=>display.Text().Contains("Git snapshot comparison ready")&&display.Text().Contains("HEAD snapshot")&&display.Text().Contains("[CRLF]"),10000);
         result.git_head_delivered_without_more_input=true;
+        if(probe!=null){probe.Phase="head_ready";Thread.Sleep(100);}
         ToggleGitBottom(display);display.Wait(()=>display.Text().Contains("> 1 @@")&&!display.Text().Contains("[CRLF]"),3000);
         result.git_sidebar_hunks_survive_hidden_bottom=true;
         ToggleGitBottom(display);display.Wait(()=>display.Text().Contains("[CRLF]"),3000);
+        if(probe!=null)probe.Phase="navigate";
         display.Send("\r");display.Wait(()=>display.Text().Contains("Git hunk 1 selected")&&display.Text().Contains("Col 1 "),3000);result.git_hunk_navigation=true;
         display.Send("\x1a");display.Wait(()=>display.Text().Contains("Stale:")&&!display.Text().Contains("xZx"),3000);result.git_stale_after_undo=true;
+        if(probe!=null){probe.Phase="stale";Thread.Sleep(100);probe.Phase="index";}
         display.Send("\x1b"+"v");display.Wait(()=>display.Text().Contains("Compare Index Snapshot"),3000);
         display.Send("\x1b[A\x1b[A\x1b[A\x1b[A\r");
         display.Wait(()=>display.Text().Contains("Git snapshot comparison ready")&&display.Text().Contains("index snapshot")&&display.Text().Contains("INDEX_ONLY"),10000);
         result.git_index_delivered_without_more_input=true;
+        if(probe!=null){probe.Phase="index_ready";Thread.Sleep(100);}
         if(Convert.ToBase64String(File.ReadAllBytes(path))!=Convert.ToBase64String(original)||Convert.ToBase64String(File.ReadAllBytes(Path.Combine(root,".git/index")))!=Convert.ToBase64String(index))throw new IOException("Read-only Git flow changed file or index");
         result.git_disk_and_index_unchanged=true;
     }

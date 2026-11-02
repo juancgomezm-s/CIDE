@@ -78,6 +78,8 @@ Keep `docs/VALIDACION.md` consistent with observed evidence and material limitat
 
 ## F2 contracts
 
+- Read `docs/M2_SUFFIX_COST_REVIEW.md` and `docs/GIT_AUXILIARY_MEASUREMENT.md` for the next evidence block. LineIndex replacement growth now pre-reserves proportional slack capped at 32 KiB logical charge per index (both Wide arrays together); preserve that ownership and lossless promotion. The 8 MiB cold newline observation became slower while retained projection capacity fell; do not claim universal speed/RAM improvement. Process sampling can miss short-lived Git/conhost descendants and true peaks. Next active fronts: cold growth distributions and native dense multi-document edit/undo evidence; build complete blocks before their serial validation window.
+
 - Range reads use the block prefix piece index. Do not restore whole-document decode/index builds in movement, viewport rendering or range edit commands.
 - TextProjection is shared per document; direct/inverse changes update EOL events and sparse scalar checkpoints. Preserve invalid UTF-8 grouping, literal mid-file BOM and legacy offsets.
 - Layout cache quota is 1 MiB/document; line metadata is accounted separately. History defaults to 8 MiB logical charge and 1024 steps. These are not private-process RAM guarantees.

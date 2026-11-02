@@ -1,0 +1,10 @@
+fixture_bytes,run,elapsed_ms,sample_rows,head_async,index_async,hunk_navigation,stale_after_undo,sidebar_survives_hidden_bottom,disk_index_unchanged,exit_code,truncated,sampling_failed
+4096,0,2772.3159,68,True,True,True,True,True,True,0,False,False
+4096,1,2581.8188,41,True,True,True,True,True,True,0,False,False
+4096,2,2538.6855,43,True,True,True,True,True,True,0,False,False
+1048576,0,2623.9433,48,True,True,True,True,True,True,0,False,False
+1048576,1,2568.2126,53,True,True,True,True,True,True,0,False,False
+1048576,2,2466.2026,47,True,True,True,True,True,True,0,False,False
+2097088,0,2660.8674,49,True,True,True,True,True,True,0,False,False
+2097088,1,2647.6405,47,True,True,True,True,True,True,0,False,False
+2097088,2,2514.3958,50,True,True,True,True,True,True,0,False,False

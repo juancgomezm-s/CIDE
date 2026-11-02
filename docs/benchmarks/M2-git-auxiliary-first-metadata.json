@@ -1,0 +1,25 @@
+{
+  "utc": "2026-11-02T19:38:51.0490046Z",
+  "os_reported": "Microsoft Windows NT 6.2.9200.0",
+  "framework": "4.0.30319.42000",
+  "git_executable": "C:\\Program Files\\Git\\cmd\\git.exe",
+  "git_file_version": "2.54.0.windows.1",
+  "editor": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\target/release/jc-ide-tui.exe",
+  "requested_sample_ms": 5,
+  "runs_per_size": 3,
+  "scope": "editor and observed descendants during Git flow, including Git conhost descendants; excludes initial TUI host/conhost and harness",
+  "limits": "sampling can miss short-lived processes and true peaks; no physical display or global acceptance",
+  "base_commit": "6cf6f13e9640d126513c7fa9fa1d5b8b1fe8848e",
+  "editor_binary_sha256": "7952f8c6d145bed4eeb138aa31c84384d322f57c6e98f1d3b0ea22aa3bedcaed",
+  "harness_binary_sha256": "2ef7b95666edc2b756c884c30cafa24576b497e8c1512bdaff52e54ae5df52d6",
+  "git_version": "git version 2.54.0.windows.1",
+  "source_sha256": {
+    "conpty-smoke.cs": "c93bcc4b82db3bcb40e6cf45d065144473562d88ec2624633d5e3e5175518cd4",
+    "conpty-git.cs": "1f40a39c4348003d612cf3ed28818f5ab4b736b67fd53f3951b8767b9c8e9425",
+    "conpty-git-metrics.cs": "a19e406474b29f4ebd5acc55eaffd60d3a9786c1f3947a6041be3bdac01fdf5f",
+    "measure-git-auxiliary.cs": "3754b047fb09489452d332cc92aecc3452c2b16f2fe9df86997bcdd56c859a3f"
+  },
+  "completed_utc": "2026-11-02T19:38:51.125578+00:00",
+  "scope_original_label": "editor and observed descendants during Git flow; excludes host/conhost/harness",
+  "postrun_label_correction": "Raw process names show conhost.exe as a Git descendant. Scope label clarified after collection; counter collection/filtering unchanged. Source hashes describe the collection build before this metadata-label correction."
+}
