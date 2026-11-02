@@ -1,0 +1,4 @@
+protocol=cpu-workloads-v1; pid=27756; samples=7; warmups=1; sampler_ms=10; concurrent_load=unknown_qwen_unknown; filesystem_cache=uncontrolled; hardware=record_by_integrator; worker_affinity_priority=unchanged
+fixture_setup_wall_ns=72220900; fixture_root=\\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\work\test-temp\cpu-workloads-27756-1793658213819047600
+corpus encoding=UTF-8 bytes=16777216 files=16 fnv1a64=15b4407e5cceeb25
+corpus encoding=Windows-1252 bytes=16777216 files=16 fnv1a64=426f2b1ea973e525

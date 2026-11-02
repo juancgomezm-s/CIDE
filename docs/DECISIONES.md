@@ -277,3 +277,21 @@ no ejecutar filtros y evitando falsear semántica suprimiendo conversiones. Conf
 estable y repositorio confiable son precondición, no sandbox hostil. Límites de
 input/records/entries/path/owned y plazo único transporte+parseo. Validación y uso:
 GIT_STATUS_READ_ONLY y GIT_STATUS_DELIVERY. Presentación TUI pendiente, Git writes M5.
+
+
+## D30 — CPU por archivos con admisión y costes explícitos
+
+El perfil identifica CPU de proyecto concentrada en un worker. Reemplazar la ruta
+monolítica por un único executor con coordinador/scanner0 y helpers persistentes,
+dos en total por defecto y 1…4 configurable. Headroom por available_parallelism,
+sin afinidades/prioridades ni garantía de CPU libre externa. Reutilizar Pattern y
+Request, sin clones de buffers abiertos; UI publica por ordinal y cobra cuotas
+globales, con canales/batches acotados y cancelación/cleanup antes de reutilizar.
+JobSystem conserva su identidad documental; no anidar pools ni inventar documentos.
+
+La comparación local reduce espera y memoria muestreada a costa de más CPU total;
+se registra ese intercambio, la mediana negativa pequeña y Qwen desconocido.
+No speedup universal ni aceptación física/global. Overrides s/2/3 no justifican
+cambiar la política global: mantener s. TUI expone --search-workers para limitar
+demanda desde arranque; las escrituras/undo siguen en el owner, nunca en helpers.
+Método/datos/pruebas/limitaciones: CPU_PERFORMANCE y CPU_PROJECT_EXECUTOR.

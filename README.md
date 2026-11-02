@@ -148,3 +148,11 @@ El [estado Git por repositorio](docs/GIT_STATUS_READ_ONLY.md) y su
 261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
 sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
 TUI de status pendiente; diff activo HEAD/index operativo.
+
+
+Search Plus aprovecha varios núcleos por archivo, con dos trabajadores por defecto
+y límite de arranque `--search-workers 1..4`. [Resultados CPU](docs/CPU_PERFORMANCE.md):
+en 16 MiB, espera mediana 1,24–1,49× más rápida y memoria privada muestreada menor,
+con CPU total 30–48% mayor. Se conservan cuotas, cancelación, orden y bytes; Qwen
+queda como carga desconocida, sin tocar sus procesos. `opt-level=s` se mantiene
+tras compararlo. [Uso y límites](docs/CPU_RUNTIME_OPTIONS.md).

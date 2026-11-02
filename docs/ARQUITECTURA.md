@@ -116,3 +116,13 @@ El [estado Git por repositorio](GIT_STATUS_READ_ONLY.md) y su
 261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
 sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
 TUI de status pendiente; diff activo HEAD/index operativo.
+
+
+Search Plus ya usa un executor de CPU por archivos: coordinador/scanner0 y hasta
+tres helpers persistentes, default dos trabajadores totales, admisión limitada
+por configuración y disponibilidad. Un único scanner, fuentes abiertas prestadas
+del Request Arc, orden y cuotas centrales, staging bounded y liberación antes de
+idle. Worker1 comparte engine; no otra ruta serial ni pool F3 anidado. TUI propaga
+--search-workers al modelo compartido. [Diseño](CPU_PROJECT_EXECUTOR.md) y
+[costes/medición](CPU_PERFORMANCE.md), incluido aumento de CPU total. Escrituras
+de documentos permanecen seriales y transaccionales. No se cambia release s.

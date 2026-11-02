@@ -1,4 +1,5 @@
 //! On-demand, literal project search. One bounded worker, no resident index.
+mod parallel;
 mod replace;
 mod scan;
 use crate::{Cancellation, TaskStamp, Wakeup, Workbench};
@@ -24,6 +25,9 @@ pub struct ProjectSearchOptions {
     pub max_file_bytes: usize,
     pub max_scan_bytes: usize,
     pub max_entries: usize,
+    /// Total project CPU workers, including its coordinator/scanner. The executor
+    /// further caps this by available logical processors with headroom reserved.
+    pub workers: usize,
 }
 impl ProjectSearchOptions {
     pub fn literal(query: impl Into<String>) -> Self {
@@ -36,6 +40,7 @@ impl ProjectSearchOptions {
             max_file_bytes: 2 * 1024 * 1024,
             max_scan_bytes: 64 * 1024 * 1024,
             max_entries: 100_000,
+            workers: 2,
         }
     }
     fn validate(&self) -> Result<(), String> {
@@ -47,6 +52,7 @@ impl ProjectSearchOptions {
             || self.max_scan_bytes == 0
             || self.max_scan_bytes > 256 * 1024 * 1024
             || !(1..=100_000).contains(&self.max_entries)
+            || !(1..=4).contains(&self.workers)
             || self.include.len() + self.exclude.len() > 16
             || self
                 .include
@@ -432,6 +438,7 @@ fn publish(shared: &Shared, request: &Request, event: Event) -> bool {
     true
 }
 fn worker(shared: Arc<Shared>) {
+    let mut executor = parallel::Executor::new();
     loop {
         let request = {
             let queue = shared.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -442,10 +449,10 @@ fn worker(shared: Arc<Shared>) {
             if queue.stop {
                 return;
             }
-            queue.pending.take().unwrap()
+            Arc::new(queue.pending.take().unwrap())
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            scan::run(&request, |rows| {
+            executor.run(request.clone(), |rows| {
                 publish(&shared, &request, Event::Rows(request.generation, rows))
             })
         }));

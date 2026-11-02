@@ -1,0 +1,29 @@
+{
+  "utc": "2026-11-02T22:18:59.316675+00:00",
+  "source_product": "16071e3 archived/saved serial binary",
+  "pair": 2,
+  "order": [
+    "parallel",
+    "serial"
+  ],
+  "default_requested_project_workers": 1,
+  "available_logical_processors": 16,
+  "actual_utilization": "derive from per-sample GetProcessTimes total/wall, includes sampler; workers are not all16",
+  "hardware": "M2-cpu-hardware.json",
+  "example_sha256": "942cb427db60474db792d529a1c87e9516c27a690bd7db088589761a6e620744",
+  "binary_sha256": "ebea7820d0776459e2803c1b3643a51005d7ca6a4eccf08aacf9ab66b5e1d9eb",
+  "samples": 31,
+  "protocol": "identical source/corpus/CLI search suite,1warmup/case; checks inside measured publicAPI pipeline",
+  "concurrent_qwen_load": "unknown; no inspection/control; no CPU affinity/priority/system changes",
+  "serialized": "no concurrent builds/fixtures/benchmarks; helper tasks idle between measurement captures",
+  "limitations": "filesystem/CPU caches uncontrolled; own process sampled peaks, CPU accounting quantized, not physical UI latency",
+  "runtime_source_sha256": {
+    "Cargo.toml": "99687366f0fa08f19804bc3502608b028c9343eee0ad398608ebe32ef87838dd",
+    "crates/jc-app/src/project_search.rs": "9cec74801f09684a44659729b5ec04aca09407df75d26bb1de22fe6eed480e05",
+    "crates/jc-app/src/project_search/scan.rs": "423438aca06dcf1b8b13d1b37091b446741318a965fdd8e4b232c6074bce489d",
+    "crates/jc-app/src/text_search.rs": "d12054be4fec7797c3a890231805e8c1408e836c69394f637ebf5016f96195c7",
+    "crates/jc-text/src/encoding.rs": "eba795cfdb94d4d9288c88b956bae8f2aafd1399c59b4ab3ecd8aab3f743a7ed"
+  },
+  "post_measurement_frontend": "TUI worker-limit argument was exposed after captures; jc-app measured executor unchanged",
+  "power_temperature": "uncontrolled/unobserved; no system changes"
+}

@@ -1,8 +1,8 @@
 # Validación
 
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
-261 pruebas locales aprobadas en la suite completa del bloque Git status
-(dos helpers de subproceso aparte),
+274 pruebas distintas aprobadas al cierre integrado CPU/TUI
+(suites completadas selectivamente; dos helpers de subproceso aparte),
 fmt/Clippy/release, tres pares fríos equivalentes y catorce procesos nativos
 retenidos de edición/undo en ocho documentos. Máximo histórico actual 52,461 MiB;
 Memoria/teclado global y
@@ -719,3 +719,48 @@ renames detectados y cambios internos de submódulos quedan fuera de esta consul
 Rutas byte no autorizan navegación filesystem. TUI status sigue pendiente;
 diff activo HEAD/index ya conectado. Sin Git writes/watcher/GUI ni aceptación
 global de RAM/pantalla física.
+
+
+## CPU por archivos y arranque configurable — 2026-11-02
+
+Construcción completa antes de la validación del executor: un scanner común,
+coordinador y helpers persistentes, ondas/entrega ordenadas, cuotas de fuente y
+resultados centrales, read_file sin duplicar Vec por guardia y cancelación/RAII.
+Tres pruebas internas y cinco de API añadidas. La corrida workspace aprobó 122
+casos de aplicación antes de encontrar dos expectativas nuevas incorrectas de
+case-insensitive en S1. Corregidos SOLO oráculos: 32 casos nuevos/pendientes de
+aplicación y 115 de otros crates pasaron, total **269 distintos**. No se repitió
+la parte aprobada. Clippy pidió manual_clamp equivalente, resuelto y aprobado;
+release workspace bins/ejemplos pasó. Frontera exacta con archivo vacío se verificó
+en el caso dirigido después, sin cambiar producto ni repetir la suite.
+
+Después se construyó/validó `--search-workers 1..4`: **47 pruebas TUI** (42 lib,
+cinco main), cinco nuevas respecto a 269. Total actual **274 pruebas distintas
+aprobadas**, no una corrida completa única de 274. Rechazo antes de TerminalSession,
+default2/opciones/rutas/encoding/help/errores y propagación a cada draft comprobados.
+Clippy dirigido TUI/all-targets y test afectado de app, release TUI y CLI real
+help/error/duplicado pasaron. Formato aplicado; sin inferir validación nueva de
+las 269 anteriores ni repetir mediciones tras el flag de frontend.
+
+[Método y resultados completos](CPU_PERFORMANCE.md): hardware 8 físicos/16 lógicos
+observados sin alterar afinidad, perfil inicial126 muestras de fase y comparación
+1488 consultas conservadas (dos pares, 31/caso) más selección codegen168 muestras.
+Fuentes/probe/binarios/corpus identificados por hash, raw/checks/metadata retenidos;
+capturas serializadas sin builds/fixtures pesados concurrentes.
+
+- 16 MiB: mediana 1,24–1,49× y p95 1,41–1,48× más rápidos; throughput elegible
+  ~67,9–86,4→99,5–108,4 MiB/s. CPU agregada ~1→1,726–1,797 núcleos equivalentes.
+- CPU total sumada por operación/caso sube **30,4–47,9%**; se acepta intercambio
+  local por menor espera, no menos trabajo ni 100% CPU como objetivo. Un caso
+  pequeño mostró mediana ~4,2% más lenta; se conserva en datos/documentación.
+- Privado muestreado del harness16MiB 5,527–5,625→3,520–4,230 MiB; reader guardia
+  y allocator también cambian costes. No RAM de TUI ni garantía global de 50MiB.
+- Overrides solo jc-app s/2/3: seis capturas en dos órdenes, siete/caso; no mejora
+  UTF-8 consistente que justifique política global y probe +15,6/+21,9% de tamaño.
+  Se mantiene **opt-level=s**, Cargo.toml/lock sin cambios. No repetir ese perfil.
+
+Carga Qwen desconocida, no inspeccionada/controlada; cachés, energía, temperatura
+y otra carga no controladas. Accounting CPU cuantizado y picos muestreados, no
+instrucciones exactas ni pantalla física. Windows local, sin aceptación Linux,
+GUI o servicios completos. Workers4 funcional, rendimiento no certificado.
+Sin instalaciones, CI/push ni cambios de seguridad/servicios/CPU global/GPU.

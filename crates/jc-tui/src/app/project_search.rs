@@ -28,7 +28,9 @@ impl TuiApp {
                     self.status = "Search text cannot be empty".into();
                     return;
                 }
-                self.project_draft = Some(ProjectSearchOptions::literal(input));
+                let mut draft = ProjectSearchOptions::literal(input);
+                draft.workers = self.project_search_workers;
+                self.project_draft = Some(draft);
                 self.open_prompt(PromptKind::ProjectInclude);
             }
             PromptKind::ProjectInclude => {
@@ -156,4 +158,35 @@ fn patterns(text: &str) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+#[cfg(test)]
+mod worker_settings_tests {
+    use super::*;
+    use crate::LaunchOptions;
+
+    #[test]
+    fn launch_budget_reaches_every_new_project_query_without_starting_work() {
+        for workers in [1, 2, 4] {
+            let mut app = TuiApp::with_search_workers(LaunchOptions::default(), workers).unwrap();
+            for query in ["first", "second"] {
+                app.submit_project_prompt(PromptKind::ProjectQuery, query.into());
+                let draft = app.project_draft.as_ref().unwrap();
+                assert_eq!(draft.query, query);
+                assert_eq!(draft.workers, workers);
+                assert_eq!(app.project_search.state, jc_app::ProjectSearchState::Idle);
+                assert!(!app.project_search.ready());
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_cpu_budget_is_rejected_before_entering_a_terminal() {
+        for workers in [0, 5] {
+            assert!(TuiApp::with_search_workers(LaunchOptions::default(), workers).is_err());
+            let error =
+                crate::run_with_search_workers(LaunchOptions::default(), workers).unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        }
+    }
 }

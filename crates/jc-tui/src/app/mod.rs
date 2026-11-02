@@ -47,6 +47,7 @@ pub struct TuiApp {
     pub(crate) project_search: jc_app::ProjectSearch,
     pub(crate) project_results: bool,
     pub(crate) project_draft: Option<jc_app::ProjectSearchOptions>,
+    project_search_workers: usize,
     pub(crate) replace_preview: Option<jc_app::ProjectReplacePreview>,
     pub(crate) project_replace: Option<jc_app::ProjectReplacePreview>,
     replace_files: usize,
@@ -59,7 +60,19 @@ impl TuiApp {
     pub fn new(options: LaunchOptions) -> Self {
         Self::with_wakeup(options, jc_app::Wakeup::default())
     }
+    pub fn with_search_workers(options: LaunchOptions, workers: usize) -> std::io::Result<Self> {
+        Self::with_wakeup_and_search_workers(options, jc_app::Wakeup::default(), workers)
+    }
     pub(crate) fn with_wakeup(options: LaunchOptions, wakeup: jc_app::Wakeup) -> Self {
+        Self::with_wakeup_and_search_workers(options, wakeup, 2)
+            .expect("valid default project worker budget")
+    }
+    pub(crate) fn with_wakeup_and_search_workers(
+        options: LaunchOptions,
+        wakeup: jc_app::Wakeup,
+        workers: usize,
+    ) -> std::io::Result<Self> {
+        crate::validate_search_workers(workers)?;
         let registry = default_registry();
         let keymap = default_keymap();
         let menus = default_menu_model();
@@ -86,6 +99,7 @@ impl TuiApp {
             project_search: jc_app::ProjectSearch::new(wakeup.clone()),
             project_results: false,
             project_draft: None,
+            project_search_workers: workers,
             replace_preview: None,
             project_replace: None,
             replace_files: 0,
@@ -100,7 +114,7 @@ impl TuiApp {
                 app.status = error;
             }
         }
-        app
+        Ok(app)
     }
 
     pub fn frame(&mut self, width: u16, height: u16) -> Screen {

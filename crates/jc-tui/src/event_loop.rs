@@ -138,10 +138,10 @@ impl Drop for InputPump {
     }
 }
 
-pub(crate) fn run(options: LaunchOptions) -> io::Result<()> {
+pub(crate) fn run(options: LaunchOptions, search_workers: usize) -> io::Result<()> {
     let mut terminal = TerminalSession::enter()?;
     let wakeup = Wakeup::default();
-    let mut app = TuiApp::with_wakeup(options, wakeup.clone());
+    let mut app = TuiApp::with_wakeup_and_search_workers(options, wakeup.clone(), search_workers)?;
     let input = InputPump::start(wakeup.clone())?;
     let (mut width, mut height) = terminal.size()?;
     let mut dirty = true;

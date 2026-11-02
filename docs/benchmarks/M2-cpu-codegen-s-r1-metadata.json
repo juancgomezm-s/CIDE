@@ -1,0 +1,29 @@
+{
+  "utc": "2026-11-02T22:23:21.706945+00:00",
+  "pair": 1,
+  "order": [
+    "s",
+    "2",
+    "3"
+  ],
+  "app_opt_level": "s",
+  "other_crates_opt_level": "s",
+  "default_project_workers": 2,
+  "example_sha256": "942cb427db60474db792d529a1c87e9516c27a690bd7db088589761a6e620744",
+  "binary_sha256": "0a739e5894c50301b5173c9ebc7d1723158d1740ccad48944dbedfaf75466994",
+  "binary_bytes": 498176,
+  "scope": "selection profile:7samples/case, p95=max; same2worker implementation/corpus/CLI; app-package compiler opt only; not UI/display acceptance",
+  "concurrent_qwen_load": "unknown; no other process control/inspection",
+  "serialized": "all builds finished before captures; no concurrent heavy work",
+  "toolchain": "Rust1.85.1 MSVC thinLTO codegen-units1 offline; CLI --config package override, manifest unchanged",
+  "runtime_source_sha256": {
+    "Cargo.toml": "99687366f0fa08f19804bc3502608b028c9343eee0ad398608ebe32ef87838dd",
+    "crates/jc-app/src/project_search.rs": "d9607699998111d5f4084cc7ebac2f5f3cf36cfb0739ac7556873129c4d978d8",
+    "crates/jc-app/src/project_search/scan.rs": "4c7a92e0cfdc0b547ac1c3ac769171e61d89654dd706855e8db6c371e2d720a4",
+    "crates/jc-app/src/project_search/parallel.rs": "48d411cd1f853d786e2339d69001be46c358b08ad4b8329b693e820b92ee96a7",
+    "crates/jc-app/src/text_search.rs": "d12054be4fec7797c3a890231805e8c1408e836c69394f637ebf5016f96195c7",
+    "crates/jc-text/src/encoding.rs": "eba795cfdb94d4d9288c88b956bae8f2aafd1399c59b4ab3ecd8aab3f743a7ed"
+  },
+  "post_measurement_frontend": "TUI worker-limit argument was exposed after captures; jc-app measured executor unchanged",
+  "power_temperature": "uncontrolled/unobserved; no system changes"
+}

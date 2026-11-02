@@ -108,3 +108,19 @@ in PLAN/CONTINUAR, profile before selecting parallelism, bounded configurable
 concurrency/cancellation/backpressure, deterministic versioned results, no nested
 pools or large extra copies. Preserve CPU/RAM headroom for Qwen; do not manipulate
 other processes/system settings. Mark concurrent load unknown if not safely verified.
+
+
+## CPU closure and next authorized work
+
+CPU file execution and TUI --search-workers are implemented and locally validated;
+read docs/CPU_PERFORMANCE.md, docs/CPU_PROJECT_EXECUTOR.md and
+docs/CPU_RUNTIME_OPTIONS.md. Default2 total workers includes coordinator; requested
+1..4 capped by available-minus4 (minimum1), no OS affinity/priority changes.
+One engine/window1 and helpers, global quotas/order, bounded staging, Request Arc
+released before idle, no extra open-source copies or nested F3 pools. Preserve
+source-byte quota semantics and separate EOF sentinel, snapshot revisions and undo.
+274 distinct tests passed in selective closure; do not claim one full274 run.
+CPU total increased in the measured tradeoff; Qwen load unknown and physical UI
+latency still open. Codegen s/2/3 already compared: keep s, do not repeat that
+profile or prolong CPU optimization without a concrete new question. Next planned
+work is repository-status TUI presentation on the existing versioned controller.

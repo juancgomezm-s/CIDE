@@ -1,0 +1,14 @@
+{
+  "utc": "2026-11-02T21:45:32.379065+00:00",
+  "os": "Windows-11-10.0.26300-SP0",
+  "processor": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+  "physical_cores": 8,
+  "active_logical_processors_all_groups": 16,
+  "python_os_cpu_count": 16,
+  "current_process_affinity_mask": "0xffff",
+  "current_process_available_logical_bits": 16,
+  "system_affinity_mask": "0xffff",
+  "affinity_changed": false,
+  "concurrent_qwen_load": "unknown; no other process inspection or control",
+  "scope": "read-only OS processor topology/own process affinity; not a CPU utilization benchmark"
+}

@@ -195,3 +195,36 @@ archivos privados. Si no puede verificarse su actividad sin interferir, registra
 carga concurrente desconocida y no atribuir toda variación al cambio. Máximo
 tres agentes, un integrador, compilaciones y mediciones pesadas serializadas.
 Construir bloques completos antes de validar. Sin instalaciones, push ni CI.
+
+
+## Cierre CPU y siguiente bloque — 2026-11-02
+
+CPU implementado y medido: [CPU_PERFORMANCE](CPU_PERFORMANCE.md). Search Plus usa
+un solo engine por archivo, default dos trabajadores incluido coordinador,
+configurable 1…4 con admisión/headroom conservadores. TUI ya acepta
+`--search-workers 1..4`; uno reduce demanda mientras se trabaja con otras cargas.
+Se conservan bytes/encoding/undo, revisiones, cancelación y cuotas globales; helpers
+lazy reutilizados sin snapshots duplicados ni pools anidados/F3 documental ficticio.
+
+Cuatro capturas / 1488 consultas conservadas, mismo probe/corpus y dos órdenes.
+16 MiB: mediana 1,24–1,49× más rápida, uso agregado ~1→1,73–1,80 núcleos equivalentes;
+CPU total aumenta 30–48%. Memoria privada muestreada del harness baja de
+5,527–5,625 a 3,520–4,230 MiB, incluido reader sin crecimiento para guardia EOF.
+Un caso pequeño tuvo mediana peor; no es aceleración universal ni menos CPU total.
+Codegen jc-app s/2/3 se comparó aparte: se **mantiene s**, sin mejora UTF-8 consistente
+que justifique cambiar política global. Qwen/carga, energía y temperatura no
+observados/controlados; no tocar procesos ajenos. Pantalla física/global RAM abiertas.
+
+Validación CPU: 269 pruebas distintas al completar las suites tras corregir dos
+oráculos S1 sensibles a mayúsculas; luego integración de arranque TUI, 47 pruebas
+TUI/CLI aprobadas con cinco nuevas, total **274 distintas**. Formato, Clippy
+workspace/all-targets del executor y dirigidos posteriores, release y CLI real
+pasaron. No una suite completa de 274 en una sola corrida. No repetir perfiles
+ni suites por documentación; sin instalaciones/CI/push/afinidades/prioridades.
+
+**Siguiente pendiente autorizado:** presentación TUI del estado Git de repositorio,
+sobre el proveedor y controlador ya implementados en `16071e3`; leer
+GIT_STATUS_READ_ONLY/GIT_STATUS_DELIVERY antes de conectar. Preservar paths byte
+opacos, rechazo de filtros, configuración aislada, generación/opciones vigentes,
+lectura visible y ausencia de escrituras. No prolongar optimizaciones CPU sin
+otra pregunta concreta ni activar un incremento ajeno al plan.
