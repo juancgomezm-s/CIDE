@@ -1,0 +1,16 @@
+{
+  "base_commit": "191bd82",
+  "product_source": "working-tree block migration after191bd82",
+  "pair": 2,
+  "order": [
+    "block",
+    "flat"
+  ],
+  "example_sha256": "4207e8e35f3e590a68bea00107f0e74f9bb0098edfe1f3501479ff9dcdc0e0ce",
+  "product_index_sha256": "4d17a66439478ecf4d496e23a2a4d62a6fc3d08d39ea111f74fa9eceec6318d1",
+  "binary_sha256": "e76d3026d4c3565dd5e334989688d9fb670299ce2a7f04f80cbacf48be7d63a8",
+  "scope": "Workbench model; same benchmark source/protocol per experiment; cold is model state, OS/CPU/allocator caches not purged; not RAM/UI",
+  "utc": "2026-11-02T21:04:36.559755+00:00",
+  "os": "Windows-11-10.0.26300-SP0",
+  "toolchain": "Rust1.85.1 MSVC release locked offline"
+}

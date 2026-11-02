@@ -1,0 +1,10 @@
+{
+  "base_commit": "191bd82",
+  "product_source": "working-tree block migration",
+  "editor_binary_sha256": "170375935e0fa2a64c12a1798584457a4d84ed6ec3a1f4b34c2d31d15ce863e6",
+  "harness_binary_sha256": "978ae73158e209fc867ef4f0fc684d7a63129afb8a3d1f00f89dfa64389be3b2",
+  "harness_source_sha256": "fbbca1e84b0721bda390d4157450da060153e3dfb4e83352a57a1c825c6bfe52",
+  "scope": "same dense-edits RunAcceptance; CLI label/explicit executable differ;1discarded+7retained; VTnotphysical, no simultaneous builds/fixtures",
+  "utc": "2026-11-02T21:24:17.852438+00:00",
+  "os": "Windows-11-10.0.26300-SP0"
+}

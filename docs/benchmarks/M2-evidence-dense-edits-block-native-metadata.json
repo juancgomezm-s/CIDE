@@ -1,0 +1,18 @@
+{
+  "base_commit": "191bd82",
+  "product_source": "working-tree block migration",
+  "product_index_sha256": "4d17a66439478ecf4d496e23a2a4d62a6fc3d08d39ea111f74fa9eceec6318d1",
+  "editor_binary_sha256": "170375935e0fa2a64c12a1798584457a4d84ed6ec3a1f4b34c2d31d15ce863e6",
+  "host_binary_sha256": "8d284cf68053f7cbb41091faa0b402c96a2909bef08078dfb874fb4389caecde",
+  "harness_binary_sha256": "1e280cae8c024b5a56e516797c07201be747f2e55f0d916ad1c6def7106d443b",
+  "source_sha256": {
+    "conpty-smoke.cs": "c93bcc4b82db3bcb40e6cf45d065144473562d88ec2624633d5e3e5175518cd4",
+    "conpty-git.cs": "1f40a39c4348003d612cf3ed28818f5ab4b736b67fd53f3951b8767b9c8e9425",
+    "conpty-git-metrics.cs": "a19e406474b29f4ebd5acc55eaffd60d3a9786c1f3947a6041be3bdac01fdf5f",
+    "conpty-acceptance.cs": "7e03be7aa338b9b883710f967e7c869510ee39fc41e5292fcde622f524d3c574"
+  },
+  "scope": "same RunAcceptance; one discarded +7 retained processes/shape; separate process counters and historical peaks, VT not physical display; no simultaneous builds/fixtures",
+  "utc": "2026-11-02T21:05:08.381628+00:00",
+  "os": "Windows-11-10.0.26300-SP0",
+  "toolchain": "Rust1.85.1 MSVC release locked offline"
+}

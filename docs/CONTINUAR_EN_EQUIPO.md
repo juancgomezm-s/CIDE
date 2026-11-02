@@ -46,29 +46,33 @@ Workbench ni escriben buffers/disco. Propuestas requieren futura aceptación y
 de encoding deberá cancelar/reemplazar explícitamente la clave. El sistema actual
 está ligado a un Workbench y documentos, no a trabajos de proyecto sin documento.
 
-## Siguiente bloque: picos/sufijos restantes y medición conjunta de Git
+## Checkpoint actual: índice por bloques integrado
 
-El bloque Git/tareas/diff/TUI está guardado localmente en `6cf6f13`. El bloque
-posterior ya midió sufijos y auxiliares, y acotó el crecimiento de replace_after:
-leer M2_SUFFIX_COST_REVIEW y GIT_AUXILIARY_MEASUREMENT. Suite completa 240 pruebas,
-fmt/Clippy/release; 4914 observaciones antes y después, y nueve sesiones Git.
-No volver a ejecutar lo aprobado sin cambios o preocupación material.
+Git/tareas/diff/TUI está en `6cf6f13`; crecimiento plano y medición inicial en
+`d6de969`; distribuciones en `6feb19b`; candidato/comparador en `191bd82`.
+Ahora `workbench/line_index.rs` contiene un único índice por bloques, con bases
+usize y registros relativos/EOL u16. El plano y los ejemplos que dependían de él
+fueron retirados, conservados en la historia. Leer M2_BLOCK_LINE_INDEX y
+M2_UNDO_PIPELINE_PROBE antes de tocar esas rutas. No reactivar dos modelos.
 
-Los frentes cold_growth y dense-edits ya fueron recogidos, revisados y ejecutados
-por el integrador. M2_COLD_GROWTH_DISTRIBUTION conserva tres pares con igual
-ejemplo/versiones identificadas: 5580 filas, sin cambio consistente de signo en
-p95 frío. M2_DENSE_EDIT_EVIDENCE registra catorce procesos retenidos y sus checks:
-pico histórico de compromiso 68,160→52,461 MiB; la puerta de 50 MiB sigue abierta.
-No repetir esos datasets ni reemplazarlos por otras corridas sin motivo material.
+Bloque completo construido antes de validar: migración, oráculos multibloque,
+aplicación real UTF-8/legacy/vistas/undo, cuotas y liberación de catálogo. Suite
+completa 245 aprobadas; ajuste final de catálogo con 15+3 pruebas afectadas,
+246 distintas al cierre. fmt/Clippy/release aprobados. No repetir lo aprobado
+sin cambio o preocupación material. Ejemplo pipeline también compilado/ejecutado.
 
-Bloque siguiente realmente en construcción: `examples/support/block_line_index.rs`
-y `examples/line_index_candidates.rs`, dentro de jc-app, con método
-LINE_INDEX_CANDIDATES y contrato LINE_INDEX_CANDIDATE_CONTRACT. Candidato y driver
-se construyen en archivos exclusivos; no hay cambio productivo ni decisión de
-estructura. El integrador debe esperar/recoger ambos, revisar, abrir ventana
-serial y medir antes de seleccionar. No cerrar turno afirmando que siguen activos
-si ya terminaron sin un integrador que recoja sus entregas. Distinguir siempre
-modelo, proceso nativo e imagen física; no tocar configuración del sistema.
+Dos pares Workbench, 48 sesiones nativas / 42 retenidas y dos pares in-process
+están recogidos, revisados y medidos serialmente, no pendientes en agentes.
+Pico denso editado 43,73/43,82 MiB en dos capturas; local bajo 50 MiB, sin aceptación
+global. Undo interno total p95 179,2/172,1 µs frente a plano 573,7/752,9 µs; VT
+repetido 16,9147 ms bloques / 16,9702 ms plano. La cola nativa inicial mayor no
+persistió, se conserva. No fabricar latencia residual restando percentiles.
+
+Pendientes funcionales del plan: regex real acotado, selección rectangular con
+clipboard/undo, símbolos/includes/RUN mediante proveedor, y backend GUI medido.
+No habilitar switches decorativos ni mezclar proveedores ABL en jc-app. No más
+intentos GUI/browser sin una ventana autorizada; no cambios de sistema/servicios.
+Puerta física requiere medición de presentación real, separada de VT/modelo.
 
 - Construir bloques más amplios antes de validar, según pidió el usuario. Reservar
   comprobaciones intermedias para bloqueantes concretos; no repetir suites por retoques.
@@ -84,11 +88,10 @@ modelo, proceso nativo e imagen física; no tocar configuración del sistema.
   proceso ampliados: `M2_ACCEPTANCE_EVIDENCE.md`. Layout frío ya recorre 64 KiB
   con contexto, sin String/offsets de toda la línea. Pico real de línea ASCII
   16 MiB: 434,9 → 18,0 MiB. No reintroducir esa materialización.
-- Metadatos densos ya compactados: `M2_DENSE_LINE_METADATA.md`. Cuatro bytes
-  por línea para offsets de 30 bits y promoción sin pérdida; no restaurar dos
-  vectores espejo. Recolección reutiliza arenas completamente alcanzables.
-  Modelo tras frío ~49,3 MiB privados; pico nativo 71,9 → 51,7 MiB, todavía
-  sobre 50 MiB. Preservar presupuesto/cache y atender picos/sufijos restantes.
+- Metadatos por bloques ya integrados: `M2_BLOCK_LINE_INDEX.md`; la representación
+  plana de `M2_DENSE_LINE_METADATA.md` es histórica. Bases nativas y relativos/EOL
+  sin truncamiento, una única ruta. Recolección sigue reutilizando arenas
+  completamente alcanzables. Preservar presupuestos, heap accounting y tradeoffs.
 - Matriz de teclado ampliada, 209 pruebas integradas y gate central del dispatcher
   TUI para impedir ejecución de menús deshabilitados. Ampliar matriz física/manual
   y latencia de pantalla; regex continúa sin motor real.

@@ -1,0 +1,15 @@
+{
+  "base_commit": "191bd82",
+  "product_source": "working-tree block migration",
+  "pair": 2,
+  "order": [
+    "flat",
+    "block"
+  ],
+  "example_sha256": "3df986185e10260cdd3fdf0d6d5d880dfbc78b08dce2c153f0fda11f21578b8e",
+  "binary_sha256": "0d38a9be256297ae6ee85a2fce5a18c1bd7e008712638c1f7690ab92dbbc68bf",
+  "scope": "in-process wall-time handle/frame/encode, warm extra verification geometry; excludes OS input/ConPTY/physical display; not CPU cycle counter or native residual subtraction",
+  "toolchain": "Rust1.85.1 MSVC release locked offline",
+  "utc": "2026-11-02T21:23:52.625872+00:00",
+  "os": "Windows-11-10.0.26300-SP0"
+}

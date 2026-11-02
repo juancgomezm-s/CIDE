@@ -107,7 +107,19 @@ Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crosst
 
 **Bloque siguiente medido:** [sufijos y crecimiento acotado](M2_SUFFIX_COST_REVIEW.md), 4914 observaciones antes y otras 4914 después, 240 pruebas completas y fmt/Clippy/release. Una primera newline ya no duplica el índice: capacidad posterior de proyección en el corpus de 8 MiB, 8388792→4227256 B. Se conserva el coste O(L) y el caso frío único 1760,8→2145,2 µs; no se declara mejora general de latencia/RAM. [Auxiliares Git](GIT_AUXILIARY_MEASUREMENT.md): nueve sesiones, sumas observadas por ciclo hasta 11,156 MiB privados en el corpus cercano a 2 MiB, excluyendo bootstrap/conhost inicial/harness; cobertura temporal limitada. Siguientes frentes activos: distribución de primeras ediciones y recorrido nativo denso con edición/undo en ocho documentos. No se cierra M2A ni la puerta global de 50 MiB/pantalla física.
 
-**Cierre de esos dos frentes:** [tres pares de distribución fría](M2_COLD_GROWTH_DISTRIBUTION.md), 5580 filas, mismo ejemplo sobre `6cf6f13` y `d6de969`; y [14 procesos nativos retenidos](M2_DENSE_EDIT_EVIDENCE.md), mismo recorrido de edición/undo en ocho documentos. Pico histórico de compromiso 68,160→52,461 MiB; máximo privado observado tras editar 65,922→50,434 MiB. La puerta global sigue abierta. El p95 frío no cambia consistentemente de signo entre pares; no se declara aceleración ni regresión general. Sin cambio productivo ni repetición de suites sin necesidad. Siguiente bloque de construcción: candidato por bloques + comparador experimental ([contrato](LINE_INDEX_CANDIDATE_CONTRACT.md)), antes de elegir otra estructura o conectarla al editor.
+**Cierre de esos dos frentes:** [tres pares de distribución fría](M2_COLD_GROWTH_DISTRIBUTION.md), 5580 filas, mismo ejemplo sobre `6cf6f13` y `d6de969`; y [14 procesos nativos retenidos](M2_DENSE_EDIT_EVIDENCE.md), mismo recorrido de edición/undo en ocho documentos. Pico histórico de compromiso 68,160→52,461 MiB; máximo privado observado tras editar 65,922→50,434 MiB. La puerta global sigue abierta. El p95 frío no cambia consistentemente de signo entre pares; no se declara aceleración ni regresión general. Sin cambio productivo ni repetición de suites sin necesidad. Ese bloque experimental se cerró en `191bd82`; su selección e integración posterior están documentadas a continuación.
+
+**Bloque por bloques integrado y medido:** [diseño/evidencia](M2_BLOCK_LINE_INDEX.md),
+una única representación productiva, retirado el comparador dependiente del plano
+(reproducible en `191bd82`). Suite completa 245 aprobadas y revisión de capacidad
+posterior con 15+3 pruebas afectadas: 246 distintas al cierre; fmt/Clippy/release.
+Dos pares de Workbench con igual ejemplo, 48 procesos nativos / 42 retenidos y
+1984 operaciones de pipeline. Pico histórico denso editado 52,461→43,727 MiB,
+repetición 52,313→43,820 MiB. El movimiento caliente sube ligeramente; sparse/cold
+tienen tradeoffs. [Undo por etapas](M2_UNDO_PIPELINE_PROBE.md): mejora interna en
+ambos órdenes; p95 VT repetido 16,9702 ms plano / 16,9147 ms bloques, sin persistir
+la diferencia inicial. Global RAM/servicios/pantalla física y M2A siguen abiertos.
+Conservar evidencia, sin repetir suites por documentación ni cambios menores.
 
 ## M2B — GUI Windows mínima — PENDIENTE
 

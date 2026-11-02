@@ -1,5 +1,11 @@
 # Comparación experimental de índices de líneas
 
+> Checkpoint experimental histórico `191bd82`. Los ejemplos y la implementación
+> plana descritos aquí se reproducen en una copia aislada de ese commit. Después
+> se integró una única ruta productiva por bloques y se retiraron ambos ejemplos:
+> [diseño, validación y mediciones actuales](M2_BLOCK_LINE_INDEX.md). Los comandos
+> de este documento corresponden al checkpoint histórico, no al árbol actual.
+
 Driver y candidato completos, revisados, compilados y medidos por el integrador.
 La estructura sigue fuera del editor en este checkpoint. Los resultados permiten
 seleccionarla para una integración posterior, con tradeoffs y revalidación nativa.

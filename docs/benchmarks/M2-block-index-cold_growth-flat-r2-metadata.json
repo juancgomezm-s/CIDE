@@ -1,0 +1,16 @@
+{
+  "base_commit": "191bd82",
+  "product_source": "d6de969 saved binary",
+  "pair": 2,
+  "order": [
+    "block",
+    "flat"
+  ],
+  "example_sha256": "4207e8e35f3e590a68bea00107f0e74f9bb0098edfe1f3501479ff9dcdc0e0ce",
+  "product_index_sha256": "see flat source in d6de969",
+  "binary_sha256": "fc36d792e34c4cfc6893d5ef9a28c999edaa839cd5b93898643a4d09b35afabc",
+  "scope": "Workbench model; same benchmark source/protocol per experiment; cold is model state, OS/CPU/allocator caches not purged; not RAM/UI",
+  "utc": "2026-11-02T21:04:42.100435+00:00",
+  "os": "Windows-11-10.0.26300-SP0",
+  "toolchain": "Rust1.85.1 MSVC release locked offline"
+}

@@ -23,6 +23,7 @@ def p95(values):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--include-block", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
     data = root / "docs/benchmarks"
@@ -63,7 +64,8 @@ def main():
                              max(int(row["decoded_bytes"]) for row in group)])
     assert len(example_hashes) == 1, "Comparison must use identical benchmark source"
     phases, timings = [], []
-    for version in ("before", "after"):
+    versions = ("before", "after", "block") if args.include_block else ("before", "after")
+    for version in versions:
         prefix = data / f"M2-evidence-dense-edits-{version}-native"
         checks = read(Path(str(prefix) + "-checks.csv"))
         assert {row["run"] for row in checks} == {str(run) for run in range(1, 8)}
@@ -116,7 +118,7 @@ def main():
             writer = csv.writer(stream, lineterminator="\n")
             writer.writerow(header)
             writer.writerows(rows)
-    print(f"Validated 6 cold captures, 5580 model observations and 14 native retained runs; summaries: {output}")
+    print(f"Validated 6 cold captures, 5580 model observations and {7 * len(versions)} native retained runs; summaries: {output}")
 
 
 if __name__ == "__main__":

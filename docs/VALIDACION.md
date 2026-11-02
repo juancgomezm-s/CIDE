@@ -1,7 +1,8 @@
 # Validación
 
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
-240 pruebas locales aprobadas al cierre (dos helpers de subproceso aparte),
+246 pruebas distintas aprobadas al cierre del bloque por bloques (245 en suite
+completa y una regresión posterior con 15+3 pruebas afectadas; dos helpers aparte),
 fmt/Clippy/release, tres pares fríos equivalentes y catorce procesos nativos
 retenidos de edición/undo en ocho documentos. Máximo histórico actual 52,461 MiB;
 Memoria/teclado global y
@@ -644,3 +645,48 @@ No se reinterpreta el first_cycle único anterior como p95 ni se afirma disco/CP
 fríos: las cachés no se purgaron. Datos, versiones, hashes y limitaciones están
 en ambos métodos. El siguiente índice por bloques está solo en construcción
 experimental, fuera de la aplicación; todavía no es implementación ni aceptación.
+
+
+## Índice por bloques productivo y comparación de undo — 2026-11-02
+
+Se sustituyó la ruta plana después de la comparación `191bd82`, sin conservar
+dos índices/editing models. Bases usize, relativos/EOL u16, fronteras locales,
+catálogo acotado y liberación tras borrado masivo. Oráculos de miles de líneas,
+inversas, offsets cercanos a usize::MAX, 512 roundtrips y aplicación real UTF-8
+inválido/BOM/EOL mixtos/Windows-1252 explícito/vistas/rangos/disk-preserving.
+La página legacy real del usuario continúa sin confirmar.
+
+- Suite workspace locked/offline tras reemplazo: **245 aprobadas, 0 fallidas**;
+  dos helpers ignorados se invocan por padres. Tras corregir retención del
+  catálogo se ejecutaron las **15 pruebas afectadas de workbench y tres de
+  aplicación**, incluyendo una regresión nueva: **246 distintas aprobadas**,
+  no una segunda suite completa de 246. fmt, Clippy workspace/all-targets
+  `-D warnings` y release workspace bins/ejemplos pasaron.
+- [Workbench real](M2_BLOCK_LINE_INDEX.md): dos pares invertidos plano/bloques,
+  mismo ejemplo/hash y binarios identificados, por pareja 930 cold + 4914 suffix
+  filas por versión. A 8 MiB/inicio p95 first_apply 2373,1/2989,2→60,1/54,2 µs;
+  newline caliente undo 1144,4/1147,1→25,0/23,4 µs. Movimiento 2,9/2,7→3,4/3,3 µs,
+  ligeramente más lento. Construcción fría similar en ese Workbench; benchmark
+  puro histórico y líneas espaciadas conservan sus costes negativos documentados.
+- 32 sesiones nativas / 28 retenidas iniciales: base, ocho documentos de 4 MiB,
+  línea 16 MiB y denso editado/undo. Checks/cierres/hashes correctos. Pico histórico
+  editor 1,414 / 34,906 / 17,957 / **43,727 MiB** respectivamente. Denso previo
+  52,461 MiB. Host/conhost/harness separados; logical capacity no se llama RAM.
+- [Pipeline undo](M2_UNDO_PIPELINE_PROBE.md): mismo ejemplo sobre D6 archivado y
+  bloques, dos pares invertidos, 1984 filas, 496/captura, checks completos y sin
+  full repaint. Compilación release y Clippy del ejemplo pasaron. Undo total
+  in-process p95 573,7/752,9→179,2/172,1 µs. Son relojes wall time, no CPUcycles;
+  el probe tiene calentamiento adicional fuera de timer, documentado.
+- Repetición serial nativa: 16 sesiones / 14 retenidas más, todos con ocho
+  edits/undos/cierres, disco intacto y salida cero. Undo VT p95 56 muestras:
+  plano **16,9702 ms**, bloques **16,9147 ms**; la diferencia inicial de bloques
+  20,9661 ms no persistió. No se borra esa captura ni se atribuye causa al núcleo
+  o SO. Pico repetido 52,313→43,820 MiB. Total bloque: 48 sesiones / 42 retenidas.
+- `summarize-growth-evidence.py --include-block` validó checks nativos y
+  `summarize-undo-pipeline.py` identidades/cobertura/etapas/VT, separados. Raw,
+  metadata y hashes enlazados desde ambos métodos; comparador histórico en Git.
+
+El corpus denso local queda bajo 50 MiB; servicios/cargas/máquinas y presentación
+física siguen sin aceptación global. VT no es pantalla, no se restan percentiles
+de protocolos diferentes. Sin CI remoto, push, dependencias, cambios de sistema
+ni nuevos intentos GUI. Documentación no motivó repetir suites aprobadas.

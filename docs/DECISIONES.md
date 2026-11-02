@@ -240,3 +240,24 @@ La instrumentación opt-in de Git observa editor y descendientes por identidad
 PID/creación y handles propios. Sus sumas son por ciclo de lecturas secuenciales,
 con cobertura incompleta de procesos/picos breves. No convierte una captura pequeña
 en aceptación global; GIT_AUXILIARY_MEASUREMENT conserva datos y limitaciones.
+
+
+## D28 — Un índice de líneas por bloques después de comparación medida
+
+La comparación histórica `191bd82` seleccionó bloques para integración, con
+tradeoffs explícitos de construcción, lookup y líneas espaciadas. La migración
+reemplaza D23/D27 en representación de líneas: no quedan arrays Compact/Wide ni
+fallback plano productivo. Bases usize y registros relativos/EOL u16 conservan
+offsets completos; máximo 256 registros/bloque y 14 bits relativos. Catálogo con
+holgura proporcional limitada a 32 KiB de headers y liberación tras borrados
+masivos; presupuestos de layout/historial/worker y propiedad documento/vista no
+cambian. D23 conserva la reutilización de arenas alcanzables del core.
+
+Se acepta la mejora densa medida, manteniendo sus costes: O(número de bloques)
+para sufijos/catálogo, algo más de lookup caliente y metadatos mayores en líneas
+muy espaciadas. Pruebas multibloque, legacy, bytes inválidos, CRLF, vistas y undo
+pasaron. Pico denso editado 52,46→43,73 MiB; repetición 52,31→43,82 MiB. Undo
+interno mejora en dos órdenes; el aumento de p95 VT inicial no persistió al
+repetir. No se descarta esa primera cola ni se resta percentiles entre protocolos.
+Método/datos en M2_BLOCK_LINE_INDEX y M2_UNDO_PIPELINE_PROBE. No se acepta RAM
+global/pantalla física ni se cambia release/backend por intuición. Sin CI remoto.

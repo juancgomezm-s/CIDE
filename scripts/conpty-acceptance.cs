@@ -180,8 +180,8 @@ public static partial class JcConPtySmoke {
 public static class MeasureM2Native {
     public static int Main(string[] args) {
         try {
-            string root=Path.GetFullPath(args[0]);string phase=args[1];if(phase!="before"&&phase!="after"&&phase!="dense-before"&&phase!="dense-after"&&phase!="dense-edits-after"&&phase!="dense-edits-before")throw new ArgumentException("phase");
-            bool denseEdits=phase=="dense-edits-after"||phase=="dense-edits-before";
+            string root=Path.GetFullPath(args[0]);string phase=args[1];if(phase!="before"&&phase!="after"&&phase!="block"&&phase!="dense-before"&&phase!="dense-after"&&phase!="dense-edits-after"&&phase!="dense-edits-before"&&phase!="dense-edits-block"&&phase!="dense-edits-block-repeat"&&phase!="dense-edits-flat-repeat")throw new ArgumentException("phase");
+            bool denseEdits=phase.StartsWith("dense-edits-",StringComparison.Ordinal);
             string prefix=Path.Combine(root,"docs","benchmarks","M2-evidence-"+phase+"-native");
             if(File.Exists(prefix+"-timings.csv")||File.Exists(prefix+"-memory.csv")||(denseEdits&&File.Exists(prefix+"-checks.csv")))throw new IOException("Refusing to overwrite retained measurements");
             using(var times=new StreamWriter(new FileStream(prefix+"-timings.csv",FileMode.CreateNew,FileAccess.Write),new UTF8Encoding(false)))
