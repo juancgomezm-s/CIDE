@@ -1,5 +1,7 @@
 # Auditoría de arquitectura y referencia ecode
 
+**Avance vigente F2:** [rangos, índices y memoria](F2_RANGES_INDEX_MEMORY.md) implementados y validados sobre F1. Los defectos/costes globales descritos en checkpoints anteriores son históricos; F3 permanece pendiente.
+
 Fecha: 2026-11-01. Base de JC-IDE: `d5eccfccdfade62b6f794d48b2e3a25de945d4ca`, rama `m2a/dual-pane-tui`.
 
 **Seguimiento:** [F1 implementado](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) corrige propiedad duplicada, transacciones, CRLF y apertura/cierre. Este informe conserva los hallazgos y tiempos de la base auditada; no describe esos defectos como presentes después de F1. F2/F3 siguen pendientes.

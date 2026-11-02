@@ -1,5 +1,7 @@
 # M2A — Checkpoint TUI
 
+**Avance vigente F2:** [rangos, índices y memoria](F2_RANGES_INDEX_MEMORY.md) implementados y validados sobre F1. Los defectos/costes globales descritos en checkpoints anteriores son históricos; F3 permanece pendiente.
+
 **Estado:** en desarrollo. Este documento registra implementación, no cierre de épica.
 
 **Checkpoint vigente:** [F1 — documentos, vistas y transacciones](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) sustituye los estados espejo, el cierre global de pestañas compartidas y los undos separados del incremento histórico descrito abajo. F2/F3 siguen pendientes.

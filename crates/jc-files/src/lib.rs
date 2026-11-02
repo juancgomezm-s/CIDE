@@ -6,7 +6,9 @@
 //! it, and replaces the target atomically on supported platforms.
 
 use jc_core::{Document, EditError};
-use jc_text::{encode, inspect_text, EncodeError, EncodingSource, TextEncoding, TextInspection};
+use jc_text::{
+    encode, inspect_text, probe_encoding, EncodeError, EncodingSource, TextEncoding, TextInspection,
+};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -127,13 +129,14 @@ impl FileSession {
     ) -> Result<Self, FileError> {
         let path = path.into();
         let bytes = fs::read(&path)?;
-        let inspection = inspect_text(&bytes, explicit);
+        let probe = probe_encoding(&bytes, explicit);
+        let fingerprint = Fingerprint::of(&bytes);
         Ok(Self {
             path,
-            document: Document::from_bytes(bytes.clone()),
-            encoding: inspection.probe.encoding,
-            encoding_source: inspection.probe.source,
-            disk_fingerprint: Some(Fingerprint::of(&bytes)),
+            document: Document::from_bytes(bytes),
+            encoding: probe.encoding,
+            encoding_source: probe.source,
+            disk_fingerprint: Some(fingerprint),
         })
     }
 

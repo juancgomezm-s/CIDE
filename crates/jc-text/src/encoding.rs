@@ -86,15 +86,32 @@ pub struct DecodedText {
 
 pub fn decode(bytes: &[u8], encoding: TextEncoding) -> DecodedText {
     match encoding {
-        TextEncoding::Utf8 => decode_utf8(bytes),
+        TextEncoding::Utf8 => decode_utf8(bytes, true),
         TextEncoding::Windows1252 => decode_single_byte(bytes, encoding, cp1252_decode),
         TextEncoding::Iso8859_1 => decode_single_byte(bytes, encoding, |byte| Some(byte as u32)),
         TextEncoding::Ibm850 => decode_single_byte(bytes, encoding, cp850_decode),
     }
 }
 
-fn decode_utf8(bytes: &[u8]) -> DecodedText {
-    let content_start = if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
+pub fn decode_fragment(bytes: &[u8], encoding: TextEncoding, source_start: usize) -> DecodedText {
+    let mut decoded = if encoding == TextEncoding::Utf8 {
+        decode_utf8(bytes, source_start == 0)
+    } else {
+        decode(bytes, encoding)
+    };
+    for offset in &mut decoded.source_offsets {
+        *offset += source_start;
+    }
+    for issue in &mut decoded.issues {
+        issue.source_range.start += source_start;
+        issue.source_range.end += source_start;
+    }
+    decoded.content_start += source_start;
+    decoded
+}
+
+fn decode_utf8(bytes: &[u8], strip_bom: bool) -> DecodedText {
+    let content_start = if strip_bom && bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
         3
     } else {
         0

@@ -1,5 +1,7 @@
 # M2–M5 — Grupos de edición, navegación y Git integrado
 
+**Avance vigente F2:** [rangos, índices y memoria](F2_RANGES_INDEX_MEMORY.md) implementados y validados sobre F1. Los defectos/costes globales descritos en checkpoints anteriores son históricos; F3 permanece pendiente.
+
 **Estado:** doble panel TUI implementado y validado localmente el 2026-11-01. El resto del documento incluye capacidades futuras: Git, navegación por lenguaje y LSP aún no están operativos.
 
 **Avance F1:** documento y vistas ya están separados; los grupos mantienen vistas persistentes con ViewId. El cierre elimina una vista y conserva el documento compartido. Ver [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md); las descripciones de campos espejo/cierre global de abajo son históricas.

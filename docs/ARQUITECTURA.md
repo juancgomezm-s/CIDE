@@ -2,7 +2,7 @@
 
 JC-IDE separa almacenamiento de bytes, interpretación textual, estado de aplicación, servicios opcionales y presentación. Esta es la arquitectura de destino; el estado implementado y sus diferencias están en la [auditoría del 2026-11-01](AUDITORIA_ECODE_ARQUITECTURA.md).
 
-F1 ya separó documento y vistas, retiró campos espejo e introdujo transacciones multiposición y mapas completos. El [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) documenta la implementación real. Índices incrementales, presupuestos de memoria, render puro y jobs continúan pendientes en F2/F3; no se presentan como terminados.
+F1 ya separó documento y vistas, retiró campos espejo e introdujo transacciones multiposición y mapas completos. El [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) documenta la implementación real. F2 ya incorpora rangos, índice por revisión, EOL/checkpoints incrementales y cuotas. La presentación pura y los jobs siguen pendientes en F3. El [checkpoint F2](F2_RANGES_INDEX_MEMORY.md) distingue resultados del modelo de objetivos de RAM/latencia globales.
 
 ## Capas
 
@@ -21,7 +21,7 @@ La regla central es que una acción de negocio existe una sola vez como `Command
 
 ## Propiedad del estado
 
-Propietarios lógicos de destino: F1 los implementa mediante colecciones en Workbench y grupos; DocumentId/ViewId ya existen. Las filas de índice/snapshots/layout contienen trabajo pendiente de F2/F3.
+Propietarios lógicos de destino: F1 los implementa mediante colecciones en Workbench y grupos; DocumentId/ViewId ya existen. F2 implementa TextProjection y lecturas prestadas por revisión; snapshots propios de workers y presentación pura siguen en F3.
 
 | Propietario | Contiene | No contiene |
 |---|---|---|
@@ -50,7 +50,7 @@ El historial de contenido pertenece al documento. F1 reubica las selecciones med
 
 El core ofrece segmentos/rangos y snapshots de lectura por revisión. Un índice aumentado de líneas permite localizar bytes/líneas sin materializar el archivo completo. `jc-text` decodifica rangos con contexto suficiente para límites multibyte, incidencias y CRLF; reutiliza cachés acotadas e invalida solo lo afectado. Apertura inicial o cambio de encoding pueden exigir recorrido global explícito; mover el cursor sobre texto estable no.
 
-La estructura final de piezas se decide comparando vector por bloques/índice frente a árbol aumentado con cargas representativas. La interfaz de cambios se fija antes de esa elección. Medir N bytes, P piezas, cantidad de líneas y una línea extrema: limitar líneas visibles no limita por sí solo el trabajo horizontal sobre una línea enorme.
+F2 comparó prefijos planos, bloques y árbol Box con la misma carga y eligió un vector de piezas con índice de bloques de 128. El árbol queda como candidato para cargas futuras de transacciones, no otro motor activo. Las mediciones y límites están en el checkpoint F2. La interfaz de cambios se fija antes de esa elección. Medir N bytes, P piezas, cantidad de líneas y una línea extrema: limitar líneas visibles no limita por sí solo el trabajo horizontal sobre una línea enorme.
 
 Presupuestar bytes de undo/redo, segmentos añadidos, snapshots, cachés y documentos cerrados, además del número de pasos. Recuperar almacenamiento no alcanzable sin borrar undo todavía prometido. Un snapshot de worker tiene duración/cancelación acotada para no impedir indefinidamente la liberación.
 

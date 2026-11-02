@@ -1,6 +1,6 @@
 use super::{Workbench, WorkbenchError};
 use jc_files::FileError;
-use jc_text::{encode, TextIndex, TextPosition};
+use jc_text::{encode, TextPosition};
 use std::ops::Range;
 
 impl Workbench {
@@ -44,8 +44,7 @@ impl Workbench {
             return Ok(());
         }
         let haystack = document.session.document().to_bytes();
-        let decoded = jc_text::decode(&haystack, encoding);
-        let index = TextIndex::new(&decoded);
+        let tab = document.tab_id;
         let case_sensitive = self.search.case_sensitive;
         let whole_word = self.search.whole_word;
         let mut matches = Vec::new();
@@ -61,8 +60,8 @@ impl Workbench {
                     .all(|(a, b)| a.eq_ignore_ascii_case(b))
             };
             if equal
-                && index.source_byte_to_position(offset).is_ok()
-                && index.source_byte_to_position(offset + needle.len()).is_ok()
+                && self.position_for_tab(tab, offset).is_some()
+                && self.position_for_tab(tab, offset + needle.len()).is_some()
                 && (!whole_word || is_word_match(&haystack, offset, offset + needle.len()))
             {
                 matches.push(offset..offset + needle.len());
@@ -159,10 +158,7 @@ impl Workbench {
 
     pub fn search_match_position(&self, index: usize) -> Option<TextPosition> {
         let range = self.search.matches.get(index)?;
-        let decoded = self.active_decoded()?;
-        TextIndex::new(&decoded)
-            .source_byte_to_position(range.start)
-            .ok()
+        self.position_for_tab(self.tabs.active_id()?, range.start)
     }
 
     fn find(&mut self, forward: bool) -> Result<Option<Range<usize>>, WorkbenchError> {

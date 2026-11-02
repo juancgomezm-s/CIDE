@@ -1,5 +1,7 @@
 # F1 — Documentos, vistas y transacciones
 
+**Seguimiento:** F2 ya está implementado; consultar [checkpoint y mediciones](F2_RANGES_INDEX_MEMORY.md). Este documento conserva el alcance/evidencia histórica de F1.
+
 Implementado y validado localmente el 2026-11-01 sobre la rama `m2a/dual-pane-tui`. Este incremento sustituye la sincronización de cursor entre documento y panel e introduce lotes atómicos; F2/F3 continúan pendientes.
 
 ## Propiedad real del estado

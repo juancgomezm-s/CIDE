@@ -1,7 +1,7 @@
 use super::{Workbench, WorkbenchError};
 use jc_files::FileError;
 use jc_languages::detect;
-use jc_text::{decode, encode, PositionError, TextIndex, TextPosition};
+use jc_text::{encode, PositionError, TextPosition};
 use std::ops::Range;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,7 +10,39 @@ struct LineSlice {
     separator: Range<usize>,
 }
 
+struct SourceWindow {
+    start: usize,
+    bytes: Vec<u8>,
+}
+impl std::ops::Index<Range<usize>> for SourceWindow {
+    type Output = [u8];
+    fn index(&self, range: Range<usize>) -> &Self::Output {
+        &self.bytes[range.start - self.start..range.end - self.start]
+    }
+}
+impl SourceWindow {
+    fn get(&self, offset: usize) -> Option<&u8> {
+        self.bytes.get(offset.checked_sub(self.start)?)
+    }
+}
+
 impl Workbench {
+    fn read_window(&self, range: Range<usize>) -> Result<SourceWindow, WorkbenchError> {
+        let source = self
+            .active_document()
+            .ok_or(WorkbenchError::NoDocument)?
+            .session
+            .document();
+        let bytes = source.read_range(range.clone()).map_err(FileError::from)?;
+        Ok(SourceWindow {
+            start: range.start,
+            bytes,
+        })
+    }
+    fn preferred_ending(&self) -> Result<&'static [u8], WorkbenchError> {
+        self.with_active_text(|text, _| text.preferred_ending())
+    }
+
     pub fn insert_text(&mut self, text: &str) -> Result<(), WorkbenchError> {
         let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
@@ -39,15 +71,8 @@ impl Workbench {
     }
 
     pub fn insert_newline(&mut self) -> Result<(), WorkbenchError> {
-        let ending = self
-            .active_editor()
-            .ok_or(WorkbenchError::NoDocument)?
-            .session
-            .inspection()
-            .line_endings
-            .preferred_bytes();
-        let text = String::from_utf8(ending.to_vec()).expect("line-ending bytes are valid ASCII");
-        self.insert_text(&text)
+        let text = std::str::from_utf8(self.preferred_ending()?).expect("ASCII line ending");
+        self.insert_text(text)
     }
 
     pub fn insert_tab(&mut self) -> Result<(), WorkbenchError> {
@@ -118,43 +143,19 @@ impl Workbench {
         Ok(())
     }
 
-    fn boundaries(&self) -> Result<Vec<usize>, WorkbenchError> {
-        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
-        let encoding = document
-            .session
-            .encoding()
-            .ok_or(FileError::EncodingRequired)?;
-        let decoded = decode(&document.session.document().to_bytes(), encoding);
-        let index = TextIndex::new(&decoded);
-        Ok(decoded
-            .source_offsets
-            .iter()
-            .copied()
-            .filter(|&offset| index.source_byte_to_position(offset).is_ok())
-            .collect())
-    }
-
     fn previous_boundary(&self) -> Result<Option<usize>, WorkbenchError> {
         let cursor = self
             .active_editor()
             .ok_or(WorkbenchError::NoDocument)?
             .cursor;
-        Ok(self
-            .boundaries()?
-            .into_iter()
-            .take_while(|offset| *offset < cursor)
-            .last())
+        Ok(self.with_active_text(|text, source| text.adjacent(source, cursor, false))??)
     }
-
     fn next_boundary(&self) -> Result<Option<usize>, WorkbenchError> {
         let cursor = self
             .active_editor()
             .ok_or(WorkbenchError::NoDocument)?
             .cursor;
-        Ok(self
-            .boundaries()?
-            .into_iter()
-            .find(|offset| *offset > cursor))
+        Ok(self.with_active_text(|text, source| text.adjacent(source, cursor, true))??)
     }
 
     pub fn move_left(&mut self, select: bool) -> Result<(), WorkbenchError> {
@@ -183,60 +184,40 @@ impl Workbench {
     }
 
     pub fn move_end(&mut self, select: bool) -> Result<(), WorkbenchError> {
-        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
-        let encoding = document
-            .session
-            .encoding()
-            .ok_or(FileError::EncodingRequired)?;
-        let decoded = decode(&document.session.document().to_bytes(), encoding);
-        let index = TextIndex::new(&decoded);
-        let position = index.source_byte_to_position(document.cursor)?;
-        let column = index
-            .line_len(position.line)
-            .ok_or(PositionError::LineOutOfRange(position.line))?;
+        let pos = self.active_position().ok_or(WorkbenchError::NoDocument)?;
+        let column = self
+            .with_active_text(|text, source| text.line_len(source, pos.line))?
+            .ok_or(PositionError::LineOutOfRange(pos.line))?;
         self.move_to_position(
             TextPosition {
-                line: position.line,
+                line: pos.line,
                 column,
             },
             select,
         )
     }
-
     pub fn move_vertical(&mut self, delta: isize, select: bool) -> Result<(), WorkbenchError> {
-        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
-        let encoding = document
-            .session
-            .encoding()
-            .ok_or(FileError::EncodingRequired)?;
-        let decoded = decode(&document.session.document().to_bytes(), encoding);
-        let index = TextIndex::new(&decoded);
-        let current = index.source_byte_to_position(document.cursor)?;
-        let target_line = if delta < 0 {
-            current.line.saturating_sub(delta.unsigned_abs())
-        } else {
-            (current.line + delta as usize).min(index.line_count().saturating_sub(1))
-        };
-        let target_column = current.column.min(index.line_len(target_line).unwrap_or(0));
-        let offset = index.position_to_source_byte(TextPosition {
-            line: target_line,
-            column: target_column,
-        })?;
+        let current = self.active_position().ok_or(WorkbenchError::NoDocument)?;
+        let offset = self.with_active_text(|text, source| {
+            let line = if delta < 0 {
+                current.line.saturating_sub(delta.unsigned_abs())
+            } else {
+                current
+                    .line
+                    .saturating_add(delta as usize)
+                    .min(text.line_count() - 1)
+            };
+            let column = current.column.min(text.line_len(source, line).unwrap_or(0));
+            text.offset(source, TextPosition { line, column })
+        })??;
         self.move_cursor_to(offset, select)
     }
-
     fn move_to_position(
         &mut self,
         position: TextPosition,
         select: bool,
     ) -> Result<(), WorkbenchError> {
-        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
-        let encoding = document
-            .session
-            .encoding()
-            .ok_or(FileError::EncodingRequired)?;
-        let decoded = decode(&document.session.document().to_bytes(), encoding);
-        let offset = TextIndex::new(&decoded).position_to_source_byte(position)?;
+        let offset = self.with_active_text(|text, source| text.offset(source, position))??;
         self.move_cursor_to(offset, select)
     }
 
@@ -260,8 +241,8 @@ impl Workbench {
                 .ok_or(WorkbenchError::NoDocument)?
                 .session
                 .document()
-                .to_bytes()[selection.clone()]
-            .to_vec();
+                .read_range(selection.clone())
+                .map_err(FileError::from)?;
             let insert_at = selection.end;
             let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
             document
@@ -276,21 +257,10 @@ impl Workbench {
 
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let line = self.line_slice(position.line)?;
-        let source = self
-            .active_editor()
-            .ok_or(WorkbenchError::NoDocument)?
-            .session
-            .document()
-            .to_bytes();
+        let source = self.read_window(line.content.start..line.separator.end)?;
         let mut duplicate = Vec::new();
         if line.separator.is_empty() {
-            let ending = self
-                .active_editor()
-                .ok_or(WorkbenchError::NoDocument)?
-                .session
-                .inspection()
-                .line_endings
-                .preferred_bytes();
+            let ending = self.preferred_ending()?;
             duplicate.extend_from_slice(ending);
             duplicate.extend_from_slice(&source[line.content.clone()]);
         } else {
@@ -353,15 +323,13 @@ impl Workbench {
 
     pub fn move_line_down(&mut self) -> Result<(), WorkbenchError> {
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
-        let line_count = {
-            let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
-            let encoding = document
-                .session
-                .encoding()
-                .ok_or(FileError::EncodingRequired)?;
-            let decoded = decode(&document.session.document().to_bytes(), encoding);
-            TextIndex::new(&decoded).line_count()
-        };
+        let tab = self
+            .active_document()
+            .ok_or(WorkbenchError::NoDocument)?
+            .tab_id;
+        let line_count = self
+            .line_count_for_tab(tab)
+            .ok_or(WorkbenchError::NoDocument)?;
         if position.line + 1 >= line_count {
             return Ok(());
         }
@@ -395,7 +363,7 @@ impl Workbench {
             .encoding()
             .ok_or(FileError::EncodingRequired)?;
         let prefix = encode(comment, encoding).map_err(FileError::from)?;
-        let source = document.session.document().to_bytes();
+        let source = self.read_window(line.content.start..line.separator.end)?;
         let content = &source[line.content.clone()];
         let indent_relative = content
             .iter()
@@ -447,20 +415,22 @@ impl Workbench {
     ) -> Result<(), WorkbenchError> {
         let doc = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let encoding = doc.session.encoding().ok_or(FileError::EncodingRequired)?;
-        let source = doc.session.document().to_bytes();
         let prefix = encode(comment, encoding).map_err(FileError::from)?;
-        let decoded = decode(&source, encoding);
-        let index = TextIndex::new(&decoded);
-        let first = index.source_byte_to_position(selection.start.max(decoded.content_start))?;
-        let last = index.source_byte_to_position(selection.end)?;
+        let content_start = self.with_active_text(|text, _| text.content_start())?;
+        let first = self.with_active_text(|text, source| {
+            text.position(source, selection.start.max(content_start))
+        })??;
+        let last = self.with_active_text(|text, source| text.position(source, selection.end))??;
         let last_line = if last.column == 0 && last.line > first.line {
             last.line - 1
         } else {
             last.line
         };
         let slices = (first.line..=last_line)
-            .map(|line| slice_from_index(&index, line, source.len()))
+            .map(|line| self.line_slice(line))
             .collect::<Result<Vec<_>, _>>()?;
+        let source =
+            self.read_window(slices[0].content.start..slices.last().unwrap().separator.end)?;
         let all_commented = slices.iter().all(|slice| {
             let body = &source[slice.content.clone()];
             let indent = body
@@ -518,36 +488,20 @@ impl Workbench {
             .cursor;
         let range = if let Some(mut range) = selection.clone() {
             // Preserve a UTF-8 BOM at the start of the file, even for Select All.
-            let inspection = self
-                .active_editor()
-                .ok_or(WorkbenchError::NoDocument)?
-                .session
-                .inspection();
-            if range.start < inspection.probe.bom_len {
-                range.start = inspection.probe.bom_len;
-            }
+            let content_start = self.with_active_text(|text, _| text.content_start())?;
+            range.start = range.start.max(content_start);
             range
         } else {
             let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
             let line = self.line_slice(position.line)?;
-            let source = self
-                .active_editor()
-                .ok_or(WorkbenchError::NoDocument)?
-                .session
-                .document()
-                .to_bytes();
+            let source = self.read_window(line.content.start..line.separator.end)?;
             let relative = source[line.content.clone()]
                 .iter()
                 .position(|byte| !matches!(*byte, b' ' | b'\t'))
                 .unwrap_or(line.content.len());
             (line.content.start + relative)..line.content.end
         };
-        let source = self
-            .active_editor()
-            .ok_or(WorkbenchError::NoDocument)?
-            .session
-            .document()
-            .to_bytes();
+        let source = self.read_window(range.clone())?;
         let bytes = &source[range.clone()];
         let start = bytes
             .iter()
@@ -637,31 +591,33 @@ impl Workbench {
         if indent && selected.is_none() {
             return self.insert_tab();
         }
-        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
-        let encoding = document
-            .session
-            .encoding()
-            .ok_or(FileError::EncodingRequired)?;
-        let decoded = decode(&document.session.document().to_bytes(), encoding);
-        let index = TextIndex::new(&decoded);
-        let cursor = document.cursor;
+        let cursor = self
+            .active_editor()
+            .ok_or(WorkbenchError::NoDocument)?
+            .cursor;
+        let content_start = self.with_active_text(|text, _| text.content_start())?;
         let (first_line, last_line) = if let Some(range) = &selected {
-            let first = index.source_byte_to_position(range.start.max(decoded.content_start))?;
-            let last = index.source_byte_to_position(range.end)?;
-            let end = if last.column == 0 && last.line > first.line {
-                last.line - 1
-            } else {
-                last.line
-            };
-            (first.line, end)
+            let first = self.with_active_text(|text, source| {
+                text.position(source, range.start.max(content_start))
+            })??;
+            let last = self.with_active_text(|text, source| text.position(source, range.end))??;
+            (
+                first.line,
+                if last.column == 0 && last.line > first.line {
+                    last.line - 1
+                } else {
+                    last.line
+                },
+            )
         } else {
-            let position = index.source_byte_to_position(cursor)?;
-            (position.line, position.line)
+            let pos = self.active_position().ok_or(WorkbenchError::NoDocument)?;
+            (pos.line, pos.line)
         };
-        let source = document.session.document().to_bytes();
         let slices = (first_line..=last_line)
-            .map(|line| slice_from_index(&index, line, source.len()))
+            .map(|line| self.line_slice(line))
             .collect::<Result<Vec<_>, _>>()?;
+        let source =
+            self.read_window(slices[0].content.start..slices.last().unwrap().separator.end)?;
         let begin = slices[0].content.start;
         let end = slices.last().map_or(begin, |slice| slice.separator.end);
         let mut replacement = Vec::new();
@@ -717,12 +673,7 @@ impl Workbench {
     ) -> Result<(), WorkbenchError> {
         let first = self.line_slice(first_line)?;
         let second = self.line_slice(second_line)?;
-        let source = self
-            .active_editor()
-            .ok_or(WorkbenchError::NoDocument)?
-            .session
-            .document()
-            .to_bytes();
+        let source = self.read_window(first.content.start..second.separator.end)?;
         let mut replacement = Vec::new();
 
         if second.separator.is_empty() {
@@ -747,14 +698,14 @@ impl Workbench {
     }
 
     fn line_slice(&self, line: usize) -> Result<LineSlice, WorkbenchError> {
-        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
-        let encoding = document
-            .session
-            .encoding()
-            .ok_or(FileError::EncodingRequired)?;
-        let bytes = document.session.document().to_bytes();
-        let decoded = decode(&bytes, encoding);
-        slice_from_index(&TextIndex::new(&decoded), line, bytes.len())
+        let tab = self
+            .active_document()
+            .ok_or(WorkbenchError::NoDocument)?
+            .tab_id;
+        let (content, separator) = self
+            .line_range_for_tab(tab, line)
+            .ok_or(PositionError::LineOutOfRange(line))?;
+        Ok(LineSlice { content, separator })
     }
 
     pub fn select_all(&mut self) -> Result<(), WorkbenchError> {
@@ -773,8 +724,12 @@ impl Workbench {
             .session
             .encoding()
             .ok_or(FileError::EncodingRequired)?;
-        let bytes = document.session.document().to_bytes();
-        let decoded = decode(&bytes[range], encoding);
+        let bytes = document
+            .session
+            .document()
+            .read_range(range.clone())
+            .map_err(FileError::from)?;
+        let decoded = jc_text::decode_fragment(&bytes, encoding, range.start);
         if !decoded.issues.is_empty() {
             return Err(WorkbenchError::ClipboardEncoding);
         }
@@ -825,31 +780,4 @@ impl Workbench {
         }
         self.after_edit()
     }
-}
-
-fn slice_from_index(
-    index: &TextIndex,
-    line: usize,
-    document_len: usize,
-) -> Result<LineSlice, WorkbenchError> {
-    let length = index
-        .line_len(line)
-        .ok_or(PositionError::LineOutOfRange(line))?;
-    let start = index.position_to_source_byte(TextPosition { line, column: 0 })?;
-    let content_end = index.position_to_source_byte(TextPosition {
-        line,
-        column: length,
-    })?;
-    let separator_end = if line + 1 < index.line_count() {
-        index.position_to_source_byte(TextPosition {
-            line: line + 1,
-            column: 0,
-        })?
-    } else {
-        document_len
-    };
-    Ok(LineSlice {
-        content: start..content_end,
-        separator: content_end..separator_end,
-    })
 }

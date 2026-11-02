@@ -50,9 +50,76 @@ struct Piece {
     len: usize,
 }
 
+const PIECE_BLOCK: usize = 128;
+#[derive(Debug)]
+struct PieceIndex {
+    blocks: Vec<usize>,
+    local: Vec<usize>,
+}
+impl PieceIndex {
+    fn single(len: usize) -> Self {
+        if len == 0 {
+            Self {
+                blocks: Vec::new(),
+                local: Vec::new(),
+            }
+        } else {
+            Self {
+                blocks: vec![len],
+                local: vec![len],
+            }
+        }
+    }
+    fn build(pieces: &[Piece]) -> Result<Self, EditError> {
+        let mut result = Self {
+            blocks: Vec::new(),
+            local: Vec::new(),
+        };
+        result
+            .blocks
+            .try_reserve(pieces.len().div_ceil(PIECE_BLOCK))
+            .map_err(|_| EditError::CapacityOverflow)?;
+        result
+            .local
+            .try_reserve(pieces.len())
+            .map_err(|_| EditError::CapacityOverflow)?;
+        let mut total = 0;
+        for block in pieces.chunks(PIECE_BLOCK) {
+            let mut subtotal = 0;
+            for piece in block {
+                subtotal += piece.len;
+                result.local.push(subtotal);
+            }
+            total += subtotal;
+            result.blocks.push(total);
+        }
+        Ok(result)
+    }
+    fn locate(&self, offset: usize) -> (usize, usize) {
+        let block = self.blocks.partition_point(|&end| end <= offset);
+        if block == self.blocks.len() {
+            return (self.local.len(), self.blocks.last().copied().unwrap_or(0));
+        }
+        let base = block.checked_sub(1).map_or(0, |i| self.blocks[i]);
+        let from = block * PIECE_BLOCK;
+        let local = &self.local[from..(from + PIECE_BLOCK).min(self.local.len())];
+        let index = local.partition_point(|&end| end <= offset - base);
+        (
+            from + index,
+            base + index.checked_sub(1).map_or(0, |i| local[i]),
+        )
+    }
+    fn memory_bytes(&self) -> usize {
+        (self.blocks.capacity() + self.local.capacity()) * std::mem::size_of::<usize>()
+    }
+}
+
 #[derive(Debug)]
 struct State {
     pieces: Vec<Piece>,
+    ends: PieceIndex,
+    history_charge: usize,
+    history_payload: usize,
     len: usize,
     revision: u64,
     edit: Option<ChangeSet>,
@@ -127,6 +194,7 @@ pub struct Document {
     saved_revision: u64,
     next_revision: u64,
     history_limit: usize,
+    history_bytes_limit: usize,
     last_edit: Option<ChangeSet>,
 }
 
@@ -160,6 +228,11 @@ impl Document {
             added: Vec::new(),
             state: State {
                 pieces,
+                ends: PieceIndex::single(len),
+                history_charge: std::mem::size_of::<State>()
+                    + std::mem::size_of::<Piece>()
+                    + 2 * std::mem::size_of::<usize>(),
+                history_payload: 0,
                 len,
                 revision: 0,
                 edit: None,
@@ -169,6 +242,7 @@ impl Document {
             saved_revision: 0,
             next_revision: 1,
             history_limit: 1024,
+            history_bytes_limit: 8 * 1024 * 1024,
             last_edit: None,
         }
     }
@@ -211,16 +285,122 @@ impl Document {
     pub fn retained_added_bytes(&self) -> usize {
         self.added.len()
     }
+    pub fn history_bytes_limit(&self) -> usize {
+        self.history_bytes_limit
+    }
+    /// Conservative logical history charge: metadata and changed payload bytes.
+    pub fn history_bytes(&self) -> usize {
+        let metadata = self
+            .undo
+            .iter()
+            .chain(&self.redo)
+            .fold(0usize, |n, state| n.saturating_add(state.history_charge));
+        let payload = self
+            .undo
+            .iter()
+            .skip(1)
+            .chain(&self.redo)
+            .fold(0usize, |n, state| n.saturating_add(state.history_payload));
+        metadata
+            .saturating_add(payload)
+            .saturating_add(if self.undo.is_empty() {
+                0
+            } else {
+                self.state.history_payload
+            })
+    }
+    pub fn set_history_bytes_limit(&mut self, limit: usize) {
+        self.history_bytes_limit = limit;
+        self.enforce_history_budget();
+        self.reclaim_unused_storage();
+    }
     pub fn set_history_limit(&mut self, limit: usize) {
         self.history_limit = limit;
         trim_history(&mut self.undo, limit);
         trim_history(&mut self.redo, limit);
+        self.enforce_history_budget();
+        self.reclaim_unused_storage();
+    }
+    fn enforce_history_budget(&mut self) {
+        while self.history_bytes() > self.history_bytes_limit {
+            if !self.undo.is_empty() {
+                self.undo.remove(0);
+            } else if !self.redo.is_empty() {
+                self.redo.remove(0);
+            } else {
+                break;
+            }
+        }
+        // Collection is independent of undo semantics and does not discard reachable states.
+        let budget = if self.undo.is_empty() && self.redo.is_empty() {
+            0
+        } else {
+            self.history_bytes_limit
+        };
+        let threshold = self.len().saturating_add(budget).saturating_add(64 * 1024);
+        if self.added.len() > threshold || self.original.len() > threshold {
+            self.reclaim_unused_storage();
+        }
+    }
+    pub fn retained_source_bytes(&self) -> usize {
+        self.original.capacity() + self.added.capacity()
+    }
+
+    /// Relocate only reachable source intervals; revisions, history and maps remain unchanged.
+    pub fn reclaim_unused_storage(&mut self) {
+        fn collect(document: &Document, source: Source) -> (Vec<u8>, Vec<(Range<usize>, usize)>) {
+            let mut ranges: Vec<_> = std::iter::once(&document.state)
+                .chain(&document.undo)
+                .chain(&document.redo)
+                .flat_map(|state| &state.pieces)
+                .filter(|piece| piece.source == source)
+                .map(|p| p.start..p.start + p.len)
+                .collect();
+            ranges.sort_unstable_by_key(|range| range.start);
+            let mut merged: Vec<Range<usize>> = Vec::new();
+            for range in ranges {
+                if let Some(last) = merged.last_mut().filter(|last| last.end >= range.start) {
+                    last.end = last.end.max(range.end);
+                } else {
+                    merged.push(range);
+                }
+            }
+            let source = match source {
+                Source::Original => &document.original,
+                Source::Added => &document.added,
+            };
+            let mut bytes = Vec::with_capacity(merged.iter().map(|r| r.len()).sum());
+            let mut mapping = Vec::with_capacity(merged.len());
+            for range in merged {
+                let base = bytes.len();
+                bytes.extend_from_slice(&source[range.clone()]);
+                mapping.push((range, base));
+            }
+            (bytes, mapping)
+        }
+        let (original, original_map) = collect(self, Source::Original);
+        let (added, added_map) = collect(self, Source::Added);
+        for state in std::iter::once(&mut self.state)
+            .chain(&mut self.undo)
+            .chain(&mut self.redo)
+        {
+            for piece in &mut state.pieces {
+                let map = match piece.source {
+                    Source::Original => &original_map,
+                    Source::Added => &added_map,
+                };
+                let index = map.partition_point(|(range, _)| range.start <= piece.start) - 1;
+                piece.start = map[index].1 + piece.start - map[index].0.start;
+            }
+        }
+        self.original = original;
+        self.added = added;
     }
     pub fn compact_storage(&mut self) {
         let bytes = self.to_bytes();
         let len = bytes.len();
         self.original = bytes;
-        self.added.clear();
+        self.added = Vec::new();
         self.state.pieces = if len == 0 {
             Vec::new()
         } else {
@@ -230,7 +410,14 @@ impl Document {
                 len,
             }]
         };
+        self.state.ends = PieceIndex::single(len);
         self.state.len = len;
+        self.state.edit = None;
+        self.state.history_payload = 0;
+        self.last_edit = None;
+        self.state.history_charge = std::mem::size_of::<State>()
+            + self.state.pieces.capacity() * std::mem::size_of::<Piece>()
+            + self.state.ends.memory_bytes();
         self.undo.clear();
         self.redo.clear();
     }
@@ -248,6 +435,32 @@ impl Document {
             bytes.extend_from_slice(chunk);
         }
         bytes
+    }
+
+    /// Borrow only the requested segments, locating the first piece in O(log P).
+    pub fn range_chunks(&self, range: Range<usize>) -> Result<RangeChunks<'_>, EditError> {
+        self.validate_range(&range)?;
+        let (index, position) = self.state.ends.locate(range.start);
+        Ok(RangeChunks {
+            document: self,
+            pieces: self.state.pieces[index..].iter(),
+            position,
+            range,
+        })
+    }
+
+    pub fn read_range(&self, range: Range<usize>) -> Result<Vec<u8>, EditError> {
+        let chunks = self.range_chunks(range.clone())?;
+        let mut bytes = Vec::with_capacity(range.len());
+        for chunk in chunks {
+            bytes.extend_from_slice(chunk);
+        }
+        Ok(bytes)
+    }
+
+    /// A revision-consistent borrowed read. Rust prevents edits while it is held.
+    pub fn read_snapshot(&self) -> DocumentRead<'_> {
+        DocumentRead { document: self }
     }
 
     pub fn write_to<W: Write + ?Sized>(&self, writer: &mut W) -> io::Result<()> {
@@ -375,13 +588,27 @@ impl Document {
             after_revision: change.after_revision,
             edits: state_edits,
         };
+        let ends = PieceIndex::build(&pieces)?;
         for edit in batch.edits {
             self.added.extend_from_slice(&edit.bytes);
         }
+        let history_charge = std::mem::size_of::<State>()
+            + pieces
+                .capacity()
+                .saturating_mul(std::mem::size_of::<Piece>())
+                .saturating_add(ends.memory_bytes())
+                .saturating_add(state_change.edits.capacity() * std::mem::size_of::<ByteEdit>());
+        let history_payload = state_change.edits.iter().fold(0usize, |n, e| {
+            n.saturating_add(e.replaced.len())
+                .saturating_add(e.inserted_len)
+        });
         let previous = std::mem::replace(
             &mut self.state,
             State {
                 pieces,
+                ends,
+                history_charge,
+                history_payload,
                 len: new_len,
                 revision: self.next_revision,
                 edit: Some(state_change),
@@ -394,6 +621,7 @@ impl Document {
         }
         self.redo.clear();
         self.last_edit = Some(change);
+        self.enforce_history_budget();
         Ok(())
     }
 
@@ -415,6 +643,7 @@ impl Document {
             self.redo.push(current);
             trim_history(&mut self.redo, self.history_limit);
         }
+        self.enforce_history_budget();
         true
     }
 
@@ -429,6 +658,7 @@ impl Document {
             self.undo.push(current);
             trim_history(&mut self.undo, self.history_limit);
         }
+        self.enforce_history_budget();
         true
     }
 
@@ -456,23 +686,15 @@ impl Document {
         if range.end - range.start != bytes.len() {
             return false;
         }
-        let mut position = 0;
         let mut compared = 0;
-        for piece in &self.state.pieces {
-            let end = position + piece.len;
-            if position >= range.end {
-                break;
+        for chunk in self
+            .range_chunks(range.clone())
+            .expect("validated replacement")
+        {
+            if chunk != &bytes[compared..compared + chunk.len()] {
+                return false;
             }
-            if end > range.start {
-                let start_in_piece = range.start.saturating_sub(position);
-                let end_in_piece = piece.len.min(range.end - position);
-                let chunk = &self.piece_bytes(piece)[start_in_piece..end_in_piece];
-                if chunk != &bytes[compared..compared + chunk.len()] {
-                    return false;
-                }
-                compared += chunk.len();
-            }
-            position = end;
+            compared += chunk.len();
         }
         compared == bytes.len()
     }
@@ -481,8 +703,8 @@ impl Document {
         if range.is_empty() {
             return;
         }
-        let mut position = 0;
-        for piece in &self.state.pieces {
+        let (index, mut position) = self.state.ends.locate(range.start);
+        for piece in &self.state.pieces[index..] {
             let end = position + piece.len;
             if position >= range.end {
                 break;
@@ -521,6 +743,43 @@ fn push_coalesced(pieces: &mut Vec<Piece>, piece: Piece) {
         }
     }
     pieces.push(piece);
+}
+
+pub struct RangeChunks<'a> {
+    document: &'a Document,
+    pieces: std::slice::Iter<'a, Piece>,
+    position: usize,
+    range: Range<usize>,
+}
+impl<'a> Iterator for RangeChunks<'a> {
+    type Item = &'a [u8];
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.position >= self.range.end {
+            return None;
+        }
+        let piece = self.pieces.next()?;
+        let start = self.range.start.saturating_sub(self.position);
+        let end = piece.len.min(self.range.end - self.position);
+        self.position += piece.len;
+        Some(&self.document.piece_bytes(piece)[start..end])
+    }
+}
+pub struct DocumentRead<'a> {
+    document: &'a Document,
+}
+impl DocumentRead<'_> {
+    pub fn revision(&self) -> u64 {
+        self.document.revision()
+    }
+    pub fn len(&self) -> usize {
+        self.document.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.document.is_empty()
+    }
+    pub fn chunks(&self, range: Range<usize>) -> Result<RangeChunks<'_>, EditError> {
+        self.document.range_chunks(range)
+    }
 }
 
 impl Default for Document {

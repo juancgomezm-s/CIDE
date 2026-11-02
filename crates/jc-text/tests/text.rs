@@ -4,6 +4,15 @@ use jc_text::{
 };
 
 #[test]
+fn fragments_preserve_literal_mid_file_bom_and_report_absolute_issue_offsets() {
+    let decoded = jc_text::decode_fragment(b"\xef\xbb\xbf\xff", TextEncoding::Utf8, 123);
+    assert_eq!(decoded.text, "\u{feff}\u{fffd}");
+    assert_eq!(decoded.source_offsets, vec![123, 126, 127]);
+    assert_eq!(decoded.issues[0].source_range, 126..127);
+    assert_eq!(decoded.content_start, 123);
+}
+
+#[test]
 fn invalid_utf8_is_not_guessed_as_a_legacy_code_page() {
     let bytes = b"ni\xf1o";
     let probe = probe_encoding(bytes, None);

@@ -1,11 +1,14 @@
 mod commands;
 mod edit;
 mod search;
+mod text;
+use std::cell::RefCell;
+use text::TextProjection;
 
 use crate::{CommandContext, CommandId, NavLocation, PaneId, PaneManager, TabId, TabManager};
 use jc_files::{FileError, FileSession};
 use jc_languages::detect;
-use jc_text::{decode, PositionError, TextEncoding, TextIndex, TextPosition};
+use jc_text::{PositionError, TextEncoding, TextPosition};
 use std::fmt;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -72,6 +75,7 @@ pub struct EditorDocument {
     pub tab_id: TabId,
     pub session: FileSession,
     notified_revision: u64,
+    text: RefCell<TextProjection>,
 }
 
 #[derive(Debug)]
@@ -155,31 +159,91 @@ impl Workbench {
         &self.panes
     }
 
-    pub fn document_by_tab(&self, id: TabId) -> Option<&EditorDocument> {
-        self.documents.iter().find(|document| document.tab_id == id)
+    pub fn set_history_budget(
+        &mut self,
+        id: DocumentId,
+        bytes: usize,
+    ) -> Result<(), WorkbenchError> {
+        let document = self
+            .documents
+            .iter_mut()
+            .find(|document| document.id == id)
+            .ok_or(WorkbenchError::NoDocument)?;
+        document
+            .session
+            .document_mut()
+            .set_history_bytes_limit(bytes);
+        Ok(())
     }
 
-    pub fn decoded_for_tab(&self, id: TabId) -> Option<jc_text::DecodedText> {
-        let document = self.document_by_tab(id)?;
-        let encoding = document.session.encoding()?;
-        Some(decode(&document.session.document().to_bytes(), encoding))
+    pub fn document_by_tab(&self, id: TabId) -> Option<&EditorDocument> {
+        self.documents.iter().find(|document| document.tab_id == id)
     }
 
     fn cursor_for_tab(&self, tab: TabId) -> usize {
         self.panes.remembered_cursor(tab).unwrap_or_else(|| {
             self.document_by_tab(tab)
-                .and_then(|d| d.session.inspection().decoded)
-                .map_or(0, |d| d.content_start)
+                .map_or(0, |d| session_content_start(&d.session))
         })
     }
 
+    fn with_text<T>(
+        &self,
+        tab: TabId,
+        f: impl FnOnce(&mut TextProjection, &jc_core::Document) -> T,
+    ) -> Option<T> {
+        let document = self.document_by_tab(tab)?;
+        let encoding = document.session.encoding()?;
+        let source = document.session.document();
+        let mut text = document.text.borrow_mut();
+        text.ensure(source, encoding);
+        Some(f(&mut text, source))
+    }
+    fn with_active_text<T>(
+        &self,
+        f: impl FnOnce(&mut TextProjection, &jc_core::Document) -> T,
+    ) -> Result<T, WorkbenchError> {
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        if document.session.encoding().is_none() {
+            return Err(FileError::EncodingRequired.into());
+        }
+        self.with_text(document.tab_id, f)
+            .ok_or(WorkbenchError::NoDocument)
+    }
+    pub fn position_for_tab(&self, tab: TabId, offset: usize) -> Option<TextPosition> {
+        self.with_text(tab, |text, source| text.position(source, offset))?
+            .ok()
+    }
     pub fn position_for_pane(&self, pane: PaneId) -> Option<TextPosition> {
         let location = self.panes.view(pane)?.location()?;
-        let decoded = self.decoded_for_tab(location.tab)?;
-        let offset = location.byte_offset;
-        TextIndex::new(&decoded)
-            .source_byte_to_position(offset)
-            .ok()
+        self.position_for_tab(location.tab, location.byte_offset)
+    }
+    pub fn line_count_for_tab(&self, tab: TabId) -> Option<usize> {
+        self.with_text(tab, |text, _| text.line_count())
+    }
+    pub fn line_range_for_tab(
+        &self,
+        tab: TabId,
+        line: usize,
+    ) -> Option<(Range<usize>, Range<usize>)> {
+        self.with_text(tab, |text, source| text.line_range(source, line))?
+    }
+    pub fn visible_line(
+        &self,
+        tab: TabId,
+        line: usize,
+        column: usize,
+        width: usize,
+    ) -> Option<Vec<(char, usize)>> {
+        self.with_text(tab, |text, source| {
+            text.visible(source, line, column, width)
+        })?
+    }
+    /// Cumulative raw bytes scanned, bytes decoded and retained projection metadata/cache.
+    pub fn text_statistics(&self, tab: TabId) -> Option<(u64, u64, usize)> {
+        let document = self.document_by_tab(tab)?;
+        let text = document.text.borrow();
+        Some((text.scanned_bytes, text.decoded_bytes, text.memory_bytes()))
     }
 
     fn activate_location_document(&mut self, location: NavLocation) -> bool {
@@ -251,11 +315,8 @@ impl Workbench {
             return false;
         };
         if offset > document.session.document().len()
-            || self.decoded_for_tab(tab).is_some_and(|decoded| {
-                TextIndex::new(&decoded)
-                    .source_byte_to_position(offset)
-                    .is_err()
-            })
+            || (document.session.encoding().is_some()
+                && self.position_for_tab(tab, offset).is_none())
         {
             return false;
         }
@@ -335,10 +396,8 @@ impl Workbench {
             };
             let max_line = view
                 .location()
-                .and_then(|loc| self.decoded_for_tab(loc.tab))
-                .map_or(0, |decoded| {
-                    TextIndex::new(&decoded).line_count().saturating_sub(1)
-                });
+                .and_then(|loc| self.line_count_for_tab(loc.tab))
+                .map_or(0, |count| count.saturating_sub(1));
             self.panes
                 .set_scroll(other, other_line.min(max_line), view.scroll_column());
         }
@@ -361,15 +420,14 @@ impl Workbench {
     }
 
     fn normalize_views(&mut self, tab: TabId) {
-        if let Some(decoded) = self.decoded_for_tab(tab) {
-            let index = TextIndex::new(&decoded);
-            let boundaries: Vec<_> = decoded
-                .source_offsets
-                .iter()
-                .copied()
-                .filter(|&n| index.source_byte_to_position(n).is_ok())
-                .collect();
-            self.panes.normalize(tab, &boundaries);
+        if let Some(document) = self.documents.iter().find(|d| d.tab_id == tab) {
+            if let Some(encoding) = document.session.encoding() {
+                let source = document.session.document();
+                let mut text = document.text.borrow_mut();
+                text.ensure(source, encoding);
+                self.panes
+                    .normalize_with(tab, |offset| text.snap(source, offset));
+            }
         }
     }
 
@@ -435,11 +493,7 @@ impl Workbench {
         if to_side && !first_side_open {
             self.prepare_side_target();
         }
-        let cursor = session
-            .inspection()
-            .decoded
-            .as_ref()
-            .map_or(0, |decoded| decoded.content_start);
+        let cursor = session_content_start(&session);
         let title = title_for_path(&path, "<file>");
         let tab_id = self.tabs.open(title);
         self.next_document += 1;
@@ -448,6 +502,7 @@ impl Workbench {
             session,
             id: DocumentId(self.next_document),
             notified_revision: 0,
+            text: RefCell::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, cursor), true);
         let _ = self.rebuild_search();
@@ -469,6 +524,7 @@ impl Workbench {
             session,
             id: DocumentId(self.next_document),
             notified_revision: 0,
+            text: RefCell::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, 0), true);
         let _ = self.rebuild_search();
@@ -522,17 +578,8 @@ impl Workbench {
             .map(|document| document.session.document().to_bytes())
     }
 
-    pub fn active_decoded(&self) -> Option<jc_text::DecodedText> {
-        let document = self.active_document()?;
-        let encoding = document.session.encoding()?;
-        Some(decode(&document.session.document().to_bytes(), encoding))
-    }
-
     pub fn active_position(&self) -> Option<TextPosition> {
-        let decoded = self.active_decoded()?;
-        TextIndex::new(&decoded)
-            .source_byte_to_position(self.active_editor()?.cursor)
-            .ok()
+        self.position_for_pane(self.panes.active())
     }
 
     pub fn context(&self) -> CommandContext {
@@ -690,17 +737,14 @@ impl Workbench {
             return false;
         }
         self.closed_documents.pop();
-        let cursor = session
-            .inspection()
-            .decoded
-            .as_ref()
-            .map_or(0, |d| d.content_start);
+        let cursor = session_content_start(&session);
         self.next_document += 1;
         self.documents.push(EditorDocument {
             id: DocumentId(self.next_document),
             tab_id: expected,
             session,
             notified_revision: 0,
+            text: RefCell::default(),
         });
         self.panes
             .navigate(NavLocation::new(expected, cursor), false);
@@ -725,13 +769,13 @@ impl Workbench {
             .session
             .encoding()
             .ok_or(FileError::EncodingRequired)?;
-        let decoded = decode(&document.session.document().to_bytes(), encoding);
-        let index = TextIndex::new(&decoded);
+        let projection = document.text.get_mut();
+        projection.ensure(document.session.document(), encoding);
         let mut replacements = Vec::with_capacity(edits.len());
         for edit in edits {
             for offset in [edit.range.start, edit.range.end] {
                 if offset != 0 {
-                    index.source_byte_to_position(offset)?;
+                    projection.position(document.session.document(), offset)?;
                 }
             }
             replacements.push(jc_core::Replacement {
@@ -819,6 +863,19 @@ impl Workbench {
         if let Some((id, dirty)) = state {
             self.tabs.set_dirty(id, dirty);
         }
+    }
+}
+
+fn session_content_start(session: &FileSession) -> usize {
+    if session.encoding() == Some(TextEncoding::Utf8)
+        && session
+            .document()
+            .read_range(0..session.document().len().min(3))
+            .is_ok_and(|bytes| bytes == [0xef, 0xbb, 0xbf])
+    {
+        3
+    } else {
+        0
     }
 }
 

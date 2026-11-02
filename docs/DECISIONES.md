@@ -142,3 +142,12 @@ Evidencia y alcance: [AUDITORIA_ECODE_ARQUITECTURA.md](AUDITORIA_ECODE_ARQUITECT
 ### D18 — Avance F1 del 2026-11-01
 
 Implementados DocumentId/ViewId, estado persistente único por vista, EditBatch/ChangeSet y propuestas textuales por revisión sin buffer mutable público. Los grupos mantienen sus vistas; el catálogo de pestañas TUI sigue visible globalmente. Se conserva una sesión/undo por documento; los cerrados retienen descriptores, no buffers. Undo/redo reubican posiciones de forma determinista; la restauración exacta de selecciones anteriores queda como mejora de UX con metadatos acotados. F2/F3 siguen pendientes. Evidencia y límites en [F1_DOCUMENT_VIEWS_TRANSACTIONS.md](F1_DOCUMENT_VIEWS_TRANSACTIONS.md).
+
+
+## D19 — Índice de piezas por bloques y proyección textual acotada
+
+Implementada en F2 sobre `ddc9d41`. Conservar el vector de piezas y añadir un índice de prefijos en bloques de 128, elegido tras comparar consultas y pesos simulados con vector plano y árbol Box. No se incorpora el árbol experimental al motor productivo ni se extrapola su prueba a transacciones completas.
+
+Navegación, columnas y viewport consumen una proyección compartida por documento/revisión/encoding. EOL y checkpoints se actualizan en el intervalo afectado; las cachés de layout tienen cuota de 1 MiB/documento. El historial aplica 1024 pasos y 8 MiB de carga lógica por defecto; recolección de fuentes alcanzables preserva revisiones y undos retenidos. El snapshot de lectura actual es prestado; ownership/cuotas de jobs asíncronos pertenecen a F3.
+
+Las cuotas no acreditan <50 MiB de RAM privada. Medir picos fríos, índices de líneas, capacidad de fuentes, muchos documentos y tecla-a-pantalla antes de aceptar objetivos globales. F3 sigue pendiente; sin cambios en D13 (CI remoto en M5), D14 (plugins post-M5) ni la referencia visual de Sublime Text. Datos y método en [F2_RANGES_INDEX_MEMORY.md](F2_RANGES_INDEX_MEMORY.md).

@@ -51,9 +51,13 @@ pub fn render(app: &mut TuiApp, width: u16, height: u16) -> Screen {
     } else {
         editor_width
     };
-    let number_width = app.workbench.active_decoded().map_or(3, |decoded| {
-        (logical_lines(&decoded).len().max(1).to_string().len() as u16).clamp(3, 7)
-    });
+    let number_width = app
+        .workbench
+        .active_document()
+        .and_then(|d| app.workbench.line_count_for_tab(d.tab_id))
+        .map_or(3, |count| {
+            (count.max(1).to_string().len() as u16).clamp(3, 7)
+        });
     app.workbench.reveal_active_pane(
         usize::from(content_height.saturating_sub(1)),
         usize::from(pane_width.saturating_sub(number_width + 2)),
@@ -268,7 +272,7 @@ fn draw_editor(app: &TuiApp, screen: &mut Screen, pane: PaneId, area: (u16, u16,
         );
         return;
     };
-    let Some(decoded) = app.workbench.decoded_for_tab(document.tab_id) else {
+    let Some(line_count) = app.workbench.line_count_for_tab(document.tab_id) else {
         screen.text(
             x + 2,
             y + 2,
@@ -283,42 +287,44 @@ fn draw_editor(app: &TuiApp, screen: &mut Screen, pane: PaneId, area: (u16, u16,
         .workbench
         .position_for_pane(pane)
         .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
-    let lines = logical_lines(&decoded);
-    let number_width = (lines.len().max(1).to_string().len() as u16).clamp(3, 7);
+    let number_width = (line_count.max(1).to_string().len() as u16).clamp(3, 7);
     let text_x = x + number_width + 2;
     let text_width = width.saturating_sub(number_width + 2);
     if text_width == 0 {
         return;
     }
     let visible_height = usize::from(height);
-    let first_line = view.scroll_line().min(lines.len().saturating_sub(1));
+    let first_line = view.scroll_line().min(line_count.saturating_sub(1));
     let hscroll = view.scroll_column();
     let selection = app.workbench.selection_for_pane(pane);
 
     for row in 0..visible_height {
         let line_index = first_line + row;
-        if line_index >= lines.len() {
+        if line_index >= line_count {
             break;
         }
         let row_y = y + row as u16;
         let number = format!("{:>width$} ", line_index + 1, width = number_width as usize);
         screen.text_styled(x, row_y, &number, CellStyle::Dim);
-        for (visual_col, &(ch, source_offset)) in lines[line_index].iter().enumerate() {
-            if visual_col >= hscroll {
-                let target = visual_col - hscroll;
-                if target >= usize::from(text_width) {
-                    break;
-                }
-                let style = if selection
-                    .as_ref()
-                    .is_some_and(|range| contains_byte(range, source_offset))
-                {
-                    CellStyle::Reverse
-                } else {
-                    CellStyle::Normal
-                };
-                screen.put_styled(text_x + target as u16, row_y, ch, style);
-            }
+        let visible = app
+            .workbench
+            .visible_line(
+                document.tab_id,
+                line_index,
+                hscroll,
+                usize::from(text_width),
+            )
+            .unwrap_or_default();
+        for (target, (ch, source_offset)) in visible.into_iter().enumerate() {
+            let style = if selection
+                .as_ref()
+                .is_some_and(|range| contains_byte(range, source_offset))
+            {
+                CellStyle::Reverse
+            } else {
+                CellStyle::Normal
+            };
+            screen.put_styled(text_x + target as u16, row_y, ch, style);
         }
     }
 
@@ -356,15 +362,44 @@ fn draw_bottom(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, he
             CellStyle::Dim
         },
     );
+    let count = match app.panels.bottom() {
+        BottomPanel::Problems => app.workbench.problems().len(),
+        BottomPanel::Output => app.workbench.output().len(),
+        BottomPanel::SearchResults => app.workbench.search().matches.len(),
+        BottomPanel::Terminal => 1,
+    };
+    let available = usize::from(height.saturating_sub(1));
+    let selected = app.bottom_selected.min(count.saturating_sub(1));
+    let start = if focused {
+        selected.saturating_sub(available.saturating_sub(1))
+    } else {
+        count.saturating_sub(available)
+    };
     let rows: Vec<String> = match app.panels.bottom() {
-        BottomPanel::Problems => app.workbench.problems().to_vec(),
-        BottomPanel::Output => app.workbench.output().to_vec(),
+        BottomPanel::Problems => app
+            .workbench
+            .problems()
+            .iter()
+            .skip(start)
+            .take(available)
+            .cloned()
+            .collect(),
+        BottomPanel::Output => app
+            .workbench
+            .output()
+            .iter()
+            .skip(start)
+            .take(available)
+            .cloned()
+            .collect(),
         BottomPanel::SearchResults => app
             .workbench
             .search()
             .matches
             .iter()
             .enumerate()
+            .skip(start)
+            .take(available)
             .map(|(i, range)| {
                 app.workbench.search_match_position(i).map_or_else(
                     || format!("{}: bytes {}..{}", i + 1, range.start, range.end),
@@ -381,16 +416,15 @@ fn draw_bottom(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, he
                 )
             })
             .collect(),
-        BottomPanel::Terminal => vec!["Embedded shell is not active in this milestone.".to_owned()],
+        BottomPanel::Terminal => {
+            if available > 0 && start == 0 {
+                vec!["Embedded shell is not active in this milestone.".to_owned()]
+            } else {
+                Vec::new()
+            }
+        }
     };
-    let available = usize::from(height.saturating_sub(1));
-    let selected = app.bottom_selected.min(rows.len().saturating_sub(1));
-    let start = if focused {
-        selected.saturating_sub(available.saturating_sub(1))
-    } else {
-        rows.len().saturating_sub(available)
-    };
-    for (offset, line) in rows.iter().skip(start).take(available).enumerate() {
+    for (offset, line) in rows.iter().enumerate() {
         let index = start + offset;
         let style = if focused && index == selected {
             CellStyle::Reverse
@@ -441,6 +475,7 @@ fn draw_status(app: &TuiApp, screen: &mut Screen, y: u16) {
     }
 }
 
+#[cfg(test)]
 fn logical_lines(decoded: &jc_text::DecodedText) -> Vec<Vec<(char, usize)>> {
     let chars: Vec<char> = decoded.text.chars().collect();
     let mut lines = vec![Vec::new()];

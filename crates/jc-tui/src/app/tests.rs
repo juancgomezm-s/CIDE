@@ -34,6 +34,23 @@ fn text(app: &mut TuiApp, value: &str) {
     }
 }
 
+#[test]
+fn drawing_shared_views_reads_visible_ranges_without_rescanning_the_document() {
+    let mut app = TuiApp::new(LaunchOptions::default());
+    let tab = app.workbench.new_file("f2-render.txt", TextEncoding::Utf8);
+    app.workbench
+        .insert_text(&"abcdefg\r\n".repeat(100000))
+        .unwrap();
+    app.workbench.split_editor_right();
+    app.render(140, 30);
+    let before = app.workbench.text_statistics(tab).unwrap();
+    let screen = app.render(140, 30);
+    let after = app.workbench.text_statistics(tab).unwrap();
+    assert_eq!(before.0, after.0);
+    assert!(after.1 - before.1 < 65536);
+    assert!((0..screen.height()).any(|row| screen.row_text(row).contains("Group 1")));
+}
+
 fn palette(app: &mut TuiApp, label: &str) {
     key(
         app,

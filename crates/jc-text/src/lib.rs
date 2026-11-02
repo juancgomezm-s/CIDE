@@ -9,8 +9,8 @@ mod index;
 mod profile;
 
 pub use encoding::{
-    decode, encode, probe_encoding, DecodeIssue, DecodedText, EncodeError, EncodingProbe,
-    EncodingSource, TextEncoding,
+    decode, decode_fragment, encode, probe_encoding, DecodeIssue, DecodedText, EncodeError,
+    EncodingProbe, EncodingSource, TextEncoding,
 };
 pub use index::{PositionError, TextIndex, TextPosition};
 pub use profile::{inspect_text, LineEndingInfo, LineEndingKind, TextInspection};

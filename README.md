@@ -4,7 +4,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M2 en desarrollo — F1 implementado y validado localmente: documentos/vistas separados, transacciones atómicas, CRLF y cierre/reapertura corregidos. Próximo incremento F2: índices y memoria eficientes. GUI con dirección visual de Sublime Text, símbolos y Search Plus de proyecto pendientes.**
+**Estado: M2 en desarrollo — F1/F2 implementados y validados localmente: vistas independientes, transacciones, lectura por rangos, índice textual incremental y cuotas de historial/caché. Próximo incremento F3: presentación y tareas. GUI con dirección visual de Sublime Text, símbolos y Search Plus de proyecto pendientes.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
@@ -24,7 +24,7 @@ real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 | `jc-cli` | Inspección de archivos, copia exacta, edición de bytes a copia nueva, demo de undo/redo, preparación de solicitudes y validación de respuestas Progress |
 | Documentación | Resumen, investigación, arquitectura, decisiones, hitos, lenguajes y evidencia de validación |
 
-El núcleo usa la biblioteca estándar de Rust; el frontend terminal usa crossterm. La piece table usa un vector de fragmentos en esta primera versión; las operaciones recorren O(P) fragmentos. El historial tiene límite configurable de pasos (1024 por defecto), no de bytes retenidos; la compactación explícita elimina el historial. La [auditoría de arquitectura y ecode](docs/AUDITORIA_ECODE_ARQUITECTURA.md) documenta los límites y el plan de sustitución.
+El núcleo usa la biblioteca estándar de Rust; el frontend terminal usa crossterm. La piece table conserva un vector de fragmentos con índice por bloques para localizar rangos en O(log P); editar aún reconstruye metadatos. El historial tiene límites configurables de pasos (1024) y carga lógica por bytes (8 MiB); la recolección de fuentes conserva los undos retenidos. Véanse [F2 y sus mediciones](docs/F2_RANGES_INDEX_MEMORY.md) y la [auditoría histórica](docs/AUDITORIA_ECODE_ARQUITECTURA.md).
 
 ## Empezar
 
@@ -56,7 +56,7 @@ Los offsets del núcleo son bytes, no caracteres ni columnas visuales. `jc-text`
 
 La TUI dibuja dos grupos Primary/Secondary con cursor, selección y viewport independientes. Comparten `TabId`, `FileSession` y undo; los offsets se ajustan al editar y deshacer. Pin/unpin, scroll vertical vinculado, apertura lateral y back/forward se ejecutan desde el registro central, menús y palette. En terminales estrechas se muestra el grupo activo conservando el otro. Git/diff, símbolos e includes/RUN siguen pendientes; M2A permanece abierto.
 
-F1 retiró los campos espejo de cursor/selección/scroll del documento. Los grupos poseen vistas persistentes con ViewId y comparten el documento/undo. Replace-all publica una sola transacción; cerrar una vista preserva otras referencias. La decodificación completa todavía debe sustituirse en F2. Véanse [avance F1](docs/F1_DOCUMENT_VIEWS_TRANSACTIONS.md), [arquitectura](docs/ARQUITECTURA.md) y [plan](docs/PLAN.md).
+F1 retiró los campos espejo de cursor/selección/scroll del documento. Los grupos poseen vistas persistentes con ViewId y comparten el documento/undo. Replace-all publica una sola transacción; cerrar una vista preserva otras referencias. F2 ya sustituyó la decodificación completa de navegación/render por proyección compartida y rangos visibles; F3 sigue pendiente. Véanse [avance F1](docs/F1_DOCUMENT_VIEWS_TRANSACTIONS.md), [arquitectura](docs/ARQUITECTURA.md) y [plan](docs/PLAN.md).
 
 En este equipo se preparó Rust 1.85.1 dentro de `work/toolchain`, sin cambiar el PATH del usuario. El wrapper PowerShell también admite un Cargo ya instalado:
 
@@ -119,6 +119,7 @@ fuentes del usuario sean Windows-1252, ISO-8859-1 o IBM850.
 13. [Prompt para continuar desde el equipo](docs/CONTINUAR_EN_EQUIPO.md)
 14. [Post-M5: compatibilidad Sublime Text](docs/POST_M5_SUBLIME_COMPAT.md)
 15. [Auditoría de arquitectura, ecode y baseline local](docs/AUDITORIA_ECODE_ARQUITECTURA.md)
+16. [F2: rangos, índices, memoria y mediciones](docs/F2_RANGES_INDEX_MEMORY.md)
 
 ## Procedencia y licencia
 

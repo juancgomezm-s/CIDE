@@ -312,16 +312,7 @@ impl PaneManager {
         self.next_view = next;
         Some(loc)
     }
-    pub(crate) fn normalize(&mut self, tab: TabId, boundaries: &[usize]) {
-        let snap = |offset| {
-            boundaries
-                .partition_point(|&n| n <= offset)
-                .checked_sub(1)
-                .map_or_else(
-                    || boundaries.first().copied().unwrap_or(0),
-                    |i| boundaries[i],
-                )
-        };
+    pub(crate) fn normalize_with(&mut self, tab: TabId, mut snap: impl FnMut(usize) -> usize) {
         for group in [&mut self.primary, &mut self.secondary] {
             for view in &mut group.views {
                 if view.tab == tab {

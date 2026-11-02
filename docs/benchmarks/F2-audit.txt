@@ -1,0 +1,10 @@
+replace_all_one_undo: expected=[97, 32, 97] actual=[97, 32, 97]
+crlf_right: cursor=3 logical_position=Some(TextPosition { line: 1, column: 0 })
+jump_inside_crlf_accepted=false
+reopen_discard: document_dirty=false tab_dirty=false
+history_zero: document_bytes=65536 retained_added_bytes=131072
+bytes,move_right_p50_us,move_right_p95_us,position_p50_us,position_p95_us
+4096,0,1,0,0
+65536,0,0,0,0
+1048576,0,1,0,0
+4194304,0,1,0,0
