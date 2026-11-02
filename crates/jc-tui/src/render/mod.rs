@@ -282,6 +282,7 @@ fn draw_editor(
     let first_line = view.scroll_line().min(line_count.saturating_sub(1));
     let hscroll = view.scroll_column();
     let selection = app.workbench.selection_for_pane(pane);
+    let highlights = app.workbench.search_matches_for_tab(_document.tab_id);
 
     for row in 0..visible_height {
         let line_index = first_line + row;
@@ -298,9 +299,13 @@ fn draw_editor(
             .map(Vec::as_slice)
             .unwrap_or(&[]);
         for (target, (ch, source_offset)) in visible.iter().copied().enumerate() {
-            let style = if selection
-                .as_ref()
-                .is_some_and(|range| contains_byte(range, source_offset))
+            let hit = highlights.partition_point(|hit| hit.range.end <= source_offset);
+            let style = if highlights
+                .get(hit)
+                .is_some_and(|m| m.range.start <= source_offset)
+                || selection
+                    .as_ref()
+                    .is_some_and(|range| contains_byte(range, source_offset))
             {
                 CellStyle::Reverse
             } else {
@@ -422,15 +427,22 @@ fn draw_bottom(
             .take(available)
             .map(|(i, range)| {
                 frame.search_position(i).map_or_else(
-                    || format!("{}: bytes {}..{}", i + 1, range.start, range.end),
+                    || {
+                        format!(
+                            "{}: bytes {}..{}",
+                            i + 1,
+                            range.range.start,
+                            range.range.end
+                        )
+                    },
                     |position| {
                         format!(
                             "{}: Ln {} Col {} (bytes {}..{})",
                             i + 1,
                             position.line + 1,
                             position.column + 1,
-                            range.start,
-                            range.end
+                            range.range.start,
+                            range.range.end
                         )
                     },
                 )

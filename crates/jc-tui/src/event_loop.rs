@@ -189,6 +189,7 @@ pub(crate) fn run(options: LaunchOptions) -> io::Result<()> {
             dirty = false;
         }
         if input.shared.pending()
+            || app.workbench.search_running()
             || app.tasks.has_completed()
             || app.project_search.ready()
             || app.project_replace.is_some()

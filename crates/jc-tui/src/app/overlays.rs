@@ -8,6 +8,18 @@ use jc_text::TextEncoding;
 
 impl TuiApp {
     pub(crate) fn handle_overlay_key(&mut self, key: KeyEvent) {
+        if let UiOverlay::Prompt {
+            kind: crate::state::PromptKind::GoToPosition,
+            input,
+        } = &self.overlay
+        {
+            if let KeyCode::Char(ch) = key.code {
+                if is_plain_text(key) && input.len() + ch.len_utf8() > 64 {
+                    self.status = "Position input exceeds 64 bytes".into();
+                    return;
+                }
+            }
+        }
         match self.overlay.clone() {
             UiOverlay::ProjectReplacePreview { mut selected } => {
                 let count = self.replace_preview.as_ref().map_or(0, |p| p.lines().len());
@@ -58,7 +70,14 @@ impl TuiApp {
                 _ => {}
             },
             UiOverlay::Find { mut input } => {
+                if let KeyCode::Char(ch) = key.code {
+                    if is_plain_text(key) && input.len() + ch.len_utf8() > 4096 {
+                        self.status = "Search query exceeds 4096 bytes".into();
+                        return;
+                    }
+                }
                 if key.code == KeyCode::Esc {
+                    self.workbench.cancel_search();
                     self.close_overlay();
                     return;
                 }
@@ -82,7 +101,18 @@ impl TuiApp {
                 mut replacement,
                 mut field,
             } => {
+                if let KeyCode::Char(ch) = key.code {
+                    let len = match field {
+                        ReplaceField::Find => find.len(),
+                        ReplaceField::Replacement => replacement.len(),
+                    };
+                    if is_plain_text(key) && len + ch.len_utf8() > 4096 {
+                        self.status = "Search input exceeds 4096 bytes".into();
+                        return;
+                    }
+                }
                 if key.code == KeyCode::Esc {
+                    self.workbench.cancel_search();
                     self.close_overlay();
                     return;
                 }
@@ -258,7 +288,11 @@ impl TuiApp {
         match self.workbench.set_search_query(input.clone()) {
             Ok(()) => {
                 self.overlay = UiOverlay::Find { input };
-                self.status = format!("{} matches", self.workbench.search().matches.len());
+                self.status = format!(
+                    "Document search {:?}: {} matches",
+                    self.workbench.search().status,
+                    self.workbench.search().matches.len()
+                );
             }
             Err(error) => {
                 self.overlay = UiOverlay::Find { input };
@@ -269,12 +303,28 @@ impl TuiApp {
 
     fn update_replace_query(&mut self, query: &str) {
         match self.workbench.set_search_query(query.to_owned()) {
-            Ok(()) => self.status = format!("{} matches", self.workbench.search().matches.len()),
+            Ok(()) => {
+                self.status = format!(
+                    "Document search {:?}: {} matches",
+                    self.workbench.search().status,
+                    self.workbench.search().matches.len()
+                )
+            }
             Err(error) => self.status = error.to_string(),
         }
     }
 
     pub(crate) fn append_overlay_text(&mut self, text: &str) {
+        if let UiOverlay::Prompt {
+            kind: crate::state::PromptKind::GoToPosition,
+            input,
+        } = &self.overlay
+        {
+            if input.len() + text.len() > 64 {
+                self.status = "Position input exceeds 64 bytes".into();
+                return;
+            }
+        }
         match self.overlay.clone() {
             UiOverlay::Prompt { kind, mut input } => {
                 if matches!(
@@ -292,6 +342,10 @@ impl TuiApp {
                 self.overlay = UiOverlay::Prompt { kind, input };
             }
             UiOverlay::Find { mut input } => {
+                if input.len() + text.len() > 4096 {
+                    self.status = "Search query exceeds 4096 bytes".into();
+                    return;
+                }
                 input.push_str(text);
                 self.update_find(input);
             }
@@ -300,6 +354,14 @@ impl TuiApp {
                 mut replacement,
                 field,
             } => {
+                let len = match field {
+                    ReplaceField::Find => find.len(),
+                    ReplaceField::Replacement => replacement.len(),
+                };
+                if len + text.len() > 4096 {
+                    self.status = "Search input exceeds 4096 bytes".into();
+                    return;
+                }
                 match field {
                     ReplaceField::Find => {
                         find.push_str(text);

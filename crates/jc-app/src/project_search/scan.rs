@@ -1,5 +1,5 @@
 use super::*;
-use jc_text::{decode_fragment, encode, probe_encoding, TextPosition};
+use jc_text::{decode_fragment, probe_encoding};
 use std::{
     fs::{self, File},
     io::{self, Read},
@@ -140,7 +140,8 @@ pub(super) fn run(
         entries: 0,
         limited: false,
         stopped: false,
-        patterns: std::collections::HashMap::new(),
+        pattern: crate::text_search::Pattern::compile(&request.options.query, true, false)
+            .expect("validated project query"),
     };
     for (path, source) in &request.open {
         if scan.included(path) {
@@ -268,26 +269,7 @@ struct Scan<'a, F> {
     entries: usize,
     limited: bool,
     stopped: bool,
-    patterns: std::collections::HashMap<TextEncoding, Option<Arc<Pattern>>>,
-}
-struct Pattern {
-    needle: Vec<u8>,
-    prefix: Vec<usize>,
-}
-fn compile(query: &str, encoding: TextEncoding) -> Option<Arc<Pattern>> {
-    let needle = encode(query, encoding).ok()?;
-    let mut prefix = vec![0; needle.len()];
-    let mut j = 0;
-    for i in 1..needle.len() {
-        while j > 0 && needle[i] != needle[j] {
-            j = prefix[j - 1];
-        }
-        if needle[i] == needle[j] {
-            j += 1;
-        }
-        prefix[i] = j;
-    }
-    Some(Arc::new(Pattern { needle, prefix }))
+    pattern: Arc<crate::text_search::Pattern>,
 }
 impl<F: FnMut(Vec<ProjectSearchRow>) -> bool> Scan<'_, F> {
     fn relative(&self, path: &Path) -> String {
@@ -376,59 +358,31 @@ impl<F: FnMut(Vec<ProjectSearchRow>) -> bool> Scan<'_, F> {
             );
             return;
         }
-        let query = &self.request.options.query;
-        let pattern = self
-            .patterns
-            .entry(encoding)
-            .or_insert_with(|| compile(query, encoding))
-            .clone();
-        let Some(pattern) = pattern else {
-            return;
-        };
-        let needle = &pattern.needle;
-        let prefix = &pattern.prefix;
         let origin = stamp.map_or_else(
             || SearchOrigin::Disk(ContentFingerprint::of(bytes)),
             SearchOrigin::Open,
         );
-        let mut cursor = PositionCursor {
-            offset: probe.bom_len,
-            line: 0,
-            column: 0,
-            cr: false,
+        let limits = crate::SearchLimits {
+            max_results: self.request.options.max_results,
+            total_time: Duration::from_secs(10),
+            ..crate::SearchLimits::default()
         };
-        let mut found = 0;
-        for i in probe.bom_len..bytes.len() {
-            if i % 4096 == 0 && self.done() {
+        let mut scanner =
+            crate::text_search::Scanner::new(self.pattern.clone(), encoding, bytes.len());
+        loop {
+            if self.done() {
                 return;
             }
-            while found > 0 && bytes[i] != needle[found] {
-                found = prefix[found - 1];
-            }
-            if bytes[i] == needle[found] {
-                found += 1;
-            }
-            if found == needle.len() {
-                let end = i + 1;
-                let start = end - needle.len();
-                found = 0;
-                let interior = |offset: usize| {
-                    offset > 0
-                        && offset < bytes.len()
-                        && bytes[offset - 1] == b'\r'
-                        && bytes[offset] == b'\n'
-                };
-                if interior(start) || interior(end) {
-                    continue;
-                }
-                cursor.advance(bytes, encoding, start);
-                let mut snippet_end = (start + 160).min(bytes.len());
+            let step = scanner.step(limits, |range| bytes[range].to_vec());
+            for hit in step.matches {
+                let start = hit.range.start;
+                let mut end = (start + 160).min(bytes.len());
                 if encoding == TextEncoding::Utf8 {
-                    while snippet_end < bytes.len() && bytes[snippet_end] & 0xc0 == 0x80 {
-                        snippet_end -= 1;
+                    while end < bytes.len() && bytes[end] & 0xc0 == 0x80 {
+                        end -= 1;
                     }
                 }
-                let snippet = decode_fragment(&bytes[start..snippet_end], encoding, start)
+                let snippet = decode_fragment(&bytes[start..end], encoding, start)
                     .text
                     .chars()
                     .take_while(|c| *c != '\r' && *c != '\n')
@@ -436,11 +390,8 @@ impl<F: FnMut(Vec<ProjectSearchRow>) -> bool> Scan<'_, F> {
                     .collect();
                 if !self.emit(ProjectSearchRow::Match(ProjectSearchMatch {
                     path: path.to_owned(),
-                    range: start..end,
-                    position: TextPosition {
-                        line: cursor.line,
-                        column: cursor.column,
-                    },
+                    range: hit.range,
+                    position: hit.position,
                     snippet,
                     encoding,
                     origin,
@@ -449,45 +400,18 @@ impl<F: FnMut(Vec<ProjectSearchRow>) -> bool> Scan<'_, F> {
                     return;
                 }
             }
-        }
-    }
-}
-struct PositionCursor {
-    offset: usize,
-    line: usize,
-    column: usize,
-    cr: bool,
-}
-impl PositionCursor {
-    fn advance(&mut self, bytes: &[u8], encoding: TextEncoding, target: usize) {
-        while self.offset < target {
-            let mut end = (self.offset + 16384).min(target);
-            if encoding == TextEncoding::Utf8 {
-                while end < bytes.len() && bytes[end] & 0xc0 == 0x80 {
-                    end -= 1;
+            match step.status {
+                crate::SearchStatus::Complete => break,
+                crate::SearchStatus::Running => {}
+                _ => {
+                    self.limited = true;
+                    return;
                 }
             }
-            let text = decode_fragment(&bytes[self.offset..end], encoding, self.offset);
-            for ch in text.text.chars() {
-                match ch {
-                    '\r' => {
-                        self.line += 1;
-                        self.column = 0;
-                    }
-                    '\n' => {
-                        if !self.cr {
-                            self.line += 1;
-                        }
-                        self.column = 0;
-                    }
-                    _ => self.column += 1,
-                };
-                self.cr = ch == '\r';
-            }
-            self.offset = end;
         }
     }
 }
+
 fn glob(pattern: &str, path: &str) -> bool {
     if let Some(tail) = pattern.strip_prefix("**/") {
         if glob(tail, path) {

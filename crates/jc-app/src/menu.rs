@@ -202,6 +202,13 @@ pub fn default_menu_model() -> MenuModel {
                 command(SearchProject),
                 command(SearchCancelProject),
                 command(SearchReplaceProject),
+                SEP,
+                command(SearchSelectionNext),
+                command(SearchSelectionPrevious),
+                command(SearchGoToPosition),
+                command(SearchCancel),
+                command(SearchHistoryPrevious),
+                command(SearchHistoryNext),
             ],
         ),
         menu(

@@ -129,7 +129,18 @@ fn search_next_and_previous_share_byte_ranges_with_selection() {
     let mut bench = Workbench::default();
     bench.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
     bench.set_search_query("alpha").unwrap();
-    assert_eq!(bench.search().matches, vec![0..5, 11..16]);
+    while bench.search_running() {
+        bench.poll_document_search();
+    }
+    assert_eq!(
+        bench
+            .search()
+            .matches
+            .iter()
+            .map(|m| m.range.clone())
+            .collect::<Vec<_>>(),
+        vec![0..5, 11..16]
+    );
 
     assert_eq!(bench.find_next().unwrap(), Some(0..5));
     assert_eq!(bench.active_editor().unwrap().selection(), Some(0..5));
@@ -204,11 +215,17 @@ fn replace_current_and_all_use_the_document_encoding() {
         .open_file(&path, Some(TextEncoding::Iso8859_1))
         .unwrap();
     bench.set_search_query("nino").unwrap();
+    while bench.search_running() {
+        bench.poll_document_search();
+    }
     assert_eq!(bench.find_next().unwrap(), Some(0..4));
     assert!(bench.replace_current("niño").unwrap());
     assert_eq!(bench.active_bytes().unwrap(), b"ni\xf1o nino");
 
     bench.set_search_query("nino").unwrap();
+    while bench.search_running() {
+        bench.poll_document_search();
+    }
     assert_eq!(bench.replace_all("café").unwrap(), 1);
     assert_eq!(bench.active_bytes().unwrap(), b"ni\xf1o caf\xe9");
 }

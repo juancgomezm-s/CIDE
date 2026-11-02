@@ -6,17 +6,19 @@ La búsqueda debe ser más poderosa que la del editor típico, pero ejecutarse *
 
 **Avance 2026-11-02:** S1 literal implementado: worker acotado, filtros, snapshots de abiertos, lotes, cancelación, destinos versionados y reemplazo con preview/confirmación/conflictos por archivo. Uso y límites en [S1_PROJECT_SEARCH.md](S1_PROJECT_SEARCH.md). S0 sigue con escaneo síncrono y case-insensitive ASCII; no se afirma Unicode case folding completo ni regex. M2A/global RAM/latencia física siguen abiertos.
 
+**Avance S0 2026-11-02:** sustituido el scan síncrono y el matcher ASCII por el engine literal compartido con proyecto, cooperativo y con cuotas/deadline. Default full case folding Unicode 17 C+F; rangos originales, palabra Unicode, selección siguiente/anterior, historial, marcadores e ir a posición escalar. [Implementación, datos y límites](S0_DOCUMENT_SEARCH.md). Regex y aceptación global M2A siguen abiertos.
+
 ## S0 — Archivo activo: M2A
 
 - Ctrl+F: búsqueda incremental; F3 y Shift+F3: siguiente/anterior.
 - Ctrl+H: reemplazo, con undo y preservación de codificación.
-- Ctrl+F3 / Ctrl+Shift+F3: buscar la selección siguiente/anterior (pendiente).
-- Ctrl+G: ir a línea/columna con límites (pendiente).
+- Ctrl+F3 / Ctrl+Shift+F3: buscar la selección siguiente/anterior, implementado.
+- Ctrl+G: ir a línea/columna de escalares con límites, implementado.
 - Encontrar todas las coincidencias y navegar resultados con ubicación tipada.
 - Sensibilidad a mayúsculas, palabra completa, historial y marcadores.
 - Regex solo con motor real limitado en tiempo/trabajo, no un switch decorativo.
 
-**Limitación actual:** case-insensitive compara bytes ASCII. No anunciar todavía case folding completo para español, Unicode ni todas las codepages. Es un requisito expreso de la próxima implementación.
+**Semántica vigente S0:** default full case folding Unicode 17 (C+F, no Turkic), sobre escalares interpretados en la página explícita del documento. No normaliza NFC/NFD ni elimina acentos. Palabra usa categorías L/M/N/Pc y join controls; no promete UAX #29 por idioma. S1 conserva su interfaz literal sensible a mayúsculas.
 
 ## S1 — Proyecto: prioridad alta tras S0
 
@@ -68,8 +70,8 @@ Ver [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
 | Ctrl+H | Replace |
 | F3 / Shift+F3 | Coincidencia siguiente/anterior |
 | Ctrl+Shift+F | Buscar en proyecto |
-| Ctrl+G | Ir a línea (reservado) |
-| Ctrl+F3 / Ctrl+Shift+F3 | Buscar selección (reservado) |
+| Ctrl+G | Ir a línea[:columna] escalar |
+| Ctrl+F3 / Ctrl+Shift+F3 | Buscar selección siguiente/anterior |
 | Ctrl+J | Panel inferior |
 | F7 | Check Syntax ABL, nunca reemplazar por búsqueda |
 

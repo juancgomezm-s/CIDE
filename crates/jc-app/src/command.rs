@@ -46,6 +46,12 @@ pub enum CommandId {
     SearchReplace,
     SearchFindNext,
     SearchFindPrevious,
+    SearchSelectionNext,
+    SearchSelectionPrevious,
+    SearchGoToPosition,
+    SearchCancel,
+    SearchHistoryPrevious,
+    SearchHistoryNext,
     SearchProject,
     SearchCancelProject,
     SearchReplaceProject,
@@ -117,6 +123,8 @@ pub struct CommandContext {
     pub has_project: bool,
     pub project_search_running: bool,
     pub project_replace_ready: bool,
+    pub document_search_running: bool,
+    pub search_history_available: bool,
     pub active_language: Option<String>,
     pub has_progress_profile: bool,
     pub has_database_schema: bool,
@@ -144,6 +152,8 @@ impl Default for CommandContext {
             has_project: false,
             project_search_running: false,
             project_replace_ready: false,
+            document_search_running: false,
+            search_history_available: false,
             active_language: None,
             has_progress_profile: false,
             has_database_schema: false,
@@ -221,6 +231,12 @@ impl CommandRegistry {
 
 fn always(_: &CommandContext) -> bool {
     true
+}
+fn document_search_running(ctx: &CommandContext) -> bool {
+    ctx.document_search_running
+}
+fn search_history(ctx: &CommandContext) -> bool {
+    ctx.has_document && ctx.search_history_available
 }
 fn never(_: &CommandContext) -> bool {
     false
@@ -346,6 +362,42 @@ pub fn default_registry() -> CommandRegistry {
         spec!(SearchReplace, Search, "Replace", has_document),
         spec!(SearchFindNext, Search, "Find Next", has_document),
         spec!(SearchFindPrevious, Search, "Find Previous", has_document),
+        spec!(
+            SearchSelectionNext,
+            Search,
+            "Find Selection Next",
+            selection
+        ),
+        spec!(
+            SearchSelectionPrevious,
+            Search,
+            "Find Selection Previous",
+            selection
+        ),
+        spec!(
+            SearchGoToPosition,
+            Search,
+            "Go to Line / Column",
+            has_document
+        ),
+        spec!(
+            SearchCancel,
+            Search,
+            "Cancel Document Search",
+            document_search_running
+        ),
+        spec!(
+            SearchHistoryPrevious,
+            Search,
+            "Previous Search Query",
+            search_history
+        ),
+        spec!(
+            SearchHistoryNext,
+            Search,
+            "Next Search Query",
+            search_history
+        ),
         spec!(SearchProject, Search, "Find in Project", project),
         spec!(
             SearchReplaceProject,

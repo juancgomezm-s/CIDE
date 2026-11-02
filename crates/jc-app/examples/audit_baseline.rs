@@ -31,6 +31,9 @@ fn measure(mut operation: impl FnMut()) -> (u128, u128) {
 fn main() {
     let mut app = bench("a a");
     app.set_search_query("a").unwrap();
+    while app.search_running() {
+        app.poll_document_search();
+    }
     app.replace_all("b").unwrap();
     app.undo().unwrap();
     println!(

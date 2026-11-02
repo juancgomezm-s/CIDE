@@ -14,6 +14,35 @@ impl TuiApp {
     }
 
     pub(crate) fn submit_prompt(&mut self, kind: PromptKind, input: String) {
+        if kind == PromptKind::GoToPosition {
+            let parse = || {
+                let mut fields = input.trim().split(':');
+                let line = fields.next()?.parse::<usize>().ok()?.checked_sub(1)?;
+                let column = fields
+                    .next()
+                    .unwrap_or("1")
+                    .parse::<usize>()
+                    .ok()?
+                    .checked_sub(1)?;
+                if fields.next().is_some() {
+                    return None;
+                }
+                Some(jc_text::TextPosition { line, column })
+            };
+            if let Some(position) = parse() {
+                match self.workbench.go_to_position(position) {
+                    Ok(()) => {
+                        self.close_overlay();
+                        let _ = self.focus.focus(jc_app::PrimaryFocus::Editor, &self.panels);
+                        self.status = "Position selected".into();
+                    }
+                    Err(error) => self.status = error.to_string(),
+                }
+            } else {
+                self.status = "Use line[:column], one-based scalar coordinates".into();
+            }
+            return;
+        }
         if matches!(
             kind,
             PromptKind::ProjectQuery
@@ -42,6 +71,7 @@ impl TuiApp {
             return;
         }
         let result: Result<(), String> = match kind {
+            PromptKind::GoToPosition => unreachable!(),
             PromptKind::Open => self.open_path(path),
             PromptKind::New => {
                 let encoding = self.default_encoding.unwrap_or(TextEncoding::Utf8);

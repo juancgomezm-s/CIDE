@@ -1,6 +1,85 @@
 use super::*;
 
 #[test]
+fn document_search_runs_between_events_with_unicode_markers_history_and_goto() {
+    use jc_app::SearchStatus;
+    let mut app = TuiApp::new(LaunchOptions::default());
+    app.workbench.new_file("unicode.txt", TextEncoding::Utf8);
+    text(&mut app, "Straße NIÑO\r\nxßx ss ß");
+    app.frame(100, 25);
+    key(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    text(&mut app, "STRASSE");
+    assert_eq!(app.workbench.search().status, SearchStatus::Running);
+    assert_eq!(app.workbench.search().scanned_bytes, 0);
+    app.frame(100, 25);
+    assert_eq!(app.workbench.search().scanned_bytes, 0); // preparation/render do not advance search
+    while app.workbench.search_running() {
+        app.poll_tasks();
+    }
+    assert_eq!(app.workbench.search().matches.len(), 1);
+    let screen = app.frame(100, 25);
+    let row = screen.row_text(3);
+    let x = row[..row.find("Straße").unwrap()].chars().count() as u16;
+    assert_eq!(screen.cell(x, 3).style, crate::CellStyle::Reverse);
+    key(&mut app, KeyCode::F(3), KeyModifiers::NONE);
+    assert_eq!(
+        app.workbench.active_editor().unwrap().selection(),
+        Some(0..7)
+    );
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    key(&mut app, KeyCode::F(3), KeyModifiers::CONTROL);
+    while app.workbench.search_running() {
+        app.poll_tasks();
+    }
+    assert_eq!(app.workbench.search().query, "Straße");
+    key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL);
+    assert!(matches!(
+        app.overlay,
+        UiOverlay::Prompt {
+            kind: crate::state::PromptKind::GoToPosition,
+            ..
+        }
+    ));
+    app.submit_prompt(crate::state::PromptKind::GoToPosition, "2:2".into());
+    assert_eq!(
+        app.workbench.active_position().unwrap(),
+        jc_text::TextPosition { line: 1, column: 1 }
+    );
+    let before = app.workbench.active_editor().unwrap().cursor;
+    app.open_prompt(crate::state::PromptKind::GoToPosition);
+    app.submit_prompt(crate::state::PromptKind::GoToPosition, "0:0".into());
+    assert_eq!(app.workbench.active_editor().unwrap().cursor, before);
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    key(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    key(&mut app, KeyCode::Up, KeyModifiers::ALT);
+    assert!(matches!(&app.overlay,UiOverlay::Find{input} if input==&app.workbench.search().query));
+}
+
+#[test]
+fn document_search_escape_and_input_limits_leave_no_hidden_work_or_edits() {
+    let mut app = TuiApp::new(LaunchOptions::default());
+    app.workbench.new_file("large.txt", TextEncoding::Utf8);
+    app.workbench.insert_text(&"x".repeat(256 * 1024)).unwrap();
+    key(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    text(&mut app, "needle");
+    assert!(app.workbench.search_running());
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(!app.workbench.search_running());
+    assert_eq!(
+        app.workbench.search().status,
+        jc_app::SearchStatus::Cancelled
+    );
+    key(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    assert!(app.workbench.search_running());
+    let before = app.workbench.search().query.clone();
+    app.handle_event(Event::Paste("q".repeat(5000)));
+    assert_eq!(app.workbench.search().query, before);
+    assert!(!app
+        .registry
+        .is_enabled(CommandId::SearchToggleRegex, &app.command_context()));
+}
+
+#[test]
 fn project_replace_preview_cancel_confirmation_and_file_scheduling_are_explicit() {
     use crate::state::PromptKind;
     use jc_app::ProjectSearchState;

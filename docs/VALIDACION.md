@@ -1,7 +1,7 @@
 # Validación
 
-**Evidencia local más reciente:** F1/F2/F3, guardado Windows y Search Plus literal
-de proyecto, 174 pruebas y verificaciones Rust satisfactorias. Véase S1 al final; las secciones
+**Evidencia local más reciente:** S0 literal Unicode y S1 compartido, con suite de
+186 pruebas y regresiones finales dirigidas de vistas (188 casos distintos). Véase S0 al final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
 
 Estado de la primera base preparada antes de publicarla:
@@ -250,3 +250,57 @@ de huella/raíz no son un CAS ni aislamiento completo frente a un actor que camb
 nombres durante el commit. M2A permanece abierto. Detalle en
 [S1_PROJECT_SEARCH.md](S1_PROJECT_SEARCH.md). Sin CI remoto, push ni cambios de
 servicios, Qwen/GPU o configuración del sistema.
+
+
+## S0 literal Unicode — cierre por bloques del 2026-11-02
+
+Sobre `6e07b1e`: retirado el scan síncrono ASCII y el matcher de bytes separado de
+proyecto. Un motor literal de fragmentos sirve a ambos. S0 admite default full
+case folding Unicode 17 C+F, palabra Unicode, búsqueda de selección, historial,
+marcadores e ir a posición escalar. Datos upstream fijados por hash, licencia
+retenida, generación offline; sin crate ni proceso de lenguaje nuevo.
+
+Al cierre del bloque integrado se ejecutó el workspace completo: **186 pruebas,
+0 fallos**, fmt, Clippy workspace/all-targets -D warnings y release. Luego la revisión
+de vistas añadió dos regresiones: Find/Replace Current respetan la vista activa y
+una navegación diferida no pisa una intención posterior de caret/anchor/ViewId.
+Validación final dirigida: S0 9, F1 8, Workbench 18 y TUI 26, todas aprobadas;
+Clippy/release y recorridos Windows repetidos satisfactoriamente. **188 casos
+distintos** comprobados; no se afirma una corrida completa de 188 ni se repitieron
+suites F2 y mediciones que no cambian con esa corrección. Se aplica la preferencia
+del usuario: construcción por bloques amplios, validación al cierre y comprobaciones
+intermedias solo ante bloqueantes/revisiones materiales.
+
+Las pruebas incluyen las 1585 entradas de folding C/F, word properties, oráculo
+plano independiente frente a fragmentos 4/5/7/16, límites de expansiones escalares,
+UTF-8 inválido/BOM/CRLF, páginas explícitas/encoding estricto, cuotas/deadlines,
+cancelación que persiste al editar, undo y flujos de teclado. Fuente/encoding/EOL
+permanecen canónicos; no hay snapshot completo por tecla ni worker que edite.
+
+Mediciones release del mismo equipo/toolchain/perfil de S1: 5+31 consultas sobre
+líneas ASCII. En 16 MiB, programar p50/p95 2/3 µs, slot p95 417 µs, fin
+352732/401671 µs y cancelar después de un turno p95 1 µs. Proyecto compartido,
+cuatro archivos/2.097.144 bytes/64 matches: primer lote 7815/9941 µs, fin
+30633/37057 µs y cancel+join 48/65 µs. p95 de fin de proyecto **~35 % mayor** que S1
+(27457 µs): coste registrado, pendiente optimizar decoder/scratch sin motores
+paralelos. Datos en S0-document.csv y S0-project-shared.csv bajo benchmarks/.
+
+ConPTY real UTF-8: STRASSE encuentra Straße sin otra tecla, F3 navega, Ctrl+G usa
+escalares y reemplazo/undo no guardan el buffer. También pasó otra vez el flujo
+S1 de proyecto/preview/confirmación. Datos versionados S0-conpty.json y
+S0-project-conpty.json; reconfirmación final en work/S0-final-*.json. El control
+de cursor previo dio p95 16,0726 ms hasta VT, no pantalla física. Memoria privada
+muestreada en fixture mínimo antes del recorrido: 1.122.304 bytes; no RAM global.
+Peso del ejecutable en S0-binary.csv; tamaño no equivale a RAM.
+
+PowerShell presentó retraso/bloqueo al inicializar FileSystem. Se continuó con
+Cargo directo, el mismo toolchain y variables solo del proceso, y el mismo host
+C# mediante csc existente. No se modificaron servicios ni configuración global.
+Helpers de junction ahora usan mklink /J con rutas propias entrecomilladas.
+
+Regex continúa deshabilitado y no existe motor ni checkbox ficticio. No se valida
+NFC/NFD/Turkic, UAX #29 por idioma, IME/grafemas, Linux, GUI/AVM ni corpus exhaustivo.
+Los límites cooperativos no son preempción dura del allocator/decoder. RAM global,
+cold peaks, latencia hasta pantalla física y aceptación completa M2A siguen abiertas.
+Detalle y siguientes bloques en [S0_DOCUMENT_SEARCH.md](S0_DOCUMENT_SEARCH.md).
+Sin push ni CI remoto; Qwen/GPU y configuración del sistema intactos.

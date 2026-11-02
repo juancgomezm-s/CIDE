@@ -81,14 +81,41 @@ impl Workbench {
                 self.outdent_lines()?;
                 Ok(CommandOutcome::None)
             }
-            SearchFind => Ok(CommandOutcome::ShowFind),
-            SearchReplace => Ok(CommandOutcome::ShowReplace),
+            SearchFind => {
+                self.set_search_query(self.search.query.clone())?;
+                Ok(CommandOutcome::ShowFind)
+            }
+            SearchReplace => {
+                self.set_search_query(self.search.query.clone())?;
+                Ok(CommandOutcome::ShowReplace)
+            }
             SearchFindNext => {
                 let _ = self.find_next()?;
                 Ok(CommandOutcome::None)
             }
             SearchFindPrevious => {
                 let _ = self.find_previous()?;
+                Ok(CommandOutcome::None)
+            }
+            SearchSelectionNext => {
+                self.find_selection(true)?;
+                Ok(CommandOutcome::None)
+            }
+            SearchSelectionPrevious => {
+                self.find_selection(false)?;
+                Ok(CommandOutcome::None)
+            }
+            SearchGoToPosition => Ok(CommandOutcome::ShowGoToPosition),
+            SearchCancel => {
+                self.cancel_search();
+                Ok(CommandOutcome::None)
+            }
+            SearchHistoryPrevious => {
+                self.cycle_search_history(true)?;
+                Ok(CommandOutcome::None)
+            }
+            SearchHistoryNext => {
+                self.cycle_search_history(false)?;
                 Ok(CommandOutcome::None)
             }
             SearchToggleCase => {

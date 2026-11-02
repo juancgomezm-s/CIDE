@@ -34,6 +34,7 @@ fn draw_prompt(screen: &mut Screen, kind: PromptKind, input: &str) {
         PromptKind::ProjectInclude => "Include globs, comma separated (empty = **)",
         PromptKind::ProjectExclude => "Extra exclude globs (.git/target/work always excluded)",
         PromptKind::ProjectReplacement => "Replacement text (empty deletes matches)",
+        PromptKind::GoToPosition => "Go to line[:column] (one-based scalars)",
     };
     let (x, y, width, height) = centered(screen, 64, 5);
     panel(screen, x, y, width, height, title);
@@ -103,10 +104,9 @@ fn draw_find(app: &TuiApp, screen: &mut Screen, input: &str) {
     let y = screen.height().saturating_sub(4);
     panel(screen, x, y, width, 3, "Find");
     let flags = format!(
-        " [{}]Case [{}]Word [{}]Regex  {}/{}",
+        " [{}]Case [{}]Word literal {}/{}",
         yes(app.workbench.search().case_sensitive),
         yes(app.workbench.search().whole_word),
-        yes(app.workbench.search().regex),
         app.workbench.search().current.map_or(0, |value| value + 1),
         app.workbench.search().matches.len()
     );

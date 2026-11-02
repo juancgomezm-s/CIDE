@@ -18,6 +18,7 @@ pub enum PromptKind {
     ProjectInclude,
     ProjectExclude,
     ProjectReplacement,
+    GoToPosition,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

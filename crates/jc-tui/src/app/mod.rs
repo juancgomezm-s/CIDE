@@ -96,6 +96,16 @@ impl TuiApp {
         let mut update = TaskUpdate::default();
         update.recover = self.project_search.take_recovery();
         update.changed = update.recover;
+        if self.workbench.poll_document_search() {
+            update.changed = true;
+            if !self.project_results {
+                self.status = format!(
+                    "Document search {:?}: {} matches",
+                    self.workbench.search().status,
+                    self.workbench.search().matches.len()
+                );
+            }
+        }
         update.changed |= self.apply_project_replace_step();
         if self.project_search.poll(&self.workbench, 4) {
             update.changed = true;

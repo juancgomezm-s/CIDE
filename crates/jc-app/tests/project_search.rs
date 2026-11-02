@@ -385,8 +385,15 @@ fn links_and_junctions_do_not_expose_files_outside_root() {
 }
 #[cfg(windows)]
 fn create_directory_link(target: &Path, link: &Path) {
-    assert!(std::process::Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-Command","New-Item -ItemType Junction -Path $env:JC_TEST_LINK -Target $env:JC_TEST_TARGET | Out-Null"])
-        .env("JC_TEST_LINK",link).env("JC_TEST_TARGET",target).status().unwrap().success());
+    use std::os::windows::process::CommandExt;
+    assert!(std::process::Command::new("cmd.exe")
+        .raw_arg("/D /V:OFF /C mklink /J \"%JC_TEST_LINK%\" \"%JC_TEST_TARGET%\"")
+        .env("JC_TEST_LINK", link)
+        .env("JC_TEST_TARGET", target)
+        .output()
+        .unwrap()
+        .status
+        .success());
 }
 #[cfg(unix)]
 fn create_directory_link(target: &Path, link: &Path) {

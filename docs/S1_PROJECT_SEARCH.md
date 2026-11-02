@@ -1,5 +1,7 @@
 # Search Plus de proyecto — literal, lotes y reemplazo versionado
 
+**Seguimiento S0:** el matcher de bytes descrito en este checkpoint fue sustituido por un engine compartido de fragmentos Unicode; [estado y mediciones actuales](S0_DOCUMENT_SEARCH.md). S1 mantiene su interfaz exacta sensible a mayúsculas y sus cuotas. El resto documenta el checkpoint S1 y su evidencia histórica.
+
 Implementado localmente el 2026-11-02 sobre `ed51143`, después de F1/F2/F3.
 Núcleo transversal en jc-app; TUI consume el mismo controlador y las transacciones
 existentes. No se añadió dependencia de terceros, indexador residente ni servicio

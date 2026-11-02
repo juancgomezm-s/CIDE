@@ -10,8 +10,18 @@ impl TuiApp {
                 | CommandId::SearchReplace
                 | CommandId::SearchFindNext
                 | CommandId::SearchFindPrevious
+                | CommandId::SearchSelectionNext
+                | CommandId::SearchSelectionPrevious
+                | CommandId::SearchHistoryNext
+                | CommandId::SearchHistoryPrevious
         ) {
             self.project_results = false;
+        }
+        if matches!(
+            command,
+            CommandId::SearchProject | CommandId::SearchReplaceProject
+        ) {
+            self.workbench.cancel_search();
         }
         if command == CommandId::EditorOpenToSide && self.focus.primary() == PrimaryFocus::Sidebar {
             self.activate_explorer_entry_to_side();
@@ -20,6 +30,21 @@ impl TuiApp {
         match self.workbench.execute(command) {
             Ok(outcome) => {
                 self.handle_outcome(outcome);
+                if command == CommandId::SearchCancel {
+                    self.status = "Document search cancelled".into();
+                }
+                if matches!(
+                    command,
+                    CommandId::SearchHistoryNext | CommandId::SearchHistoryPrevious
+                ) {
+                    match &mut self.overlay {
+                        UiOverlay::Find { input } => *input = self.workbench.search().query.clone(),
+                        UiOverlay::Replace { find, .. } => {
+                            *find = self.workbench.search().query.clone()
+                        }
+                        _ => {}
+                    }
+                }
                 if command == CommandId::FileReopenClosed {
                     self.ensure_encoding_choice();
                 }
@@ -34,6 +59,7 @@ impl TuiApp {
             CommandOutcome::PromptOpen => self.open_prompt(PromptKind::Open),
             CommandOutcome::PromptNew => self.open_prompt(PromptKind::New),
             CommandOutcome::PromptSaveAs => self.open_prompt(PromptKind::SaveAs),
+            CommandOutcome::ShowGoToPosition => self.open_prompt(PromptKind::GoToPosition),
             CommandOutcome::ShowFind => {
                 let input = self.workbench.search().query.clone();
                 self.open_focus_overlay(Overlay::Find);

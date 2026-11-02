@@ -82,14 +82,15 @@ public static class JcConPtySmoke {
         public long private_bytes,keyboard_output_bytes;public double idle_cpu_ms;public int clears_during_keys,resize_clears,exit_code;
         public bool project_search_delivered;
         public bool project_replace_previewed,project_replace_applied_and_undone;
+        public bool document_search_folded_without_more_input,document_goto_scalars,document_replaced_and_undone;
     }
-    public static Result Run(string executable,string host,string directory,bool project){
+    public static Result Run(string executable,string host,string directory,bool project,bool document){
         string root=Path.GetFullPath(directory);string relative=project ? "work/s1-smoke-"+Process.GetCurrentProcess().Id+"/source.txt" : "work/f3-smoke-"+Process.GetCurrentProcess().Id+".txt";string path=Path.GetFullPath(Path.Combine(root,relative));
         if(!path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new IOException("Test path outside workspace");
         bool created=false;string fixtureDir=null;IntPtr inputRead=IntPtr.Zero,inputWrite=IntPtr.Zero,outputRead=IntPtr.Zero,outputWrite=IntPtr.Zero,console=IntPtr.Zero,attributes=IntPtr.Zero,editor=IntPtr.Zero;ProcessInfo child=new ProcessInfo();Thread reader=null;
         try{
             if(project){string candidate=Path.GetDirectoryName(path);if(Directory.Exists(candidate))throw new IOException("Test directory already exists");Directory.CreateDirectory(candidate);fixtureDir=candidate;}
-            using(FileStream file=new FileStream(path,FileMode.CreateNew,FileAccess.Write)){byte[] content=Encoding.UTF8.GetBytes("F3_VISIBLE_"+new string('x',128)+"\nnext\n");file.Write(content,0,content.Length);created=true;}
+            using(FileStream file=new FileStream(path,FileMode.CreateNew,FileAccess.Write)){byte[] content=Encoding.UTF8.GetBytes("F3_VISIBLE_"+new string('x',128)+(document ? "\r\nStraße NIÑO\r\n" : "\nnext\n"));file.Write(content,0,content.Length);created=true;}
             Check(CreatePipe(out inputRead,out inputWrite,IntPtr.Zero,0));Check(CreatePipe(out outputRead,out outputWrite,IntPtr.Zero,0));HResult(CreatePseudoConsole(new Coord(80,24),inputRead,outputWrite,0,out console));
             CloseHandle(inputRead);inputRead=IntPtr.Zero;CloseHandle(outputWrite);outputWrite=IntPtr.Zero;
             IntPtr bytes=IntPtr.Zero;InitializeProcThreadAttributeList(IntPtr.Zero,1,0,ref bytes);attributes=Marshal.AllocHGlobal(bytes);Check(InitializeProcThreadAttributeList(attributes,1,0,ref bytes));
@@ -110,6 +111,20 @@ public static class JcConPtySmoke {
             int resizeBefore;lock(display.sync){resizeBefore=display.clears;}
             display.Resize(120,30);HResult(ResizePseudoConsole(console,new Coord(120,30)));display.Wait(()=>display.clears>resizeBefore && display.Text().Contains("Group 1"),3000);
             lock(display.sync){result.resize_clears=display.clears-resizeBefore;}
+            if(document){
+                display.Send("\x06");display.Wait(()=>display.Text().Contains("literal"),3000);
+                display.Send("STRASSE");display.Wait(()=>display.Text().Contains("Document search Complete: 1 matches"),3000);result.document_search_folded_without_more_input=true;
+                display.Send("\x1bOR");display.Wait(()=>display.Text().Contains("Ln 2 Col 7"),3000);
+                display.Send("\x1b");display.Wait(()=>!display.Text().Contains("literal"),3000);
+                display.Send("\x07");display.Wait(()=>display.Text().Contains("Go to line[:column]"),3000);
+                display.Send("2:2\r");display.Wait(()=>display.Text().Contains("Ln 2 Col 2"),3000);result.document_goto_scalars=true;
+                display.Send("\x1b"+"s");display.Wait(()=>display.Text().Contains("Find in Project"),3000);
+                display.Send("\x1b[B\r");display.Wait(()=>display.Text().Contains("Replace:"),3000);
+                display.Send("\tSTRASSE\r");display.Wait(()=>display.Text().Contains("STRASSE NIÑO"),3000);
+                if(!File.ReadAllText(path).Contains("Straße NIÑO"))throw new IOException("Document replacement unexpectedly saved the file");
+                display.Send("\x1b");display.Wait(()=>!display.Text().Contains("Replace:"),3000);
+                display.Send("\x1a");display.Wait(()=>display.Text().Contains("Straße NIÑO") && display.Text().Contains("Document search Complete"),3000);result.document_replaced_and_undone=true;
+            }
             if(project){
                 display.Send("\x1b"+"f");display.Wait(()=>display.Text().Contains("Exit"),3000);
                 display.Send("\x1b[B\x1b[B\r");display.Wait(()=>display.Text().Contains("Open folder"),3000);

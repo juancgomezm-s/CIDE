@@ -68,6 +68,9 @@ fn replace_all_reverts_once_and_rebases_every_view() {
     assert_ne!(first, second);
     app.jump_to_location(tab, 0);
     app.set_search_query("a").unwrap();
+    while app.search_running() {
+        app.poll_document_search();
+    }
     app.replace_all("long").unwrap();
     assert_eq!(app.active_bytes().unwrap(), b"long long end");
     assert_eq!(

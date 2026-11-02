@@ -18,9 +18,10 @@ pub enum WorkbenchError {
     NoDocument,
     File(FileError),
     Position(PositionError),
-    SearchEncoding,
     RegexUnavailable,
     ClipboardEncoding,
+    SearchInput,
+    SearchIncomplete,
 }
 
 impl fmt::Display for WorkbenchError {
@@ -29,14 +30,17 @@ impl fmt::Display for WorkbenchError {
             Self::NoDocument => f.write_str("no active document"),
             Self::File(error) => write!(f, "{error}"),
             Self::Position(error) => write!(f, "{error}"),
-            Self::SearchEncoding => {
-                f.write_str("search text is not representable in the document encoding")
-            }
             Self::RegexUnavailable => {
                 f.write_str("regular-expression search is not implemented yet")
             }
             Self::ClipboardEncoding => {
                 f.write_str("clipboard text cannot be represented in the target document encoding")
+            }
+            Self::SearchInput => {
+                f.write_str("search input or replacement exceeds its configured budget")
+            }
+            Self::SearchIncomplete => {
+                f.write_str("search is incomplete; wait, restart or refine before replacing")
             }
         }
     }
@@ -59,11 +63,21 @@ impl From<PositionError> for WorkbenchError {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SearchState {
     pub query: String,
-    pub matches: Vec<Range<usize>>,
+    pub matches: Vec<crate::SearchMatch>,
     pub current: Option<usize>,
     pub case_sensitive: bool,
     pub whole_word: bool,
-    pub regex: bool,
+    pub status: crate::SearchStatus,
+    pub target: Option<crate::TaskStamp>,
+    pub generation: u64,
+    pub scanned_bytes: usize,
+    pub history: std::collections::VecDeque<SearchHistoryEntry>,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchHistoryEntry {
+    pub query: String,
+    pub case_sensitive: bool,
+    pub whole_word: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -129,6 +143,7 @@ pub enum CommandOutcome {
     PromptSaveAs,
     ShowFind,
     ShowReplace,
+    ShowGoToPosition,
     ShowPalette,
     OpenMenu(CommandId),
     View(CommandId),
@@ -145,6 +160,10 @@ pub struct Workbench {
     closed_documents: Vec<ClosedDocument>,
     next_document: u64,
     pub(crate) search: SearchState,
+    search_work: Option<search::SearchWork>,
+    search_limits: crate::SearchLimits,
+    search_navigation: Option<search::PendingNavigation>,
+    search_history_index: Option<usize>,
     pub(crate) clipboard: Option<String>,
     output: Vec<String>,
     problems: Vec<String>,
@@ -606,6 +625,8 @@ impl Workbench {
                 .is_some(),
             clipboard_has_text: self.clipboard.as_ref().is_some_and(|text| !text.is_empty()),
             has_project: false,
+            document_search_running: self.search_running(),
+            search_history_available: !self.search.history.is_empty(),
             active_language: language,
             has_progress_profile: false,
             has_database_schema: false,

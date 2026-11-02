@@ -34,11 +34,13 @@ pub use panes::{NavLocation, PaneId, PaneManager, PaneView, ViewId, ViewState};
 pub use tabs::{CloseRequest, Tab, TabId, TabManager};
 
 pub use workbench::{
-    CommandOutcome, DocumentId, EditorDocument, EditorRead, SearchState, TextReplacement,
-    Workbench, WorkbenchError,
+    CommandOutcome, DocumentId, EditorDocument, EditorRead, SearchHistoryEntry, SearchState,
+    TextReplacement, Workbench, WorkbenchError,
 };
 mod project_search;
 pub use project_search::{
     ProjectReplacePreview, ProjectSearch, ProjectSearchMatch, ProjectSearchOptions,
     ProjectSearchRow, ProjectSearchState, ReplaceFileOutcome, SearchOrigin,
 };
+mod text_search;
+pub use text_search::{SearchLimits, SearchMatch, SearchStatus};

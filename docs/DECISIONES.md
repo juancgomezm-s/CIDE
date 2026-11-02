@@ -169,3 +169,12 @@ Implementado localmente sobre `ed51143` (2026-11-02). Un worker de proyecto reut
 Preview es lectura del snapshot de búsqueda, sin I/O; aceptación explícita y comprobación por archivo al aplicar. Abiertos se editan con revisión esperada en un undo, sin guardar automáticamente; cerrados se guardan mediante FileSession. Procesar uno por turno permite cancelar los restantes, sin prometer rollback global ni preempción durante I/O. La UI informa guardado/edición/no-op/conflicto. Consultas incompletas, con avisos o fuentes obsoletas no habilitan replace.
 
 Guardado conserva ReplaceFileW: retries solo para 32/33/1175, máximo cinco llamadas y 75 ms de esperas, comprobando huella entre intentos. 1176/1177 retienen temporal y ruta de recuperación. No se atribuye el handle histórico a un servicio ni se cambia el sistema. Detalles y regresiones en SAVE_WINDOWS_CONTENTION; uso, cuotas y límites en S1_PROJECT_SEARCH. Case folding Unicode completo/regex/S0 y metas globales siguen pendientes; no cambia la dirección visual Sublime ni los hitos de Progress/CI/plugins.
+
+
+## D22 — S0 cooperativo y un solo matcher literal Unicode
+
+Implementado sobre S1 `6e07b1e`, 2026-11-02. El documento se escanea por turnos con rangos prestados, evitando copias completas por tecla. 16 KiB/2 ms, 16 MiB, 10.000 resultados y 5 s por defecto; cancelación, revisión/encoding/generación y rechazo de reemplazos incompletos. Proyecto usa el mismo matcher, retirando el KMP anterior; conserva su opción exacta sensible a mayúsculas. Source maps se guardan solo para el prefijo coincidente.
+
+Datos Unicode 17 fijados por hash/licencia: default full C+F sin Turkic, sin NFC/NFD ni conversión canónica. Las expansiones solo entregan rangos de escalares originales completos. Palabra es L/M/N/Pc + join controls, no UAX #29. Datos importados y algoritmos nuevos se identifican por separado. La dependencia es estática/generada, sin crate ni proceso de lenguaje nuevo.
+
+Se implementaron navegación de selección, historial, marcadores y Go to escalar en comandos compartidos. Cancelar persiste al editar; Find/Replace explícitos reinician. No habilitar regex sin motor/presupuesto. El p95 de proyecto sube ~35 % en el corpus local; medir/optimizar decoder común en otro bloque, sin recuperar motores paralelos ni cambiar perfil release por intuición. RAM global/pantalla física permanecen abiertos. Desarrollo por bloques amplios y validación al cierre, según preferencia del usuario. Método en S0_DOCUMENT_SEARCH.
