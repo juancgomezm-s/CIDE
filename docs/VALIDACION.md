@@ -1,7 +1,8 @@
 # Validación
 
-**Evidencia local más reciente:** corpus/memoria M2 y layout frío acotado, suite
-completa de 194 pruebas y recorridos nativos ampliados. Véase el bloque final; las secciones
+**Evidencia local más reciente:** integración paralela de DiffModel/estudio GUI,
+suite de 200 pruebas; corpus/memoria y layout frío del bloque previo con recorridos
+nativos ampliados. El estudio HTML sigue sin revisión renderizada. Véase el bloque final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
 
 Estado de la primera base preparada antes de publicarla:
@@ -393,3 +394,45 @@ peak commit del SO complementa picos privados muestreados, no son el mismo dato.
 Pendientes: metadatos densos O(L), distribuciones frías, caché fría real, más
 teclado/IME/DPI/portapapeles, Linux, GUI y pantalla física. No se declara cierre
 M2A ni <50 MiB global. Sin CI/push/instalaciones/configuración/servicios/Qwen/GPU.
+
+
+## M2 — Dos frentes paralelos autorizados — 2026-11-02
+
+Juan autorizó varios workers. Capacidad nativa anunciada: cuatro agentes total;
+se usaron tres, incluido el integrador. `/root/diff_read_model` tuvo propiedad
+exclusiva de diff_model.rs/DIFF_MODEL_READ_ONLY.md y `/root/gui_scene_study` de
+prototypes/m2b/*/M2B_SCENE_STUDY.md. El integrador conservó layout/aceptación,
+exports/APIs compartidas/plan/VALIDACION/commits. Sin chats principales nuevos,
+worktrees externos ni simulación de workers mediante procesos. Los benchmarks
+de aceptación terminaron antes de admitir estos frentes. Los workers avanzaron
+diseño/código y comprobaciones ligeras; Cargo y las suites se ejecutaron en serie.
+
+DiffModel puro prestado: fuentes inmutables de bytes, líneas tipadas, Myers,
+hunks/correspondencias solo iguales, cuotas de bytes/líneas/trabajo/metadatos/hunks,
+cancelación cooperativa también durante comparación de líneas largas. Un resultado
+limitado/cancelado no publica equivalencias parciales. No recibe Document/sesión/
+undo, no normaliza bytes, no propone cambios ni llama Git. Seis pruebas nuevas,
+incluido oráculo LCS independiente sobre 961 pares pequeños, EOL/BOM/invalid,
+newline final, correspondencias, cuotas y cancelación. Detalle en
+[DIFF_MODEL_READ_ONLY.md](DIFF_MODEL_READ_ONLY.md). No tiene todavía UI/proveedor
+Git, integración con jobs/versiones ni aceptación de rendimiento de diff.
+
+La integración pasó la **suite completa de 200 pruebas, 0 fallos**, fmt --check,
+Clippy workspace/all-targets -D warnings y release. Clippy pidió enumerate en
+un bucle del oráculo: corrección solo de test, seguida de seis pruebas DiffModel,
+Clippy y fmt aprobados; no se repitieron las suites/producto/benchmarks inalterados.
+Las mediciones M2 anteriores no se atribuyen a un motor diff ni a un backend GUI.
+
+Estudio GUI HTML/CSS/JS local: fuente ABL, include PIN, Explorer, Search y palette
+con datos fijos. Sin editor editable, buffer/undo alternativo, red, dependencia o
+backend elegido. Su contrato distingue Workbench existente de Presentation y
+dispatcher aún privados de TUI. Check-scene.py y node --check aprobados por worker
+e integrador. [Escena/contrato](M2B_SCENE_STUDY.md).
+
+Tras terminar benchmarks se intentó captura con Edge ya instalado, headless y
+perfil propio en work: terminó con 0xC0000005 sin imagen. No se desactivó seguridad,
+instaló herramientas ni tocó configuración/servicios. Revisión visual renderizada,
+DPI/IME/accesibilidad y todo rendimiento GUI siguen pendientes. No hay jc-gui
+funcional ni cierre M2B. Git con escritura/CI sigue en M5; sin push ni cambios a
+GPU/Qwen. El foco siguiente de aceptación sigue siendo metadatos densos y puerta
+de RAM/latencia física; estos frentes no eliminan esos pendientes.

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>JC-IDE · Estudio de escena M2B</title>
+  <link rel="stylesheet" href="scene.css">
+</head>
+<body>
+  <header class="study-header">
+    <div><p class="eyebrow">JC-IDE / ESTUDIO VISUAL M2B</p><h1>El código, en primer plano.</h1></div>
+    <p class="study-note">Escena estática de comparación. Sin backend elegido,<br>edición, parser ni conexión a Progress.</p>
+  </header>
+  <nav class="study-controls" aria-label="Estados del estudio visual">
+    <div class="segmented"><button type="button" id="workspace-state" aria-pressed="true">Espacio de trabajo</button><button type="button" id="palette-state" aria-pressed="false">Command palette</button></div>
+    <div class="study-options"><button type="button" id="reference-state" aria-pressed="false">Enfocar referencia</button><button type="button" id="compact-state" aria-pressed="false">Ventana compacta</button></div>
+  </nav>
+
+  <main class="study-canvas">
+    <section class="workspace" id="workspace" aria-label="Maqueta de JC-IDE; contenido de ejemplo, sin edición">
+      <div class="titlebar"><span class="app-symbol" aria-hidden="true">J</span><span>order-entry.p — ventas · JC-IDE</span><span class="window-marks" aria-hidden="true">— &nbsp; □ &nbsp; ×</span></div>
+      <div class="menubar" aria-label="Menú ilustrado"><span>File</span><span>Edit</span><span>Search</span><span>Project</span><span>Build</span><span>Tools</span><span>View</span><span>Help</span></div>
+      <div class="body-grid">
+        <aside class="sidebar" aria-label="Explorer ilustrado">
+          <div class="panel-heading">FOLDERS <span aria-hidden="true">···</span></div>
+          <div class="tree-line project"><span class="chevron">⌄</span><span class="folder-icon"></span>ventas</div>
+          <div class="tree-line level-1"><span class="chevron">⌄</span><span class="folder-icon"></span>src</div>
+          <div class="tree-line level-2 selected"><span class="file-icon">P</span>order-entry.p</div>
+          <div class="tree-line level-2"><span class="file-icon">P</span>customers.p</div>
+          <div class="tree-line level-1"><span class="chevron">⌄</span><span class="folder-icon"></span>includes</div>
+          <div class="tree-line level-2 reference-file"><span class="file-icon include">I</span>session.i<span class="small-pin">PIN</span></div>
+          <div class="tree-line level-1"><span class="chevron">›</span><span class="folder-icon"></span>reports</div>
+          <div class="tree-line level-1"><span class="file-icon muted">MD</span>README.md</div>
+          <div class="sidebar-caption">PROYECTO DE EJEMPLO<br><span>Fuentes con encoding explícito</span></div>
+        </aside>
+        <div class="editor-area">
+          <div class="editor-groups">
+            <section class="editor-group primary active" id="primary-group" aria-label="Grupo 1: order-entry.p">
+              <div class="tab-strip"><div class="tab active-tab"><span class="tab-file">P</span>order-entry.p<span class="tab-close" aria-hidden="true">×</span></div><span class="group-label">GRUPO 1</span></div>
+              <div class="path-strip">src <span>›</span> order-entry.p</div>
+              <div class="source" id="primary-source" role="img" aria-label="Fuente ABL de ejemplo, solo lectura en este estudio"></div>
+              <div class="editor-empty"></div>
+            </section>
+            <section class="editor-group reference" id="reference-group" aria-label="Grupo 2: session.i, referencia anclada">
+              <div class="tab-strip"><div class="tab active-tab"><span class="tab-file include">I</span>session.i<span class="pin-mark">PIN</span></div><span class="group-label">GRUPO 2</span></div>
+              <div class="path-strip">includes <span>›</span> session.i <span class="reference-caption">referencia anclada</span></div>
+              <div class="source" id="reference-source" role="img" aria-label="Include ABL de ejemplo, solo lectura en este estudio"></div>
+              <div class="reference-note"><span class="note-rule"></span>El anclaje conserva esta referencia.<br>El scroll vinculado es una opción independiente.</div>
+              <div class="editor-empty"></div>
+            </section>
+          </div>
+          <section class="search-panel" aria-label="Búsqueda ilustrada, consulta literal de ejemplo">
+            <div class="bottom-tabs"><span class="current">Search</span><span>Problems</span><span>Output</span><span class="search-total">3 coincidencias · documento</span></div>
+            <div class="search-bar"><span class="find-glyph" aria-hidden="true">⌕</span><span class="query-value">cCliente</span><span class="search-option" title="Coincidencia sensible a mayúsculas ilustrada">Aa</span><span class="search-option">Palabra</span><span class="literal-tag">literal</span></div>
+            <div class="search-results" id="search-results"></div>
+          </section>
+        </div>
+      </div>
+      <div class="statusbar"><span id="status-focus">Grupo 1</span><span class="status-separator"></span><span id="status-position">Ln 8, Col 40</span><span class="status-spacer"></span><span>ABL</span><span>Windows-1252</span><span>CRLF</span><span>Spaces: 4</span></div>
+
+      <div class="palette-shade" id="palette-shade" hidden></div>
+      <section class="palette" id="palette" aria-label="Command palette ilustrada, sin ejecución de comandos" hidden>
+        <div class="palette-query"><span class="palette-prefix">&gt;</span><span>group</span><span class="mock-caret" aria-hidden="true"></span><kbd>Esc</kbd></div>
+        <div class="palette-row palette-selected"><div><strong>Focus Group 2</strong><small>Navigation</small></div><kbd>Ctrl+2</kbd></div>
+        <div class="palette-row"><div><strong>Focus Group 1</strong><small>Navigation</small></div><kbd>Ctrl+1</kbd></div>
+        <div class="palette-row"><div><strong>One Group</strong><small>View</small></div></div>
+        <div class="palette-footer">Muestra de comandos del registro compartido</div>
+      </section>
+    </section>
+  </main>
+  <footer class="study-footer"><p><span class="legend-dot"></span>Dirección visual: Sublime Text. Datos, geometría y estados de muestra; no representan un editor gráfico implementado.</p><a href="../../docs/M2B_SCENE_STUDY.md">Contrato y comparación de backends ↗</a></footer>
+
+  <script id="scene-data" type="application/json">
+  {
+    "schema": 1,
+    "fixtureOnly": true,
+    "project": "ventas",
+    "documents": [
+      {"id": 1, "path": "src/order-entry.p", "revision": 7, "encoding": "Windows-1252", "eol": "CRLF", "bom": false, "finalNewline": true,
+       "lines": ["/* Entrada de pedidos: fixture visual. */", "{includes/session.i}", "DEFINE VARIABLE cCliente AS CHARACTER NO-UNDO.", "DEFINE VARIABLE iPedido AS INTEGER NO-UNDO.", "", "ASSIGN cCliente = \"Señor Muñoz\".", "FOR EACH Customer NO-LOCK", "    WHERE Customer.Name BEGINS cCliente:", "    DISPLAY Customer.CustNum Customer.Name.", "END."],
+       "highlights": [{"line": 2, "scalarStart": 16, "scalarLength": 8}, {"line": 5, "scalarStart": 7, "scalarLength": 8}, {"line": 7, "scalarStart": 31, "scalarLength": 8}]},
+      {"id": 2, "path": "includes/session.i", "revision": 3, "encoding": "Windows-1252", "eol": "CRLF", "bom": false, "finalNewline": true,
+       "lines": ["/* Contexto compartido de la sesión. */", "DEFINE SHARED VARIABLE cEmpresa", "    AS CHARACTER NO-UNDO.", "DEFINE SHARED VARIABLE cUsuario", "    AS CHARACTER NO-UNDO.", "DEFINE SHARED VARIABLE iSucursal", "    AS INTEGER NO-UNDO.", "", "&SCOPED-DEFINE APP-NAME JC-IDE"], "highlights": []}
+    ],
+    "views": [
+      {"id": 101, "documentId": 1, "group": "Primary", "cursor": {"line": 7, "scalarColumn": 39}, "viewport": {"firstLine": 0, "firstDisplayColumn": 0}},
+      {"id": 102, "documentId": 2, "group": "Secondary", "cursor": {"line": 1, "scalarColumn": 0}, "viewport": {"firstLine": 0, "firstDisplayColumn": 0}}
+    ],
+    "groups": [{"id": "Primary", "activeViewId": 101, "pinned": false}, {"id": "Secondary", "activeViewId": 102, "pinned": true}],
+    "scrollLinked": false,
+    "search": {"documentId": 1, "expectedRevision": 7, "query": "cCliente", "caseSensitive": true, "wholeWord": false, "status": "Complete"},
+    "paletteCommands": ["EditorFocusSecondary", "EditorFocusPrimary", "EditorOneGroup"]
+  }
+  </script>
+  <script src="scene.js"></script>
+</body>
+</html>

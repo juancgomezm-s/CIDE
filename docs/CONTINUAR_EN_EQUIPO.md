@@ -68,7 +68,10 @@ está ligado a un Workbench y documentos, no a trabajos de proyecto sin document
 
 El bloque de evidencia pasó 194 pruebas completas Windows, fmt, Clippy/release,
 24 sesiones ConPTY antes y 24 después, y regresión Unicode nativa
-(ver VALIDACION y M2_ACCEPTANCE_EVIDENCE). Benchmarks opt-in:
+(ver VALIDACION y M2_ACCEPTANCE_EVIDENCE). La integración paralela posterior pasó
+200 pruebas: DiffModel puro sin UI/Git y estudio GUI estático sin backend
+(DIFF_MODEL_READ_ONLY, M2B_SCENE_STUDY). Revisión renderizada del HTML pendiente;
+Edge headless terminó con 0xC0000005, sin modificar el sistema. Benchmarks opt-in:
 `document_search_bench`, `project_search_bench`, `f3_pipeline`, `f3_jobs`; smoke Windows `scripts/smoke-conpty.ps1 -ProjectSearch`, tras compilar
 `f3_console_host` y `jc-ide-tui` en release. Método en S0_DOCUMENT_SEARCH, S1_PROJECT_SEARCH y F3_PRESENTATION_TASKS.
 

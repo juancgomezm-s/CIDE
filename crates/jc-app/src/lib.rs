@@ -7,6 +7,7 @@
 
 mod command;
 mod dialog;
+pub mod diff_model;
 mod focus;
 mod jobs;
 mod keymap;

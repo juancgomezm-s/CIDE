@@ -97,7 +97,11 @@ Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crosst
 - el contrato de tareas entrega diagnósticos sin bloquear edición y descarta resultados obsoletos; Progress Check/Compile/Run/Schema permanecen deshabilitados si no hay proveedor validado;
 - el frontend no crea un segundo buffer ni su propio undo.
 
+**Preparación paralela autorizada del 2026-11-02:** [DiffModel puro](DIFF_MODEL_READ_ONLY.md) de fuentes inmutables, hunks y correspondencia de líneas exactas, con cuotas/cancelación; seis regresiones y suite integrada de 200 pruebas. No hay comandos/renderer/proveedor Git conectados ni rendimiento diff aceptado. Los metadatos densos y las puertas globales de M2-F siguen prioritarios.
+
 ## M2B — GUI Windows mínima — PENDIENTE
+
+Ya existe un [estudio estático de escena y contrato](M2B_SCENE_STUDY.md) preparado en paralelo: ABL/include PIN/Explorer/Search/palette, datos locales y matriz neutral. Sus comprobaciones estáticas pasan; la captura headless falló sin imagen, por lo que revisión renderizada sigue pendiente. No es editor gráfico ni decisión de backend.
 
 Elegir tecnología gráfica con mediciones y consumir el mismo `jc-app`. Iniciar una escena de comparación al estabilizar F1/F2: fuente ABL + include en referencia anclada + Explorer + búsqueda + palette. Mantener la dirección visual de Sublime Text: editor dominante, marco compacto, tabs discretas, sidebar colapsable, panel inferior y barra de estado. Estilo visual no implica copiar shortcuts ni compatibilidad de plugins.
 
