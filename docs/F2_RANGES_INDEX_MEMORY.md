@@ -1,5 +1,7 @@
 # F2 — Acceso por rangos, proyección textual y memoria
 
+**Seguimiento:** F3 ya implementa presentación de solo lectura, terminal incremental y tareas acotadas; [evidencia y límites actuales](F3_PRESENTATION_TASKS.md). El resto conserva el checkpoint histórico de F2.
+
 Checkpoint implementado sobre `ddc9d41`, rama `m2a/dual-pane-tui`. Mantiene la propiedad de vistas y las transacciones de F1. La base de F2 queda validada localmente; las metas de RAM del proceso, arranque y latencia tecla-a-pantalla siguen abiertas.
 
 ## Qué cambió

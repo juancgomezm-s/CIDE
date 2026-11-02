@@ -1,5 +1,9 @@
 # Validación
 
+**Evidencia local más reciente:** F1/F2/F3, 157 pruebas y verificaciones Rust
+satisfactorias. Véase la sección F3 al final y su checkpoint; las secciones
+anteriores conservan sus fechas y limitaciones históricas.
+
 Estado de la primera base preparada antes de publicarla:
 
 - Workspace Rust compilado localmente.
@@ -115,3 +119,68 @@ Las nuevas regresiones comparan segmentos con slices planos y la proyección inc
 La primera matriz ampliada detectó reconstrucción completa del layout de una línea larga tras editar. Se sustituyó por actualización local de checkpoints y se agregaron regresiones específicas antes del cierre. Método, cifras finales y límites en [F2_RANGES_INDEX_MEMORY.md](F2_RANGES_INDEX_MEMORY.md). Los 131,072 bytes añadidos finales del diagnóstico sin historial son retención de buffer, no RAM total.
 
 Las pruebas de archivo se ejecutaron con hard links/ReplaceFileW permitidos y temporales del proyecto. No se usó CI remoto. No se valida aquí Linux, nueva matriz manual de terminales, GUI, IME/grafemas, Progress/AVM ni latencia completa de UI. Los objetivos globales de RAM/arranque continúan abiertos; F3 sigue pendiente.
+
+## F3 — Presentación y tareas: validación local del 2026-11-02
+
+Base `e72856f`, rama `m2a/dual-pane-tui`, Windows 11 Pro 10.0.26300,
+Rust 1.85.1 MSVC aislado en `work/toolchain`. No se añadieron dependencias de
+terceros, no se cambió el perfil release ni se invocó GitHub Actions.
+
+Comandos satisfactorios, mediante `scripts/cargo-local.ps1`:
+
+- `cargo fmt --all -- --check`.
+- `cargo test --workspace --locked --offline`: **157 pruebas, 0 fallos**.
+- `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`.
+- `cargo build --workspace --release --locked --offline`.
+
+Quince pruebas nuevas cubren preparación/composición sin cambios de vistas/caché,
+terminal incremental, no-op/cursor, borrado de texto/estilos, resize e invalidación
+por fallo; cuota/cierre de cola de entrada; snapshot inmutable durante edición,
+revisión/encoding/vista/reapertura, generaciones, presión de cola, límites de
+resultados, cancelación/deadline/panic, logs y entrega a paneles sin otra tecla ni
+aplicación automática de propuestas. Las pruebas F1 de vistas y transacciones,
+F2 de rangos y las de archivo/encoding volvieron a pasar. Los tests de archivos
+se ejecutaron con hard links/ReplaceFileW permitidos, temporales en el proyecto.
+
+Una segunda corrida completa devolvió error Windows 1175 en `force_save` de
+`external_content_change_blocks_normal_save_and_preserves_external_version`
+(ReplaceFileW: no se puede quitar el archivo para reemplazarlo). La repetición
+dirigida de las ocho pruebas de sesión pasó sin cambios. Es una incidencia
+intermitente de causa aún no identificada; no se atribuye a OneDrive, antivirus
+o sandbox sin evidencia ni se modificó el guardado para ocultarla.
+La siguiente corrida completa del árbol final pasó las 157 pruebas, 0 fallos.
+
+Benchmarks release opt-in, Ryzen 9 8945HS, 8 núcleos/16 hilos, RAM visible
+16.037.152 KiB, perfil existente de tamaño con thin LTO/un codegen unit:
+
+- `f3_pipeline`: Right → preparación → composición → VT a memoria, 5 muestras de
+  calentamiento +31 medidas por tamaño/viewport; 4 KiB/1 MiB/4 MiB, 80×24/140×40.
+  p95 35–97 µs; delta mediano 23/41 bytes; frame idéntico 0 bytes. Excluye entrada
+  OS, transporte y pantalla. [CSV](benchmarks/F3-pipeline.csv).
+- `f3_jobs`: 5+31 muestras, proveedor de mensaje y proveedor cooperativo que consulta
+  token entre sleeps de 1 ms. Admisión-a-entrega p50/p95 12/20 µs; cancelar trabajo
+  iniciado-a-entrega 1537/1567 µs. No mide proveedor real ni búsqueda.
+  [CSV](benchmarks/F3-jobs.csv).
+- Ejecutable real mediante `scripts/smoke-conpty.ps1` y ejemplo Windows opt-in
+  `f3_console_host`: fixture ASCII de 145 bytes, 80×24, 3 Right de calentamiento y
+  31 medidos. Inyección-a-salida VT p50/p95 **15,7802/16,0550 ms**; 1150 bytes,
+  ningún clear en teclas, un clear tras resize a 120×30 y salida File/Exit código 0.
+  Proceso editor: 1.089.536 bytes privados y 0 ms CPU en una ventana de reposo
+  de 250 ms. Excluye bootstrap/conhost/anfitrión. [JSON](benchmarks/F3-conpty.json).
+
+El primer intento del host heredó stdout redirigido de PowerShell y no capturó la
+pantalla; se corrigió el host opt-in enlazando CONIN$/CONOUT$ de su pseudoconsola.
+Otro intento usó End en un menú que navega con Up/Down; la prueba final sale con
+Up desde la primera entrada. No se contabilizan esos intentos como validación.
+
+**Límites:** no se midió el refresco/pintado de pantalla física ni arranque. El p95
+ConPTY no cierra la meta tecla-a-pantalla <16 ms. El muestreo de RAM/CPU corresponde
+a un fixture mínimo y proceso sin servicios; no acredita RAM global <50 MiB,
+varios documentos, Unicode/grafemas, doble grupo nativo ni reposo universal. No es
+matriz Linux/terminales/DPI/IME ni aceptación GUI. Cancelación es cooperativa;
+un proveedor que ignore token puede bloquear su worker/join. La base actual es
+por documento; identidad de proyecto, escaneos por lotes, Search Plus de proyecto
+y proveedores Progress reales aún requieren integración. Search activo y Explorer
+siguen síncronos. M2A continúa abierto; AVM M3, CI/Git con escritura M5 y plugins
+externos post-M5. Detalle de APIs, cuotas, método y próximos pasos en
+[F3_PRESENTATION_TASKS.md](F3_PRESENTATION_TASKS.md).

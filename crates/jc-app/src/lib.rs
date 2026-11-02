@@ -8,12 +8,17 @@
 mod command;
 mod dialog;
 mod focus;
+mod jobs;
 mod keymap;
 mod menu;
 mod panels;
 mod panes;
 mod tabs;
 mod workbench;
+pub use jobs::{
+    Cancellation, CompletedTask, JobId, JobKey, JobLimits, JobSystem, SubmitError, TaskFailure,
+    TaskItem, TaskOutput, TaskProvider, TaskSnapshot, TaskStamp, TaskStatus, Wakeup,
+};
 
 pub use command::{
     default_registry, CommandCategory, CommandContext, CommandId, CommandRegistry, CommandSpec,

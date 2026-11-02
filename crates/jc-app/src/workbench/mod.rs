@@ -151,6 +151,9 @@ pub struct Workbench {
 }
 
 impl Workbench {
+    pub fn document_by_id(&self, id: DocumentId) -> Option<&EditorDocument> {
+        self.documents.iter().find(|document| document.id == id)
+    }
     pub fn tabs(&self) -> &TabManager {
         &self.tabs
     }
@@ -444,17 +447,11 @@ impl Workbench {
     }
 
     pub fn push_output(&mut self, line: impl Into<String>) {
-        self.output.push(line.into());
-        if self.output.len() > 2000 {
-            self.output.drain(..self.output.len() - 2000);
-        }
+        append_log(&mut self.output, line.into(), 2000);
     }
 
     pub fn push_problem(&mut self, line: impl Into<String>) {
-        self.problems.push(line.into());
-        if self.problems.len() > 1000 {
-            self.problems.drain(..self.problems.len() - 1000);
-        }
+        append_log(&mut self.problems, line.into(), 1000);
     }
 
     pub fn clear_problems(&mut self) {
@@ -884,4 +881,28 @@ fn title_for_path(path: &Path, fallback: &str) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or(fallback)
         .to_owned()
+}
+
+fn append_log(log: &mut Vec<String>, mut line: String, max_lines: usize) {
+    const BYTES: usize = 256 * 1024;
+    const LINE: usize = 4096;
+    const MARKER: &str = "… [truncated]";
+    if line.len() > LINE {
+        let mut end = LINE - MARKER.len();
+        while !line.is_char_boundary(end) {
+            end -= 1;
+        }
+        line.truncate(end);
+        line.push_str(MARKER);
+    }
+    line.shrink_to_fit();
+    log.push(line);
+    let mut bytes = log
+        .iter()
+        .map(|line| line.capacity() + std::mem::size_of::<String>())
+        .sum::<usize>();
+    while log.len() > max_lines || bytes > BYTES {
+        let first = log.remove(0);
+        bytes -= first.capacity() + std::mem::size_of::<String>();
+    }
 }

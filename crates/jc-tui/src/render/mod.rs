@@ -1,13 +1,16 @@
 mod overlays;
 
-use crate::app::TuiApp;
+use crate::app::{Presentation, TuiApp};
 use crate::screen::{CellStyle, Screen};
 use crate::state::UiOverlay;
 use jc_app::{BottomPanel, PaneId, PrimaryFocus, SidebarView};
 use jc_languages::detect;
 use std::ops::Range;
 
-pub fn render(app: &mut TuiApp, width: u16, height: u16) -> Screen {
+pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
+    let app = frame.app;
+    let width = frame.layout.width;
+    let height = frame.layout.height;
     let mut screen = Screen::new(width, height);
     if width < 40 || height < 10 {
         screen.text(0, 0, "JC-IDE: terminal too small (minimum 40x10)");
@@ -18,19 +21,11 @@ pub fn render(app: &mut TuiApp, width: u16, height: u16) -> Screen {
     draw_tabs(app, &mut screen);
 
     let status_y = height - 1;
-    let bottom_height = if app.panels.bottom_visible() {
-        ((height - 4) / 3).clamp(4, 9)
-    } else {
-        0
-    };
+    let bottom_height = frame.layout.bottom_height;
     let content_top = 2;
     let content_bottom = status_y.saturating_sub(bottom_height);
-    let content_height = content_bottom.saturating_sub(content_top);
-    let sidebar_width = if app.panels.sidebar_visible() {
-        (width / 4).clamp(18, 28).min(width.saturating_sub(20))
-    } else {
-        0
-    };
+    let content_height = frame.layout.content_height;
+    let sidebar_width = frame.layout.sidebar_width;
     if sidebar_width > 0 {
         draw_sidebar(
             app,
@@ -42,36 +37,20 @@ pub fn render(app: &mut TuiApp, width: u16, height: u16) -> Screen {
         );
         screen.vline(sidebar_width, content_top, content_height, '│');
     }
-    let editor_x = sidebar_width.saturating_add(u16::from(sidebar_width > 0));
-    let editor_width = width.saturating_sub(editor_x);
-    // Keep both groups alive when space only permits the focused one.
-    let two_columns = app.workbench.panes().is_split() && editor_width >= 65;
-    let pane_width = if two_columns {
-        (editor_width - 1) / 2
-    } else {
-        editor_width
-    };
-    let number_width = app
-        .workbench
-        .active_document()
-        .and_then(|d| app.workbench.line_count_for_tab(d.tab_id))
-        .map_or(3, |count| {
-            (count.max(1).to_string().len() as u16).clamp(3, 7)
-        });
-    app.workbench.reveal_active_pane(
-        usize::from(content_height.saturating_sub(1)),
-        usize::from(pane_width.saturating_sub(number_width + 2)),
-    );
+    let editor_x = frame.layout.editor_x;
+    let editor_width = frame.layout.editor_width;
+    let two_columns = frame.layout.two_columns;
+    let pane_width = frame.layout.pane_width;
     if two_columns {
         draw_editor(
-            app,
+            frame,
             &mut screen,
             PaneId::Primary,
             (editor_x, content_top, pane_width, content_height),
         );
         screen.vline(editor_x + pane_width, content_top, content_height, '│');
         draw_editor(
-            app,
+            frame,
             &mut screen,
             PaneId::Secondary,
             (
@@ -83,7 +62,7 @@ pub fn render(app: &mut TuiApp, width: u16, height: u16) -> Screen {
         );
     } else {
         draw_editor(
-            app,
+            frame,
             &mut screen,
             app.workbench.panes().active(),
             (editor_x, content_top, editor_width, content_height),
@@ -93,7 +72,7 @@ pub fn render(app: &mut TuiApp, width: u16, height: u16) -> Screen {
     if bottom_height > 0 {
         screen.hline(0, content_bottom, width, '─');
         draw_bottom(
-            app,
+            frame,
             &mut screen,
             0,
             content_bottom + 1,
@@ -101,7 +80,7 @@ pub fn render(app: &mut TuiApp, width: u16, height: u16) -> Screen {
             bottom_height.saturating_sub(1),
         );
     }
-    draw_status(app, &mut screen, status_y);
+    draw_status(frame, &mut screen, status_y);
     overlays::draw(app, &mut screen);
     screen
 }
@@ -220,7 +199,13 @@ fn draw_sidebar(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, h
     }
 }
 
-fn draw_editor(app: &TuiApp, screen: &mut Screen, pane: PaneId, area: (u16, u16, u16, u16)) {
+fn draw_editor(
+    frame: &Presentation<'_>,
+    screen: &mut Screen,
+    pane: PaneId,
+    area: (u16, u16, u16, u16),
+) {
+    let app = frame.app;
     let (x, y, width, height) = area;
     if width < 6 || height == 0 {
         return;
@@ -259,7 +244,7 @@ fn draw_editor(app: &TuiApp, screen: &mut Screen, pane: PaneId, area: (u16, u16,
     );
     let y = y + 1;
     let height = height.saturating_sub(1);
-    let Some(document) = document else {
+    let Some(_document) = document else {
         screen.text(x + 2, y + 2, "JC-IDE");
         screen.text_styled(
             x + 2,
@@ -272,7 +257,7 @@ fn draw_editor(app: &TuiApp, screen: &mut Screen, pane: PaneId, area: (u16, u16,
         );
         return;
     };
-    let Some(line_count) = app.workbench.line_count_for_tab(document.tab_id) else {
+    let Some(line_count) = frame.editor(pane).line_count else {
         screen.text(
             x + 2,
             y + 2,
@@ -283,9 +268,9 @@ fn draw_editor(app: &TuiApp, screen: &mut Screen, pane: PaneId, area: (u16, u16,
         );
         return;
     };
-    let cursor = app
-        .workbench
-        .position_for_pane(pane)
+    let cursor = frame
+        .editor(pane)
+        .position
         .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
     let number_width = (line_count.max(1).to_string().len() as u16).clamp(3, 7);
     let text_x = x + number_width + 2;
@@ -306,16 +291,13 @@ fn draw_editor(app: &TuiApp, screen: &mut Screen, pane: PaneId, area: (u16, u16,
         let row_y = y + row as u16;
         let number = format!("{:>width$} ", line_index + 1, width = number_width as usize);
         screen.text_styled(x, row_y, &number, CellStyle::Dim);
-        let visible = app
-            .workbench
-            .visible_line(
-                document.tab_id,
-                line_index,
-                hscroll,
-                usize::from(text_width),
-            )
-            .unwrap_or_default();
-        for (target, (ch, source_offset)) in visible.into_iter().enumerate() {
+        let visible = frame
+            .editor(pane)
+            .rows
+            .get(row)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        for (target, (ch, source_offset)) in visible.iter().copied().enumerate() {
             let style = if selection
                 .as_ref()
                 .is_some_and(|range| contains_byte(range, source_offset))
@@ -341,7 +323,15 @@ fn draw_editor(app: &TuiApp, screen: &mut Screen, pane: PaneId, area: (u16, u16,
     }
 }
 
-fn draw_bottom(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, height: u16) {
+fn draw_bottom(
+    frame: &Presentation<'_>,
+    screen: &mut Screen,
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+) {
+    let app = frame.app;
     if height == 0 {
         return;
     }
@@ -401,7 +391,7 @@ fn draw_bottom(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, he
             .skip(start)
             .take(available)
             .map(|(i, range)| {
-                app.workbench.search_match_position(i).map_or_else(
+                frame.search_position(i).map_or_else(
                     || format!("{}: bytes {}..{}", i + 1, range.start, range.end),
                     |position| {
                         format!(
@@ -440,7 +430,8 @@ fn draw_bottom(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, he
     }
 }
 
-fn draw_status(app: &TuiApp, screen: &mut Screen, y: u16) {
+fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
+    let app = frame.app;
     screen.fill_row_styled(y, ' ', CellStyle::Reverse);
     let left = if let Some(path) = app.workbench.active_path() {
         let language = detect(&path.to_string_lossy()).id;
@@ -448,9 +439,8 @@ fn draw_status(app: &TuiApp, screen: &mut Screen, y: u16) {
             .workbench
             .active_encoding()
             .map_or("encoding?", |e| e.name());
-        let position = app
-            .workbench
-            .active_position()
+        let position = frame
+            .status_position
             .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
         format!(
             " {} | {} | {} | Ln {} Col {} ",
@@ -530,7 +520,8 @@ mod tests {
     #[test]
     fn empty_app_renders_without_panicking() {
         let mut app = TuiApp::new(crate::state::LaunchOptions::default());
-        let screen = render(&mut app, 80, 24);
+        let frame = app.prepare_frame(80, 24);
+        let screen = render(&frame);
         assert!((0..screen.height()).any(|row| screen.row_text(row).contains("JC-IDE")));
         let _ = Workbench::default();
     }

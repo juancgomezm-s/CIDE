@@ -1,26 +1,45 @@
-use crate::screen::{CellStyle, Screen};
-use crossterm::cursor::{Hide, MoveTo, Show};
-use crossterm::style::{Attribute, Print, SetAttribute};
-use crossterm::terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{execute, queue};
-use std::io::{self, Stdout, Write};
+use crate::screen::Screen;
+use crate::FrameEncoder;
+use crossterm::cursor::{Hide, Show};
+use crossterm::event::{
+    DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
+};
+use crossterm::execute;
+use crossterm::style::{Attribute, SetAttribute};
+use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use std::io::{self, Stdout};
 
 pub struct TerminalSession {
     stdout: Stdout,
     restored: bool,
+    encoder: FrameEncoder,
 }
 
 impl TerminalSession {
     pub fn enter() -> io::Result<Self> {
         terminal::enable_raw_mode()?;
         let mut stdout = io::stdout();
-        if let Err(error) = execute!(stdout, EnterAlternateScreen, Hide) {
+        if let Err(error) = execute!(
+            stdout,
+            EnterAlternateScreen,
+            EnableBracketedPaste,
+            EnableFocusChange,
+            Hide
+        ) {
+            let _ = execute!(
+                stdout,
+                DisableBracketedPaste,
+                DisableFocusChange,
+                Show,
+                LeaveAlternateScreen
+            );
             let _ = terminal::disable_raw_mode();
             return Err(error);
         }
         Ok(Self {
             stdout,
             restored: false,
+            encoder: FrameEncoder::default(),
         })
     }
 
@@ -28,33 +47,11 @@ impl TerminalSession {
         terminal::size()
     }
 
+    pub fn invalidate(&mut self) {
+        self.encoder.invalidate();
+    }
     pub fn draw(&mut self, screen: &Screen) -> io::Result<()> {
-        queue!(self.stdout, Hide, MoveTo(0, 0), Clear(ClearType::All))?;
-        for y in 0..screen.height() {
-            queue!(self.stdout, MoveTo(0, y))?;
-            let mut active = CellStyle::Normal;
-            queue!(self.stdout, SetAttribute(Attribute::Reset))?;
-            for x in 0..screen.width() {
-                let cell = screen.cell(x, y);
-                if cell.style != active {
-                    active = cell.style;
-                    let attribute = match active {
-                        CellStyle::Normal => Attribute::Reset,
-                        CellStyle::Reverse => Attribute::Reverse,
-                        CellStyle::Dim => Attribute::Dim,
-                    };
-                    queue!(self.stdout, SetAttribute(attribute))?;
-                }
-                queue!(self.stdout, Print(cell.ch))?;
-            }
-            queue!(self.stdout, SetAttribute(Attribute::Reset))?;
-        }
-        if let Some((x, y)) = screen.cursor() {
-            queue!(self.stdout, MoveTo(x, y), Show)?;
-        } else {
-            queue!(self.stdout, Hide)?;
-        }
-        self.stdout.flush()
+        self.encoder.draw_to(&mut self.stdout, screen).map(|_| ())
     }
 
     pub fn restore(&mut self) -> io::Result<()> {
@@ -66,6 +63,8 @@ impl TerminalSession {
             self.stdout,
             SetAttribute(Attribute::Reset),
             Show,
+            DisableBracketedPaste,
+            DisableFocusChange,
             LeaveAlternateScreen
         );
         let raw_result = terminal::disable_raw_mode();

@@ -4,7 +4,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M2 en desarrollo — F1/F2 implementados y validados localmente: vistas independientes, transacciones, lectura por rangos, índice textual incremental y cuotas de historial/caché. Próximo incremento F3: presentación y tareas. GUI con dirección visual de Sublime Text, símbolos y Search Plus de proyecto pendientes.**
+**Estado: M2 en desarrollo — F1/F2/F3 implementados con evidencia local: vistas independientes, transacciones, rangos/índices, cuotas, presentación de solo lectura, terminal incremental y tareas acotadas/versionadas. Metas globales de rendimiento abiertas. Próximo incremento funcional: Search Plus de proyecto. GUI con dirección visual de Sublime Text y símbolos pendientes.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
@@ -56,7 +56,7 @@ Los offsets del núcleo son bytes, no caracteres ni columnas visuales. `jc-text`
 
 La TUI dibuja dos grupos Primary/Secondary con cursor, selección y viewport independientes. Comparten `TabId`, `FileSession` y undo; los offsets se ajustan al editar y deshacer. Pin/unpin, scroll vertical vinculado, apertura lateral y back/forward se ejecutan desde el registro central, menús y palette. En terminales estrechas se muestra el grupo activo conservando el otro. Git/diff, símbolos e includes/RUN siguen pendientes; M2A permanece abierto.
 
-F1 retiró los campos espejo de cursor/selección/scroll del documento. Los grupos poseen vistas persistentes con ViewId y comparten el documento/undo. Replace-all publica una sola transacción; cerrar una vista preserva otras referencias. F2 ya sustituyó la decodificación completa de navegación/render por proyección compartida y rangos visibles; F3 sigue pendiente. Véanse [avance F1](docs/F1_DOCUMENT_VIEWS_TRANSACTIONS.md), [arquitectura](docs/ARQUITECTURA.md) y [plan](docs/PLAN.md).
+F1 retiró los campos espejo de cursor/selección/scroll del documento. Los grupos poseen vistas persistentes con ViewId y comparten el documento/undo. Replace-all publica una sola transacción; cerrar una vista preserva otras referencias. F2 ya sustituyó la decodificación completa de navegación/render por proyección compartida y rangos visibles; F3 separa preparación/render, emite diferencias y entrega trabajos internos sin otra tecla. Véanse [avance F3](docs/F3_PRESENTATION_TASKS.md), [avance F1](docs/F1_DOCUMENT_VIEWS_TRANSACTIONS.md), [arquitectura](docs/ARQUITECTURA.md) y [plan](docs/PLAN.md).
 
 En este equipo se preparó Rust 1.85.1 dentro de `work/toolchain`, sin cambiar el PATH del usuario. El wrapper PowerShell también admite un Cargo ya instalado:
 

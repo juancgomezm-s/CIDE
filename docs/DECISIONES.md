@@ -151,3 +151,12 @@ Implementada en F2 sobre `ddc9d41`. Conservar el vector de piezas y añadir un �
 Navegación, columnas y viewport consumen una proyección compartida por documento/revisión/encoding. EOL y checkpoints se actualizan en el intervalo afectado; las cachés de layout tienen cuota de 1 MiB/documento. El historial aplica 1024 pasos y 8 MiB de carga lógica por defecto; recolección de fuentes alcanzables preserva revisiones y undos retenidos. El snapshot de lectura actual es prestado; ownership/cuotas de jobs asíncronos pertenecen a F3.
 
 Las cuotas no acreditan <50 MiB de RAM privada. Medir picos fríos, índices de líneas, capacidad de fuentes, muchos documentos y tecla-a-pantalla antes de aceptar objetivos globales. F3 sigue pendiente; sin cambios en D13 (CI remoto en M5), D14 (plugins post-M5) ni la referencia visual de Sublime Text. Datos y método en [F2_RANGES_INDEX_MEMORY.md](F2_RANGES_INDEX_MEMORY.md).
+
+
+## D20 — Presentación prestada y proveedores internos con cuotas
+
+Implementada localmente en F3 sobre `e72856f` (2026-11-02). Preparar viewport/texto antes de componer una `Presentation` prestada de solo lectura; el encoder terminal conserva solo frames entregados con éxito y emite diferencias. El loop despierta por entrada/completion, drena lotes acotados y bloquea en reposo.
+
+Para workers internos elegir snapshots propios de rangos con cuotas, evitando prolongar préstamos de DocumentRead o clonar Document/FileSession/undo. JobId monotónico representa generación; validar documento/revisión/encoding/vista y clave vigente en cada entrega. Resultados tipados y propuestas sin aplicación automática; una aceptación futura usa la transacción F1. Dos workers lazy, ocho trabajos, 2 MiB por snapshot/8 MiB total, 64 elementos/64 KiB por resultado y 2 s por deadline predeterminados. Cancelación y timeout son cooperativos: proveedores confiables deben comprobar token y acotar sus operaciones; no se promete preempción ni aislamiento de plugins.
+
+No incorporar proveedores ficticios a comandos visibles ni iniciar servicios al abrir archivos. Search Plus de proyecto necesita generación de contexto y escaneo por lotes; Progress real sigue M3. Los datos locales de inyección a VT no certifican pantalla física, RAM global ni cierre de M2A. Método y límites en [F3_PRESENTATION_TASKS.md](F3_PRESENTATION_TASKS.md). No cambia D13 (CI en M5), D14 (plugins post-M5) ni Sublime Text como dirección visual.

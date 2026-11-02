@@ -35,6 +35,65 @@ fn text(app: &mut TuiApp, value: &str) {
 }
 
 #[test]
+fn composing_prepared_frames_changes_neither_views_nor_text_caches() {
+    let mut app = TuiApp::new(LaunchOptions::default());
+    let tab = app
+        .workbench
+        .new_file("readonly-frame.txt", TextEncoding::Utf8);
+    app.workbench.insert_text(&"abc\r\n".repeat(100)).unwrap();
+    app.workbench.split_editor_right();
+    let presentation = app.prepare_frame(140, 30);
+    let views = format!("{:?}", presentation.app.workbench.panes());
+    let stats = presentation.app.workbench.text_statistics(tab);
+    let first = crate::render::render(&presentation);
+    let second = crate::render::render(&presentation);
+    assert_eq!(first, second);
+    assert_eq!(views, format!("{:?}", presentation.app.workbench.panes()));
+    assert_eq!(stats, presentation.app.workbench.text_statistics(tab));
+}
+
+fn diagnostic_provider(
+    snapshot: &jc_app::TaskSnapshot,
+    _: &jc_app::Cancellation,
+    out: &mut jc_app::TaskOutput,
+) -> Result<(), jc_app::TaskFailure> {
+    out.push(jc_app::TaskItem::Diagnostic {
+        range: snapshot.range.start..snapshot.range.start + 1,
+        message: "background diagnostic".to_owned(),
+    })?;
+    out.push(jc_app::TaskItem::ProposedEdit {
+        range: snapshot.range.clone(),
+        text: "proposed".to_owned(),
+    })
+}
+#[test]
+fn background_completion_wakes_and_updates_panels_without_input_or_applying_edits() {
+    use std::time::Duration;
+    let wakeup = jc_app::Wakeup::default();
+    let mut app = TuiApp::with_wakeup(LaunchOptions::default(), wakeup.clone());
+    app.workbench.new_file("task-frame.txt", TextEncoding::Utf8);
+    app.workbench.insert_text("abc").unwrap();
+    let id = app.workbench.active_document().unwrap().id;
+    let ticket = wakeup.ticket();
+    app.tasks
+        .submit(
+            &app.workbench,
+            jc_app::JobKey(1),
+            id,
+            None,
+            0..3,
+            diagnostic_provider,
+        )
+        .unwrap();
+    wakeup.wait(ticket, Some(Duration::from_secs(1)));
+    assert_ne!(wakeup.ticket(), ticket);
+    assert!(app.poll_tasks().changed);
+    assert!(app.workbench.problems()[0].contains("background diagnostic"));
+    assert!(app.workbench.output()[0].contains("proposed"));
+    assert_eq!(app.workbench.active_bytes().unwrap(), b"abc");
+}
+
+#[test]
 fn drawing_shared_views_reads_visible_ranges_without_rescanning_the_document() {
     let mut app = TuiApp::new(LaunchOptions::default());
     let tab = app.workbench.new_file("f2-render.txt", TextEncoding::Utf8);
@@ -42,9 +101,9 @@ fn drawing_shared_views_reads_visible_ranges_without_rescanning_the_document() {
         .insert_text(&"abcdefg\r\n".repeat(100000))
         .unwrap();
     app.workbench.split_editor_right();
-    app.render(140, 30);
+    app.frame(140, 30);
     let before = app.workbench.text_statistics(tab).unwrap();
-    let screen = app.render(140, 30);
+    let screen = app.frame(140, 30);
     let after = app.workbench.text_statistics(tab).unwrap();
     assert_eq!(before.0, after.0);
     assert!(after.1 - before.1 < 65536);
@@ -80,17 +139,17 @@ fn keyboard_and_palette_drive_split_pin_history_and_responsive_rendering() {
     let second = app.workbench.new_file("right.txt", TextEncoding::Utf8);
     assert_eq!(app.workbench.panes().active(), PaneId::Primary);
     text(&mut app, "right text");
-    let wide = app.render(140, 30);
+    let wide = app.frame(140, 30);
     let headers = wide.row_text(2);
     assert!(headers.contains("Group 1: right.txt"));
     assert!(headers.contains("Group 2: left.txt [PIN]"));
     assert!(wide.row_text(3).contains("right text"));
     assert!(wide.row_text(3).contains("left text"));
-    let narrow = app.render(45, 15);
+    let narrow = app.frame(45, 15);
     assert!(narrow.row_text(2).contains("Group 1: right.txt"));
     assert!(!narrow.row_text(2).contains("Group 2"));
     key(&mut app, KeyCode::Char('2'), KeyModifiers::CONTROL);
-    let narrow = app.render(45, 15);
+    let narrow = app.frame(45, 15);
     assert!(narrow.row_text(2).contains("Group 2: left.txt"));
     key(&mut app, KeyCode::Char('1'), KeyModifiers::CONTROL);
     key(&mut app, KeyCode::Left, KeyModifiers::ALT);
@@ -138,7 +197,7 @@ fn view_menu_scrolls_to_the_selected_command_in_a_short_terminal() {
         .unwrap();
     app.dispatch(CommandId::MenuView);
     key(&mut app, KeyCode::Up, KeyModifiers::NONE); // wrap to Navigate Forward
-    let screen = app.render(45, 10);
+    let screen = app.frame(45, 10);
     assert!((1..9).any(|row| screen.row_text(row).contains("Navigate Forward")));
     // Menu interiors must be opaque even when shorter labels leave spare cells.
     for row in 2..8 {

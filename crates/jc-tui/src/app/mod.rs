@@ -4,6 +4,8 @@ mod explorer;
 mod menus;
 mod overlays;
 mod paths;
+mod presentation;
+pub(crate) use presentation::Presentation;
 #[cfg(test)]
 mod tests;
 
@@ -29,12 +31,16 @@ pub struct TuiApp {
     pub(crate) project_root: Option<PathBuf>,
     pub(crate) explorer: explorer::ExplorerState,
     pub(crate) bottom_selected: usize,
+    pub(crate) tasks: jc_app::JobSystem,
     should_exit: bool,
     default_encoding: Option<TextEncoding>,
 }
 
 impl TuiApp {
     pub fn new(options: LaunchOptions) -> Self {
+        Self::with_wakeup(options, jc_app::Wakeup::default())
+    }
+    pub(crate) fn with_wakeup(options: LaunchOptions, wakeup: jc_app::Wakeup) -> Self {
         let registry = default_registry();
         let keymap = default_keymap();
         let menus = default_menu_model();
@@ -53,6 +59,8 @@ impl TuiApp {
             project_root: None,
             explorer: explorer::ExplorerState::default(),
             bottom_selected: 0,
+            tasks: jc_app::JobSystem::new(jc_app::JobLimits::default(), wakeup)
+                .expect("valid default task quotas"),
             should_exit: false,
             default_encoding: options.encoding,
         };
@@ -64,8 +72,54 @@ impl TuiApp {
         app
     }
 
-    pub fn render(&mut self, width: u16, height: u16) -> Screen {
-        render::render(self, width, height)
+    pub fn frame(&mut self, width: u16, height: u16) -> Screen {
+        let presentation = self.prepare_frame(width, height);
+        render::render(&presentation)
+    }
+
+    pub(crate) fn poll_tasks(&mut self) -> TaskUpdate {
+        let mut update = TaskUpdate::default();
+        for completion in self.tasks.poll(&self.workbench, 4) {
+            if completion.status == jc_app::TaskStatus::Panicked {
+                update.recover = true;
+            }
+            if !completion.applicable {
+                if completion.current {
+                    self.status = match completion.status {
+                        jc_app::TaskStatus::TimedOut => "Background task timed out",
+                        jc_app::TaskStatus::LimitExceeded => "Task result exceeded its size limit",
+                        jc_app::TaskStatus::InvalidRange => {
+                            "Background task returned an invalid result"
+                        }
+                        _ => "Background task failed",
+                    }
+                    .to_owned();
+                    update.changed = true;
+                }
+                continue;
+            }
+            for item in completion.output.items() {
+                match item {
+                    jc_app::TaskItem::Diagnostic { range, message } => {
+                        self.workbench.push_problem(format!(
+                            "document {} bytes {}..{}: {}",
+                            completion.stamp.document.0, range.start, range.end, message
+                        ))
+                    }
+                    jc_app::TaskItem::Message(message) => {
+                        self.workbench.push_output(message.clone())
+                    }
+                    jc_app::TaskItem::ProposedEdit { range, text } => {
+                        self.workbench.push_output(format!(
+                            "Suggested replacement for bytes {}..{}: {}",
+                            range.start, range.end, text
+                        ))
+                    }
+                }
+                update.changed = true;
+            }
+        }
+        update
     }
 
     pub fn should_exit(&self) -> bool {
@@ -91,4 +145,10 @@ impl TuiApp {
     pub(crate) fn request_exit(&mut self) {
         self.should_exit = true;
     }
+}
+
+#[derive(Default)]
+pub(crate) struct TaskUpdate {
+    pub changed: bool,
+    pub recover: bool,
 }

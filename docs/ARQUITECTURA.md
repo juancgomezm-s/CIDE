@@ -2,7 +2,7 @@
 
 JC-IDE separa almacenamiento de bytes, interpretación textual, estado de aplicación, servicios opcionales y presentación. Esta es la arquitectura de destino; el estado implementado y sus diferencias están en la [auditoría del 2026-11-01](AUDITORIA_ECODE_ARQUITECTURA.md).
 
-F1 ya separó documento y vistas, retiró campos espejo e introdujo transacciones multiposición y mapas completos. El [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) documenta la implementación real. F2 ya incorpora rangos, índice por revisión, EOL/checkpoints incrementales y cuotas. La presentación pura y los jobs siguen pendientes en F3. El [checkpoint F2](F2_RANGES_INDEX_MEMORY.md) distingue resultados del modelo de objetivos de RAM/latencia globales.
+F1 ya separó documento y vistas, retiró campos espejo e introdujo transacciones multiposición y mapas completos. El [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) documenta la implementación real. F2 ya incorpora rangos, índice por revisión, EOL/checkpoints incrementales y cuotas. F3 separa preparación y composición de solo lectura, emite diffs de celdas y añade snapshots propios acotados, generaciones, cancelación cooperativa y despertar por resultados. El [checkpoint F3](F3_PRESENTATION_TASKS.md) precisa cuotas y evidencia; la latencia física y RAM global siguen abiertas. El [checkpoint F2](F2_RANGES_INDEX_MEMORY.md) distingue resultados del modelo de objetivos de RAM/latencia globales.
 
 ## Capas
 
@@ -21,7 +21,7 @@ La regla central es que una acción de negocio existe una sola vez como `Command
 
 ## Propiedad del estado
 
-Propietarios lógicos de destino: F1 los implementa mediante colecciones en Workbench y grupos; DocumentId/ViewId ya existen. F2 implementa TextProjection y lecturas prestadas por revisión; snapshots propios de workers y presentación pura siguen en F3.
+Propietarios lógicos de destino: F1 los implementa mediante colecciones en Workbench y grupos; DocumentId/ViewId ya existen. F2 implementa TextProjection y lecturas prestadas por revisión; F3 implementa snapshots propios de rangos para workers y presentación prestada de solo lectura; no son clones de documentos ni otro motor editable.
 
 | Propietario | Contiene | No contiene |
 |---|---|---|
@@ -75,6 +75,8 @@ La UI coordina mutaciones en un único flujo. Workers reciben snapshots inmutabl
 Búsqueda, exploración de archivos, Git y lenguajes usan concurrencia, colas y resultados acotados, cancelación y presupuesto. El loop de UI debe despertarse por entrada o finalización sin depender de otra tecla. Search Plus entrega lotes y da prioridad a contenido sucio abierto frente al archivo de disco. Una cancelación o cierre descarta entregas tardías y libera snapshots.
 
 En reemplazo de proyecto la atomicidad es por documento/archivo y se informa avance/conflictos: no se promete una transacción atómica de todo el filesystem. Preview y validación de revisión/huella preceden a cada escritura. Progress/AVM solo se inicia a petición explícita; navegación estática no ejecuta programas.
+
+La implementación F3 se limita a tareas internas de documento con vista opcional. Son dos workers lazy, ocho trabajos admitidos, snapshots de 2 MiB/8 MiB total, resultados de 64 elementos/64 KiB y deadline cooperativo de 2 s por defecto. Una cola ocupada devuelve Busy; no se fuerza la interrupción de Rust arbitrario. La entrega vuelve a validar documento/revisión/encoding/vista/generación. Configuración de proyecto, escaneo por lotes y proveedores reales aún deben integrarse; propuestas no se aplican automáticamente. Véase el checkpoint F3 para el loop y sus cuotas de entrada/logs.
 
 ## Ligereza
 

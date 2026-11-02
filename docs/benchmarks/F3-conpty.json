@@ -1,0 +1,11 @@
+{
+  "samples": 31,
+  "injection_to_vt_p50_ms": 15.7802,
+  "injection_to_vt_p95_ms": 16.055,
+  "private_bytes": 1089536,
+  "keyboard_output_bytes": 1150,
+  "idle_cpu_ms": 0.0,
+  "clears_during_keys": 0,
+  "resize_clears": 1,
+  "exit_code": 0
+}

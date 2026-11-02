@@ -145,6 +145,14 @@ impl Default for PaneManager {
     }
 }
 impl PaneManager {
+    pub(crate) fn tab_for_view(&self, id: ViewId) -> Option<TabId> {
+        self.primary
+            .views
+            .iter()
+            .chain(&self.secondary.views)
+            .find(|view| view.id == id)
+            .map(|view| view.tab)
+    }
     pub fn is_split(&self) -> bool {
         self.secondary_open
     }
