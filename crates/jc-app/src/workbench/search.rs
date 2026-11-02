@@ -147,10 +147,13 @@ impl Workbench {
                 .unwrap()
                 .session
                 .document();
-            work.scanner.step(self.search_limits, |range| {
-                source
-                    .read_range(range)
+            work.scanner.step(self.search_limits, |range, bytes| {
+                for chunk in source
+                    .range_chunks(range)
                     .expect("revision-consistent search range")
+                {
+                    bytes.extend_from_slice(chunk);
+                }
             })
         };
         let changed = !step.matches.is_empty() || step.status != self.search.status;

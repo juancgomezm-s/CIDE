@@ -1,4 +1,4 @@
-# Continuación local — después de S0 Unicode
+# Continuación local — después de optimizar S0 Unicode
 
 F1/F2/F3 están implementados con evidencia local en `m2a/dual-pane-tui`. F1:
 `ddc9d41`; F2: `2423134` + normalización `e72856f`; consultar el log para F3.
@@ -38,16 +38,18 @@ Workbench ni escriben buffers/disco. Propuestas requieren futura aceptación y
 de encoding deberá cancelar/reemplazar explícitamente la clave. El sistema actual
 está ligado a un Workbench y documentos, no a trabajos de proyecto sin documento.
 
-## Siguiente bloque: decoder compartido y aceptación M2A
+## Siguiente bloque: ampliar evidencia y aceptación M2A
 
 - Construir bloques más amplios antes de validar, según pidió el usuario. Reservar
   comprobaciones intermedias para bloqueantes concretos; no repetir suites por retoques.
 - S0 está implementado: rangos cooperativos, Unicode 17 full folding, palabra,
   selección, historial, marcadores y Go to. Un solo matcher sirve documento/proyecto;
   no restaurar el escaneo síncrono, ASCII case-insensitive ni KMP paralelo.
-- Priorizar decoder/scratch y rutas ASCII en el mismo engine, con corpus y coste
-  medidos. S1 p95 de fin subió ~35 % al unificar. Mantener cotas y semántica; no
-  compensar con mayores quotas ni cambiar perfil release sin comparación.
+- Decoder/scratch ya optimizados: `S0_DECODER_OPTIMIZATION.md`. Un iterador
+  prestado sirve también a decode/decode_fragment; buffer reutilizado y rechazo
+  ASCII sin prefijo dentro del mismo matcher. Proyecto p95 18,649 ms frente a
+  40,930 ms contemporáneos y 27,457 ms S1 histórico en el mismo corpus. No extrapolar
+  esa mejora a todos los casos ni afirmar mejora de cancelación. Conservar cuotas.
 - Ampliar corpus Unicode/legacy, líneas extremas/frío, muchas piezas/documentos y
   teclado. Validar al cerrar ese bloque. Regex solo con motor real y presupuesto;
   no existe todavía, no anunciar cierre completo de Search Plus/M2A.
@@ -60,7 +62,8 @@ está ligado a un Workbench y documentos, no a trabajos de proyecto sin document
 
 ## Medición y límites
 
-S0 pasó suite de 186 pruebas Windows más regresiones finales dirigidas (188 casos distintos), fmt, Clippy y build release (ver VALIDACION). Benchmarks opt-in:
+El bloque de optimización pasó la suite completa de 191 pruebas Windows, fmt,
+Clippy y release, y ambos flujos ConPTY (ver VALIDACION y S0_DECODER_OPTIMIZATION). Benchmarks opt-in:
 `document_search_bench`, `project_search_bench`, `f3_pipeline`, `f3_jobs`; smoke Windows `scripts/smoke-conpty.ps1 -ProjectSearch`, tras compilar
 `f3_console_host` y `jc-ide-tui` en release. Método en S0_DOCUMENT_SEARCH, S1_PROJECT_SEARCH y F3_PRESENTATION_TASKS.
 
@@ -80,7 +83,7 @@ No hacer push ni operaciones remotas sin autorización. Git con escritura y CI e
 M5; plugins externos post-M5. Entregar evidencia y commit local sin reescribir
 historial.
 
-S0 medido en 16 MiB: programar p95 3 µs, slot p95 417 µs y fin p95 401671 µs;
+S0 optimizado medido en 16 MiB: programar p95 3 µs, slot p95 180 µs y fin p95 178829 µs;
 son tiempos de modelo, no pantalla física. PowerShell tuvo bloqueo de inicialización
 en esta sesión: se validó con Cargo directo en el mismo entorno de proceso y el host
 C# existente compilado con csc. No se modificó configuración del sistema. El wrapper

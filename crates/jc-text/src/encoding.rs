@@ -85,69 +85,25 @@ pub struct DecodedText {
 }
 
 pub fn decode(bytes: &[u8], encoding: TextEncoding) -> DecodedText {
-    match encoding {
-        TextEncoding::Utf8 => decode_utf8(bytes, true),
-        TextEncoding::Windows1252 => decode_single_byte(bytes, encoding, cp1252_decode),
-        TextEncoding::Iso8859_1 => decode_single_byte(bytes, encoding, |byte| Some(byte as u32)),
-        TextEncoding::Ibm850 => decode_single_byte(bytes, encoding, cp850_decode),
-    }
+    decode_fragment(bytes, encoding, 0)
 }
 
 pub fn decode_fragment(bytes: &[u8], encoding: TextEncoding, source_start: usize) -> DecodedText {
-    let mut decoded = if encoding == TextEncoding::Utf8 {
-        decode_utf8(bytes, source_start == 0)
-    } else {
-        decode(bytes, encoding)
-    };
-    for offset in &mut decoded.source_offsets {
-        *offset += source_start;
-    }
-    for issue in &mut decoded.issues {
-        issue.source_range.start += source_start;
-        issue.source_range.end += source_start;
-    }
-    decoded.content_start += source_start;
-    decoded
-}
-
-fn decode_utf8(bytes: &[u8], strip_bom: bool) -> DecodedText {
-    let content_start = if strip_bom && bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
-        3
-    } else {
-        0
-    };
+    let scalars = DecodedScalars::new(bytes, encoding, source_start);
+    let content_start = scalars.content_start();
     let mut text = String::new();
     let mut source_offsets = Vec::new();
     let mut issues = Vec::new();
-    let mut cursor = content_start;
-
-    while cursor < bytes.len() {
-        match std::str::from_utf8(&bytes[cursor..]) {
-            Ok(valid) => {
-                append_valid_utf8(valid, cursor, &mut text, &mut source_offsets);
-                cursor = bytes.len();
-            }
-            Err(error) => {
-                let valid_len = error.valid_up_to();
-                if valid_len > 0 {
-                    let valid = std::str::from_utf8(&bytes[cursor..cursor + valid_len])
-                        .expect("valid_up_to identifies UTF-8");
-                    append_valid_utf8(valid, cursor, &mut text, &mut source_offsets);
-                    cursor += valid_len;
-                }
-                if cursor < bytes.len() {
-                    let invalid_len = error.error_len().unwrap_or(1).min(bytes.len() - cursor);
-                    source_offsets.push(cursor);
-                    text.push('�');
-                    issues.push(DecodeIssue {
-                        source_range: cursor..cursor + invalid_len,
-                    });
-                    cursor += invalid_len;
-                }
-            }
+    for scalar in scalars {
+        source_offsets.push(scalar.source_range.start);
+        text.push(scalar.character);
+        if !scalar.valid {
+            issues.push(DecodeIssue {
+                source_range: scalar.source_range,
+            });
         }
     }
-    source_offsets.push(cursor);
+    source_offsets.push(source_start + bytes.len());
     DecodedText {
         text,
         source_offsets,
@@ -156,44 +112,94 @@ fn decode_utf8(bytes: &[u8], strip_bom: bool) -> DecodedText {
     }
 }
 
-fn append_valid_utf8(
-    valid: &str,
-    source_start: usize,
-    text: &mut String,
-    offsets: &mut Vec<usize>,
-) {
-    for (relative, ch) in valid.char_indices() {
-        offsets.push(source_start + relative);
-        text.push(ch);
-    }
+/// A decoded scalar retains its original byte coordinates and validity. Invalid
+/// input is reported, never silently converted into searchable replacement text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedScalar {
+    pub character: char,
+    pub source_range: Range<usize>,
+    pub valid: bool,
 }
 
-fn decode_single_byte(
-    bytes: &[u8],
-    _encoding: TextEncoding,
-    map: fn(u8) -> Option<u32>,
-) -> DecodedText {
-    let mut text = String::with_capacity(bytes.len());
-    let mut source_offsets = Vec::with_capacity(bytes.len() + 1);
-    let mut issues = Vec::new();
-    for (offset, byte) in bytes.iter().copied().enumerate() {
-        source_offsets.push(offset);
-        match map(byte).and_then(char::from_u32) {
-            Some(ch) => text.push(ch),
-            None => {
-                text.push('�');
-                issues.push(DecodeIssue {
-                    source_range: offset..offset + 1,
-                });
-            }
+/// Allocation-free interpretation of a borrowed source range. UTF-8 runs are
+/// validated once, then traversed as chars; single-byte pages use their explicit
+/// mapping. A BOM is stripped only at absolute byte zero, as in decode_fragment.
+pub struct DecodedScalars<'a> {
+    remaining: &'a [u8],
+    chars: std::str::Chars<'a>,
+    invalid_len: usize,
+    encoding: TextEncoding,
+    offset: usize,
+    content_start: usize,
+}
+impl<'a> DecodedScalars<'a> {
+    pub fn new(bytes: &'a [u8], encoding: TextEncoding, source_start: usize) -> Self {
+        let bom = usize::from(
+            source_start == 0
+                && encoding == TextEncoding::Utf8
+                && bytes.starts_with(&[0xef, 0xbb, 0xbf]),
+        ) * 3;
+        Self {
+            remaining: &bytes[bom..],
+            chars: "".chars(),
+            invalid_len: 0,
+            encoding,
+            offset: source_start + bom,
+            content_start: source_start + bom,
         }
     }
-    source_offsets.push(bytes.len());
-    DecodedText {
-        text,
-        source_offsets,
-        issues,
-        content_start: 0,
+    pub fn content_start(&self) -> usize {
+        self.content_start
+    }
+    #[inline]
+    fn scalar(&mut self, character: char, len: usize, valid: bool) -> DecodedScalar {
+        let start = self.offset;
+        self.offset += len;
+        DecodedScalar {
+            character,
+            source_range: start..self.offset,
+            valid,
+        }
+    }
+}
+impl Iterator for DecodedScalars<'_> {
+    type Item = DecodedScalar;
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(ch) = self.chars.next() {
+                return Some(self.scalar(ch, ch.len_utf8(), true));
+            }
+            if self.invalid_len != 0 {
+                let len = std::mem::take(&mut self.invalid_len);
+                self.remaining = &self.remaining[len..];
+                return Some(self.scalar('\u{fffd}', len, false));
+            }
+            let &byte = self.remaining.first()?;
+            if self.encoding != TextEncoding::Utf8 {
+                self.remaining = &self.remaining[1..];
+                let ch = match self.encoding {
+                    TextEncoding::Windows1252 => cp1252_decode(byte),
+                    TextEncoding::Ibm850 => cp850_decode(byte),
+                    TextEncoding::Iso8859_1 => Some(byte as u32),
+                    TextEncoding::Utf8 => unreachable!(),
+                }
+                .and_then(char::from_u32);
+                return Some(self.scalar(ch.unwrap_or('\u{fffd}'), 1, ch.is_some()));
+            }
+            let valid = match std::str::from_utf8(self.remaining) {
+                Ok(valid) => valid,
+                Err(error) => {
+                    // Retain decode_fragment's grouping, including one-byte
+                    // barriers for an incomplete sequence at the source end.
+                    self.invalid_len = error.error_len().unwrap_or(1);
+                    std::str::from_utf8(&self.remaining[..error.valid_up_to()])
+                        .expect("valid_up_to identifies UTF-8")
+                }
+            };
+            self.remaining = &self.remaining[valid.len()..];
+            self.chars = valid.chars();
+        }
     }
 }
 

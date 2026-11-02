@@ -373,7 +373,9 @@ impl<F: FnMut(Vec<ProjectSearchRow>) -> bool> Scan<'_, F> {
             if self.done() {
                 return;
             }
-            let step = scanner.step(limits, |range| bytes[range].to_vec());
+            let step = scanner.step(limits, |range, buffer| {
+                buffer.extend_from_slice(&bytes[range])
+            });
             for hit in step.matches {
                 let start = hit.range.start;
                 let mut end = (start + 160).min(bytes.len());

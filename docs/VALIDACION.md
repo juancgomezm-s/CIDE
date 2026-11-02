@@ -1,7 +1,7 @@
 # Validación
 
-**Evidencia local más reciente:** S0 literal Unicode y S1 compartido, con suite de
-186 pruebas y regresiones finales dirigidas de vistas (188 casos distintos). Véase S0 al final; las secciones
+**Evidencia local más reciente:** decoder S0 optimizado, suite completa de
+191 pruebas y ambos recorridos ConPTY. Véase el bloque final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
 
 Estado de la primera base preparada antes de publicarla:
@@ -304,3 +304,42 @@ Los límites cooperativos no son preempción dura del allocator/decoder. RAM glo
 cold peaks, latencia hasta pantalla física y aceptación completa M2A siguen abiertas.
 Detalle y siguientes bloques en [S0_DOCUMENT_SEARCH.md](S0_DOCUMENT_SEARCH.md).
 Sin push ni CI remoto; Qwen/GPU y configuración del sistema intactos.
+
+
+## S0 — Optimización del decoder compartido — 2026-11-02
+
+Sobre `570a6eb`: decoder prestado de escalares/rangos/validez en jc-text, reutilizado
+por decode/decode_fragment y el único scanner documento/proyecto. Un buffer de
+fuente retenido por tarea sustituye asignaciones por fragmento; rechazo ASCII sin
+prefijo dentro del mismo matcher. Sin dependencias, cambios de perfil/cuotas ni
+funcionalidad nueva. Se mantienen bytes, Unicode 17, posiciones, revisiones y
+transacciones. [Implementación y mediciones](S0_DECODER_OPTIMIZATION.md).
+
+Validación final local offline: **191 pruebas, 0 fallos**, fmt --check, Clippy
+workspace/all-targets con -D warnings, release del workspace y host ConPTY. Las
+tres regresiones nuevas comprueban bytes inválidos/truncados/BOM/rangos, todos los
+bytes válidos de las tres páginas legacy y 400 matches plegados con reanudación,
+posiciones y lotes acotados. Oráculos Unicode y regresiones de archivos/vistas pasan.
+Se construyó el bloque antes de validar; una regresión material de throughput en
+documento motivó el ajuste ASCII y la comprobación final, no microajustes repetidos.
+
+Mismo corpus de proyecto (4 archivos, 2.097.144 bytes, 64 matches), 5 calentamientos
+y 31 muestras, mismo Rust/perfil/hardware: primer lote p50/p95 antes 8262/10611 µs,
+después 4697/5044 µs; fin 31225/40930 → 17587/18649 µs; cancelar+join
+44/97 → 58/104 µs. Fin p95 baja 54,4 % contemporáneo y queda 32,1 % bajo S1
+histórico (27457 µs) en esta carga. Cancelación sin mejora consistente.
+Documento 16 MiB: schedule p50/p95 2/3 µs, slot p95 650 → 180 µs, fin
+358788/632051 → 89093/178829 µs; cancelación p95 1 → 7 µs. Dispersión elevada,
+sin aislamiento global; no son tiempos tecla-a-pantalla. CSV antes/después y primera
+pasada en benchmarks/S0-decoder-*.csv; método completo en el documento del bloque.
+
+Ambos flujos nativos finales aprobaron: STRASSE/Straße sin otra tecla, F3, Go to
+escalar, reemplazo sin guardar y undo; proyecto con entrega/preview/confirmación y
+undo. Datos en S0-decoder-document-conpty.json y S0-decoder-project-conpty.json.
+Control de cursor hasta VT p95 16,0099/16,0911 ms, no pantalla física. Muestreo
+privado mínimo 1.138.688/1.146.880 bytes previo al flujo, no RAM global ni peak.
+
+No hay contador global de asignaciones/RAM, aceptación Linux/GUI/IME/grafemas,
+regex/AVM ni cierre M2A. Sigue pendiente ampliar corpus Unicode/legacy/frío,
+líneas extremas/muchas piezas y teclado, y aceptar RAM/latencia físicas. Sin CI
+remoto, push ni cambios a Qwen/GPU, servicios o configuración del sistema.

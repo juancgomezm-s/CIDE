@@ -59,7 +59,8 @@ Cuotas predeterminadas:
 | Replace-all | 2 MiB de propuestas textuales, antes de publicar el lote |
 | Go to | Hasta 64 bytes de entrada, sin valores cero/overflow |
 
-El decoder conserva solo un fragmento y contexto, incidencias y offsets; el matcher
+En este checkpoint el decoder conservaba un fragmento, contexto, incidencias y offsets;
+el bloque posterior S0_DECODER_OPTIMIZATION retira esa materialización del scan; el matcher
 guarda un mapa de origen para el prefijo que está coincidiendo. No se escribe un
 Origin por cada escalar ajeno a la consulta. Resultados tipados contienen rango
 de bytes y posición escalar; no se conserva otra lista espejo de posiciones.
@@ -131,8 +132,9 @@ muestras: primer lote p50/p95 7815/9941 µs; fin 30633/37057 µs; cancel+join 48
 [Comparación con matcher compartido](benchmarks/S0-project-shared.csv).
 El p95 de fin subió de 27457 a 37057 µs respecto a S1 (~35 %). Se registra el
 coste de decodificar/producir coordenadas en el engine común; no se afirma una
-mejora de throughput. Optimizar decoder/scratch ASCII en el mismo engine, con
-cargas medidas, queda para otro bloque; no restaurar un motor de bytes paralelo.
+mejora de throughput. Ese coste se abordó después en el [bloque de optimización](S0_DECODER_OPTIMIZATION.md):
+decoder prestado y memoria reutilizada, manteniendo un solo motor. Sus datos antes/
+después y controles finales sustituyen esta medición como evidencia más reciente.
 
 El ejecutable real pasó recorridos propios en ConPTY privada UTF-8: escribir
 STRASSE y recibir un match de Straße sin otra tecla, F3, Ctrl+G escalar, reemplazo

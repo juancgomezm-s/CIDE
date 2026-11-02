@@ -1,7 +1,5 @@
 //! Shared streaming literal matcher for document and project search.
-use jc_text::{
-    decode_fragment, full_case_fold, is_search_word, DecodedText, TextEncoding, TextPosition,
-};
+use jc_text::{full_case_fold, is_search_word, DecodedScalars, TextEncoding, TextPosition};
 use std::{
     collections::VecDeque,
     ops::Range,
@@ -18,6 +16,44 @@ pub struct SearchMatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dense_folded_matches_resume_across_slots_without_losing_source_positions() {
+        let text = format!("\u{feff}{}😀", "ß\r\nx".repeat(400));
+        for size in [4, 5, 7, 4096] {
+            let mut scanner = Scanner::new(
+                Pattern::compile("SS", false, false).unwrap(),
+                TextEncoding::Utf8,
+                text.len(),
+            );
+            let mut actual = Vec::new();
+            loop {
+                let step = scanner.step(
+                    SearchLimits {
+                        step_bytes: size,
+                        ..SearchLimits::default()
+                    },
+                    |range, bytes| bytes.extend_from_slice(&text.as_bytes()[range]),
+                );
+                assert!(step.matches.len() <= 256);
+                actual.extend(step.matches);
+                if step.status != SearchStatus::Running {
+                    assert_eq!(step.status, SearchStatus::Complete);
+                    break;
+                }
+            }
+            let expected: Vec<_> = (0..400)
+                .map(|i| SearchMatch {
+                    range: (3 + i * 5)..(5 + i * 5),
+                    position: TextPosition {
+                        line: i,
+                        column: usize::from(i > 0),
+                    },
+                })
+                .collect();
+            assert_eq!(actual, expected, "chunk={size}");
+        }
+    }
+
     #[test]
     fn streaming_ranges_match_an_independent_flat_folded_oracle() {
         let texts = [
@@ -83,7 +119,7 @@ mod tests {
                                     step_bytes: size,
                                     ..SearchLimits::default()
                                 },
-                                |range| text.as_bytes()[range].to_vec(),
+                                |range, bytes| bytes.extend_from_slice(&text.as_bytes()[range]),
                             );
                             actual.extend(step.matches.into_iter().map(|m| m.range));
                             steps += 1;
@@ -204,6 +240,7 @@ struct Matcher {
     pending: Option<Pending>,
 }
 impl Matcher {
+    #[inline]
     fn feed(
         &mut self,
         ch: char,
@@ -228,6 +265,21 @@ impl Matcher {
             self.origins.clear();
             self.previous = None;
             return ready;
+        }
+        // ASCII folds to exactly one scalar. When there is no active prefix,
+        // rejecting it needs neither expansion nor an origin entry. Unicode and
+        // all actual prefixes still follow the same KMP and boundary rules.
+        if self.matched == 0 && ch.is_ascii() {
+            let folded = if self.pattern.fold {
+                ch.to_ascii_lowercase()
+            } else {
+                ch
+            };
+            if folded != self.pattern.chars[0] {
+                self.origins.clear();
+                self.previous = Some(ch);
+                return ready;
+            }
         }
         let left_word = self.pattern.word && self.previous.is_some_and(is_search_word);
         let start_boundary = !(self.previous == Some('\r') && ch == '\n');
@@ -285,20 +337,15 @@ impl Matcher {
     }
 }
 #[derive(Debug)]
-struct Chunk {
-    decoded: DecodedText,
-    byte: usize,
-    scalar: usize,
-    count: usize,
-    issue: usize,
-}
-#[derive(Debug)]
 pub(crate) struct Scanner {
     matcher: Matcher,
     encoding: TextEncoding,
     len: usize,
     offset: usize,
-    chunk: Option<Chunk>,
+    bytes: Vec<u8>,
+    chunk_start: usize,
+    chunk_end: usize,
+    has_chunk: bool,
     position: TextPosition,
     cr: bool,
     started: Instant,
@@ -323,7 +370,10 @@ impl Scanner {
             encoding,
             len,
             offset: 0,
-            chunk: None,
+            bytes: Vec::new(),
+            chunk_start: 0,
+            chunk_end: 0,
+            has_chunk: false,
             position: TextPosition { line: 0, column: 0 },
             cr: false,
             started: Instant::now(),
@@ -335,7 +385,7 @@ impl Scanner {
     pub(crate) fn step(
         &mut self,
         limits: SearchLimits,
-        mut read: impl FnMut(Range<usize>) -> Vec<u8>,
+        mut read: impl FnMut(Range<usize>, &mut Vec<u8>),
     ) -> Step {
         let started = Instant::now();
         let mut hits = Vec::new();
@@ -352,51 +402,51 @@ impl Scanner {
         if self.offset >= limits.max_scan_bytes && self.offset < self.len {
             self.status = SearchStatus::Limited;
         }
-        if self.status == SearchStatus::Running && self.chunk.is_none() && self.offset < self.len {
-            let end = (self.offset + limits.step_bytes)
+        if self.status == SearchStatus::Running && !self.has_chunk && self.offset < self.len {
+            self.chunk_start = self.offset;
+            self.chunk_end = (self.offset + limits.step_bytes)
                 .min(self.len)
                 .min(limits.max_scan_bytes);
-            let bytes = read(self.offset..(end + 4).min(self.len));
-            let decoded = decode_fragment(&bytes, self.encoding, self.offset);
-            let count = decoded
-                .source_offsets
-                .windows(2)
-                .take_while(|pair| pair[1] <= end)
-                .count();
-            if count == 0 {
-                self.offset = decoded.content_start.min(end);
-                if self.offset < end {
-                    self.status = SearchStatus::Limited;
-                }
-            } else {
-                self.chunk = Some(Chunk {
-                    decoded,
-                    byte: 0,
-                    scalar: 0,
-                    count,
-                    issue: 0,
-                });
-            }
+            self.bytes.clear();
+            read(
+                self.offset..(self.chunk_end + 4).min(self.len),
+                &mut self.bytes,
+            );
+            self.has_chunk = true;
+        }
+        // Move only the Vec header: reuse the owned source capacity while keeping
+        // the decoder's borrow local to this cooperative slot (no self-reference).
+        let bytes = std::mem::take(&mut self.bytes);
+        let mut scalars = DecodedScalars::new(
+            &bytes[self.offset.saturating_sub(self.chunk_start)..],
+            self.encoding,
+            self.offset,
+        );
+        let previous_offset = self.offset;
+        if self.has_chunk {
+            self.offset = scalars.content_start().min(self.chunk_end);
         }
         let mut processed = 0;
-        while self.status == SearchStatus::Running {
-            let Some(chunk) = self.chunk.as_mut() else {
+        while self.status == SearchStatus::Running && self.has_chunk {
+            let Some(scalar) = scalars
+                .next()
+                .filter(|s| s.source_range.end <= self.chunk_end)
+            else {
+                self.has_chunk = false;
+                if processed == 0 && self.offset == previous_offset && self.offset < self.chunk_end
+                {
+                    self.status = SearchStatus::Limited;
+                }
                 break;
             };
-            let ch = chunk.decoded.text[chunk.byte..].chars().next().unwrap();
-            let start = chunk.decoded.source_offsets[chunk.scalar];
-            let end = chunk.decoded.source_offsets[chunk.scalar + 1];
-            while chunk.issue < chunk.decoded.issues.len()
-                && chunk.decoded.issues[chunk.issue].source_range.end <= start
-            {
-                chunk.issue += 1;
-            }
-            let valid = chunk
-                .decoded
-                .issues
-                .get(chunk.issue)
-                .is_none_or(|issue| issue.source_range.start >= end);
-            let hit = self.matcher.feed(ch, start, end, self.position, valid);
+            let ch = scalar.character;
+            let hit = self.matcher.feed(
+                ch,
+                scalar.source_range.start,
+                scalar.source_range.end,
+                self.position,
+                scalar.valid,
+            );
             match ch {
                 '\r' => {
                     self.position.line += 1;
@@ -411,22 +461,21 @@ impl Scanner {
                 _ => self.position.column += 1,
             };
             self.cr = ch == '\r';
-            self.offset = end;
-            chunk.byte += ch.len_utf8();
-            chunk.scalar += 1;
+            self.offset = scalar.source_range.end;
             processed += 1;
             if let Some(hit) = hit {
                 self.accept(hit, limits, &mut hits);
             }
-            if self.chunk.as_ref().is_some_and(|c| c.scalar == c.count) {
-                self.chunk = None;
+            if self.offset >= self.chunk_end {
+                self.has_chunk = false;
                 break;
             }
             if hits.len() >= 256 || processed % 128 == 0 && started.elapsed() >= limits.step_time {
                 break;
             }
         }
-        if self.status == SearchStatus::Running && self.offset == self.len && self.chunk.is_none() {
+        self.bytes = bytes;
+        if self.status == SearchStatus::Running && self.offset == self.len && !self.has_chunk {
             if let Some(pending) = self.matcher.pending.take() {
                 self.accept(pending.hit, limits, &mut hits);
             }
