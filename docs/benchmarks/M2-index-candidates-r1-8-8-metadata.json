@@ -1,0 +1,18 @@
+{
+  "utc": "2026-11-02T20:43:19.151772+00:00",
+  "os": "Windows-11-10.0.26300-SP0",
+  "base_commit": "6feb19b26f82669596fdeb82e73304584b00ec0d",
+  "source_sha256": {
+    "crates/jc-app/examples/line_index_candidates.rs": "b531a7d2df4200943867e0aaea4d841d8c8398ef8f27d25e2f0b4935a1300ee4",
+    "crates/jc-app/examples/support/block_line_index.rs": "1d353f9f3e02cfe5ab89ab9a13020153205026a753e9aa7f74c87399d40009ff",
+    "crates/jc-app/src/workbench/line_index.rs": "38ee7990abaf06ac9cc03433bc834f2cc4123c705ba728b75abccfd3a20bcc04"
+  },
+  "binary_sha256": "749497b3118addd6125355326efec9d8b5906bf9d9212f5d6b37889d3494cf85",
+  "toolchain": "Rust1.85.1 MSVC release locked offline",
+  "pair": 1,
+  "order": "flat-first",
+  "mib": 8,
+  "stride": 8,
+  "rows": 938,
+  "scope": "experimental metadata only; same-case separate processes, inverted implementation order; not process RAM/UI/physical display"
+}
