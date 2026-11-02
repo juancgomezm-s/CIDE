@@ -468,9 +468,9 @@ fn view_menu_scrolls_to_the_selected_command_in_a_short_terminal() {
         .insert_text(&"XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n".repeat(12))
         .unwrap();
     app.dispatch(CommandId::MenuView);
-    key(&mut app, KeyCode::Up, KeyModifiers::NONE); // wrap to Navigate Forward
+    key(&mut app, KeyCode::Up, KeyModifiers::NONE); // wrap to the final registered command
     let screen = app.frame(45, 10);
-    assert!((1..9).any(|row| screen.row_text(row).contains("Navigate Forward")));
+    assert!((1..9).any(|row| screen.row_text(row).contains("Configure Executable")));
     // Menu interiors must be opaque even when shorter labels leave spare cells.
     for row in 2..8 {
         assert!(!screen

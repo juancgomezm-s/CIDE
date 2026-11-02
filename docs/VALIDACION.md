@@ -1,8 +1,9 @@
 # Validación
 
-**Evidencia local más reciente:** proveedor Git read-only integrado, suite
-completa de 218 pruebas (dos helpers de subproceso aparte); memoria/teclado en
-el bloque de 209 con recorridos nativos. UI/jobs Git y revisión renderizada GUI pendientes. Véase el bloque final; las secciones
+**Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
+237 pruebas locales aprobadas al cierre (dos helpers de subproceso aparte),
+fmt/Clippy/release y recorrido ConPTY HEAD/index. Memoria/teclado global y
+revisión renderizada GUI pendientes. Véase el bloque final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
 
 Estado de la primera base preparada antes de publicarla:
@@ -532,3 +533,49 @@ bloque RAM no validan esa carga. Windows 10 no se probó localmente, Linux/IME/G
 pantalla física y picos globales siguen abiertos. Contrato/citas primarias en
 [GIT_READ_ONLY_PROVIDER.md](GIT_READ_ONLY_PROVIDER.md). Sin push/CI remoto,
 instalaciones ni cambios a seguridad/configuración/servicios/Qwen/GPU.
+# Integración Git diff versionada y TUI — 2026-11-02
+
+Bloque completo construido antes de validar: ampliación del JobSystem F3,
+OwnedDiffModel con fuentes compartidas, controlador de una intención en vuelo,
+comandos centrales, configuración de Git por sesión y visor TUI navegable.
+No se incorporó otro pool, dependencia ni motor editable. Contrato en
+[GIT_DIFF_DELIVERY.md](GIT_DIFF_DELIVERY.md) y
+[GIT_DIFF_PRESENTATION.md](GIT_DIFF_PRESENTATION.md).
+
+Validación local Windows/Rust 1.85.1 MSVC/Git 2.54.0.windows.1, offline y serial:
+
+- Suite workspace: 237 pruebas aprobadas al cierre; dos helpers ignorados se
+  ejecutan desde sus tests padres. La primera corrida aprobó aplicación/core/texto/
+  archivos y detectó en TUI una expectativa de última opción del menú anterior.
+  Tras actualizar esa expectativa y corregir el presupuesto de filas del visor,
+  se repitió solo `cargo test -p jc-tui`: 40 + 2 aprobadas. La revisión posterior
+  separó el presupuesto de hunks laterales del panel inferior; se repitieron TUI,
+  Clippy/release TUI y el smoke afectado. Otra revisión corrigió presión temporal
+  de snapshots: nueve Git + ocho F3 jobs, Clippy de aplicación y release workspace
+  repetidos de forma dirigida. Sin repetir las suites de los demás crates.
+- Nueve regresiones de controlador: dirty HEAD/index, bytes inválidos/BOM/legacy,
+  cuotas antes de captura, espera bajo presión compartida sin copia extra,
+  reserva retenida hasta poll, supersession/cancel/clear/
+  retry, obsolescencia por revisión/encoding/vista/documento/ruta/cierre, EOF y
+  navegación sin transacción/guardado. OwnedDiffModel conserva fuentes sin copiar.
+- Cuatro pruebas de compositor y tres de preparación: clipping, inmutabilidad,
+  EOL, prefijos acotados/contexto, scroll largo/End→Up y panel de una fila.
+  Dos pruebas TUI conectan disponibilidad/configuración, entrega sin otra entrada,
+  recuperación de error y composición sin alterar bytes/revisión/undo.
+- `cargo fmt --all -- --check`, Clippy workspace/all-targets con `-D warnings`
+  y build release workspace aprobados. Clippy corrigió una construcción de string
+  exclusivamente en el fixture de prueba; no requirió repetir suites sin cambios.
+- ConPTY release: [datos crudos](benchmarks/M2-git-conpty.json). HEAD e index llegan
+  sin otra tecla, navegación a hunk, undo→Stale, hunks laterales conservados al
+  ocultar/reabrir el panel inferior, bytes de disco/index iguales y
+  salida 0. El fixture usa repositorio exclusivo bajo work, sin tocar refs/index
+  del proyecto. Primer intento del harness corrigió lanzamiento de stdin/argumentos;
+  los siguientes corrigieron su supuesto de agrupar varios caracteres en un undo.
+  En entrada WinAPI ConPTY se usó finalmente un carácter, una edición inequívoca.
+
+Los 31 movimientos del harness son anteriores a iniciar Git: p95 inyección-a-VT
+15,9808 ms, cero clears por movimiento y un clear por resize. Su muestreo de memoria
+también precede a Git; **no mide memoria/latencia conjunta de auxiliares**, ni es
+una aceptación global o de pantalla física. No se repitieron benchmarks generales.
+Sin CI/push/instalaciones ni nuevos intentos GUI. Estado completo de repositorio,
+watcher, Git con escritura, backend GUI y M2A global continúan pendientes.

@@ -35,6 +35,7 @@ fn draw_prompt(screen: &mut Screen, kind: PromptKind, input: &str) {
         PromptKind::ProjectExclude => "Extra exclude globs (.git/target/work always excluded)",
         PromptKind::ProjectReplacement => "Replacement text (empty deletes matches)",
         PromptKind::GoToPosition => "Go to line[:column] (one-based scalars)",
+        PromptKind::GitExecutable => "Absolute path to Git executable (this session)",
     };
     let (x, y, width, height) = centered(screen, 64, 5);
     panel(screen, x, y, width, height, title);

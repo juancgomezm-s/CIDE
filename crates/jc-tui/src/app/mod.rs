@@ -1,12 +1,16 @@
 mod commands;
 mod events;
 mod explorer;
+mod git_diff;
 mod menus;
 mod overlays;
 mod paths;
 mod presentation;
 mod project_search;
 pub(crate) use presentation::Presentation;
+pub(crate) use presentation::{GitDiffRow, GitHunkRow, GitPresentation, GitRowKind};
+#[cfg(test)]
+mod git_integration_tests;
 #[cfg(test)]
 mod keyboard_matrix_tests;
 #[cfg(test)]
@@ -35,6 +39,11 @@ pub struct TuiApp {
     pub(crate) explorer: explorer::ExplorerState,
     pub(crate) bottom_selected: usize,
     pub(crate) tasks: jc_app::JobSystem,
+    pub(crate) git_diff: jc_app::git_diff::GitDiffController,
+    pub(crate) git_executable: Option<PathBuf>,
+    pub(crate) git_cwd: PathBuf,
+    pub(crate) git_source: jc_app::git_read::GitBlobSource,
+    pub(crate) git_diff_scroll: usize,
     pub(crate) project_search: jc_app::ProjectSearch,
     pub(crate) project_results: bool,
     pub(crate) project_draft: Option<jc_app::ProjectSearchOptions>,
@@ -69,6 +78,11 @@ impl TuiApp {
             project_root: None,
             explorer: explorer::ExplorerState::default(),
             bottom_selected: 0,
+            git_diff: jc_app::git_diff::GitDiffController::new(),
+            git_executable: None,
+            git_cwd: std::env::current_dir().unwrap_or_default(),
+            git_source: jc_app::git_read::GitBlobSource::Head,
+            git_diff_scroll: 0,
             project_search: jc_app::ProjectSearch::new(wakeup.clone()),
             project_results: false,
             project_draft: None,
@@ -120,9 +134,14 @@ impl TuiApp {
             }
             update.recover |= self.project_search.state == jc_app::ProjectSearchState::Failed;
         }
-        for completion in self.tasks.poll(&self.workbench, 4) {
+        for mut completion in self.tasks.poll(&self.workbench, 4) {
             if completion.status == jc_app::TaskStatus::Panicked {
                 update.recover = true;
+            }
+            if self.git_diff.accept(&self.workbench, &mut completion) {
+                self.status = self.git_diff.message().to_owned();
+                update.changed = true;
+                continue;
             }
             if !completion.applicable {
                 if completion.current {
@@ -160,6 +179,7 @@ impl TuiApp {
                 update.changed = true;
             }
         }
+        update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
         update
     }
 
@@ -171,6 +191,14 @@ impl TuiApp {
         let mut context = self.workbench.context();
         context.focus = self.focus.primary();
         context.has_project = self.project_root.is_some();
+        context.git_diff_available = cfg!(windows)
+            && context.has_project
+            && context.has_document
+            && self.workbench.active_encoding().is_some();
+        context.git_diff_running = matches!(
+            self.git_diff.state(),
+            jc_app::git_diff::GitDiffState::Queued | jc_app::git_diff::GitDiffState::Running
+        );
         context.project_search_running = self.project_search.state
             == jc_app::ProjectSearchState::Running
             || self.project_replace.is_some();

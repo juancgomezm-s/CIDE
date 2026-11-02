@@ -14,6 +14,18 @@ impl TuiApp {
     }
 
     pub(crate) fn submit_prompt(&mut self, kind: PromptKind, input: String) {
+        if kind == PromptKind::GitExecutable {
+            let path = PathBuf::from(input.trim());
+            if input.len() > 4096 || !path.is_absolute() {
+                self.status = "Use an absolute Git executable path (maximum 4096 bytes)".into();
+                return;
+            }
+            self.git_diff.clear(&mut self.tasks);
+            self.git_executable = Some(path);
+            self.close_overlay();
+            self.request_git_diff(self.git_source);
+            return;
+        }
         if kind == PromptKind::GoToPosition {
             let parse = || {
                 let mut fields = input.trim().split(':');
@@ -71,7 +83,7 @@ impl TuiApp {
             return;
         }
         let result: Result<(), String> = match kind {
-            PromptKind::GoToPosition => unreachable!(),
+            PromptKind::GoToPosition | PromptKind::GitExecutable => unreachable!(),
             PromptKind::Open => self.open_path(path),
             PromptKind::New => {
                 let encoding = self.default_encoding.unwrap_or(TextEncoding::Utf8);
@@ -88,6 +100,7 @@ impl TuiApp {
                         self.project_search.clear();
                         self.cancel_project_replace();
                         self.project_results = false;
+                        self.git_diff.clear(&mut self.tasks);
                         self.project_root = self.explorer.root().map(PathBuf::from);
                         self.panels.show_sidebar(SidebarView::Explorer);
                     })

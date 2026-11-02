@@ -204,6 +204,11 @@ impl Workbench {
             ViewExplorer
             | ViewDatabase
             | ViewGit
+            | GitDiffHead
+            | GitDiffIndex
+            | GitDiffRefresh
+            | GitDiffCancel
+            | GitConfigureExecutable
             | ViewSymbols
             | ViewToggleBottomPanel
             | ViewTerminal

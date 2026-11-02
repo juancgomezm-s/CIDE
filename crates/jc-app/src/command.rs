@@ -76,6 +76,11 @@ pub enum CommandId {
     ViewExplorer,
     ViewDatabase,
     ViewGit,
+    GitDiffHead,
+    GitDiffIndex,
+    GitDiffRefresh,
+    GitDiffCancel,
+    GitConfigureExecutable,
     ViewSymbols,
     ViewToggleBottomPanel,
     ViewTerminal,
@@ -130,6 +135,8 @@ pub struct CommandContext {
     pub has_database_schema: bool,
     pub can_reopen_closed_tab: bool,
     pub terminal_available: bool,
+    pub git_diff_available: bool,
+    pub git_diff_running: bool,
     // Shared pane navigation state; keymap handlers are connected by the frontend.
     pub split_editor: bool,
     pub reference_pinned: bool,
@@ -159,6 +166,8 @@ impl Default for CommandContext {
             has_database_schema: false,
             can_reopen_closed_tab: false,
             terminal_available: false,
+            git_diff_available: false,
+            git_diff_running: false,
             split_editor: false,
             reference_pinned: false,
             nav_back_available: false,
@@ -292,6 +301,12 @@ fn line_comment(ctx: &CommandContext) -> bool {
 }
 fn project(ctx: &CommandContext) -> bool {
     ctx.has_project
+}
+fn git_diff(ctx: &CommandContext) -> bool {
+    ctx.git_diff_available
+}
+fn git_diff_running(ctx: &CommandContext) -> bool {
+    ctx.git_diff_running
 }
 fn project_search_running(ctx: &CommandContext) -> bool {
     ctx.project_search_running
@@ -428,7 +443,17 @@ pub fn default_registry() -> CommandRegistry {
         spec!(Tab9, Navigation, "Last Tab", has_document),
         spec!(ViewExplorer, View, "Explorer", always),
         spec!(ViewDatabase, View, "Database / Schema", never),
-        spec!(ViewGit, View, "Git", never),
+        spec!(ViewGit, View, "Git: Active File Diff", git_diff),
+        spec!(GitDiffHead, View, "Git: Compare HEAD Snapshot", git_diff),
+        spec!(GitDiffIndex, View, "Git: Compare Index Snapshot", git_diff),
+        spec!(GitDiffRefresh, View, "Git: Refresh Snapshot", git_diff),
+        spec!(GitDiffCancel, View, "Git: Cancel Diff", git_diff_running),
+        spec!(
+            GitConfigureExecutable,
+            View,
+            "Git: Configure Executable…",
+            git_diff
+        ),
         spec!(ViewSymbols, View, "Symbols", never),
         spec!(ViewToggleBottomPanel, View, "Toggle Bottom Panel", always),
         spec!(ViewTerminal, View, "Terminal", terminal),

@@ -19,6 +19,7 @@ pub enum PromptKind {
     ProjectExclude,
     ProjectReplacement,
     GoToPosition,
+    GitExecutable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

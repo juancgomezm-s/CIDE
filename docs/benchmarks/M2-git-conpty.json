@@ -1,0 +1,23 @@
+{
+  "samples": 31,
+  "injection_to_vt_p50_ms": 15.405,
+  "injection_to_vt_p95_ms": 15.9808,
+  "private_bytes": 1114112,
+  "keyboard_output_bytes": 1150,
+  "idle_cpu_ms": 0,
+  "clears_during_keys": 0,
+  "resize_clears": 1,
+  "exit_code": 0,
+  "project_search_delivered": false,
+  "project_replace_previewed": false,
+  "project_replace_applied_and_undone": false,
+  "document_search_folded_without_more_input": false,
+  "document_goto_scalars": false,
+  "document_replaced_and_undone": false,
+  "git_head_delivered_without_more_input": true,
+  "git_index_delivered_without_more_input": true,
+  "git_hunk_navigation": true,
+  "git_stale_after_undo": true,
+  "git_disk_and_index_unchanged": true,
+  "git_sidebar_hunks_survive_hidden_bottom": true
+}

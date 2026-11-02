@@ -22,6 +22,10 @@ impl GitObjectId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+    /// Heap storage retained by this identifier, for owned result accounting.
+    pub fn memory_bytes(&self) -> usize {
+        self.0.capacity()
+    }
     fn parse(bytes: &[u8]) -> Result<Self, GitReadError> {
         if ![40, 64].contains(&bytes.len())
             || !bytes.iter().all(u8::is_ascii_hexdigit)
@@ -66,6 +70,9 @@ pub struct GitBlobSnapshot {
     bytes: Vec<u8>,
 }
 impl GitBlobSnapshot {
+    pub fn into_parts(self) -> (GitBlobIdentity, Vec<u8>) {
+        (self.identity, self.bytes)
+    }
     pub fn identity(&self) -> &GitBlobIdentity {
         &self.identity
     }

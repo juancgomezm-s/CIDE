@@ -209,3 +209,18 @@ el lanzamiento y no abandona un reader para aparentar deadline duro. La API Wind
 se prueba localmente, sin fallback sin contención ni promesa de sandbox hostil.
 Esto prepara el diff read-only, no lo entrega a UI: faltan jobs/revisiones/generación,
 status y medición de auxiliares. Proveedor y límites en GIT_READ_ONLY_PROVIDER.
+
+## D26 — Entrega Git sobre el JobSystem existente
+
+Implementada después de D25: un snapshot de trabajo acotado y un blob inmutable,
+con OwnedDiffModel sobre el mismo algoritmo; no otro buffer editable ni pool.
+Solo una comparación Git en vuelo y una intención pendiente sin fuentes; reservar
+12 MiB de artefacto hasta consumir completion evita que resultados sin poll evadan
+el presupuesto. Request descarta antes el resultado aceptado. Aplicación valida
+revisión, encoding, vista activa, ruta y generación antes de presentar o navegar.
+La TUI expone acciones centrales explícitas HEAD/index/refresh/cancel/configuración;
+Git es opcional y se elige por ruta absoluta para la sesión. El visor prepara solo
+filas visibles/prefijos acotados, con bytes inválidos/BOM/EOL explícitos. No ejecutar
+Git ni diff durante entrada/render. Identidad de snapshot y refresh manual, sin
+watcher ni status global. Evidencia y límites en GIT_DIFF_DELIVERY y
+GIT_DIFF_PRESENTATION; memoria conjunta de auxiliares y pantalla física pendientes.

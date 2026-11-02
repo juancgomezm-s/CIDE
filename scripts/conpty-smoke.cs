@@ -83,14 +83,19 @@ public static partial class JcConPtySmoke {
         public bool project_search_delivered;
         public bool project_replace_previewed,project_replace_applied_and_undone;
         public bool document_search_folded_without_more_input,document_goto_scalars,document_replaced_and_undone;
+        public bool git_head_delivered_without_more_input,git_index_delivered_without_more_input,git_hunk_navigation,git_stale_after_undo,git_disk_and_index_unchanged;
+        public bool git_sidebar_hunks_survive_hidden_bottom;
     }
-    public static Result Run(string executable,string host,string directory,bool project,bool document){
-        string root=Path.GetFullPath(directory);string relative=project ? "work/s1-smoke-"+Process.GetCurrentProcess().Id+"/source.txt" : "work/f3-smoke-"+Process.GetCurrentProcess().Id+".txt";string path=Path.GetFullPath(Path.Combine(root,relative));
+    public static Result Run(string executable,string host,string directory,bool project,bool document){return Run(executable,host,directory,project,document,null);}
+    public static Result Run(string executable,string host,string directory,bool project,bool document,string gitExecutable){
+        bool git=gitExecutable!=null;
+        string root=Path.GetFullPath(directory);string relative=(project||git) ? "work/"+(git?"git":"s1")+"-smoke-"+Process.GetCurrentProcess().Id+"/source.txt" : "work/f3-smoke-"+Process.GetCurrentProcess().Id+".txt";string path=Path.GetFullPath(Path.Combine(root,relative));
         if(!path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new IOException("Test path outside workspace");
         bool created=false;string fixtureDir=null;IntPtr inputRead=IntPtr.Zero,inputWrite=IntPtr.Zero,outputRead=IntPtr.Zero,outputWrite=IntPtr.Zero,console=IntPtr.Zero,attributes=IntPtr.Zero,editor=IntPtr.Zero;ProcessInfo child=new ProcessInfo();Thread reader=null;
         try{
-            if(project){string candidate=Path.GetDirectoryName(path);if(Directory.Exists(candidate))throw new IOException("Test directory already exists");Directory.CreateDirectory(candidate);fixtureDir=candidate;}
-            using(FileStream file=new FileStream(path,FileMode.CreateNew,FileAccess.Write)){byte[] content=Encoding.UTF8.GetBytes("F3_VISIBLE_"+new string('x',128)+(document ? "\r\nStraße NIÑO\r\n" : "\nnext\n"));file.Write(content,0,content.Length);created=true;}
+            if(project||git){string candidate=Path.GetDirectoryName(path);if(Directory.Exists(candidate))throw new IOException("Test directory already exists");Directory.CreateDirectory(candidate);fixtureDir=candidate;}
+            using(FileStream file=new FileStream(path,FileMode.CreateNew,FileAccess.Write)){byte[] content=Encoding.UTF8.GetBytes("F3_VISIBLE_"+new string('x',128)+((document||git) ? "\r\nStraße NIÑO\r\n" : "\nnext\n"));file.Write(content,0,content.Length);created=true;}
+            if(git)SeedGitFixture(gitExecutable,fixtureDir,path);
             Check(CreatePipe(out inputRead,out inputWrite,IntPtr.Zero,0));Check(CreatePipe(out outputRead,out outputWrite,IntPtr.Zero,0));HResult(CreatePseudoConsole(new Coord(80,24),inputRead,outputWrite,0,out console));
             CloseHandle(inputRead);inputRead=IntPtr.Zero;CloseHandle(outputWrite);outputWrite=IntPtr.Zero;
             IntPtr bytes=IntPtr.Zero;InitializeProcThreadAttributeList(IntPtr.Zero,1,0,ref bytes);attributes=Marshal.AllocHGlobal(bytes);Check(InitializeProcThreadAttributeList(attributes,1,0,ref bytes));
@@ -148,6 +153,7 @@ public static partial class JcConPtySmoke {
                     }
                 }
             }
+            if(git)CheckGitFlow(display,result,gitExecutable,fixtureDir,path);
             // File is clean: File menu -> Up wraps to Exit -> Enter, with no writes.
             display.Send("\x1b"+"f");
             display.Wait(()=>display.Text().Contains("Exit"),3000);
@@ -163,7 +169,13 @@ public static partial class JcConPtySmoke {
             foreach(IntPtr handle in new[]{inputRead,inputWrite,outputRead,outputWrite})if(handle!=IntPtr.Zero)CloseHandle(handle);
             if(attributes!=IntPtr.Zero){DeleteProcThreadAttributeList(attributes);Marshal.FreeHGlobal(attributes);}
             if(created)File.Delete(path);
-            if(fixtureDir!=null)Directory.Delete(fixtureDir,false);
+            if(fixtureDir!=null){
+                string checkedPath=Path.GetFullPath(fixtureDir);
+                string work=Path.GetFullPath(Path.Combine(root,"work"));
+                if(Path.GetDirectoryName(checkedPath)!=work || !Path.GetFileName(checkedPath).StartsWith(git?"git-smoke-":"s1-smoke-",StringComparison.Ordinal))throw new IOException("Unsafe fixture cleanup target");
+                if(git)foreach(string ownedFile in Directory.GetFiles(checkedPath,"*",SearchOption.AllDirectories))File.SetAttributes(ownedFile,FileAttributes.Normal);
+                Directory.Delete(checkedPath,git);
+            }
         }
     }
 }

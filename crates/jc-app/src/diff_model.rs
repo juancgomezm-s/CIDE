@@ -3,7 +3,7 @@
 //! This read model never receives a Document/FileSession, decodes text, executes
 //! Git, or proposes/applies edits. A frontend must obtain versioned snapshots
 //! separately before handing their bytes to this synchronous, cancelable job.
-use std::{mem::size_of, ops::Range};
+use std::{mem::size_of, ops::Range, sync::Arc};
 
 /// Zero-based line in a diff source, not a byte/scalar/display coordinate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -162,21 +162,117 @@ impl<'a> DiffModel<'a> {
     /// Only exact equal spans have corresponding lines. Changed lines have no
     /// invented one-to-one counterpart, even when both changed ranges are equal.
     pub fn corresponding_line(&self, side: DiffSide, line: DiffLine) -> Option<DiffLine> {
-        let index = self.spans.partition_point(|span| {
-            let range = match side {
-                DiffSide::Left => &span.left,
-                DiffSide::Right => &span.right,
-            };
-            range.end <= line
-        });
-        let span = self.spans.get(index)?;
-        let (from, to) = match side {
-            DiffSide::Left => (&span.left, &span.right),
-            DiffSide::Right => (&span.right, &span.left),
-        };
-        (span.kind == DiffKind::Equal && from.contains(&line))
-            .then(|| DiffLine(to.start.0 + line.0 - from.start.0))
+        corresponding_line(&self.spans, side, line)
     }
+}
+
+/// Worker/UI ownership of the same immutable alignment. Sources are shared owned
+/// byte vectors, never documents or sessions; computing moves metadata, not bytes.
+#[derive(Debug)]
+pub struct OwnedDiffModel {
+    left: Arc<Vec<u8>>,
+    right: Arc<Vec<u8>>,
+    left_ends: Vec<usize>,
+    right_ends: Vec<usize>,
+    spans: Vec<DiffSpan>,
+    status: DiffStatus,
+    stats: DiffStats,
+}
+impl OwnedDiffModel {
+    pub fn compute(
+        left: Arc<Vec<u8>>,
+        right: Arc<Vec<u8>>,
+        limits: DiffLimits,
+        cancelled: impl FnMut() -> bool,
+    ) -> Self {
+        let DiffModel {
+            left_ends,
+            right_ends,
+            spans,
+            status,
+            stats,
+            ..
+        } = DiffModel::compute(&left, &right, limits, cancelled);
+        Self {
+            left,
+            right,
+            left_ends,
+            right_ends,
+            spans,
+            status,
+            stats,
+        }
+    }
+    pub fn status(&self) -> DiffStatus {
+        self.status
+    }
+    pub fn stats(&self) -> DiffStats {
+        self.stats
+    }
+    pub fn spans(&self) -> &[DiffSpan] {
+        &self.spans
+    }
+    pub fn hunks(&self) -> impl Iterator<Item = &DiffSpan> {
+        self.spans
+            .iter()
+            .filter(|span| span.kind == DiffKind::Changed)
+    }
+    pub fn source_bytes(&self, side: DiffSide) -> &[u8] {
+        match side {
+            DiffSide::Left => &self.left,
+            DiffSide::Right => &self.right,
+        }
+    }
+    fn ends(&self, side: DiffSide) -> &[usize] {
+        match side {
+            DiffSide::Left => &self.left_ends,
+            DiffSide::Right => &self.right_ends,
+        }
+    }
+    pub fn line_count(&self, side: DiffSide) -> Option<usize> {
+        (self.status == DiffStatus::Exact).then(|| self.ends(side).len())
+    }
+    pub fn line_byte_range(&self, side: DiffSide, line: DiffLine) -> Option<Range<usize>> {
+        if self.status != DiffStatus::Exact {
+            return None;
+        }
+        let ends = self.ends(side);
+        let end = *ends.get(line.0)?;
+        Some(if line.0 == 0 { 0 } else { ends[line.0 - 1] }..end)
+    }
+    pub fn line_bytes(&self, side: DiffSide, line: DiffLine) -> Option<&[u8]> {
+        let range = self.line_byte_range(side, line)?;
+        Some(&self.source_bytes(side)[range])
+    }
+    pub fn corresponding_line(&self, side: DiffSide, line: DiffLine) -> Option<DiffLine> {
+        corresponding_line(&self.spans, side, line)
+    }
+    /// Conservative logical ownership charge, including both source capacities.
+    pub fn memory_bytes(&self) -> usize {
+        size_of::<Self>()
+            + self.left.capacity()
+            + self.right.capacity()
+            + 2 * (size_of::<Vec<u8>>() + 2 * size_of::<usize>())
+            + (self.left_ends.capacity() + self.right_ends.capacity()) * size_of::<usize>()
+            + self.spans.capacity() * size_of::<DiffSpan>()
+    }
+}
+
+fn corresponding_line(spans: &[DiffSpan], side: DiffSide, line: DiffLine) -> Option<DiffLine> {
+    let index = spans.partition_point(|span| {
+        let range = match side {
+            DiffSide::Left => &span.left,
+            DiffSide::Right => &span.right,
+        };
+        range.end <= line
+    });
+    let span = spans.get(index)?;
+    let (from, to) = match side {
+        DiffSide::Left => (&span.left, &span.right),
+        DiffSide::Right => (&span.right, &span.left),
+    };
+    (span.kind == DiffKind::Equal && from.contains(&line))
+        .then(|| DiffLine(to.start.0 + line.0 - from.start.0))
 }
 
 type Stopped = DiffStatus;
@@ -440,6 +536,37 @@ fn push_span(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn owned_alignment_retains_original_sources_and_exact_line_mapping() {
+        let left = Arc::new(b"\xef\xbb\xbfa\xff\r\nb\nlast".to_vec());
+        let right = Arc::new(b"\xef\xbb\xbfa\xff\r\nadded\rb\nlast".to_vec());
+        let left_pointer = left.as_ptr();
+        let right_pointer = right.as_ptr();
+        let model = OwnedDiffModel::compute(left, right, DiffLimits::default(), || false);
+        assert_eq!(model.status(), DiffStatus::Exact);
+        assert_eq!(model.source_bytes(DiffSide::Left).as_ptr(), left_pointer);
+        assert_eq!(model.source_bytes(DiffSide::Right).as_ptr(), right_pointer);
+        assert_eq!(
+            model.line_bytes(DiffSide::Left, DiffLine(0)),
+            Some(b"\xef\xbb\xbfa\xff\r\n".as_slice())
+        );
+        assert_eq!(
+            model.line_byte_range(DiffSide::Right, DiffLine(1)),
+            Some(7..13)
+        );
+        assert_eq!(
+            model.corresponding_line(DiffSide::Left, DiffLine(1)),
+            Some(DiffLine(2))
+        );
+        assert_eq!(model.corresponding_line(DiffSide::Right, DiffLine(1)), None);
+        assert_eq!(model.line_count(DiffSide::Right), Some(4));
+        assert_eq!(model.hunks().count(), 1);
+        assert!(
+            model.memory_bytes()
+                >= model.source_bytes(DiffSide::Left).len()
+                    + model.source_bytes(DiffSide::Right).len()
+        );
+    }
     fn diff<'a>(left: &'a [u8], right: &'a [u8]) -> DiffModel<'a> {
         let result = DiffModel::compute(left, right, DiffLimits::default(), || false);
         assert_eq!(result.status(), DiffStatus::Exact);

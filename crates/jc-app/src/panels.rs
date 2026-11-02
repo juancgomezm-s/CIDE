@@ -11,6 +11,7 @@ pub enum BottomPanel {
     Problems,
     Output,
     SearchResults,
+    Diff,
     Terminal,
 }
 

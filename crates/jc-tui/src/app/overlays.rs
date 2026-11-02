@@ -56,6 +56,7 @@ impl TuiApp {
                     if matches!(
                         kind,
                         crate::state::PromptKind::ProjectQuery
+                            | crate::state::PromptKind::GitExecutable
                             | crate::state::PromptKind::ProjectInclude
                             | crate::state::PromptKind::ProjectExclude
                             | crate::state::PromptKind::ProjectReplacement
@@ -330,6 +331,7 @@ impl TuiApp {
                 if matches!(
                     kind,
                     crate::state::PromptKind::ProjectQuery
+                        | crate::state::PromptKind::GitExecutable
                         | crate::state::PromptKind::ProjectInclude
                         | crate::state::PromptKind::ProjectExclude
                         | crate::state::PromptKind::ProjectReplacement

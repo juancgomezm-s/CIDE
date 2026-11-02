@@ -127,7 +127,21 @@ impl TuiApp {
             FileOpenFolder => self.open_prompt(PromptKind::OpenFolder),
             ViewExplorer => self.show_sidebar(SidebarView::Explorer),
             ViewDatabase => self.show_sidebar(SidebarView::Database),
-            ViewGit => self.show_sidebar(SidebarView::Git),
+            ViewGit => self.open_git_diff(),
+            GitDiffHead => {
+                self.git_source = jc_app::git_read::GitBlobSource::Head;
+                self.open_git_diff();
+            }
+            GitDiffIndex => {
+                self.git_source = jc_app::git_read::GitBlobSource::Index;
+                self.open_git_diff();
+            }
+            GitDiffRefresh => self.open_git_diff(),
+            GitDiffCancel => {
+                self.git_diff.cancel(&mut self.tasks);
+                self.status = self.git_diff.message().to_owned();
+            }
+            GitConfigureExecutable => self.open_prompt(PromptKind::GitExecutable),
             ViewSymbols => self.show_sidebar(SidebarView::Symbols),
             ViewToggleBottomPanel => {
                 self.panels.toggle_bottom();

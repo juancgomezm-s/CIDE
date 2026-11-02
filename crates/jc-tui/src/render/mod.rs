@@ -1,3 +1,4 @@
+mod git_diff;
 mod overlays;
 
 use crate::app::{Presentation, TuiApp};
@@ -28,7 +29,7 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
     let sidebar_width = frame.layout.sidebar_width;
     if sidebar_width > 0 {
         draw_sidebar(
-            app,
+            frame,
             &mut screen,
             0,
             content_top,
@@ -124,7 +125,19 @@ fn draw_tabs(app: &TuiApp, screen: &mut Screen) {
     }
 }
 
-fn draw_sidebar(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, height: u16) {
+fn draw_sidebar(
+    frame: &Presentation<'_>,
+    screen: &mut Screen,
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+) {
+    let app = frame.app;
+    if app.panels.sidebar() == SidebarView::Git {
+        git_diff::sidebar(screen, &frame.git, x, y, width, height);
+        return;
+    }
     let focused = app.focus.primary() == PrimaryFocus::Sidebar;
     let title = match app.panels.sidebar() {
         SidebarView::Explorer => " Explorer ",
@@ -189,8 +202,7 @@ fn draw_sidebar(app: &TuiApp, screen: &mut Screen, x: u16, y: u16, width: u16, h
             screen.text_styled(x + 1, y + 2, "available in M3/M4", CellStyle::Dim);
         }
         SidebarView::Git => {
-            screen.text(x + 1, y + 1, "Git service is optional");
-            screen.text_styled(x + 1, y + 2, "planned for M5", CellStyle::Dim);
+            unreachable!("Git presentation is rendered above");
         }
         SidebarView::Symbols => {
             screen.text(x + 1, y + 1, "Symbols follow language");
@@ -340,6 +352,10 @@ fn draw_bottom(
     if height == 0 {
         return;
     }
+    if app.panels.bottom() == BottomPanel::Diff {
+        git_diff::unified(screen, &frame.git, x, y, width, height);
+        return;
+    }
     let focused = app.focus.primary() == PrimaryFocus::BottomPanel;
     let title = match app.panels.bottom() {
         BottomPanel::Problems => " Problems ",
@@ -349,6 +365,7 @@ fn draw_bottom(
         }
         BottomPanel::SearchResults => " Search Results ",
         BottomPanel::Terminal => " Terminal ",
+        BottomPanel::Diff => unreachable!(),
     };
     screen.text_styled(
         x,
@@ -365,6 +382,7 @@ fn draw_bottom(
         BottomPanel::Output => app.workbench.output().len(),
         BottomPanel::SearchResults => app.search_result_count(),
         BottomPanel::Terminal => 1,
+        BottomPanel::Diff => unreachable!(),
     };
     let available = usize::from(height.saturating_sub(1));
     let selected = app.bottom_selected.min(count.saturating_sub(1));
@@ -455,6 +473,7 @@ fn draw_bottom(
                 Vec::new()
             }
         }
+        BottomPanel::Diff => unreachable!(),
     };
     for (offset, line) in rows.iter().enumerate() {
         let index = start + offset;

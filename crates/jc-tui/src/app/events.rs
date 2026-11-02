@@ -73,6 +73,10 @@ impl TuiApp {
     }
 
     fn handle_sidebar_key(&mut self, key: KeyEvent) {
+        if self.panels.sidebar() == SidebarView::Git {
+            self.handle_git_sidebar_key(key);
+            return;
+        }
         if self.panels.sidebar() != SidebarView::Explorer {
             if key.code == KeyCode::Enter {
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
@@ -149,11 +153,16 @@ impl TuiApp {
     }
 
     fn handle_bottom_key(&mut self, key: KeyEvent) {
+        if self.panels.bottom() == BottomPanel::Diff {
+            self.handle_git_diff_key(key);
+            return;
+        }
         let count = match self.panels.bottom() {
             BottomPanel::Problems => self.workbench.problems().len(),
             BottomPanel::Output => self.workbench.output().len(),
             BottomPanel::SearchResults => self.search_result_count(),
             BottomPanel::Terminal => 1,
+            BottomPanel::Diff => 0,
         };
         match key.code {
             KeyCode::Up => self.bottom_selected = self.bottom_selected.saturating_sub(1),

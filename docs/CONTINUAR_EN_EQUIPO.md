@@ -6,6 +6,14 @@ Guardado Windows: `ed51143`; S1 `6e07b1e`; S0 Unicode cooperativo implementado d
 
 ## Inicio
 
+Juan autorizó continuidad operativa: no esperar otra orden de «continúa» después
+de un commit intermedio. Integrar/validar cada bloque y activar enseguida el
+siguiente pendiente independiente del plan. Antes de cerrar turno debe quedar un
+bloque realmente activo o un bloqueo concreto que necesite decisión de Juan.
+Reutilizar hasta tres agentes nativos total con archivos exclusivos; un único
+integrador conserva APIs/exportaciones/manifests/comandos/plan/VALIDACION/commits.
+No ampliar alcance y mantener ventanas seriales de compilación/fixtures/medición.
+
 1. Revisar git status/rama/log y conservar modificaciones del usuario.
 2. Leer AGENTS, README, PLAN, ARQUITECTURA, DECISIONES, los checkpoints F1/F2/F3,
    S0_DOCUMENT_SEARCH, S1_PROJECT_SEARCH, SAVE_WINDOWS_CONTENTION y VALIDACION, bajo `docs/`. Mediciones crudas en `docs/benchmarks/`.
@@ -38,7 +46,7 @@ Workbench ni escriben buffers/disco. Propuestas requieren futura aceptación y
 de encoding deberá cancelar/reemplazar explícitamente la clave. El sistema actual
 está ligado a un Workbench y documentos, no a trabajos de proyecto sin documento.
 
-## Siguiente bloque: entrega Git versionada y picos restantes
+## Siguiente bloque: picos/sufijos restantes y medición conjunta de Git
 
 - Construir bloques más amplios antes de validar, según pidió el usuario. Reservar
   comprobaciones intermedias para bloqueantes concretos; no repetir suites por retoques.
@@ -106,9 +114,11 @@ normal sigue disponible; no investigar/tocar servicios ajenos para validar el ed
 Proveedor Git posterior: GIT_READ_ONLY_PROVIDER.md y git_read.rs ya leen blobs
 HEAD/index exactos con identidad/OID, límites, deadline/cancelación y Job Object
 Windows. Suite integrada 218 pruebas (dos helpers son fixtures invocados por los
-tests), fmt/Clippy/release; Git 2.54.0.windows.1. No hay menú/renderer/status ni
-coordinación JobSystem/TaskStamp para diff. El siguiente incremento requiere
-snapshots de trabajo acotados, revisión/encoding/generación y entrega descartable;
+tests), fmt/Clippy/release; Git 2.54.0.windows.1. La integración posterior ya conecta menú/palette, renderer de solo lectura y
+JobSystem/TaskStamp: GIT_DIFF_DELIVERY y GIT_DIFF_PRESENTATION. Cierre con 237
+pruebas aprobadas, fmt/Clippy/release y ConPTY HEAD/index sin otra tecla, navegación,
+undo→Stale y conservación de disco/index. El siguiente incremento mide costes
+conjuntos de editor + auxiliares y atiende picos/sufijos restantes;
 no llamar read_blob desde entrada/render ni habilitar comandos sin handler real.
 No eliminar reap/cancelación de readers para fingir un retorno de cinco segundos.
 El callback debe ser barato; kernel cleanup no es preempción dura.

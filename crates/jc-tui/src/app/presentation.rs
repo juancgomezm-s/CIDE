@@ -3,6 +3,37 @@ use super::TuiApp;
 use jc_app::{BottomPanel, PaneId, PrimaryFocus};
 use jc_text::TextPosition;
 
+#[derive(Debug, Default)]
+pub(crate) struct GitPresentation {
+    pub status: String,
+    pub details: Vec<String>,
+    pub hunks: Vec<GitHunkRow>,
+    pub rows: Vec<GitDiffRow>,
+    pub total_hunks: usize,
+}
+#[derive(Debug)]
+pub(crate) struct GitHunkRow {
+    pub index: usize,
+    pub label: String,
+    pub selected: bool,
+}
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum GitRowKind {
+    Context,
+    Deleted,
+    Added,
+    Header,
+    Notice,
+}
+#[derive(Debug)]
+pub(crate) struct GitDiffRow {
+    pub kind: GitRowKind,
+    pub left_line: Option<usize>,
+    pub right_line: Option<usize>,
+    pub text: String,
+    pub eol: &'static str,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FrameLayout {
     pub width: u16,
@@ -71,6 +102,7 @@ pub(crate) struct Presentation<'a> {
     pub secondary: EditorText,
     pub status_position: Option<TextPosition>,
     pub search_positions: Vec<(usize, Option<TextPosition>)>,
+    pub git: GitPresentation,
 }
 impl Presentation<'_> {
     pub fn editor(&self, pane: PaneId) -> &EditorText {
@@ -89,6 +121,7 @@ impl Presentation<'_> {
 
 impl TuiApp {
     pub(crate) fn prepare_frame(&mut self, width: u16, height: u16) -> Presentation<'_> {
+        self.git_diff.tick(&self.workbench, &mut self.tasks);
         let layout = FrameLayout::new(self, width, height);
         let mut primary = EditorText::default();
         let mut secondary = EditorText::default();
@@ -162,6 +195,21 @@ impl TuiApp {
                     .collect();
             }
         }
+        let git = if self.panels.sidebar() == jc_app::SidebarView::Git
+            || self.panels.bottom() == BottomPanel::Diff
+        {
+            self.prepare_git_diff(
+                layout.width,
+                usize::from(layout.bottom_height.saturating_sub(3)),
+                if self.panels.sidebar_visible() {
+                    usize::from(layout.content_height)
+                } else {
+                    0
+                },
+            )
+        } else {
+            GitPresentation::default()
+        };
         Presentation {
             app: self,
             layout,
@@ -169,6 +217,7 @@ impl TuiApp {
             secondary,
             status_position,
             search_positions,
+            git,
         }
     }
 }

@@ -95,8 +95,17 @@ Tema, densidad y disposición se definen como datos. Primera escena: pestañas p
 
 El proveedor `git_read` ya obtiene snapshots privados/inmutables de blobs HEAD/index
 con identidad raíz/git-dir/ruta/OID, de forma explícita y acotada en Windows.
-`DiffModel` puede prestar sus bytes sin otra sesión/undo. La coordinación de jobs,
-generaciones y snapshot de trabajo no está conectada: el futuro consumidor debe
-validar revisión/encoding y descartar entregas obsoletas. No ejecutar ese proceso
-en entrada/render ni habilitar una UI Git por la presencia del módulo.
-Ver [contrato/evidencia Git](GIT_READ_ONLY_PROVIDER.md).
+`OwnedDiffModel` comparte fuentes inmutables mediante Arc y usa el mismo motor de
+alineación que `DiffModel`, sin otra sesión/undo ni copia adicional del snapshot.
+`GitDiffController` ya coordina el JobSystem F3: un trabajo en vuelo, una pendiente
+de metadatos, reserva de artefacto de 12 MiB hasta poll y rechazo de entregas por
+revisión/encoding/vista activa/ruta/generación. Descartar un resultado libera sus
+fuentes; superseder espera el acknowledgement anterior antes de capturar otro.
+Solo el worker canonicaliza, inicia Git y calcula el diff. Preparación TUI normaliza
+viewport y decodifica prefijos acotados de las filas visibles; composición consume
+GitPresentation de solo lectura. El frontend limpia la intención al cambiar raíz
+o ejecutable y tick valida antes de preparar. HEAD/index conservan identidad de
+snapshot; refresh explícito, sin watcher ni escrituras. Ver
+[entrega/cuotas](GIT_DIFF_DELIVERY.md), [presentación](GIT_DIFF_PRESENTATION.md)
+y [proveedor Git](GIT_READ_ONLY_PROVIDER.md). RAM editor + auxiliares y latencia
+física permanecen sin aceptación global.
