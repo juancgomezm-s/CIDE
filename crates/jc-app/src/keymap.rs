@@ -315,6 +315,7 @@ pub fn default_keymap() -> KeyMap {
         bind(BottomPanel, KeyStroke::alt(c('1')), ViewProblems),
         bind(BottomPanel, KeyStroke::alt(c('2')), ViewOutput),
         bind(BottomPanel, KeyStroke::alt(c('3')), ViewSearchResults),
+        bind(BottomPanel, KeyStroke::plain(Escape), SearchCancelProject),
         bind(BottomPanel, KeyStroke::alt(c('4')), ViewTerminal),
         bind(Global, KeyStroke::plain(f(6)), FocusNext),
         bind(Global, KeyStroke::shift(f(6)), FocusPrevious),

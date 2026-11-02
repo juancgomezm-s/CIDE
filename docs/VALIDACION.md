@@ -1,7 +1,7 @@
 # Validación
 
-**Evidencia local más reciente:** F1/F2/F3, 157 pruebas y verificaciones Rust
-satisfactorias. Véase la sección F3 al final y su checkpoint; las secciones
+**Evidencia local más reciente:** F1/F2/F3, guardado Windows y Search Plus literal
+de proyecto, 174 pruebas y verificaciones Rust satisfactorias. Véase S1 al final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
 
 Estado de la primera base preparada antes de publicarla:
@@ -204,3 +204,49 @@ con código 32 en ambas corridas. No se omiten ni se reclasifican como guardados
 Detalles, límites y fuente primaria: [SAVE_WINDOWS_CONTENTION.md](SAVE_WINDOWS_CONTENTION.md).
 Datos crudos en benchmarks/SAVE-contention-before.csv y SAVE-contention-after.csv.
 Cero CI remoto y ninguna modificación de servicios/configuración del sistema.
+
+## Search Plus de proyecto — 2026-11-02
+
+Sobre el guardado `ed51143`: búsqueda literal exacta con globs/exclusiones, worker
+bajo demanda, snapshots abiertos, resultados por lotes versionados, cancelación y
+navegación. Reemplazo con preview agrupado, confirmación explícita, un archivo por
+turno y conflictos individuales. Abiertos usan un undo sin guardarse; cerrados usan
+FileSession. No-op no reescribe. No hay transacción global del filesystem.
+
+Validación Windows local: **174 pruebas, 0 fallos** (jc-app 82, jc-core 26,
+jc-files 14, jc-tui 24, jc-cli 6, jc-languages 4, jc-progress 9, jc-text 9).
+Fmt/check, Clippy workspace/all-targets con -D warnings y build release completos.
+Trece nuevas regresiones respecto a ed51143 incluyen diez de integración de
+proyecto, dos TUI y una verificación nativa de handle. Cubren bytes/encodings,
+BOM/CRLF, raíz/junction/handle, globs, presupuestos, fuentes sucias/obsoletas,
+generaciones, cancelación, preview sin escrituras, confirmación, undo, no-op y
+conflictos. Una junction creada tras el preview también se rechaza sin alterar
+el archivo externo. Las pruebas de guardado siguen presentes y pasaron.
+
+Benchmark release project_search_bench: corpus ASCII de 2.097.144 bytes en cuatro
+archivos, 64 coincidencias, cache de disco caliente, 5+31 muestras. Primera entrega
+p50/p95 5707/7220 µs; fin 21239/27457 µs. Cancelar y hacer join después de la primera
+entrega de una consulta densa: 56/73 µs. No mide terminal ni escrituras de reemplazo.
+Datos en [S1-search.csv](benchmarks/S1-search.csv).
+
+El ejecutable real pasó scripts/smoke-conpty.ps1 -ProjectSearch: carpeta/filtros,
+resultado y completion sin otra tecla, navegación, preview cancelado, aplicación
+confirmada, buffer abierto no guardado y un undo. El host configura UTF-8 solo en
+su ConPTY privada y ahora interpreta movimientos relativos/borrado VT. La primera
+prueba de undo se hizo con foco Output; se corrigió el recorrido para volver al
+Editor, conforme al scope real de Ctrl+Z. No se cambió el keymap para acomodar
+el test. Datos en [S1-conpty.json](benchmarks/S1-conpty.json).
+
+Control previo de cursor: p50/p95 15,6115/16,0598 ms hasta VT, 1150 bytes/31 Right,
+0 clears por teclas y 1 por resize; exit 0. Muestreo mínimo anterior al recorrido:
+1.142.784 bytes privados del editor y 0 ms CPU en 250 ms, sin contar conhost/host.
+Esto no acepta RAM global <50 MiB ni latencia hasta pantalla física <16 ms.
+
+Límites: S1 es literal/sensible a mayúsculas; Unicode case folding completo,
+regex real y migración acotada del scan de documento S0 siguen pendientes. No hay
+aceptación Linux/GUI/DPI/IME/grafemas ni corpus exhaustivo. Cancelación cooperativa:
+I/O del sistema y el commit de un archivo no son preemptibles. Las verificaciones
+de huella/raíz no son un CAS ni aislamiento completo frente a un actor que cambie
+nombres durante el commit. M2A permanece abierto. Detalle en
+[S1_PROJECT_SEARCH.md](S1_PROJECT_SEARCH.md). Sin CI remoto, push ni cambios de
+servicios, Qwen/GPU o configuración del sistema.

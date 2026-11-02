@@ -47,6 +47,7 @@ pub enum CommandId {
     SearchFindNext,
     SearchFindPrevious,
     SearchProject,
+    SearchCancelProject,
     SearchReplaceProject,
     SearchToggleCase,
     SearchToggleWholeWord,
@@ -114,6 +115,8 @@ pub struct CommandContext {
     pub has_selection: bool,
     pub clipboard_has_text: bool,
     pub has_project: bool,
+    pub project_search_running: bool,
+    pub project_replace_ready: bool,
     pub active_language: Option<String>,
     pub has_progress_profile: bool,
     pub has_database_schema: bool,
@@ -139,6 +142,8 @@ impl Default for CommandContext {
             has_selection: false,
             clipboard_has_text: false,
             has_project: false,
+            project_search_running: false,
+            project_replace_ready: false,
             active_language: None,
             has_progress_profile: false,
             has_database_schema: false,
@@ -272,6 +277,12 @@ fn line_comment(ctx: &CommandContext) -> bool {
 fn project(ctx: &CommandContext) -> bool {
     ctx.has_project
 }
+fn project_search_running(ctx: &CommandContext) -> bool {
+    ctx.project_search_running
+}
+fn project_replace_ready(ctx: &CommandContext) -> bool {
+    ctx.project_replace_ready
+}
 fn reopen(ctx: &CommandContext) -> bool {
     ctx.can_reopen_closed_tab
 }
@@ -336,7 +347,18 @@ pub fn default_registry() -> CommandRegistry {
         spec!(SearchFindNext, Search, "Find Next", has_document),
         spec!(SearchFindPrevious, Search, "Find Previous", has_document),
         spec!(SearchProject, Search, "Find in Project", project),
-        spec!(SearchReplaceProject, Search, "Replace in Project", project),
+        spec!(
+            SearchReplaceProject,
+            Search,
+            "Replace in Project",
+            project_replace_ready
+        ),
+        spec!(
+            SearchCancelProject,
+            Search,
+            "Cancel Project Search",
+            project_search_running
+        ),
         spec!(SearchToggleCase, Search, "Match Case", always),
         spec!(SearchToggleWholeWord, Search, "Whole Word", always),
         spec!(SearchToggleRegex, Search, "Regular Expression", never),

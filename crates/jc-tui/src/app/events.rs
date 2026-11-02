@@ -20,10 +20,6 @@ impl TuiApp {
             self.handle_overlay_key(key);
             return;
         }
-        if key.code == KeyCode::Esc {
-            let _ = self.focus.escape();
-            return;
-        }
         if let Some(stroke) = to_stroke(key) {
             let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
             let context = self.command_context();
@@ -32,6 +28,7 @@ impl TuiApp {
                     self.dispatch(command);
                     return;
                 }
+                Resolution::Disabled(_) if key.code == KeyCode::Esc => {}
                 Resolution::Disabled(command) => {
                     self.status = self
                         .registry
@@ -42,6 +39,10 @@ impl TuiApp {
                 }
                 Resolution::None => {}
             }
+        }
+        if key.code == KeyCode::Esc {
+            let _ = self.focus.escape();
+            return;
         }
         match self.focus.primary() {
             PrimaryFocus::Editor => self.handle_editor_key(key),
@@ -151,7 +152,7 @@ impl TuiApp {
         let count = match self.panels.bottom() {
             BottomPanel::Problems => self.workbench.problems().len(),
             BottomPanel::Output => self.workbench.output().len(),
-            BottomPanel::SearchResults => self.workbench.search().matches.len(),
+            BottomPanel::SearchResults => self.search_result_count(),
             BottomPanel::Terminal => 1,
         };
         match key.code {
@@ -161,6 +162,11 @@ impl TuiApp {
             }
             KeyCode::Home => self.bottom_selected = 0,
             KeyCode::End if count > 0 => self.bottom_selected = count - 1,
+            KeyCode::Enter
+                if self.panels.bottom() == BottomPanel::SearchResults && self.project_results =>
+            {
+                self.select_project_result()
+            }
             KeyCode::Enter if self.panels.bottom() == BottomPanel::SearchResults => {
                 match self.workbench.select_search_match(self.bottom_selected) {
                     Ok(true) => {

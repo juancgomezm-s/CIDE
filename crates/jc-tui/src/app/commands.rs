@@ -4,6 +4,15 @@ use jc_app::{BottomPanel, CommandId, CommandOutcome, Overlay, PrimaryFocus, Side
 
 impl TuiApp {
     pub(crate) fn dispatch(&mut self, command: CommandId) {
+        if matches!(
+            command,
+            CommandId::SearchFind
+                | CommandId::SearchReplace
+                | CommandId::SearchFindNext
+                | CommandId::SearchFindPrevious
+        ) {
+            self.project_results = false;
+        }
         if command == CommandId::EditorOpenToSide && self.focus.primary() == PrimaryFocus::Sidebar {
             self.activate_explorer_entry_to_side();
             return;
@@ -105,12 +114,17 @@ impl TuiApp {
             FocusPrevious => {
                 self.focus.previous(&self.panels);
             }
-            SearchProject | SearchReplaceProject => {
-                let label = self
-                    .registry
-                    .get(command)
-                    .map_or("Command", |spec| spec.label);
-                self.status = format!("{label} is not implemented in this M2 checkpoint");
+            SearchProject => {
+                self.cancel_project_replace();
+                self.open_prompt(PromptKind::ProjectQuery);
+            }
+            SearchCancelProject => {
+                self.project_search.cancel();
+                self.cancel_project_replace();
+                self.status = "Project search cancelled".into();
+            }
+            SearchReplaceProject => {
+                self.open_prompt(PromptKind::ProjectReplacement);
             }
             _ => {}
         }

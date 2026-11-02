@@ -145,7 +145,10 @@ impl TuiApp {
                 }
             }
             status_position = self.workbench.active_position();
-            if self.panels.bottom_visible() && self.panels.bottom() == BottomPanel::SearchResults {
+            if self.panels.bottom_visible()
+                && self.panels.bottom() == BottomPanel::SearchResults
+                && !self.project_results
+            {
                 let count = self.workbench.search().matches.len();
                 let available = usize::from(layout.bottom_height.saturating_sub(2));
                 let selected = self.bottom_selected.min(count.saturating_sub(1));

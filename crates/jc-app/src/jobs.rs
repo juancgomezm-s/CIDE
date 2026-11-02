@@ -47,7 +47,7 @@ impl Wakeup {
 pub struct JobKey(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct JobId(pub u64);
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TaskStamp {
     pub document: DocumentId,
     pub revision: u64,
@@ -71,6 +71,15 @@ pub struct Cancellation {
     deadline: Instant,
 }
 impl Cancellation {
+    pub(crate) fn new(timeout: Duration) -> Self {
+        Self {
+            flag: Arc::new(AtomicBool::new(false)),
+            deadline: Instant::now() + timeout,
+        }
+    }
+    pub(crate) fn cancel(&self) {
+        self.flag.store(true, Ordering::Release);
+    }
     pub fn is_cancelled(&self) -> bool {
         self.flag.load(Ordering::Acquire) || Instant::now() >= self.deadline
     }

@@ -14,6 +14,10 @@ pub enum PromptKind {
     New,
     SaveAs,
     OpenFolder,
+    ProjectQuery,
+    ProjectInclude,
+    ProjectExclude,
+    ProjectReplacement,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +28,9 @@ pub enum ReplaceField {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiOverlay {
+    ProjectReplacePreview {
+        selected: usize,
+    },
     None,
     Prompt {
         kind: PromptKind,

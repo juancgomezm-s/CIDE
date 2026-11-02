@@ -63,6 +63,8 @@ Dependencias: F1 → F2 → F3 → ampliación funcional M2A. El prototipo de ba
 
 **Alcance de productividad ABL:** la edición y el snippet engine son universales; el contenido ABL y sus servicios especializados pertenecerán a una extensión de lenguaje interna y opcional. Tokenización/formateo se prepara en M3; firmas, USING y herencia en M4. Ver [arquitectura de extensiones](EXTENSION_ARCHITECTURE.md) y [comandos ABL](ABL_EDITOR_COMMAND_SCOPE.md).
 
+**Avance S1 del 2026-11-02:** búsqueda literal de proyecto, filtros, snapshots abiertos, lotes/generaciones/cancelación, navegación y preview/reemplazo por archivo implementados con evidencia local. Abiertos usan un undo y no se guardan automáticamente; cerrados usan FileSession, con conflictos explícitos. [APIs, cuotas, mediciones y límites](S1_PROJECT_SEARCH.md). No cierra S0 (case folding Unicode completo, búsqueda de documento acotada/regex real), matriz funcional ni aceptación global de rendimiento. El tratamiento de guardado Windows 32/33/1175 y recuperación 1176/1177 está documentado en [SAVE_WINDOWS_CONTENTION.md](SAVE_WINDOWS_CONTENTION.md).
+
 **Search Plus es prioridad de producto:** primero documento activo, luego búsqueda en proyecto cancelable, más tarde referencias apoyadas en compilador XREF y catálogo de esquema. Ver [plan Search Plus](M2_SEARCH_PLUS.md).
 
 Esta prioridad se ejecuta sobre M2-F: antes de sumar búsqueda de proyecto deben existir transacciones, resultados por revisión y presupuesto de trabajo/memoria. Navegación de proveedores, Git y asistentes no se anteponen a esa base.
@@ -81,7 +83,7 @@ Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crosst
 
 **Incremento M2A — dos grupos funcionales (2026-11-01):** `PaneManager` ya está conectado al renderer TUI, comandos, menús y palette. Cursor, selección y viewport se conservan por grupo; las ediciones/undo/redo ajustan posiciones de la otra vista e historial sin duplicar documentos. Incluye pin, apertura lateral, back/forward, scroll vertical vinculado y fallback al grupo activo con poco ancho. Hay pruebas locales y smoke test en terminal Windows; véase [VALIDACION.md](VALIDACION.md). Siguen pendientes símbolos/includes, Git read-only/diffs y revisión manual completa. Git con escritura permanece en M5. Ver [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
 
-**Pendiente para cerrar M2A:** aceptación global de rendimiento de M2-F, búsqueda/reemplazo de proyecto con preview y conflictos explícitos, integración de proveedores reales sobre el contrato de tareas F3 y revisión manual completa de teclado. El contrato de tareas/Problems/Output ya tiene proveedor de prueba y regresiones locales; no equivale a Progress conectado. La ejecución real de Progress y su validación pertenecen a M3; no se aplazan defectos conocidos de datos/edición hasta M5.
+**Pendiente para cerrar M2A:** aceptación global de rendimiento de M2-F, cierre S0/Unicode y ampliación de la matriz Search Plus, integración de proveedores reales sobre el contrato de tareas F3 y revisión manual completa de teclado. El incremento literal de proyecto con preview y conflictos ya existe; no se confunde con cierre completo de Search Plus. El contrato de tareas/Problems/Output ya tiene proveedor de prueba y regresiones locales; no equivale a Progress conectado. La ejecución real de Progress y su validación pertenecen a M3; no se aplazan defectos conocidos de datos/edición hasta M5.
 
 **Criterios de aceptación:**
 - uso completo por teclado;

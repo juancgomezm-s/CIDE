@@ -9,6 +9,30 @@ use jc_text::TextEncoding;
 impl TuiApp {
     pub(crate) fn handle_overlay_key(&mut self, key: KeyEvent) {
         match self.overlay.clone() {
+            UiOverlay::ProjectReplacePreview { mut selected } => {
+                let count = self.replace_preview.as_ref().map_or(0, |p| p.lines().len());
+                match key.code {
+                    KeyCode::Esc => {
+                        self.replace_preview = None;
+                        self.close_overlay();
+                        return;
+                    }
+                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.accept_project_replace();
+                        return;
+                    }
+                    KeyCode::F(9) => {
+                        self.accept_project_replace();
+                        return;
+                    }
+                    KeyCode::Up => selected = selected.saturating_sub(1),
+                    KeyCode::Down => selected = (selected + 1).min(count.saturating_sub(1)),
+                    KeyCode::Home => selected = 0,
+                    KeyCode::End => selected = count.saturating_sub(1),
+                    _ => {}
+                }
+                self.overlay = UiOverlay::ProjectReplacePreview { selected };
+            }
             UiOverlay::Prompt { kind, mut input } => match key.code {
                 KeyCode::Esc => self.close_overlay(),
                 KeyCode::Enter => self.submit_prompt(kind, input),
@@ -17,6 +41,17 @@ impl TuiApp {
                     self.overlay = UiOverlay::Prompt { kind, input };
                 }
                 KeyCode::Char(ch) if is_plain_text(key) => {
+                    if matches!(
+                        kind,
+                        crate::state::PromptKind::ProjectQuery
+                            | crate::state::PromptKind::ProjectInclude
+                            | crate::state::PromptKind::ProjectExclude
+                            | crate::state::PromptKind::ProjectReplacement
+                    ) && input.len() + ch.len_utf8() > 4096
+                    {
+                        self.status = "Project query/filter exceeds 4096 bytes".into();
+                        return;
+                    }
                     input.push(ch);
                     self.overlay = UiOverlay::Prompt { kind, input };
                 }
@@ -242,6 +277,17 @@ impl TuiApp {
     pub(crate) fn append_overlay_text(&mut self, text: &str) {
         match self.overlay.clone() {
             UiOverlay::Prompt { kind, mut input } => {
+                if matches!(
+                    kind,
+                    crate::state::PromptKind::ProjectQuery
+                        | crate::state::PromptKind::ProjectInclude
+                        | crate::state::PromptKind::ProjectExclude
+                        | crate::state::PromptKind::ProjectReplacement
+                ) && input.len() + text.len() > 4096
+                {
+                    self.status = "Project query/filter exceeds 4096 bytes".into();
+                    return;
+                }
                 input.push_str(text);
                 self.overlay = UiOverlay::Prompt { kind, input };
             }

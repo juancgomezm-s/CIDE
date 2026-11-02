@@ -14,6 +14,16 @@ impl TuiApp {
     }
 
     pub(crate) fn submit_prompt(&mut self, kind: PromptKind, input: String) {
+        if matches!(
+            kind,
+            PromptKind::ProjectQuery
+                | PromptKind::ProjectInclude
+                | PromptKind::ProjectExclude
+                | PromptKind::ProjectReplacement
+        ) {
+            self.submit_project_prompt(kind, input);
+            return;
+        }
         let value = input.trim();
         if value.is_empty() {
             self.status = "Path cannot be empty".to_owned();
@@ -45,12 +55,21 @@ impl TuiApp {
             PromptKind::OpenFolder => {
                 if path.is_dir() {
                     self.explorer.set_root(path).map(|()| {
+                        self.project_search.clear();
+                        self.cancel_project_replace();
+                        self.project_results = false;
                         self.project_root = self.explorer.root().map(PathBuf::from);
                         self.panels.show_sidebar(SidebarView::Explorer);
                     })
                 } else {
                     Err("Folder does not exist".to_owned())
                 }
+            }
+            PromptKind::ProjectQuery
+            | PromptKind::ProjectInclude
+            | PromptKind::ProjectExclude
+            | PromptKind::ProjectReplacement => {
+                unreachable!()
             }
         };
         match result {

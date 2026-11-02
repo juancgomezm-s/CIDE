@@ -151,6 +151,9 @@ pub struct Workbench {
 }
 
 impl Workbench {
+    pub(crate) fn open_documents(&self) -> impl Iterator<Item = &EditorDocument> {
+        self.documents.iter()
+    }
     pub fn document_by_id(&self, id: DocumentId) -> Option<&EditorDocument> {
         self.documents.iter().find(|document| document.id == id)
     }

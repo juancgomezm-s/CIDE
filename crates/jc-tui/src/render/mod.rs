@@ -339,6 +339,9 @@ fn draw_bottom(
     let title = match app.panels.bottom() {
         BottomPanel::Problems => " Problems ",
         BottomPanel::Output => " Output ",
+        BottomPanel::SearchResults if app.project_results => {
+            " Project Search: literal / case sensitive "
+        }
         BottomPanel::SearchResults => " Search Results ",
         BottomPanel::Terminal => " Terminal ",
     };
@@ -355,7 +358,7 @@ fn draw_bottom(
     let count = match app.panels.bottom() {
         BottomPanel::Problems => app.workbench.problems().len(),
         BottomPanel::Output => app.workbench.output().len(),
-        BottomPanel::SearchResults => app.workbench.search().matches.len(),
+        BottomPanel::SearchResults => app.search_result_count(),
         BottomPanel::Terminal => 1,
     };
     let available = usize::from(height.saturating_sub(1));
@@ -381,6 +384,33 @@ fn draw_bottom(
             .skip(start)
             .take(available)
             .cloned()
+            .collect(),
+        BottomPanel::SearchResults if app.project_results => app
+            .project_search
+            .rows()
+            .iter()
+            .skip(start)
+            .take(available)
+            .map(|row| {
+                let root = app
+                    .project_search
+                    .root()
+                    .unwrap_or(std::path::Path::new(""));
+                match row {
+                    jc_app::ProjectSearchRow::Match(m) => format!(
+                        "{}:{}:{}  {}",
+                        m.path.strip_prefix(root).unwrap_or(&m.path).display(),
+                        m.position.line + 1,
+                        m.position.column + 1,
+                        m.snippet
+                    ),
+                    jc_app::ProjectSearchRow::Issue { path, message } => format!(
+                        "{}: {}",
+                        path.strip_prefix(root).unwrap_or(path).display(),
+                        message
+                    ),
+                }
+            })
             .collect(),
         BottomPanel::SearchResults => app
             .workbench

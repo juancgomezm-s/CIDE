@@ -1,0 +1,4 @@
+operation,corpus_bytes,files,samples,p50_us,p95_us
+first_batch,2097144,4,31,5707,7220
+complete,2097144,4,31,21239,27457
+cancel_and_join,2097144,4,31,56,73

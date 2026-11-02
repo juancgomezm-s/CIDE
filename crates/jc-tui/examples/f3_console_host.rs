@@ -3,6 +3,13 @@
 #[cfg(windows)]
 fn main() {
     use std::{fs::OpenOptions, io::Write, process::Command};
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetConsoleOutputCP(page: u32) -> i32;
+    }
+    // This harness owns a private ConPTY. Do not inherit its default OEM page
+    // for a renderer that emits UTF-8; no user/system console is modified.
+    assert_ne!(unsafe { SetConsoleOutputCP(65001) }, 0);
     let mut args = std::env::args_os().skip(1);
     let executable = args.next().expect("editor executable");
     let input = OpenOptions::new().read(true).open("CONIN$").unwrap();

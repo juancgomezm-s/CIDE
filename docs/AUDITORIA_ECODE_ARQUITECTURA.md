@@ -1,6 +1,6 @@
 # Auditoría de arquitectura y referencia ecode
 
-**Avance vigente F2:** [rangos, índices y memoria](F2_RANGES_INDEX_MEMORY.md) implementados y validados sobre F1. Los defectos/costes globales descritos en checkpoints anteriores son históricos; F3 permanece pendiente.
+**Avance vigente:** F1/F2/F3 y [Search Plus literal de proyecto](S1_PROJECT_SEARCH.md) implementados con evidencia local. Los defectos/costes descritos en checkpoints anteriores son históricos; la aceptación global de RAM/latencia física y M2A sigue abierta.
 
 Fecha: 2026-11-01. Base de JC-IDE: `d5eccfccdfade62b6f794d48b2e3a25de945d4ca`, rama `m2a/dual-pane-tui`.
 

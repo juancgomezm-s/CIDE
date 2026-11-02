@@ -4,6 +4,8 @@ La búsqueda debe ser más poderosa que la del editor típico, pero ejecutarse *
 
 **Orden actualizado 2026-11-01:** S0/S1 dependen de M2-F de [PLAN.md](PLAN.md). F1 corrigió replace-all para usar una transacción y mapas completos. F2 ya resuelve posiciones mediante la proyección compartida y virtualiza filas visibles del panel. El escaneo de consulta sigue síncrono y la cota/cancelación de resultados/jobs corresponde a F3/Search Plus. Ver [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md). La [auditoría de ecode y JC-IDE](AUDITORIA_ECODE_ARQUITECTURA.md) aporta evidencia y referencias para la sustitución.
 
+**Avance 2026-11-02:** S1 literal implementado: worker acotado, filtros, snapshots de abiertos, lotes, cancelación, destinos versionados y reemplazo con preview/confirmación/conflictos por archivo. Uso y límites en [S1_PROJECT_SEARCH.md](S1_PROJECT_SEARCH.md). S0 sigue con escaneo síncrono y case-insensitive ASCII; no se afirma Unicode case folding completo ni regex. M2A/global RAM/latencia física siguen abiertos.
+
 ## S0 — Archivo activo: M2A
 
 - Ctrl+F: búsqueda incremental; F3 y Shift+F3: siguiente/anterior.

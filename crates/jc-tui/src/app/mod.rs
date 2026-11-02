@@ -5,6 +5,7 @@ mod menus;
 mod overlays;
 mod paths;
 mod presentation;
+mod project_search;
 pub(crate) use presentation::Presentation;
 #[cfg(test)]
 mod tests;
@@ -32,6 +33,13 @@ pub struct TuiApp {
     pub(crate) explorer: explorer::ExplorerState,
     pub(crate) bottom_selected: usize,
     pub(crate) tasks: jc_app::JobSystem,
+    pub(crate) project_search: jc_app::ProjectSearch,
+    pub(crate) project_results: bool,
+    pub(crate) project_draft: Option<jc_app::ProjectSearchOptions>,
+    pub(crate) replace_preview: Option<jc_app::ProjectReplacePreview>,
+    pub(crate) project_replace: Option<jc_app::ProjectReplacePreview>,
+    replace_files: usize,
+    replace_conflicts: usize,
     should_exit: bool,
     default_encoding: Option<TextEncoding>,
 }
@@ -59,6 +67,13 @@ impl TuiApp {
             project_root: None,
             explorer: explorer::ExplorerState::default(),
             bottom_selected: 0,
+            project_search: jc_app::ProjectSearch::new(wakeup.clone()),
+            project_results: false,
+            project_draft: None,
+            replace_preview: None,
+            project_replace: None,
+            replace_files: 0,
+            replace_conflicts: 0,
             tasks: jc_app::JobSystem::new(jc_app::JobLimits::default(), wakeup)
                 .expect("valid default task quotas"),
             should_exit: false,
@@ -79,6 +94,20 @@ impl TuiApp {
 
     pub(crate) fn poll_tasks(&mut self) -> TaskUpdate {
         let mut update = TaskUpdate::default();
+        update.recover = self.project_search.take_recovery();
+        update.changed = update.recover;
+        update.changed |= self.apply_project_replace_step();
+        if self.project_search.poll(&self.workbench, 4) {
+            update.changed = true;
+            if self.project_results {
+                self.status = format!(
+                    "Project search {:?}: {} rows",
+                    self.project_search.state,
+                    self.project_search.rows().len()
+                );
+            }
+            update.recover |= self.project_search.state == jc_app::ProjectSearchState::Failed;
+        }
         for completion in self.tasks.poll(&self.workbench, 4) {
             if completion.status == jc_app::TaskStatus::Panicked {
                 update.recover = true;
@@ -129,8 +158,13 @@ impl TuiApp {
     pub(crate) fn command_context(&self) -> jc_app::CommandContext {
         let mut context = self.workbench.context();
         context.focus = self.focus.primary();
-        // Project-aware search is not enabled until its provider exists.
-        context.has_project = false;
+        context.has_project = self.project_root.is_some();
+        context.project_search_running = self.project_search.state
+            == jc_app::ProjectSearchState::Running
+            || self.project_replace.is_some();
+        context.project_replace_ready = self.project_results
+            && self.project_replace.is_none()
+            && self.project_search.can_replace();
         if context.focus == jc_app::PrimaryFocus::Sidebar {
             context.can_open_to_side = self.panels.sidebar() == jc_app::SidebarView::Explorer
                 && self

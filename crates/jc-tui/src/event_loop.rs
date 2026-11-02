@@ -188,7 +188,11 @@ pub(crate) fn run(options: LaunchOptions) -> io::Result<()> {
             terminal.draw(&screen)?;
             dirty = false;
         }
-        if input.shared.pending() || app.tasks.has_completed() {
+        if input.shared.pending()
+            || app.tasks.has_completed()
+            || app.project_search.ready()
+            || app.project_replace.is_some()
+        {
             continue;
         }
         wakeup.wait(ticket, app.tasks.next_deadline());

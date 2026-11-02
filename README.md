@@ -4,7 +4,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M2 en desarrollo — F1/F2/F3 implementados con evidencia local: vistas independientes, transacciones, rangos/índices, cuotas, presentación de solo lectura, terminal incremental y tareas acotadas/versionadas. Metas globales de rendimiento abiertas. Próximo incremento funcional: Search Plus de proyecto. GUI con dirección visual de Sublime Text y símbolos pendientes.**
+**Estado: M2 en desarrollo — F1/F2/F3 implementados con evidencia local: vistas independientes, transacciones, rangos/índices, cuotas, presentación de solo lectura, terminal incremental y tareas acotadas/versionadas. Metas globales de rendimiento abiertas. Search Plus de proyecto ya busca por lotes y ofrece reemplazo literal con preview y conflictos; el cierre de S0 y la aceptación completa de M2A siguen abiertos. GUI con dirección visual de Sublime Text y símbolos pendientes.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
@@ -18,7 +18,7 @@ real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 | Selecciones | Port parcial de `Region` de Lime Text, con procedencia y licencia conservadas |
 | `jc-languages` | 18 perfiles y detección por extensión/nombre de archivo |
 | `jc-progress` | Construcción de argumentos sin shell, solicitudes ASCII y parser acotado de diagnósticos/esquema |
-| `jc-app` | Registro central de comandos, keymap contextual, foco, menús, pestañas, paneles y diálogos compartidos por TUI/GUI |
+| `jc-app` | Comandos, keymap, foco, paneles, tareas y Search Plus de proyecto con preview/reemplazo versionado; compartido por TUI/GUI |
 | `jc-tui` | Frontend terminal en M2A: edición, tabs, overlays, Explorer, resultados, menús y command palette |
 | Auxiliares ABL | Código experimental para comprobar/compilar y exportar esquema; requiere pruebas con Progress real |
 | `jc-cli` | Inspección de archivos, copia exacta, edición de bytes a copia nueva, demo de undo/redo, preparación de solicitudes y validación de respuestas Progress |
@@ -69,6 +69,10 @@ En este equipo se preparó Rust 1.85.1 dentro de `work/toolchain`, sin cambiar e
 `work/` está ignorado por Git; en un clon nuevo se necesita instalar Rust. El wrapper no descarga herramientas. Las pruebas de guardado seguro requieren permitir hard links y `ReplaceFileW`; un sandbox que los bloquee puede devolver acceso denegado.
 
 La especificación de doble panel, Outline, navegación de includes/RUN, autocompletado y Git está en [M2_NAVIGATION_PANES_GIT.md](docs/M2_NAVIGATION_PANES_GIT.md). Para retomar desde una PC Windows usa el [prompt de continuación](docs/CONTINUAR_EN_EQUIPO.md).
+
+## Search Plus de proyecto
+
+Abre una carpeta y usa Ctrl+Shift+F para consulta literal sensible a mayúsculas, inclusión/exclusión por globs y resultados progresivos. Enter navega; Esc en el panel inferior cancela. Tras una consulta completa sin avisos, Search / Replace in Project permite revisar sustituciones y confirmar con F9/Ctrl+Enter. Abiertos: edición con undo sin guardar; cerrados: guardado por archivo y conflictos explícitos. Véanse [uso, cuotas y límites](docs/S1_PROJECT_SEARCH.md) y [guardado Windows](docs/SAVE_WINDOWS_CONTENTION.md). No se certifican regex, case folding Unicode completo ni objetivos globales de rendimiento.
 
 ## Política de CI
 

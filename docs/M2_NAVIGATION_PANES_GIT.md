@@ -1,6 +1,6 @@
 # M2–M5 — Grupos de edición, navegación y Git integrado
 
-**Avance vigente F2:** [rangos, índices y memoria](F2_RANGES_INDEX_MEMORY.md) implementados y validados sobre F1. Los defectos/costes globales descritos en checkpoints anteriores son históricos; F3 permanece pendiente.
+**Avance vigente:** F1/F2/F3 y [Search Plus literal de proyecto](S1_PROJECT_SEARCH.md) implementados con evidencia local. Los defectos/costes descritos en checkpoints anteriores son históricos; la aceptación global de RAM/latencia física y M2A sigue abierta.
 
 **Estado:** doble panel TUI implementado y validado localmente el 2026-11-01. El resto del documento incluye capacidades futuras: Git, navegación por lenguaje y LSP aún no están operativos.
 

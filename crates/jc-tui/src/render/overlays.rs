@@ -6,6 +6,9 @@ use jc_app::MenuId;
 
 pub fn draw(app: &TuiApp, screen: &mut Screen) {
     match &app.overlay {
+        UiOverlay::ProjectReplacePreview { selected } => {
+            draw_project_preview(app, screen, *selected)
+        }
         UiOverlay::None => {}
         UiOverlay::Prompt { kind, input } => draw_prompt(screen, *kind, input),
         UiOverlay::Find { input } => draw_find(app, screen, input),
@@ -27,6 +30,10 @@ fn draw_prompt(screen: &mut Screen, kind: PromptKind, input: &str) {
         PromptKind::New => "New file path",
         PromptKind::SaveAs => "Save As",
         PromptKind::OpenFolder => "Open folder",
+        PromptKind::ProjectQuery => "Find in Project: literal, case sensitive",
+        PromptKind::ProjectInclude => "Include globs, comma separated (empty = **)",
+        PromptKind::ProjectExclude => "Extra exclude globs (.git/target/work always excluded)",
+        PromptKind::ProjectReplacement => "Replacement text (empty deletes matches)",
     };
     let (x, y, width, height) = centered(screen, 64, 5);
     panel(screen, x, y, width, height, title);
@@ -34,6 +41,59 @@ fn draw_prompt(screen: &mut Screen, kind: PromptKind, input: &str) {
     screen.set_cursor(
         (x + 2 + input.chars().count() as u16).min(x + width.saturating_sub(2)),
         y + 2,
+    );
+}
+
+fn draw_project_preview(app: &TuiApp, screen: &mut Screen, selected: usize) {
+    let Some(preview) = &app.replace_preview else {
+        return;
+    };
+    let (x, y, width, height) = centered(screen, 92, 22);
+    panel(screen, x, y, width, height, "Replace in Project — Preview");
+    screen.text(
+        x + 2,
+        y + 1,
+        &clip(
+            &format!(
+                "{} files / {} matches; search snapshot",
+                preview.files_remaining(),
+                preview.matches()
+            ),
+            width.saturating_sub(4),
+        ),
+    );
+    let available = usize::from(height.saturating_sub(5));
+    let start = selected.saturating_sub(available.saturating_sub(1));
+    for (offset, line) in preview
+        .lines()
+        .iter()
+        .skip(start)
+        .take(available)
+        .enumerate()
+    {
+        screen.text_styled(
+            x + 2,
+            y + 2 + offset as u16,
+            &clip(line, width.saturating_sub(4)),
+            if start + offset == selected {
+                CellStyle::Reverse
+            } else {
+                CellStyle::Normal
+            },
+        );
+    }
+    screen.text(
+        x + 2,
+        y + height.saturating_sub(3),
+        &clip(
+            "Closed files are saved; open buffers stay unsaved.",
+            width.saturating_sub(4),
+        ),
+    );
+    screen.text(
+        x + 2,
+        y + height.saturating_sub(2),
+        &clip("F9 / Ctrl+Enter apply; Esc cancel", width.saturating_sub(4)),
     );
 }
 

@@ -1,4 +1,129 @@
 use super::*;
+
+#[test]
+fn project_replace_preview_cancel_confirmation_and_file_scheduling_are_explicit() {
+    use crate::state::PromptKind;
+    use jc_app::ProjectSearchState;
+    use std::time::{Duration, Instant};
+    let root = std::env::temp_dir().join(format!("jc-tui-project-replace-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    for index in 0..3 {
+        std::fs::write(root.join(format!("{index}.p")), b"a a\r\n").unwrap();
+    }
+    let mut app = TuiApp::new(LaunchOptions::default());
+    app.submit_prompt(PromptKind::OpenFolder, root.to_str().unwrap().into());
+    app.project_search
+        .start(
+            &app.workbench,
+            &root,
+            jc_app::ProjectSearchOptions::literal("a"),
+        )
+        .unwrap();
+    app.project_results = true;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while app.project_search.state == ProjectSearchState::Running {
+        app.poll_tasks();
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert!(app
+        .registry
+        .is_enabled(CommandId::SearchReplaceProject, &app.command_context()));
+    app.dispatch(CommandId::SearchReplaceProject);
+    app.submit_prompt(PromptKind::ProjectReplacement, "b".into());
+    assert!(matches!(
+        app.overlay,
+        UiOverlay::ProjectReplacePreview { .. }
+    ));
+    let screen = app.frame(100, 30);
+    assert!((0..30).any(|row| screen.row_text(row).contains("+ b")));
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    for index in 0..3 {
+        assert_eq!(
+            std::fs::read(root.join(format!("{index}.p"))).unwrap(),
+            b"a a\r\n"
+        );
+    }
+    app.submit_prompt(PromptKind::ProjectReplacement, "b".into());
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    assert!(app.project_replace.is_some());
+    app.poll_tasks();
+    assert_eq!(app.project_replace.as_ref().unwrap().files_remaining(), 2);
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert!(app.project_replace.is_none());
+    let changed = (0..3)
+        .filter(|index| std::fs::read(root.join(format!("{index}.p"))).unwrap() == b"b b\r\n")
+        .count();
+    assert_eq!(changed, 1);
+    drop(app);
+    for index in 0..3 {
+        std::fs::remove_file(root.join(format!("{index}.p"))).unwrap();
+    }
+    std::fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn project_search_prompts_cancel_and_deliver_navigable_rows_without_more_input() {
+    use crate::state::PromptKind;
+    use jc_app::{ProjectSearchState, Wakeup};
+    use std::time::{Duration, Instant};
+    let root = std::env::temp_dir().join(format!("jc-tui-project-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let path = root.join("source.p");
+    std::fs::write(&path, "a niño\r\n").unwrap();
+    let wake = Wakeup::default();
+    let mut app = TuiApp::with_wakeup(LaunchOptions::default(), wake.clone());
+    app.submit_prompt(PromptKind::OpenFolder, root.to_str().unwrap().into());
+    assert!(app
+        .registry
+        .is_enabled(CommandId::SearchProject, &app.command_context()));
+    assert!(!app
+        .registry
+        .is_enabled(CommandId::SearchReplaceProject, &app.command_context()));
+    for cancel in [true, false] {
+        key(
+            &mut app,
+            KeyCode::Char('f'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        );
+        text(&mut app, "niño");
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        text(&mut app, "*.p");
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(app.project_results);
+        assert_eq!(app.project_search.state, ProjectSearchState::Running);
+        if cancel {
+            key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+            assert_eq!(app.project_search.state, ProjectSearchState::Cancelled);
+            continue;
+        }
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while app.project_search.state == ProjectSearchState::Running {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            assert!(Instant::now() < deadline);
+            if app.project_search.state == ProjectSearchState::Running
+                && !app.project_search.ready()
+            {
+                wake.wait(ticket, Some(Duration::from_millis(100)));
+            }
+        }
+        assert_eq!(app.project_search.rows().len(), 1);
+        let screen = app.frame(100, 30);
+        assert!((0..30).any(|row| screen.row_text(row).contains("source.p:1:3")));
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
+        assert_eq!(app.workbench.active_position().unwrap().column, 2);
+        assert_eq!(
+            app.workbench.active_bytes().unwrap(),
+            "a niño\r\n".as_bytes()
+        );
+    }
+    drop(app);
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_dir(root).unwrap();
+}
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{CommandId, PaneId, PrimaryFocus};
 

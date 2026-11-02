@@ -22,14 +22,15 @@ mod windows;
 use windows::replace_path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Fingerprint {
+pub struct ContentFingerprint {
     len: u64,
     first: u64,
     second: u64,
 }
 
-impl Fingerprint {
-    fn of(bytes: &[u8]) -> Self {
+type Fingerprint = ContentFingerprint;
+impl ContentFingerprint {
+    pub fn of(bytes: &[u8]) -> Self {
         let mut first = 0xcbf29ce484222325u64;
         let mut second = 0x9e3779b97f4a7c15u64;
         for byte in bytes {

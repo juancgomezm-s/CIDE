@@ -37,3 +37,8 @@ pub use workbench::{
     CommandOutcome, DocumentId, EditorDocument, EditorRead, SearchState, TextReplacement,
     Workbench, WorkbenchError,
 };
+mod project_search;
+pub use project_search::{
+    ProjectReplacePreview, ProjectSearch, ProjectSearchMatch, ProjectSearchOptions,
+    ProjectSearchRow, ProjectSearchState, ReplaceFileOutcome, SearchOrigin,
+};

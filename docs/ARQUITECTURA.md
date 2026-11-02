@@ -78,6 +78,8 @@ En reemplazo de proyecto la atomicidad es por documento/archivo y se informa ava
 
 La implementación F3 se limita a tareas internas de documento con vista opcional. Son dos workers lazy, ocho trabajos admitidos, snapshots de 2 MiB/8 MiB total, resultados de 64 elementos/64 KiB y deadline cooperativo de 2 s por defecto. Una cola ocupada devuelve Busy; no se fuerza la interrupción de Rust arbitrario. La entrega vuelve a validar documento/revisión/encoding/vista/generación. Configuración de proyecto, escaneo por lotes y proveedores reales aún deben integrarse; propuestas no se aplican automáticamente. Véase el checkpoint F3 para el loop y sus cuotas de entrada/logs.
 
+El incremento S1 usa un controlador de proyecto compartido y un worker bajo demanda, además de los jobs documentales F3. Captura hasta 8 MiB de abiertos incluidos (2 MiB/archivo), conserva solo una petición pendiente y entrega lotes de hasta 32 filas con cola de cuatro, más evento terminal. Workers solo leen. La aplicación consume planes de reemplazo confirmados de uno en uno: abiertos mediante apply_text_edits por revisión; cerrados mediante FileSession, con huella y conflicto antes de guardar. El renderer solo lee preview/filas visibles. No hay segundo undo ni transacción global del filesystem. Véanse [S1](S1_PROJECT_SEARCH.md) y [contención de guardado Windows](SAVE_WINDOWS_CONTENTION.md).
+
 ## Ligereza
 
 Abrir y editar no requiere Progress, Git, LSP, terminal ni agentes. Los servicios se activan bajo demanda y su consumo se mide junto con el proceso principal.
