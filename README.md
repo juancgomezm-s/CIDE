@@ -78,7 +78,7 @@ La especificación de doble panel, Outline, navegación de includes/RUN, autocom
 
 Abre una carpeta y usa Ctrl+Shift+F para consulta literal sensible a mayúsculas, inclusión/exclusión por globs y resultados progresivos. Enter navega; Esc en el panel inferior cancela. Tras una consulta completa sin avisos, Search / Replace in Project permite revisar sustituciones y confirmar con F9/Ctrl+Enter. Abiertos: edición con undo sin guardar; cerrados: guardado por archivo y conflictos explícitos. Véanse [uso, cuotas y límites](docs/S1_PROJECT_SEARCH.md) y [guardado Windows](docs/SAVE_WINDOWS_CONTENTION.md). En documento activo, Ctrl+F/Ctrl+H ya ofrecen búsqueda acotada, case folding completo Unicode 17, selección/historial y Ctrl+G escalar: [S0](docs/S0_DOCUMENT_SEARCH.md). No se certifican regex, normalización Unicode, GUI ni objetivos globales de rendimiento.
 
-En Windows, abre la raíz del repositorio y usa View / Git: Active File Diff; la primera vez solicita la ruta absoluta de Git para esa sesión. HEAD/index, refresh, cancelación y configuración están en View y palette. La comparación incluye cambios sin guardar (hasta 2 MiB por fuente), muestra identidad/OID y permite navegar hunks sin editar snapshots. Cambiar documento, vista, revisión o encoding exige refresh. [Entrega y límites](docs/GIT_DIFF_DELIVERY.md), [presentación TUI](docs/GIT_DIFF_PRESENTATION.md) y [proveedor Git](docs/GIT_READ_ONLY_PROVIDER.md). No hay watcher ni status de todo el repositorio; operaciones Git con escritura siguen en M5. La [escena de estudio GUI](docs/M2B_SCENE_STUDY.md) conserva su alcance estático, sin backend elegido ni editor gráfico funcional.
+En Windows, abre la raíz del repositorio y usa View / Git: Active File Diff; la primera vez solicita la ruta absoluta de Git para esa sesión. HEAD/index, refresh, cancelación y configuración están en View y palette. La comparación incluye cambios sin guardar (hasta 2 MiB por fuente), muestra identidad/OID y permite navegar hunks sin editar snapshots. Cambiar documento, vista, revisión o encoding exige refresh. [Entrega y límites](docs/GIT_DIFF_DELIVERY.md), [presentación TUI](docs/GIT_DIFF_PRESENTATION.md) y [proveedor Git](docs/GIT_READ_ONLY_PROVIDER.md). El estado de repositorio de solo lectura se describe abajo; no hay watcher; operaciones Git con escritura siguen en M5. La [escena de estudio GUI](docs/M2B_SCENE_STUDY.md) conserva su alcance estático, sin backend elegido ni editor gráfico funcional.
 
 ## Política de CI
 
@@ -147,7 +147,13 @@ El [estado Git por repositorio](docs/GIT_STATUS_READ_ONLY.md) y su
 [entrega versionada](docs/GIT_STATUS_DELIVERY.md) ya están integrados/validados:
 261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
 sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
-TUI de status pendiente; diff activo HEAD/index operativo.
+TUI de status integrada: Open Folder con la raíz del repositorio y Tools /
+Git: Repository Status (también en palette). Solicita ruta absoluta de Git para
+la sesión si falta; admite refresh/cancel y selección Up/Down/Home/End sin abrir
+archivos. No requiere documento ni encoding. Muestra disco/índice con rutas byte
+escapadas, configuración aislada y sin renames/submódulos; no incorpora buffers
+sucios. [Uso, contrato y límites](docs/GIT_STATUS_PRESENTATION.md). Cierre local:
+290 pruebas completas, fmt/Clippy/release. Diff activo HEAD/index sigue operativo.
 
 
 Search Plus aprovecha varios núcleos por archivo, con dos trabajadores por defecto

@@ -21,9 +21,19 @@ impl TuiApp {
                 return;
             }
             self.git_diff.clear(&mut self.tasks);
+            self.git_status.clear();
+            let target = self.git_configuration_target.take();
             self.git_executable = Some(path);
             self.close_overlay();
-            self.request_git_diff(self.git_source);
+            match target {
+                Some(super::git_repository::GitConfigurationTarget::Diff) => {
+                    self.request_git_diff(self.git_source)
+                }
+                Some(super::git_repository::GitConfigurationTarget::Status) => {
+                    self.request_git_repository_status()
+                }
+                None => self.status = "Git executable configured".into(),
+            }
             return;
         }
         if kind == PromptKind::GoToPosition {
@@ -101,6 +111,8 @@ impl TuiApp {
                         self.cancel_project_replace();
                         self.project_results = false;
                         self.git_diff.clear(&mut self.tasks);
+                        self.git_status.clear();
+                        self.git_configuration_target = None;
                         self.project_root = self.explorer.root().map(PathBuf::from);
                         self.panels.show_sidebar(SidebarView::Explorer);
                     })

@@ -81,6 +81,9 @@ pub enum CommandId {
     GitDiffRefresh,
     GitDiffCancel,
     GitConfigureExecutable,
+    GitRepositoryStatus,
+    GitStatusRefresh,
+    GitStatusCancel,
     ViewSymbols,
     ViewToggleBottomPanel,
     ViewTerminal,
@@ -137,6 +140,8 @@ pub struct CommandContext {
     pub terminal_available: bool,
     pub git_diff_available: bool,
     pub git_diff_running: bool,
+    pub git_repository_available: bool,
+    pub git_status_running: bool,
     // Shared pane navigation state; keymap handlers are connected by the frontend.
     pub split_editor: bool,
     pub reference_pinned: bool,
@@ -168,6 +173,8 @@ impl Default for CommandContext {
             terminal_available: false,
             git_diff_available: false,
             git_diff_running: false,
+            git_repository_available: false,
+            git_status_running: false,
             split_editor: false,
             reference_pinned: false,
             nav_back_available: false,
@@ -307,6 +314,12 @@ fn git_diff(ctx: &CommandContext) -> bool {
 }
 fn git_diff_running(ctx: &CommandContext) -> bool {
     ctx.git_diff_running
+}
+fn git_repository(ctx: &CommandContext) -> bool {
+    ctx.git_repository_available
+}
+fn git_status_running(ctx: &CommandContext) -> bool {
+    ctx.git_status_running
 }
 fn project_search_running(ctx: &CommandContext) -> bool {
     ctx.project_search_running
@@ -452,7 +465,25 @@ pub fn default_registry() -> CommandRegistry {
             GitConfigureExecutable,
             View,
             "Git: Configure Executable…",
-            git_diff
+            git_repository
+        ),
+        spec!(
+            GitRepositoryStatus,
+            View,
+            "Git: Repository Status (Read-Only)",
+            git_repository
+        ),
+        spec!(
+            GitStatusRefresh,
+            View,
+            "Git: Refresh Repository Status",
+            git_repository
+        ),
+        spec!(
+            GitStatusCancel,
+            View,
+            "Git: Cancel Repository Status",
+            git_status_running
         ),
         spec!(ViewSymbols, View, "Symbols", never),
         spec!(ViewToggleBottomPanel, View, "Toggle Bottom Panel", always),

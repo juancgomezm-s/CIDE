@@ -102,8 +102,10 @@ Keep `docs/VALIDACION.md` consistent with observed evidence and material limitat
 ## Current CPU priority
 
 Repository status provider/controller are implemented and locally validated; read
-docs/GIT_STATUS_READ_ONLY.md and docs/GIT_STATUS_DELIVERY.md. Status TUI remains
-pending. Juan now prioritizes CPU/core utilization: follow the latest CPU block
+docs/GIT_STATUS_READ_ONLY.md, docs/GIT_STATUS_DELIVERY.md and
+docs/GIT_STATUS_PRESENTATION.md. Status TUI is integrated; CPU profiling is closed.
+The following CPU requirements remain constraints, not a request to repeat it:
+follow the latest CPU block
 in PLAN/CONTINUAR, profile before selecting parallelism, bounded configurable
 concurrency/cancellation/backpressure, deterministic versioned results, no nested
 pools or large extra copies. Preserve CPU/RAM headroom for Qwen; do not manipulate
@@ -122,5 +124,12 @@ source-byte quota semantics and separate EOF sentinel, snapshot revisions and un
 274 distinct tests passed in selective closure; do not claim one full274 run.
 CPU total increased in the measured tradeoff; Qwen load unknown and physical UI
 latency still open. Codegen s/2/3 already compared: keep s, do not repeat that
-profile or prolong CPU optimization without a concrete new question. Next planned
-work is repository-status TUI presentation on the existing versioned controller.
+profile or prolong CPU optimization without a concrete new question. The next
+authorized increment, repository-status TUI presentation, is now integrated:
+read docs/GIT_STATUS_PRESENTATION.md. Latest closure: one full workspace run of
+290 passed, fmt/Clippy all-targets/release. Preserve poll_tasks as sole completion
+acceptance route, context invalidation before prepare, bounded visible rows,
+escaped opaque paths, explicit refresh/cancel, read-only rendering and terminal
+recovery even for stale worker panics. No file navigation from status yet.
+Build complete functional blocks before their validation window; do not repeat
+passing suites for documentation or minor changes without a concrete concern.

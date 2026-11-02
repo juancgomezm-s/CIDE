@@ -190,3 +190,11 @@ El [estado Git por repositorio](GIT_STATUS_READ_ONLY.md) y su
 261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
 sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
 TUI de status pendiente; diff activo HEAD/index operativo.
+
+## Integración posterior — 2026-11-02
+
+La [presentación Git status TUI](GIT_STATUS_PRESENTATION.md) ya está conectada:
+consulta explícita sin documento, lista visible acotada, selección y refresh/cancel,
+sin abrir paths ni escribir Git. Cierre posterior: 290 pruebas completas locales,
+fmt/Clippy/release. Las menciones anteriores de UI pendiente son históricas;
+se conservan límites del proveedor y aceptación global RAM/pantalla abierta.

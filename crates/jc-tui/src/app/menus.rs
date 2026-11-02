@@ -60,6 +60,15 @@ impl TuiApp {
     }
 
     pub(crate) fn close_overlay(&mut self) {
+        if matches!(
+            self.overlay,
+            UiOverlay::Prompt {
+                kind: crate::state::PromptKind::GitExecutable,
+                ..
+            }
+        ) {
+            self.git_configuration_target = None;
+        }
         self.overlay = UiOverlay::None;
         let _ = self.focus.close_overlay();
     }

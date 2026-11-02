@@ -295,3 +295,19 @@ No speedup universal ni aceptación física/global. Overrides s/2/3 no justifica
 cambiar la política global: mantener s. TUI expone --search-workers para limitar
 demanda desde arranque; las escrituras/undo siguen en el owner, nunca en helpers.
 Método/datos/pruebas/limitaciones: CPU_PERFORMANCE y CPU_PROJECT_EXECUTOR.
+
+## D31 — Presentación de status sin convertir rutas en autoridad
+
+Conectar el controlador existente a una vista de repositorio independiente de
+DocumentId/encoding. Una sola aceptación en poll_tasks, contexto validado antes
+de preparar y render de solo lectura. La vista posee selección/scroll, no otro
+snapshot persistente ni sesión. Solo formatea filas visibles acotadas; paths
+opacos se escapan sin pérdida y Enter no abre archivos. Navegación futura exigirá
+validación propia del filesystem. Refresh/cancel explícitos, sin watcher.
+
+La configuración de Git conserva la intención status/diff y Escape la descarta.
+Un pánico obsoleto puede haber escrito a terminal: su señal de recuperación no
+se descarta junto con la entrega. Se conserva aislamiento/filtros/límites del
+proveedor, sin prometer igualdad con Git personal ni snapshot atómico del disco.
+[Contrato y validación](GIT_STATUS_PRESENTATION.md): 290 pruebas completas locales,
+Clippy/release; sin aceptación GUI/RAM global/latencia física ni escrituras Git.

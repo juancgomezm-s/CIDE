@@ -141,7 +141,12 @@ impl TuiApp {
                 self.git_diff.cancel(&mut self.tasks);
                 self.status = self.git_diff.message().to_owned();
             }
-            GitConfigureExecutable => self.open_prompt(PromptKind::GitExecutable),
+            GitConfigureExecutable => self.configure_git_executable(),
+            GitRepositoryStatus | GitStatusRefresh => self.open_git_repository_status(),
+            GitStatusCancel => {
+                self.git_status.cancel();
+                self.status = self.git_status.message().to_owned();
+            }
             ViewSymbols => self.show_sidebar(SidebarView::Symbols),
             ViewToggleBottomPanel => {
                 self.panels.toggle_bottom();

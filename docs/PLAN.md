@@ -228,3 +228,19 @@ GIT_STATUS_READ_ONLY/GIT_STATUS_DELIVERY antes de conectar. Preservar paths byte
 opacos, rechazo de filtros, configuración aislada, generación/opciones vigentes,
 lectura visible y ausencia de escrituras. No prolongar optimizaciones CPU sin
 otra pregunta concreta ni activar un incremento ajeno al plan.
+
+## Cierre del siguiente incremento: Git status TUI — 2026-11-02
+
+La presentación TUI pendiente en el cierre CPU ya está conectada al controlador
+existente: consulta explícita de repositorio sin documento, rutas byte opacas,
+filas visibles acotadas, selección, refresh/cancel y configuración con intención.
+Entrega vigente solo por poll_tasks, composición de solo lectura y recuperación
+tras pánico incluso obsoleto. No watcher ni rutas editables o escrituras Git.
+
+Bloque integrado antes de validar: 290 pruebas completas aprobadas, fmt,
+Clippy workspace all-targets y release bins/examples. [Contrato/uso y límites](GIT_STATUS_PRESENTATION.md)
+y [evidencia](VALIDACION.md). CPU queda cerrado con sus datos existentes; no se
+repiten perfiles ni pruebas por ajustes documentales. Las menciones anteriores
+de presentación status pendiente describen checkpoints históricos. Navegación
+segura desde paths Git, otras funciones M2 y aceptación global de RAM/pantalla
+siguen pendientes; no se declara cierre de M2A ni se activa otro incremento aquí.

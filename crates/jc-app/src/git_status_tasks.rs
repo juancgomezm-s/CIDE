@@ -11,6 +11,7 @@ use crate::{
 };
 use std::{
     path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
     sync::{Arc, Condvar, Mutex},
     thread::{self, JoinHandle},
     time::Duration,
@@ -100,6 +101,7 @@ struct Shared {
     queue: Mutex<Queue>,
     changed: Condvar,
     wake: Wakeup,
+    recover: AtomicBool,
 }
 
 pub struct GitStatusController {
@@ -124,6 +126,7 @@ impl GitStatusController {
                 queue: Mutex::new(Queue::default()),
                 changed: Condvar::new(),
                 wake,
+                recover: AtomicBool::new(false),
             }),
             provider,
             worker: None,
@@ -176,6 +179,11 @@ impl GitStatusController {
             .unwrap_or_else(|error| error.into_inner())
             .completion
             .is_some()
+    }
+
+    /// Panic hooks may have written to the terminal even for a stale generation.
+    pub fn take_recovery(&self) -> bool {
+        self.shared.recover.swap(false, Ordering::AcqRel)
     }
 
     fn invalidate_work(&mut self) {
@@ -393,7 +401,10 @@ fn worker(shared: Arc<Shared>, provider: Arc<Provider>) {
         }));
         let result = match result {
             Ok(result) => result.map_err(GitStatusFailure::Provider),
-            Err(_) => Err(GitStatusFailure::WorkerPanic),
+            Err(_) => {
+                shared.recover.store(true, Ordering::Release);
+                Err(GitStatusFailure::WorkerPanic)
+            }
         };
         let mut queue = shared
             .queue
@@ -665,6 +676,37 @@ mod tests {
         wait_ready(&controller, &wake);
         controller.poll(&options);
         assert_eq!(controller.state(), GitStatusTaskState::Ready);
+    }
+
+    #[test]
+    fn stale_provider_panic_still_requests_one_terminal_recovery() {
+        let wake = Wakeup::default();
+        let gate = Arc::new(Mutex::new(()));
+        let provider_gate = gate.clone();
+        let (started, starts) = mpsc::channel();
+        let mut controller = GitStatusController::with_provider(
+            wake.clone(),
+            Arc::new(move |options, _| {
+                if options.root.ends_with("old-panic") {
+                    started.send(()).unwrap();
+                    drop(provider_gate.lock().unwrap());
+                    panic!("obsolete provider panic");
+                }
+                Ok(snapshot(options))
+            }),
+        );
+        let held = gate.lock().unwrap();
+        controller.request(options("old-panic")).unwrap();
+        starts.recv_timeout(Duration::from_secs(3)).unwrap();
+        let current = options("current");
+        controller.request(current.clone()).unwrap();
+        drop(held);
+        wait_ready(&controller, &wake);
+        controller.poll(&current);
+        assert_eq!(controller.state(), GitStatusTaskState::Ready);
+        assert!(controller.failure().is_none());
+        assert!(controller.take_recovery());
+        assert!(!controller.take_recovery());
     }
 
     #[test]

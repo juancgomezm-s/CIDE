@@ -20,11 +20,14 @@ impl TuiApp {
         self.git_source = source;
         self.git_diff_scroll = 0;
         let Some(git_executable) = self.git_executable.clone() else {
+            self.git_configuration_target =
+                Some(super::git_repository::GitConfigurationTarget::Diff);
             self.git_diff.clear(&mut self.tasks);
             self.status = "Choose an absolute Git executable path".into();
             self.open_prompt(PromptKind::GitExecutable);
             return;
         };
+        self.git_configuration_target = None;
         let Some(root) = self.project_root.clone() else {
             self.git_diff.clear(&mut self.tasks);
             self.status = "Open the repository root folder before comparing".into();

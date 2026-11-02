@@ -2,15 +2,23 @@ mod commands;
 mod events;
 mod explorer;
 mod git_diff;
+mod git_repository;
+mod git_status;
 mod menus;
 mod overlays;
 mod paths;
 mod presentation;
 mod project_search;
+use git_repository::GitConfigurationTarget;
+#[cfg(test)]
+pub(crate) use git_status::GitStatusRow;
+pub(crate) use git_status::{git_status_list_height, GitStatusPresentation};
 pub(crate) use presentation::Presentation;
 pub(crate) use presentation::{GitDiffRow, GitHunkRow, GitPresentation, GitRowKind};
 #[cfg(test)]
 mod git_integration_tests;
+#[cfg(test)]
+mod git_status_integration_tests;
 #[cfg(test)]
 mod keyboard_matrix_tests;
 #[cfg(test)]
@@ -40,6 +48,8 @@ pub struct TuiApp {
     pub(crate) bottom_selected: usize,
     pub(crate) tasks: jc_app::JobSystem,
     pub(crate) git_diff: jc_app::git_diff::GitDiffController,
+    pub(crate) git_status: git_status::GitStatusView,
+    git_configuration_target: Option<GitConfigurationTarget>,
     pub(crate) git_executable: Option<PathBuf>,
     pub(crate) git_cwd: PathBuf,
     pub(crate) git_source: jc_app::git_read::GitBlobSource,
@@ -92,6 +102,8 @@ impl TuiApp {
             explorer: explorer::ExplorerState::default(),
             bottom_selected: 0,
             git_diff: jc_app::git_diff::GitDiffController::new(),
+            git_status: git_status::GitStatusView::new(wakeup.clone()),
+            git_configuration_target: None,
             git_executable: None,
             git_cwd: std::env::current_dir().unwrap_or_default(),
             git_source: jc_app::git_read::GitBlobSource::Head,
@@ -194,6 +206,20 @@ impl TuiApp {
             }
         }
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
+        let status_changed = self
+            .git_status
+            .poll(self.project_root.as_deref(), self.git_executable.as_deref());
+        update.changed |= status_changed;
+        update.recover |= self.git_status.take_recovery();
+        if status_changed {
+            update.recover |= self.git_status.worker_panicked();
+            if self.panels.sidebar_visible()
+                && self.panels.sidebar() == jc_app::SidebarView::GitStatus
+            {
+                self.status = self.git_status.message().to_owned();
+            }
+        }
+        update.changed |= update.recover;
         update
     }
 
@@ -212,6 +238,12 @@ impl TuiApp {
         context.git_diff_running = matches!(
             self.git_diff.state(),
             jc_app::git_diff::GitDiffState::Queued | jc_app::git_diff::GitDiffState::Running
+        );
+        context.git_repository_available = cfg!(windows) && context.has_project;
+        context.git_status_running = matches!(
+            self.git_status.state(),
+            jc_app::git_status_tasks::GitStatusTaskState::Queued
+                | jc_app::git_status_tasks::GitStatusTaskState::Running
         );
         context.project_search_running = self.project_search.state
             == jc_app::ProjectSearchState::Running

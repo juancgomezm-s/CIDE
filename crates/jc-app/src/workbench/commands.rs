@@ -209,6 +209,9 @@ impl Workbench {
             | GitDiffRefresh
             | GitDiffCancel
             | GitConfigureExecutable
+            | GitRepositoryStatus
+            | GitStatusRefresh
+            | GitStatusCancel
             | ViewSymbols
             | ViewToggleBottomPanel
             | ViewTerminal

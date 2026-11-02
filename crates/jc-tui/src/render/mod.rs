@@ -1,4 +1,5 @@
 mod git_diff;
+mod git_status;
 mod overlays;
 
 use crate::app::{Presentation, TuiApp};
@@ -134,6 +135,18 @@ fn draw_sidebar(
     height: u16,
 ) {
     let app = frame.app;
+    if app.panels.sidebar() == SidebarView::GitStatus {
+        git_status::draw_git_status(
+            screen,
+            &frame.git_status,
+            x,
+            y,
+            width,
+            height,
+            app.focus.primary() == PrimaryFocus::Sidebar,
+        );
+        return;
+    }
     if app.panels.sidebar() == SidebarView::Git {
         git_diff::sidebar(screen, &frame.git, x, y, width, height);
         return;
@@ -143,6 +156,7 @@ fn draw_sidebar(
         SidebarView::Explorer => " Explorer ",
         SidebarView::Database => " Database ",
         SidebarView::Git => " Git ",
+        SidebarView::GitStatus => " Git Status ",
         SidebarView::Symbols => " Symbols ",
     };
     screen.text_styled(
@@ -201,7 +215,7 @@ fn draw_sidebar(
             screen.text(x + 1, y + 1, "Schema provider");
             screen.text_styled(x + 1, y + 2, "available in M3/M4", CellStyle::Dim);
         }
-        SidebarView::Git => {
+        SidebarView::Git | SidebarView::GitStatus => {
             unreachable!("Git presentation is rendered above");
         }
         SidebarView::Symbols => {

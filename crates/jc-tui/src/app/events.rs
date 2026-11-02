@@ -73,6 +73,10 @@ impl TuiApp {
     }
 
     fn handle_sidebar_key(&mut self, key: KeyEvent) {
+        if self.panels.sidebar() == SidebarView::GitStatus {
+            self.handle_git_status_sidebar_key(key);
+            return;
+        }
         if self.panels.sidebar() == SidebarView::Git {
             self.handle_git_sidebar_key(key);
             return;

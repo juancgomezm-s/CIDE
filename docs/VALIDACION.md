@@ -1,8 +1,8 @@
 # Validación
 
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
-274 pruebas distintas aprobadas al cierre integrado CPU/TUI
-(suites completadas selectivamente; dos helpers de subproceso aparte),
+290 pruebas aprobadas en una corrida completa al integrar status de repositorio
+(cero fallos; dos helpers ignorados invocados por sus tests padre),
 fmt/Clippy/release, tres pares fríos equivalentes y catorce procesos nativos
 retenidos de edición/undo en ocho documentos. Máximo histórico actual 52,461 MiB;
 Memoria/teclado global y
@@ -764,3 +764,30 @@ y otra carga no controladas. Accounting CPU cuantizado y picos muestreados, no
 instrucciones exactas ni pantalla física. Windows local, sin aceptación Linux,
 GUI o servicios completos. Workers4 funcional, rendimiento no certificado.
 Sin instalaciones, CI/push ni cambios de seguridad/servicios/CPU global/GPU.
+
+## Presentación Git status integrada — 2026-11-02
+
+Completado el siguiente incremento autorizado después de CPU: sidebar de estado
+Git, comandos centrales sin documento abierto, configuración con intención de
+status/diff, selección, refresh y cancelación. La preparación produce únicamente
+filas visibles acotadas; composición de solo lectura, paths byte escapados sin
+conversión lossy ni apertura de rutas. Poll acepta entregas con contexto vigente;
+la recuperación de terminal también cubre pánico de una generación descartada.
+No se inicia trabajo al pintar ni hay watcher. Se preserva el proveedor aislado,
+sin renames/submódulos y con rechazo explícito de clean/process configurados.
+
+Construcción e integración completas antes de la ventana de comprobación:
+`cargo test --workspace --locked --offline` aprobó **290 pruebas, cero fallos**;
+dos helpers ignorados son invocados por sus padres. Formato, Clippy workspace
+all-targets con `-D warnings` y release workspace bins/examples aprobaron.
+Son 16 regresiones nuevas: registro 1, recuperación obsoleta 1, componente 5,
+renderer 4 e integración Git nativa 5. Los fixtures comparan index, config, HEAD,
+ref de rama y archivos, además de bytes/revisión/undo/carets del documento compartido.
+Screen lógico de 45/140 columnas comprueba clipping e idempotencia; no es una
+medición física. No se repitieron perfiles CPU ni suites aprobadas por documentación.
+
+Uso y contrato en [GIT_STATUS_PRESENTATION](GIT_STATUS_PRESENTATION.md). Sin CI,
+push ni escritura Git desde la función. Estado refleja disco/índice, no buffers
+sucios ni snapshot atómico del filesystem. Rutas siguen opacas y Enter no abre
+archivos. Windows local; GUI, aceptación RAM global y pantalla física abiertas.
+Este cierre no declara M2A completo ni autoriza ampliar optimización CPU.

@@ -288,3 +288,25 @@ fn display_strings_are_stable_and_human_readable() {
     assert_eq!(KeyStroke::alt(Key::Function(4)).to_string(), "Alt+F4");
     assert_eq!(KeyStroke::ctrl(Key::Char('`')).to_string(), "Ctrl+`");
 }
+#[test]
+fn repository_status_commands_need_repository_context_but_no_document() {
+    let registry = jc_app::default_registry();
+    let mut context = jc_app::CommandContext {
+        git_repository_available: true,
+        ..Default::default()
+    };
+    assert!(!context.has_document);
+    for command in [
+        jc_app::CommandId::GitRepositoryStatus,
+        jc_app::CommandId::GitStatusRefresh,
+        jc_app::CommandId::GitConfigureExecutable,
+    ] {
+        assert!(registry.is_enabled(command, &context));
+    }
+    assert!(!registry.is_enabled(jc_app::CommandId::GitDiffHead, &context));
+    assert!(!registry.is_enabled(jc_app::CommandId::GitStatusCancel, &context));
+    context.git_status_running = true;
+    context.git_repository_available = false;
+    assert!(registry.is_enabled(jc_app::CommandId::GitStatusCancel, &context));
+    assert!(!registry.is_enabled(jc_app::CommandId::GitStatusRefresh, &context));
+}

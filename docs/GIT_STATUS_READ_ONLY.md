@@ -168,3 +168,11 @@ renames detectados y cambios internos de submódulos quedan fuera de esta consul
 Rutas byte no autorizan navegación filesystem. TUI status sigue pendiente;
 diff activo HEAD/index ya conectado. Sin Git writes/watcher/GUI ni aceptación
 global de RAM/pantalla física.
+
+## Integración posterior — 2026-11-02
+
+La [presentación Git status TUI](GIT_STATUS_PRESENTATION.md) ya está conectada:
+consulta explícita sin documento, lista visible acotada, selección y refresh/cancel,
+sin abrir paths ni escribir Git. Cierre posterior: 290 pruebas completas locales,
+fmt/Clippy/release. Las menciones anteriores de UI pendiente son históricas;
+se conservan límites del proveedor y aceptación global RAM/pantalla abierta.

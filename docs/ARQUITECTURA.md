@@ -115,7 +115,13 @@ El [estado Git por repositorio](GIT_STATUS_READ_ONLY.md) y su
 [entrega versionada](GIT_STATUS_DELIVERY.md) ya están integrados/validados:
 261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
 sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
-TUI de status pendiente; diff activo HEAD/index operativo.
+TUI de status ya conectada al mismo controlador; diff activo HEAD/index operativo.
+GitStatusView posee selección/scroll y metadatos de contexto, sin duplicar snapshots
+ni sesiones. poll_tasks acepta completions; validate_context antes de prepare solo
+descarta contexto obsoleto. Preparación limita filas/columnas y escapa paths byte;
+renderer consume una presentación de solo lectura. Pánicos obsoletos conservan
+una señal independiente de recuperación terminal. [Contrato](GIT_STATUS_PRESENTATION.md).
+Cierre posterior: 290 pruebas completas, fmt/Clippy/release; no aceptación física.
 
 
 Search Plus ya usa un executor de CPU por archivos: coordinador/scanner0 y hasta

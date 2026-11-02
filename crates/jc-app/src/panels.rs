@@ -3,6 +3,7 @@ pub enum SidebarView {
     Explorer,
     Database,
     Git,
+    GitStatus,
     Symbols,
 }
 
