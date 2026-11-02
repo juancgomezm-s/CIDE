@@ -1,8 +1,8 @@
 # Validación
 
-**Evidencia local más reciente:** metadatos compactos, recolección sin copia de
-arenas enteras y matriz de teclado, 209 pruebas completas y recorridos nativos.
-El estudio HTML sigue sin revisión renderizada; el proveedor Git tiene bloque propio. Véase el bloque final; las secciones
+**Evidencia local más reciente:** proveedor Git read-only integrado, suite
+completa de 218 pruebas (dos helpers de subproceso aparte); memoria/teclado en
+el bloque de 209 con recorridos nativos. UI/jobs Git y revisión renderizada GUI pendientes. Véase el bloque final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
 
 Estado de la primera base preparada antes de publicarla:
@@ -494,3 +494,41 @@ de lanzamiento desconocido se conserva como limitación de aislamiento global.
 Siguen abiertos RAM/picos globales, sufijos O(L), huecos grandes, frío real,
 matriz de teclado física, pantalla física, IME/DPI/Linux/GUI/AVM. Sin CI remoto,
 push, instalaciones ni cambios de seguridad/configuración/servicios/Qwen/GPU.
+
+
+## M2 — Proveedor de objetos Git de solo lectura — 2026-11-02
+
+Después de `5890ad0`, el módulo git_read Windows obtiene blobs HEAD/index por
+ruta relativa validada/literal. Bytes privados inmutables, identidad de repositorio,
+commit/OID y modo, sin normalizar fuente/EOL ni aplicar filtros/textconv. No hace
+escrituras Git de producción, config persistente, red/fetch ni indexer/watcher.
+El ejecutable instalado es elegido por ruta absoluta; fuera de Windows se rechaza.
+
+Win32 Job Object y handle list limitan herencia y contienen proceso/descendientes
+desde creación. Salidas capadas, timeout de solicitud y cancelación cooperativa.
+Una auditoría previa encontró retornos sin reap al fallar el primer/segundo reader:
+se corrigieron con CaptureGuard RAII, stop/CancelSynchronousIo y observación de
+terminación antes de join, incluido unwind del callback. Drenaje completo en éxito;
+no se abandona un hilo para cumplir una gracia ni se promete retorno duro de 5 s.
+
+Windows 11 Pro 10.0.26300, Rust 1.85.1 MSVC, Git **2.54.0.windows.1**, offline:
+nueve tests dirigidos aprobados y suite completa serial **218 pruebas, 0 fallos**.
+Dos tests ignorados son helpers propios invocados por los de contención, no casos
+de producto saltados. Verificación OS de hijo/descendiente terminados tras cancel,
+timeout, fallo de cada reader y pánico; blob grande completo, stdout/stderr limit,
+quoting real, rutas/missing/unmerged/modos y HEAD/index separados. Solo repositorios
+sintéticos exclusivos en work/test-temp reciben init/objetos/index/refs de prueba;
+index/config/worktree se comprueban intactos durante lectura del proveedor.
+
+Luego se amplió el caso existente HEAD/index para prestar sus bytes a DiffModel:
+un hunk exacto con BOM/invalid/EOL conserva ambos snapshots; dirigido aprobado.
+Clippy pidió retirar drop(control) innecesario de un test; corregido sin cambiar
+producción. Controles finales fmt --check, Clippy workspace/all-targets -D warnings
+y release aprobados, sin repetir suites inalteradas por esos cambios de test.
+
+No existe aún UI/status Git ni entrega versionada en JobSystem/TaskStamp. No se
+han medido RAM/latencia de Git activo y readers; datos de servicios apagados del
+bloque RAM no validan esa carga. Windows 10 no se probó localmente, Linux/IME/GUI/
+pantalla física y picos globales siguen abiertos. Contrato/citas primarias en
+[GIT_READ_ONLY_PROVIDER.md](GIT_READ_ONLY_PROVIDER.md). Sin push/CI remoto,
+instalaciones ni cambios a seguridad/configuración/servicios/Qwen/GPU.

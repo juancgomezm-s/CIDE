@@ -38,7 +38,7 @@ Workbench ni escriben buffers/disco. Propuestas requieren futura aceptación y
 de encoding deberá cancelar/reemplazar explícitamente la clave. El sistema actual
 está ligado a un Workbench y documentos, no a trabajos de proyecto sin documento.
 
-## Siguiente bloque: picos restantes y entrega Git de solo lectura
+## Siguiente bloque: entrega Git versionada y picos restantes
 
 - Construir bloques más amplios antes de validar, según pidió el usuario. Reservar
   comprobaciones intermedias para bloqueantes concretos; no repetir suites por retoques.
@@ -74,7 +74,7 @@ está ligado a un Workbench y documentos, no a trabajos de proyecto sin document
 El bloque de evidencia pasó 194 pruebas completas Windows, fmt, Clippy/release,
 24 sesiones ConPTY antes y 24 después, y regresión Unicode nativa
 (ver VALIDACION y M2_ACCEPTANCE_EVIDENCE). La integración paralela posterior pasó
-200 pruebas: DiffModel puro sin UI/Git y estudio GUI estático sin backend
+200 pruebas en aquel checkpoint: DiffModel puro y estudio GUI estático sin backend
 (DIFF_MODEL_READ_ONLY, M2B_SCENE_STUDY). Revisión renderizada del HTML pendiente;
 Edge headless terminó con 0xC0000005, sin modificar el sistema. Benchmarks opt-in:
 `document_search_bench`, `project_search_bench`, `f3_pipeline`, `f3_jobs`; smoke Windows `scripts/smoke-conpty.ps1 -ProjectSearch`, tras compilar
@@ -101,3 +101,14 @@ son tiempos de modelo, no pantalla física. PowerShell tuvo bloqueo de inicializ
 en esta sesión: se validó con Cargo directo en el mismo entorno de proceso y el host
 C# existente compilado con csc. No se modificó configuración del sistema. El wrapper
 normal sigue disponible; no investigar/tocar servicios ajenos para validar el editor.
+
+
+Proveedor Git posterior: GIT_READ_ONLY_PROVIDER.md y git_read.rs ya leen blobs
+HEAD/index exactos con identidad/OID, límites, deadline/cancelación y Job Object
+Windows. Suite integrada 218 pruebas (dos helpers son fixtures invocados por los
+tests), fmt/Clippy/release; Git 2.54.0.windows.1. No hay menú/renderer/status ni
+coordinación JobSystem/TaskStamp para diff. El siguiente incremento requiere
+snapshots de trabajo acotados, revisión/encoding/generación y entrega descartable;
+no llamar read_blob desde entrada/render ni habilitar comandos sin handler real.
+No eliminar reap/cancelación de readers para fingir un retorno de cinco segundos.
+El callback debe ser barato; kernel cleanup no es preempción dura.

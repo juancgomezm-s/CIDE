@@ -76,7 +76,7 @@ La especificación de doble panel, Outline, navegación de includes/RUN, autocom
 
 Abre una carpeta y usa Ctrl+Shift+F para consulta literal sensible a mayúsculas, inclusión/exclusión por globs y resultados progresivos. Enter navega; Esc en el panel inferior cancela. Tras una consulta completa sin avisos, Search / Replace in Project permite revisar sustituciones y confirmar con F9/Ctrl+Enter. Abiertos: edición con undo sin guardar; cerrados: guardado por archivo y conflictos explícitos. Véanse [uso, cuotas y límites](docs/S1_PROJECT_SEARCH.md) y [guardado Windows](docs/SAVE_WINDOWS_CONTENTION.md). En documento activo, Ctrl+F/Ctrl+H ya ofrecen búsqueda acotada, case folding completo Unicode 17, selección/historial y Ctrl+G escalar: [S0](docs/S0_DOCUMENT_SEARCH.md). No se certifican regex, normalización Unicode, GUI ni objetivos globales de rendimiento.
 
-Preparación adicional: [DiffModel de solo lectura](docs/DIFF_MODEL_READ_ONLY.md), aún sin UI/Git, y [escena de estudio GUI](docs/M2B_SCENE_STUDY.md), sin backend elegido ni editor gráfico funcional.
+Preparación adicional: [DiffModel de solo lectura](docs/DIFF_MODEL_READ_ONLY.md) y [proveedor Windows de blobs HEAD/index](docs/GIT_READ_ONLY_PROVIDER.md), aún sin UI/jobs, y [escena de estudio GUI](docs/M2B_SCENE_STUDY.md), sin backend elegido ni editor gráfico funcional.
 
 ## Política de CI
 

@@ -91,3 +91,12 @@ Abrir y editar no requiere Progress, Git, LSP, terminal ni agentes. Los servicio
 La tecnología gráfica sigue pendiente de medición. Comparar candidatos con el mismo caso y el mismo motor: arranque, memoria privada, tecla-a-pantalla, IME, accesibilidad, DPI, selección y archivos grandes. Un control existente solo es viable si puede respetar la propiedad del documento y del undo; si exige otro buffer editable/normalización obligatoria, queda descartado o requiere revisar explícitamente la decisión de arquitectura antes de integrarlo.
 
 Tema, densidad y disposición se definen como datos. Primera escena: pestañas por grupo, sidebar colapsable, editor dominante, palette flotante, búsqueda inferior, barra de estado y referencia anclada. Minimap y efectos no preceden a los presupuestos de respuesta. Las metas y evidencia se mantienen separadas en [PLAN.md](PLAN.md) y [VALIDACION.md](VALIDACION.md).
+
+
+El proveedor `git_read` ya obtiene snapshots privados/inmutables de blobs HEAD/index
+con identidad raíz/git-dir/ruta/OID, de forma explícita y acotada en Windows.
+`DiffModel` puede prestar sus bytes sin otra sesión/undo. La coordinación de jobs,
+generaciones y snapshot de trabajo no está conectada: el futuro consumidor debe
+validar revisión/encoding y descartar entregas obsoletas. No ejecutar ese proceso
+en entrada/render ni habilitar una UI Git por la presencia del módulo.
+Ver [contrato/evidencia Git](GIT_READ_ONLY_PROVIDER.md).

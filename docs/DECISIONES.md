@@ -197,3 +197,15 @@ El dispatcher comprueba el registro actual antes de efectos de foco/búsqueda/
 documento, para todas las entradas TUI. No se copian reglas por menú/widget.
 La auditoría de teclado y sus seis regresiones están en M2_KEYBOARD_MATRIX_AUDIT;
 no sustituyen prueba física de terminales ni hacen público el dispatcher para GUI.
+
+
+## D25 — Objetos Git explícitos, inmutables y con proceso contenido
+
+HEAD se fija a commit/OID; index a blob/modo stage 0 por ruta literal. El proveedor
+lee objetos raw sin filtro/textconv, no worktree normalizado ni indexer permanente.
+Git instalado se elige por ruta absoluta; no descarga ni hereda inyecciones Git del
+entorno. Salidas y solicitud están acotadas; cleanup posee job/proceso/readers desde
+el lanzamiento y no abandona un reader para aparentar deadline duro. La API Windows
+se prueba localmente, sin fallback sin contención ni promesa de sandbox hostil.
+Esto prepara el diff read-only, no lo entrega a UI: faltan jobs/revisiones/generación,
+status y medición de auxiliares. Proveedor y límites en GIT_READ_ONLY_PROVIDER.

@@ -101,6 +101,8 @@ Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crosst
 
 **Preparación paralela autorizada del 2026-11-02:** [DiffModel puro](DIFF_MODEL_READ_ONLY.md) de fuentes inmutables, hunks y correspondencia de líneas exactas, con cuotas/cancelación; seis regresiones y suite integrada de 200 pruebas. No hay comandos/renderer/proveedor Git conectados ni rendimiento diff aceptado. Los picos/sufijos densos restantes y las puertas globales de M2-F siguen prioritarios.
 
+**Proveedor read-only posterior:** [Git HEAD/index](GIT_READ_ONLY_PROVIDER.md), Windows con snapshots de bytes exactos/identidad, límites y contención/cancelación. Nueve regresiones efectivas y suite completa de 218 pruebas; composición con DiffModel verificada. Aún no hay entrega por revisión/generación, UI/status ni comandos Git funcionales. Su RAM/latencia auxiliar siguen por medir antes de aceptación global. Escrituras Git permanecen M5.
+
 ## M2B — GUI Windows mínima — PENDIENTE
 
 Ya existe un [estudio estático de escena y contrato](M2B_SCENE_STUDY.md) preparado en paralelo: ABL/include PIN/Explorer/Search/palette, datos locales y matriz neutral. Sus comprobaciones estáticas pasan; la captura headless falló sin imagen, por lo que revisión renderizada sigue pendiente. No es editor gráfico ni decisión de backend.

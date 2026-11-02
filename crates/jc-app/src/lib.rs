@@ -9,6 +9,7 @@ mod command;
 mod dialog;
 pub mod diff_model;
 mod focus;
+pub mod git_read;
 mod jobs;
 mod keymap;
 mod menu;
