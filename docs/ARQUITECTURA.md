@@ -109,3 +109,10 @@ snapshot; refresh explícito, sin watcher ni escrituras. Ver
 [entrega/cuotas](GIT_DIFF_DELIVERY.md), [presentación](GIT_DIFF_PRESENTATION.md)
 y [proveedor Git](GIT_READ_ONLY_PROVIDER.md). RAM editor + auxiliares y latencia
 física permanecen sin aceptación global.
+
+
+El [estado Git por repositorio](GIT_STATUS_READ_ONLY.md) y su
+[entrega versionada](GIT_STATUS_DELIVERY.md) ya están integrados/validados:
+261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
+sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
+TUI de status pendiente; diff activo HEAD/index operativo.

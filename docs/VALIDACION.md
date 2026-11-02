@@ -1,8 +1,8 @@
 # Validación
 
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
-246 pruebas distintas aprobadas al cierre del bloque por bloques (245 en suite
-completa y una regresión posterior con 15+3 pruebas afectadas; dos helpers aparte),
+261 pruebas locales aprobadas en la suite completa del bloque Git status
+(dos helpers de subproceso aparte),
 fmt/Clippy/release, tres pares fríos equivalentes y catorce procesos nativos
 retenidos de edición/undo en ocho documentos. Máximo histórico actual 52,461 MiB;
 Memoria/teclado global y
@@ -690,3 +690,32 @@ El corpus denso local queda bajo 50 MiB; servicios/cargas/máquinas y presentaci
 física siguen sin aceptación global. VT no es pantalla, no se restan percentiles
 de protocolos diferentes. Sin CI remoto, push, dependencias, cambios de sistema
 ni nuevos intentos GUI. Documentación no motivó repetir suites aprobadas.
+
+
+## Estado Git por repositorio — cierre local
+
+Proveedor/parser, transporte compartido, controlador y ejemplo público integrados.
+Una ventana tras construir todo: **261 pruebas workspace aprobadas, 0 fallidas**,
+dos helpers de subproceso invocados por padres; formato, Clippy workspace/all-targets
+con warnings denegados y release workspace bins/ejemplos pasaron. Son 15 pruebas
+nuevas: seis parser, seis controlador y tres Git real. No hubo CI ni mediciones
+de rendimiento adicionales. Los apartados de entrega del worker son históricos.
+
+El fixture real comprobó MM/no rastreado por captura raw, proveedor tipado y
+controlador real con Wakeup/poll/join. Index/config/worktree conservaron sus bytes,
+sin index.lock. Rechazo de drivers clean/process sin ejecutar centinelas, raíz
+padre/cancelación/salida excesiva. El controlador rechaza longitud Y capacidad de
+PathBuf excesivas; una ruta corta con reserva enorme no elude la cuota de metadata.
+Pruebas de cola/generaciones/configuración/panic/join usan coordinación explícita.
+
+El ejemplo `cargo run -p jc-app --example git_status --release --locked --offline --
+ABSOLUTE_GIT_EXECUTABLE ABSOLUTE_REPOSITORY_ROOT` usa la API pública; compila en
+release y escapa cada byte de ruta sin conversión lossy ni apertura implícita.
+No se ejecutó como otro benchmark: el recorrido real está en el fixture integrado.
+
+La consulta representa configuración aislada y disco/index, no buffers sin guardar
+ni necesariamente preferencias globales del Git personal. Filtros configurados,
+renames detectados y cambios internos de submódulos quedan fuera de esta consulta.
+Rutas byte no autorizan navegación filesystem. TUI status sigue pendiente;
+diff activo HEAD/index ya conectado. Sin Git writes/watcher/GUI ni aceptación
+global de RAM/pantalla física.

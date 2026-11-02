@@ -89,7 +89,7 @@ impl fmt::Debug for GitBlobSnapshot {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GitReadLimits {
     pub max_blob_bytes: usize,
     pub max_metadata_bytes: usize,
@@ -107,7 +107,7 @@ impl Default for GitReadLimits {
     }
 }
 impl GitReadLimits {
-    fn valid(self) -> bool {
+    pub(crate) fn valid(self) -> bool {
         self.max_blob_bytes <= 16 * 1024 * 1024
             && (1..=1024 * 1024).contains(&self.max_metadata_bytes)
             && (1..=64 * 1024).contains(&self.max_stderr_bytes)
@@ -145,13 +145,18 @@ pub enum GitReadError {
     Missing,
     Unmerged,
     UnsupportedMode,
+    /// Repository clean/process drivers need a separate execution policy.
+    ConfiguredFilter,
     Protocol,
     Cancelled,
     TimedOut,
     OutputLimit(GitOutputLimit),
     Io(io::Error),
     Containment(io::Error),
-    CommandFailed { code: u32, stderr: Vec<u8> },
+    CommandFailed {
+        code: u32,
+        stderr: Vec<u8>,
+    },
 }
 impl fmt::Display for GitReadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -208,37 +213,7 @@ impl GitReader {
         };
         control.check()?;
         let path = validate_path(path)?;
-        if !repository_root.is_absolute() {
-            return Err(GitReadError::InvalidPath);
-        }
-        let root = repository_root.canonicalize()?;
-        validate_metadata_path(&root)?;
-        if !root.is_dir() {
-            return Err(GitReadError::InvalidPath);
-        }
-        let discovered = self.run(
-            &root,
-            None,
-            &[
-                "rev-parse".into(),
-                "--path-format=absolute".into(),
-                "--show-toplevel".into(),
-                "--absolute-git-dir".into(),
-            ],
-            limits.metadata(),
-            &mut control,
-        )?;
-        let lines = metadata_lines(&discovered)?;
-        if lines.len() != 2 {
-            return Err(GitReadError::Protocol);
-        }
-        let reported_root = PathBuf::from(lines[0]).canonicalize()?;
-        let git_dir = PathBuf::from(lines[1]).canonicalize()?;
-        validate_metadata_path(&git_dir)?;
-        if root != reported_root || !git_dir.is_dir() {
-            return Err(GitReadError::NotRepositoryRoot);
-        }
-        let repository = GitRepositoryIdentity { root, git_dir };
+        let repository = self.discover(repository_root, limits, &mut control)?;
         let commit = if source == GitBlobSource::Head {
             let out = self.run(
                 &repository.root,
@@ -328,6 +303,108 @@ impl GitReader {
             bytes,
         })
     }
+    // Discovery is shared by object/status reads; never accept implicit parent
+    // repository traversal or weaken process containment for either provider.
+    fn discover(
+        &self,
+        repository_root: &Path,
+        limits: GitReadLimits,
+        control: &mut Control<impl FnMut() -> bool>,
+    ) -> Result<GitRepositoryIdentity, GitReadError> {
+        if !repository_root.is_absolute() {
+            return Err(GitReadError::InvalidPath);
+        }
+        let root = repository_root.canonicalize()?;
+        validate_metadata_path(&root)?;
+        if !root.is_dir() {
+            return Err(GitReadError::InvalidPath);
+        }
+        let discovered = self.run(
+            &root,
+            None,
+            &[
+                "rev-parse".into(),
+                "--path-format=absolute".into(),
+                "--show-toplevel".into(),
+                "--absolute-git-dir".into(),
+            ],
+            limits.metadata(),
+            control,
+        )?;
+        let lines = metadata_lines(&discovered)?;
+        if lines.len() != 2 {
+            return Err(GitReadError::Protocol);
+        }
+        let reported_root = PathBuf::from(lines[0]).canonicalize()?;
+        let git_dir = PathBuf::from(lines[1]).canonicalize()?;
+        validate_metadata_path(&git_dir)?;
+        if root != reported_root || !git_dir.is_dir() {
+            return Err(GitReadError::NotRepositoryRoot);
+        }
+        Ok(GitRepositoryIdentity { root, git_dir })
+    }
+
+    /// Internal transport for the typed status provider, run only off the UI path.
+    /// No index refresh, rename detection or submodule traversal. Configured
+    /// clean/process filters are rejected rather than executed or silently
+    /// disabled (which could misreport normalized content). This is not a
+    /// sandbox against hostile concurrent repository/configuration mutation.
+    pub(crate) fn read_status_porcelain_v2(
+        &self,
+        repository_root: &Path,
+        limits: GitReadLimits,
+        cancelled: impl FnMut() -> bool,
+    ) -> Result<(GitRepositoryIdentity, Vec<u8>), GitReadError> {
+        if !cfg!(windows) {
+            return Err(GitReadError::UnsupportedPlatform);
+        }
+        if !limits.valid() {
+            return Err(GitReadError::InvalidLimits);
+        }
+        let mut control = Control {
+            deadline: Instant::now() + limits.timeout,
+            cancelled,
+        };
+        control.check()?;
+        let repository = self.discover(repository_root, limits, &mut control)?;
+        let filters = self.run(
+            &repository.root,
+            Some(&repository.git_dir),
+            &[
+                "config".into(),
+                "--null".into(),
+                "--name-only".into(),
+                "--get-regexp".into(),
+                r"^filter\..*\.(clean|process)$".into(),
+            ],
+            limits.metadata(),
+            &mut control,
+        );
+        match filters {
+            Ok(names) if !names.is_empty() => return Err(GitReadError::ConfiguredFilter),
+            Ok(_) => return Err(GitReadError::Protocol),
+            Err(GitReadError::CommandFailed { code: 1, stderr }) if stderr.is_empty() => {}
+            Err(error) => return Err(error),
+        }
+        let bytes = self.run(
+            &repository.root,
+            Some(&repository.git_dir),
+            &[
+                "status".into(),
+                "--porcelain=v2".into(),
+                "-z".into(),
+                "--untracked-files=all".into(),
+                "--ignored=no".into(),
+                "--no-renames".into(),
+                "--ignore-submodules=all".into(),
+            ],
+            limits.metadata(),
+            &mut control,
+        )?;
+        control.check()?;
+        Ok((repository, bytes))
+    }
+
     fn run(
         &self,
         root: &Path,
@@ -625,6 +702,172 @@ mod tests {
             fs::remove_dir_all(&target).unwrap();
         }
     }
+    #[test]
+    fn repository_status_observes_staged_worktree_untracked_without_index_refresh() {
+        let fixture = Fixture::new();
+        let original = fixture.blob(b"committed\r\n");
+        fixture.index("tracked.p", &original, "100644");
+        fixture.head();
+        let staged = fixture.blob(b"staged\r\n");
+        fixture.index("tracked.p", &staged, "100644");
+        fs::write(fixture.root.join("tracked.p"), b"working\xff\r\n").unwrap();
+        fs::write(fixture.root.join("nuevo niño.p"), b"untouched\r\n").unwrap();
+        let index = fs::read(fixture.root.join(".git/index")).unwrap();
+        let config = fs::read(fixture.root.join(".git/config")).unwrap();
+        let (identity, bytes) = fixture
+            .reader()
+            .read_status_porcelain_v2(&fixture.root, GitReadLimits::default(), || false)
+            .unwrap();
+        assert_eq!(identity.root, fixture.root);
+        assert!(bytes
+            .split(|&byte| byte == 0)
+            .any(|record| record.starts_with(b"1 MM ") && record.ends_with(b" tracked.p")));
+        assert!(bytes
+            .split(|&byte| byte == 0)
+            .any(|record| record == "? nuevo niño.p".as_bytes()));
+        let snapshot = crate::git_status::read_status(
+            &fixture.reader(),
+            &fixture.root,
+            crate::git_status::GitStatusReadOptions::default(),
+            || false,
+        )
+        .unwrap();
+        assert_eq!(snapshot.repository(), &identity);
+        let tracked = snapshot
+            .status()
+            .entries()
+            .iter()
+            .find(|entry| entry.path() == b"tracked.p")
+            .unwrap();
+        assert_eq!(
+            tracked.state(),
+            crate::git_status::GitStatusState::Tracked {
+                index: crate::git_status::GitStatusChange::Modified,
+                worktree: crate::git_status::GitStatusChange::Modified,
+            }
+        );
+        assert!(snapshot
+            .status()
+            .entries()
+            .iter()
+            .any(|entry| entry.path() == "nuevo niño.p".as_bytes()
+                && entry.state() == crate::git_status::GitStatusState::Untracked));
+        let wake = crate::Wakeup::default();
+        let mut controller = crate::git_status_tasks::GitStatusController::new(wake.clone());
+        let options = crate::git_status_tasks::GitStatusOptions {
+            git_executable: fixture.git.clone(),
+            root: fixture.root.clone(),
+            limits: crate::git_status::GitStatusReadOptions::default(),
+        };
+        controller.request(options.clone()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let ticket = wake.ticket();
+            controller.poll(&options);
+            if !matches!(
+                controller.state(),
+                crate::git_status_tasks::GitStatusTaskState::Queued
+                    | crate::git_status_tasks::GitStatusTaskState::Running
+            ) {
+                break;
+            }
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .expect("status worker completion");
+            wake.wait(ticket, Some(remaining));
+        }
+        assert_eq!(
+            controller.state(),
+            crate::git_status_tasks::GitStatusTaskState::Ready,
+            "{:?}",
+            controller.failure()
+        );
+        assert_eq!(controller.result().unwrap().status(), snapshot.status());
+        drop(controller); // Join the real worker before checking disk/fixture cleanup.
+        assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
+        assert_eq!(fs::read(fixture.root.join(".git/config")).unwrap(), config);
+        assert_eq!(
+            fs::read(fixture.root.join("tracked.p")).unwrap(),
+            b"working\xff\r\n"
+        );
+        assert!(!fixture.root.join(".git/index.lock").exists());
+    }
+
+    #[test]
+    fn status_rejects_clean_and_process_filters_without_invoking_them() {
+        for kind in ["clean", "process"] {
+            let fixture = Fixture::new();
+            let original = fixture.blob(b"committed\r\n");
+            fixture.index("tracked.p", &original, "100644");
+            fixture.head();
+            fs::write(fixture.root.join("tracked.p"), b"changed\r\n").unwrap();
+            fs::write(fixture.root.join(".gitattributes"), b"*.p filter=witness\n").unwrap();
+            fixture.git(
+                &[
+                    "config",
+                    &format!("filter.witness.{kind}"),
+                    "cmd /c echo ran > filter-executed",
+                ],
+                None,
+            );
+            let index = fs::read(fixture.root.join(".git/index")).unwrap();
+            let result = fixture.reader().read_status_porcelain_v2(
+                &fixture.root,
+                GitReadLimits::default(),
+                || false,
+            );
+            assert!(
+                matches!(result, Err(GitReadError::ConfiguredFilter)),
+                "{result:?}"
+            );
+            assert!(!fixture.root.join("filter-executed").exists());
+            assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
+        }
+    }
+
+    #[test]
+    fn status_discovery_cancellation_and_large_output_are_bounded() {
+        let fixture = Fixture::new();
+        fs::create_dir(fixture.root.join("nested")).unwrap();
+        assert!(matches!(
+            fixture.reader().read_status_porcelain_v2(
+                &fixture.root.join("nested"),
+                GitReadLimits::default(),
+                || false,
+            ),
+            Err(GitReadError::NotRepositoryRoot)
+        ));
+        assert!(matches!(
+            fixture.reader().read_status_porcelain_v2(
+                &fixture.root,
+                GitReadLimits::default(),
+                || true,
+            ),
+            Err(GitReadError::Cancelled)
+        ));
+        for index in 0..64 {
+            fs::write(
+                fixture
+                    .root
+                    .join(format!("untracked-{index:03}-{}.p", "x".repeat(120))),
+                b"raw",
+            )
+            .unwrap();
+        }
+        assert!(matches!(
+            fixture.reader().read_status_porcelain_v2(
+                &fixture.root,
+                GitReadLimits {
+                    max_metadata_bytes: 2048,
+                    ..GitReadLimits::default()
+                },
+                || false,
+            ),
+            Err(GitReadError::OutputLimit(GitOutputLimit::Metadata))
+        ));
+        assert!(!fixture.root.join(".git/index").exists());
+    }
+
     #[test]
     fn head_and_index_are_distinct_immutable_raw_blobs_without_worktree_or_index_writes() {
         let fixture = Fixture::new();

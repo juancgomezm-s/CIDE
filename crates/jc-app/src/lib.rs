@@ -11,6 +11,8 @@ pub mod diff_model;
 mod focus;
 pub mod git_diff;
 pub mod git_read;
+pub mod git_status;
+pub mod git_status_tasks;
 mod jobs;
 mod keymap;
 mod menu;

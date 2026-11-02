@@ -147,3 +147,24 @@ conjuntos de editor + auxiliares y atiende picos/sufijos restantes;
 no llamar read_blob desde entrada/render ni habilitar comandos sin handler real.
 No eliminar reap/cancelación de readers para fingir un retorno de cinco segundos.
 El callback debe ser barato; kernel cleanup no es preempción dura.
+
+
+## Prioridad vigente: CPU y concurrencia acotada — 2026-11-02
+
+Juan pide aprovechar núcleos disponibles. El bloque Git proveedor/controlador
+está cerrado con 261 pruebas completas, fmt/Clippy/release; su presentación TUI
+se pospone ante esta prioridad. Leer GIT_STATUS_READ_ONLY y GIT_STATUS_DELIVERY.
+
+Primero inventariar hardware real y perfilar búsqueda por archivos, diff,
+decodificación y tareas de fondo. Elegir el cuello medido; reutilizar planificador
+cuando encaje, concurrencia configurable/acotada, cancelación, cuotas/backpressure,
+resultados deterministas/versionados, sin pools anidados ni copias grandes.
+Preservar bytes/encoding/undo y no paralelizar escrituras de un documento.
+
+Antes/después con corpus/protocolo idénticos: throughput, latencia/p95 del tramo
+medible, CPU por proceso/tiempo y memoria/picos. 100% CPU no es aceptación.
+Reservar margen para Qwen; sin afinidades/prioridades/servicios/GPU ajenos ni
+archivos privados. Si no puede verificarse su actividad sin interferir, registrar
+carga concurrente desconocida y no atribuir toda variación al cambio. Máximo
+tres agentes, un integrador, compilaciones y mediciones pesadas serializadas.
+Construir bloques completos antes de validar. Sin instalaciones, push ni CI.

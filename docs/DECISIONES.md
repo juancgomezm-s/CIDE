@@ -261,3 +261,19 @@ interno mejora en dos órdenes; el aumento de p95 VT inicial no persistió al
 repetir. No se descarta esa primera cola ni se resta percentiles entre protocolos.
 Método/datos en M2_BLOCK_LINE_INDEX y M2_UNDO_PIPELINE_PROBE. No se acepta RAM
 global/pantalla física ni se cambia release/backend por intuición. Sin CI remoto.
+
+
+## D29 — Estado Git con identidad de repositorio y entrega acotada
+
+Status no pertenece a una revisión Document. Proveedor/parser y controlador
+reutilizan transporte contenido/discovery y la frontera repository de ProjectSearch,
+sin documentos ficticios. Un worker lazy reutilizable, activo1/pendienteúltima1/
+completion1, generación y opciones completas, cancelación y Drop/join. Los paths
+son bytes opacos, no autoridad filesystem; la observación no promete CAS global.
+
+Consulta v2 NUL, no-renames/ignore-submodules, configuración global/system aislada.
+Clean/process configurados se rechazan antes de status, conservando el contrato de
+no ejecutar filtros y evitando falsear semántica suprimiendo conversiones. Config
+estable y repositorio confiable son precondición, no sandbox hostil. Límites de
+input/records/entries/path/owned y plazo único transporte+parseo. Validación y uso:
+GIT_STATUS_READ_ONLY y GIT_STATUS_DELIVERY. Presentación TUI pendiente, Git writes M5.

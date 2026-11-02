@@ -174,3 +174,24 @@ Metas iniciales para un equipo de referencia identificado en cada corrida: p95 d
 Matriz local: 4 KiB, 64 KiB, 1/4/16 MiB; líneas cortas y una línea larga; UTF-8 multibyte/combining/ancho doble, legacy, BOM y EOL mixtos; pocas/muchas piezas; búsquedas con cero/muchas coincidencias; edit/undo/redo y cerrar/reabrir. Registrar hardware, OS/toolchain/perfil, corpus, calentamiento, muestras y p50/p95; separar apertura fría, edición caliente y procesos auxiliares.
 
 Medir también bytes decodificados, asignaciones por operación, memoria privada y retención tras liberar historial/cerrar documentos. Un viewport fijo no debe provocar trabajo proporcional a todo el archivo en cada tecla. Cuotas de workers, cola, resultados y cachés serán configuración explícita con valores derivados de esas mediciones. La primera evidencia y sus límites están en [AUDITORIA_ECODE_ARQUITECTURA.md](AUDITORIA_ECODE_ARQUITECTURA.md).
+
+
+## Prioridad vigente: CPU y concurrencia acotada — 2026-11-02
+
+Juan pide aprovechar núcleos disponibles. El bloque Git proveedor/controlador
+está cerrado con 261 pruebas completas, fmt/Clippy/release; su presentación TUI
+se pospone ante esta prioridad. Leer GIT_STATUS_READ_ONLY y GIT_STATUS_DELIVERY.
+
+Primero inventariar hardware real y perfilar búsqueda por archivos, diff,
+decodificación y tareas de fondo. Elegir el cuello medido; reutilizar planificador
+cuando encaje, concurrencia configurable/acotada, cancelación, cuotas/backpressure,
+resultados deterministas/versionados, sin pools anidados ni copias grandes.
+Preservar bytes/encoding/undo y no paralelizar escrituras de un documento.
+
+Antes/después con corpus/protocolo idénticos: throughput, latencia/p95 del tramo
+medible, CPU por proceso/tiempo y memoria/picos. 100% CPU no es aceptación.
+Reservar margen para Qwen; sin afinidades/prioridades/servicios/GPU ajenos ni
+archivos privados. Si no puede verificarse su actividad sin interferir, registrar
+carga concurrente desconocida y no atribuir toda variación al cambio. Máximo
+tres agentes, un integrador, compilaciones y mediciones pesadas serializadas.
+Construir bloques completos antes de validar. Sin instalaciones, push ni CI.

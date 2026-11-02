@@ -97,3 +97,14 @@ Keep `docs/VALIDACION.md` consistent with observed evidence and material limitat
 - Rendering consumes read-only presentation; update viewport before rendering. Background results carry revisions/generations and use bounded, cancelable queues.
 - Measure local performance now; CI remains deferred to M5. Compare memory and latency before selecting a storage structure, release optimization level or GUI backend. Do not claim that this target architecture is already implemented.
 - Preserve byte/encoding/save guarantees while replacing flawed ownership and notification paths. Each migration removes its replaced route; do not retain two production editing models.
+
+
+## Current CPU priority
+
+Repository status provider/controller are implemented and locally validated; read
+docs/GIT_STATUS_READ_ONLY.md and docs/GIT_STATUS_DELIVERY.md. Status TUI remains
+pending. Juan now prioritizes CPU/core utilization: follow the latest CPU block
+in PLAN/CONTINUAR, profile before selecting parallelism, bounded configurable
+concurrency/cancellation/backpressure, deterministic versioned results, no nested
+pools or large extra copies. Preserve CPU/RAM headroom for Qwen; do not manipulate
+other processes/system settings. Mark concurrent load unknown if not safely verified.

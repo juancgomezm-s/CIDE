@@ -183,3 +183,10 @@ Split/One Group, Focus 1/2, Pin, Linked Scroll y Back/Forward ya están registra
 - El incremento doble panel está compilado y probado localmente; aún falta revisión manual exhaustiva de combinaciones/terminales. GitHub Actions permanece dormido hasta M5 y M2A sigue abierto.
 
 Consulte también [TUI_INTERACTION.md](TUI_INTERACTION.md), [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md), [M2_SEARCH_PLUS.md](M2_SEARCH_PLUS.md) y [PLAN.md](PLAN.md).
+
+
+El [estado Git por repositorio](GIT_STATUS_READ_ONLY.md) y su
+[entrega versionada](GIT_STATUS_DELIVERY.md) ya están integrados/validados:
+261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
+sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
+TUI de status pendiente; diff activo HEAD/index operativo.

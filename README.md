@@ -141,3 +141,10 @@ La licencia de distribución del código nuevo está pendiente de decisión del 
 Las condiciones BSD de la parte derivada de Lime se conservan: [LICENSING.md](LICENSING.md).
 
 Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para construir, probar y ampliar el proyecto.
+
+
+El [estado Git por repositorio](docs/GIT_STATUS_READ_ONLY.md) y su
+[entrega versionada](docs/GIT_STATUS_DELIVERY.md) ya están integrados/validados:
+261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
+sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
+TUI de status pendiente; diff activo HEAD/index operativo.

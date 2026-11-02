@@ -183,3 +183,10 @@ No se atribuyen al Git activo las mediciones de RAM del editor con servicios apa
 Windows 10 es requisito de la API, no plataforma local validada; Linux/M5 sigue
 sin validar. La limpieza de kernel puede prolongar retorno: no se promete una
 cota dura por el deadline o por la gracia de drenaje.
+
+
+El [estado Git por repositorio](GIT_STATUS_READ_ONLY.md) y su
+[entrega versionada](GIT_STATUS_DELIVERY.md) ya están integrados/validados:
+261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
+sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
+TUI de status pendiente; diff activo HEAD/index operativo.
