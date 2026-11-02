@@ -2,7 +2,8 @@
 
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
 240 pruebas locales aprobadas al cierre (dos helpers de subproceso aparte),
-fmt/Clippy/release, sufijos antes/después y nueve recorridos Git con contadores.
+fmt/Clippy/release, tres pares fríos equivalentes y catorce procesos nativos
+retenidos de edición/undo en ocho documentos. Máximo histórico actual 52,461 MiB;
 Memoria/teclado global y
 revisión renderizada GUI pendientes. Véase el bloque final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
@@ -614,3 +615,32 @@ builds/fixtures simultáneos. Los datos/hashes están enlazados desde ambos mét
 No se repitieron benchmarks generales ya aprobados. Quedan activos la distribución
 fría y el nuevo recorrido nativo dense-edits; su código todavía no es evidencia.
 La memoria densa nativa previa de 51,7 MiB y las puertas global/física siguen abiertas.
+
+## Cierre frío y edición densa nativa — 2026-11-02
+
+Se recogieron los dos entregables, revisaron y ejecutaron en ventanas seriales,
+sin compilar ni correr otros fixtures durante la captura. No hubo cambios
+productivos; se conserva el checkpoint de 240 pruebas, sin repetirlo por añadir
+instrumentación. Formato, Clippy del ejemplo, release y csc aprobados.
+
+- [Distribución fría](M2_COLD_GROWTH_DISTRIBUTION.md): mismo ejemplo/hash sobre
+  anterior `6cf6f13` exportado bajo work y actual `d6de969`. Tres pares con orden
+  alternado; 5580 filas/180 resúmenes, 1116 sesiones retenidas. Para 8 MiB/inicio,
+  p95 anteriores 1424,0 / 3688,9 / 3858,1 µs; actuales 2361,9 / 3399,4 / 3251,5 µs.
+  Signo variable, sin atribución causal de sistema ni aceptación de latencia global.
+- [Recorrido nativo](M2_DENSE_EDIT_EVIDENCE.md): mismo RunAcceptance, ocho fuentes
+  de 4 MiB, newline/undo por teclado. Siete procesos retenidos por versión, todos
+  con 8 ediciones/8 undos/8 cierres, SHA-256 de disco iguales y salida 0. Anterior:
+  641 muestras de memoria; actual: 638. Máximo histórico de compromiso del editor
+  68,160→52,461 MiB. Máximo observado privado tras editar 65,922→50,434 MiB.
+  Tras undo la capacidad queda retenida; cerrar baja consumo pero no certifica la
+  carga viva. Bootstrap/conhost/harness separados. La puerta de 50 MiB sigue abierta.
+- Actual, inyección-a-VT: p95 movimiento 16,1111 ms, inserción 16,0820 ms, undo
+  16,5021 ms; son datos del harness con correlación, no pantalla física.
+- `summarize-growth-evidence.py` validó hashes/casos/filas y checks antes de generar
+  los resúmenes de modelo, memoria por proceso/fase y tiempos VT por separado.
+
+No se reinterpreta el first_cycle único anterior como p95 ni se afirma disco/CPU
+fríos: las cachés no se purgaron. Datos, versiones, hashes y limitaciones están
+en ambos métodos. El siguiente índice por bloques está solo en construcción
+experimental, fuera de la aplicación; todavía no es implementación ni aceptación.

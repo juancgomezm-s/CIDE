@@ -78,7 +78,7 @@ Keep `docs/VALIDACION.md` consistent with observed evidence and material limitat
 
 ## F2 contracts
 
-- Read `docs/M2_SUFFIX_COST_REVIEW.md` and `docs/GIT_AUXILIARY_MEASUREMENT.md` for the next evidence block. LineIndex replacement growth now pre-reserves proportional slack capped at 32 KiB logical charge per index (both Wide arrays together); preserve that ownership and lossless promotion. The 8 MiB cold newline observation became slower while retained projection capacity fell; do not claim universal speed/RAM improvement. Process sampling can miss short-lived Git/conhost descendants and true peaks. Next active fronts: cold growth distributions and native dense multi-document edit/undo evidence; build complete blocks before their serial validation window.
+- Read `docs/M2_SUFFIX_COST_REVIEW.md` and `docs/GIT_AUXILIARY_MEASUREMENT.md` for the evidence block. LineIndex replacement growth now pre-reserves proportional slack capped at 32 KiB logical charge per index (both Wide arrays together); preserve that ownership and lossless promotion. The 8 MiB cold newline observation became slower while retained projection capacity fell; subsequent cold/native distributions are documented below. Do not claim universal speed/RAM improvement. Process sampling can miss short-lived Git/conhost descendants and true peaks. Build complete blocks before their serial validation window.
 
 - Range reads use the block prefix piece index. Do not restore whole-document decode/index builds in movement, viewport rendering or range edit commands.
 - TextProjection is shared per document; direct/inverse changes update EOL events and sparse scalar checkpoints. Preserve invalid UTF-8 grouping, literal mid-file BOM and legacy offsets.
@@ -88,6 +88,8 @@ Keep `docs/VALIDACION.md` consistent with observed evidence and material limitat
 - Initial cold line layout and line splitting may allocate/decode the affected line; profile that peak and metadata suffix shifts. Do not claim <50 MiB or full UI latency from model-only benchmarks.
 
 ## M2-F architecture gates
+
+- Read `docs/M2_COLD_GROWTH_DISTRIBUTION.md` and `docs/M2_DENSE_EDIT_EVIDENCE.md`: three cold comparison pairs and fourteen retained native processes are complete. The dense edited historical commit peak fell 68.16→52.46 MiB, still above target; cold latency sign varies across pairs. The next candidate is experimental under examples/support, per `docs/LINE_INDEX_CANDIDATE_CONTRACT.md`. Measure it before selecting/replacing the production index; no second live index or editing model.
 
 - Build transactional edits and document/view ownership before more navigation/providers. Multi-edit commands validate against an expected revision and publish one undoable change with a complete position map; workers and frontends must not mutate live buffers directly.
 - Text navigation must reject the interior of CRLF. Byte, scalar, grapheme and display coordinates are not interchangeable.

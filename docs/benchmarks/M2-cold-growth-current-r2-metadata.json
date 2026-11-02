@@ -1,0 +1,16 @@
+{
+  "product_commit": "d6de969",
+  "pair": 2,
+  "pair_order": [
+    "current",
+    "baseline"
+  ],
+  "example_sha256": "4207e8e35f3e590a68bea00107f0e74f9bb0098edfe1f3501479ff9dcdc0e0ce",
+  "line_index_sha256": "38ee7990abaf06ac9cc03433bc834f2cc4123c705ba728b75abccfd3a20bcc04",
+  "binary_sha256": "fc36d792e34c4cfc6893d5ef9a28c999edaa839cd5b93898643a4d09b35afabc",
+  "scope": "new Workbench index/layout; OS/CPU/allocator caches not purged; 1 discarded +31 retained sessions/case, six cases; same protocol/source both versions",
+  "process_ram_measured": false,
+  "utc": "2026-11-02T20:19:57.422859+00:00",
+  "os": "Windows-11-10.0.26300-SP0",
+  "toolchain": "Rust 1.85.1 MSVC release locked offline"
+}

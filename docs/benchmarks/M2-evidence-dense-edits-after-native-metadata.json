@@ -1,0 +1,16 @@
+{
+  "product_commit": "d6de969",
+  "editor_binary_sha256": "b17f03314411598f4a53d88fc5f9677eee78ec4f6df227e402d45658b86c6fc1",
+  "host_binary_sha256": "21727750c07eeeec0c7d3a1ac5e3499d2100d2a1b5282d2f916321b44d97fbb6",
+  "harness_binary_sha256": "c36851489cc77dcd81aeb0af2b475903b5d8625c4c94d0b04545a01b6cfdec7f",
+  "source_sha256": {
+    "conpty-smoke.cs": "c93bcc4b82db3bcb40e6cf45d065144473562d88ec2624633d5e3e5175518cd4",
+    "conpty-git.cs": "1f40a39c4348003d612cf3ed28818f5ab4b736b67fd53f3951b8767b9c8e9425",
+    "conpty-git-metrics.cs": "a19e406474b29f4ebd5acc55eaffd60d3a9786c1f3947a6041be3bdac01fdf5f",
+    "conpty-acceptance.cs": "d18f43e71b819188be14e8f99b860d128a20712d906020828f1e31ac0313d177"
+  },
+  "scope": "8 documents x4MiB; newline/edit/undo, retained and historical peak per process; 1 discarded +7 retained processes; VT response not physical display; OS caches not purged",
+  "utc": "2026-11-02T20:16:50.233529+00:00",
+  "os": "Windows-11-10.0.26300-SP0",
+  "toolchain": "Rust 1.85.1 MSVC, release, locked offline"
+}

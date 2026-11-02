@@ -1,0 +1,16 @@
+{
+  "product_commit": "6cf6f13",
+  "editor_binary_sha256": "09aeaab49a8ab31ad753f3ac74cc9b40bfdb8d3feb6ceb8da93680e002efc0ba",
+  "host_binary_sha256": "21727750c07eeeec0c7d3a1ac5e3499d2100d2a1b5282d2f916321b44d97fbb6",
+  "harness_binary_sha256": "a7a97408540769a9a7b7515cdc70ff2396929e5849cb3f10b1bc6f756dde23a2",
+  "source_sha256": {
+    "conpty-smoke.cs": "c93bcc4b82db3bcb40e6cf45d065144473562d88ec2624633d5e3e5175518cd4",
+    "conpty-git.cs": "1f40a39c4348003d612cf3ed28818f5ab4b736b67fd53f3951b8767b9c8e9425",
+    "conpty-git-metrics.cs": "a19e406474b29f4ebd5acc55eaffd60d3a9786c1f3947a6041be3bdac01fdf5f",
+    "conpty-acceptance.cs": "01372ff93b5eaf1485e97cd615757272e8b6de81e54ca4b169ed625083287d2a"
+  },
+  "scope": "same dense-edits RunAcceptance as after capture; CLI before label selects separate dataset and executable, not different workload; 1 discarded +7 retained processes; VT not physical display",
+  "utc": "2026-11-02T20:20:40.209784+00:00",
+  "os": "Windows-11-10.0.26300-SP0",
+  "toolchain": "Rust 1.85.1 MSVC release locked offline"
+}

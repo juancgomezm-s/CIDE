@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 
 public static partial class JcConPtySmoke {
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct ProcessEntry {
@@ -40,22 +41,55 @@ public static partial class JcConPtySmoke {
     }
     public sealed class AcceptanceResult {
         public double startup_ready_ms;public List<double> key_ms;public List<string> memory;
+        public readonly List<AcceptanceOperation> operations=new List<AcceptanceOperation>();
+        public int edited_documents,undone_documents,cleanly_closed_documents,exit_code;
+        public bool disk_unchanged_after_edit,disk_unchanged_after_undo;
+    }
+    public sealed class AcceptanceOperation {
+        public string operation;public int document;public double elapsed_ms;
+        internal AcceptanceOperation(string name,int index,long start){operation=name;document=index;elapsed_ms=(Stopwatch.GetTimestamp()-start)*1000.0/Stopwatch.Frequency;}
+    }
+    static string AcceptanceHash(string path) {
+        using(var hash=SHA256.Create())using(var file=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.Read))
+            return Convert.ToBase64String(hash.ComputeHash(file));
+    }
+    static void AcceptanceVerifyDisk(List<string> paths,List<string> hashes) {
+        for(int i=0;i<paths.Count;i++)if(AcceptanceHash(paths[i])!=hashes[i])throw new IOException("Dense-edit source changed on disk: document-"+i);
+    }
+    static void AcceptanceStartOfDocument(Display display,int document,AcceptanceResult result,string operation) {
+        long start=Stopwatch.GetTimestamp();
+        display.Send("\x1b"+(document+1));
+        display.Wait(()=>display.Text().Contains("Group 1: document-"+document+".txt"),10000);
+        display.Send("\x07");display.Wait(()=>display.Text().Contains("Go to line[:column]"),10000);
+        display.Send("1:1\r");display.Wait(()=>!display.Text().Contains("Go to line[:column]")&&display.Text().Contains("Ln 1 Col 1 "),30000);
+        result.operations.Add(new AcceptanceOperation(operation,document,start));
+    }
+    static void AcceptanceNavigation(Display display,int document,int line,AcceptanceResult result,string operation) {
+        long start=Stopwatch.GetTimestamp();display.Send("\x1b[C");
+        display.Wait(()=>display.Text().Contains("Ln "+line+" Col 2 "),10000);
+        result.operations.Add(new AcceptanceOperation(operation,document,start));
+        display.Send("\x1b[D");display.Wait(()=>display.Text().Contains("Ln "+line+" Col 1 "),10000);
     }
     public static AcceptanceResult RunAcceptance(string executable,string host,string directory,string shape,int iteration) {
         string root=Path.GetFullPath(directory);string fixture=Path.GetFullPath(Path.Combine(root,"work","m2-native-"+Process.GetCurrentProcess().Id+"-"+shape+"-"+iteration));
         if(!fixture.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)||Directory.Exists(fixture))throw new IOException("Unsafe/existing fixture");
-        Directory.CreateDirectory(fixture);List<string> paths=new List<string>();
+        Directory.CreateDirectory(fixture);List<string> paths=new List<string>();List<string> hashes=new List<string>();
         IntPtr inputRead=IntPtr.Zero,inputWrite=IntPtr.Zero,outputRead=IntPtr.Zero,outputWrite=IntPtr.Zero,console=IntPtr.Zero,attributes=IntPtr.Zero,editor=IntPtr.Zero;
         ProcessInfo child=new ProcessInfo();Thread reader=null,sampling=null;MemorySampler meter=null;
         try {
-            int documents=shape=="multi"||shape=="dense"?8:1;int size=shape=="long"?16*1024*1024:documents==8?4*1024*1024:4096;
+            bool denseEdits=shape=="dense-edits",dense=shape=="dense"||denseEdits;
+            int documents=shape=="multi"||dense?8:1;int size=shape=="long"?16*1024*1024:documents==8?4*1024*1024:4096;
+            // Every old shape retains its byte sequence; only the write batching changes.
+            byte[] unit=Encoding.UTF8.GetBytes(shape=="long"?"x":dense?"abcdefg\n":new string('x',63)+"\n");
+            byte[] block=new byte[64*1024];for(int j=0;j<block.Length;j++)block[j]=unit[j%unit.Length];
             for(int i=0;i<documents;i++) {
                 string path=Path.Combine(fixture,"document-"+i+".txt");paths.Add(path);
                 using(FileStream file=new FileStream(path,FileMode.CreateNew,FileAccess.Write)) {
-                    byte[] first=Encoding.UTF8.GetBytes("M2_VISIBLE_"+i+" "+(shape=="dense"?new string('x',128)+"\n":""));file.Write(first,0,first.Length);
-                    byte[] block=Encoding.UTF8.GetBytes(shape=="long"?new string('x',8192):shape=="dense"?"abcdefg\n":new string('x',63)+"\n");
-                    while(file.Length<size){int count=(int)Math.Min(block.Length,size-file.Length);file.Write(block,0,count);}
+                    byte[] first=Encoding.UTF8.GetBytes("M2_VISIBLE_"+i+" "+(dense?new string('x',128)+"\n":""));file.Write(first,0,first.Length);
+                    int remaining=size-first.Length;
+                    while(remaining>0){int count=Math.Min(block.Length,remaining);file.Write(block,0,count);remaining-=count;}
                 }
+                if(denseEdits)hashes.Add(AcceptanceHash(path));
             }
             var consoles=OwnedConsoleIds();
             Check(CreatePipe(out inputRead,out inputWrite,IntPtr.Zero,0));Check(CreatePipe(out outputRead,out outputWrite,IntPtr.Zero,0));
@@ -96,6 +130,29 @@ public static partial class JcConPtySmoke {
                 }
             }
             meter.phase="retained";Thread.Sleep(100);
+            if(denseEdits) {
+                meter.phase="before_edit";Thread.Sleep(100);
+                for(int i=0;i<documents;i++) {
+                    meter.phase="edit_navigation";AcceptanceStartOfDocument(display,i,result,"edit_document_start_navigation");
+                    meter.phase="edit";long started=Stopwatch.GetTimestamp();display.Send("\r");
+                    display.Wait(()=>display.Text().Contains("Ln 2 Col 1 "),30000);
+                    result.operations.Add(new AcceptanceOperation("insert_initial_newline",i,started));result.edited_documents++;
+                    meter.phase="after_edit_navigation";AcceptanceNavigation(display,i,2,result,"after_edit_navigation");
+                }
+                meter.phase="after_edit";Thread.Sleep(100);
+                meter.phase="verify_disk_after_edit";AcceptanceVerifyDisk(paths,hashes);result.disk_unchanged_after_edit=true;
+                for(int i=0;i<documents;i++) {
+                    meter.phase="undo_navigation";long started=Stopwatch.GetTimestamp();display.Send("\x1b"+(i+1));int expected=i;
+                    display.Wait(()=>display.Text().Contains("Group 1: document-"+expected+".txt")&&display.Text().Contains("Ln 2 Col 1 "),10000);
+                    result.operations.Add(new AcceptanceOperation("undo_document_navigation",i,started));
+                    meter.phase="undo";started=Stopwatch.GetTimestamp();display.Send("\x1a");
+                    display.Wait(()=>display.Text().Contains("Ln 1 Col 1 "),30000);
+                    result.operations.Add(new AcceptanceOperation("undo_initial_newline",i,started));result.undone_documents++;
+                    meter.phase="after_undo_navigation";AcceptanceNavigation(display,i,1,result,"after_undo_navigation");
+                }
+                meter.phase="after_undo";Thread.Sleep(100);
+                meter.phase="verify_disk_after_undo";AcceptanceVerifyDisk(paths,hashes);result.disk_unchanged_after_undo=true;
+            }
             meter.phase="closing";
             // Clean fixtures: close the second group, then every document via
             // centrally registered commands. Record retained process memory.
@@ -103,10 +160,11 @@ public static partial class JcConPtySmoke {
             display.Send("\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r");
             display.Wait(()=>!display.Text().Contains("Group 2"),5000);
             for(int i=0;i<documents;i++){display.Send("\x17");int remaining=documents-i-1;
-                display.Wait(()=>remaining==0?display.Text().Contains("Group 1: Empty"):!display.Text().Contains("document-"+(remaining)+".txt"),5000);}
+                display.Wait(()=>remaining==0?display.Text().Contains("Group 1: Empty"):!display.Text().Contains("document-"+(remaining)+".txt"),5000);result.cleanly_closed_documents++;}
             meter.phase="closed";Thread.Sleep(100);
             display.Send("\x1b"+"f");display.Wait(()=>display.Text().Contains("Exit"),5000);display.Send("\x1b[A\r");
-            if(WaitForSingleObject(child.process,10000)!=0)throw new TimeoutException("Acceptance exit");int code;GetExitCodeProcess(child.process,out code);if(code!=0)throw new IOException("Editor exit "+code);
+            if(WaitForSingleObject(child.process,10000)!=0)throw new TimeoutException("Acceptance exit");int code;Check(GetExitCodeProcess(child.process,out code));if(code!=0)throw new IOException("Editor exit "+code);
+            result.exit_code=code;
             meter.stop=true;sampling.Join();result.memory=meter.rows;return result;
         } finally {
             if(meter!=null)meter.stop=true;if(sampling!=null)sampling.Join(2000);
@@ -122,22 +180,27 @@ public static partial class JcConPtySmoke {
 public static class MeasureM2Native {
     public static int Main(string[] args) {
         try {
-            string root=Path.GetFullPath(args[0]);string phase=args[1];if(phase!="before"&&phase!="after"&&phase!="dense-before"&&phase!="dense-after")throw new ArgumentException("phase");
+            string root=Path.GetFullPath(args[0]);string phase=args[1];if(phase!="before"&&phase!="after"&&phase!="dense-before"&&phase!="dense-after"&&phase!="dense-edits-after"&&phase!="dense-edits-before")throw new ArgumentException("phase");
+            bool denseEdits=phase=="dense-edits-after"||phase=="dense-edits-before";
             string prefix=Path.Combine(root,"docs","benchmarks","M2-evidence-"+phase+"-native");
-            if(File.Exists(prefix+"-timings.csv")||File.Exists(prefix+"-memory.csv"))throw new IOException("Refusing to overwrite retained measurements");
-            using(var times=new StreamWriter(prefix+"-timings.csv",false,new UTF8Encoding(false)))
-            using(var memory=new StreamWriter(prefix+"-memory.csv",false,new UTF8Encoding(false))) {
+            if(File.Exists(prefix+"-timings.csv")||File.Exists(prefix+"-memory.csv")||(denseEdits&&File.Exists(prefix+"-checks.csv")))throw new IOException("Refusing to overwrite retained measurements");
+            using(var times=new StreamWriter(new FileStream(prefix+"-timings.csv",FileMode.CreateNew,FileAccess.Write),new UTF8Encoding(false)))
+            using(var memory=new StreamWriter(new FileStream(prefix+"-memory.csv",FileMode.CreateNew,FileAccess.Write),new UTF8Encoding(false)))
+            using(var checks=denseEdits?new StreamWriter(new FileStream(prefix+"-checks.csv",FileMode.CreateNew,FileAccess.Write),new UTF8Encoding(false)):null) {
                 times.NewLine="\n";memory.NewLine="\n";
+                if(checks!=null){checks.NewLine="\n";checks.WriteLine("shape,run,edited_documents,undone_documents,cleanly_closed_documents,disk_unchanged_after_edit,disk_unchanged_after_undo,exit_code");}
                 times.WriteLine("shape,run,operation,sample,elapsed_ms");
                 memory.WriteLine("shape,run,phase,elapsed_ms,editor_pid,editor_private,editor_working,editor_peak_commit,host_pid,host_private,host_working,host_peak_commit,console_pid,console_private,console_working,console_peak_commit,harness_private,harness_working,harness_peak_commit");
                 string executable=args.Length>2?Path.GetFullPath(args[2]):Path.Combine(root,"target/release/jc-ide-tui.exe");
                 if(!executable.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new IOException("Executable outside workspace");
-                foreach(string shape in phase.StartsWith("dense-")?new[]{"dense"}:new[]{"base","multi","long"})for(int run=0;run<8;run++) {
+                foreach(string shape in denseEdits?new[]{"dense-edits"}:phase.StartsWith("dense-")?new[]{"dense"}:new[]{"base","multi","long"})for(int run=0;run<8;run++) {
                     var result=JcConPtySmoke.RunAcceptance(executable,Path.Combine(root,"target/release/examples/f3_console_host.exe"),root,shape,run);
                     if(run>0){times.WriteLine(shape+","+run+",startup_ready,0,"+result.startup_ready_ms.ToString("F4",System.Globalization.CultureInfo.InvariantCulture));
                         for(int i=0;i<result.key_ms.Count;i++)times.WriteLine(shape+","+run+",injection_to_vt,"+i+","+result.key_ms[i].ToString("F4",System.Globalization.CultureInfo.InvariantCulture));
+                        foreach(var operation in result.operations)times.WriteLine(shape+","+run+","+operation.operation+","+operation.document+","+operation.elapsed_ms.ToString("F4",System.Globalization.CultureInfo.InvariantCulture));
+                        if(checks!=null)checks.WriteLine(shape+","+run+","+result.edited_documents+","+result.undone_documents+","+result.cleanly_closed_documents+","+result.disk_unchanged_after_edit.ToString().ToLowerInvariant()+","+result.disk_unchanged_after_undo.ToString().ToLowerInvariant()+","+result.exit_code);
                         foreach(string row in result.memory)memory.WriteLine(shape+","+run+","+row);}
-                    times.Flush();memory.Flush();Console.WriteLine(shape+" "+run+" complete");
+                    times.Flush();memory.Flush();if(checks!=null)checks.Flush();Console.WriteLine(shape+" "+run+" complete");
                 }
             }return 0;
         }catch(Exception e){Console.Error.WriteLine(e);return 1;}

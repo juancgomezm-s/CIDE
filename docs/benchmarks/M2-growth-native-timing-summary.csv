@@ -1,0 +1,17 @@
+version,operation,samples,p50_ms,p95_ms,max_ms
+before,after_edit_navigation,56,15.447949999999999,16.0892,16.5562
+before,after_undo_navigation,56,15.507200000000001,16.1532,16.3257
+before,edit_document_start_navigation,56,46.65055,47.7633,48.0637
+before,injection_to_vt,217,15.5291,16.3341,16.6806
+before,insert_initial_newline,56,15.498899999999999,16.0702,16.3763
+before,startup_ready,7,111.469,121.1065,121.1065
+before,undo_document_navigation,56,15.49105,16.0586,16.0807
+before,undo_initial_newline,56,15.5029,16.0731,16.5135
+after,after_edit_navigation,56,15.48985,16.071,16.1593
+after,after_undo_navigation,56,15.499300000000002,16.118,16.4175
+after,edit_document_start_navigation,56,46.5304,47.4449,48.2344
+after,injection_to_vt,217,15.5423,16.1111,16.3806
+after,insert_initial_newline,56,15.4208,16.082,16.5048
+after,startup_ready,7,105.023,107.1927,107.1927
+after,undo_document_navigation,56,15.3612,16.0485,16.1691
+after,undo_initial_newline,56,15.534600000000001,16.5021,22.0464

@@ -54,15 +54,21 @@ leer M2_SUFFIX_COST_REVIEW y GIT_AUXILIARY_MEASUREMENT. Suite completa 240 prueb
 fmt/Clippy/release; 4914 observaciones antes y después, y nueve sesiones Git.
 No volver a ejecutar lo aprobado sin cambios o preocupación material.
 
-Frentes realmente activos al continuar: `cold_growth.rs` (ejemplo nuevo de
-distribución de primera newline por sesión) y ampliación de
-`scripts/conpty-acceptance.cs` para dense-edits (ocho documentos, newline/undo,
-retención y cierre). Sus métodos nuevos son M2_COLD_GROWTH_DISTRIBUTION y
-M2_DENSE_EDIT_EVIDENCE. Construcción delegada exclusiva, sin compilar/medir hasta
-que ambos contratos estén cerrados y el integrador reserve ventana serial. No
-atribuirles evidencia antes de ejecutarlos. El caso frío único de 8 MiB pasó de
-1,7608 a 2,1452 ms; la capacidad retenida posterior bajó ~8→4,03 MiB. Mantener
-ambos hechos y distinguir modelo, muestreo nativo e imagen física.
+Los frentes cold_growth y dense-edits ya fueron recogidos, revisados y ejecutados
+por el integrador. M2_COLD_GROWTH_DISTRIBUTION conserva tres pares con igual
+ejemplo/versiones identificadas: 5580 filas, sin cambio consistente de signo en
+p95 frío. M2_DENSE_EDIT_EVIDENCE registra catorce procesos retenidos y sus checks:
+pico histórico de compromiso 68,160→52,461 MiB; la puerta de 50 MiB sigue abierta.
+No repetir esos datasets ni reemplazarlos por otras corridas sin motivo material.
+
+Bloque siguiente realmente en construcción: `examples/support/block_line_index.rs`
+y `examples/line_index_candidates.rs`, dentro de jc-app, con método
+LINE_INDEX_CANDIDATES y contrato LINE_INDEX_CANDIDATE_CONTRACT. Candidato y driver
+se construyen en archivos exclusivos; no hay cambio productivo ni decisión de
+estructura. El integrador debe esperar/recoger ambos, revisar, abrir ventana
+serial y medir antes de seleccionar. No cerrar turno afirmando que siguen activos
+si ya terminaron sin un integrador que recoja sus entregas. Distinguir siempre
+modelo, proceso nativo e imagen física; no tocar configuración del sistema.
 
 - Construir bloques más amplios antes de validar, según pidió el usuario. Reservar
   comprobaciones intermedias para bloqueantes concretos; no repetir suites por retoques.

@@ -1,0 +1,8 @@
+shape,run,edited_documents,undone_documents,cleanly_closed_documents,disk_unchanged_after_edit,disk_unchanged_after_undo,exit_code
+dense-edits,1,8,8,8,true,true,0
+dense-edits,2,8,8,8,true,true,0
+dense-edits,3,8,8,8,true,true,0
+dense-edits,4,8,8,8,true,true,0
+dense-edits,5,8,8,8,true,true,0
+dense-edits,6,8,8,8,true,true,0
+dense-edits,7,8,8,8,true,true,0
