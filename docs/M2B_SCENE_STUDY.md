@@ -159,3 +159,28 @@ La tentativa de captura headless falló sin generar imagen. La revisión visual
 renderizada, interacción del navegador y accesibilidad de la maqueta permanecen
 pendientes; no se presenta la comprobación estática como revisión visual. IME/UIA reales, RAM/latencia/arranque GUI y aceptación
 global de M2B no se pueden concluir de estos archivos.
+
+### Intento posterior mediante computer-use — 2026-11-02
+
+Se leyó la habilidad computer-use y sus instrucciones de runtime/confirmaciones.
+El medio disponible fue `node_repl` con `@oai/sky`; inicialización y `list_apps`
+devolvieron inventario, sin ventana de Edge targeteable. No se inspeccionaron
+pestañas ni contenidos ajenos. Se solicitó abrir el Edge ya instalado mediante
+`sky.launch_app`, seguido de un inventario de ventanas. La llamada no devolvió
+resultado y fue interrumpida tras aproximadamente 672 segundos. No produjo PID,
+ventana seleccionada, estado de página ni captura; el lanzamiento quedó en estado
+desconocido, no se interpreta como un render fallido de la escena.
+
+No se llegó a navegar al HTML, iniciar un servidor local ni ejecutar los estados
+workspace/palette/compacto. La comprobación ligera posterior mediante `tasklist`
+falló con «El nombre de usuario o la contraseña no son correctos» y no permitió
+atribuir procesos. No se cerraron navegadores ni superficies sin propiedad
+demostrada. Se reseteó correctamente el kernel de `node_repl` para terminar la
+sesión interrumpida; no quedaron llamadas de lanzamiento/render del agente
+pendientes ni un servidor de este trabajo. No se afirma que no existan procesos
+de Edge, porque no se pudo comprobar su estado.
+
+Se liberó la ventana de medición del integrador y se detuvieron los intentos de
+render en este bloque. No se modificó seguridad, GPU, configuración ni servicios,
+ni se instaló software. La revisión renderizada sigue pendiente; no se generaron
+ni simularon capturas de evidencia.

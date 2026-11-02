@@ -178,3 +178,22 @@ Implementado sobre S1 `6e07b1e`, 2026-11-02. El documento se escanea por turnos 
 Datos Unicode 17 fijados por hash/licencia: default full C+F sin Turkic, sin NFC/NFD ni conversión canónica. Las expansiones solo entregan rangos de escalares originales completos. Palabra es L/M/N/Pc + join controls, no UAX #29. Datos importados y algoritmos nuevos se identifican por separado. La dependencia es estática/generada, sin crate ni proceso de lenguaje nuevo.
 
 Se implementaron navegación de selección, historial, marcadores y Go to escalar en comandos compartidos. Cancelar persiste al editar; Find/Replace explícitos reinician. No habilitar regex sin motor/presupuesto. La subida inicial de ~35 % del p95 de proyecto se recuperó en el corpus medido mediante decoder prestado/scratch reutilizado y rechazo ASCII dentro del mismo matcher; no se generaliza a todas las cargas ni se afirma mejora de cancelación. El perfil release se conserva. Detalle: S0_DECODER_OPTIMIZATION.md. RAM global/pantalla física permanecen abiertos. Desarrollo por bloques amplios y validación al cierre, según preferencia del usuario. Método en S0_DOCUMENT_SEARCH. El bloque M2_ACCEPTANCE_EVIDENCE amplía corpus, teclado y mediciones por proceso; retira la materialización completa del layout frío. El caso denso de ocho documentos todavía excede 50 MiB y la latencia física sigue sin medir; no aceptar objetivos globales por un corpus parcial.
+
+
+## D23 — Metadatos compactos y recolección con identidad
+
+La carga medida de ocho documentos de líneas cortas justifica sustituir inicio
+usize/EOL u8 por un índice único compacto, con fallback de ancho sin truncar.
+La recolección conserva arenas enteras todavía alcanzables, sin una copia por
+cambiar presupuesto; mantiene mapas/revisiones/undo y compacta huecos reales.
+No se cambia contenedor del core ni cuotas por intuición. Pico nativo 71,9 →
+51,7 MiB y frío algo más lento: se acepta el ahorro medido, no la meta global de
+50 MiB. Método/tradeoffs en M2_DENSE_LINE_METADATA.
+
+## D24 — Disponibilidad en la entrada central de comandos TUI
+
+Un item deshabilitado no puede ejecutar su handler mediante Enter de menú.
+El dispatcher comprueba el registro actual antes de efectos de foco/búsqueda/
+documento, para todas las entradas TUI. No se copian reglas por menú/widget.
+La auditoría de teclado y sus seis regresiones están en M2_KEYBOARD_MATRIX_AUDIT;
+no sustituyen prueba física de terminales ni hacen público el dispatcher para GUI.

@@ -1,5 +1,6 @@
 mod commands;
 mod edit;
+mod line_index;
 mod search;
 mod text;
 use std::cell::RefCell;

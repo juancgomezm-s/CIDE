@@ -4,6 +4,16 @@ use jc_app::{BottomPanel, CommandId, CommandOutcome, Overlay, PrimaryFocus, Side
 
 impl TuiApp {
     pub(crate) fn dispatch(&mut self, command: CommandId) {
+        // Every TUI entry point, including menu Enter, shares this gate.
+        // Check before changing search/focus state or invoking any handler.
+        if !self.registry.is_enabled(command, &self.command_context()) {
+            self.status = self
+                .registry
+                .get(command)
+                .map(|spec| format!("{} is unavailable in this context", spec.label))
+                .unwrap_or_else(|| "Command unavailable".to_owned());
+            return;
+        }
         if matches!(
             command,
             CommandId::SearchFind

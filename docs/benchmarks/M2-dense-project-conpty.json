@@ -1,0 +1,17 @@
+{
+  "samples": 31,
+  "injection_to_vt_p50_ms": 15.4756,
+  "injection_to_vt_p95_ms": 16.6212,
+  "private_bytes": 1126400,
+  "keyboard_output_bytes": 1150,
+  "idle_cpu_ms": 0,
+  "clears_during_keys": 0,
+  "resize_clears": 1,
+  "exit_code": 0,
+  "project_search_delivered": true,
+  "project_replace_previewed": true,
+  "project_replace_applied_and_undone": true,
+  "document_search_folded_without_more_input": false,
+  "document_goto_scalars": false,
+  "document_replaced_and_undone": false
+}

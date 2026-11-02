@@ -94,3 +94,15 @@ Límites materiales:
 - Sigue pendiente restaurar exactamente selecciones históricas: se conserva la política de mapeo determinista de F1.
 
 El siguiente incremento funcional es F3 (presentación de solo lectura y tareas versionadas/acotadas). Mantener estos benchmarks para detectar regresiones y continuar perfilando picos fríos/memoria antes de cerrar objetivos globales. Sublime Text sigue siendo la referencia visual; esta optimización es del motor compartido.
+
+
+## Actualización posterior M2 — metadatos densos y recolección
+
+El bloque documentado en [M2_DENSE_LINE_METADATA](M2_DENSE_LINE_METADATA.md)
+sustituye inicio usize + EOL u8 por un índice compacto de cuatro bytes por línea
+para offsets de 30 bits, con promoción sin truncar. No altera la elección del
+índice de piezas por bloques, las coordenadas/bytes canónicos ni cuotas de layout.
+La recolección evita reconstruir una arena completamente alcanzable y conserva
+la reubicación necesaria de arenas con huecos e historial retenido. Mediciones
+F2 anteriores son históricas; el bloque nuevo registra asignaciones, RAM real,
+tradeoffs de frío y picos restantes, sin afirmar aceptación <50 MiB global.

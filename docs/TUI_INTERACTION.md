@@ -105,11 +105,14 @@ El movimiento, la selección y la edición pasan por Workbench con las coordenad
 | Next / Previous | F3 / Shift+F3 |
 | Find in Project | Ctrl+Shift+F |
 | Replace in Project | Ctrl+Shift+H |
-| Go to Line (pendiente) | Ctrl+G |
-| Find selected next/previous (pendiente) | Ctrl+F3 / Ctrl+Shift+F3 |
+| Go to línea[:columna escalar] | Ctrl+G |
+| Find selected next/previous | Ctrl+F3 / Ctrl+Shift+F3 |
 
 En la barra Find: `Enter` siguiente, `Shift+Enter` anterior, `Alt+C` case,
-`Alt+W` whole word, `Alt+R` regex y `Esc` cierra.
+`Alt+W` whole word y `Esc` cancela el scan pendiente y cierra.
+Regex permanece deshabilitado hasta incorporar un motor con presupuesto real;
+no se ofrece Alt+R como toggle funcional. Ver S0_DOCUMENT_SEARCH para límites,
+folding Unicode, selección, historial y navegación escalar implementados.
 
 ## Sidebar y panel inferior
 
@@ -213,7 +216,7 @@ Estas teclas siguen como reservas; no se registran handlers ficticios:
 |---|---|
 | Quick Open File | Ctrl+P |
 | Go to Symbol | Ctrl+R |
-| Go to Line | Ctrl+G (ya reservado) |
+| Go to línea[:columna escalar] | Ctrl+G (implementado en S0) |
 | Go to Definition / Peek | F12 / Alt+F12 |
 | Find References | Shift+F12 |
 | Manual completion | Ctrl+Space |

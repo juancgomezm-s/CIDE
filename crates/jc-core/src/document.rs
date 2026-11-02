@@ -348,7 +348,8 @@ impl Document {
 
     /// Relocate only reachable source intervals; revisions, history and maps remain unchanged.
     pub fn reclaim_unused_storage(&mut self) {
-        fn collect(document: &Document, source: Source) -> (Vec<u8>, Vec<(Range<usize>, usize)>) {
+        type RelocationMap = Vec<(Range<usize>, usize)>;
+        fn collect(document: &Document, source: Source) -> (Option<Vec<u8>>, RelocationMap) {
             let mut ranges: Vec<_> = std::iter::once(&document.state)
                 .chain(&document.undo)
                 .chain(&document.redo)
@@ -369,6 +370,12 @@ impl Document {
                 Source::Original => &document.original,
                 Source::Added => &document.added,
             };
+            // The entire arena is still reachable: its offsets are already the
+            // desired mapping. Reusing it avoids a source-sized temporary just
+            // to collect a different arena or change a history budget.
+            if merged.len() == 1 && merged[0] == (0..source.len()) {
+                return (None, Vec::new());
+            }
             let mut bytes = Vec::with_capacity(merged.iter().map(|r| r.len()).sum());
             let mut mapping = Vec::with_capacity(merged.len());
             for range in merged {
@@ -376,7 +383,7 @@ impl Document {
                 bytes.extend_from_slice(&source[range.clone()]);
                 mapping.push((range, base));
             }
-            (bytes, mapping)
+            (Some(bytes), mapping)
         }
         let (original, original_map) = collect(self, Source::Original);
         let (added, added_map) = collect(self, Source::Added);
@@ -386,6 +393,8 @@ impl Document {
         {
             for piece in &mut state.pieces {
                 let map = match piece.source {
+                    Source::Original if original.is_none() => continue,
+                    Source::Added if added.is_none() => continue,
                     Source::Original => &original_map,
                     Source::Added => &added_map,
                 };
@@ -393,8 +402,16 @@ impl Document {
                 piece.start = map[index].1 + piece.start - map[index].0.start;
             }
         }
-        self.original = original;
-        self.added = added;
+        if let Some(original) = original {
+            self.original = original;
+        } else {
+            self.original.shrink_to_fit();
+        }
+        if let Some(added) = added {
+            self.added = added;
+        } else {
+            self.added.shrink_to_fit();
+        }
     }
     pub fn compact_storage(&mut self) {
         let bytes = self.to_bytes();

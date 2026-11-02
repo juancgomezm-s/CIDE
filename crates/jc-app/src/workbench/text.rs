@@ -1,4 +1,5 @@
 //! Revision-aware line metadata and bounded lazy scalar layouts.
+use super::line_index::{shift, LineIndex};
 use jc_core::Document;
 use jc_text::{
     decode_fragment, DecodedScalars, DecodedText, PositionError, TextEncoding, TextPosition,
@@ -27,21 +28,12 @@ pub(super) struct TextProjection {
     revision: Option<u64>,
     encoding: Option<TextEncoding>,
     len: usize,
-    starts: Vec<usize>,
-    endings: Vec<u8>,
+    lines: LineIndex,
     ending_counts: [usize; 4],
     layouts: VecDeque<Layout>,
     cache_bytes: usize,
     pub decoded_bytes: u64,
     pub scanned_bytes: u64,
-}
-
-fn shift(value: usize, old_len: usize, new_len: usize) -> usize {
-    if new_len >= old_len {
-        value + (new_len - old_len)
-    } else {
-        value - (old_len - new_len)
-    }
 }
 
 impl TextProjection {
@@ -55,7 +47,7 @@ impl TextProjection {
                 .is_ok_and(|b| b == [0xef, 0xbb, 0xbf]);
         let content_start = if bom { 3 } else { 0 };
         let mut updated = false;
-        if self.encoding == Some(encoding) && self.starts.first() == Some(&content_start) {
+        if self.encoding == Some(encoding) && self.lines.first_start() == Some(content_start) {
             if let Some(change) = document
                 .last_change()
                 .filter(|c| Some(c.before_revision) == self.revision)
@@ -77,11 +69,8 @@ impl TextProjection {
                         .saturating_add(e.inserted_len)
                 });
                 let high = high.saturating_add(margin).min(self.len);
-                let low_line = self.starts.partition_point(|&n| n <= low).saturating_sub(1);
-                let high_line = self
-                    .starts
-                    .partition_point(|&n| n <= high)
-                    .saturating_sub(1);
+                let low_line = self.lines.upper_bound(low).saturating_sub(1);
+                let high_line = self.lines.upper_bound(high).saturating_sub(1);
                 let candidate = if low_line == high_line {
                     self.layouts
                         .iter()
@@ -94,33 +83,29 @@ impl TextProjection {
                     None
                 };
                 let mut from = low.saturating_sub(2).max(content_start);
-                let next = self.starts.partition_point(|&n| n <= from);
-                if next < self.starts.len()
-                    && self.starts[next] == from + 1
-                    && self.endings[next - 1] == 2
+                let next = self.lines.upper_bound(from);
+                if next < self.lines.len()
+                    && self.lines.start(next) == from + 1
+                    && self.lines.ending(next - 1) == 2
                 {
                     from -= 1;
                 }
                 let mut old_end = high.saturating_add(2).min(self.len);
-                let next = self.starts.partition_point(|&n| n <= old_end);
-                if next < self.starts.len()
-                    && self.starts[next] == old_end + 1
-                    && self.endings[next - 1] == 2
+                let next = self.lines.upper_bound(old_end);
+                if next < self.lines.len()
+                    && self.lines.start(next) == old_end + 1
+                    && self.lines.ending(next - 1) == 2
                 {
                     old_end += 1;
                 }
                 let new_end = shift(old_end, self.len, document.len());
                 if new_end <= document.len() && from <= new_end {
-                    let first = self.starts.partition_point(|&n| n <= from);
-                    let last = self.starts.partition_point(|&n| n <= old_end);
-                    let (mut replacement, mut endings) = self.scan(document, from..new_end);
-                    replacement.remove(0);
-                    endings.pop();
-                    let added = replacement.len();
+                    let first = self.lines.upper_bound(from);
+                    let last = self.lines.upper_bound(old_end);
+                    let replacement = self.scan(document, from..new_end);
+                    let added = replacement.len() - 1;
                     let removed = last - first;
-                    for start in &mut self.starts[last..] {
-                        *start = shift(*start, self.len, document.len());
-                    }
+                    self.lines.shift_tail(last, self.len, document.len());
                     self.layouts.retain_mut(|layout| {
                         if layout.line < low_line {
                             return true;
@@ -134,14 +119,13 @@ impl TextProjection {
                         }
                         true
                     });
-                    for &ending in &self.endings[first - 1..last - 1] {
-                        self.ending_counts[ending as usize] -= 1;
+                    for line in first - 1..last - 1 {
+                        self.ending_counts[self.lines.ending(line) as usize] -= 1;
                     }
-                    for &ending in &endings {
-                        self.ending_counts[ending as usize] += 1;
+                    for entry in replacement.entries().take(replacement.len() - 1) {
+                        self.ending_counts[entry.ending as usize] += 1;
                     }
-                    self.endings.splice(first - 1..last - 1, endings);
-                    self.starts.splice(first..last, replacement);
+                    self.lines.replace_after(first..last, replacement);
                     if let Some((layout, old_content)) = candidate {
                         if added == removed {
                             let new_content =
@@ -169,21 +153,18 @@ impl TextProjection {
             }
         }
         if !updated {
-            let (starts, endings) = self.scan(document, content_start..document.len());
-            self.starts = starts;
-            self.endings = endings;
+            self.lines = self.scan(document, content_start..document.len());
             self.ending_counts = [0; 4];
-            for &ending in &self.endings {
-                self.ending_counts[ending as usize] += 1;
+            for entry in self.lines.entries() {
+                self.ending_counts[entry.ending as usize] += 1;
             }
             self.layouts.clear();
             self.cache_bytes = 0;
         }
         if !updated
-            || self.starts.capacity() > self.starts.len().saturating_mul(2).saturating_add(1024)
+            || self.lines.capacity() > self.lines.len().saturating_mul(2).saturating_add(1024)
         {
-            self.starts.shrink_to_fit();
-            self.endings.shrink_to_fit();
+            self.lines.shrink_to_fit();
         }
         self.revision = Some(document.revision());
         self.encoding = Some(encoding);
@@ -258,10 +239,10 @@ impl TextProjection {
         }
     }
 
-    fn scan(&mut self, document: &Document, range: Range<usize>) -> (Vec<usize>, Vec<u8>) {
+    fn scan(&mut self, document: &Document, range: Range<usize>) -> LineIndex {
         self.scanned_bytes += range.len() as u64;
-        let mut result = vec![range.start];
-        let mut endings = Vec::new();
+        let mut result = LineIndex::default();
+        let mut start = range.start;
         let mut bytes = document
             .range_chunks(range.clone())
             .expect("validated index range")
@@ -271,26 +252,28 @@ impl TextProjection {
             .peekable();
         while let Some((index, byte)) = bytes.next() {
             let mut end = range.start + index + 1;
-            if byte == b'\r' {
+            let ending = if byte == b'\r' {
                 if bytes.peek().is_some_and(|(_, b)| *b == b'\n') {
                     bytes.next();
                     end += 1;
-                    endings.push(2);
+                    2
                 } else {
-                    endings.push(3);
+                    3
                 }
-                result.push(end);
             } else if byte == b'\n' {
-                result.push(end);
-                endings.push(1);
-            }
+                1
+            } else {
+                continue;
+            };
+            result.push(start, ending);
+            start = end;
         }
-        endings.push(0);
-        (result, endings)
+        result.finish(start);
+        result
     }
 
     pub fn content_start(&self) -> usize {
-        self.starts[0]
+        self.lines.start(0)
     }
     pub fn preferred_ending(&self) -> &'static [u8] {
         let [_, lf, crlf, cr] = self.ending_counts;
@@ -305,7 +288,7 @@ impl TextProjection {
         }
     }
     pub fn line_count(&self) -> usize {
-        self.starts.len()
+        self.lines.len()
     }
 
     pub fn line_range(
@@ -317,9 +300,9 @@ impl TextProjection {
     }
 
     fn line_range_at(&self, line: usize, len: usize) -> Option<(Range<usize>, Range<usize>)> {
-        let start = *self.starts.get(line)?;
-        let end = self.starts.get(line + 1).copied().unwrap_or(len);
-        let ending = match self.endings[line] {
+        let start = self.lines.get(line)?.start;
+        let end = self.lines.get(line + 1).map_or(len, |entry| entry.start);
+        let ending = match self.lines.ending(line) {
             0 => 0,
             2 => 2,
             _ => 1,
@@ -421,13 +404,10 @@ impl TextProjection {
         document: &Document,
         offset: usize,
     ) -> Result<TextPosition, PositionError> {
-        if offset < self.starts[0] || offset > self.len {
+        if offset < self.lines.start(0) || offset > self.len {
             return Err(PositionError::SourceOffsetNotBoundary(offset));
         }
-        let line = self
-            .starts
-            .partition_point(|&n| n <= offset)
-            .saturating_sub(1);
+        let line = self.lines.upper_bound(offset).saturating_sub(1);
         let content = self.line_range(document, line).unwrap().0;
         if offset > content.end {
             return Err(PositionError::InsideLineEnding(offset));
@@ -483,11 +463,8 @@ impl TextProjection {
     }
 
     pub fn snap(&mut self, document: &Document, offset: usize) -> usize {
-        let offset = offset.clamp(self.starts[0], self.len);
-        let line = self
-            .starts
-            .partition_point(|&n| n <= offset)
-            .saturating_sub(1);
+        let offset = offset.clamp(self.lines.start(0), self.len);
+        let line = self.lines.upper_bound(offset).saturating_sub(1);
         let content = self.line_range(document, line).unwrap().0;
         let offset = offset.min(content.end);
         let layout = self.layout(document, line).unwrap();
@@ -579,9 +556,7 @@ impl TextProjection {
             + (self.layouts.capacity() - self.layouts.len()) * std::mem::size_of::<Layout>()
     }
     pub fn memory_bytes(&self) -> usize {
-        self.starts.capacity() * std::mem::size_of::<usize>()
-            + self.endings.capacity()
-            + self.cache_memory()
+        self.lines.memory_bytes() + self.cache_memory()
     }
 }
 

@@ -8,6 +8,8 @@ mod presentation;
 mod project_search;
 pub(crate) use presentation::Presentation;
 #[cfg(test)]
+mod keyboard_matrix_tests;
+#[cfg(test)]
 mod tests;
 
 use crate::render;

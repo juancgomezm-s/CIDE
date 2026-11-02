@@ -1,8 +1,8 @@
 # Validación
 
-**Evidencia local más reciente:** integración paralela de DiffModel/estudio GUI,
-suite de 200 pruebas; corpus/memoria y layout frío del bloque previo con recorridos
-nativos ampliados. El estudio HTML sigue sin revisión renderizada. Véase el bloque final; las secciones
+**Evidencia local más reciente:** metadatos compactos, recolección sin copia de
+arenas enteras y matriz de teclado, 209 pruebas completas y recorridos nativos.
+El estudio HTML sigue sin revisión renderizada; el proveedor Git tiene bloque propio. Véase el bloque final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
 
 Estado de la primera base preparada antes de publicarla:
@@ -436,3 +436,61 @@ DPI/IME/accesibilidad y todo rendimiento GUI siguen pendientes. No hay jc-gui
 funcional ni cierre M2B. Git con escritura/CI sigue en M5; sin push ni cambios a
 GPU/Qwen. El foco siguiente de aceptación sigue siendo metadatos densos y puerta
 de RAM/latencia física; estos frentes no eliminan esos pendientes.
+
+
+## M2 — Índice compacto, recolección y disponibilidad de menús — 2026-11-02
+
+Sobre `4f14da9`: un índice compacto sustituye los vectores paralelos de inicio/EOL.
+Offsets de 30 bits + dos de tipo EOL; promoción a usize cuando se necesita, sin
+truncar. Mantiene rango byte/encoding/revisión y actualizaciones directas/inversas.
+Se elimina también la reconstrucción de arenas completamente alcanzables durante
+recolección; las arenas con huecos siguen relocándose conservando todo undo/redo.
+
+Suite completa local: **209 pruebas, 0 fallos**, fmt --check, Clippy workspace/
+all-targets -D warnings y release. Dos regresiones de ancho/EOL y una de arena
+original completa + Added con rama descartada, revisiones/mapas/saved/undo/redo.
+Clippy pidió un alias de tipo en collect: se corrigió el alias y repitió el
+control fallido, sin repetir suites inalteradas. La promoción >1 GiB se prueba
+con metadatos sintéticos; no se afirma apertura real de ese tamaño.
+
+El worker de teclado entregó seis regresiones event-level (campos Replace,
+F6/Esc/overlays, disponibilidad por tecla/palette/menú, cierre de vista/última,
+alias de tabs/panel y Release/Repeat). Encontró que Enter de menú no verificaba
+disponibilidad. Se corrigió en dispatch TUI antes de cualquier efecto: Database
+deshabilitado no se abre. Se reconciliaron Ctrl+G/selección ya implementados y
+regex deshabilitado en el contrato TUI. Matriz manual/física sigue pendiente.
+
+Comparación serial con ejecutables anteriores conservados e identificados por
+SHA-256, mismo ejemplo/corpus/perfil: ocho documentos de 4 MiB/líneas de ocho bytes
+pasaron de 73.379.840 a 51.712.000 bytes privados tras frío (~70,0 → 49,3 MiB).
+Capacidad de proyección activa 4.718.793 → 2.097.348 bytes. Peak commit de vida
+del modelo 81.248.256 → 52.817.920 bytes. El GC de ocho dejó de solicitar otros
+33.555.648 bytes y pidió 1024; la línea de 16 MiB dejó de pedir otros ~16 MiB.
+La primera pasada sin la optimización de GC también se conserva, no se sustituye
+por los datos finales. Frío único 90,46 → 104,13 ms; Right+viewport p50/p95
+52,0/56,9 → 52,3/87,2 µs. No se afirma mejora general de throughput.
+
+ConPTY densa before/after: ocho sesiones por lado, una warm + siete retenidas,
+dos vistas y visita/cierre de los ocho documentos. Peak commit máximo del editor
+75.382.784 → 54.226.944 bytes (71,9 → 51,7 MiB), todavía mayor que 50 MiB.
+Suma private contemporánea editor+host+ConPTY 77.672.448 → 56.598.528 bytes;
+controlador C# separado. Arranque p50/p95 103,30/114,27 → 107,37/114,43 ms;
+Right hasta VT 15,529/16,129 → 15,539/16,086 ms, no pantalla física.
+Los labels retained de estos CSV incluyen cierre progresivo: no se usan sus
+percentiles como RAM estable. El runner separa closing en futuras corridas.
+
+Los benchmarks terminaron antes de integrar el gate de menú. Se reconfirmaron
+los dos recorridos funcionales finales de documento/proyecto, Unicode sin otra
+tecla, Go to, preview/reemplazo y undo. Método/hashes/datos y tradeoffs en
+[M2_DENSE_LINE_METADATA.md](M2_DENSE_LINE_METADATA.md). Sin repetir benchmarks
+inalterados por un cambio de disponibilidad de comandos.
+
+El worker GUI no logró superficie controlable: inventario sin Edge targeteable,
+lanzamiento sin devolución/PID/ventana/captura, interrumpido; kernel reseteado,
+sin llamadas propias pendientes ni servidor. No se cerró navegador no atribuible
+ni se ajustó seguridad/sistema. No se repiten intentos equivalentes. El estado
+de lanzamiento desconocido se conserva como limitación de aislamiento global.
+
+Siguen abiertos RAM/picos globales, sufijos O(L), huecos grandes, frío real,
+matriz de teclado física, pantalla física, IME/DPI/Linux/GUI/AVM. Sin CI remoto,
+push, instalaciones ni cambios de seguridad/configuración/servicios/Qwen/GPU.

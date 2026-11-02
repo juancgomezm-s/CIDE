@@ -1,6 +1,32 @@
 use jc_core::{Document, EditError};
 
 #[test]
+fn collecting_a_discarded_branch_keeps_the_other_arena_and_saved_history_valid() {
+    let original = b"\xfforiginal\r\n";
+    let mut doc = Document::from_bytes(original.to_vec());
+    doc.insert(0, b"live").unwrap();
+    doc.mark_saved();
+    doc.insert(0, b"dead").unwrap();
+    assert!(doc.undo());
+    doc.insert(0, b"new").unwrap(); // the dead branch is no longer retained
+    let revision = doc.revision();
+    let geometry = doc.last_change().cloned();
+    doc.reclaim_unused_storage();
+    assert_eq!(doc.revision(), revision);
+    assert_eq!(doc.last_change(), geometry.as_ref());
+    assert_eq!(doc.retained_added_bytes(), 7);
+    assert_eq!(doc.to_bytes(), [b"newlive".as_slice(), original].concat());
+    assert!(doc.undo());
+    assert_eq!(doc.to_bytes(), [b"live".as_slice(), original].concat());
+    assert!(!doc.is_modified());
+    assert!(doc.undo());
+    assert_eq!(doc.to_bytes(), original);
+    assert!(doc.redo());
+    assert!(doc.redo());
+    assert_eq!(doc.to_bytes(), [b"newlive".as_slice(), original].concat());
+}
+
+#[test]
 fn a_large_discarded_transition_does_not_charge_new_small_undo_steps() {
     let mut doc = Document::default();
     doc.set_history_bytes_limit(4096);

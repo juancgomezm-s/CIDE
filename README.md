@@ -68,7 +68,7 @@ En este equipo se preparó Rust 1.85.1 dentro de `work/toolchain`, sin cambiar e
 
 `work/` está ignorado por Git; en un clon nuevo se necesita instalar Rust. El wrapper no descarga herramientas. Las pruebas de guardado seguro requieren permitir hard links y `ReplaceFileW`; un sandbox que los bloquee puede devolver acceso denegado.
 
-La [evidencia ampliada M2](docs/M2_ACCEPTANCE_EVIDENCE.md) mide corpus Unicode/legacy, muchas piezas/documentos, memoria por proceso y arranque; corrige el pico del layout frío. Metadatos densos y aceptación global siguen abiertos.
+La [evidencia ampliada M2](docs/M2_ACCEPTANCE_EVIDENCE.md) mide corpus Unicode/legacy, muchas piezas/documentos, memoria por proceso y arranque; corrige el pico del layout frío. El [índice compacto y la recolección sin copia innecesaria](docs/M2_DENSE_LINE_METADATA.md) reducen el pico nativo denso de 71,9 a 51,7 MiB; la aceptación global sigue abierta.
 
 La especificación de doble panel, Outline, navegación de includes/RUN, autocompletado y Git está en [M2_NAVIGATION_PANES_GIT.md](docs/M2_NAVIGATION_PANES_GIT.md). Para retomar desde una PC Windows usa el [prompt de continuación](docs/CONTINUAR_EN_EQUIPO.md).
 

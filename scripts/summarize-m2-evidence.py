@@ -1,11 +1,16 @@
 """Summarize the retained raw local samples, keeping timings and process memory separate."""
 import csv
 import math
+import argparse
 from collections import defaultdict
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
 folder = root / "docs/benchmarks"
+parser = argparse.ArgumentParser()
+parser.add_argument("--dense", action="store_true")
+args = parser.parse_args()
+family = "dense" if args.dense else "evidence"
 def read(name):
     with (folder / name).open(encoding="utf-8", newline="") as file:
         return list(csv.DictReader(file))
@@ -13,7 +18,7 @@ def p(values, percentile):
     values = sorted(values)
     return values[math.ceil(len(values) * percentile) - 1]
 for phase in ("before", "after"):
-    path = folder / f"M2-evidence-{phase}-model.csv"
+    path = folder / f"M2-{family}-{phase}-model.csv"
     if not path.exists():
         continue
     groups = defaultdict(list)
@@ -34,16 +39,17 @@ for phase in ("before", "after"):
         summary.append(entry)
         if op in ("cold_projection", "warm_move_viewport", "close_all"):
             print(case, op, len(rows), entry["p50_us"], entry["p95_us"], entry["max_peak_live_bytes"], entry["last_private_bytes"], entry["process_peak_commit_bytes"])
-    with (folder / f"M2-evidence-{phase}-model-summary.csv").open("w", encoding="utf-8", newline="") as file:
+    with (folder / f"M2-{family}-{phase}-model-summary.csv").open("w", encoding="utf-8", newline="") as file:
         writer = csv.DictWriter(file, summary[0].keys(), lineterminator="\n")
         writer.writeheader(); writer.writerows(summary)
     groups = defaultdict(list)
-    for row in read(f"M2-evidence-{phase}-native-timings.csv"):
+    native = f"M2-evidence-{'dense-' if args.dense else ''}{phase}-native"
+    for row in read(native + "-timings.csv"):
         groups[row["shape"], row["operation"]].append(float(row["elapsed_ms"]))
     for key, values in groups.items():
         print(phase, key, len(values), "p50/p95 ms", p(values, .5), p(values, .95))
     groups = defaultdict(list)
-    for row in read(f"M2-evidence-{phase}-native-memory.csv"):
+    for row in read(native + "-memory.csv"):
         groups[row["shape"]].append(row)
     for shape, rows in groups.items():
         print(phase, shape, "native memory", len(rows), "samples")

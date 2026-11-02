@@ -87,7 +87,7 @@ Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crosst
 
 **Incremento M2A — dos grupos funcionales (2026-11-01):** `PaneManager` ya está conectado al renderer TUI, comandos, menús y palette. Cursor, selección y viewport se conservan por grupo; las ediciones/undo/redo ajustan posiciones de la otra vista e historial sin duplicar documentos. Incluye pin, apertura lateral, back/forward, scroll vertical vinculado y fallback al grupo activo con poco ancho. Hay pruebas locales y smoke test en terminal Windows; véase [VALIDACION.md](VALIDACION.md). Siguen pendientes símbolos/includes, Git read-only/diffs y revisión manual completa. Git con escritura permanece en M5. Ver [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
 
-**Pendiente para cerrar M2A:** aceptación global de rendimiento de M2-F, metadatos densos y ampliar frío/teclado sobre el corpus ya medido, regex real si se incorpora y matriz Search Plus, integración de proveedores reales sobre el contrato de tareas F3 y revisión manual completa de teclado. El incremento literal de proyecto con preview y conflictos ya existe; no se confunde con cierre completo de Search Plus. El contrato de tareas/Problems/Output ya tiene proveedor de prueba y regresiones locales; no equivale a Progress conectado. La ejecución real de Progress y su validación pertenecen a M3; no se aplazan defectos conocidos de datos/edición hasta M5.
+**Pendiente para cerrar M2A:** aceptación global de rendimiento de M2-F, picos/sufijos restantes y ampliar frío/teclado sobre el corpus ya medido, regex real si se incorpora y matriz Search Plus, integración de proveedores reales sobre el contrato de tareas F3 y revisión manual completa de teclado. El incremento literal de proyecto con preview y conflictos ya existe; no se confunde con cierre completo de Search Plus. El contrato de tareas/Problems/Output ya tiene proveedor de prueba y regresiones locales; no equivale a Progress conectado. La ejecución real de Progress y su validación pertenecen a M3; no se aplazan defectos conocidos de datos/edición hasta M5.
 
 **Criterios de aceptación:**
 - uso completo por teclado;
@@ -97,7 +97,9 @@ Existe `jc-tui` con ejecutable `jc-ide-tui`, entrada de terminal mediante crosst
 - el contrato de tareas entrega diagnósticos sin bloquear edición y descarta resultados obsoletos; Progress Check/Compile/Run/Schema permanecen deshabilitados si no hay proveedor validado;
 - el frontend no crea un segundo buffer ni su propio undo.
 
-**Preparación paralela autorizada del 2026-11-02:** [DiffModel puro](DIFF_MODEL_READ_ONLY.md) de fuentes inmutables, hunks y correspondencia de líneas exactas, con cuotas/cancelación; seis regresiones y suite integrada de 200 pruebas. No hay comandos/renderer/proveedor Git conectados ni rendimiento diff aceptado. Los metadatos densos y las puertas globales de M2-F siguen prioritarios.
+**Bloque posterior de RAM/teclado:** [metadatos compactos](M2_DENSE_LINE_METADATA.md), recolección que reutiliza arenas enteras y seis regresiones de teclado; 209 pruebas completas y recorridos nativos. Modelo denso ~49,3 MiB tras frío; pico nativo 71,9 → 51,7 MiB, por lo que la puerta global permanece abierta. Frío/sufijos tienen costes registrados. El dispatcher TUI ya impide ejecutar menús deshabilitados; [matriz y pendientes físicos](M2_KEYBOARD_MATRIX_AUDIT.md).
+
+**Preparación paralela autorizada del 2026-11-02:** [DiffModel puro](DIFF_MODEL_READ_ONLY.md) de fuentes inmutables, hunks y correspondencia de líneas exactas, con cuotas/cancelación; seis regresiones y suite integrada de 200 pruebas. No hay comandos/renderer/proveedor Git conectados ni rendimiento diff aceptado. Los picos/sufijos densos restantes y las puertas globales de M2-F siguen prioritarios.
 
 ## M2B — GUI Windows mínima — PENDIENTE
 

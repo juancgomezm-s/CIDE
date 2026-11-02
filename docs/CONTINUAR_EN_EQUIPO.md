@@ -38,7 +38,7 @@ Workbench ni escriben buffers/disco. Propuestas requieren futura aceptación y
 de encoding deberá cancelar/reemplazar explícitamente la clave. El sistema actual
 está ligado a un Workbench y documentos, no a trabajos de proyecto sin documento.
 
-## Siguiente bloque: metadatos densos y aceptación M2A
+## Siguiente bloque: picos restantes y entrega Git de solo lectura
 
 - Construir bloques más amplios antes de validar, según pidió el usuario. Reservar
   comprobaciones intermedias para bloqueantes concretos; no repetir suites por retoques.
@@ -54,9 +54,14 @@ está ligado a un Workbench y documentos, no a trabajos de proyecto sin document
   proceso ampliados: `M2_ACCEPTANCE_EVIDENCE.md`. Layout frío ya recorre 64 KiB
   con contexto, sin String/offsets de toda la línea. Pico real de línea ASCII
   16 MiB: 434,9 → 18,0 MiB. No reintroducir esa materialización.
-- Priorizar metadatos de líneas densas: ocho documentos de 4 MiB/líneas de ocho
-  bytes aún dieron ~69,5 MiB privados en el modelo; no aceptar globalmente <50 MiB.
-  Ampliar frío/teclado y latencia física. Regex sigue sin motor/presupuesto real.
+- Metadatos densos ya compactados: `M2_DENSE_LINE_METADATA.md`. Cuatro bytes
+  por línea para offsets de 30 bits y promoción sin pérdida; no restaurar dos
+  vectores espejo. Recolección reutiliza arenas completamente alcanzables.
+  Modelo tras frío ~49,3 MiB privados; pico nativo 71,9 → 51,7 MiB, todavía
+  sobre 50 MiB. Preservar presupuesto/cache y atender picos/sufijos restantes.
+- Matriz de teclado ampliada, 209 pruebas integradas y gate central del dispatcher
+  TUI para impedir ejecución de menús deshabilitados. Ampliar matriz física/manual
+  y latencia de pantalla; regex continúa sin motor real.
 - Mantener preview/confirmación/huellas de S1 y transacciones. Abiertos no se guardan
   automáticamente; cerrados usan FileSession. Workers no escriben.
 - Guardado Windows conserva retries 32/33/1175 y recovery 1176/1177; no borrar el
