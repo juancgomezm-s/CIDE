@@ -1,6 +1,74 @@
 use super::*;
 
 #[test]
+fn keyboard_edit_matrix_keeps_legacy_bytes_and_non_editor_tab_scope() {
+    for encoding in [
+        TextEncoding::Utf8,
+        TextEncoding::Windows1252,
+        TextEncoding::Iso8859_1,
+        TextEncoding::Ibm850,
+    ] {
+        let mut app = TuiApp::new(LaunchOptions::default());
+        app.workbench.new_file("matrix.p", encoding);
+        app.workbench
+            .insert_text("niño Straße\r\nnext\r\n")
+            .unwrap();
+        let original = app.workbench.active_bytes().unwrap();
+        app.workbench
+            .go_to_position(jc_text::TextPosition { line: 0, column: 0 })
+            .unwrap();
+        for (code, modifiers) in [
+            (KeyCode::Char('d'), KeyModifiers::CONTROL),
+            (
+                KeyCode::Char('d'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            (KeyCode::Tab, KeyModifiers::NONE),
+            (KeyCode::Char('/'), KeyModifiers::CONTROL),
+        ] {
+            key(&mut app, code, modifiers);
+            assert_ne!(app.workbench.active_bytes().unwrap(), original);
+            key(&mut app, KeyCode::Char('z'), KeyModifiers::CONTROL);
+            assert_eq!(app.workbench.active_bytes().unwrap(), original);
+            app.workbench
+                .go_to_position(jc_text::TextPosition { line: 0, column: 0 })
+                .unwrap();
+        }
+        for command in [
+            CommandId::ViewExplorer,
+            CommandId::ViewOutput,
+            CommandId::SearchFind,
+            CommandId::SearchReplace,
+            CommandId::PaletteOpen,
+            CommandId::MenuView,
+        ] {
+            app.dispatch(command);
+            let revision = app
+                .workbench
+                .active_document()
+                .unwrap()
+                .session
+                .document()
+                .revision();
+            key(&mut app, KeyCode::Tab, KeyModifiers::NONE);
+            key(&mut app, KeyCode::BackTab, KeyModifiers::SHIFT);
+            assert_eq!(
+                app.workbench
+                    .active_document()
+                    .unwrap()
+                    .session
+                    .document()
+                    .revision(),
+                revision
+            );
+            assert_eq!(app.workbench.active_bytes().unwrap(), original);
+            key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+            app.focus.focus(PrimaryFocus::Editor, &app.panels);
+        }
+    }
+}
+
+#[test]
 fn document_search_runs_between_events_with_unicode_markers_history_and_goto() {
     use jc_app::SearchStatus;
     let mut app = TuiApp::new(LaunchOptions::default());

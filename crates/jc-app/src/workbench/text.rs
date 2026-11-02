@@ -1,6 +1,8 @@
 //! Revision-aware line metadata and bounded lazy scalar layouts.
 use jc_core::Document;
-use jc_text::{decode_fragment, DecodedText, PositionError, TextEncoding, TextPosition};
+use jc_text::{
+    decode_fragment, DecodedScalars, DecodedText, PositionError, TextEncoding, TextPosition,
+};
 use std::collections::VecDeque;
 use std::ops::Range;
 
@@ -364,17 +366,34 @@ impl TextProjection {
             return self.layouts.back();
         }
         let range = self.line_range(document, line)?.0;
-        let decoded = self.decode(document, range.clone());
-        let scalars = decoded.source_offsets.len() - 1;
-        // Large lines get sparse checkpoints; they never become a permanent decoded copy.
+        // Build sparse checkpoints directly from bounded source ranges. A cold
+        // long line must not materialize a String and one offset per scalar.
         let stride = 256usize.max(range.len().saturating_mul(32).div_ceil(CACHE_LIMIT));
-        let checkpoints = decoded
-            .source_offsets
-            .iter()
-            .copied()
-            .enumerate()
-            .step_by(stride)
-            .collect::<Vec<_>>();
+        let mut checkpoints = Vec::with_capacity(range.len() / stride + 1);
+        let mut bytes = Vec::with_capacity(range.len().min(64 * 1024) + 4);
+        let mut cursor = range.start;
+        let mut scalars = 0;
+        while cursor < range.end {
+            let end = (cursor + 64 * 1024).min(range.end);
+            let context_end = (end + 4).min(document.len());
+            bytes.clear();
+            for chunk in document.range_chunks(cursor..context_end).ok()? {
+                bytes.extend_from_slice(chunk);
+            }
+            self.decoded_bytes += bytes.len() as u64;
+            for scalar in DecodedScalars::new(&bytes, self.encoding?, cursor)
+                .take_while(|s| s.source_range.end <= end)
+            {
+                if scalars % stride == 0 {
+                    checkpoints.push((scalars, scalar.source_range.start));
+                }
+                scalars += 1;
+                cursor = scalar.source_range.end;
+            }
+        }
+        if scalars % stride == 0 {
+            checkpoints.push((scalars, range.end));
+        }
         let layout = Layout {
             line,
             scalars,
@@ -571,6 +590,33 @@ mod tests {
     use super::*;
     use jc_core::{EditBatch, Replacement};
     use jc_text::{decode, TextIndex};
+
+    #[test]
+    fn cold_sparse_layout_preserves_chunk_edge_scalars_invalid_groups_and_eof() {
+        for shift in 0..4 {
+            let mut bytes = vec![b'a'; 64 * 1024 - shift];
+            bytes.extend_from_slice("😀é\u{feff}".as_bytes());
+            bytes.extend_from_slice(b"\xe1\x80x\xf0\x9f");
+            let doc = Document::from_bytes(bytes.clone());
+            let reference = TextIndex::new(&decode(&bytes, TextEncoding::Utf8));
+            let mut projection = TextProjection::default();
+            projection.ensure(&doc, TextEncoding::Utf8);
+            assert_eq!(projection.line_len(&doc, 0), reference.line_len(0));
+            for offset in (64 * 1024 - 8)..=bytes.len() {
+                assert_eq!(
+                    projection.position(&doc, offset),
+                    reference.source_byte_to_position(offset)
+                );
+            }
+            for column in (64 * 1024 - 8)..=reference.line_len(0).unwrap() {
+                let position = TextPosition { line: 0, column };
+                assert_eq!(
+                    projection.offset(&doc, position),
+                    reference.position_to_source_byte(position)
+                );
+            }
+        }
+    }
 
     #[test]
     fn layouts_remain_within_quota_after_visiting_many_different_lines() {

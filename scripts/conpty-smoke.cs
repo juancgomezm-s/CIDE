@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using System.ComponentModel;
 using System.Collections.Generic;
 
-public static class JcConPtySmoke {
+public static partial class JcConPtySmoke {
     [StructLayout(LayoutKind.Sequential)] struct Coord {public short X,Y; public Coord(short x,short y){X=x;Y=y;}}
     [StructLayout(LayoutKind.Sequential)] struct Startup {
         public int cb;public IntPtr reserved,desktop,title;public int x,y,xSize,ySize,xChars,yChars,fill,flags;

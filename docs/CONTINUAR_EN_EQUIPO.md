@@ -1,4 +1,4 @@
-# Continuación local — después de optimizar S0 Unicode
+# Continuación local — después del bloque de evidencia M2
 
 F1/F2/F3 están implementados con evidencia local en `m2a/dual-pane-tui`. F1:
 `ddc9d41`; F2: `2423134` + normalización `e72856f`; consultar el log para F3.
@@ -38,7 +38,7 @@ Workbench ni escriben buffers/disco. Propuestas requieren futura aceptación y
 de encoding deberá cancelar/reemplazar explícitamente la clave. El sistema actual
 está ligado a un Workbench y documentos, no a trabajos de proyecto sin documento.
 
-## Siguiente bloque: ampliar evidencia y aceptación M2A
+## Siguiente bloque: metadatos densos y aceptación M2A
 
 - Construir bloques más amplios antes de validar, según pidió el usuario. Reservar
   comprobaciones intermedias para bloqueantes concretos; no repetir suites por retoques.
@@ -50,9 +50,13 @@ está ligado a un Workbench y documentos, no a trabajos de proyecto sin document
   ASCII sin prefijo dentro del mismo matcher. Proyecto p95 18,649 ms frente a
   40,930 ms contemporáneos y 27,457 ms S1 histórico en el mismo corpus. No extrapolar
   esa mejora a todos los casos ni afirmar mejora de cancelación. Conservar cuotas.
-- Ampliar corpus Unicode/legacy, líneas extremas/frío, muchas piezas/documentos y
-  teclado. Validar al cerrar ese bloque. Regex solo con motor real y presupuesto;
-  no existe todavía, no anunciar cierre completo de Search Plus/M2A.
+- Corpus Unicode/legacy, 4097 piezas, ocho documentos, teclado y memoria por
+  proceso ampliados: `M2_ACCEPTANCE_EVIDENCE.md`. Layout frío ya recorre 64 KiB
+  con contexto, sin String/offsets de toda la línea. Pico real de línea ASCII
+  16 MiB: 434,9 → 18,0 MiB. No reintroducir esa materialización.
+- Priorizar metadatos de líneas densas: ocho documentos de 4 MiB/líneas de ocho
+  bytes aún dieron ~69,5 MiB privados en el modelo; no aceptar globalmente <50 MiB.
+  Ampliar frío/teclado y latencia física. Regex sigue sin motor/presupuesto real.
 - Mantener preview/confirmación/huellas de S1 y transacciones. Abiertos no se guardan
   automáticamente; cerrados usan FileSession. Workers no escriben.
 - Guardado Windows conserva retries 32/33/1175 y recovery 1176/1177; no borrar el
@@ -62,15 +66,16 @@ está ligado a un Workbench y documentos, no a trabajos de proyecto sin document
 
 ## Medición y límites
 
-El bloque de optimización pasó la suite completa de 191 pruebas Windows, fmt,
-Clippy y release, y ambos flujos ConPTY (ver VALIDACION y S0_DECODER_OPTIMIZATION). Benchmarks opt-in:
+El bloque de evidencia pasó 194 pruebas completas Windows, fmt, Clippy/release,
+24 sesiones ConPTY antes y 24 después, y regresión Unicode nativa
+(ver VALIDACION y M2_ACCEPTANCE_EVIDENCE). Benchmarks opt-in:
 `document_search_bench`, `project_search_bench`, `f3_pipeline`, `f3_jobs`; smoke Windows `scripts/smoke-conpty.ps1 -ProjectSearch`, tras compilar
 `f3_console_host` y `jc-ide-tui` en release. Método en S0_DOCUMENT_SEARCH, S1_PROJECT_SEARCH y F3_PRESENTATION_TASKS.
 
 ConPTY registra inyección-a-VT (p95 16,0726 ms en fixture mínimo), no pantalla
 física. Un muestreo corto de memoria/CPU de ese proceso no certifica metas globales.
-Mantener abiertas latencia física, arranque, RAM/picos con varios documentos,
-servicios y doble grupo nativo. El código 1175 ya tiene reproducción nativa observada e inyección determinista;
+Ya hay arranque/memoria por proceso y doble grupo nativo medidos en M2_ACCEPTANCE_EVIDENCE;
+mantener abiertas aceptación física/global, caché fría real, servicios y cargas densas. El código 1175 ya tiene reproducción nativa observada e inyección determinista;
 el tratamiento seguro se probó junto con bloqueos persistentes y recovery. No
 confundirlo con eliminación de toda contención externa.
 F2 ya midió rangos/modelo hasta 16 MiB; no confundir

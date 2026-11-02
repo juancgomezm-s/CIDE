@@ -1,7 +1,7 @@
 # Validación
 
-**Evidencia local más reciente:** decoder S0 optimizado, suite completa de
-191 pruebas y ambos recorridos ConPTY. Véase el bloque final; las secciones
+**Evidencia local más reciente:** corpus/memoria M2 y layout frío acotado, suite
+completa de 194 pruebas y recorridos nativos ampliados. Véase el bloque final; las secciones
 anteriores conservan sus fechas y limitaciones históricas.
 
 Estado de la primera base preparada antes de publicarla:
@@ -343,3 +343,53 @@ No hay contador global de asignaciones/RAM, aceptación Linux/GUI/IME/grafemas,
 regex/AVM ni cierre M2A. Sigue pendiente ampliar corpus Unicode/legacy/frío,
 líneas extremas/muchas piezas y teclado, y aceptar RAM/latencia físicas. Sin CI
 remoto, push ni cambios a Qwen/GPU, servicios o configuración del sistema.
+
+
+## M2 — Corpus ampliado y memoria de procesos — 2026-11-02
+
+Sobre `282d006`, mismo Windows/Rust/perfil release. **194 pruebas completas,
+0 fallos**, fmt --check, Clippy workspace/all-targets -D warnings y release.
+Tres regresiones nuevas: layout frío sobre bordes 64 KiB/UTF-8 inválido/BOM/EOF;
+corpus Unicode/legacy con rangos/coordenadas, fragmentación y reemplazo/undo;
+teclado de edición y Tab/BackTab fuera del editor en cuatro páginas.
+
+Se corrigió un defecto medido: layout inicial decodificaba toda la línea y creaba
+un offset por escalar. Ahora recorre rangos de 64 KiB/contexto mediante el decoder
+compartido y solo conserva checkpoints. Una línea ASCII de 16 MiB llevó al editor
+real a peak commit 456.040.448 bytes antes y 18.833.408 después (434,9 → 18,0 MiB).
+Caso UTF-8 del modelo: primera proyección 100,04 → 73,77 ms y peak live solicitado
+117.444.841 → 17.371.537 bytes. Frío de modelo tiene una muestra por caso, no p95.
+
+Ejemplo opt-in con allocator instrumentado, ocho corpus nuevos en procesos frescos:
+4 MiB ASCII/Unicode/tres páginas legacy; línea Unicode 16 MiB; 4097 piezas; ocho
+documentos de 4 MiB con líneas de ocho bytes. Operaciones calientes 5+31 muestras
+crudas: p95 Right+posición+viewport de dos grupos 53–82 µs según carga; fuentes,
+historial/proyección, asignaciones y proceso medidos por separado. No mezclar
+tiempos instrumentados con S0 sin wrapper. El caso denso de ocho documentos sigue
+en 72.847.360 bytes privados (~69,5 MiB) y baja a 1.216.512 tras cerrar; objetivo
+global de 50 MiB abierto. Recolección de fuentes de la línea larga aún provoca
+peak commit del modelo de 35.049.472 bytes. No se ocultan otros picos/retención.
+
+ConPTY: 24 sesiones antes y 24 después, base/8 documentos/una línea 16 MiB, con
+un proceso de calentamiento y siete retenidos por forma. Arranque hasta primer
+Right observado p95 final 63,95/114,44/203,64 ms; no caché del SO vaciada.
+Dos vistas y 31 Right retenidos por sesión, selección Alt+1..8, One Group,
+Ctrl+W de todos y File/Exit. Memoria editor/host Rust/conhost/controlador C#
+registrada aparte. Suma máxima de private contemporánea editor+host+conhost
+final: 3,61/41,16/20,24 MiB. Los procesos auxiliares son del test/transporte,
+no servicios de lenguaje. Progress/LSP no se iniciaron.
+
+Inyección-a-VT p95 final 16,084/16,160/16,048 ms: no pantalla física, ni prueba
+de la meta <16 ms. Otra vez pasó el recorrido Unicode nativo de búsqueda sin otra
+tecla/F3/Go to/reemplazo sin guardar/undo. Raw samples y método en
+[M2_ACCEPTANCE_EVIDENCE.md](M2_ACCEPTANCE_EVIDENCE.md) y benchmarks/M2-evidence-*.
+
+La primera tentativa del nuevo host a 80 columnas no pudo observar Col por la
+longitud de ruta; no se usó como medición. Se corrigió el arnés a geometría 140×40
+y rutas relativas, sin cambiar el producto. Los CSV retenidos son corridas completas.
+La granularidad de muestreo solicitada es 5 ms, dependiente del planificador;
+peak commit del SO complementa picos privados muestreados, no son el mismo dato.
+
+Pendientes: metadatos densos O(L), distribuciones frías, caché fría real, más
+teclado/IME/DPI/portapapeles, Linux, GUI y pantalla física. No se declara cierre
+M2A ni <50 MiB global. Sin CI/push/instalaciones/configuración/servicios/Qwen/GPU.
