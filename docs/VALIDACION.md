@@ -184,3 +184,23 @@ y proveedores Progress reales aún requieren integración. Search activo y Explo
 siguen síncronos. M2A continúa abierto; AVM M3, CI/Git con escritura M5 y plugins
 externos post-M5. Detalle de APIs, cuotas, método y próximos pasos en
 [F3_PRESENTATION_TASKS.md](F3_PRESENTATION_TASKS.md).
+
+## Guardado Windows — continuación del 2026-11-02
+
+Se implementó tratamiento acotado de 32/33/1175 con verificación de huella entre
+intentos, conflicto si el destino cambia y conservación del temporal ante 1176/1177.
+La causa del handle externo histórico no se identificó. La corrección acredita
+el tratamiento seguro de esos errores, no la eliminación de bloqueos del sistema.
+
+Validación local: **161 pruebas, 0 fallos**; fmt, Clippy workspace/all-targets con
+-D warnings y build release satisfactorios. Cuatro regresiones nuevas: 1175
+inyectado con commit nativo posterior, bloqueo persistente con cuota, conflictos
+entre intentos, conservación ante fallos parciales, y lector nativo liberado/detenido
+(las primeras cubren varios escenarios dentro de cada prueba).
+
+Probe nativo de 300 guardados antes/después: el código 1175 se observó 1 vez antes
+y 0 después en el escenario de mapeo; lector persistente produce 100 fallos seguros
+con código 32 en ambas corridas. No se omiten ni se reclasifican como guardados.
+Detalles, límites y fuente primaria: [SAVE_WINDOWS_CONTENTION.md](SAVE_WINDOWS_CONTENTION.md).
+Datos crudos en benchmarks/SAVE-contention-before.csv y SAVE-contention-after.csv.
+Cero CI remoto y ninguna modificación de servicios/configuración del sistema.

@@ -1,0 +1,202 @@
+//! ReplaceFileW preserves metadata. Never fall back to delete + rename.
+//! https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew
+use super::{ExternalState, FileError, Fingerprint};
+use std::{ffi::c_void, fs, io, os::windows::ffi::OsStrExt, path::Path, ptr, time::Duration};
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn ReplaceFileW(
+        target: *const u16,
+        replacement: *const u16,
+        backup: *const u16,
+        flags: u32,
+        exclude: *mut c_void,
+        reserved: *mut c_void,
+    ) -> i32;
+}
+fn native_replace(temporary: &Path, target: &Path) -> io::Result<()> {
+    let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+    let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+    let ok = unsafe {
+        ReplaceFileW(
+            target.as_ptr(),
+            temporary.as_ptr(),
+            ptr::null(),
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+pub(super) fn replace_path(temporary: &Path, target: &Path) -> Result<(), FileError> {
+    if !target.try_exists()? {
+        return fs::rename(temporary, target).map_err(Into::into);
+    }
+    guarded_replace(temporary, target, native_replace, std::thread::sleep)
+}
+
+fn guarded_replace(
+    temporary: &Path,
+    target: &Path,
+    mut replace: impl FnMut(&Path, &Path) -> io::Result<()>,
+    mut wait: impl FnMut(Duration),
+) -> Result<(), FileError> {
+    // A retry must not overwrite a new version created while waiting for a lock.
+    let original = Fingerprint::of(&fs::read(target)?);
+    let delays = [5, 10, 20, 40];
+    for attempt in 0..=delays.len() {
+        if attempt > 0 {
+            match fs::read(target) {
+                Ok(bytes) if Fingerprint::of(&bytes) == original => {}
+                Ok(_) => return Err(FileError::ExternalModification(ExternalState::Changed)),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                    return Err(FileError::ExternalModification(ExternalState::Missing))
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        match replace(temporary, target) {
+            Ok(()) => return Ok(()),
+            Err(error) if matches!(error.raw_os_error(), Some(1176 | 1177)) => {
+                // These codes can leave names partially moved. Cleanup of the
+                // replacement could destroy the only remaining copy of the edit.
+                return Err(FileError::SaveRecovery {
+                    target: target.to_owned(),
+                    temporary: temporary.to_owned(),
+                    error,
+                });
+            }
+            Err(error)
+                if matches!(error.raw_os_error(), Some(32 | 33 | 1175))
+                    && attempt < delays.len() =>
+            {
+                wait(Duration::from_millis(delays[attempt]))
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    unreachable!()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tests::test_dir;
+    #[test]
+    fn transient_1175_retries_same_commit_and_persistent_lock_is_bounded() {
+        let dir = test_dir();
+        let target = dir.join("source.p");
+        let temporary = dir.join("replacement");
+        fs::write(&target, b"original").unwrap();
+        fs::write(&temporary, b"edited").unwrap();
+        let mut calls = 0;
+        let mut waits = Vec::new();
+        guarded_replace(
+            &temporary,
+            &target,
+            |temp, dest| {
+                calls += 1;
+                if calls < 3 {
+                    Err(io::Error::from_raw_os_error(1175))
+                } else {
+                    native_replace(temp, dest)
+                }
+            },
+            |delay| waits.push(delay),
+        )
+        .unwrap();
+        assert_eq!(calls, 3);
+        assert_eq!(waits.len(), 2);
+        assert_eq!(fs::read(&target).unwrap(), b"edited");
+        fs::write(&temporary, b"next").unwrap();
+        calls = 0;
+        waits.clear();
+        let result = guarded_replace(
+            &temporary,
+            &target,
+            |_, _| {
+                calls += 1;
+                Err(io::Error::from_raw_os_error(32))
+            },
+            |delay| waits.push(delay),
+        );
+        assert!(matches!(result,Err(FileError::Io(error)) if error.raw_os_error()==Some(32)));
+        assert_eq!(calls, 5);
+        assert_eq!(waits.iter().sum::<Duration>(), Duration::from_millis(75));
+        assert_eq!(fs::read(&target).unwrap(), b"edited");
+        assert_eq!(fs::read(&temporary).unwrap(), b"next");
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn external_change_or_deletion_during_retry_is_a_conflict() {
+        let dir = test_dir();
+        let target = dir.join("source.p");
+        let temporary = dir.join("replacement");
+        for removed in [false, true] {
+            fs::write(&target, b"original").unwrap();
+            fs::write(&temporary, b"edited").unwrap();
+            let mut calls = 0;
+            let result = guarded_replace(
+                &temporary,
+                &target,
+                |_, dest| {
+                    calls += 1;
+                    if removed {
+                        fs::remove_file(dest)?;
+                    } else {
+                        fs::write(dest, b"external")?;
+                    }
+                    Err(io::Error::from_raw_os_error(1175))
+                },
+                |_| {},
+            );
+            assert!(matches!(result, Err(FileError::ExternalModification(_))));
+            assert_eq!(calls, 1);
+            if !removed {
+                assert_eq!(fs::read(&target).unwrap(), b"external");
+            }
+            assert_eq!(fs::read(&temporary).unwrap(), b"edited");
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn partial_replacement_keeps_recovery_bytes_and_reports_their_path() {
+        let dir = test_dir();
+        let target = dir.join("source.p");
+        for code in [1176, 1177] {
+            fs::write(&target, b"original").unwrap();
+            let result = crate::atomic_replace_with_commit(
+                &target,
+                false,
+                |file| {
+                    use std::io::Write;
+                    file.write_all(b"edited")
+                },
+                |temp, dest| {
+                    guarded_replace(
+                        temp,
+                        dest,
+                        |_, _| Err(io::Error::from_raw_os_error(code)),
+                        |_| {},
+                    )
+                },
+            );
+            let Err(FileError::SaveRecovery {
+                temporary, error, ..
+            }) = result
+            else {
+                panic!("expected recoverable failure");
+            };
+            assert_eq!(error.raw_os_error(), Some(code));
+            assert_eq!(fs::read(&temporary).unwrap(), b"edited");
+            assert_eq!(fs::read(&target).unwrap(), b"original");
+            fs::remove_file(temporary).unwrap();
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+}

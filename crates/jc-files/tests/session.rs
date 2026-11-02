@@ -6,6 +6,48 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
+#[cfg(windows)]
+#[test]
+fn temporary_reader_contention_recovers_and_persistent_contention_preserves_dirty_bytes() {
+    use std::{os::windows::fs::OpenOptionsExt, sync::mpsc, thread, time::Duration};
+    let work = Workspace::new();
+    let path = work.path("contention.p");
+    fs::write(&path, b"original\r\n").unwrap();
+    let mut session = FileSession::open(&path, Some(TextEncoding::Utf8)).unwrap();
+    session.insert_text(0, "new ").unwrap();
+    let (ready, started) = mpsc::channel();
+    let held = path.clone();
+    let reader = thread::spawn(move || {
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(3)
+            .open(held)
+            .unwrap();
+        ready.send(()).unwrap();
+        thread::sleep(Duration::from_millis(25));
+        drop(file);
+    });
+    started.recv().unwrap();
+    session.save().unwrap();
+    reader.join().unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"new original\r\n");
+    assert!(!session.document().is_modified());
+    session.insert_text(0, "more ").unwrap();
+    let reader = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(&path)
+        .unwrap();
+    assert!(
+        matches!(session.save(),Err(FileError::Io(error)) if matches!(error.raw_os_error(),Some(32 | 33 | 1175)))
+    );
+    assert!(session.document().is_modified());
+    assert_eq!(fs::read(&path).unwrap(), b"new original\r\n");
+    drop(reader);
+    session.save().unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"more new original\r\n");
+}
+
 struct Workspace(PathBuf);
 
 impl Workspace {

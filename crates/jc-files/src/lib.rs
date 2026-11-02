@@ -16,6 +16,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+use windows::replace_path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Fingerprint {
@@ -57,6 +61,11 @@ pub enum FileError {
     TargetExists(PathBuf),
     Encode(EncodeError),
     Edit(EditError),
+    SaveRecovery {
+        target: PathBuf,
+        temporary: PathBuf,
+        error: io::Error,
+    },
 }
 
 impl fmt::Display for FileError {
@@ -80,6 +89,16 @@ impl fmt::Display for FileError {
             }
             Self::Encode(error) => write!(f, "{error}"),
             Self::Edit(error) => write!(f, "{error}"),
+            Self::SaveRecovery {
+                target,
+                temporary,
+                error,
+            } => write!(
+                f,
+                "save could not finish for {}; recovery bytes retained at {}: {error}",
+                target.display(),
+                temporary.display()
+            ),
         }
     }
 }
@@ -90,6 +109,7 @@ impl std::error::Error for FileError {
             Self::Io(error) => Some(error),
             Self::Encode(error) => Some(error),
             Self::Edit(error) => Some(error),
+            Self::SaveRecovery { error, .. } => Some(error),
             _ => None,
         }
     }
@@ -276,7 +296,16 @@ fn atomic_replace_with(
     target: &Path,
     create_only: bool,
     write: impl FnOnce(&mut File) -> io::Result<()>,
-) -> io::Result<()> {
+) -> Result<(), FileError> {
+    atomic_replace_with_commit(target, create_only, write, replace_path)
+}
+
+fn atomic_replace_with_commit(
+    target: &Path,
+    create_only: bool,
+    write: impl FnOnce(&mut File) -> io::Result<()>,
+    commit: impl FnOnce(&Path, &Path) -> Result<(), FileError>,
+) -> Result<(), FileError> {
     let parent = target
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
@@ -303,14 +332,14 @@ fn atomic_replace_with(
                 break;
             }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     }
     let (temporary_path, mut temporary_file) = temporary.ok_or_else(|| {
         io::Error::new(io::ErrorKind::AlreadyExists, "unable to allocate save file")
     })?;
 
-    let operation = (|| {
+    let operation: Result<(), FileError> = (|| {
         if let Ok(metadata) = fs::metadata(target) {
             temporary_file.set_permissions(metadata.permissions())?;
         }
@@ -321,13 +350,13 @@ fn atomic_replace_with(
         if create_only {
             commit_new_path(&temporary_path, target)?;
         } else {
-            replace_path(&temporary_path, target)?;
+            commit(&temporary_path, target)?;
         }
         sync_parent(parent)?;
         Ok(())
     })();
 
-    if operation.is_err() {
+    if operation.is_err() && !matches!(operation, Err(FileError::SaveRecovery { .. })) {
         let _ = fs::remove_file(&temporary_path);
     }
     operation
@@ -340,56 +369,16 @@ fn commit_new_path(temporary: &Path, target: &Path) -> io::Result<()> {
 }
 
 #[cfg(unix)]
-fn replace_path(temporary: &Path, target: &Path) -> io::Result<()> {
-    fs::rename(temporary, target)
-}
-
-#[cfg(windows)]
-fn replace_path(temporary: &Path, target: &Path) -> io::Result<()> {
-    if !target.exists() {
-        return fs::rename(temporary, target);
-    }
-    use std::ffi::c_void;
-    use std::os::windows::ffi::OsStrExt;
-    use std::ptr;
-
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn ReplaceFileW(
-            replaced_file_name: *const u16,
-            replacement_file_name: *const u16,
-            backup_file_name: *const u16,
-            replace_flags: u32,
-            exclude: *mut c_void,
-            reserved: *mut c_void,
-        ) -> i32;
-    }
-
-    let replaced: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
-    let replacement: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
-    let ok = unsafe {
-        ReplaceFileW(
-            replaced.as_ptr(),
-            replacement.as_ptr(),
-            ptr::null(),
-            0,
-            ptr::null_mut(),
-            ptr::null_mut(),
-        )
-    };
-    if ok == 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+fn replace_path(temporary: &Path, target: &Path) -> Result<(), FileError> {
+    fs::rename(temporary, target).map_err(Into::into)
 }
 
 #[cfg(not(any(unix, windows)))]
-fn replace_path(temporary: &Path, target: &Path) -> io::Result<()> {
+fn replace_path(temporary: &Path, target: &Path) -> Result<(), FileError> {
     if target.exists() {
         fs::remove_file(target)?;
     }
-    fs::rename(temporary, target)
+    fs::rename(temporary, target).map_err(Into::into)
 }
 
 #[cfg(unix)]
@@ -409,7 +398,7 @@ mod tests {
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(0);
 
-    fn test_dir() -> PathBuf {
+    pub(crate) fn test_dir() -> PathBuf {
         let path = std::env::temp_dir().join(format!(
             "jc-ide-files-{}-{}",
             std::process::id(),

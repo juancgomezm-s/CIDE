@@ -1,0 +1,4 @@
+scenario,attempts,errors,codes,original_preserved,dirty_preserved
+uncontended,100,0,{},true,true
+reader_denies_delete,100,100,{32: 100},true,true
+mapped_target,100,0,{},true,true
