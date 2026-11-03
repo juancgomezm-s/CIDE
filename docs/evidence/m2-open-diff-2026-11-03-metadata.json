@@ -1,0 +1,113 @@
+{
+  "baseline": "f7043e0",
+  "raw_log_distinct_passed": 40,
+  "raw_log_names": [
+    "abl_comment_and_duplicate_delete_shortcuts_resolve_consistently",
+    "app::keyboard_matrix_tests::closing_a_shared_view_preserves_dirty_document_then_last_view_requires_a_choice",
+    "app::keyboard_matrix_tests::disabled_database_command_has_no_effect_from_shortcut_palette_or_menu",
+    "app::keyboard_matrix_tests::enhanced_keyboard_release_does_not_repeat_an_edit_but_repeat_events_do",
+    "app::keyboard_matrix_tests::f6_and_escape_follow_visible_areas_and_restore_the_area_under_a_palette",
+    "app::keyboard_matrix_tests::replace_tab_and_backtab_route_paste_to_fields_before_one_undoable_commit",
+    "app::keyboard_matrix_tests::tab_aliases_preserve_selection_and_bottom_panel_alt_one_does_not_select_a_tab",
+    "app::open_diff_tests::open_diff_tui_palette_stale_refresh_cancel_and_shared_undo_keep_source_identity",
+    "both_panes_show_same_tab_id_while_only_one_document_exists",
+    "byte_and_artifact_quotas_fail_before_copy_or_worker_creation",
+    "cancelled_or_cleared_delivery_never_resurrects_and_a_new_request_waits_for_its_ack",
+    "closing_split_restores_the_primary_document",
+    "completed_but_undelivered_artifacts_reject_revision_encoding_view_document_path_and_close_changes",
+    "contextual_bottom_panel_shortcuts_override_global_tab_shortcuts",
+    "ctrl_tab_and_ctrl_page_down_share_one_semantic_command",
+    "default_registry_keymap_and_menus_are_internally_consistent",
+    "deleted_hunk_at_eof_navigates_without_replacing_bytes",
+    "dirty_document_snapshot_compares_head_or_index_and_hunk_navigation_preserves_bytes_and_undo",
+    "dirty_tabs_cannot_close_without_an_explicit_choice",
+    "display_strings_are_stable_and_human_readable",
+    "editor_groups_share_one_workbench_without_duplicating_document_bytes",
+    "edits_and_shared_undo_rebase_the_other_groups_selection_and_history",
+    "escape_closes_transient_layers_before_returning_to_editor",
+    "f6_focus_cycle_only_visits_visible_primary_areas",
+    "legacy_dirty_snapshot_stays_in_its_page_and_encoding_change_invalidates_navigation",
+    "linked_scroll_moves_viewports_without_moving_the_other_caret",
+    "open_to_side_preserves_pin_and_closing_one_view_preserves_shared_document",
+    "pinning_reference_redirects_automatic_open_and_keeps_back_history",
+    "progress_shortcuts_require_abl_and_a_progress_profile",
+    "reopening_an_open_path_reuses_dirty_bytes_and_undo",
+    "repository_status_commands_need_repository_context_but_no_document",
+    "root_escape_and_missing_executable_are_worker_failures_without_source_writes",
+    "save_binding_remains_visible_but_disabled_when_document_is_clean",
+    "save_is_the_same_command_from_menu_and_keyboard",
+    "selection_and_scroll_survive_focus_changes_on_a_shared_document",
+    "supersession_keeps_one_snapshot_and_only_latest_pending_metadata_until_acknowledgement",
+    "tab_and_shift_tab_are_editor_indentation_not_global_focus",
+    "tab_navigation_wraps_and_alt_9_semantics_can_select_last",
+    "temporary_shared_snapshot_pressure_keeps_git_queued_until_plain_completion_is_polled",
+    "unsaved_dialog_has_stable_unique_keyboard_choices"
+  ],
+  "additional_cases_observed": {
+    "open_diff": 5,
+    "jobs": 8,
+    "tui_open_diff": 2
+  },
+  "new_cases": 7,
+  "conpty_checks": 4,
+  "exit_code": 0,
+  "fixtures_unchanged": true,
+  "git_used_for_product_comparison": false,
+  "git_regression_fixture_tests": 9,
+  "git_regression_first_run": "sandbox fixture removal denied; shared test mutex poisoned; all9 passed with approved fixture access",
+  "initial_failures": [
+    "fixture used nonexistent single_editor_group method",
+    "narrow unified prefix exceeded1column, fixed clipping",
+    "Clippy format_collect",
+    "ConPTY palette title case and split focus oracles",
+    "Escape left stale ready status, routed through shared cancel command"
+  ],
+  "sources_sha256": {
+    "crates/jc-app/src/command.rs": "8274aea64939dced6d02dafc66c22f8bfc9268e5c0c22b169a8959dff8b97921",
+    "crates/jc-app/src/jobs.rs": "1e46cb055f89d380371c6938a0d5c7c34d82fb8ed4a892fa8d9130cf0639c21a",
+    "crates/jc-app/src/lib.rs": "ac711995c9b35c558550a3ace629cc0af26da58758a06a9c46589d80173259a9",
+    "crates/jc-app/src/menu.rs": "20ed0229f05fe6a3390f9ba471aa9a76049695959ab42293117280b5446e0f4a",
+    "crates/jc-app/src/open_diff.rs": "1ac707d6ccba6010e1de37fc8d3c6ea3d92d6466a568a4e4363cddddd4802b26",
+    "crates/jc-app/src/open_diff_view.rs": "18c5f657bbc111c43d5a761133b8cef3f024b42522a02f2f140f301cf2da6575",
+    "crates/jc-app/src/workbench/commands.rs": "fb7baf43079c23bddcbb05594990f8fbdcaf4e343599c30645ba0dc1222b930a",
+    "crates/jc-app/src/workbench/mod.rs": "54be220d3f6e4424e6b72a6cf2b13a885959504c93e8180e4a0095bbd5685659",
+    "crates/jc-app/src/workbench/viewport.rs": "81b7d0410681516a909c7756a1900de5697735b5517912a606b5a91a1ec045ae",
+    "crates/jc-app/tests/open_diff.rs": "01472c094813c0a559fab1927fc8639c72c12b26867bee3535932d1d88e7b7df",
+    "crates/jc-tui/src/app/commands.rs": "07b7d2a98e7990921fff644d48292c8d639aba89ca8d4ead7a2ba656f1a5e24c",
+    "crates/jc-tui/src/app/events.rs": "b7a7ac8f4e0bcd888a86c5d71350fc3feedd0bc328bfd0ab3903619ef18ae100",
+    "crates/jc-tui/src/app/mod.rs": "3c932424e000df1382d847867c9afc96d1b5b7b66a2a05fef7e7c3c58aced001",
+    "crates/jc-tui/src/app/open_diff.rs": "cec763f2848ee7c2760593704a7638f676c32fb98178dfa42f5914e40c1aab99",
+    "crates/jc-tui/src/app/open_diff_tests.rs": "ffc3ca82f1781caedd29855813215a877d6d520350b90ad7f2e0681fc24a1f9c",
+    "crates/jc-tui/src/app/presentation.rs": "7fa0da49e8c9a856910377d7718a13964065fc4ef839a9de742d4995490ada4d",
+    "crates/jc-tui/src/render/mod.rs": "59d0334e57c037b464e462ede72359ad8a77bd214b4922935398ac81a00af56e",
+    "crates/jc-tui/src/render/open_diff.rs": "771e2b21c18b432988c51b6a1ce0ac7a5b9499b29c81e8ad9b71156290116e73",
+    "scripts/smoke-open-diff-conpty.py": "1338c58159e265d688bcb4f2f95842c68b34bd55b0c131ee87df5d59a7d44ef5"
+  },
+  "binary_sha256": {
+    "cide-gui.exe": "4f5084e67e81f820d83139ac6b4d61aea291a309904df61a3092f668cea704b2",
+    "cide-tui.exe": "102b279e85b29667585fe706874bd43c86752a36dacc39233afa0c5d70f23365",
+    "cide.exe": "853c638e1d6cfc0555b6f9f2add74946dd21aeab19d2a440f9381a1fbc8cdefd"
+  },
+  "gui_open_diff_implemented": false,
+  "physical_display_verified": false,
+  "ci_runs": 0,
+  "package": {
+    "archive": "work\\packages\\CIDE-windows-dev-open-diff-2026-11-03.zip",
+    "bytes": 5398311,
+    "sha256": "3a1ffd4243ea153d92623da8362c8b0048319d8e16cf28e01f64da5f29ee5874",
+    "members": 76,
+    "crc_and_manifest_hashes_verified": true,
+    "missing_notices": [
+      {
+        "package": "winapi-i686-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      },
+      {
+        "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      }
+    ]
+  },
+  "observed_total_distinct_passed": 54,
+  "count_method": "40 raw distinct +5 model/controller +8 jobs +1 TUI not in raw logs; second TUI case already included in40"
+}

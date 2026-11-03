@@ -240,6 +240,11 @@ impl Workbench {
             | GitRepositoryStatus
             | GitStatusRefresh
             | GitStatusCancel
+            | DiffCompareOpen
+            | DiffRefreshOpen
+            | DiffCancelOpen
+            | DiffOpenNavigateLeft
+            | DiffOpenNavigateRight
             | ViewSymbols
             | ViewToggleBottomPanel
             | ViewTerminal

@@ -1,0 +1,17 @@
+{
+  "archive": "work\\packages\\CIDE-windows-dev-open-diff-2026-11-03.zip",
+  "bytes": 5398311,
+  "sha256": "3a1ffd4243ea153d92623da8362c8b0048319d8e16cf28e01f64da5f29ee5874",
+  "members": 76,
+  "crc_and_manifest_hashes_verified": true,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ]
+}

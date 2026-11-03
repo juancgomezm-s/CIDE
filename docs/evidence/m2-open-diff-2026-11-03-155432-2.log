@@ -1,0 +1,15 @@
+cargo test -p jc-tui --lib keyboard_matrix_tests --locked --offline
+
+running 6 tests
+test app::keyboard_matrix_tests::enhanced_keyboard_release_does_not_repeat_an_edit_but_repeat_events_do ... ok
+test app::keyboard_matrix_tests::tab_aliases_preserve_selection_and_bottom_panel_alt_one_does_not_select_a_tab ... ok
+test app::keyboard_matrix_tests::closing_a_shared_view_preserves_dirty_document_then_last_view_requires_a_choice ... ok
+test app::keyboard_matrix_tests::f6_and_escape_follow_visible_areas_and_restore_the_area_under_a_palette ... ok
+test app::keyboard_matrix_tests::replace_tab_and_backtab_route_paste_to_fields_before_one_undoable_commit ... ok
+test app::keyboard_matrix_tests::disabled_database_command_has_no_effect_from_shortcut_palette_or_menu ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 97 filtered out; finished in 0.00s
+
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.51s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-e9bab7c6db37e0da.exe)

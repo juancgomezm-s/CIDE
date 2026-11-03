@@ -8,6 +8,8 @@
 mod command;
 mod dialog;
 pub mod diff_model;
+pub mod open_diff;
+pub mod open_diff_view;
 pub mod syntax_theme;
 pub use jc_languages::syntax::{SyntaxKind, SyntaxProfile};
 pub mod explorer;

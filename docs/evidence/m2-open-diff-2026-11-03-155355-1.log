@@ -1,0 +1,73 @@
+cargo test -p jc-app --test interaction --test panes --test git_diff --locked --offline
+
+running 9 tests
+test byte_and_artifact_quotas_fail_before_copy_or_worker_creation ... ok
+test dirty_document_snapshot_compares_head_or_index_and_hunk_navigation_preserves_bytes_and_undo ... FAILED
+test root_escape_and_missing_executable_are_worker_failures_without_source_writes ... FAILED
+test deleted_hunk_at_eof_navigates_without_replacing_bytes ... FAILED
+test cancelled_or_cleared_delivery_never_resurrects_and_a_new_request_waits_for_its_ack ... FAILED
+test legacy_dirty_snapshot_stays_in_its_page_and_encoding_change_invalidates_navigation ... FAILED
+test completed_but_undelivered_artifacts_reject_revision_encoding_view_document_path_and_close_changes ... FAILED
+test supersession_keeps_one_snapshot_and_only_latest_pending_metadata_until_acknowledgement ... FAILED
+test temporary_shared_snapshot_pressure_keeps_git_queued_until_plain_completion_is_polled ... FAILED
+
+failures:
+
+---- dirty_document_snapshot_compares_head_or_index_and_hunk_navigation_preserves_bytes_and_undo stdout ----
+
+thread 'dirty_document_snapshot_compares_head_or_index_and_hunk_navigation_preserves_bytes_and_undo' panicked at crates\jc-app\tests\git_diff.rs:166:36:
+called `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: "Acceso denegado." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- root_escape_and_missing_executable_are_worker_failures_without_source_writes stdout ----
+
+thread 'root_escape_and_missing_executable_are_worker_failures_without_source_writes' panicked at crates\jc-app\tests\git_diff.rs:529:33:
+called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+
+---- deleted_hunk_at_eof_navigates_without_replacing_bytes stdout ----
+
+thread 'deleted_hunk_at_eof_navigates_without_replacing_bytes' panicked at crates\jc-app\tests\git_diff.rs:558:33:
+called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+
+---- cancelled_or_cleared_delivery_never_resurrects_and_a_new_request_waits_for_its_ack stdout ----
+
+thread 'cancelled_or_cleared_delivery_never_resurrects_and_a_new_request_waits_for_its_ack' panicked at crates\jc-app\tests\git_diff.rs:336:33:
+called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+
+---- legacy_dirty_snapshot_stays_in_its_page_and_encoding_change_invalidates_navigation stdout ----
+
+thread 'legacy_dirty_snapshot_stays_in_its_page_and_encoding_change_invalidates_navigation' panicked at crates\jc-app\tests\git_diff.rs:582:33:
+called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+
+---- completed_but_undelivered_artifacts_reject_revision_encoding_view_document_path_and_close_changes stdout ----
+
+thread 'completed_but_undelivered_artifacts_reject_revision_encoding_view_document_path_and_close_changes' panicked at crates\jc-app\tests\git_diff.rs:382:33:
+called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+
+---- supersession_keeps_one_snapshot_and_only_latest_pending_metadata_until_acknowledgement stdout ----
+
+thread 'supersession_keeps_one_snapshot_and_only_latest_pending_metadata_until_acknowledgement' panicked at crates\jc-app\tests\git_diff.rs:279:33:
+called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+
+---- temporary_shared_snapshot_pressure_keeps_git_queued_until_plain_completion_is_polled stdout ----
+
+thread 'temporary_shared_snapshot_pressure_keeps_git_queued_until_plain_completion_is_polled' panicked at crates\jc-app\tests\git_diff.rs:462:33:
+called `Result::unwrap()` on an `Err` value: PoisonError { .. }
+
+
+failures:
+    cancelled_or_cleared_delivery_never_resurrects_and_a_new_request_waits_for_its_ack
+    completed_but_undelivered_artifacts_reject_revision_encoding_view_document_path_and_close_changes
+    deleted_hunk_at_eof_navigates_without_replacing_bytes
+    dirty_document_snapshot_compares_head_or_index_and_hunk_navigation_preserves_bytes_and_undo
+    legacy_dirty_snapshot_stays_in_its_page_and_encoding_change_invalidates_navigation
+    root_escape_and_missing_executable_are_worker_failures_without_source_writes
+    supersession_keeps_one_snapshot_and_only_latest_pending_metadata_until_acknowledgement
+    temporary_shared_snapshot_pressure_keeps_git_queued_until_plain_completion_is_polled
+
+test result: FAILED. 1 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.99s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.90s
+     Running tests\git_diff.rs (target\debug\deps\git_diff-63a1ec86cc916ea5.exe)
+error: test failed, to rerun pass `-p jc-app --test git_diff`

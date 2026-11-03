@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "physical_display_verified": false,
+  "os_clipboard_verified": false,
+  "git_invoked": false,
+  "checks": [
+    "open_diff_dual_snapshot_delivers_without_input_or_git",
+    "open_diff_readonly_input_and_compact_restore",
+    "open_diff_enter_navigates_original_right_group",
+    "open_diff_palette_navigates_original_left_group"
+  ],
+  "exit_code": 0,
+  "fixtures_unchanged": true,
+  "vt_bytes": 46705
+}

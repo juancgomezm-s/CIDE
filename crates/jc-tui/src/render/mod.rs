@@ -1,5 +1,6 @@
 mod git_diff;
 mod git_status;
+mod open_diff;
 mod overlays;
 
 // Same visible-row bound as the shared escaped-display API. Preparation uses
@@ -86,6 +87,7 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
             bottom_height.saturating_sub(1),
         );
     }
+    open_diff::draw(frame, &mut screen);
     draw_status(frame, &mut screen, status_y);
     overlays::draw(app, &mut screen);
     screen

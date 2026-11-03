@@ -14,6 +14,13 @@ impl TuiApp {
                 .unwrap_or_else(|| "Command unavailable".to_owned());
             return;
         }
+        if super::open_diff::is_command(command) {
+            self.open_diff_command(command);
+            return;
+        }
+        if !Self::keep_open_diff_for(command) {
+            self.open_diff_visible = false;
+        }
         if matches!(
             command,
             CommandId::SearchFind

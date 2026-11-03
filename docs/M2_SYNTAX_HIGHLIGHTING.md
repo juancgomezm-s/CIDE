@@ -146,3 +146,7 @@ hasta su implementación y validación con presupuestos. No pedir de nuevo esa
 autorización ni interpretarla como instalación de programas del sistema.
 
 Paquete local: `work/packages/CIDE-windows-dev-syntax-2026-11-03.zip`, 4284421 bytes; SHA256 `5ae95ac62f722bf26fc694de841a6e312f3d42a1391dae005c6d49ca1be84234`. CRC y hashes de los69 miembros verificados; canal de desarrollo, sin instalador ni publicación.
+
+Actualización posterior: el checkpoint de diff se integró y validó en TUI sobre
+regex/resaltado actuales; [estado vigente](M2_OPEN_DOCUMENT_DIFF.md). La descripción
+de suspensión anterior registra el estado al entregar resaltado, no el actual.

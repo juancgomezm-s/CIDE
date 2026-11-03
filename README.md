@@ -271,3 +271,8 @@ ya muestran estado de repositorio y diff HEAD/índice frente al buffer sucio;
 ejecutable Git elegido para la sesión o `--git-executable ABS`, refresh/cancel,
 sin escrituras Git. [Uso y evidencia del bloque integrado](docs/M2B_PROJECT_REPLACE_GIT.md):
 53 pruebas Rust dirigidas y58 controles nativos; pruebas físicas de usuario al final.
+
+La TUI ya compara los **dos documentos abiertos sin Git**, incluidos cambios sin
+guardar: View/Palette Compare Open Groups, hunks, F5, Escape y navegación a cada
+grupo. Visor lateral/unificado acotado y de solo lectura; [uso y evidencia](docs/M2_OPEN_DOCUMENT_DIFF.md).
+Ese visor todavía no está integrado en GUI. [Seguimiento hasta cerrar TUI](docs/M2_TUI_FINISH.md).

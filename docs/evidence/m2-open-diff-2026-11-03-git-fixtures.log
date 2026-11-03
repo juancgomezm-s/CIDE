@@ -1,0 +1,16 @@
+
+running 9 tests
+test byte_and_artifact_quotas_fail_before_copy_or_worker_creation ... ok
+test cancelled_or_cleared_delivery_never_resurrects_and_a_new_request_waits_for_its_ack ... ok
+test completed_but_undelivered_artifacts_reject_revision_encoding_view_document_path_and_close_changes ... ok
+test deleted_hunk_at_eof_navigates_without_replacing_bytes ... ok
+test dirty_document_snapshot_compares_head_or_index_and_hunk_navigation_preserves_bytes_and_undo ... ok
+test legacy_dirty_snapshot_stays_in_its_page_and_encoding_change_invalidates_navigation ... ok
+test supersession_keeps_one_snapshot_and_only_latest_pending_metadata_until_acknowledgement ... ok
+test root_escape_and_missing_executable_are_worker_failures_without_source_writes ... ok
+test temporary_shared_snapshot_pressure_keeps_git_queued_until_plain_completion_is_polled ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.64s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running tests\git_diff.rs (target\debug\deps\git_diff-63a1ec86cc916ea5.exe)

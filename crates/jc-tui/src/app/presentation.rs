@@ -107,6 +107,7 @@ pub(crate) struct Presentation<'a> {
     pub status_position: Option<TextPosition>,
     pub search_positions: Vec<(usize, Option<TextPosition>)>,
     pub git: GitPresentation,
+    pub open_diff: Option<jc_app::open_diff_view::OpenDiffPresentation>,
     pub git_status: super::GitStatusPresentation,
     pub explorer: jc_app::explorer::ExplorerPresentation,
 }
@@ -130,6 +131,8 @@ impl TuiApp {
         if self.explorer.root() != self.project_root.as_deref() {
             self.explorer.clear();
         }
+        self.open_diff
+            .validate_context(&self.workbench, &mut self.tasks);
         self.git_diff.tick(&self.workbench, &mut self.tasks);
         self.git_status
             .validate_context(self.project_root.as_deref(), self.git_executable.as_deref());
@@ -141,7 +144,7 @@ impl TuiApp {
         let mut secondary = EditorText::default();
         let mut search_positions = Vec::new();
         let mut status_position = None;
-        if layout.width >= 40 && layout.height >= 10 {
+        if layout.width >= 40 && layout.height >= 10 && !self.open_diff_visible {
             let number_width = self
                 .workbench
                 .active_document()
@@ -315,7 +318,16 @@ impl TuiApp {
         if self.syntax_pending {
             self.syntax_wakeup.signal();
         }
+        let open_diff = self.open_diff_visible.then(|| {
+            self.open_diff_view.prepare(
+                &self.open_diff,
+                usize::from(layout.height.saturating_sub(6)),
+                usize::from(layout.width.saturating_sub(2)),
+                layout.width >= 92,
+            )
+        });
         Presentation {
+            open_diff,
             app: self,
             layout,
             primary,

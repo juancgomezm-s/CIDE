@@ -7,6 +7,9 @@ mod git_diff;
 mod git_repository;
 mod git_status;
 mod menus;
+mod open_diff;
+#[cfg(test)]
+mod open_diff_tests;
 mod overlays;
 mod paths;
 mod presentation;
@@ -80,6 +83,9 @@ pub struct TuiApp {
     pub(crate) syntax_targets: [Option<(jc_app::PaneId, jc_app::TabId)>; 2],
     pub(crate) syntax_wakeup: jc_app::Wakeup,
     pub(crate) git_diff: jc_app::git_diff::GitDiffController,
+    pub(crate) open_diff: jc_app::open_diff::OpenDiffController,
+    pub(crate) open_diff_view: jc_app::open_diff_view::OpenDiffView,
+    pub(crate) open_diff_visible: bool,
     pub(crate) git_status: git_status::GitStatusView,
     pub(crate) quick_open: jc_app::quick_open::QuickOpenController,
     quick_open_root: Option<PathBuf>,
@@ -143,6 +149,9 @@ impl TuiApp {
             syntax_targets: [None, None],
             syntax_wakeup: wakeup.clone(),
             git_diff: jc_app::git_diff::GitDiffController::new(),
+            open_diff: Default::default(),
+            open_diff_view: Default::default(),
+            open_diff_visible: false,
             git_status: git_status::GitStatusView::new(wakeup.clone()),
             quick_open: jc_app::quick_open::QuickOpenController::new(wakeup.clone()),
             quick_open_root: None,
@@ -234,6 +243,11 @@ impl TuiApp {
             if completion.status == jc_app::TaskStatus::Panicked {
                 update.recover = true;
             }
+            if self.open_diff.accept(&self.workbench, &mut completion) {
+                self.status = self.open_diff.message().into();
+                update.changed = true;
+                continue;
+            }
             if self.git_diff.accept(&self.workbench, &mut completion) {
                 self.status = self.git_diff.message().to_owned();
                 update.changed = true;
@@ -241,6 +255,7 @@ impl TuiApp {
             }
             update.changed |= self.workbench.accept_task_completion(&completion);
         }
+        update.changed |= self.open_diff.tick(&self.workbench, &mut self.tasks);
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
         let status_changed = self
             .git_status
@@ -307,6 +322,7 @@ impl TuiApp {
                     .and_then(|id| self.explorer.node(id))
                     .is_some_and(|entry| !entry.is_dir());
         }
+        self.open_diff_context(&mut context);
         context
     }
 

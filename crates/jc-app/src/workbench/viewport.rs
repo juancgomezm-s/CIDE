@@ -3,6 +3,42 @@ use super::{Workbench, WorkbenchError};
 use crate::{PaneId, TabId};
 use jc_text::{PositionError, TextPosition};
 impl Workbench {
+    pub fn can_compare_open(&self) -> bool {
+        let origin = |pane| {
+            self.panes
+                .view(pane)
+                .and_then(|v| v.location())
+                .and_then(|loc| self.document_by_tab(loc.tab))
+                .filter(|d| d.session.encoding().is_some())
+                .map(|d| d.id)
+        };
+        matches!((origin(PaneId::Primary),origin(PaneId::Secondary)),(Some(a),Some(b)) if a!=b)
+    }
+    /// Explicit navigation into an existing view, retaining pin and recording
+    /// history in that group. Validate before changing focus or either caret.
+    pub fn jump_to_pane_location(&mut self, pane: PaneId, tab: TabId, offset: usize) -> bool {
+        if self
+            .panes
+            .view(pane)
+            .and_then(|v| v.location())
+            .is_none_or(|loc| loc.tab != tab)
+            || self.position_for_tab(tab, offset).is_none()
+        {
+            return false;
+        }
+        self.panes.focus(pane);
+        self.panes
+            .navigate(crate::NavLocation::new(tab, offset), false);
+        let Some(state) = self.panes.active_state_mut() else {
+            return false;
+        };
+        state.cursor = offset;
+        state.anchor = None;
+        state.rectangle = None;
+        state.manual_scroll = false;
+        self.search_navigation = None;
+        self.activate_location_document(crate::NavLocation::new(tab, offset))
+    }
     pub fn byte_offset_for_tab(&self, tab: TabId, position: TextPosition) -> Option<usize> {
         self.with_text(tab, |text, source| text.offset(source, position))?
             .ok()

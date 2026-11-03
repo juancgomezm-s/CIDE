@@ -785,6 +785,7 @@ impl Workbench {
             nav_back_available: self.panes.can_back(),
             nav_forward_available: self.panes.can_forward(),
             can_open_to_side: active.is_some(),
+            open_diff_available: self.can_compare_open(),
             ..CommandContext::default()
         }
     }

@@ -552,3 +552,12 @@ cargados al presupuesto. Sin decode fuente completo ni edits desde worker.
 Pattern compartido y reutilizado por revisión. Reemplazo conserva texto literal,
 revisión esperada y una transacción. Limitaciones de case folding, fronteras,
 complejidad adversaria y validación se explicitan en [M2_REGEX_SEARCH](M2_REGEX_SEARCH.md).
+
+## D52 — Comparación de abiertos como artefacto dual F3
+
+OpenDiffController valida ambos orígenes y generation; una ejecución en vuelo
+con pendiente solo de metadata. F3 reserva el conjunto antes de copiar dos rangos
+acotados y comparte Arc con OwnedDiffModel. La presentación no admite snapshots
+ni acepta resultados, retiene solo filas/prefijos visibles y usa encoding por
+lado. TUI bloquea edits del visor y navega al grupo de origen. No nuevo buffer,
+undo, Git o ruta de escritura. [Evidencia y límites](M2_OPEN_DOCUMENT_DIFF.md).

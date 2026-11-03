@@ -559,3 +559,25 @@ copy or unbounded backtracking. Reuse compiled patterns across revisions and
 share them across file workers. Regex replacement is literal; document the
 simple-fold/unsupported Unicode-boundary distinction from literal full folding.
 Do not repeat dependency permission. Keep CI dormant and validate broad blocks.
+
+## Comparación de abiertos TUI implementada — 2026-11-03
+
+El checkpoint suspendido de comparación sin Git ya se integró sobre regex y
+resaltado actuales: controller con dos orígenes versionados, admisión dual F3,
+presentación compartida acotada y visor TUI lateral/unificado. Comandos View/
+paleta, hunks, navegación a grupo original, stale/refresh/cancel; fuente de solo
+lectura y sin writes. `docs/M2_OPEN_DOCUMENT_DIFF.md`.
+GUI de este visor sigue pendiente; no restaurar su checkpoint automáticamente.
+
+54 casos distintos observados aprobados, cuatro flujos ConPTY, fmt/Clippy/release.
+Las nueve regresiones Git pasaron con acceso autorizado a fixtures propios tras
+fallar por acceso sandbox; no se usa Git en la comparación del producto.
+No CI ni aceptación física/global. Siguiente bloque realmente activo: contrato
+de capacidades internas opcionales y consumidor TUI de símbolos/navegación,
+según EXTENSION_ARCHITECTURE y `docs/M2_TUI_FINISH.md`.
+
+Preserve dual-origin validation for OpenDiff, one flight plus latest metadata,
+combined snapshot/artifact reservations, read-only bounded OpenDiffView and no
+admission/poll from preparation/draw. Controller owns accepted immutable result.
+Escape routes through DiffCancelOpen; original-group hunk navigation respects
+ViewId and byte boundaries. GUI capability remains disabled until wired.

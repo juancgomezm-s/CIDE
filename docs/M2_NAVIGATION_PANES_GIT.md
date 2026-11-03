@@ -208,3 +208,19 @@ el [GUI Win32/GDI inicial](M2B_NATIVE_WINDOWS.md), que comparte Workbench y reci
 16 checks del ejecutable nativo;339 pruebas Rust distintas en cierre selectivo,
 fmt/Clippy/release. Adaptar Quick Open/Palette al GUI es el siguiente bloque activo.
 Sin aceptación global ni prueba manual solicitada ahora; regex/dependencias pendientes.
+
+## Comparación de abiertos TUI implementada — 2026-11-03
+
+El checkpoint suspendido de comparación sin Git ya se integró sobre regex y
+resaltado actuales: controller con dos orígenes versionados, admisión dual F3,
+presentación compartida acotada y visor TUI lateral/unificado. Comandos View/
+paleta, hunks, navegación a grupo original, stale/refresh/cancel; fuente de solo
+lectura y sin writes. [Contrato y evidencia](M2_OPEN_DOCUMENT_DIFF.md).
+GUI de este visor sigue pendiente; no restaurar su checkpoint automáticamente.
+
+54 casos distintos observados aprobados, cuatro flujos ConPTY, fmt/Clippy/release.
+Las nueve regresiones Git pasaron con acceso autorizado a fixtures propios tras
+fallar por acceso sandbox; no se usa Git en la comparación del producto.
+No CI ni aceptación física/global. Siguiente bloque realmente activo: contrato
+de capacidades internas opcionales y consumidor TUI de símbolos/navegación,
+según EXTENSION_ARCHITECTURE y [matriz de cierre TUI](M2_TUI_FINISH.md).

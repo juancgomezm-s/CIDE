@@ -97,6 +97,11 @@ pub enum CommandId {
     GitRepositoryStatus,
     GitStatusRefresh,
     GitStatusCancel,
+    DiffCompareOpen,
+    DiffRefreshOpen,
+    DiffCancelOpen,
+    DiffOpenNavigateLeft,
+    DiffOpenNavigateRight,
     ViewSymbols,
     ViewToggleBottomPanel,
     ViewTerminal,
@@ -162,6 +167,9 @@ pub struct CommandContext {
     pub git_diff_running: bool,
     pub git_repository_available: bool,
     pub git_status_running: bool,
+    pub open_diff_available: bool,
+    pub open_diff_active: bool,
+    pub open_diff_ready: bool,
     // Shared pane navigation state; keymap handlers are connected by the frontend.
     pub split_editor: bool,
     pub reference_pinned: bool,
@@ -199,6 +207,9 @@ impl Default for CommandContext {
             git_diff_running: false,
             git_repository_available: false,
             git_status_running: false,
+            open_diff_available: false,
+            open_diff_active: false,
+            open_diff_ready: false,
             split_editor: false,
             reference_pinned: false,
             nav_back_available: false,
@@ -368,6 +379,15 @@ fn git_repository(ctx: &CommandContext) -> bool {
 }
 fn git_status_running(ctx: &CommandContext) -> bool {
     ctx.git_status_running
+}
+fn open_diff_available(ctx: &CommandContext) -> bool {
+    ctx.open_diff_available
+}
+fn open_diff_active(ctx: &CommandContext) -> bool {
+    ctx.open_diff_active
+}
+fn open_diff_ready(ctx: &CommandContext) -> bool {
+    ctx.open_diff_ready
 }
 fn project_search_running(ctx: &CommandContext) -> bool {
     ctx.project_search_running
@@ -595,6 +615,36 @@ pub fn default_registry() -> CommandRegistry {
             View,
             "Git: Cancel Repository Status",
             git_status_running
+        ),
+        spec!(
+            DiffCompareOpen,
+            View,
+            "Compare Open Groups (Read-Only)",
+            open_diff_available
+        ),
+        spec!(
+            DiffRefreshOpen,
+            View,
+            "Refresh Open Groups Comparison",
+            open_diff_available
+        ),
+        spec!(
+            DiffCancelOpen,
+            View,
+            "Cancel Open Groups Comparison",
+            open_diff_active
+        ),
+        spec!(
+            DiffOpenNavigateLeft,
+            View,
+            "Open Comparison Hunk in Left Group",
+            open_diff_ready
+        ),
+        spec!(
+            DiffOpenNavigateRight,
+            View,
+            "Open Comparison Hunk in Right Group",
+            open_diff_ready
         ),
         spec!(ViewSymbols, View, "Symbols", never),
         spec!(ViewToggleBottomPanel, View, "Toggle Bottom Panel", always),

@@ -158,6 +158,8 @@ pub struct TaskOutput {
     stamp: TaskStamp,
     artifact_limit: usize,
     git_diff: Option<crate::git_diff::GitDiffReply>,
+    open_diff: Option<crate::open_diff::OpenDiffReply>,
+    second_stamp: Option<TaskStamp>,
 }
 impl TaskOutput {
     fn new(
@@ -165,6 +167,7 @@ impl TaskOutput {
         range: Range<usize>,
         stamp: TaskStamp,
         artifact_limit: usize,
+        second_stamp: Option<TaskStamp>,
     ) -> Self {
         Self {
             items: Vec::new(),
@@ -176,6 +179,8 @@ impl TaskOutput {
             stamp,
             artifact_limit,
             git_diff: None,
+            open_diff: None,
+            second_stamp,
         }
     }
     pub fn items(&self) -> &[TaskItem] {
@@ -188,6 +193,7 @@ impl TaskOutput {
         let failure = if reply.stamp != self.stamp {
             Some(TaskFailure::InvalidRange)
         } else if self.git_diff.is_some()
+            || self.open_diff.is_some()
             || self.items.len() >= self.max_items
             || reply.memory_bytes() > self.artifact_limit
         {
@@ -205,9 +211,37 @@ impl TaskOutput {
     pub fn take_git_diff(&mut self) -> Option<crate::git_diff::GitDiffReply> {
         self.git_diff.take()
     }
+    pub(crate) fn set_open_diff(
+        &mut self,
+        reply: crate::open_diff::OpenDiffReply,
+    ) -> Result<(), TaskFailure> {
+        let failure = if reply.result.left.stamp != self.stamp
+            || Some(reply.result.right.stamp) != self.second_stamp
+        {
+            Some(TaskFailure::InvalidRange)
+        } else if self.open_diff.is_some()
+            || self.git_diff.is_some()
+            || self.items.len() >= self.max_items
+            || reply.memory_bytes() > self.artifact_limit
+        {
+            Some(TaskFailure::LimitExceeded)
+        } else {
+            None
+        };
+        if let Some(failure) = failure {
+            self.failure = Some(failure);
+            return Err(failure);
+        }
+        self.open_diff = Some(reply);
+        Ok(())
+    }
+    pub(crate) fn take_open_diff(&mut self) -> Option<crate::open_diff::OpenDiffReply> {
+        self.open_diff.take()
+    }
     fn clear(&mut self) {
         self.items.clear();
         self.git_diff = None;
+        self.open_diff = None;
         self.bytes = 0;
     }
     pub fn push(&mut self, item: TaskItem) -> Result<(), TaskFailure> {
@@ -215,7 +249,10 @@ impl TaskOutput {
             r.start > r.end || r.start < self.range.start || r.end > self.range.end
         }) {
             Some(TaskFailure::InvalidRange)
-        } else if self.items.len() + usize::from(self.git_diff.is_some()) >= self.max_items
+        } else if self.items.len()
+            + usize::from(self.git_diff.is_some())
+            + usize::from(self.open_diff.is_some())
+            >= self.max_items
             || item.allocation() > self.max_bytes.saturating_sub(self.bytes)
         {
             Some(TaskFailure::LimitExceeded)
@@ -300,6 +337,7 @@ pub struct CompletedTask {
 struct Job {
     id: JobId,
     snapshot: TaskSnapshot,
+    second: Option<TaskSnapshot>,
     cancel: Cancellation,
     provider: Provider,
     artifact_limit: usize,
@@ -307,6 +345,12 @@ struct Job {
 enum Provider {
     Plain(TaskProvider),
     GitDiff(crate::git_diff::GitDiffWork),
+    OpenDiff(crate::open_diff::OpenDiffWork),
+}
+struct SecondCapture {
+    stamp: TaskStamp,
+    path: PathBuf,
+    range: Range<usize>,
 }
 struct Capture {
     document: DocumentId,
@@ -316,6 +360,7 @@ struct Capture {
     artifact_limit: usize,
     timeout: Duration,
     expected: Option<TaskStamp>,
+    second: Option<SecondCapture>,
 }
 struct Completion {
     id: JobId,
@@ -341,6 +386,7 @@ struct Record {
     cancel: Cancellation,
     bytes: usize,
     artifact_limit: usize,
+    open_diff: Option<crate::open_diff::OpenDiffWork>,
 }
 pub struct JobSystem {
     shared: Arc<Shared>,
@@ -432,6 +478,7 @@ impl JobSystem {
                 artifact_limit: 0,
                 timeout: self.shared.limits.timeout,
                 expected: None,
+                second: None,
             },
         )
     }
@@ -473,6 +520,49 @@ impl JobSystem {
                 provider: Provider::GitDiff(work),
                 artifact_limit: 12 * 1024 * 1024,
                 timeout: Duration::from_secs(10),
+                second: None,
+            },
+        )
+    }
+    pub(crate) fn submit_open_diff(
+        &mut self,
+        app: &Workbench,
+        key: JobKey,
+        work: crate::open_diff::OpenDiffWork,
+    ) -> Result<JobId, SubmitError> {
+        if !work.current(app) {
+            return Err(SubmitError::InvalidView);
+        }
+        let left = app
+            .document_by_id(work.left.stamp.document)
+            .ok_or(SubmitError::NoDocument)?;
+        let right = app
+            .document_by_id(work.right.stamp.document)
+            .ok_or(SubmitError::NoDocument)?;
+        let (left_len, right_len) = (
+            left.session.document().len(),
+            right.session.document().len(),
+        );
+        if left_len > 2 * 1024 * 1024 || right_len > 2 * 1024 * 1024 {
+            return Err(SubmitError::SnapshotLimit);
+        }
+        let second = SecondCapture {
+            stamp: work.right.stamp,
+            path: work.right.path.clone(),
+            range: 0..right_len,
+        };
+        self.submit_internal(
+            app,
+            key,
+            Capture {
+                document: work.left.stamp.document,
+                view: work.left.stamp.view,
+                range: 0..left_len,
+                expected: Some(work.left.stamp),
+                provider: Provider::OpenDiff(work),
+                artifact_limit: 12 * 1024 * 1024,
+                timeout: Duration::from_secs(10),
+                second: Some(second),
             },
         )
     }
@@ -490,6 +580,7 @@ impl JobSystem {
             artifact_limit,
             timeout,
             expected,
+            second,
         } = capture;
         let limits = self.shared.limits;
         if self.records.len() >= limits.outstanding {
@@ -504,17 +595,30 @@ impl JobSystem {
         if range.start > range.end {
             return Err(SubmitError::InvalidRange);
         }
-        if range.len() > limits.snapshot_bytes {
+        if range.len() > limits.snapshot_bytes
+            || second
+                .as_ref()
+                .is_some_and(|capture| capture.range.len() > limits.snapshot_bytes)
+        {
             return Err(SubmitError::SnapshotLimit);
         }
-        if range.len() > limits.total_snapshot_bytes.saturating_sub(self.bytes) {
+        let total = range
+            .len()
+            .checked_add(second.as_ref().map_or(0, |capture| capture.range.len()))
+            .ok_or(SubmitError::SnapshotLimit)?;
+        if total > limits.total_snapshot_bytes {
+            return Err(SubmitError::SnapshotLimit);
+        }
+        if total > limits.total_snapshot_bytes.saturating_sub(self.bytes) {
             // Git retains metadata while other F3 jobs own the budget; retry
             // after poll releases it, without capturing a second source.
-            return Err(if matches!(&provider, Provider::GitDiff(_)) {
-                SubmitError::Busy
-            } else {
-                SubmitError::SnapshotLimit
-            });
+            return Err(
+                if matches!(&provider, Provider::GitDiff(_) | Provider::OpenDiff(_)) {
+                    SubmitError::Busy
+                } else {
+                    SubmitError::SnapshotLimit
+                },
+            );
         }
         let doc = app
             .document_by_id(document)
@@ -535,12 +639,59 @@ impl JobSystem {
         if expected.is_some_and(|expected| expected != stamp) {
             return Err(SubmitError::InvalidView);
         }
+        let second_doc = if let Some(capture) = &second {
+            let doc = app
+                .document_by_id(capture.stamp.document)
+                .ok_or(SubmitError::NoDocument)?;
+            if capture.range.start > capture.range.end
+                || capture.range.end > doc.session.document().len()
+            {
+                return Err(SubmitError::InvalidRange);
+            }
+            if capture.path.as_os_str().len() > 4096 {
+                return Err(SubmitError::SnapshotLimit);
+            }
+            if !app.task_stamp_is_current(capture.stamp) || doc.session.path() != capture.path {
+                return Err(SubmitError::InvalidView);
+            }
+            Some(doc)
+        } else {
+            None
+        };
+        // Validate ALL source and artifact reservations before either copy.
+        let open_diff = match &provider {
+            Provider::OpenDiff(work) => Some(work.clone()),
+            _ => None,
+        };
         let source = Arc::new(
             doc.session
                 .document()
                 .read_range(range.clone())
                 .map_err(|_| SubmitError::InvalidRange)?,
         );
+        let second = match (second, second_doc) {
+            (Some(capture), Some(doc)) => Some(TaskSnapshot {
+                stamp: capture.stamp,
+                range: capture.range.clone(),
+                bytes: Arc::new(
+                    doc.session
+                        .document()
+                        .read_range(capture.range)
+                        .map_err(|_| SubmitError::InvalidRange)?,
+                ),
+            }),
+            _ => None,
+        };
+        let charged = source
+            .capacity()
+            .checked_add(second.as_ref().map_or(0, |source| source.bytes.capacity()))
+            .ok_or(SubmitError::SnapshotLimit)?;
+        if charged > limits.total_snapshot_bytes {
+            return Err(SubmitError::SnapshotLimit);
+        }
+        if charged > limits.total_snapshot_bytes.saturating_sub(self.bytes) {
+            return Err(SubmitError::Busy);
+        }
         if self.handles.is_empty() {
             for index in 0..limits.workers {
                 let shared = self.shared.clone();
@@ -571,12 +722,13 @@ impl JobSystem {
                 stamp,
                 path,
                 cancel: cancel.clone(),
-                bytes: source.len(),
+                bytes: charged,
                 artifact_limit,
+                open_diff,
             },
         );
         self.latest.insert(key, id);
-        self.bytes += source.len();
+        self.bytes += charged;
         self.artifact_bytes += artifact_limit;
         self.next = next;
         let mut queue = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -587,6 +739,7 @@ impl JobSystem {
                 range,
                 bytes: source,
             },
+            second,
             cancel,
             provider,
             artifact_limit,
@@ -602,6 +755,10 @@ impl JobSystem {
     pub fn cancel_stale(&mut self, app: &Workbench) {
         for record in self.records.values() {
             if !app.task_stamp_is_current(record.stamp)
+                || record
+                    .open_diff
+                    .as_ref()
+                    .is_some_and(|work| !work.current(app))
                 || app
                     .document_by_id(record.stamp.document)
                     .is_none_or(|doc| doc.session.path() != record.path)
@@ -647,6 +804,10 @@ impl JobSystem {
             }
             let current = latest
                 && !record.cancel.flag.load(Ordering::Acquire)
+                && record
+                    .open_diff
+                    .as_ref()
+                    .is_none_or(|work| work.current(app))
                 && app.task_stamp_is_current(record.stamp);
             let applicable = current
                 && event.status == TaskStatus::Completed
@@ -687,6 +848,7 @@ fn worker(shared: Arc<Shared>) {
             job.snapshot.range.clone(),
             job.snapshot.stamp,
             job.artifact_limit,
+            job.second.as_ref().map(|source| source.stamp),
         );
         let result = if job.cancel.is_cancelled() {
             Ok(Err(TaskFailure::Cancelled))
@@ -696,6 +858,13 @@ fn worker(shared: Arc<Shared>) {
                 Provider::GitDiff(work) => {
                     crate::git_diff::run(work, &job.snapshot, &job.cancel, &mut output)
                 }
+                Provider::OpenDiff(work) => crate::open_diff::run(
+                    work,
+                    &job.snapshot,
+                    job.second.as_ref().ok_or(TaskFailure::InvalidRange)?,
+                    &job.cancel,
+                    &mut output,
+                ),
             }))
         };
         let status = if result.is_err() {
@@ -720,6 +889,7 @@ fn worker(shared: Arc<Shared>) {
             output.clear();
         }
         drop(job.snapshot); // source ownership ends before publication
+        drop(job.second);
         let mut queue = shared.queue.lock().unwrap_or_else(|e| e.into_inner());
         if queue.stopping {
             return;
