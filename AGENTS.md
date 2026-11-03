@@ -164,3 +164,13 @@ Next active block is read-only regex admission for shared Search Plus, not an
 enabled regex or an extension/AVM implementation. Do not install dependencies,
 enable a decorative switch or repeat completed profiles. Design captures and
 replacement semantics before enabling a regex editing path.
+
+Regex admission is complete; read docs/M2_REGEX_ADMISSION.md. The next concrete
+decision is whether Juan authorizes adding/pinning a maintained Rust regex engine
+(candidate regex-automata0.4.18) despite the current no-install constraint, or
+prefers another M2A task with regex disabled. Do not fetch crates or invent a new
+regex parser to bypass that constraint. No implementation/runtime validation is
+implied by the admission. Preserve literal full folding, typed source boundaries,
+real cooperative work limits and revision-safe replacement; project preview must
+show actual match content rather than the regex query. No new suites/profiles for
+this documentation-only admission; 319 distinct remains the preceding evidence.

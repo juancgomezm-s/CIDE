@@ -845,3 +845,16 @@ una corrida completa319. Formato, Clippy workspace/all-targets -D warnings y
 release workspace bins/examples aprobaron. No se repitieron suites aprobadas ni
 perfiles por prosa; sin CI/push/ConPTY nuevo. Screen45/140 readonly no acredita
 display físico/RAM global/GUI. AVM/proveedores M3 no intervienen.
+
+## Admisión regex completada: decisión de dependencia pendiente
+
+La auditoría siguiente ya está recogida en [M2_REGEX_ADMISSION](M2_REGEX_ADMISSION.md).
+No se habilitó regex ni se descargó nada. Candidato para evaluar: regex-automata
+0.4.18 mantenido, con compilación/VM cooperativa, presupuestos, coordenadas y
+reemplazos explícitos; no asumir que una llamada monolítica es cancelable.
+Lock/cache no contienen un motor. La instrucción de continuidad «sin instalar
+dependencias» exige decisión de Juan antes de añadir/fijar esa dependencia Rust.
+Alternativa: conservar regex deshabilitado y seleccionar otro pendiente M2A.
+No implementar un parser/engine casero para esquivar la restricción. La admisión
+es diseño/revisión de fuentes primarias y código local, sin pruebas/benchmarks
+nuevos ni aceptación de un motor; siguen vigentes los 319 casos del cierre previo.

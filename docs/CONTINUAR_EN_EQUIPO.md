@@ -252,3 +252,16 @@ Plus, prioridad universal pendiente de M2A. Revisar engine compartido y contrato
 de bytes/Unicode, presupuesto/cancelación, capturas/reemplazo y costo sin instalar
 dependencias. No habilitar el switch hasta que haya un motor operativo y validado;
 no adelantar proveedores de extensión/AVM M3 ni GUI sin ventana autorizada.
+
+## Admisión regex completada: decisión de dependencia pendiente
+
+La auditoría siguiente ya está recogida en [M2_REGEX_ADMISSION](M2_REGEX_ADMISSION.md).
+No se habilitó regex ni se descargó nada. Candidato para evaluar: regex-automata
+0.4.18 mantenido, con compilación/VM cooperativa, presupuestos, coordenadas y
+reemplazos explícitos; no asumir que una llamada monolítica es cancelable.
+Lock/cache no contienen un motor. La instrucción de continuidad «sin instalar
+dependencias» exige decisión de Juan antes de añadir/fijar esa dependencia Rust.
+Alternativa: conservar regex deshabilitado y seleccionar otro pendiente M2A.
+No implementar un parser/engine casero para esquivar la restricción. La admisión
+es diseño/revisión de fuentes primarias y código local, sin pruebas/benchmarks
+nuevos ni aceptación de un motor; siguen vigentes los 319 casos del cierre previo.
