@@ -1,0 +1,17 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.28s
+     Running tests\panes.rs (target\debug\deps\panes-b4a6ccfaa25679ea.exe)
+
+running 9 tests
+test pinning_reference_redirects_automatic_open_and_keeps_back_history ... ok
+test closing_split_restores_the_primary_document ... ok
+test open_to_side_preserves_pin_and_closing_one_view_preserves_shared_document ... ok
+test editor_groups_share_one_workbench_without_duplicating_document_bytes ... ok
+test linked_scroll_moves_viewports_without_moving_the_other_caret ... ok
+test both_panes_show_same_tab_id_while_only_one_document_exists ... ok
+test edits_and_shared_undo_rebase_the_other_groups_selection_and_history ... ok
+test selection_and_scroll_survive_focus_changes_on_a_shared_document ... ok
+test reopening_an_open_path_reuses_dirty_bytes_and_undo ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

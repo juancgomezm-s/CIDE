@@ -1255,3 +1255,36 @@ PNG1384×741 y984×641 GDI→PNG sin pérdida revisados visualmente. No OS clipb
 interoperable/IME/DPI/accesibilidad/mouse-pantalla físicos/Unicode general/Linux/RAM
 global aceptados. Menús/draglineal/wheel, symlink opcional y notices GNU pendientes.
 Sin dependencias/proveedores/AVM/regex/instalaciones/CI/push/publicación ni seguridad.
+
+## Menús y ratón GUI — 2026-11-03
+
+[Contrato y alcance](M2B_NATIVE_INTERACTION.md). Construcción completa antes de
+checks:16 casos Rust distintos aprobados, cuatro nuevos. Viewport/selección byte(1),
+panes afectadas(9), menú(2), CLI(1), viewport F2 por rangos(1), presentación/split
+TUI afectados(2). Sin solapamientos de filtros ni suite workspace global; solo
+rutas impactadas por el cambio de viewport/captura/menú.
+
+13 checks HWND, seis nuevos: cuatro encodings/BOM/EOL mixto, drag/Shift y diagnósticos,
+fronteras byte/CRLF y undo; captura/interrupción/resize/seis stales; wheel signed
+fraccionaria sobre pane inactivo, foco/caret/selección/pin/enlace y reveal manual;
+HMENU real/ocho grupos/IDs/separadores/Alt/F10/seis macros, labels y capabilities;
+seis reentradas fuente y tres campo, wrong-group/disabled; composición/compact/
+hits/jobs y limpieza Source13B identidad/revisión/encoding/catálogo/disco. Metadata
+Git propia intacta; un WM_PAINT, cero errores. Native aprobó primera corrida;
+24ms del arnés no es latencia física. Popup y clipboard son transporte sintético.
+
+fmt, Clippy workspace/all-targets `-D warnings`, release workspace bins/examples
+aprobados offline, Rust1.85.1 MSVC x64. Fallo inicial retenido de tres lints solo
+del arnés, corregidos juntos. [Logs/hashes/nombres únicos](evidence/m2b-native-interaction-2026-11-03-metadata.json),
+[reporte](evidence/m2b-native-interaction-2026-11-03-native-report.json),
+[scroll](evidence/m2b-native-interaction-2026-11-03-native-interaction.png),
+[restauración](evidence/m2b-native-interaction-2026-11-03-native-frame.png).
+PNG1384×741/984×641 revisados visualmente, derivados sin pérdida de GDI. Solo área
+cliente, no screenshot de menú desplegado. Find→menú cancelado cubierto;
+paleta→macro desde Find no tuvo caso separado. Sin clipboard privado leído/alterado.
+
+[ZIP verificado](evidence/m2b-native-interaction-2026-11-03-package.json): CRC/hashes69
+entradas. Aceptación física/global/Unicode/OS clipboard/IME/DPI/accesibilidad/Linux,
+RAM o latencia global, symlink y dos notices GNU siguen pendientes. Paquete local
+de desarrollo, sin instalador/distribución final. Sin nuevos proveedores/AVM/
+dependencias/regex/instalaciones/seguridad/CI/push/publicación.

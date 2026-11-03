@@ -1,0 +1,177 @@
+//! View-only input: source bytes, undo and file sessions never change here.
+use super::{Workbench, WorkbenchError};
+use crate::{PaneId, TabId};
+use jc_text::{PositionError, TextPosition};
+impl Workbench {
+    pub fn byte_offset_for_tab(&self, tab: TabId, position: TextPosition) -> Option<usize> {
+        self.with_text(tab, |text, source| text.offset(source, position))?
+            .ok()
+    }
+    /// Both byte endpoints must be legal text boundaries in the active source.
+    /// A collapsed selection has no anchor; this is not a navigation jump.
+    pub fn set_linear_selection_bytes(
+        &mut self,
+        anchor: usize,
+        head: usize,
+    ) -> Result<(), WorkbenchError> {
+        self.with_active_text(|text, source| {
+            // Existing whole-file selection uses anchor0, including an initial
+            // BOM. The caret/head still requires a legal textual boundary.
+            if anchor != 0 {
+                text.position(source, anchor)?;
+            }
+            text.position(source, head)?;
+            Ok::<(), PositionError>(())
+        })??;
+        let state = self
+            .panes
+            .active_state_mut()
+            .ok_or(WorkbenchError::NoDocument)?;
+        state.rectangle = None;
+        state.cursor = head;
+        state.anchor = (anchor != head).then_some(anchor);
+        state.manual_scroll = false;
+        self.search_navigation = None;
+        Ok(())
+    }
+    pub fn resume_caret_tracking(&mut self) {
+        if let Some(state) = self.panes.active_state_mut() {
+            state.manual_scroll = false;
+        }
+    }
+    pub fn clamp_viewport_rows(&mut self, rows: usize) {
+        for pane in [PaneId::Primary, PaneId::Secondary] {
+            let Some(view) = self.panes.view(pane) else {
+                continue;
+            };
+            let Some(location) = view.location() else {
+                continue;
+            };
+            let max = self
+                .line_count_for_tab(location.tab)
+                .unwrap_or(1)
+                .saturating_sub(rows.max(1));
+            self.panes
+                .set_scroll(pane, view.scroll_line().min(max), view.scroll_column());
+        }
+    }
+    /// Manual vertical scrolling preserves focus/carets/selection, applies the
+    /// actual clamped delta to a linked group and suspends automatic reveal.
+    pub fn scroll_view_vertical(&mut self, pane: PaneId, delta: isize, rows: usize) -> bool {
+        let Some(view) = self.panes.view(pane) else {
+            return false;
+        };
+        let Some(location) = view.location() else {
+            return false;
+        };
+        let old = view.scroll_line();
+        let column = view.scroll_column();
+        let max = self
+            .line_count_for_tab(location.tab)
+            .unwrap_or(1)
+            .saturating_sub(rows.max(1));
+        let next = if delta < 0 {
+            old.saturating_sub(delta.unsigned_abs())
+        } else {
+            old.saturating_add(delta as usize)
+        }
+        .min(max);
+        if next == old {
+            return false;
+        }
+        self.panes.set_scroll(pane, next, column);
+        self.panes.set_manual_scroll(pane, true);
+        self.link_scroll_delta(pane, old, next, rows);
+        true
+    }
+    pub(super) fn link_scroll_delta(&mut self, pane: PaneId, old: usize, next: usize, rows: usize) {
+        if !self.panes.scroll_linked() || old == next {
+            return;
+        }
+        let other = if pane == PaneId::Primary {
+            PaneId::Secondary
+        } else {
+            PaneId::Primary
+        };
+        let Some(view) = self.panes.view(other) else {
+            return;
+        };
+        let max = view
+            .location()
+            .and_then(|loc| self.line_count_for_tab(loc.tab))
+            .unwrap_or(1)
+            .saturating_sub(rows.max(1));
+        let line = if next >= old {
+            view.scroll_line().saturating_add(next - old)
+        } else {
+            view.scroll_line().saturating_sub(old - next)
+        }
+        .min(max);
+        self.panes.set_scroll(other, line, view.scroll_column());
+        self.panes.set_manual_scroll(other, true);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jc_text::TextEncoding;
+    #[test]
+    fn viewport_and_byte_selection_preserve_source_history_and_linked_independent_views() {
+        let mut app = Workbench::default();
+        app.new_file("viewport.txt", TextEncoding::Utf8);
+        app.insert_text(&"ñ\r\n".repeat(100)).unwrap();
+        app.go_to_position(TextPosition { line: 0, column: 0 })
+            .unwrap();
+        app.split_editor_right();
+        app.focus_editor_pane(PaneId::Primary);
+        app.go_to_position(TextPosition { line: 0, column: 0 })
+            .unwrap();
+        app.reveal_active_pane(10, 40);
+        let bytes = app.active_bytes().unwrap();
+        let revision = app.active_document().unwrap().session.document().revision();
+        let secondary = app.position_for_pane(PaneId::Secondary);
+        app.toggle_scroll_link();
+        assert!(app.scroll_view_vertical(PaneId::Primary, 20, 10));
+        for pane in [PaneId::Primary, PaneId::Secondary] {
+            assert_eq!(app.panes().view(pane).unwrap().scroll_line(), 20);
+        }
+        app.reveal_active_pane(10, 40);
+        assert_eq!(app.panes().view(PaneId::Primary).unwrap().scroll_line(), 20);
+        assert_eq!(app.position_for_pane(PaneId::Secondary), secondary);
+        assert!(app.set_linear_selection_bytes(0, 3).is_err()); // CRLF interior
+        app.set_linear_selection_bytes(0, 4).unwrap();
+        assert_eq!(app.selection_for_pane(PaneId::Primary), Some(0..4));
+        app.set_linear_selection_bytes(2, 2).unwrap();
+        assert!(app.active_editor().unwrap().anchor.is_none());
+        app.reveal_active_pane(10, 40);
+        assert_eq!(app.panes().view(PaneId::Primary).unwrap().scroll_line(), 0);
+        assert_eq!(app.active_bytes().unwrap(), bytes);
+        assert_eq!(
+            app.active_document().unwrap().session.document().revision(),
+            revision
+        );
+        assert!(app.scroll_view_vertical(PaneId::Secondary, isize::MAX, 10));
+        assert_eq!(
+            app.panes().view(PaneId::Secondary).unwrap().scroll_line(),
+            91
+        );
+        app.clamp_viewport_rows(1000);
+        assert_eq!(
+            app.panes().view(PaneId::Secondary).unwrap().scroll_line(),
+            0
+        );
+        app.insert_text("X").unwrap();
+        app.undo().unwrap();
+        assert_eq!(app.active_bytes().unwrap(), bytes);
+        // A BOM stays selectable by the existing whole-file anchor convention,
+        // but never becomes a caret inside its three-byte representation.
+        let mut bom = Workbench::default();
+        bom.new_file("bom.txt", TextEncoding::Utf8);
+        bom.insert_text("\u{feff}a\r\n").unwrap();
+        bom.set_linear_selection_bytes(0, 4).unwrap();
+        assert_eq!(bom.selection_for_pane(PaneId::Primary), Some(0..4));
+        assert!(bom.set_linear_selection_bytes(0, 1).is_err());
+        assert_eq!(bom.selection_for_pane(PaneId::Primary), Some(0..4));
+    }
+}

@@ -236,8 +236,11 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             || options.parity_only
             || options.bottom_only
             || options.selector_input_only
+            || options.interaction_only
         {
-            if options.selector_input_only {
+            if options.interaction_only {
+                checks.extend(super::interaction_smoke::run(hwnd, options)?);
+            } else if options.selector_input_only {
                 checks.extend(super::selector_input_smoke::run(hwnd, options)?);
             } else if options.bottom_only {
                 checks.extend(super::bottom_smoke::run(hwnd, options)?);
@@ -428,6 +431,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         checks.extend(super::parity_smoke::run(hwnd, options)?);
         checks.extend(super::bottom_smoke::run(hwnd, options)?);
         checks.extend(super::selector_input_smoke::run(hwnd, options)?);
+        checks.extend(super::interaction_smoke::run(hwnd, options)?);
         // A complete native selector flow: modal query input, real PostMessage
         // delivery, authoritative target, dirty session reuse and shared undo.
         position(hwnd, 0, 0)?;

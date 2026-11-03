@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 1 test
+test app::tests::keyboard_and_palette_drive_split_pin_history_and_responsive_rendering ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 94 filtered out; finished in 0.00s
+

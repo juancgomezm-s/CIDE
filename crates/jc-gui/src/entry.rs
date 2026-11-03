@@ -16,6 +16,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut parity_only = false;
     let mut bottom_only = false;
     let mut selector_input_only = false;
+    let mut interaction_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -61,6 +62,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("duplicate --smoke-bottom-only".into());
                 }
                 bottom_only = true;
+            }
+            Some("--smoke-interaction-only") => {
+                if interaction_only {
+                    return Err("duplicate --smoke-interaction-only".into());
+                }
+                interaction_only = true;
             }
             Some("--smoke-selector-input-only") => {
                 if selector_input_only {
@@ -132,6 +139,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(parity_only)
         + usize::from(bottom_only)
         + usize::from(selector_input_only)
+        + usize::from(interaction_only)
         > 1
     {
         return Err("choose only one smoke section".into());
@@ -146,6 +154,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || parity_only
         || bottom_only
         || selector_input_only
+        || interaction_only
     {
         if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("smoke uses only its explicit fixture".into());
@@ -170,6 +179,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             parity_only,
             bottom_only,
             selector_input_only,
+            interaction_only,
         });
     }
     Ok(Some(options))
@@ -400,5 +410,36 @@ mod tests {
             "user.p"
         ])
         .is_err());
+    }
+}
+
+#[cfg(test)]
+mod interaction_options_tests {
+    use super::parse;
+    use std::ffi::OsString;
+    #[test]
+    fn interaction_section_requires_owned_paths_and_is_exclusive() {
+        let parse_args = |words: &[&str]| parse(words.iter().map(OsString::from));
+        assert!(parse_args(&["--smoke-interaction-only"]).is_err());
+        assert!(parse_args(&["--smoke-interaction-only", "--smoke-bottom-only"]).is_err());
+        assert!(parse_args(&["--smoke-interaction-only", "--smoke-interaction-only"]).is_err());
+        let root = std::env::current_dir().unwrap();
+        let fixture = root.join("fixture.txt");
+        let report = root.join("report.json");
+        let args = vec![
+            OsString::from("--smoke-interaction-only"),
+            OsString::from("--smoke-fixture"),
+            fixture.into_os_string(),
+            OsString::from("--smoke-report"),
+            report.into_os_string(),
+        ];
+        assert!(
+            parse(args)
+                .unwrap()
+                .unwrap()
+                .smoke
+                .unwrap()
+                .interaction_only
+        );
     }
 }

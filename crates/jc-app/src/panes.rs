@@ -44,6 +44,7 @@ pub struct ViewState {
     pub rectangle: Option<RectangularSelection>,
     pub scroll_line: usize,
     pub scroll_column: usize,
+    pub manual_scroll: bool,
 }
 impl ViewState {
     pub fn selection(&self) -> Option<std::ops::Range<usize>> {
@@ -119,6 +120,7 @@ impl PaneView {
                 view.state.cursor = loc.byte_offset;
                 view.state.anchor = None;
                 view.state.rectangle = None;
+                view.state.manual_scroll = false;
             }
         } else {
             let id = ViewId(*next);
@@ -258,6 +260,11 @@ impl PaneManager {
         if let Some(v) = self.view_mut(id).editor_mut() {
             v.state.scroll_line = line;
             v.state.scroll_column = column;
+        }
+    }
+    pub(crate) fn set_manual_scroll(&mut self, id: PaneId, manual: bool) {
+        if let Some(view) = self.view_mut(id).editor_mut() {
+            view.state.manual_scroll = manual;
         }
     }
     pub(crate) fn rebase(&mut self, tab: TabId, change: &ChangeSet, include_active: bool) {

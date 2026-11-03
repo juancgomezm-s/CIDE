@@ -30,7 +30,7 @@ impl State {
     }
     pub(super) fn close_selector(&mut self) {
         self.selector_generation = self.selector_generation.saturating_add(1);
-        self.rectangle_drag = None;
+        self.cancel_pointer();
         self.selector_editor_input = false;
         self.selector_edit_target = None;
         self.selector_search_panel = None;
@@ -306,13 +306,15 @@ impl State {
                 let search = self.selector_search_panel.take();
                 self.close_selector();
                 self.explorer_focused = explorer_focus;
-                if matches!(
-                    command,
-                    jc_app::CommandId::SearchHistoryPrevious
-                        | jc_app::CommandId::SearchHistoryNext
-                        | jc_app::CommandId::SearchToggleCase
-                        | jc_app::CommandId::SearchToggleWholeWord
-                ) {
+                if super::native_menu::is_supported_macro(command)
+                    || matches!(
+                        command,
+                        jc_app::CommandId::SearchHistoryPrevious
+                            | jc_app::CommandId::SearchHistoryNext
+                            | jc_app::CommandId::SearchToggleCase
+                            | jc_app::CommandId::SearchToggleWholeWord
+                    )
+                {
                     self.search_panel = search;
                 }
                 self.execute(command)

@@ -285,6 +285,7 @@ impl Workbench {
         editor.rectangle = None;
         editor.anchor = Some(range.start);
         editor.cursor = range.end;
+        editor.manual_scroll = false;
         Ok(true)
     }
     pub fn search_match_position(&self, index: usize) -> Option<TextPosition> {

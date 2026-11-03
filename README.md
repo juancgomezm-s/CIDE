@@ -120,6 +120,11 @@ ya consume resultados F3 tipados: Ctrl+J, View/paleta, Alt+1/2 dentro del panel 
 F6/Shift+F6 entre Editor/Explorer/panel. Enter navega Problems vigentes, Output es
 texto inerte. Sin proveedor conectado permanece vacío; no inicia Progress/AVM.
 
+[Menús y ratón GUI](docs/M2B_NATIVE_INTERACTION.md): menús contextuales desde el
+modelo compartido, selección lineal por drag/Shift, rueda fraccionaria sobre cada
+grupo y scroll enlazado sin mover carets. Validación local:16 casos Rust y13 checks
+HWND; aceptación física/global todavía pendiente.
+
 [Entrada de selectores GUI](docs/M2B_SELECTOR_INPUT.md): Quick Open, paleta y encoding
 ya permiten caret/selección con Shift, Home/End, Delete y Ctrl+A/C/X/V, también por
 Edit. Up/Down/Tab recorren resultados; Ctrl+Home/End elige primero/último. Campos

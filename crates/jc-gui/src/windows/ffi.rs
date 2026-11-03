@@ -147,13 +147,17 @@ pub const WM_ERASEBKGND: u32 = 20;
 pub const WM_NCCREATE: u32 = 0x81;
 pub const WM_NCDESTROY: u32 = 0x82;
 pub const WM_KEYDOWN: u32 = 0x100;
+pub const WM_KEYUP: u32 = 0x101;
 pub const WM_CHAR: u32 = 0x102;
 pub const WM_SYSKEYDOWN: u32 = 0x104;
+pub const WM_SYSKEYUP: u32 = 0x105;
+pub const WM_SYSCHAR: u32 = 0x106;
 pub const WM_UNICHAR: u32 = 0x109;
 pub const WM_COMMAND: u32 = 0x111;
 pub const WM_INITMENU: u32 = 0x116;
 pub const WM_LBUTTONDOWN: u32 = 0x201;
 pub const WM_MOUSEMOVE: u32 = 0x200;
+pub const WM_MOUSEWHEEL: u32 = 0x20a;
 pub const WM_LBUTTONUP: u32 = 0x202;
 pub const WM_CAPTURECHANGED: u32 = 0x215;
 pub const WM_CANCELMODE: u32 = 0x1f;
@@ -168,6 +172,9 @@ extern "system" {
 #[link(name = "user32")]
 extern "system" {
     pub fn RegisterClassW(class: *const WndClass) -> u16;
+    pub fn ScreenToClient(hwnd: Hwnd, point: *mut Point) -> i32;
+    pub fn SystemParametersInfoW(action: u32, parameter: u32, data: *mut c_void, flags: u32)
+        -> i32;
     pub fn UnregisterClassW(name: *const u16, instance: Handle) -> i32;
     pub fn CreateWindowExW(
         ex_style: u32,
@@ -216,8 +223,6 @@ extern "system" {
     pub fn CreatePopupMenu() -> Handle;
     pub fn AppendMenuW(menu: Handle, flags: u32, item: usize, text: *const u16) -> i32;
     pub fn DestroyMenu(menu: Handle) -> i32;
-    pub fn EnableMenuItem(menu: Handle, item: u32, flags: u32) -> u32;
-    pub fn CheckMenuItem(menu: Handle, item: u32, flags: u32) -> u32;
     pub fn GetMenu(hwnd: Hwnd) -> Handle;
     pub fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, kind: u32) -> i32;
     pub fn GetWindow(hwnd: Hwnd, relation: u32) -> Hwnd;

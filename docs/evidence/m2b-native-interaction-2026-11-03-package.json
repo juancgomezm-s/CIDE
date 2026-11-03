@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "archive": "work/packages/CIDE-windows-dev-native-interaction-2026-11-03.zip",
+  "bytes": 4177463,
+  "sha256": "f59348b8a6cf0940bc1243b5e54aa653ad6404bfd6e6b95a2fd9edd7f63bca52",
+  "members": 69,
+  "crc_all_passed": true,
+  "manifest_hashes_all_passed": true,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ],
+  "channel": "local development; no installer or release certification"
+}

@@ -142,6 +142,7 @@ impl Workbench {
     }
 
     pub(super) fn after_edit(&mut self) -> Result<(), WorkbenchError> {
+        self.resume_caret_tracking();
         self.rebase_after_edit();
         // Undo/redo can shorten a range before the caret. Length clamping alone
         // could leave it inside a multibyte scalar (or before the UTF-8 BOM).
@@ -169,6 +170,7 @@ impl Workbench {
     }
 
     pub fn move_left(&mut self, select: bool) -> Result<(), WorkbenchError> {
+        self.resume_caret_tracking();
         if let Some(offset) = self.previous_boundary()? {
             self.move_cursor_to(offset, select)?;
         } else {
@@ -178,6 +180,7 @@ impl Workbench {
     }
 
     pub fn move_right(&mut self, select: bool) -> Result<(), WorkbenchError> {
+        self.resume_caret_tracking();
         if let Some(offset) = self.next_boundary()? {
             self.move_cursor_to(offset, select)?;
         } else {
@@ -258,6 +261,7 @@ impl Workbench {
             document.anchor = None;
         }
         document.cursor = offset;
+        document.manual_scroll = false;
         Ok(())
     }
 
@@ -746,6 +750,7 @@ impl Workbench {
     }
 
     pub fn select_all(&mut self) -> Result<(), WorkbenchError> {
+        self.resume_caret_tracking();
         self.cancel_rectangle();
         let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document.anchor = Some(0);

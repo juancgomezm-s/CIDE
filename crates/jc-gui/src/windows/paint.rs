@@ -130,6 +130,7 @@ struct TextArea {
     y: i32,
     columns: usize,
     rows: usize,
+    capacity_rows: usize,
 }
 fn text_areas(state: &State) -> Vec<TextArea> {
     let cw = state.cell_width.clamp(1, 8192);
@@ -158,9 +159,103 @@ fn text_areas(state: &State) -> Vec<TextArea> {
                 y,
                 columns,
                 rows: rows.min(count.saturating_sub(first)),
+                capacity_rows: rows,
             })
         })
         .collect()
+}
+
+pub(super) fn source_pane_at(state: &State, x: i32, y: i32) -> Option<(PaneId, usize)> {
+    for (pane, rect) in areas(state) {
+        let top = rect.top + state.cell_height + 6;
+        let rows = ((rect.bottom - top) / state.cell_height.clamp(1, 8192)).clamp(0, 128) as usize;
+        if rows > 0
+            && x >= rect.left
+            && x < rect.right
+            && y >= top
+            && y < top + rows as i32 * state.cell_height
+        {
+            return Some((pane, rows));
+        }
+    }
+    None
+}
+pub(super) fn focus_pane_at(state: &State, x: i32, y: i32) -> Option<PaneId> {
+    areas(state)
+        .into_iter()
+        .find(|(_, r)| x >= r.left && x < r.right && y >= r.top && y < r.bottom)
+        .map(|(pane, _)| pane)
+}
+/// Current scalar/diagnostic/TAB4 projection -> legal source byte boundary.
+/// Captured drags clamp to their original visible text area, without autoscroll.
+pub(super) fn linear_hit(
+    state: &State,
+    x: i32,
+    y: i32,
+    locked: Option<PaneId>,
+) -> Result<Option<(PaneId, usize)>, String> {
+    let cw = state.cell_width.clamp(1, 8192);
+    let ch = state.cell_height.clamp(1, 8192);
+    for area in text_areas(state) {
+        if area.columns == 0
+            || area.capacity_rows == 0
+            || locked.is_some_and(|pane| pane != area.pane)
+        {
+            continue;
+        }
+        let right = area.x + area.columns as i32 * cw;
+        let bottom = area.y + area.capacity_rows as i32 * ch;
+        if locked.is_none() && (x < area.x || x >= right || y < area.y || y >= bottom) {
+            continue;
+        }
+        let count = state
+            .workbench
+            .line_count_for_tab(area.tab)
+            .ok_or("Source line catalog unavailable")?;
+        let line = (area.first + ((y.clamp(area.y, bottom - 1) - area.y) / ch) as usize)
+            .min(count.saturating_sub(1));
+        let column = area.scroll + ((x.clamp(area.x, right - 1) - area.x) / cw) as usize;
+        let (content, _) = state
+            .workbench
+            .line_range_for_tab(area.tab, line)
+            .ok_or("Source hit line unavailable")?;
+        let byte = if state.workbench.rectangle_for_pane(area.pane).is_some() {
+            state
+                .workbench
+                .rectangle_byte_at(
+                    area.tab,
+                    jc_app::rectangle::VisualPosition {
+                        line,
+                        column: jc_app::rectangle::VisualColumn(column),
+                    },
+                )
+                .map_err(|e| e.to_string())?
+        } else if state.workbench.invisibles_visible() {
+            state
+                .workbench
+                .display_byte_at(area.tab, line, column)
+                .ok_or("Diagnostic source hit unavailable")?
+                .min(content.end)
+                .max(content.start)
+        } else {
+            let end = state
+                .workbench
+                .position_for_tab(area.tab, content.end)
+                .ok_or("Source EOL boundary unavailable")?;
+            state
+                .workbench
+                .byte_offset_for_tab(
+                    area.tab,
+                    TextPosition {
+                        line,
+                        column: column.min(end.column),
+                    },
+                )
+                .ok_or("Source scalar boundary unavailable")?
+        };
+        return Ok(Some((area.pane, byte)));
+    }
+    Ok(None)
 }
 
 /// A first hit converts the currently painted scalar/diagnostic coordinates;
@@ -718,98 +813,6 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
     }
     drop(selected);
     Ok(())
-}
-
-pub(super) fn click(state: &mut State, x: i32, y: i32) {
-    let Some((pane, rect)) = areas(state)
-        .into_iter()
-        .find(|(_, rect)| x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom)
-    else {
-        return;
-    };
-    state.workbench.focus_editor_pane(pane);
-    state.bottom.focused = false;
-    let Some(view) = state.workbench.panes().view(pane) else {
-        return;
-    };
-    let Some(location) = view.location() else {
-        return;
-    };
-    let count = state
-        .workbench
-        .line_count_for_tab(location.tab)
-        .unwrap_or(0);
-    if count == 0 {
-        return;
-    }
-    let digits = count.to_string().len().clamp(3, 7) as i32;
-    let text_x = rect.left + (digits + 2) * state.cell_width + 8;
-    let text_y = rect.top + state.cell_height + 6;
-    if y < text_y || x < text_x {
-        return;
-    }
-    let line =
-        (view.scroll_line() + (y - text_y) as usize / state.cell_height as usize).min(count - 1);
-    if let Some(rectangle) = state.workbench.rectangle_for_pane(pane) {
-        let column = rectangle
-            .scroll_column
-            .saturating_add((x - text_x) as usize / state.cell_width as usize);
-        let target = state
-            .workbench
-            .rectangle_byte_at(
-                location.tab,
-                jc_app::rectangle::VisualPosition {
-                    line,
-                    column: jc_app::rectangle::VisualColumn(column),
-                },
-            )
-            .map_err(|error| error.to_string())
-            .and_then(|byte| {
-                state
-                    .workbench
-                    .position_for_tab(location.tab, byte)
-                    .ok_or_else(|| "Rectangle click boundary unavailable".to_string())
-            });
-        match target {
-            Ok(position) => {
-                let select = state.modifiers().contains(jc_app::Modifiers::SHIFT);
-                if let Err(error) = state.workbench.set_caret_position(position, select) {
-                    state.error(error);
-                }
-            }
-            Err(error) => state.error(error),
-        }
-        return;
-    }
-    let column = view.scroll_column() + (x - text_x) as usize / state.cell_width as usize;
-    if state.workbench.invisibles_visible() {
-        let target = state
-            .workbench
-            .display_byte_at(location.tab, line, column)
-            .and_then(|byte| state.workbench.position_for_tab(location.tab, byte));
-        if let Some(position) = target {
-            let select = state.modifiers().contains(jc_app::Modifiers::SHIFT);
-            if let Err(error) = state.workbench.set_caret_position(position, select) {
-                state.error(error);
-            }
-        }
-        return;
-    }
-    let end = state
-        .workbench
-        .line_range_for_tab(location.tab, line)
-        .and_then(|(content, _)| state.workbench.position_for_tab(location.tab, content.end))
-        .map_or(0, |position| position.column);
-    let select = state.modifiers().contains(jc_app::Modifiers::SHIFT);
-    if let Err(error) = state.workbench.set_caret_position(
-        TextPosition {
-            line,
-            column: column.min(end),
-        },
-        select,
-    ) {
-        state.error(error);
-    }
 }
 
 /// Actual GDI rasterization into a DIB, not a simulated screenshot. The BMP is

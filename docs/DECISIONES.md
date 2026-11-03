@@ -517,3 +517,16 @@ Un handoff nativo captura generación/intención/candidato y contexto completo, 
 préstamos, transfiere y revalida antes de mutar. Cuota256UTF8 se comprueba también
 antes de reservar salida del decoder; no pegado truncado. [Contrato y evidencia](M2B_SELECTOR_INPUT.md).
 La automatización usa solo backend sintético, sin leer/alterar clipboard privado.
+
+## D49 — Gestos por vista y menús como intenciones revalidadas
+
+Scroll manual pertenece a ViewState, sin desplazar caret ni crear historia. El
+reveal se reanuda con intención explícita; scroll enlazado aplica delta consumido,
+no sincroniza cursores ni depende de pin. Hits convierten la proyección vigente
+a bytes legales. Captura solo conserva metadata de destino/ancla; cambio de
+revisión/vista/encoding/ruta/raíz/foco invalida el gesto, con selección retenida.
+SetCapture/ReleaseCapture y screen-coordinate/settings APIs quedan fuera del
+préstamo. Menús se componen por modelo/categoría/handler, nunca rangos numéricos.
+Una elección modal retiene un stamp acotado y revalida contexto/capability al volver;
+macros de paleta abren el HMENU real sin perder draft invocador. Se eliminan las
+rutas anteriores reemplazadas. [Contrato/evidencia](M2B_NATIVE_INTERACTION.md).

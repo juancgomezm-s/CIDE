@@ -1,5 +1,5 @@
 //! Mouse/command intentions only. All rectangular geometry and edits stay in jc-app.
-use super::{line_edit::EditTarget, paint, State};
+use super::{paint, pointer_input::PointerContext, State};
 use jc_app::{rectangle::VisualPosition, CommandId, PaneId};
 
 pub(super) fn is_rectangle(command: CommandId) -> bool {
@@ -13,11 +13,11 @@ pub(super) fn is_rectangle(command: CommandId) -> bool {
             | CommandId::EditRectangleDown
     )
 }
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct RectangleDrag {
     anchor: VisualPosition,
     pane: PaneId,
-    target: EditTarget,
+    target: PointerContext,
 }
 impl State {
     pub(super) fn rectangle_status(&mut self) {
@@ -58,7 +58,7 @@ impl State {
             self.error(error);
             return false;
         }
-        let Some(target) = self.source_edit_target() else {
+        let Some(target) = self.pointer_context(pane) else {
             return false;
         };
         self.rectangle_drag = Some(RectangleDrag {
@@ -70,8 +70,9 @@ impl State {
         true
     }
     pub(super) fn validate_rectangle_drag(&mut self) -> bool {
-        if self.rectangle_drag.is_some_and(|drag| {
-            self.source_edit_target() != Some(drag.target)
+        if self.rectangle_drag.as_ref().is_some_and(|drag| {
+            self.workbench.panes().active() != drag.pane
+                || self.pointer_context(drag.pane).as_ref() != Some(&drag.target)
                 || !self.context().editor_input
                 || self.workbench.rectangle_for_pane(drag.pane).is_none()
         }) {
@@ -85,7 +86,7 @@ impl State {
         if !self.validate_rectangle_drag() {
             return;
         }
-        let drag = self.rectangle_drag.unwrap();
+        let drag = self.rectangle_drag.as_ref().unwrap().clone();
         let head = match paint::rectangle_hit(self, x, y, Some(drag.pane)) {
             Ok(Some((_, head))) => head,
             Ok(None) => return,
@@ -98,7 +99,7 @@ impl State {
             self.error(error);
             return;
         }
-        if let Some(target) = self.source_edit_target() {
+        if let Some(target) = self.pointer_context(drag.pane) {
             self.rectangle_drag = Some(RectangleDrag { target, ..drag });
         }
         self.rectangle_status();

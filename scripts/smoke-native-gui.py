@@ -117,6 +117,15 @@ SELECTOR_INPUT_REQUIRED = {
     "selector_input_modal_origin_palette_encoding_focus", "selector_input_readonly_resize_cleanup",
 }
 
+INTERACTION_REQUIRED = {
+    "interaction_linear_drag_encodings_invisibles_undo",
+    "interaction_drag_capture_interrupt_stale",
+    "interaction_wheel_fraction_link_pin_focus",
+    "interaction_native_menu_context_macros_capabilities",
+    "interaction_menu_reentry_stale_field_source",
+    "interaction_readonly_compact_cleanup",
+}
+
 def ordinary_directory(path):
     info = path.lstat()
     return path.is_dir() and not path.is_symlink() and not (getattr(info, "st_file_attributes", 0) & 0x400)
@@ -175,7 +184,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity", "bottom", "selector-input"), default="all")
+    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity", "bottom", "selector-input", "interaction"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -205,7 +214,8 @@ def main():
                    ["--smoke-rectangle-only"] if args.section == "rectangle" else
                    ["--smoke-parity-only"] if args.section == "parity" else
                    ["--smoke-bottom-only"] if args.section == "bottom" else
-                   ["--smoke-selector-input-only"] if args.section == "selector-input" else []),
+                   ["--smoke-selector-input-only"] if args.section == "selector-input" else
+                   ["--smoke-interaction-only"] if args.section == "interaction" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -222,8 +232,9 @@ def main():
                 RECTANGLE_REQUIRED if args.section == "rectangle" else
                 PARITY_REQUIRED if args.section == "parity" else
                 BOTTOM_REQUIRED if args.section == "bottom" else
+                INTERACTION_REQUIRED if args.section == "interaction" else
                 SELECTOR_INPUT_REQUIRED if args.section == "selector-input" else
-                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED | PARITY_REQUIRED | BOTTOM_REQUIRED | SELECTOR_INPUT_REQUIRED)
+                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED | PARITY_REQUIRED | BOTTOM_REQUIRED | SELECTOR_INPUT_REQUIRED | INTERACTION_REQUIRED)
     if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
     if payload.get("backend") != "Win32/GDI" or payload.get("window") != "own_hidden_hwnd" or payload.get("native_paints", 0) < 1:

@@ -12,14 +12,18 @@ mod folder;
 mod git_panel;
 mod git_smoke;
 mod git_view;
+mod interaction_smoke;
 mod line_edit;
 mod line_edit_smoke;
+mod menu_input;
+mod native_menu;
 mod navigation_paint;
 mod navigation_panel;
 mod navigation_smoke;
 mod notify;
 mod paint;
 mod parity_smoke;
+mod pointer_input;
 mod project_paint;
 mod project_panel;
 mod project_results;
@@ -238,7 +242,8 @@ pub(super) fn command_id(command: CommandId) -> usize {
 
 enum Action {
     None,
-    CaptureRectangle,
+    CapturePointer,
+    NativeMenu(native_menu::NativeMenuGroup),
     Clipboard(CommandId),
     PasteSearch(u64),
     PasteNavigation(u64),
@@ -267,6 +272,12 @@ struct State {
     bottom: bottom_panel::BottomState,
     bottom_hits: Option<bottom_panel::BottomHits>,
     rectangle_drag: Option<rectangle_input::RectangleDrag>,
+    linear_drag: Option<pointer_input::LinearDrag>,
+    wheel: Option<pointer_input::WheelState>,
+    menu_stamp: Option<Box<menu_input::MenuStamp>>,
+    interaction_epoch: u64,
+    smoke_wheel_lines: Option<u32>,
+    smoke_menu_choices: std::collections::VecDeque<Option<usize>>,
     selector: Option<Selector>,
     selector_generation: u64,
     selector_explorer_focus: bool,
@@ -358,6 +369,12 @@ impl State {
             bottom: Default::default(),
             bottom_hits: None,
             rectangle_drag: None,
+            linear_drag: None,
+            wheel: None,
+            menu_stamp: None,
+            interaction_epoch: 0,
+            smoke_wheel_lines: None,
+            smoke_menu_choices: Default::default(),
             selector: None,
             selector_generation: 0,
             selector_explorer_focus: false,
@@ -531,13 +548,16 @@ impl State {
         context
     }
     fn execute(&mut self, command: CommandId) -> Action {
-        self.rectangle_drag = None;
+        self.cancel_pointer();
         if !self
             .registry
             .is_enabled(command, &self.entry_context(command))
         {
             self.status = "Command unavailable in the current context".into();
             return Action::None;
+        }
+        if let Some(group) = native_menu::group_for_command(command) {
+            return Action::NativeMenu(group);
         }
         match command {
             command if self.selector.is_some() && selector_input::field_command(command) => {
@@ -832,10 +852,16 @@ impl State {
     }
     fn key(&mut self, code: usize) -> (bool, Action) {
         if !matches!(code, 0x10..=0x12) {
-            self.rectangle_drag = None;
+            self.cancel_pointer();
         }
         self.pending_surrogate = None;
         let modifiers = self.modifiers();
+        if let Some(group) = native_menu::mnemonic(code, modifiers) {
+            return (true, Action::NativeMenu(group));
+        }
+        if code == 0x79 && modifiers == Modifiers::NONE {
+            return (true, Action::NativeMenu(native_menu::NativeMenuGroup::File));
+        }
         let key = match code {
             0x09 => Some(Key::Tab),
             0x0d => Some(Key::Enter),
@@ -998,7 +1024,7 @@ impl State {
         }
     }
     fn insert_character(&mut self, ch: char) {
-        self.rectangle_drag = None;
+        self.cancel_pointer();
         if ch.is_control() {
             return;
         }
@@ -1039,7 +1065,8 @@ impl State {
     }
 }
 fn supported(command: CommandId) -> bool {
-    COMMANDS.iter().any(|(_, value, _)| *value == command)
+    native_menu::is_supported_macro(command)
+        || COMMANDS.iter().any(|(_, value, _)| *value == command)
         || matches!(
             command,
             CommandId::EditIndent
@@ -1151,6 +1178,18 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     }
     // No RefCell borrow crosses dialogs, DestroyWindow or SendMessage. Modal
     // Win32 calls may reenter this callback and prepare another read-only frame.
+    // Screen coordinates and OS settings are read outside the model borrow.
+    let wheel = if message == WM_MOUSEWHEEL {
+        let mut point = Point {
+            x: (lparam as u16) as i16 as i32,
+            y: ((lparam as usize >> 16) as u16) as i16 as i32,
+        };
+        let mut lines = 3u32;
+        SystemParametersInfoW(0x68, 0, (&mut lines as *mut u32).cast(), 0);
+        (ScreenToClient(hwnd, &mut point) != 0).then_some((point, lines))
+    } else {
+        None
+    };
     let mut action = Action::None;
     let mut handled = true;
     let mut redraw = true;
@@ -1176,7 +1215,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 redraw = state.poll_tasks();
             }
             WM_SIZE => {
-                state.rectangle_drag = None;
+                state.cancel_pointer();
+                state.interaction_epoch = state.interaction_epoch.saturating_add(1);
                 state.explorer_hits = None;
                 state.bottom_hits = None;
                 let mut rect = Rect::default();
@@ -1193,7 +1233,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_SETFOCUS => state.focused = true,
             WM_KILLFOCUS => {
-                state.rectangle_drag = None;
+                state.cancel_pointer();
+                state.interaction_epoch = state.interaction_epoch.saturating_add(1);
                 state.focused = false;
                 state.pending_surrogate = None;
             }
@@ -1202,6 +1243,17 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 let result = state.key(wparam);
                 handled = result.0;
                 action = result.1;
+            }
+            WM_KEYUP | WM_SYSKEYUP if wparam == 0x79 => {
+                redraw = false;
+            }
+            WM_SYSCHAR
+                if char::from_u32(wparam as u32).is_some_and(|ch| {
+                    native_menu::mnemonic(ch.to_ascii_uppercase() as usize, Modifiers::ALT)
+                        .is_some()
+                }) =>
+            {
+                redraw = false;
             }
             WM_CHAR => state.character(wparam as u16),
             WM_UNICHAR => {
@@ -1213,86 +1265,82 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             WM_COMMAND if lparam == 0 => {
-                if wparam & 0xffff == OPEN_SIDE {
-                    state.close_selector();
-                    action = Action::Open(true);
-                } else if let Some((_, command, _)) =
-                    COMMANDS.iter().find(|(id, _, _)| *id == wparam & 0xffff)
-                {
-                    action = state.execute_menu(*command);
+                if state.accept_menu_selection() {
+                    if wparam & 0xffff == OPEN_SIDE {
+                        if state.registry.is_enabled(
+                            CommandId::FileOpen,
+                            &state.entry_context(CommandId::FileOpen),
+                        ) {
+                            state.close_selector();
+                            action = Action::Open(true);
+                        }
+                    } else if let Some((_, command, _)) =
+                        COMMANDS.iter().find(|(id, _, _)| *id == wparam & 0xffff)
+                    {
+                        action = state.execute_menu(*command);
+                    }
                 }
             }
             WM_INITMENU => {
-                let menu = GetMenu(hwnd);
-                CheckMenuItem(
-                    menu,
-                    command_id(CommandId::ViewToggleInvisibles) as u32,
-                    if state.workbench.invisibles_visible() {
-                        8
-                    } else {
-                        0
-                    },
-                );
-                for (id, command, _) in COMMANDS {
-                    EnableMenuItem(
-                        menu,
-                        *id as u32,
-                        if state
-                            .registry
-                            .is_enabled(*command, &state.entry_context(*command))
-                        {
-                            0
-                        } else {
-                            1
-                        },
+                state.cancel_pointer();
+                state.menu_stamp = Some(Box::new(state.current_menu_stamp()));
+                if let Err(error) = native_menu::refresh(hwnd, &state) {
+                    state.error(error);
+                }
+            }
+            WM_MOUSEWHEEL => {
+                if let Some((point, lines)) = wheel {
+                    let lines = state.smoke_wheel_lines.unwrap_or(lines);
+                    state.pointer_wheel(
+                        point.x,
+                        point.y,
+                        ((wparam >> 16) as u16) as i16 as i32,
+                        lines,
+                        wparam & 0xffff,
                     );
+                } else {
+                    state.cancel_pointer();
                 }
             }
             WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
                 let x = (lparam as u16) as i16 as i32;
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
-                if state.selector.is_none()
-                    && state.navigation_panel.is_none()
-                    && state.search_panel.is_none()
-                    && !state.project_visible()
-                    && state.replace_panel.is_none()
-                    && state.git_panel.is_none()
+                state.cancel_pointer();
+                if state.pointer_source_available()
                     && !state.bottom_click(x, y, message == WM_LBUTTONDBLCLK)
                     && !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK)
                     && message == WM_LBUTTONDOWN
                 {
-                    state.rectangle_drag = None;
                     let modifiers = state.modifiers();
-                    if modifiers.contains(Modifiers::ALT) && !modifiers.contains(Modifiers::CTRL) {
-                        if state.begin_rectangle_drag(x, y) {
-                            action = Action::CaptureRectangle;
-                        }
+                    let started = if modifiers.contains(Modifiers::ALT)
+                        && !modifiers.contains(Modifiers::CTRL)
+                    {
+                        state.begin_rectangle_drag(x, y)
                     } else {
-                        state.explorer_focused = false;
-                        paint::click(&mut state, x, y);
+                        state.begin_linear_drag(x, y, modifiers.contains(Modifiers::SHIFT))
+                    };
+                    if started {
+                        action = Action::CapturePointer;
                     }
                 }
             }
-            WM_MOUSEMOVE => {
-                redraw = state.rectangle_drag.is_some();
-                if wparam & 1 != 0 {
-                    state.update_rectangle_drag(
-                        (lparam as u16) as i16 as i32,
-                        ((lparam as usize >> 16) as u16) as i16 as i32,
-                    );
-                } else {
-                    state.rectangle_drag = None;
+            WM_MOUSEMOVE | WM_LBUTTONUP => {
+                redraw = state.rectangle_drag.is_some() || state.linear_drag.is_some();
+                if wparam & 1 != 0 || message == WM_LBUTTONUP {
+                    let x = (lparam as u16) as i16 as i32;
+                    let y = ((lparam as usize >> 16) as u16) as i16 as i32;
+                    if state.rectangle_drag.is_some() {
+                        state.update_rectangle_drag(x, y);
+                    } else {
+                        state.update_linear_drag(x, y);
+                    }
+                }
+                if wparam & 1 == 0 || message == WM_LBUTTONUP {
+                    state.cancel_pointer();
                 }
             }
-            WM_LBUTTONUP => {
-                state.update_rectangle_drag(
-                    (lparam as u16) as i16 as i32,
-                    ((lparam as usize >> 16) as u16) as i16 as i32,
-                );
-                state.rectangle_drag = None;
-            }
             WM_CAPTURECHANGED | WM_CANCELMODE => {
-                state.rectangle_drag = None;
+                state.cancel_pointer();
             }
             WM_CLOSE => action = Action::Exit,
             _ => handled = false,
@@ -1301,20 +1349,17 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         redraw |= state.validate_project_search();
         redraw |= state.validate_git_context();
         state.validate_rectangle_drag();
+        state.validate_linear_drag();
     }
     if !handled {
         return DefWindowProcW(hwnd, message, wparam, lparam);
     }
+    release_idle_capture(hwnd);
     perform(hwnd, action);
     if let Some(current) = self::owner(hwnd) {
         current.state.borrow().schedule_search();
     }
-    // Release may synchronously send WM_CAPTURECHANGED. No model borrow crosses it.
-    if self::owner(hwnd).is_some_and(|m| m.state.borrow().rectangle_drag.is_none())
-        && GetCapture() == hwnd
-    {
-        ReleaseCapture();
-    }
+    release_idle_capture(hwnd);
     if redraw && IsWindow(hwnd) != 0 {
         InvalidateRect(hwnd, std::ptr::null(), 0);
     }
@@ -1383,6 +1428,17 @@ unsafe fn file_dialog_named(
         &file[..end],
     ))))
 }
+unsafe fn release_idle_capture(hwnd: Hwnd) {
+    // Release can synchronously send WM_CAPTURECHANGED; drop the borrow first.
+    let idle = owner(hwnd).is_some_and(|m| {
+        let state = m.state.borrow();
+        state.rectangle_drag.is_none() && state.linear_drag.is_none()
+    });
+    if idle && GetCapture() == hwnd {
+        ReleaseCapture();
+    }
+}
+
 unsafe fn perform(hwnd: Hwnd, action: Action) {
     if matches!(
         action,
@@ -1395,13 +1451,20 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         return;
     }
     match action {
-        Action::CaptureRectangle => {
+        Action::CapturePointer => {
             SetCapture(hwnd);
             if GetCapture() != hwnd {
                 if let Some(model) = owner(hwnd) {
                     let mut state = model.state.borrow_mut();
-                    state.rectangle_drag = None;
-                    state.error("Mouse capture unavailable; rectangle retained");
+                    state.cancel_pointer();
+                    state.error("Mouse capture unavailable; selection retained");
+                }
+            }
+        }
+        Action::NativeMenu(group) => {
+            if let Err(error) = native_menu::open(hwnd, group) {
+                if let Some(model) = owner(hwnd) {
+                    model.state.borrow_mut().error(error);
                 }
             }
         }
@@ -1520,76 +1583,6 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
     }
 }
 
-unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
-    let bar = CreateMenu();
-    if bar.is_null() {
-        return Err(os_error("CreateMenu"));
-    }
-    for (label, start, end) in [
-        ("&File", 101, 110),
-        ("&Edit", 110, 118),
-        ("&View", 120, 130),
-        ("&Project", 150, 155),
-        ("&Search", 130, 140),
-        ("&Navigation", 160, 165),
-        ("&Git", 140, 149),
-    ] {
-        let popup = CreatePopupMenu();
-        if popup.is_null() {
-            DestroyMenu(bar);
-            return Err(os_error("CreatePopupMenu"));
-        }
-        if AppendMenuW(bar, 0x10, popup as usize, wide(label).as_ptr()) == 0 {
-            DestroyMenu(popup);
-            DestroyMenu(bar);
-            return Err(os_error("AppendMenu"));
-        }
-        for (id, command, label) in COMMANDS.iter().filter(|(id, _, _)| {
-            (*id >= start && *id < end)
-                || (start == 110 && (170..178).contains(id))
-                || (start == 120 && *id == 178)
-                || (start == 120 && (210..213).contains(id))
-                || (start == 110 && (200..206).contains(id))
-                || (start == 101 && *id == 119)
-                || (start == 130 && (194..197).contains(id))
-                || (start == 160 && (180..189).contains(id))
-        }) {
-            let text = match keymap.primary_shortcut(*command) {
-                Some(shortcut) => format!("{label}\t{shortcut}"),
-                None => (*label).to_owned(),
-            };
-            if AppendMenuW(popup, 0, *id, wide(&text).as_ptr()) == 0 {
-                DestroyMenu(bar);
-                return Err(os_error("AppendMenu item"));
-            }
-        }
-        if start == 101
-            && AppendMenuW(
-                popup,
-                0,
-                command_id(CommandId::FileSaveAll),
-                wide(&format!(
-                    "Save A&ll...\t{}",
-                    keymap
-                        .primary_shortcut(CommandId::FileSaveAll)
-                        .expect("shared Save All shortcut")
-                ))
-                .as_ptr(),
-            ) == 0
-        {
-            DestroyMenu(bar);
-            return Err(os_error("AppendMenu Save All"));
-        }
-        if start == 101
-            && AppendMenuW(popup, 0, OPEN_SIDE, wide("Open File to &Side...").as_ptr()) == 0
-        {
-            DestroyMenu(bar);
-            return Err(os_error("AppendMenu side"));
-        }
-    }
-    Ok(bar)
-}
-
 pub(super) fn run(options: GuiOptions) -> Result<(), String> {
     if options
         .git_executable
@@ -1632,7 +1625,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
         if RegisterClassW(&descriptor) == 0 {
             return Err(os_error("RegisterClassW"));
         }
-        let menu = match create_menu(&owner.state.borrow().keymap) {
+        let menu = match native_menu::create(&owner.state.borrow().keymap) {
             Ok(menu) => menu,
             Err(error) => {
                 UnregisterClassW(class.as_ptr(), instance);

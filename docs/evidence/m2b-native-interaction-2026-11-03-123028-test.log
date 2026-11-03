@@ -1,0 +1,9 @@
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.05s
+     Running unittests src\main.rs (target\debug\deps\cide_gui-f2c83c5ffc8392a1.exe)
+
+running 1 test
+test entry::interaction_options_tests::interaction_section_requires_owned_paths_and_is_exclusive ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

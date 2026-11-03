@@ -263,6 +263,7 @@ impl Workbench {
             .ok_or(WorkbenchError::NoDocument)?;
         state.anchor = Some(anchor_byte);
         state.cursor = target;
+        state.manual_scroll = false;
         state.rectangle = Some(RectangularSelection {
             anchor_column: anchor.column,
             head_column: head.column,

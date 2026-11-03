@@ -463,3 +463,32 @@ No closed suites/profiles repeated for docs. Inventory remains88 GUI routes;
 native menu adaptation, linear drag/wheel and physical/global/Unicode/clipboard/
 symlink/notices gates remain open. No new dependency/provider/AVM/regex/install/
 security changes, CI, push or publication.
+
+## Native menu and source pointer closure
+
+Read docs/M2B_NATIVE_INTERACTION.md. NativeMenuGroup composes shared menu/registry
+and real GUI routes, with no numeric category ranges or duplicate business IDs.
+Six Menu* macros and AltF/E/S/P/T/V/N/G/F10 open actual HMENU; Build/Help remain
+unsupported. Labels/checks reflect current focus/capability. MenuStamp captures
+source/field/root/focus/modal generations/Explorer selection; delayed choices
+revalidate before closing modals or acting. Never borrow State across popup/capture.
+Palette menu macros restore their Find invoker draft; no separate HWND case for
+that combination yet. Keep selector field versus palette-invoker routing distinct.
+
+Linear drag/Shift retains original pane/anchor; hits explicitly map current
+scalar/diagnostic/TAB4 projection to legal bytes. No autoscroll or word selection.
+PointerContext rejects stale source/path/root/focus/invisibles for both drags.
+Wheel accumulates signed120 fractions per source context under pointer, preserving
+focus/carets/selection; source OS screen conversion/settings are outside borrow.
+ViewState.manual_scroll suspends reveal until explicit movement/edit/selection;
+resize clamps rows, linked scroll applies consumed delta, pin stays independent.
+Retain one editing model: old paint::click and numeric create_menu are removed.
+
+16 distinct directed Rust cases/four new and13 own-HWND checks/six new passed,
+fmt/Clippy/release. Build complete before tests; initial three smoke style lints
+retained, native passed first run. Current94 GUI routes/104 historical IDs is not
+full/physical acceptance. Preserve physical/global/Unicode/clipboard/IME/DPI/
+accessibility, horizontal/autoscroll/word-selection/field mouse, symlink/notices
+gates. No closed suites/profiles repeated for docs. Keep broad construction before
+tests, manual/OS at end. No new dependency/provider/AVM/regex/install/security
+changes, CI, push or publication.

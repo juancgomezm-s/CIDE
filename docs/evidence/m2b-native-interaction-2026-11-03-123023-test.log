@@ -1,0 +1,10 @@
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.40s
+     Running unittests src\lib.rs (target\debug\deps\jc_gui-a3c44ae95137d845.exe)
+
+running 2 tests
+test windows::native_menu::tests::native_macros_and_mnemonics_are_explicit_without_unsupported_menu_providers ... ok
+test windows::native_menu::tests::definitions_cover_each_implemented_command_once_and_have_clean_separators ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.00s
+

@@ -556,3 +556,28 @@ Continúan88 rutasGUI, sin reclamar104 funciones aceptadas. Pendientes universal
 del inventario: adaptación de menús nativos y selección lineal por drag/wheel.
 Proveedores/terminal/regex, aceptación física/global/Unicode/clipboardOS, symlink
 y notices GNU conservan sus puertas. Sin nuevas dependencias/AVM/CI/push/publicación.
+
+## Menús nativos y gestos de fuente — 2026-11-03
+
+[Bloque integrado](M2B_NATIVE_INTERACTION.md) posterior a `ae9a813`: menús desde
+el modelo compartido y handlers reales, sin rangos numéricos. Seis macros de
+paleta y Alt/F10 abren HMENU; elección revalidada por contexto/capability/origen,
+atajos/checks según control activo. Sin contenido inventado para Build/Help.
+Ahora94 rutasGUI de104 IDs históricos:88 acciones y seis macros, sin certificar
+todos sus caminos físicos ni alterar el inventario histórico.
+
+Drag lineal/Shift mantiene ancla/grupo, convierte proyección a bytes legales y
+rechaza destinos obsoletos. Captura común con rectángulo fuera del préstamo.
+Wheel fraccionaria signed sobre el grupo bajo el puntero conserva foco/caret/
+selección; viewport manual por vista y enlace por delta, pin independiente.
+Se eliminan la antigua ruta click mutable y el constructor de menús numérico.
+
+Construcción completa antes de pruebas:16 Rust distintos (cuatro nuevos),13 HWND
+(seis nuevos), fmt/Clippy/release aprobados. Fallo inicial de tres lints de arnés
+retenido, native a la primera; ZIP local verificado. Sin suites cerradas repetidas
+sin impacto, perfiles globales o CI. Estos dos huecos quedan cerrados localmente;
+pantalla/ratón/teclado físicos, clipboard OS/IME/DPI/accesibilidad, Unicode general,
+latencia/RAM global, mouse horizontal/autoscroll/word-selection/campos y symlink/
+notices siguen pendientes. Proveedores/terminal/regex conservan contratos y puertas
+propias. No inferir M3 ni distribución certificada. Continuar en bloques amplios
+y dejar pruebas manuales/OS con el usuario al final, según su preferencia.

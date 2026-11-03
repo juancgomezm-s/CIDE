@@ -27,9 +27,13 @@ pub(super) struct EditTarget {
 }
 impl State {
     pub(super) fn source_edit_target(&self) -> Option<EditTarget> {
-        let document = self.workbench.active_document()?;
         let pane = self.workbench.panes().active();
-        let editor = self.workbench.active_editor()?;
+        self.view_edit_target(pane)
+    }
+    pub(super) fn view_edit_target(&self, pane: PaneId) -> Option<EditTarget> {
+        let view = self.workbench.panes().view(pane)?;
+        let editor = view.state()?;
+        let document = self.workbench.document_by_tab(view.location()?.tab)?;
         Some(EditTarget {
             document: document.id,
             revision: document.session.document().revision(),

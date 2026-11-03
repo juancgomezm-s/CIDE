@@ -559,3 +559,32 @@ nuevos, fmt/Clippy/release aprobados. Logs conservan fallos de fixture/compile/l
 native a la primera. No suites/perfiles cerrados repetidos por documentación.
 El inventario conserva88 rutas; menús/mouse general y puertas previas pendientes.
 Sin proveedores/dependencias/AVM/regex/instalaciones/CI/push/publicación ni seguridad.
+
+## Último cierre: menús nativos y ratón fuente — 2026-11-03
+
+Leer [contrato y evidencia](M2B_NATIVE_INTERACTION.md). NativeMenuGroup compone
+HMENU desde default_menu_model/registro/handlers, sin IDs por rangos ni duplicados.
+Seis macros Menu* y AltF/E/S/P/T/V/N/G/F10 tienen ruta real. Build/Help continúan
+sin provider inventado. Native shortcuts/checks dependen del control; field clipboard
+mantiene su destino y la paleta su invocador. Menú conserva Find al cancelar y
+restaura su draft al abrir macros desde paleta; ese último camino no tuvo caso
+HWND separado. MenuStamp valida fuente/campo/raíz/foco/generaciones/selección Explorer
+antes de cerrar modales o actuar; popup/capture no retienen RefCell.
+
+Drag lineal mantiene ancla/pane y usa hits escalares/diagnósticos/TAB4→bytes legales,
+Shift extiende, sin autoscroll. PointerContext comparte rechazo stale con rectángulo.
+Wheel usa coordenadas screen signed→client fuera del préstamo y configuración OS;
+fracciones120 por contexto, sin foco/caret/selección nuevos. ViewState.manual_scroll
+suspende reveal hasta intención explícita; enlace aplica delta consumido y pin es
+independiente. Resize limita viewport. No restaurar paint::click ni create_menu
+numérico ni introducir otro buffer/undo para los gestos.
+
+16 Rust distintos/cuatro nuevos,13 HWND/seis nuevos, fmt/Clippy/release aprobados.
+Construcción completa antes de pruebas, native a la primera; tres lints iniciales
+del arnés retenidos. [Hashes y logs](evidence/m2b-native-interaction-2026-11-03-metadata.json),
+[ZIP](evidence/m2b-native-interaction-2026-11-03-package.json). Ahora94 rutas/104 IDs,
+no aceptación total. Histórico de inventario intacto. No repetir suites/perfiles
+cerrados por documentación. Conservar bloques amplios y manual/OS al final.
+Pendientes física/global/Unicode/clipboard/IME/DPI/accesibilidad, mouse horizontal/
+autoscroll/word-selection/campos, symlink y notices; proveedores/terminal/regex
+requieren sus propias puertas. Sin nuevas dependencias/AVM/CI/push/publicación.

@@ -12,6 +12,7 @@ mod save_target;
 mod search;
 pub use save_target::SaveTarget;
 mod text;
+mod viewport;
 use std::cell::RefCell;
 use text::TextProjection;
 
@@ -416,6 +417,15 @@ impl Workbench {
     /// Reveal the caret in the active viewport. Other viewports move only when
     /// linked scrolling is enabled, by the same vertical delta (not caret sync).
     pub fn reveal_active_pane(&mut self, rows: usize, columns: usize) {
+        self.clamp_viewport_rows(rows);
+        if self
+            .panes
+            .view(self.panes.active())
+            .and_then(|v| v.state())
+            .is_some_and(|s| s.manual_scroll)
+        {
+            return;
+        }
         let Some(position) = self.active_position() else {
             return;
         };
@@ -454,25 +464,7 @@ impl Workbench {
                 }
             }
         }
-        if self.panes.scroll_linked() {
-            let other = if active == PaneId::Primary {
-                PaneId::Secondary
-            } else {
-                PaneId::Primary
-            };
-            let view = self.panes.view(other).expect("split view");
-            let other_line = if line >= old_line {
-                view.scroll_line().saturating_add(line - old_line)
-            } else {
-                view.scroll_line().saturating_sub(old_line - line)
-            };
-            let max_line = view
-                .location()
-                .and_then(|loc| self.line_count_for_tab(loc.tab))
-                .map_or(0, |count| count.saturating_sub(1));
-            self.panes
-                .set_scroll(other, other_line.min(max_line), view.scroll_column());
-        }
+        self.link_scroll_delta(active, old_line, line, rows);
     }
 
     pub(crate) fn rebase_after_edit(&mut self) {
@@ -797,6 +789,7 @@ impl Workbench {
             .tab_id;
         self.panes.clear_rectangles(tab);
         self.normalize_views(tab);
+        self.resume_caret_tracking();
         let _ = self.rebuild_search();
         Ok(())
     }
