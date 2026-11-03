@@ -1,0 +1,335 @@
+//! Deterministic internal automation of this frontend's own hidden HWND. It
+//! drives the production message handlers, not a second editor implementation.
+use super::{command_id, ffi::*, owner, paint};
+use crate::SmokeOptions;
+use jc_app::{CommandId, Modifiers, PaneId};
+use jc_text::{TextEncoding, TextPosition};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
+
+const SOURCE: &[u8] = b"alpha\r\nbeta\r\n";
+fn ordinary(path: &Path) -> Result<bool, String> {
+    use std::os::windows::fs::MetadataExt;
+    Ok(fs::symlink_metadata(path)
+        .map_err(|e| e.to_string())?
+        .file_attributes()
+        & 0x400
+        == 0)
+}
+fn normalized_target(path: &Path) -> Result<PathBuf, String> {
+    if !path.is_absolute() {
+        return Err("Smoke paths must be absolute".into());
+    }
+    let parent = path
+        .parent()
+        .ok_or("Smoke artifact has no parent")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !ordinary(path.parent().unwrap())? {
+        return Err("Smoke artifact parent cannot be a reparse point".into());
+    }
+    Ok(parent.join(path.file_name().ok_or("Smoke artifact has no filename")?))
+}
+pub(super) fn validate(options: &SmokeOptions) -> Result<(), String> {
+    if !options.fixture.is_absolute() || !ordinary(&options.fixture)? {
+        return Err("Smoke requires an ordinary absolute owned fixture".into());
+    }
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .ok_or("Workspace unavailable")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let work = workspace
+        .join("work")
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !work.starts_with(&workspace) {
+        return Err("Smoke work root escaped the workspace".into());
+    }
+    let fixture = options.fixture.canonicalize().map_err(|e| e.to_string())?;
+    if !fixture.starts_with(&work)
+        || fs::metadata(&fixture).map_err(|e| e.to_string())?.len() != SOURCE.len() as u64
+        || fs::read(&fixture).map_err(|e| e.to_string())? != SOURCE
+    {
+        return Err("Smoke fixture must be owned beneath workspace/work and contain alpha CRLF beta CRLF exactly".into());
+    }
+    let report = normalized_target(&options.report)?;
+    if report.parent() != fixture.parent() || report.exists() {
+        return Err("Smoke report must be new and beside its fixture".into());
+    }
+    if let Some(bitmap) = &options.bitmap {
+        let bitmap = normalized_target(bitmap)?;
+        if bitmap.parent() != fixture.parent() || bitmap.exists() || bitmap == report {
+            return Err("Smoke bitmap must be a distinct new sibling artifact".into());
+        }
+    }
+    Ok(())
+}
+
+unsafe fn bytes(hwnd: Hwnd) -> Result<Vec<u8>, String> {
+    let owner = owner(hwnd).ok_or("Smoke window lost its model")?;
+    let state = owner.state.borrow();
+    let document = state
+        .workbench
+        .active_document()
+        .ok_or("Smoke document closed")?;
+    if document.session.document().len() > 128 {
+        return Err("Smoke model exceeded its small-fixture budget".into());
+    }
+    document
+        .session
+        .document()
+        .read_range(0..document.session.document().len())
+        .map_err(|e| e.to_string())
+}
+unsafe fn expected(hwnd: Hwnd, value: &[u8]) -> Result<(), String> {
+    if bytes(hwnd)? != value {
+        Err("Smoke model bytes differ from the expected action".into())
+    } else {
+        Ok(())
+    }
+}
+unsafe fn command(hwnd: Hwnd, command: CommandId) -> Result<(), String> {
+    let id = command_id(command);
+    if id == 0 {
+        return Err("Smoke command is not exposed by the native menu".into());
+    }
+    SendMessageW(hwnd, WM_COMMAND, id, 0);
+    Ok(())
+}
+unsafe fn key(hwnd: Hwnd, code: usize, modifiers: Modifiers) -> Result<(), String> {
+    owner(hwnd)
+        .ok_or("Smoke HWND unavailable")?
+        .state
+        .borrow_mut()
+        .key_override = Some(modifiers);
+    SendMessageW(hwnd, WM_KEYDOWN, code, 0);
+    if let Some(owner) = owner(hwnd) {
+        owner.state.borrow_mut().key_override = None;
+    }
+    Ok(())
+}
+unsafe fn position(hwnd: Hwnd, line: usize, column: usize) -> Result<(), String> {
+    owner(hwnd)
+        .ok_or("Smoke HWND unavailable")?
+        .state
+        .borrow_mut()
+        .workbench
+        .go_to_position(TextPosition { line, column })
+        .map_err(|e| e.to_string())
+}
+fn escaped(value: &str) -> String {
+    value
+        .chars()
+        .take(240)
+        .flat_map(|ch| match ch {
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\\' => "\\\\".chars().collect(),
+            ch if ch.is_control() => " ".chars().collect(),
+            ch => vec![ch],
+        })
+        .collect()
+}
+
+pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
+    let mut report = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&options.report)
+        .map_err(|e| e.to_string())?;
+    let started = Instant::now();
+    let mut checks = Vec::new();
+    let result = (|| {
+        expected(hwnd, SOURCE)?;
+        checks.push("startup_shared_open_bytes");
+        if !GetWindow(hwnd, 5).is_null() {
+            return Err("Native editor unexpectedly contains a child text control".into());
+        }
+        checks.push("no_child_edit_control");
+        let (x, y) = {
+            let state = owner(hwnd).unwrap().state.borrow();
+            (
+                8 + 6 * state.cell_width + 1,
+                2 * state.cell_height + 14 + state.cell_height / 2,
+            )
+        };
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, ((y as isize) << 16) | x as isize);
+        {
+            let state = owner(hwnd).unwrap().state.borrow();
+            if state
+                .workbench
+                .active_editor()
+                .ok_or("No mouse document")?
+                .cursor
+                != 1
+                || state.workbench.context().nav_back_available
+            {
+                return Err(
+                    "Mouse caret placement created jump history or missed its scalar boundary"
+                        .into(),
+                );
+            }
+        }
+        checks.push("native_mouse_caret_without_jump_history");
+        position(hwnd, 0, 0)?;
+        // Deterministic private modifier override feeds the exact WM_KEYDOWN
+        // handler, without changing global keyboard state or focusing a window.
+        SendMessageW(hwnd, WM_CHAR, 0xd83d, 0);
+        SendMessageW(hwnd, WM_CHAR, 0xde00, 0);
+        expected(hwnd, "😀alpha\r\nbeta\r\n".as_bytes())?;
+        key(hwnd, 0x5a, Modifiers::CTRL)?;
+        expected(hwnd, SOURCE)?;
+        checks.push("utf16_pair_one_undo");
+        SendMessageW(hwnd, WM_CHAR, 0xdc00, 0);
+        expected(hwnd, SOURCE)?;
+        checks.push("unpaired_utf16_rejected");
+        key(hwnd, 0x41, Modifiers::CTRL)?;
+        if owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .workbench
+            .active_editor()
+            .and_then(|editor| editor.selection())
+            != Some(0..SOURCE.len())
+        {
+            return Err("Ctrl+A did not select the shared source".into());
+        }
+        key(hwnd, 0x43, Modifiers::CTRL)?;
+        SendMessageW(hwnd, WM_CHAR, 'q' as usize, 0);
+        expected(hwnd, b"q")?;
+        key(hwnd, 0x56, Modifiers::CTRL)?;
+        expected(hwnd, b"qalpha\r\nbeta\r\n")?;
+        key(hwnd, 0x5a, Modifiers::CTRL)?;
+        expected(hwnd, b"q")?;
+        key(hwnd, 0x5a, Modifiers::CTRL)?;
+        expected(hwnd, SOURCE)?;
+        checks.push("selection_internal_clipboard_and_undo");
+        position(hwnd, 0, 5)?;
+        key(hwnd, 0x0d, Modifiers::NONE)?;
+        expected(hwnd, b"alpha\r\n\r\nbeta\r\n")?;
+        key(hwnd, 0x5a, Modifiers::CTRL)?;
+        expected(hwnd, SOURCE)?;
+        checks.push("enter_shared_split_one_undo");
+        position(hwnd, 0, 0)?;
+        key(hwnd, 0x4a, Modifiers::CTRL.union(Modifiers::SHIFT))?;
+        expected(hwnd, b"alpha beta\r\n")?;
+        key(hwnd, 0x5a, Modifiers::CTRL)?;
+        expected(hwnd, SOURCE)?;
+        checks.push("join_shared_transaction_one_undo");
+        command(hwnd, CommandId::EditorSplitRight)?;
+        command(hwnd, CommandId::EditorFocusSecondary)?;
+        {
+            let state = owner(hwnd).unwrap().state.borrow();
+            if !state.workbench.panes().is_split() {
+                return Err("Native split did not reach PaneManager".into());
+            }
+            let primary = state
+                .workbench
+                .panes()
+                .view(PaneId::Primary)
+                .and_then(|view| view.location())
+                .ok_or("Missing primary")?;
+            let secondary = state
+                .workbench
+                .panes()
+                .view(PaneId::Secondary)
+                .and_then(|view| view.location())
+                .ok_or("Missing secondary")?;
+            if primary.tab != secondary.tab {
+                return Err("Split did not share its catalog document".into());
+            }
+        }
+        position(hwnd, 0, 0)?;
+        SendMessageW(hwnd, WM_CHAR, 'Z' as usize, 0);
+        expected(hwnd, b"Zalpha\r\nbeta\r\n")?;
+        key(hwnd, 0x5a, Modifiers::CTRL)?;
+        expected(hwnd, SOURCE)?;
+        checks.push("split_shared_document_undo");
+        // Produce a dirty revision with the same original bytes, then exercise
+        // real Save via the same Ctrl+S handler without leaving a changed fixture.
+        position(hwnd, 0, 0)?;
+        SendMessageW(hwnd, WM_CHAR, 'X' as usize, 0);
+        key(hwnd, 0x08, Modifiers::NONE)?;
+        expected(hwnd, SOURCE)?;
+        let before = owner(hwnd).unwrap().state.borrow().save_count;
+        key(hwnd, 0x53, Modifiers::CTRL)?;
+        if owner(hwnd).unwrap().state.borrow().save_count != before + 1
+            || fs::read(&options.fixture).map_err(|e| e.to_string())? != SOURCE
+        {
+            return Err("Native shared save failed or changed fixture bytes".into());
+        }
+        checks.push("shared_save_exact_fixture_bytes");
+        let new_path = options
+            .fixture
+            .parent()
+            .ok_or("Missing owned fixture directory")?
+            .join("owned-new.txt");
+        {
+            let mut state = owner(hwnd).unwrap().state.borrow_mut();
+            state.workbench.new_file(&new_path, TextEncoding::Utf8);
+            state
+                .workbench
+                .insert_text("unsaved")
+                .map_err(|error| error.to_string())?;
+            if !matches!(state.execute(CommandId::FileSave), super::Action::SaveAs) {
+                return Err("New native document bypassed Save As".into());
+            }
+            checks.push("unsaved_save_routes_to_save_as");
+            if !matches!(state.execute(CommandId::FileSaveAll), super::Action::None)
+                || new_path.exists()
+            {
+                return Err(
+                    "Native Save All wrote an unnamed document without its frontend flow".into(),
+                );
+            }
+            checks.push("native_save_all_requires_flow");
+            state
+                .workbench
+                .close_active(true)
+                .map_err(|error| error.to_string())?;
+            state.status = "Ready · internal clipboard · scalar-cell preview".into();
+        }
+        expected(hwnd, SOURCE)?;
+        SendMessageW(hwnd, WM_PAINT, 0, 0);
+        let frame = {
+            let mut state = owner(hwnd).unwrap().state.borrow_mut();
+            paint::prepare(&mut state)
+        };
+        if let Some(bitmap) = &options.bitmap {
+            paint::bitmap(hwnd, &frame, bitmap)?;
+            checks.push("actual_gdi_offscreen_bitmap");
+            checks.push("gdi_partial_clip_no_error");
+        }
+        if owner(hwnd).unwrap().state.borrow().paint_count == 0 {
+            return Err("WM_PAINT handler did not run".into());
+        }
+        checks.push("native_paint_handler");
+        if owner(hwnd).unwrap().state.borrow().paint_errors != 0 {
+            return Err("Native WM_PAINT recorded a drawing error".into());
+        }
+        checks.push("native_paint_no_errors");
+        if started.elapsed() > Duration::from_secs(15) {
+            return Err("Smoke exceeded its cooperative operation deadline".into());
+        }
+        Ok(())
+    })();
+    let paints = owner(hwnd).map_or(0, |owner| owner.state.borrow().paint_count);
+    let paint_errors = owner(hwnd).map_or(1, |owner| owner.state.borrow().paint_errors);
+    let checks = checks
+        .iter()
+        .map(|check| format!("\"{check}\""))
+        .collect::<Vec<_>>()
+        .join(",");
+    let error = result
+        .as_ref()
+        .err()
+        .map_or(String::new(), |error: &String| escaped(error));
+    writeln!(report,"{{\"ok\":{},\"backend\":\"Win32/GDI\",\"window\":\"own_hidden_hwnd\",\"native_paints\":{paints},\"native_paint_errors\":{paint_errors},\"wall_ms\":{},\"checks\":[{checks}],\"error\":\"{error}\",\"physical_display_verified\":false,\"os_clipboard_verified\":false}}",result.is_ok(),started.elapsed().as_millis()).map_err(|e|e.to_string())?;
+    result
+}

@@ -30,6 +30,10 @@ pub enum ReplaceField {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiOverlay {
+    QuickOpen {
+        input: String,
+        selected: usize,
+    },
     ProjectReplacePreview {
         selected: usize,
     },

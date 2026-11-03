@@ -126,6 +126,7 @@ impl TuiApp {
         self.git_diff.tick(&self.workbench, &mut self.tasks);
         self.git_status
             .validate_context(self.project_root.as_deref(), self.git_executable.as_deref());
+        self.validate_quick_open_context();
         let layout = FrameLayout::new(self, width, height);
         let mut primary = EditorText::default();
         let mut secondary = EditorText::default();

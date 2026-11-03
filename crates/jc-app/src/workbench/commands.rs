@@ -247,9 +247,8 @@ impl Workbench {
             ProgressCheck | ProgressCompile | ProgressRun | ProgressRefreshSchema => {
                 Ok(CommandOutcome::Progress(command))
             }
-            FileOpenFolder | SearchProject | SearchCancelProject | SearchReplaceProject => {
-                Ok(CommandOutcome::View(command))
-            }
+            FileQuickOpen | FileOpenFolder | SearchProject | SearchCancelProject
+            | SearchReplaceProject => Ok(CommandOutcome::View(command)),
         }
     }
 }

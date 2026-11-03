@@ -77,6 +77,7 @@ escribe a mano en el renderer del menú.
 |---|---|
 | New | Ctrl+N |
 | Open | Ctrl+O |
+| Quick Open Project File | Ctrl+P |
 | Open Folder | Ctrl+Shift+O |
 | Save | Ctrl+S |
 | Save As | Ctrl+Shift+S |
@@ -319,7 +320,6 @@ Estas teclas siguen como reservas; no se registran handlers ficticios:
 
 | Acción futura | Tecla propuesta |
 |---|---|
-| Quick Open File | Ctrl+P |
 | Go to Symbol | Ctrl+R |
 | Go to Definition / Peek | F12 / Alt+F12 |
 | Find References | Shift+F12 |
@@ -352,3 +352,12 @@ latencia tecla-pantalla, DPI, IME o accesibilidad física. No hay GUI aceptada n
 integración del clipboard del sistema operativo por describir Cut/Copy/Paste
 internos. Sublime Text conserva su papel de referencia visual, sin promesa de
 paridad gráfica o funcional derivada de este contrato.
+
+## Quick Open implementado — checkpoint posterior
+
+Ctrl+P ya no es reserva en TUI: File/Palette `Quick Open Project File` abre el
+selector de rutas del proyecto sin documento/encoding. Query substring literal
+con full fold, cuotas/cancelación/entrega vigente; Up/Down/Page/Home/End, Enter y
+Ctrl+Enter lateral, F5 refresh y Esc cancel. La preparación no consume completions;
+dibujar sigue readonly. [Contrato, fuente de autoridad y límites](M2_QUICK_OPEN.md).
+GUI lo adapta en el siguiente bloque; no inferir paridad por compartir comando.

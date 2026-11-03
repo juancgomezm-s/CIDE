@@ -1,0 +1,24 @@
+{
+  "run_id": "20261103T011955Z-4ec8ae453190",
+  "platform": "Windows MSVC x64 local",
+  "binary": "target/release/jc-ide-gui.exe",
+  "binary_sha256": "f3ea1256c7e4f94c6f6b5c91de53f50711103e9bfff52f8e4fcbdfdbb017e0c2",
+  "fixture_sha256": "98ab4d3aeab1e120560e942e2df6a0db1147bf94bafcf1590000ffb3c2b6fc80",
+  "fixture_bytes": 13,
+  "fixture_unchanged": true,
+  "native_report_sha256": "0e440470e5afedce48293f16e95f23b3984a596448610b1d1efd9d4eb77da9fe",
+  "bmp_sha256": "26ed1324f88ad3339539993e0b9b923e7ea99dfe2cedb7cfc29c704d34cbfb0e",
+  "png_sha256": "6340ed548bcc4c012d3ca697a2d3c2f634bd4920c4147b1ffbefb4d71587a81f",
+  "png_conversion": "Lossless BGRX BMP to RGB PNG; Python stdlib struct/zlib, no redraw or image generation",
+  "native_sources_sha256": {
+    "crates/jc-gui/Cargo.toml": "0cff743959e9ebf6b93e25cc285cb5e9fe5b2c2d3383fda70a6ea9ba6ce8346a",
+    "crates/jc-gui/src/lib.rs": "befeb1afae407ff8fa6682c90f357e74cdc399fb1b41542fafd76cb009987bfb",
+    "crates/jc-gui/src/main.rs": "1f3e04b24d915c406983287899cf512b17bb34bae5beca4a73db9cba82f80e7a",
+    "crates/jc-gui/src/windows/ffi.rs": "16de4f5807188f049eec4c4ada81de09e785b2e97f9d0d89e6a3541ef6733e6c",
+    "crates/jc-gui/src/windows/paint.rs": "4633e7233e837517271617dbc5e55dcf4a3bc34321e92e485f95d253375fc6cb",
+    "crates/jc-gui/src/windows/smoke.rs": "5c9b6ee0f7cbe64cee266220a529bc0115ea4ee5e03d39262be2c4fd17675278",
+    "crates/jc-gui/src/windows.rs": "20855ec4d6e511533d2736e093058c05a475a6bd9af9c4f157c5ff9a2e9e7d7d"
+  },
+  "physical_display_verified": false,
+  "os_clipboard_verified": false
+}

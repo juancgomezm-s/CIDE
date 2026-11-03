@@ -174,3 +174,43 @@ implied by the admission. Preserve literal full folding, typed source boundaries
 real cooperative work limits and revision-safe replacement; project preview must
 show actual match content rather than the regex query. No new suites/profiles for
 this documentation-only admission; 319 distinct remains the preceding evidence.
+
+## Latest authorization: original roadmap M2A and real M2B
+
+Juan explicitly resumed original M milestones and authorized building M2A AND M2B
+now. Automated tests/builds/smoke must run as far as possible at block closure;
+only manual/user testing waits until the end. Global physical RAM/latency gates
+stay documented, but are not a blocker for functional construction or a reason
+to restart indefinite optimization. Regex remains deferred without authorization
+to add/download/pin any new dependency; do not ask again to continue unrelated M2A.
+
+Active admitted fronts: docs/M2_QUICK_OPEN.md (Ctrl+P project metadata finder,
+bounded/cancelable, existing session/encoding/pin) and docs/M2B_NATIVE_WINDOWS.md
+(real native Win32/GDI executable, shared Workbench, no editable native buffer).
+Only existing workspace crates and system Win32 APIs; no external installs.
+Cargo.lock adds jc-gui only, no third-party version change. The existing HTML is
+not the GUI app. Use at most three agents total with exclusive files and one
+integrator; serialize heavy validation and use broad implementation blocks.
+Smoke operates only on the owned HWND/fixture and bounded new report/bitmap paths,
+not another application. Do not request a manual test or window approval now.
+No push/CI, security/services/other processes/Qwen/GPU changes.
+
+## First real GUI/Quick Open closure; next native selector block active
+
+Read docs/M2_QUICK_OPEN.md and docs/M2B_NATIVE_WINDOWS.md. Ctrl+P project finder
+is implemented in TUI: no content scans, lazy bounded worker/latest metadata,
+root/query/generation delivery, visible rows, safe labels, existing dirty-session
+reuse, side/pin/history and encoding prompt. New opens use FileSession::open_in_root
+with a16MiB byte admission and actual-handle confinement. Search Plus delegates
+to the moved shared reader; preserve its EOF guard/budgets and fail-closed platforms.
+
+jc-gui is a real Win32/GDI executable with the same Workbench, no child EDIT,
+no new external dependencies.339 distinct Rust cases passed in selective closure,
+fmt/Clippy/release and16 own-hidden-HWND smoke checks passed. Never infer physical
+display/OS clipboard/IME/DPI/accessibility/global RAM acceptance. Smoke reports
+paint errors, validates empty/partial clipping and preserves owned fixture bytes.
+Save As derives from session.is_new (no untitled mirror); native Save All currently
+requires its frontend flow. Ordinary caret placement must not add jump history.
+Next admitted block: native GUI Quick Open + Command Palette, reusing core controller
+and registry, bounded selector input/visible presentation and completion wakeup.
+No dependency installs/regex enabling/CI/push; manual user tests stay for the end.

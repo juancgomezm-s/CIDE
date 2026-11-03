@@ -18,6 +18,7 @@ mod keymap;
 mod menu;
 mod panels;
 mod panes;
+pub mod quick_open;
 pub mod rectangle;
 mod tabs;
 mod workbench;

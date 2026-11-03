@@ -1,10 +1,6 @@
 use super::*;
 use jc_text::{decode_fragment, probe_encoding};
-use std::{
-    fs::{self, File},
-    io::{self, Read},
-    path::Component,
-};
+use std::{fs, io, path::Component};
 
 pub(super) fn absolute_source_path(path: &Path) -> io::Result<PathBuf> {
     if let Ok(path) = path.canonicalize() {
@@ -47,120 +43,12 @@ pub(super) fn path_included(options: &ProjectSearchOptions, root: &Path, path: &
     options.include.iter().any(|p| glob(p, &path))
         && !options.exclude.iter().any(|p| glob(p, &path))
 }
-fn read_retry(file: &mut File, buffer: &mut [u8]) -> io::Result<usize> {
-    loop {
-        match file.read(buffer) {
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-            result => return result,
-        }
-    }
-}
 pub(super) fn read_file(root: &Path, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
-    let metadata = fs::symlink_metadata(path)?;
-    if !metadata.is_file() || reparse(&metadata) {
-        return Err(io::Error::other("Links/reparse points are excluded"));
-    }
-    let resolved = path.canonicalize()?;
-    if !resolved.starts_with(root) {
-        return Err(io::Error::other("File is outside the search root"));
-    }
-    let mut options = fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.custom_flags(0x0020_0000);
-    }
-    let file = options.open(&resolved)?;
-    if reparse(&file.metadata()?) {
-        return Err(io::Error::other("File became a reparse point"));
-    }
-    verify_handle(root, &resolved, &file)?;
-    if file.metadata()?.len() > limit as u64 {
-        return Err(io::Error::other("File exceeds the search byte budget"));
-    }
-    let initial = usize::try_from(file.metadata()?.len())
-        .unwrap_or(limit)
-        .min(limit);
-    let mut file = file;
-    let mut bytes = vec![0; initial];
-    let mut filled = 0;
-    loop {
-        while filled < bytes.len() {
-            let count = read_retry(&mut file, &mut bytes[filled..])?;
-            if count == 0 {
-                bytes.truncate(filled);
-                return Ok(bytes);
-            }
-            filled += count;
-        }
-        // Probe growth in a stack byte: a full Vec must not double just to read
-        // the sentinel beyond its admitted payload budget.
-        let mut guard = [0u8; 1];
-        if read_retry(&mut file, &mut guard)? == 0 {
-            return Ok(bytes);
-        }
-        if filled == limit {
-            return Err(io::Error::other("File grew beyond the search byte budget"));
-        }
-        let target = bytes.len().saturating_mul(2).max(filled + 1).min(limit);
-        bytes.reserve_exact(target - bytes.len());
-        bytes.resize(target, 0);
-        if bytes.capacity() > limit {
-            return Err(io::Error::other(
-                "File buffer exceeds the search byte budget",
-            ));
-        }
-        bytes[filled] = guard[0];
-        filled += 1;
-    }
+    jc_files::read_in_root(root, path, limit).map(|(_, bytes)| bytes)
 }
-#[cfg(windows)]
-fn verify_handle(root: &Path, _: &Path, file: &File) -> io::Result<()> {
-    use std::os::windows::{ffi::OsStringExt, io::AsRawHandle};
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GetFinalPathNameByHandleW(
-            handle: *mut std::ffi::c_void,
-            path: *mut u16,
-            length: u32,
-            flags: u32,
-        ) -> u32;
-    }
-    let mut buffer = vec![0u16; 32768];
-    let len = unsafe {
-        GetFinalPathNameByHandleW(
-            file.as_raw_handle(),
-            buffer.as_mut_ptr(),
-            buffer.len() as u32,
-            0,
-        )
-    };
-    if len == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if len >= buffer.len() as u32 {
-        return Err(io::Error::other("Resolved path too long"));
-    }
-    let path = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..len as usize]));
-    if !path.starts_with(root) {
-        return Err(io::Error::other("Opened handle escaped the search root"));
-    }
-    Ok(())
-}
-#[cfg(target_os = "linux")]
-fn verify_handle(root: &Path, _: &Path, file: &File) -> io::Result<()> {
-    use std::os::fd::AsRawFd;
-    if !fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?.starts_with(root) {
-        return Err(io::Error::other("Opened handle escaped the search root"));
-    }
-    Ok(())
-}
-#[cfg(not(any(windows, target_os = "linux")))]
-fn verify_handle(_: &Path, _: &Path, _: &File) -> io::Result<()> {
-    Err(io::Error::other(
-        "Secure project file traversal not supported on this platform yet",
-    ))
+#[cfg(test)]
+fn verify_handle(root: &Path, _: &Path, file: &std::fs::File) -> io::Result<()> {
+    jc_files::verify_file_in_root(root, file)
 }
 
 #[derive(Clone, Copy)]
@@ -480,6 +368,7 @@ fn glob(pattern: &str, path: &str) -> bool {
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
+    use std::fs::File;
     #[test]
     fn handle_verification_rejects_an_outside_handle_even_with_an_inside_path() {
         let root = std::env::temp_dir().join(format!("jc-project-handle-{}", std::process::id()));

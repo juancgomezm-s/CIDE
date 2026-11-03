@@ -14,6 +14,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+mod scoped_read;
+pub use scoped_read::{read_in_root, verify_file_in_root};
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 #[cfg(windows)]
@@ -150,15 +152,35 @@ impl FileSession {
     ) -> Result<Self, FileError> {
         let path = path.into();
         let bytes = fs::read(&path)?;
+        Ok(Self::from_open_bytes(path, bytes, explicit))
+    }
+
+    /// Explicit project opening validates the actual handle before reading bytes.
+    /// The byte limit also applies if the file grows after its initial metadata.
+    pub fn open_in_root(
+        root: &Path,
+        path: impl Into<PathBuf>,
+        explicit: Option<TextEncoding>,
+        max_bytes: usize,
+    ) -> Result<Self, FileError> {
+        let root = root.canonicalize()?;
+        if !root.is_dir() {
+            return Err(io::Error::other("Project root is not a directory").into());
+        }
+        let (path, bytes) = read_in_root(&root, &path.into(), max_bytes)?;
+        Ok(Self::from_open_bytes(path, bytes, explicit))
+    }
+
+    fn from_open_bytes(path: PathBuf, bytes: Vec<u8>, explicit: Option<TextEncoding>) -> Self {
         let probe = probe_encoding(&bytes, explicit);
         let fingerprint = Fingerprint::of(&bytes);
-        Ok(Self {
+        Self {
             path,
             document: Document::from_bytes(bytes),
             encoding: probe.encoding,
             encoding_source: probe.source,
             disk_fingerprint: Some(fingerprint),
-        })
+        }
     }
 
     pub fn new(path: impl Into<PathBuf>, encoding: TextEncoding) -> Self {

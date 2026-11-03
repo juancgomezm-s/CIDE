@@ -78,7 +78,7 @@ La especificación de doble panel, Outline, navegación de includes/RUN, autocom
 
 Abre una carpeta y usa Ctrl+Shift+F para consulta literal sensible a mayúsculas, inclusión/exclusión por globs y resultados progresivos. Enter navega; Esc en el panel inferior cancela. Tras una consulta completa sin avisos, Search / Replace in Project permite revisar sustituciones y confirmar con F9/Ctrl+Enter. Abiertos: edición con undo sin guardar; cerrados: guardado por archivo y conflictos explícitos. Véanse [uso, cuotas y límites](docs/S1_PROJECT_SEARCH.md) y [guardado Windows](docs/SAVE_WINDOWS_CONTENTION.md). En documento activo, Ctrl+F/Ctrl+H ya ofrecen búsqueda acotada, case folding completo Unicode 17, selección/historial y Ctrl+G escalar: [S0](docs/S0_DOCUMENT_SEARCH.md). No se certifican regex, normalización Unicode, GUI ni objetivos globales de rendimiento.
 
-En Windows, abre la raíz del repositorio y usa View / Git: Active File Diff; la primera vez solicita la ruta absoluta de Git para esa sesión. HEAD/index, refresh, cancelación y configuración están en View y palette. La comparación incluye cambios sin guardar (hasta 2 MiB por fuente), muestra identidad/OID y permite navegar hunks sin editar snapshots. Cambiar documento, vista, revisión o encoding exige refresh. [Entrega y límites](docs/GIT_DIFF_DELIVERY.md), [presentación TUI](docs/GIT_DIFF_PRESENTATION.md) y [proveedor Git](docs/GIT_READ_ONLY_PROVIDER.md). El estado de repositorio de solo lectura se describe abajo; no hay watcher; operaciones Git con escritura siguen en M5. La [escena de estudio GUI](docs/M2B_SCENE_STUDY.md) conserva su alcance estático, sin backend elegido ni editor gráfico funcional.
+En Windows, abre la raíz del repositorio y usa View / Git: Active File Diff; la primera vez solicita la ruta absoluta de Git para esa sesión. HEAD/index, refresh, cancelación y configuración están en View y palette. La comparación incluye cambios sin guardar (hasta 2 MiB por fuente), muestra identidad/OID y permite navegar hunks sin editar snapshots. Cambiar documento, vista, revisión o encoding exige refresh. [Entrega y límites](docs/GIT_DIFF_DELIVERY.md), [presentación TUI](docs/GIT_DIFF_PRESENTATION.md) y [proveedor Git](docs/GIT_READ_ONLY_PROVIDER.md). El estado de repositorio de solo lectura se describe abajo; no hay watcher; operaciones Git con escritura siguen en M5. La [escena de estudio GUI](docs/M2B_SCENE_STUDY.md) sigue como estudio histórico; el [frontend nativo actual](docs/M2B_NATIVE_WINDOWS.md) es un ejecutable Win32/GDI independiente de ese HTML.
 
 ## Política de CI
 
@@ -174,3 +174,15 @@ Edit/Palette ya ofrecen Join Lines y Split Line: Ctrl+Shift+J une líneas en
 Editor; Enter divide con el EOL preferido mediante el comando compartido. Ctrl+J
 conserva el panel inferior. Join elimina separadores internos/indentación ASCII,
 conserva el salto final y produce un undo. [Semántica, cuotas y validación](docs/M2_LINE_COMMANDS.md).
+
+Ya hay un **GUI Windows ejecutable** sobre el mismo Workbench: abrir/crear,
+editar, seleccionar, undo/redo, guardar/Save As, pestañas y dos grupos. Backend
+Win32/GDI sin framework descargado; clipboard interno y layout escalar con límites
+explícitos. Binario local: `target/release/jc-ide-gui.exe`; admite `--encoding`.
+[Uso, canvas nativo y checklist manual posterior](docs/M2B_NATIVE_WINDOWS.md).
+
+Quick Open TUI ya responde a Ctrl+P, File y Palette sobre una carpeta de proyecto;
+consulta de rutas Unicode acotada/cancelable, Enter/Ctrl+Enter y revalidación antes
+de abrir, conservando sesiones sucias. [Uso y cuotas](docs/M2_QUICK_OPEN.md).
+El cierre local reúne339 pruebas distintas y16 checks nativos; no certifica aún
+todo M2A/M2B, la pantalla física ni RAM global. Continúa adaptación Quick Open/Palette al GUI.

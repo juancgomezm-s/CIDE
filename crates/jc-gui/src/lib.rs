@@ -1,0 +1,35 @@
+//! Native frontend over the existing application model. No editable widget owns
+//! another source buffer. Platform support and smoke evidence are explicit.
+use jc_text::TextEncoding;
+use std::path::PathBuf;
+
+#[derive(Debug, Default)]
+pub struct GuiOptions {
+    pub paths: Vec<PathBuf>,
+    pub encoding: Option<TextEncoding>,
+    pub smoke: Option<SmokeOptions>,
+}
+
+/// Internal automation is confined to an owned hidden HWND and a small fixture
+/// beneath workspace/work. It never sends input to another application's window.
+#[derive(Debug)]
+pub struct SmokeOptions {
+    pub fixture: PathBuf,
+    pub report: PathBuf,
+    pub bitmap: Option<PathBuf>,
+}
+
+#[cfg(windows)]
+mod windows;
+
+pub fn run(options: GuiOptions) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        windows::run(options)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = options;
+        Err("The native Win32/GDI frontend is unavailable on this platform".into())
+    }
+}

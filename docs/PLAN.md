@@ -121,7 +121,7 @@ ambos órdenes; p95 VT repetido 16,9702 ms plano / 16,9147 ms bloques, sin persi
 la diferencia inicial. Global RAM/servicios/pantalla física y M2A siguen abiertos.
 Conservar evidencia, sin repetir suites por documentación ni cambios menores.
 
-## M2B — GUI Windows mínima — PENDIENTE
+## M2B — GUI Windows mínima — EN CONSTRUCCIÓN; primer ejecutable validado
 
 Ya existe un [estudio estático de escena y contrato](M2B_SCENE_STUDY.md) preparado en paralelo: ABL/include PIN/Explorer/Search/palette, datos locales y matriz neutral. Sus comprobaciones estáticas pasan; la captura headless falló sin imagen, por lo que revisión renderizada sigue pendiente. No es editor gráfico ni decisión de backend.
 
@@ -292,3 +292,43 @@ Alternativa: conservar regex deshabilitado y seleccionar otro pendiente M2A.
 No implementar un parser/engine casero para esquivar la restricción. La admisión
 es diseño/revisión de fuentes primarias y código local, sin pruebas/benchmarks
 nuevos ni aceptación de un motor; siguen vigentes los 319 casos del cierre previo.
+
+## Prioridad vigente de Juan: construir M2A y M2B — 2026-11-02
+
+Juan cerró el plan correctivo y pidió continuar el roadmap original: «Continúa
+con la construcción, síguete con M2A y M2B»; aclaró que automatizamos hasta donde
+sea posible y solo deja las pruebas de usuario para el final. Las puertas globales
+RAM/pantalla quedan documentadas, sin bloquear construir funciones ni abrir
+optimizaciones indefinidas. Regex permanece pendiente sin autorización para
+agregar/descargar/fijar regex-automata u otra dependencia; no volver a pedirlo para
+avanzar un pendiente independiente.
+
+Frentes admitidos en el árbol actual: [Quick Open M2A](M2_QUICK_OPEN.md), reservado
+Ctrl+P del roadmap, y [primer GUI Windows M2B](M2B_NATIVE_WINDOWS.md) mediante
+Win32/GDI nativo y Workbench compartido. Dependencias del GUI: solo paquetes
+existentes jc-app/jc-text, sin descarga de framework. El HTML de prototypes sigue
+siendo estudio histórico, no el ejecutable. Un integrador, hasta tres agentes
+totales, archivos exclusivos y validación pesada serial al cerrar bloques amplios.
+No CI/push/instalaciones, cambios de seguridad/servicios ni Qwen/GPU.
+
+Estado al activar: implementaciones en construcción/integración, sin anunciar aún
+pruebas de este bloque. El GUI real tendrá smoke de HWND propio oculto y renderer
+GDI; no controla otras aplicaciones. Validar compilación, comportamiento compartido,
+reporte/bitmap y límites, y dejar checklist manual para Juan sin pedir prueba ahora.
+
+## Primer cierre funcional M2A+M2B y siguiente bloque activo
+
+Quick Open de proyecto TUI y GUI Win32/GDI inicial implementados: consulta
+cancelable/acotada, revalidación/apertura confinada y sesión única; ventana real
+con edición/selección/undo/grupos/guardar y frame readonly. [Uso/límites finder](M2_QUICK_OPEN.md)
+y [GUI/evidencia nativa](M2B_NATIVE_WINDOWS.md).339 pruebas Rust distintas en
+cierre selectivo +16 checks del ejecutable real, fmt/Clippy/release aprobados.
+No cambios de dependencias externas, CI/push o perfiles repetidos.
+
+M2B continúa en construcción: no declarar paridad completa ni puertas físicas
+cerradas por ese smoke. El siguiente bloque ya admitido/construyéndose es adaptar
+Quick Open y Command Palette al GUI, con selección/input acotados y presentación
+GDI readonly, usando los controllers y comandos existentes. Una notificación al
+loop nativo debe recibir completions sin otra tecla y sin polling permanente.
+Regex permanece pendiente; no solicitar su dependencia para avanzar este frente.
+Las pruebas manuales de usuario se conservan para el final.

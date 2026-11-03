@@ -13,7 +13,7 @@ F1 ya separó documento y vistas, retiró campos espejo e introdujo transaccione
 - **jc-languages**: perfiles, detección y metadatos declarativos de capacidades (por ejemplo, comentarios). No inicia servicios por reconocer una extensión.
 - **jc-progress**: integración explícita con una instalación real de OpenEdge; candidata a adaptador de la extensión interna `progress.abl`.
 - **jc-tui**: frontend terminal existente; traduce eventos, consulta presentación y dibuja.
-- **jc-gui**: frontend gráfico pendiente; consume el mismo modelo sin poseer otro documento ni undo.
+- **jc-gui**: primer frontend Windows Win32/GDI ejecutable, con el mismo Workbench/documentos/vistas/undo; la aceptación completa de GUI sigue abierta.
 
 La separación entre núcleo universal, capacidades por lenguaje y extensiones internas está definida en [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
 
@@ -145,3 +145,10 @@ raw de línea y prepara solo rangos de separadores/prefijos con presupuesto prev
 Split reutiliza insert_newline. No se duplica el algoritmo en TUI, que ahora resuelve
 Enter por CommandId. [Contrato/costes reales](M2_LINE_COMMANDS.md), sin confundir
 clasificación byte→línea con validación de coordenadas escalares/visuales.
+
+El [primer frontend nativo](M2B_NATIVE_WINDOWS.md) es un proceso real Win32/GDI,
+no el estudio HTML. Preparación visible y frame GDI readonly, HWND/recursos con
+dueño único, sin child EDIT ni otro source buffer. New/Save deriva FileSession;
+mouse usa colocación escalar sin salto de historial. El [finder Quick Open](M2_QUICK_OPEN.md)
+trabaja solo sobre metadatos y abre mediante el lector por handle compartido en
+jc-files, también usado por Search Plus; no otro editor ni otra historia.

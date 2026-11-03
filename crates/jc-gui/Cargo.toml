@@ -1,0 +1,15 @@
+[package]
+name = "jc-gui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+publish = false
+description = "Native Windows frontend sharing the JC-IDE application model"
+
+[dependencies]
+jc-app = { path = "../jc-app" }
+jc-text = { path = "../jc-text" }
+
+[[bin]]
+name = "jc-ide-gui"
+path = "src/main.rs"

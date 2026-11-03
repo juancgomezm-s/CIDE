@@ -231,6 +231,16 @@ impl Workbench {
         self.move_cursor_to(offset, select)
     }
 
+    /// Ordinary caret/selection placement in scalar coordinates, without a
+    /// navigation jump. Frontends convert their own layout coordinates first.
+    pub fn set_caret_position(
+        &mut self,
+        position: TextPosition,
+        select: bool,
+    ) -> Result<(), WorkbenchError> {
+        self.move_to_position(position, select)
+    }
+
     fn move_cursor_to(&mut self, offset: usize, select: bool) -> Result<(), WorkbenchError> {
         let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         if document.rectangle.take().is_some() {

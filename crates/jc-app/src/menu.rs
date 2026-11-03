@@ -153,6 +153,7 @@ pub fn default_menu_model() -> MenuModel {
             &[
                 command(FileNew),
                 command(FileOpen),
+                command(FileQuickOpen),
                 command(FileOpenFolder),
                 SEP,
                 command(FileSave),

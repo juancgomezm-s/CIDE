@@ -55,11 +55,19 @@ impl TuiApp {
     }
 
     pub(crate) fn open_focus_overlay(&mut self, overlay: Overlay) {
+        if matches!(self.overlay, UiOverlay::QuickOpen { .. }) {
+            self.quick_open.clear();
+            self.quick_open_root = None;
+        }
         while self.focus.close_overlay().is_some() {}
         self.focus.open_overlay(overlay);
     }
 
     pub(crate) fn close_overlay(&mut self) {
+        if matches!(self.overlay, UiOverlay::QuickOpen { .. }) {
+            self.quick_open.clear();
+            self.quick_open_root = None;
+        }
         if matches!(
             self.overlay,
             UiOverlay::Prompt {

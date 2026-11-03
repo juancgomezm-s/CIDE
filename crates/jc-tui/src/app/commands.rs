@@ -113,6 +113,7 @@ impl TuiApp {
     fn handle_view(&mut self, command: CommandId) {
         use CommandId::*;
         match command {
+            FileQuickOpen => self.open_quick_open(),
             EditorSplitRight
             | EditorOneGroup
             | EditorFocusPrimary

@@ -2,7 +2,7 @@
 
 **Avance vigente:** F1/F2/F3 y [Search Plus literal de proyecto](S1_PROJECT_SEARCH.md) implementados con evidencia local. Los defectos/costes descritos en checkpoints anteriores son históricos; la aceptación global de RAM/latencia física y M2A sigue abierta.
 
-**Estado:** doble panel TUI implementado y validado localmente el 2026-11-01. El resto del documento incluye capacidades futuras: Git, navegación por lenguaje y LSP aún no están operativos.
+**Estado:** doble panel, Quick Open TUI y Git read-only implementados con evidencia local. Las secciones de navegación por lenguaje, LSP, escritura Git y merge siguen como destino futuro; los checkpoints antiguos conservan su contexto histórico.
 
 **Avance F1:** documento y vistas ya están separados; los grupos mantienen vistas persistentes con ViewId. El cierre elimina una vista y conserva el documento compartido. Ver [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md); las descripciones de campos espejo/cierre global de abajo son históricas.
 
@@ -134,7 +134,7 @@ Split/One Group, Focus 1/2, Pin, Linked Scroll y Back/Forward ya están registra
 | Pin/Unpin Reference | Ctrl+Alt+P |
 | Link/Unlink Scroll | Ctrl+Alt+L |
 | Navigate Back / Forward | Alt+Left / Alt+Right |
-| Quick Open File | Ctrl+P |
+| Quick Open File — TUI implementado | Ctrl+P |
 | Go to Symbol | Ctrl+R |
 | Go to Line | Ctrl+G |
 | Go to Definition | F12 |
@@ -198,3 +198,13 @@ consulta explícita sin documento, lista visible acotada, selección y refresh/c
 sin abrir paths ni escribir Git. Cierre posterior: 290 pruebas completas locales,
 fmt/Clippy/release. Las menciones anteriores de UI pendiente son históricas;
 se conservan límites del proveedor y aceptación global RAM/pantalla abierta.
+
+## Quick Open TUI y primer GUI nativo — cierre posterior
+
+[Quick Open](M2_QUICK_OPEN.md) ya implementa Ctrl+P sobre rutas del proyecto,
+cancelación/cuotas/entrega vigente, apertura confinada y reutilización de sesiones
+sucias, Enter/Ctrl+Enter/pin/historial. No es navegación semántica. También existe
+el [GUI Win32/GDI inicial](M2B_NATIVE_WINDOWS.md), que comparte Workbench y recibió
+16 checks del ejecutable nativo;339 pruebas Rust distintas en cierre selectivo,
+fmt/Clippy/release. Adaptar Quick Open/Palette al GUI es el siguiente bloque activo.
+Sin aceptación global ni prueba manual solicitada ahora; regex/dependencias pendientes.

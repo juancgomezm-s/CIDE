@@ -192,6 +192,7 @@ pub(crate) fn run(options: LaunchOptions, search_workers: usize) -> io::Result<(
             || app.workbench.search_running()
             || app.tasks.has_completed()
             || app.git_status.ready()
+            || app.quick_open.ready()
             || app.project_search.ready()
             || app.project_replace.is_some()
         {

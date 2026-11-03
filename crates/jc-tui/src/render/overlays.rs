@@ -6,6 +6,7 @@ use jc_app::MenuId;
 
 pub fn draw(app: &TuiApp, screen: &mut Screen) {
     match &app.overlay {
+        UiOverlay::QuickOpen { input, selected } => draw_quick_open(app, screen, input, *selected),
         UiOverlay::ProjectReplacePreview { selected } => {
             draw_project_preview(app, screen, *selected)
         }
@@ -43,6 +44,60 @@ fn draw_prompt(screen: &mut Screen, kind: PromptKind, input: &str) {
     screen.set_cursor(
         (x + 2 + input.chars().count() as u16).min(x + width.saturating_sub(2)),
         y + 2,
+    );
+}
+
+fn draw_quick_open(app: &TuiApp, screen: &mut Screen, input: &str, selected: usize) {
+    let width = screen.width().saturating_sub(2).min(96);
+    let height = screen.height().saturating_sub(2).min(20);
+    if width < 16 || height < 7 {
+        screen.hide_cursor();
+        return;
+    }
+    let x = (screen.width() - width) / 2;
+    let y = (screen.height() - height) / 2;
+    panel(screen, x, y, width, height, "Quick Open — project paths");
+    screen.text(x + 2, y + 1, &clip(&format!("> {input}"), width - 4));
+    let rows = app.quick_open.results();
+    screen.text_styled(
+        x + 2,
+        y + 2,
+        &clip(
+            &format!(
+                "{} / {} paths; literal substring",
+                app.quick_open.message(),
+                rows.len()
+            ),
+            width - 4,
+        ),
+        CellStyle::Dim,
+    );
+    let available = usize::from(height - 6);
+    let start = selected.saturating_sub(available.saturating_sub(1));
+    for (row, candidate) in rows.iter().skip(start).take(available).enumerate() {
+        screen.text_styled(
+            x + 2,
+            y + 3 + row as u16,
+            &clip(candidate.label(), width - 4),
+            if candidate.ordinal() == selected {
+                CellStyle::Reverse
+            } else {
+                CellStyle::Normal
+            },
+        );
+    }
+    screen.text_styled(
+        x + 2,
+        y + height - 2,
+        &clip(
+            "Enter open | Ctrl+Enter side | F5 refresh | Esc cancel",
+            width - 4,
+        ),
+        CellStyle::Dim,
+    );
+    screen.set_cursor(
+        (x + 4 + input.chars().count().min(usize::from(width - 6)) as u16).min(x + width - 2),
+        y + 1,
     );
 }
 

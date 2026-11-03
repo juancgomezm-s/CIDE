@@ -21,6 +21,9 @@ impl TuiApp {
             }
         }
         match self.overlay.clone() {
+            UiOverlay::QuickOpen { input, selected } => {
+                self.handle_quick_open_key(key, input, selected)
+            }
             UiOverlay::ProjectReplacePreview { mut selected } => {
                 let count = self.replace_preview.as_ref().map_or(0, |p| p.lines().len());
                 match key.code {
@@ -327,6 +330,7 @@ impl TuiApp {
             }
         }
         match self.overlay.clone() {
+            UiOverlay::QuickOpen { input, .. } => self.append_quick_open_text(input, text),
             UiOverlay::Prompt { kind, mut input } => {
                 if matches!(
                     kind,

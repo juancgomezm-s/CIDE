@@ -7,6 +7,7 @@ members = [
     "crates/jc-progress",
     "crates/jc-app",
     "crates/jc-tui",
+    "crates/jc-gui",
     "crates/jc-cli",
 ]
 resolver = "2"

@@ -1,8 +1,8 @@
 # Validación
 
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
-319 pruebas distintas aprobadas al integrar Join/Split sobre el rectángulo previo
-(cierre dirigido; no una corrida única de 319),
+339 pruebas Rust distintas aprobadas al integrar Quick Open y GUI nativo inicial
+(cierre selectivo; no una corrida única de339), más16 checks de smoke Win32/GDI,
 fmt/Clippy/release, tres pares fríos equivalentes y catorce procesos nativos
 retenidos de edición/undo en ocho documentos. Máximo histórico actual 52,461 MiB;
 Memoria/teclado global y
@@ -858,3 +858,37 @@ Alternativa: conservar regex deshabilitado y seleccionar otro pendiente M2A.
 No implementar un parser/engine casero para esquivar la restricción. La admisión
 es diseño/revisión de fuentes primarias y código local, sin pruebas/benchmarks
 nuevos ni aceptación de un motor; siguen vigentes los 319 casos del cierre previo.
+
+## Quick Open y primer GUI nativo — 2026-11-02
+
+Construcción amplia de M2A+M2B antes de comprobar: [Quick Open](M2_QUICK_OPEN.md)
+(metadata finder/selector TUI/abrir existente o lateral/encoding/pin) y [GUI real](M2B_NATIVE_WINDOWS.md)
+(HWND/menu propio, modelo único, edición/undo/grupos/guardar, GDI readonly).
+Solo jc-gui se añade a Cargo.lock, sin crates descargados ni cambios de versiones
+externas. Win32/GDI usa bibliotecas existentes del sistema; no instalación.
+
+La corrida workspace pasó148 casos antes de un fixture symlink no autorizado
+por privilegio Windows1314. Se sustituyó únicamente el fixture por junction propia:
+pasaron42 dirigidas de app y152 de otros crates (incluyendo70 TUI,2 GUI CLI y2
+scoped_open).338 distintas en ese punto; una regresión nueva de caret/selección
+sin contaminar navegación, másF1/S0 afectados, pasó18 dirigidas y dejó **339 distintas**.
+Dos helpers ignorados se invocan por sus padres. No una corrida única339 ni
+aceptación de plataformas no ejecutadas. Clippy pidió colapsar un else-if; corregido.
+Formato, Clippy workspace/all-targets -D warnings y release workspace bins/examples
+aprobaron; después solo controles GUI/afectados por hallazgos concretos, no suites
+globales ni perfiles CPU/índice repetidos.
+
+Smoke release real: HWND propio oculto, **16 checks** completos, cero errores de
+WM_PAINT, raster GDI1000x650 con106 colores, guardado real conservando13B exactos.
+La revisión inicial del BMP encontró un error no contado; se reforzó el reporte y
+el clipping vacío/parcial antes de aceptar este bloque. Se retiró estado espejo
+de untitled, se evita Save All sin flujo Save As y se usa caret placement normal
+para mouse. Evidencia [JSON](evidence/m2b-native-smoke-2026-11-02.json),
+[hashes](evidence/m2b-native-smoke-metadata-2026-11-02.json) y
+[canvas PNG nativo](evidence/m2b-native-gui-2026-11-02.png).
+
+No medición de display físico/RAM global/IME/DPI/accesibilidad ni OS clipboard;
+el canvas es rasterización propia del renderer, no screenshot del escritorio.
+Pruebas manuales de usuario quedan al final, sin solicitarlas ahora. Regex sigue
+pendiente, no se descargaron dependencias ni se ejecutó CI/push/AVM. Se continúa
+el roadmap en GUI Quick Open/Palette con los contratos ya disponibles.

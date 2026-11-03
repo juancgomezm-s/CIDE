@@ -91,6 +91,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "jc-gui"
+version = "0.1.0"
+dependencies = [
+ "jc-app",
+ "jc-text",
+]
+
+[[package]]
 name = "jc-languages"
 version = "0.1.0"
 

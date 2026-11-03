@@ -19,6 +19,7 @@ pub enum CommandCategory {
 pub enum CommandId {
     FileNew,
     FileOpen,
+    FileQuickOpen,
     FileOpenFolder,
     FileSave,
     FileSaveAs,
@@ -377,6 +378,7 @@ pub fn default_registry() -> CommandRegistry {
     let specs: Vec<CommandSpec> = vec![
         spec!(FileNew, File, "New", always),
         spec!(FileOpen, File, "Open…", always),
+        spec!(FileQuickOpen, File, "Quick Open Project File", project),
         spec!(FileOpenFolder, File, "Open Folder…", always),
         spec!(FileSave, File, "Save", dirty_document),
         spec!(FileSaveAs, File, "Save As…", has_document),

@@ -112,6 +112,8 @@ impl TuiApp {
                         self.project_results = false;
                         self.git_diff.clear(&mut self.tasks);
                         self.git_status.clear();
+                        self.quick_open.clear();
+                        self.quick_open_root = None;
                         self.git_configuration_target = None;
                         self.project_root = self.explorer.root().map(PathBuf::from);
                         self.panels.show_sidebar(SidebarView::Explorer);

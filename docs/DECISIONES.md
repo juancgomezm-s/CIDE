@@ -341,3 +341,22 @@ segunda regla de EOL/encoding. Ctrl+Shift+J evita quitar Ctrl+J al panel inferio
 Ambos rechazan rectángulos. [Uso y evidencia](M2_LINE_COMMANDS.md): nueve nuevas,
 319 distintas acumuladas en cierre dirigido, fmt/Clippy/release; sin validación
 física/RAM global ni escritura de archivos.
+
+## D34 — Finder por metadatos y primer frontend Win32/GDI real
+
+Implementar Quick Open del roadmap mediante controller lazy de metadatos, con
+latest/generación/cuotas y apertura explícita. Reutilizar FileSession/documento
+sucio y mover el lector confinado por handle de Search Plus a jc-files para no
+mantener otro lector seguro. Default nueva apertura Quick Open16MiB; sin contenido
+durante búsqueda ni indexador. [Contrato](M2_QUICK_OPEN.md).
+
+Por autorización actual de Juan construir M2B ahora mediante Win32/GDI directo,
+sin descargar framework. HWND/editor custom consume Workbench y presentación
+visible; sin EDIT buffer/undo paralelo. No afirmar backend ganador por métricas
+que no se midieron. Encoding inicial por CLI, clipboard interno, scalar-cell y
+accesibilidad/IME/DPI/display pendientes; pruebas manuales al final. Mouse coloca
+caret sin historial de salto y Save As deriva sesión. [Contrato/evidencia](M2B_NATIVE_WINDOWS.md).
+
+339 pruebas distintas en cierre selectivo y16 checks nativos, formato/Clippy/
+release. Continuar Quick Open/Palette GUI con notificación nativa, no perfiles
+indefinidos ni regex/dependencias sin autorización.

@@ -517,7 +517,39 @@ impl Workbench {
         encoding: Option<TextEncoding>,
         to_side: bool,
     ) -> Result<TabId, WorkbenchError> {
+        self.open_file_with_scope(path, encoding, to_side, None)
+    }
+
+    /// Metadata finders open through the same catalog/session path, with a confined
+    /// byte read for a new document. Reusing a dirty document never reloads it.
+    pub fn open_project_file(
+        &mut self,
+        root: &Path,
+        path: PathBuf,
+        encoding: Option<TextEncoding>,
+        to_side: bool,
+        max_bytes: usize,
+    ) -> Result<TabId, WorkbenchError> {
+        self.open_file_with_scope(path, encoding, to_side, Some((root, max_bytes)))
+    }
+
+    fn open_file_with_scope(
+        &mut self,
+        path: PathBuf,
+        encoding: Option<TextEncoding>,
+        to_side: bool,
+        scope: Option<(&Path, usize)>,
+    ) -> Result<TabId, WorkbenchError> {
         if let Ok(canonical) = std::fs::canonicalize(&path) {
+            if let Some((root, _)) = scope {
+                let root = root.canonicalize().map_err(FileError::from)?;
+                if !canonical.starts_with(&root) {
+                    return Err(FileError::Io(std::io::Error::other(
+                        "File is outside the project root",
+                    ))
+                    .into());
+                }
+            }
             if let Some(document) = self.documents.iter().find(|document| {
                 std::fs::canonicalize(document.session.path()).ok().as_ref() == Some(&canonical)
             }) {
@@ -529,7 +561,10 @@ impl Workbench {
                 return Ok(tab);
             }
         }
-        let session = FileSession::open(&path, encoding)?;
+        let session = match scope {
+            Some((root, max_bytes)) => FileSession::open_in_root(root, &path, encoding, max_bytes)?,
+            None => FileSession::open(&path, encoding)?,
+        };
         // Read failures leave the current group, selection and history intact.
         let first_side_open = to_side && self.active_document().is_none();
         if to_side && !first_side_open {

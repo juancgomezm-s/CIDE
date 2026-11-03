@@ -9,6 +9,7 @@ mod overlays;
 mod paths;
 mod presentation;
 mod project_search;
+mod quick_open;
 use git_repository::GitConfigurationTarget;
 #[cfg(test)]
 pub(crate) use git_status::GitStatusRow;
@@ -23,6 +24,8 @@ mod git_status_integration_tests;
 mod keyboard_matrix_tests;
 #[cfg(test)]
 mod line_command_tests;
+#[cfg(test)]
+mod quick_open_tests;
 #[cfg(test)]
 mod rectangle_tests;
 #[cfg(test)]
@@ -53,6 +56,8 @@ pub struct TuiApp {
     pub(crate) tasks: jc_app::JobSystem,
     pub(crate) git_diff: jc_app::git_diff::GitDiffController,
     pub(crate) git_status: git_status::GitStatusView,
+    pub(crate) quick_open: jc_app::quick_open::QuickOpenController,
+    quick_open_root: Option<PathBuf>,
     git_configuration_target: Option<GitConfigurationTarget>,
     pub(crate) git_executable: Option<PathBuf>,
     pub(crate) git_cwd: PathBuf,
@@ -107,6 +112,8 @@ impl TuiApp {
             bottom_selected: 0,
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_status: git_status::GitStatusView::new(wakeup.clone()),
+            quick_open: jc_app::quick_open::QuickOpenController::new(wakeup.clone()),
+            quick_open_root: None,
             git_configuration_target: None,
             git_executable: None,
             git_cwd: std::env::current_dir().unwrap_or_default(),
@@ -223,6 +230,8 @@ impl TuiApp {
                 self.status = self.git_status.message().to_owned();
             }
         }
+        update.changed |= self.poll_quick_open();
+        update.recover |= self.quick_open.take_recovery();
         update.changed |= update.recover;
         update
     }

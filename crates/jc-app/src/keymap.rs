@@ -242,6 +242,7 @@ pub fn default_keymap() -> KeyMap {
     KeyMap::new(vec![
         bind(Global, KeyStroke::ctrl(c('n')), FileNew),
         bind(Global, KeyStroke::ctrl(c('o')), FileOpen),
+        bind(Global, KeyStroke::ctrl(c('p')), FileQuickOpen),
         bind(Global, KeyStroke::ctrl_shift(c('o')), FileOpenFolder),
         bind(Global, KeyStroke::ctrl(c('s')), FileSave),
         bind(Global, KeyStroke::ctrl_shift(c('s')), FileSaveAs),
