@@ -1,4 +1,5 @@
 //! Language identification without reading or recoding a document.
+pub mod syntax;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolingPlan {
@@ -232,6 +233,16 @@ pub static PROFILES: &[LanguageProfile] = &[
 ];
 
 impl LanguageProfile {
+    /// Explicit lexical capability; unsupported profiles remain plain text.
+    pub fn syntax_profile(&self) -> syntax::SyntaxProfile {
+        match self.id {
+            "abl" => syntax::SyntaxProfile::Abl,
+            "json" => syntax::SyntaxProfile::Json,
+            "jsonc" => syntax::SyntaxProfile::Jsonc,
+            "rust" => syntax::SyntaxProfile::Rust,
+            _ => syntax::SyntaxProfile::Plain,
+        }
+    }
     /// The preferred editor comment operation is a property of the language,
     /// never a hardcoded check for Progress in jc-app.
     pub fn preferred_comment(&self) -> Option<CommentStyle> {
@@ -297,6 +308,14 @@ mod tests {
         assert_eq!(detect(r"C:\project\tsconfig.json").id, "jsonc");
         assert_eq!(detect("/project/package.json").id, "json");
         assert_eq!(detect(".bashrc").id, "shell");
+        assert_eq!(
+            detect("module.rs").syntax_profile(),
+            syntax::SyntaxProfile::Rust
+        );
+        assert_eq!(
+            detect("module.cs").syntax_profile(),
+            syntax::SyntaxProfile::Plain
+        );
     }
 
     #[test]

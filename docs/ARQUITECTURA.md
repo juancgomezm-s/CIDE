@@ -169,3 +169,13 @@ prioridad acotada de input/paint; un slot sin resultado no invalida el canvas.
 Clipboard externo es un handoff: snapshot acotado + target exacto, llamada OS
 fuera del modelo y revalidación antes de cut/paste mediante la edición compartida.
 Elegir encoding cambia interpretación, no fuente. No nuevo host/proveedor ABL.
+
+## Presentación léxica compartida implementada
+
+jc-languages aporta SyntaxProfile, SyntaxKind y lexer streaming puro sobre bytes
+para subconjuntos ABL/Rust/JSON/JSONC. jc-app posee una SyntaxCache por documento,
+invalida por transacción y prepara rangos de tokens revisionados para ambas UI.
+continue_syntax avanza contexto pendiente en eventos del propietario; draw no
+ejecuta lexer ni muta cachés. Las cuotas y fallback explícito se documentan en
+[M2_SYNTAX_HIGHLIGHTING.md](M2_SYNTAX_HIGHLIGHTING.md). No añade procesos,
+dependencias, AST, semántica ni proveedor de extensión operativo.

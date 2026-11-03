@@ -40,8 +40,10 @@ cargo run -p jc-cli --offline -- inspect programa.p
 
 ## Lo que falta
 
-El registro **no incluye todavía** coloreado, gramáticas, parseo incremental, completado
-semántico, diagnósticos de C#/Rust/etc., procesos LSP, compiladores genéricos ni depuración.
+El registro incluye resaltado léxico compartido para ABL, Rust, JSON y JSONC en TUI y GUI.
+Los otros perfiles usan Plain. Son subconjuntos léxicos acotados, no gramáticas completas;
+[contrato, límites y evidencia](M2_SYNTAX_HIGHLIGHTING.md). No incluye parseo incremental,
+completado semántico, diagnósticos de C#/Rust/etc., procesos LSP, compiladores genéricos ni depuración.
 El autocompletado de BD también está pendiente: hay un contrato y exportador experimental,
 pero no una interfaz que lo consuma en tiempo real.
 

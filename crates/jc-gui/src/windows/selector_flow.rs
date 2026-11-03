@@ -123,7 +123,27 @@ impl State {
     }
     pub(super) fn poll_tasks(&mut self) -> bool {
         let failed = self.bridge.acknowledge() | self.wakeup.take_notifier_failure();
-        let mut changed = failed;
+        let mut changed = failed | self.syntax_pending;
+        if self.syntax_pending {
+            self.syntax_pending = false;
+            let mut previous = None;
+            for (pane, tab) in self.syntax_targets.into_iter().flatten() {
+                if previous != Some(tab)
+                    && self
+                        .workbench
+                        .panes()
+                        .view(pane)
+                        .and_then(|v| v.location())
+                        .is_some_and(|loc| loc.tab == tab)
+                {
+                    self.syntax_pending |= self.workbench.continue_syntax(tab);
+                    previous = Some(tab);
+                }
+            }
+            if self.syntax_pending {
+                self.wakeup.signal();
+            }
+        }
         self.deliveries = self.deliveries.saturating_add(1);
         if let (Some(root), Some(selector)) = (
             &self.project_root,

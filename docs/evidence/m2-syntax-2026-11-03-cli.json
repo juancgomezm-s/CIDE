@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "cases": {
+    "missing_owned_paths": {
+      "exit": 2,
+      "stderr": "--smoke-fixture requires --smoke-report; use --help"
+    },
+    "duplicate_section": {
+      "exit": 2,
+      "stderr": "duplicate --smoke-syntax-only; use --help"
+    },
+    "mixed_sections": {
+      "exit": 2,
+      "stderr": "choose only one smoke section; use --help"
+    }
+  }
+}

@@ -348,7 +348,7 @@ fn draw_editor(
                 } else if cell.marker {
                     CellStyle::Dim
                 } else {
-                    CellStyle::Normal
+                    syntax_style(prepared.syntax.kind_at(cell.source.start))
                 };
                 screen.put_styled(text_x + target as u16, row_y, cell.ch, style);
             }
@@ -385,7 +385,7 @@ fn draw_editor(
             {
                 CellStyle::Reverse
             } else {
-                CellStyle::Normal
+                syntax_style(prepared.syntax.kind_at(source_offset))
             };
             screen.put_styled(text_x + target as u16, row_y, ch, style);
         }
@@ -585,14 +585,38 @@ fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
         " CIDE ".to_owned()
     };
     screen.text_styled(0, y, &clip(&left, screen.width()), CellStyle::Reverse);
-    let status_width = app.status.chars().count() as u16 + 2;
+    let status = if app.syntax_pending {
+        format!("Syntax preparing | {}", app.status)
+    } else if frame.primary.syntax.limited || frame.secondary.syntax.limited {
+        format!("Syntax plain: budget | {}", app.status)
+    } else if frame.editor(app.workbench.panes().active()).syntax.profile
+        == jc_app::SyntaxProfile::Plain
+        && frame
+            .editor(app.workbench.panes().active())
+            .syntax
+            .encoding
+            .is_some()
+    {
+        format!("Syntax: plain | {}", app.status)
+    } else {
+        app.status.clone()
+    };
+    let status_width = status.chars().count() as u16 + 2;
     if status_width < screen.width() {
         screen.text_styled(
             screen.width() - status_width,
             y,
-            &format!(" {} ", app.status),
+            &format!(" {} ", status),
             CellStyle::Reverse,
         );
+    }
+}
+
+fn syntax_style(kind: jc_app::SyntaxKind) -> CellStyle {
+    if kind == jc_app::SyntaxKind::Plain {
+        CellStyle::Normal
+    } else {
+        CellStyle::Syntax(kind)
     }
 }
 

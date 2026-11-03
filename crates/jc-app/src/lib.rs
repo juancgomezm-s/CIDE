@@ -8,6 +8,8 @@
 mod command;
 mod dialog;
 pub mod diff_model;
+pub mod syntax_theme;
+pub use jc_languages::syntax::{SyntaxKind, SyntaxProfile};
 pub mod explorer;
 mod navigation_input;
 pub use navigation_input::parse_text_position;
@@ -54,8 +56,8 @@ pub use tabs::{CloseRequest, Tab, TabId, TabManager};
 pub use workbench::rectangular::RectangleBounds;
 pub use workbench::{
     ClipboardExport, ClipboardTarget, CommandOutcome, DisplayCell, DocumentId, EditorDocument,
-    EditorRead, SaveTarget, SearchHistoryEntry, SearchState, TextReplacement, Workbench,
-    WorkbenchError,
+    EditorRead, SaveTarget, SearchHistoryEntry, SearchState, SyntaxRows, SyntaxStats,
+    TextReplacement, Workbench, WorkbenchError,
 };
 mod project_search;
 pub use project_search::{

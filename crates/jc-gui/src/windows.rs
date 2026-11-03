@@ -47,6 +47,7 @@ mod selector_input;
 mod selector_input_smoke;
 mod selector_paint;
 mod smoke;
+mod syntax_smoke;
 use crate::GuiOptions;
 use ffi::*;
 use jc_app::quick_open::QuickOpenController;
@@ -322,6 +323,8 @@ struct State {
     next_untitled: usize,
     pub paint_count: usize,
     pub paint_errors: usize,
+    syntax_pending: bool,
+    syntax_targets: [Option<(jc_app::PaneId, jc_app::TabId)>; 2],
     pub save_count: usize,
     pub smoke: bool,
     smoke_root: Option<PathBuf>,
@@ -420,6 +423,8 @@ impl State {
             next_untitled: 0,
             paint_count: 0,
             paint_errors: 0,
+            syntax_pending: false,
+            syntax_targets: [None, None],
             save_count: 0,
             smoke: options.smoke.is_some(),
             smoke_root: options

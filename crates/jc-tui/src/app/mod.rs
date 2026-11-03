@@ -13,6 +13,8 @@ mod presentation;
 mod project_search;
 mod quick_open;
 mod search_input;
+#[cfg(test)]
+mod syntax_integration_tests;
 use git_repository::GitConfigurationTarget;
 #[cfg(test)]
 pub(crate) use git_status::GitStatusRow;
@@ -74,6 +76,9 @@ pub struct TuiApp {
     pub(crate) explorer_view: jc_app::explorer::ExplorerView,
     pub(crate) bottom_selected: usize,
     pub(crate) tasks: jc_app::JobSystem,
+    pub(crate) syntax_pending: bool,
+    pub(crate) syntax_targets: [Option<(jc_app::PaneId, jc_app::TabId)>; 2],
+    pub(crate) syntax_wakeup: jc_app::Wakeup,
     pub(crate) git_diff: jc_app::git_diff::GitDiffController,
     pub(crate) git_status: git_status::GitStatusView,
     pub(crate) quick_open: jc_app::quick_open::QuickOpenController,
@@ -134,6 +139,9 @@ impl TuiApp {
                 .expect("valid Explorer quotas"),
             explorer_view: Default::default(),
             bottom_selected: 0,
+            syntax_pending: false,
+            syntax_targets: [None, None],
+            syntax_wakeup: wakeup.clone(),
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_status: git_status::GitStatusView::new(wakeup.clone()),
             quick_open: jc_app::quick_open::QuickOpenController::new(wakeup.clone()),
@@ -170,7 +178,30 @@ impl TuiApp {
     }
 
     pub(crate) fn poll_tasks(&mut self) -> TaskUpdate {
-        let mut update = TaskUpdate::default();
+        let mut update = TaskUpdate {
+            changed: self.syntax_pending,
+            ..TaskUpdate::default()
+        };
+        if self.syntax_pending {
+            self.syntax_pending = false;
+            let mut previous = None;
+            for (pane, tab) in self.syntax_targets.into_iter().flatten() {
+                if previous != Some(tab)
+                    && self
+                        .workbench
+                        .panes()
+                        .view(pane)
+                        .and_then(|v| v.location())
+                        .is_some_and(|loc| loc.tab == tab)
+                {
+                    self.syntax_pending |= self.workbench.continue_syntax(tab);
+                    previous = Some(tab);
+                }
+            }
+            if self.syntax_pending {
+                self.syntax_wakeup.signal();
+            }
+        }
         if let Some(root) = &self.project_root {
             update.changed |= self.explorer.poll(root, 2);
         }

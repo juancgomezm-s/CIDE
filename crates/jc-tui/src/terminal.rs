@@ -5,7 +5,7 @@ use crossterm::event::{
     DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
 };
 use crossterm::execute;
-use crossterm::style::{Attribute, SetAttribute};
+use crossterm::style::{Attribute, ResetColor, SetAttribute};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use std::io::{self, Stdout};
 
@@ -61,6 +61,7 @@ impl TerminalSession {
         self.restored = true;
         let screen_result = execute!(
             self.stdout,
+            ResetColor,
             SetAttribute(Attribute::Reset),
             Show,
             DisableBracketedPaste,

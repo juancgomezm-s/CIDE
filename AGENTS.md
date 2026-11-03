@@ -510,3 +510,29 @@ those gestures requires an explicit scope/coordinate/limits/cancellation decisio
 do not add plan scope retrospectively to justify work or infer M3/providers.
 Preserve all physical/global/Unicode/OS clipboard/IME/DPI/accessibility/symlink/
 notices gates. No new dependency/provider/AVM/install/security/CI/push/publication.
+
+## Cierre local — resaltado compartido, 2026-11-03
+
+Por prioridad explícita de Juan se integró resaltado léxico ABL, Rust, JSON y
+JSONC en TUI y GUI; otros perfiles permanecen Plain. Contrato, límites, fallos
+iniciales y evidencia: `docs/M2_SYNTAX_HIGHLIGHTING.md`.
+Pasaron35 casos Rust distintos (18 nuevos),11 checks HWND (4 nuevos),5 flujos
+ConPTY,3 rechazos CLI, fmt, Clippy y build release locales offline. No se ejecutó
+toda la suite runtime del workspace ni CI. No equivale a aceptación física/global.
+
+El diff entre documentos abiertos queda suspendido y recuperable en
+`docs/checkpoints/open-diff-before-syntax-66aa783.zip` y su manifiesto; no está activo
+ni validado. No restaurarlo automáticamente sobre el resaltado.
+
+La autorización posterior del usuario permite incorporar y fijar una dependencia
+Rust mantenida para regex real (candidato regex-automata) en el siguiente bloque
+Search Plus. Sustituye la restricción anterior para esta dependencia concreta:
+no pedir de nuevo permiso. No se añadió en este bloque, regex sigue deshabilitado
+y no están autorizadas instalaciones de programas del sistema.
+
+Preserve one revision/encoding/path/profile-aware SyntaxCache per document,
+shared across views. Lexer metadata belongs in jc-languages; bounded cache and
+palette in jc-app; rendering consumes prepared rows only. Continue deep pending
+work in owner events via continue_syntax, independently of exposure paints.
+64KiB is per-call work,128KiB is logical syntax cache/document; text layout768KiB
+plus invisibles128KiB preserves the1MiB total cache budget. Honor NO_COLOR.

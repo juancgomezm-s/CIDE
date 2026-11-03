@@ -2,7 +2,7 @@
 use crate::screen::{CellStyle, Screen};
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    style::{Attribute, SetAttribute},
+    style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
     terminal::{Clear, ClearType},
     Command,
 };
@@ -42,6 +42,7 @@ impl FrameEncoder {
         let mut out = String::new();
         if full {
             command(&mut out, Hide);
+            command(&mut out, ResetColor);
             command(&mut out, SetAttribute(Attribute::Reset));
             command(&mut out, Clear(ClearType::All));
         }
@@ -63,6 +64,7 @@ impl FrameEncoder {
                 {
                     let cell = screen.cell(x, y);
                     if active != cell.style {
+                        command(&mut out, ResetColor);
                         command(&mut out, SetAttribute(Attribute::Reset));
                         match cell.style {
                             CellStyle::Normal => {}
@@ -70,6 +72,17 @@ impl FrameEncoder {
                                 command(&mut out, SetAttribute(Attribute::Reverse))
                             }
                             CellStyle::Dim => command(&mut out, SetAttribute(Attribute::Dim)),
+                            CellStyle::Syntax(kind) => {
+                                let rgb = jc_app::syntax_theme::foreground(kind);
+                                command(
+                                    &mut out,
+                                    SetForegroundColor(Color::Rgb {
+                                        r: rgb.r,
+                                        g: rgb.g,
+                                        b: rgb.b,
+                                    }),
+                                );
+                            }
                         }
                         active = cell.style;
                     }
@@ -83,6 +96,7 @@ impl FrameEncoder {
             if out.is_empty() {
                 command(&mut out, Hide);
             }
+            command(&mut out, ResetColor);
             command(&mut out, SetAttribute(Attribute::Reset));
             if let Some((x, y)) = screen.cursor() {
                 command(&mut out, MoveTo(x, y));

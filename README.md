@@ -145,7 +145,7 @@ Perfiles iniciales: **ABL, C#, Rust, JavaScript/JSX, TypeScript/TSX, Python, HTM
 SQL, XML, JSON, JSON con comentarios, Markdown, TOML, YAML, PowerShell, Shell y texto**.
 
 Actualmente se reconocen los perfiles y se pueden editar sus archivos como bytes.
-**Resaltado, parsers, completado semántico, LSP y depuración aún no están implementados.**
+El resaltado léxico de **ABL, Rust, JSON y JSONC** está integrado en TUI y GUI; los demás perfiles conservan texto plano. Véase [contrato y evidencia local](docs/M2_SYNTAX_HIGHLIGHTING.md). Parsers, completado semántico, LSP y depuración siguen pendientes.
 El núcleo es independiente del lenguaje y la codificación se elegirá por documento;
 véase [docs/LENGUAJES.md](docs/LENGUAJES.md).
 

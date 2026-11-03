@@ -1,7 +1,7 @@
 //! Preparation owns only visible cells. Painting borrows that presentation and
 //! never accesses Workbench, document caches or a mutable editor widget.
 use super::{ffi::*, wide, State};
-use jc_app::PaneId;
+use jc_app::{PaneId, SyntaxKind, SyntaxProfile};
 use jc_text::TextPosition;
 use std::ptr::{null, null_mut};
 
@@ -11,16 +11,79 @@ const FOREGROUND: u32 = 0x00d5d7d8;
 const DIM: u32 = 0x008d8b87;
 const SELECTED: u32 = 0x00534b45;
 const ACCENT: u32 = 0x00a6d9e6;
+fn search_at(matches: &[jc_app::SearchMatch], source: std::ops::Range<usize>) -> bool {
+    // S0 delivers source-ordered ranges. One binary lookup per visible cell;
+    // diagnostic escape fragments retain their original scalar's byte start.
+    let index = matches.partition_point(|hit| hit.range.end <= source.start);
+    matches
+        .get(index)
+        .is_some_and(|hit| hit.range.start < source.end)
+}
 struct Cell {
     ch: char,
     selected: bool,
+    search: bool,
     marker: bool,
+    kind: SyntaxKind,
+}
+impl Cell {
+    fn foreground(&self) -> u32 {
+        if self.selected || self.search {
+            return FOREGROUND;
+        }
+        if self.marker {
+            return DIM;
+        }
+        let color = jc_app::syntax_theme::foreground(self.kind);
+        u32::from(color.r) | (u32::from(color.g) << 8) | (u32::from(color.b) << 16)
+    }
+    fn background(&self) -> u32 {
+        if self.selected || self.search {
+            SELECTED
+        } else {
+            BACKGROUND
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SyntaxCell {
+    pub ch: char,
+    pub kind: SyntaxKind,
+    pub selected: bool,
+    pub search: bool,
+    pub marker: bool,
+    pub foreground: u32,
+    pub background: u32,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SyntaxBudget {
+    pub processed_bytes: usize,
+    pub cache_bytes: usize,
+    pub scanned_to: usize,
+    pub pending: bool,
+    pub limited: bool,
+}
+impl From<&Cell> for SyntaxCell {
+    fn from(cell: &Cell) -> Self {
+        Self {
+            ch: cell.ch,
+            kind: cell.kind,
+            selected: cell.selected,
+            search: cell.search,
+            marker: cell.marker,
+            foreground: cell.foreground(),
+            background: cell.background(),
+        }
+    }
 }
 struct Row {
     number: Vec<u16>,
     cells: Vec<Cell>,
 }
 struct Pane {
+    id: PaneId,
+    first_line: usize,
+    syntax: SyntaxBudget,
     rect: Rect,
     header: Vec<u16>,
     rows: Vec<Row>,
@@ -47,6 +110,27 @@ pub(super) struct Frame {
     bottom: Option<super::bottom_panel::BottomFrame>,
 }
 impl Frame {
+    /// Inspection of already-owned visible presentation only. These helpers do
+    /// not consult Workbench, lexical caches or source data during rasterization.
+    pub(super) fn syntax_cell_at(
+        &self,
+        pane: PaneId,
+        line: usize,
+        column: usize,
+    ) -> Option<SyntaxCell> {
+        let pane = self.panes.iter().find(|p| p.id == pane)?;
+        pane.rows
+            .get(line.checked_sub(pane.first_line)?)?
+            .cells
+            .get(column)
+            .map(SyntaxCell::from)
+    }
+    pub(super) fn syntax_budget(&self, pane: PaneId) -> Option<SyntaxBudget> {
+        self.panes
+            .iter()
+            .find(|p| p.id == pane)
+            .map(|pane| pane.syntax)
+    }
     pub(super) fn bottom_hits(&self) -> Option<super::bottom_panel::BottomHits> {
         self.bottom
             .as_ref()
@@ -356,6 +440,8 @@ pub(super) fn rectangle_pixel(
 }
 
 pub(super) fn prepare(state: &mut State) -> Frame {
+    state.syntax_pending = false;
+    state.syntax_targets = [None, None];
     state.validate_project_search();
     let areas = areas(state);
     let columns = areas.first().map_or(1, |(_, rect)| {
@@ -367,6 +453,8 @@ pub(super) fn prepare(state: &mut State) -> Frame {
     });
     state.workbench.reveal_active_pane(rows, columns);
     let mut panes = Vec::with_capacity(areas.len());
+    let mut syntax_limited = false;
+    let mut syntax_plain = false;
     for (id, rect) in areas {
         let Some(view) = state.workbench.panes().view(id) else {
             continue;
@@ -392,6 +480,14 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         let columns = ((rect.right - text_x - 8) / state.cell_width).clamp(0, 256) as usize;
         let rows = ((rect.bottom - text_y) / state.cell_height).clamp(0, 128) as usize;
         let selection = state.workbench.selection_for_pane(id);
+        let syntax = state.workbench.syntax_rows(location.tab, first, rows);
+        state.syntax_targets[usize::from(id == PaneId::Secondary)] = Some((id, location.tab));
+        state.syntax_pending |= syntax.pending;
+        syntax_limited |= syntax.limited;
+        if id == state.workbench.panes().active() {
+            syntax_plain = syntax.profile == SyntaxProfile::Plain && syntax.encoding.is_some();
+        }
+        let matches = state.workbench.search_matches_for_tab(location.tab);
         let mut prepared = Vec::with_capacity(rows);
         for line in first..count.min(first.saturating_add(rows)) {
             if invisible && rectangle.is_none() {
@@ -403,9 +499,16 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                     .map(|cell| Cell {
                         ch: cell.ch,
                         marker: cell.marker,
-                        selected: selection.as_ref().is_some_and(|range| {
-                            range.start < cell.source.end && cell.source.start < range.end
-                        }),
+                        kind: if cell.source.is_empty() {
+                            SyntaxKind::Plain
+                        } else {
+                            syntax.kind_at(cell.source.start)
+                        },
+                        search: !cell.source.is_empty() && search_at(matches, cell.source.clone()),
+                        selected: !cell.source.is_empty()
+                            && selection.as_ref().is_some_and(|range| {
+                                range.start < cell.source.end && cell.source.start < range.end
+                            }),
                     })
                     .collect();
                 prepared.push(Row {
@@ -437,6 +540,12 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                 .enumerate()
                 .map(|(target, (ch, byte))| Cell {
                     marker: rectangle.is_some() && invisible && matches!(ch, '>' | '.'),
+                    kind: if byte == usize::MAX {
+                        SyntaxKind::Plain
+                    } else {
+                        syntax.kind_at(byte)
+                    },
+                    search: byte != usize::MAX && search_at(matches, byte..byte.saturating_add(1)),
                     ch: if ch == '\t' {
                         '→'
                     } else if ch.is_control() {
@@ -506,6 +615,15 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             }
         ));
         panes.push(Pane {
+            id,
+            first_line: first,
+            syntax: SyntaxBudget {
+                processed_bytes: syntax.stats.processed_bytes,
+                cache_bytes: syntax.stats.cache_bytes,
+                scanned_to: syntax.stats.scanned_to,
+                pending: syntax.pending,
+                limited: syntax.limited,
+            },
             rect,
             header,
             rows: prepared,
@@ -532,7 +650,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         .active_encoding()
         .map_or("choose encoding", |encoding| encoding.name());
     let status = wide(&format!(
-        "Ln {} Col {} (scalar) · {encoding}{} · {}",
+        "Ln {} Col {} (scalar) · {encoding}{}{} · {}",
         position.line + 1,
         position.column + 1,
         if state.workbench.panes().scroll_linked() {
@@ -540,8 +658,20 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         } else {
             ""
         },
+        if state.syntax_pending {
+            " · Syntax preparing"
+        } else if syntax_limited {
+            " · Syntax plain: budget"
+        } else if syntax_plain {
+            " · Syntax: plain"
+        } else {
+            ""
+        },
         state.status
     ));
+    if state.syntax_pending {
+        state.wakeup.signal();
+    }
     Frame {
         width: state.width.clamp(1, 8192),
         height: state.height.clamp(1, 8192),
@@ -704,8 +834,8 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                         bottom: (y + frame.cell_height).min(pane.rect.bottom),
                     },
                     encoded,
-                    if cell.marker { DIM } else { FOREGROUND },
-                    if cell.selected { SELECTED } else { BACKGROUND },
+                    cell.foreground(),
+                    cell.background(),
                 )?;
             }
         }

@@ -92,6 +92,7 @@ impl FrameLayout {
 #[derive(Debug, Default)]
 pub(crate) struct EditorText {
     pub line_count: Option<usize>,
+    pub syntax: jc_app::SyntaxRows,
     pub position: Option<TextPosition>,
     pub rectangle: Option<jc_app::RectangleBounds>,
     pub rows: Vec<Vec<(char, usize)>>,
@@ -133,6 +134,8 @@ impl TuiApp {
         self.git_status
             .validate_context(self.project_root.as_deref(), self.git_executable.as_deref());
         self.validate_quick_open_context();
+        self.syntax_pending = false;
+        self.syntax_targets = [None, None];
         let layout = FrameLayout::new(self, width, height);
         let mut primary = EditorText::default();
         let mut secondary = EditorText::default();
@@ -233,7 +236,16 @@ impl TuiApp {
                         })
                         .collect()
                 };
+                let syntax = self.workbench.syntax_rows(
+                    location.tab,
+                    first,
+                    usize::from(layout.content_height.saturating_sub(1)),
+                );
+                self.syntax_pending |= syntax.pending;
+                self.syntax_targets[usize::from(pane == PaneId::Secondary)] =
+                    Some((pane, location.tab));
                 let text = EditorText {
+                    syntax,
                     line_count: count,
                     position,
                     rectangle,
@@ -300,6 +312,9 @@ impl TuiApp {
             },
             usize::from(layout.sidebar_width.saturating_sub(2)),
         );
+        if self.syntax_pending {
+            self.syntax_wakeup.signal();
+        }
         Presentation {
             app: self,
             layout,

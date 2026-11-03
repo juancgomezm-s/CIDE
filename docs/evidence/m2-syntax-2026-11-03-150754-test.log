@@ -1,0 +1,47 @@
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.39s
+     Running unittests src\lib.rs (target\debug\deps\jc_app-d8378abed1e8cd0f.exe)
+
+running 5 tests
+test workbench::syntax::tests::visible_caps_are_finite_plain_fallback_and_unsupported_profiles_do_no_work ... ok
+test workbench::syntax::tests::edit_and_undo_invalidation_reuses_only_prefix_context_and_recolors_suffix ... ok
+test workbench::syntax::tests::token_exhaustion_finishes_plain_and_encoding_or_path_changes_clear_context ... ok
+test workbench::syntax::tests::deep_context_advances_cooperatively_without_false_colors_or_global_rescan ... ok
+test workbench::syntax::tests::alternating_deep_and_limited_windows_preserve_progress ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 94 filtered out; finished in 0.01s
+
+     Running unittests src\lib.rs (target\debug\deps\jc_languages-fc63eea379f3818d.exe)
+
+running 8 tests
+test syntax::tests::abl_numeric_period_terminates_statement_without_accepting_invalid_json_number ... ok
+test syntax::tests::json_and_jsonc_have_explicit_distinct_comment_capabilities ... ok
+test syntax::tests::rust_numeric_bases_suffixes_exponents_underscores_and_ranges_have_exact_spans ... ok
+test syntax::tests::rust_raw_hash_limit_and_delimiter_edits_are_explicit_and_finite ... ok
+test syntax::tests::rust_characters_byte_literals_and_lifetimes_do_not_invent_multiline_strings ... ok
+test syntax::tests::abl_nested_comments_hyphenated_words_and_literal_escapes_survive_every_chunk_size ... ok
+test syntax::tests::non_ascii_identifier_bytes_never_create_false_ascii_keywords_or_decode_source ... ok
+test syntax::tests::rust_keywords_nested_comments_multiline_and_raw_strings_are_piece_independent ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 4 tests
+
+thread 'app::syntax_integration_tests::syntax_tui_multiline_edits_undo_encodings_and_vt_colors' panicked at crates\jc-tui\src\app\syntax_integration_tests.rs:70:9:
+assertion failed: vt.contains("38;2;249;38;114")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test app::syntax_integration_tests::syntax_tui_multiline_edits_undo_encodings_and_vt_colors ... FAILED
+test app::syntax_integration_tests::syntax_tui_rust_raw_comments_char_lifetime_and_delimiter_edit_roundtrip ... ok
+test app::syntax_integration_tests::syntax_tui_selection_search_invisibles_document_switch_and_plain_fallback ... ok
+test app::syntax_integration_tests::syntax_tui_deep_scroll_resumes_without_another_key_and_cache_is_bounded ... ok
+
+failures:
+
+failures:
+    app::syntax_integration_tests::syntax_tui_multiline_edits_undo_encodings_and_vt_colors
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p jc-tui --lib`

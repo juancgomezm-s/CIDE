@@ -530,3 +530,15 @@ préstamo. Menús se componen por modelo/categoría/handler, nunca rangos numér
 Una elección modal retiene un stamp acotado y revalida contexto/capability al volver;
 macros de paleta abren el HMENU real sin perder draft invocador. Se eliminan las
 rutas anteriores reemplazadas. [Contrato/evidencia](M2B_NATIVE_INTERACTION.md).
+
+## D50 — Resaltado léxico compartido, incremental y acotado
+
+La prioridad explícita de resaltado en ambas UI y Rust se implementa con lexer
+de bytes en jc-languages, una SyntaxCache por documento en jc-app y presentaciones
+de solo lectura. No se decodifica/copia el documento entero ni se duplican estados
+editables. Las transacciones invalidan desde el primer cambio; encoding, ruta,
+perfil y revisión identifican la caché. Contexto profundo continúa en eventos del
+propietario, sin depender de pinturas. Cuotas:64KiB/tramo,128KiB sintaxis; layout
+se reduce a768KiB y conserva invisibles128KiB dentro de1MiB/documento lógico.
+Fallback Plain pendiente/limitado es explícito. ABL/Rust/JSON/JSONC son capacidades
+léxicas parciales, sin parser ni semántica. [Contrato y evidencia](M2_SYNTAX_HIGHLIGHTING.md).

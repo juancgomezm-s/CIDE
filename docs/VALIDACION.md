@@ -1314,3 +1314,22 @@ Handlers productivos intactos frente a171af05; sin paquete nuevo. Los gestos mou
 horizontal/autoscroll/word-selection/campos continúan sin admisión de construcción.
 Puertas físicas/globales/Unicode/OS/IME/DPI/accesibilidad/symlink/notices abiertas;
 sin dependencias/proveedores/AVM/terminal/regex/instalaciones/seguridad/CI/push nuevos.
+
+## Cierre local — resaltado compartido, 2026-11-03
+
+Por prioridad explícita de Juan se integró resaltado léxico ABL, Rust, JSON y
+JSONC en TUI y GUI; otros perfiles permanecen Plain. Contrato, límites, fallos
+iniciales y evidencia: [M2_SYNTAX_HIGHLIGHTING.md](M2_SYNTAX_HIGHLIGHTING.md).
+Pasaron35 casos Rust distintos (18 nuevos),11 checks HWND (4 nuevos),5 flujos
+ConPTY,3 rechazos CLI, fmt, Clippy y build release locales offline. No se ejecutó
+toda la suite runtime del workspace ni CI. No equivale a aceptación física/global.
+
+El diff entre documentos abiertos queda suspendido y recuperable en
+`checkpoints/open-diff-before-syntax-66aa783.zip` y su manifiesto; no está activo
+ni validado. No restaurarlo automáticamente sobre el resaltado.
+
+La autorización posterior del usuario permite incorporar y fijar una dependencia
+Rust mantenida para regex real (candidato regex-automata) en el siguiente bloque
+Search Plus. Sustituye la restricción anterior para esta dependencia concreta:
+no pedir de nuevo permiso. No se añadió en este bloque, regex sigue deshabilitado
+y no están autorizadas instalaciones de programas del sistema.

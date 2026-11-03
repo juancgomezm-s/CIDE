@@ -11,9 +11,11 @@ pub(crate) mod rectangular;
 mod save_target;
 mod search;
 pub use save_target::SaveTarget;
+mod syntax;
 mod text;
 mod viewport;
 use std::cell::RefCell;
+pub use syntax::{SyntaxRows, SyntaxStats};
 use text::TextProjection;
 
 use crate::{CommandContext, CommandId, NavLocation, PaneId, PaneManager, TabId, TabManager};
@@ -112,6 +114,7 @@ pub struct EditorDocument {
     notified_revision: u64,
     text: RefCell<TextProjection>,
     invisible: RefCell<invisible_layout::InvisibleLayout>,
+    syntax: RefCell<syntax::SyntaxCache>,
 }
 
 #[derive(Debug)]
@@ -299,7 +302,9 @@ impl Workbench {
         Some((
             text.scanned_bytes,
             text.decoded_bytes.saturating_add(invisible_decoded),
-            text.memory_bytes().saturating_add(invisible_memory),
+            text.memory_bytes()
+                .saturating_add(invisible_memory)
+                .saturating_add(document.syntax.borrow().memory_bytes()),
         ))
     }
 
@@ -478,6 +483,9 @@ impl Workbench {
         document.notified_revision = revision;
         let tab = document.tab_id;
         let change = document.session.document().last_change().cloned();
+        if let Some(change) = &change {
+            document.syntax.get_mut().invalidate(change, revision);
+        }
         if let Some(change) = change {
             self.panes.rebase(tab, &change, false);
         }
@@ -651,6 +659,7 @@ impl Workbench {
             notified_revision: 0,
             text: RefCell::default(),
             invisible: RefCell::default(),
+            syntax: RefCell::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, cursor), true);
         let _ = self.rebuild_search();
@@ -674,6 +683,7 @@ impl Workbench {
             notified_revision: 0,
             text: RefCell::default(),
             invisible: RefCell::default(),
+            syntax: RefCell::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, 0), true);
         let _ = self.rebuild_search();
@@ -913,6 +923,7 @@ impl Workbench {
             notified_revision: 0,
             text: RefCell::default(),
             invisible: RefCell::default(),
+            syntax: RefCell::default(),
         });
         self.panes
             .navigate(NavLocation::new(expected, cursor), false);
@@ -962,6 +973,12 @@ impl Workbench {
         let tab = document.tab_id;
         document.notified_revision = document.session.document().revision();
         let change = document.session.document().last_change().cloned();
+        if let Some(change) = &change {
+            document
+                .syntax
+                .get_mut()
+                .invalidate(change, document.notified_revision);
+        }
         let dirty = document.session.document().is_modified();
         if let Some(change) = change {
             self.panes.rebase(tab, &change, true);

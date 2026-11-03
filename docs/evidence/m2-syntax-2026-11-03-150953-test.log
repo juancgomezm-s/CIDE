@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src\lib.rs (target\debug\deps\jc_app-d8378abed1e8cd0f.exe)
+
+running 7 tests
+test workbench::text::tests::cold_sparse_layout_preserves_chunk_edge_scalars_invalid_groups_and_eof ... ok
+test workbench::text::tests::sparse_layout_bounds_warm_reads_even_for_a_long_line_and_preserves_literal_bom ... ok
+test workbench::text::tests::incremental_projection_matches_full_decoder_through_byte_edits_undo_and_redo ... ok
+test workbench::text::tests::changing_another_line_preserves_cached_layout_of_an_unchanged_long_line ... ok
+test workbench::text::tests::layouts_remain_within_quota_after_visiting_many_different_lines ... ok
+test workbench::text::tests::sparse_checkpoints_update_after_invalid_utf8_changes_and_multirange_transactions ... ok
+test workbench::text::tests::local_changes_update_only_a_source_neighborhood_and_shift_the_tail ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 92 filtered out; finished in 9.93s
+

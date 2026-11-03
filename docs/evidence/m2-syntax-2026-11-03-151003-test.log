@@ -1,0 +1,11 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 4 tests
+test app::rectangle_tests::zero_width_after_a_tab_has_visual_cursor_and_keyboard_extension_can_be_cancelled ... ok
+test app::rectangle_tests::resizing_keeps_virtual_cursor_visible_without_reinterpreting_visual_bounds ... ok
+test app::rectangle_tests::split_views_keep_independent_rectangles_through_narrow_fallback ... ok
+test app::rectangle_tests::partial_tab_latin1_punctuation_and_virtual_cells_use_visual_selection ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.00s
+

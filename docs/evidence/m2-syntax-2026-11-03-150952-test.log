@@ -1,0 +1,10 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 3 tests
+test frame_encoder::tests::erasing_text_and_changing_style_emit_cells_and_reset_attributes ... ok
+test frame_encoder::tests::resize_invalidation_and_output_failure_require_a_full_frame ... ok
+test frame_encoder::tests::unchanged_frames_emit_nothing_and_cursor_only_change_does_not_repaint ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 96 filtered out; finished in 0.00s
+

@@ -18,6 +18,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut selector_input_only = false;
     let mut interaction_only = false;
     let mut menu_invoker_only = false;
+    let mut syntax_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -63,6 +64,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("duplicate --smoke-bottom-only".into());
                 }
                 bottom_only = true;
+            }
+            Some("--smoke-syntax-only") => {
+                if syntax_only {
+                    return Err("duplicate --smoke-syntax-only".into());
+                }
+                syntax_only = true;
             }
             Some("--smoke-menu-invoker-only") => {
                 if menu_invoker_only {
@@ -148,6 +155,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(selector_input_only)
         + usize::from(interaction_only)
         + usize::from(menu_invoker_only)
+        + usize::from(syntax_only)
         > 1
     {
         return Err("choose only one smoke section".into());
@@ -164,6 +172,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || selector_input_only
         || interaction_only
         || menu_invoker_only
+        || syntax_only
     {
         if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("smoke uses only its explicit fixture".into());
@@ -190,6 +199,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             selector_input_only,
             interaction_only,
             menu_invoker_only,
+            syntax_only,
         });
     }
     Ok(Some(options))

@@ -1,0 +1,1 @@
+GUI syntax continuation deadline: source=Some("C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\native-gui-smoke\\20261103T151530Z-8bb2fa776b6b\\syntax-deep.p") bytes=176156 initial primary=Some(SyntaxBudget { processed_bytes: 65536, cache_bytes: 61779, scanned_to: 131069, pending: true, limited: false }) secondary=None paints=0 deliveries=5

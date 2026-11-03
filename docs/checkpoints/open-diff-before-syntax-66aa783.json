@@ -1,0 +1,15 @@
+{
+  "baseline": "66aa783",
+  "files": 11,
+  "archive": "docs/checkpoints/open-diff-before-syntax-66aa783.zip",
+  "sha256": "f5a17856306c13216766fe74d3dc8a0221256d910659262bf02e21b7e83d754a",
+  "validated": false,
+  "state": "unintegrated construction suspended by explicit syntax-highlighting priority; no Cargo/tests/runtime executed",
+  "missing": [
+    "shared open_diff_view",
+    "root frontend wiring",
+    "native and shared integration flows",
+    "all validation"
+  ],
+  "restoration": "tracked source content restored to66aa783 before syntax work; menu.rs stat-only dirty entry has no git content diff"
+}

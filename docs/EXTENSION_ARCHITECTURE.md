@@ -108,3 +108,11 @@ Se conserva el legado 10.0B como perfil distinto: no ofrecer sintaxis/OO que no 
 - **Post-M5:** API de plugins de terceros y adaptadores Sublime, con aislamiento y permisos conforme al anexo existente.
 
 **No se realizará ninguna ejecución de GitHub Actions durante M2–M4.** Si el entorno no tiene toolchain Rust, los cambios se señalan como no compilados, sin inventar validación.
+
+## Capacidad léxica local, 2026-11-03
+
+La prioridad explícita de resaltado TUI/GUI incorpora subconjuntos de ABL, Rust,
+JSON y JSONC en jc-languages, con caché compartida en jc-app y frontends de solo
+lectura. [Contrato](M2_SYNTAX_HIGHLIGHTING.md). No implementa loader ni proveedor
+progress.abl; tokens semánticos, AVM, XREF y acciones especializadas mantienen la
+frontera de extensión prevista.

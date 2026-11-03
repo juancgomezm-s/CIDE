@@ -25,7 +25,7 @@ class Process(c.Structure):
     _fields_=[('process',w.HANDLE),('thread',w.HANDLE),('pid',w.DWORD),('tid',w.DWORD)]
 
 class Session:
-    def __init__(self,root,exe,host,source):
+    def __init__(self,root,exe,host,source,environment=None):
         self.api=c.WinDLL('kernel32',use_last_error=True)
         signatures={
             'CreatePipe':([c.POINTER(w.HANDLE),c.POINTER(w.HANDLE),c.c_void_p,w.DWORD],w.BOOL),
@@ -66,7 +66,9 @@ class Session:
             self.check(self.api.UpdateProcThreadAttribute(self.attributes,0,0x0002000D,jobs,c.sizeof(jobs),None,None))
             startup=StartupEx();startup.startup.cb=c.sizeof(StartupEx);startup.attributes=c.cast(self.attributes,c.c_void_p)
             command=c.create_unicode_buffer(subprocess.list2cmdline([str(host),str(exe),'--encoding','utf8',str(source)]))
-            self.check(self.api.CreateProcessW(str(host),command,None,None,False,0x80000,None,str(root),c.byref(startup),c.byref(self.process)))
+            environment_buffer=None if environment is None else c.create_unicode_buffer('\0'.join(key+'='+value for key,value in sorted(environment.items()))+'\0\0')
+            flags=0x80000|(0x400 if environment_buffer is not None else 0)
+            self.check(self.api.CreateProcessW(str(host),command,None,None,False,flags,environment_buffer,str(root),c.byref(startup),c.byref(self.process)))
             for handle in (iread,owrite):self.api.CloseHandle(handle);self.handles.remove(handle)
             self.reader=threading.Thread(target=self.read,name='cide-own-conpty');self.reader.start()
         except BaseException:

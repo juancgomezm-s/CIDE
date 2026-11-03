@@ -4,6 +4,7 @@ pub enum CellStyle {
     Normal,
     Reverse,
     Dim,
+    Syntax(jc_languages::syntax::SyntaxKind),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
