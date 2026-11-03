@@ -38,6 +38,8 @@ mod selection_reopen;
 mod selection_reopen_smoke;
 mod selector;
 mod selector_flow;
+mod selector_input;
+mod selector_input_smoke;
 mod selector_paint;
 mod smoke;
 use crate::GuiOptions;
@@ -240,6 +242,7 @@ enum Action {
     Clipboard(CommandId),
     PasteSearch(u64),
     PasteNavigation(u64),
+    SelectorClipboard(CommandId, Box<selector_input::SelectorInputTarget>),
     PasteProject(u64),
     PasteReplacement(u64),
     ConfigureGit(git_panel::GitIntent),
@@ -265,6 +268,7 @@ struct State {
     bottom_hits: Option<bottom_panel::BottomHits>,
     rectangle_drag: Option<rectangle_input::RectangleDrag>,
     selector: Option<Selector>,
+    selector_generation: u64,
     selector_explorer_focus: bool,
     selector_search_panel: Option<search_panel::SearchPanel>,
     selector_editor_input: bool,
@@ -355,6 +359,7 @@ impl State {
             bottom_hits: None,
             rectangle_drag: None,
             selector: None,
+            selector_generation: 0,
             selector_explorer_focus: false,
             selector_search_panel: None,
             selector_editor_input: false,
@@ -527,11 +532,17 @@ impl State {
     }
     fn execute(&mut self, command: CommandId) -> Action {
         self.rectangle_drag = None;
-        if !self.registry.is_enabled(command, &self.context()) {
+        if !self
+            .registry
+            .is_enabled(command, &self.entry_context(command))
+        {
             self.status = "Command unavailable in the current context".into();
             return Action::None;
         }
         match command {
+            command if self.selector.is_some() && selector_input::field_command(command) => {
+                return self.selector_field_action(command);
+            }
             CommandId::ViewToggleBottomPanel | CommandId::ViewProblems | CommandId::ViewOutput => {
                 self.show_bottom(command);
                 return Action::None;
@@ -763,10 +774,16 @@ impl State {
         Action::None
     }
     fn execute_menu(&mut self, command: CommandId) -> Action {
-        if !self.registry.is_enabled(command, &self.context()) {
+        if !self
+            .registry
+            .is_enabled(command, &self.entry_context(command))
+        {
             return self.execute(command);
         }
-        let explorer_focus = self.explorer_focused;
+        if self.selector.is_some() && selector_input::field_command(command) {
+            return self.execute(command);
+        }
+        let explorer_focus = self.explorer_focused || self.selector_explorer_focus;
         if !matches!(
             command,
             CommandId::ViewToggleInvisibles
@@ -787,6 +804,8 @@ impl State {
                 | CommandId::FocusNext
                 | CommandId::FocusPrevious
                 | CommandId::PaletteOpen
+                | CommandId::FileQuickOpen
+                | CommandId::FileChooseEncoding
         ) {
             self.explorer_focused = explorer_focus;
         }
@@ -1003,12 +1022,8 @@ impl State {
             self.edit_navigation_input(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)));
             return;
         }
-        if let Some(selector) = self.selector.as_mut() {
-            if selector.append(ch.encode_utf8(&mut bytes)) {
-                self.request_files();
-            } else {
-                self.status = "Selector query limit or unsupported control".into();
-            }
+        if self.selector.is_some() {
+            self.edit_selector_input(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)), false);
             return;
         }
         if self.explorer_focused {
@@ -1222,7 +1237,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     EnableMenuItem(
                         menu,
                         *id as u32,
-                        if state.registry.is_enabled(*command, &state.context()) {
+                        if state
+                            .registry
+                            .is_enabled(*command, &state.entry_context(*command))
+                        {
                             0
                         } else {
                             1
@@ -1392,6 +1410,9 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
         Action::PasteNavigation(generation) => clipboard_flow::paste_navigation(hwnd, generation),
+        Action::SelectorClipboard(command, target) => {
+            clipboard_flow::selector_transfer(hwnd, command, *target)
+        }
         Action::PasteProject(generation) => clipboard_flow::paste_project(hwnd, generation),
         Action::PasteReplacement(generation) => clipboard_flow::paste_replacement(hwnd, generation),
         Action::SaveAll => save_flow::perform(hwnd),

@@ -121,14 +121,31 @@ fn units(text: impl Iterator<Item = char>, max: usize) -> Vec<u16> {
     result
 }
 
-fn query_tail(query: &str, columns: usize) -> (Vec<u16>, usize) {
-    // Reserve one actual blank cell after the tail for its caret, rather than
-    // painting over the last query glyph when the complete query does not fit.
-    let capacity = columns.saturating_sub(3);
-    let mut tail: Vec<char> = query.chars().rev().take(capacity.min(93)).collect();
-    tail.reverse();
-    let cursor = (2 + tail.len()).min(columns.saturating_sub(1));
-    (units("> ".chars().chain(tail), columns), cursor)
+fn query_line(
+    p: &SelectorPresentation,
+    columns: usize,
+) -> (Vec<u16>, Vec<std::ops::Range<usize>>, usize) {
+    let field = jc_app::present_selected_field(
+        &p.query,
+        p.input_selection,
+        columns.saturating_sub(2).max(1),
+        1,
+    );
+    let text = field.field.rows.first().map_or("", String::as_str);
+    let selected = field
+        .selections
+        .first()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| (r.start + 2).min(columns)..(r.end + 2).min(columns))
+        .filter(|r| !r.is_empty())
+        .collect();
+    (
+        units("> ".chars().chain(text.chars()), columns),
+        selected,
+        (field.field.cursor_column + 2).min(columns.saturating_sub(1)),
+    )
 }
 
 fn row_window(p: &SelectorPresentation, capacity: usize) -> std::ops::Range<usize> {
@@ -208,9 +225,28 @@ pub(super) unsafe fn draw(
     }
     if let Some(row) = layout.query {
         paint::fill(dc, layout.row(row), QUERY)?;
-        let (text, cursor) = query_tail(&presentation.query, layout.columns);
+        let (text, selected, cursor) = query_line(presentation, layout.columns);
         let content = layout.content(row);
         paint::text(dc, content, &text, TEXT, QUERY)?;
+        for range in selected {
+            let left = (i64::from(content.left) + range.start as i64 * layout.cell_width)
+                .min(i64::from(content.right)) as i32;
+            let right = (i64::from(content.left) + range.end as i64 * layout.cell_width)
+                .min(i64::from(content.right)) as i32;
+            if left < right {
+                paint::text(
+                    dc,
+                    Rect {
+                        left,
+                        right,
+                        ..content
+                    },
+                    &text[range],
+                    TEXT,
+                    SELECTED,
+                )?;
+            }
+        }
         if content.right > content.left && content.bottom > content.top {
             let x = (i64::from(content.left) + cursor as i64 * layout.cell_width)
                 .min(i64::from(content.right) - 1) as i32;
@@ -327,16 +363,28 @@ mod tests {
     }
 
     #[test]
-    fn query_cursor_counts_scalars_and_retains_tail_without_control_interpretation() {
-        let (display, cursor) = query_tail("abcdefé😀\x1bZ", 8);
-        assert_eq!(
-            String::from_utf16(&display[..display.len() - 1]).unwrap(),
-            "> fé😀·Z"
-        );
-        assert_eq!(cursor, 7);
-        let (tiny, cursor) = query_tail("é😀", 1);
-        assert_eq!(String::from_utf16(&tiny[..tiny.len() - 1]).unwrap(), ">");
-        assert_eq!(cursor, 0);
+    fn query_cursor_and_selected_escape_share_bounded_field_projection() {
+        let p = SelectorPresentation {
+            title: "Palette",
+            query: "aéz".into(),
+            input_selection: jc_app::FieldSelection {
+                cursor: 3,
+                anchor: Some(1),
+            },
+            message: String::new(),
+            footer: "",
+            rows: Vec::new(),
+            total: 0,
+            selected: 0,
+        };
+        let (text, ranges, caret) = query_line(&p, 96);
+        let text = String::from_utf16(&text[..text.len() - 1]).unwrap();
+        assert_eq!(text, "> a\\u{E9}z");
+        assert_eq!(ranges, vec![3..9]);
+        assert_eq!(caret, 9);
+        let before = p.query.clone();
+        let _ = query_line(&p, 4);
+        assert_eq!(p.query, before);
     }
 
     #[test]
@@ -344,6 +392,10 @@ mod tests {
         let p = SelectorPresentation {
             title: "Quick Open",
             query: "é".into(),
+            input_selection: jc_app::FieldSelection {
+                cursor: 2,
+                anchor: None,
+            },
             message: "Ready".into(),
             footer: "Enter open | Esc",
             rows: (0..20)

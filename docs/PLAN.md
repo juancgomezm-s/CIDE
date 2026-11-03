@@ -535,3 +535,24 @@ selectores, adaptación incompleta de menús y selección lineal por drag/wheel.
 Proveedores internos/terminal/regex requieren sus propios contratos/puertas; no
 inferir implementaciones de negocio del host. Manual/global/Unicode/clipboard OS,
 symlink y notices GNU siguen abiertos. Sin dependencias/proveedores/AVM/CI/push nuevos.
+
+## Entrada avanzada de selectores GUI — 2026-11-03
+
+[Bloque integrado](M2B_SELECTOR_INPUT.md) en Quick Open/paleta/encoding: campo único
+con caret/anchor, Shift selección, Home/End/Delete, Ctrl+A/C/X/V/U y rutas de menú
+Edit, sin confundir edición de campo con comandos del invocador de paleta. Up/Down/
+Page/Tab navegan candidatos; CtrlHome/End primero/último. Cuota256UTF8 y rechazo
+atómico de controles/bidi/overflow; handoff externo fuera de préstamos, revalidado
+por generación/intención/candidato/doc/vista/encoding/ruta/raíz/foco. Solo transporte
+sintético en pruebas; no clipboard privado leído/alterado durante desarrollo.
+
+FieldSelection reutiliza edit_field y un walker de presentación común; retiene
+solo filas visibles del campo (dos pasadas <=4096B), sin otra historia/motor fuente.
+23 casos Rust distintos aprobados (24 pases con un solapamiento de filtro), cuatro
+nuevos;13 checks HWND (seis nuevos), fmt/Clippy/release. Fallos de expectativa/
+getter privado/enum grande retenidos y corregidos; native aprobó primera corrida.
+
+Continúan88 rutasGUI, sin reclamar104 funciones aceptadas. Pendientes universales
+del inventario: adaptación de menús nativos y selección lineal por drag/wheel.
+Proveedores/terminal/regex, aceptación física/global/Unicode/clipboardOS, symlink
+y notices GNU conservan sus puertas. Sin nuevas dependencias/AVM/CI/push/publicación.

@@ -29,6 +29,7 @@ impl State {
         Ok(())
     }
     pub(super) fn close_selector(&mut self) {
+        self.selector_generation = self.selector_generation.saturating_add(1);
         self.rectangle_drag = None;
         self.selector_editor_input = false;
         self.selector_edit_target = None;
@@ -48,7 +49,7 @@ impl State {
         self.quick_open.clear();
     }
     pub(super) fn open_selector(&mut self, kind: SelectorKind) {
-        let explorer_focus = self.explorer_focused;
+        let explorer_focus = self.explorer_focused || self.selector_explorer_focus;
         let editor_input = self.context().editor_input;
         let edit_target = self.source_edit_target();
         let search = if kind == SelectorKind::Palette {
@@ -61,8 +62,12 @@ impl State {
             self.status = "Open a project folder first".into();
             return;
         }
+        if self.selector_generation == u64::MAX {
+            self.error("Selector generation exhausted");
+            return;
+        }
         self.selector = Some(Selector::new(kind));
-        self.selector_explorer_focus = kind == SelectorKind::Palette && explorer_focus;
+        self.selector_explorer_focus = explorer_focus;
         self.selector_search_panel = search;
         self.selector_editor_input = kind == SelectorKind::Palette && editor_input;
         self.selector_edit_target = (kind == SelectorKind::Palette)
@@ -80,6 +85,7 @@ impl State {
         }
     }
     pub(super) fn open_encoding_selector(&mut self) {
+        let explorer_focus = self.explorer_focused || self.selector_explorer_focus;
         self.close_selector();
         let Some(document) = self.workbench.active_document() else {
             return;
@@ -89,7 +95,12 @@ impl State {
             document.session.document().revision(),
             document.session.encoding(),
         ));
+        if self.selector_generation == u64::MAX {
+            self.error("Selector generation exhausted");
+            return;
+        }
         self.selector = Some(Selector::new(SelectorKind::Encoding));
+        self.selector_explorer_focus = explorer_focus;
     }
     pub(super) fn request_files(&mut self) {
         let Some(selector) = self
@@ -163,40 +174,80 @@ impl State {
         })
     }
     pub(super) fn selector_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
-        match code {
-            0x1b => {
-                let search = self.selector_search_panel.take();
-                self.close_selector();
-                self.search_panel = search;
-                self.status = "Selector cancelled".into();
+        use jc_app::{CommandId, FieldEdit};
+        if code == 0x1b {
+            let search = self.selector_search_panel.take();
+            let explorer = self.selector_explorer_focus;
+            self.close_selector();
+            self.search_panel = search;
+            self.explorer_focused = explorer;
+            self.status = "Selector cancelled".into();
+            return Action::None;
+        }
+        if modifiers.contains(Modifiers::CTRL) && !modifiers.contains(Modifiers::ALT) {
+            let command = match code {
+                0x41 => Some(CommandId::EditSelectAll),
+                0x43 => Some(CommandId::EditCopy),
+                0x58 => Some(CommandId::EditCut),
+                0x56 => Some(CommandId::EditPaste),
+                _ => None,
+            };
+            if let Some(command) = command {
+                return self.execute(command);
             }
-            0x08 => {
-                if self.selector.as_mut().is_some_and(Selector::backspace) {
-                    self.request_files();
+            if code == 0x55 {
+                self.edit_selector_input(FieldEdit::Clear, false);
+                return Action::None;
+            }
+            if code == 0x24 || code == 0x23 {
+                if let Some(selector) = self.selector.as_mut() {
+                    if code == 0x24 {
+                        selector.first();
+                    } else {
+                        selector.last();
+                    }
                 }
+                self.selector_presentation(0);
+                return Action::None;
             }
-            0x26 | 0x28 | 0x21 | 0x22 => {
-                // Normalize BEFORE a relative move, so End/overshoot cannot
-                // leave a saturated index and make Up appear unresponsive.
+            if code != 0x0d {
+                return Action::None;
+            }
+        }
+        if modifiers.contains(Modifiers::ALT) {
+            return Action::None;
+        }
+        let selecting = modifiers.contains(Modifiers::SHIFT);
+        let edit = match code {
+            0x08 => Some(FieldEdit::Backspace),
+            0x2e => Some(FieldEdit::Delete),
+            0x25 => Some(FieldEdit::Left),
+            0x27 => Some(FieldEdit::Right),
+            0x24 => Some(FieldEdit::Home),
+            0x23 => Some(FieldEdit::End),
+            _ => None,
+        };
+        if let Some(edit) = edit {
+            self.edit_selector_input(edit, selecting);
+            return Action::None;
+        }
+        match code {
+            0x26 | 0x28 | 0x21 | 0x22 | 0x09 => {
                 self.selector_presentation(0);
                 if let Some(selector) = self.selector.as_mut() {
                     selector.move_selection(match code {
                         0x26 => -1,
                         0x28 => 1,
                         0x21 => -10,
-                        _ => 10,
+                        0x22 => 10,
+                        _ => {
+                            if selecting {
+                                -1
+                            } else {
+                                1
+                            }
+                        }
                     });
-                }
-                self.selector_presentation(0);
-            }
-            0x24 => {
-                if let Some(selector) = self.selector.as_mut() {
-                    selector.first();
-                }
-            }
-            0x23 => {
-                if let Some(selector) = self.selector.as_mut() {
-                    selector.last();
                 }
                 self.selector_presentation(0);
             }
@@ -228,6 +279,7 @@ impl State {
                 match self.workbench.set_encoding(encoding) {
                     Ok(()) => {
                         self.close_selector();
+                        self.bottom.focused = false;
                         self.status = format!(
                             "Interpretation: {} · bytes unchanged; no conversion/save",
                             encoding.name()

@@ -2,6 +2,105 @@
 use super::{clipboard, ffi::Hwnd, owner};
 use jc_app::CommandId;
 const LIMIT: usize = 2 * 1024 * 1024;
+/// Explicit selector field handoff. The injectable transport also exercises
+/// reentrant delivery using controlled synthetic text on an owned test HWND.
+pub(super) unsafe fn selector_transfer_with(
+    hwnd: Hwnd,
+    command: CommandId,
+    target: super::selector_input::SelectorInputTarget,
+    transport: impl FnOnce(Option<&str>) -> Result<Option<String>, String>,
+) -> Result<(), String> {
+    if !matches!(
+        command,
+        CommandId::EditCopy | CommandId::EditCut | CommandId::EditPaste
+    ) {
+        return Err("Unsupported selector clipboard action".into());
+    }
+    let export = {
+        let model = owner(hwnd).ok_or("Selector window closed")?;
+        let state = model.state.borrow();
+        if state.selector_input_target() != Some(target.clone()) {
+            return Err("Selector destination changed before clipboard action".into());
+        }
+        if command == CommandId::EditPaste {
+            None
+        } else {
+            let Some(text) = state.selector.as_ref().and_then(|s| s.selected_text()) else {
+                return Ok(());
+            };
+            Some(text.to_owned())
+        }
+    };
+    // No RefCell/Workbench borrow crosses this call (native delayed rendering
+    // can pump messages). Text remains at most256 UTF-8 bytes before retention.
+    let returned = transport(export.as_deref())?;
+    let model = owner(hwnd).ok_or("Selector window closed during clipboard action")?;
+    let mut state = model.state.borrow_mut();
+    if state.selector_input_target() != Some(target) {
+        return Err("Selector field/context changed during clipboard action; retry".into());
+    }
+    match command {
+        CommandId::EditCut => {
+            let changed = state
+                .selector
+                .as_mut()
+                .ok_or("Selector closed")?
+                .edit_input(jc_app::FieldEdit::Delete, false)?;
+            if changed {
+                state.request_files();
+            }
+        }
+        CommandId::EditPaste => {
+            if let Some(text) = returned.filter(|text| !text.is_empty()) {
+                // The model preflights256B after selection replacement and rejects
+                // controls/bidi atomically. Synthetic transport obeys this same gate.
+                let changed = state
+                    .selector
+                    .as_mut()
+                    .ok_or("Selector closed")?
+                    .edit_input(jc_app::FieldEdit::Insert(&text), false)?;
+                if changed {
+                    state.request_files();
+                }
+            }
+        }
+        CommandId::EditCopy => {}
+        _ => return Err("Unsupported selector clipboard action".into()),
+    }
+    Ok(())
+}
+pub(super) unsafe fn selector_transfer(
+    hwnd: Hwnd,
+    command: CommandId,
+    target: super::selector_input::SelectorInputTarget,
+) {
+    let smoke = owner(hwnd).is_some_and(|model| model.state.borrow().smoke);
+    let result = selector_transfer_with(hwnd, command, target, |export| {
+        if let Some(text) = export {
+            if smoke {
+                owner(hwnd)
+                    .ok_or("Selector test window closed")?
+                    .state
+                    .borrow_mut()
+                    .smoke_clipboard = Some(text.to_owned());
+            } else {
+                clipboard::write(hwnd, text)?;
+            }
+            Ok(None)
+        } else if smoke {
+            Ok(owner(hwnd).and_then(|model| model.state.borrow().smoke_clipboard.clone()))
+        } else {
+            clipboard::read_limited(hwnd, 256)
+        }
+    });
+    if let Some(model) = owner(hwnd) {
+        let mut state = model.state.borrow_mut();
+        match result {
+            Ok(()) => state.status = "Selector clipboard action completed".into(),
+            Err(error) => state.error(error),
+        }
+    }
+}
 pub(super) unsafe fn paste_navigation(hwnd: Hwnd, generation: u64) {
     // The read happens without a model borrow. A new modal generation, view,
     // encoding or revision cannot consume the returned text.

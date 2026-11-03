@@ -6,6 +6,11 @@ y amplía FocusNext/Previous; ahora88 comandos tienen ruta GUI. La matriz/JSON d
 esta auditoría se conservan como evidencia histórica de `8fbd879`, sin regenerarlos
 ni atribuirles pruebas posteriores. Las otras limitaciones siguen vigentes.
 
+La [entrada avanzada de selectores](M2B_SELECTOR_INPUT.md) también está integrada:
+caret/selección/edición y clipboard acotado con revalidación. No agrega CommandId
+ni altera el conteo88; añade rutas reales de campo. La interoperabilidad OS y los
+otros huecos de menú/mouse siguen pendientes; los artefactos históricos no cambian.
+
 Revisión de la base `78769e9`, registro, Workbench, keymap, menús/paleta y handlers
 reales; no una lista de funciones futuras. La [matriz completa](M2B_GUI_COMMAND_MATRIX.md)
 incluye una fila por cada uno de los **104 CommandId**, predicado, binding con scope,

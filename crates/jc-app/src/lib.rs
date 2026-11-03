@@ -26,7 +26,10 @@ pub mod rectangle;
 mod tabs;
 pub mod task_panels;
 mod text_field;
-pub use text_field::{edit_field, present_field, FieldEdit, FieldPresentation};
+pub use text_field::{
+    edit_field, edit_selected_field, present_field, present_selected_field, FieldEdit,
+    FieldPresentation, FieldSelection, SelectedFieldPresentation,
+};
 mod workbench;
 pub use jobs::{
     Cancellation, CompletedTask, JobId, JobKey, JobLimits, JobSystem, SubmitError, TaskFailure,

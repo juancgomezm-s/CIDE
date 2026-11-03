@@ -440,3 +440,26 @@ release. Native fixture providers are synthetic only; no business/AVM validation
 universal inventory gaps include selector input, menu adaptation and general mouse.
 Preserve physical/global/Unicode/clipboard/symlink/notices gates. No new dependency,
 provider, AVM, install/security changes, CI, push or publication.
+
+## Native selector input closure
+
+Read docs/M2B_SELECTOR_INPUT.md. QuickOpen/Palette/Encoding now share UTF8 byte
+FieldSelection/edit_selected_field and the bounded presentation walker. Preserve
+256B single-line policy, atomic replacement quota/control/bidi rejection and
+separate field caret/anchor from candidate ordinal. Home/End edit caret; CtrlHome/
+End choose first/last, UpDown/Page/TabShiftTab navigate results. No source undo.
+Native Edit/keyboard CutCopyPasteSelectAll use entry_context.field_input; palette
+command rows still use their invoker's source context. Do not conflate these routes.
+Selector clipboard runs outside model borrows, checks generation/input intention/
+candidate/source stamp/path/view/invoker/root/focus/encoding target before and after.
+Keep destination UTF8 decoder preflight256B and existing strict native2MiB allocation
+guard. Tests use ONLY synthetic smoke transport, never the private OS clipboard.
+Action boxes that handoff metadata only; no large inline payload on every event.
+Escape preserves search draft/Explorer/bottom invoker, Files/Encoding acceptance
+returns Editor. Three new field tests and one decoder test;23 distinct directed
+cases passed (24 pass lines include one filter overlap),13 own-HWND checks with
+six new,fmt/Clippy/release. Initial fixture/private-getter/lint failures retained.
+No closed suites/profiles repeated for docs. Inventory remains88 GUI routes;
+native menu adaptation, linear drag/wheel and physical/global/Unicode/clipboard/
+symlink/notices gates remain open. No new dependency/provider/AVM/regex/install/
+security changes, CI, push or publication.

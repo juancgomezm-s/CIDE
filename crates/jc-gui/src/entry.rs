@@ -15,6 +15,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut rectangle_only = false;
     let mut parity_only = false;
     let mut bottom_only = false;
+    let mut selector_input_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -60,6 +61,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("duplicate --smoke-bottom-only".into());
                 }
                 bottom_only = true;
+            }
+            Some("--smoke-selector-input-only") => {
+                if selector_input_only {
+                    return Err("duplicate --smoke-selector-input-only".into());
+                }
+                selector_input_only = true;
             }
             Some("--smoke-selection-reopen-only") => {
                 if selection_reopen_only {
@@ -124,6 +131,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(rectangle_only)
         + usize::from(parity_only)
         + usize::from(bottom_only)
+        + usize::from(selector_input_only)
         > 1
     {
         return Err("choose only one smoke section".into());
@@ -137,6 +145,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || rectangle_only
         || parity_only
         || bottom_only
+        || selector_input_only
     {
         if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("smoke uses only its explicit fixture".into());
@@ -160,6 +169,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             rectangle_only,
             parity_only,
             bottom_only,
+            selector_input_only,
         });
     }
     Ok(Some(options))
@@ -344,6 +354,19 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(bottom.smoke.unwrap().bottom_only);
+        let selector_input = args(&[
+            "--smoke-selector-input-only",
+            "--smoke-fixture",
+            &fixture,
+            "--smoke-report",
+            &report,
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(selector_input.smoke.unwrap().selector_input_only);
+        assert!(args(&["--smoke-selector-input-only"]).is_err());
+        assert!(args(&["--smoke-selector-input-only", "--smoke-selector-input-only"]).is_err());
+        assert!(args(&["--smoke-selector-input-only", "--smoke-bottom-only"]).is_err());
         assert!(args(&["--smoke-bottom-only"]).is_err());
         assert!(args(&["--smoke-bottom-only", "--smoke-bottom-only"]).is_err());
         assert!(args(&["--smoke-bottom-only", "--smoke-parity-only"]).is_err());

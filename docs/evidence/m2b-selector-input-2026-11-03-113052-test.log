@@ -1,0 +1,28 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.41s
+     Running unittests src\lib.rs (target\debug\deps\jc_app-d8378abed1e8cd0f.exe)
+
+running 5 tests
+test text_field::tests::selection_movement_collapses_or_extends_using_existing_line_boundaries ... ok
+test text_field::tests::multiline_editing_preserves_eol_and_rejects_whole_overflow ... ok
+test text_field::tests::selected_replacement_preflights_utf8_budget_and_keeps_crlf_atomic ... ok
+test text_field::tests::field_preview_is_bounded_navigable_and_emits_no_controls ... ok
+test text_field::tests::selected_preview_highlights_complete_escape_fragments_and_retains_only_visible_rows ... FAILED
+
+failures:
+
+---- text_field::tests::selected_preview_highlights_complete_escape_fragments_and_retains_only_visible_rows stdout ----
+
+thread 'text_field::tests::selected_preview_highlights_complete_escape_fragments_and_retains_only_visible_rows' panicked at crates\jc-app\src\text_field.rs:592:9:
+assertion `left == right` failed
+  left: ["[field\\sexceeds4096\\sbytes]"]
+ right: ["[field exceeds4096 bytes]"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    text_field::tests::selected_preview_highlights_complete_escape_fragments_and_retains_only_visible_rows
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 88 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p jc-app --lib`

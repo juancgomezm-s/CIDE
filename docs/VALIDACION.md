@@ -1224,3 +1224,34 @@ en esta ventana. PNG1000×650/1384×741/984×641 GDI→PNG sin pérdida revisado
 No AVM/proveedor nuevo, OS clipboard/IME/DPI/accesibilidad/pantalla física/Linux,
 RAM global o Unicode general certificados; gates previos/notices/symlink siguen
 abiertos. Sin dependencias/instalaciones/CI/push/publicación ni perfiles nuevos.
+
+## Entrada y clipboard sintético de selectores GUI — 2026-11-03
+
+Construcción completa antes de checks: API de campo/selección y presentación,
+modelos de los tres selectores, entrada/menú/paleta/foco, generación/intención,
+decoder acotado y handoff reentrante, GDI y sección nativa dedicada. **23 casos
+Rust distintos aprobados**, cuatro nuevos: cinco compartidos de campo, siete
+selector/modelo/pintura, cuatro decoder, seis TUI multilínea afectados y un parser
+GUI. Los logs tienen24 pases: un decoder apareció también por el filtro selector.
+Metadata deduplica nombres; no corrida global ni24 casos distintos.
+
+**13 checks HWND aprobados**, seis nuevos: tres kind con edición/selección/clipboard
+por teclado/menú, Unicode fiel y cuota/rechazos atómicos, QuickOpen metadata real y
+supersession/dirtyReuse/side/pin, nueve reentradas tardías rechazadas (caret/query/
+kind/rev/view/encoding/root/ABA/candidato), foco Find/Explorer/Bottom y encoding,
+resize real/compact/composición/limpieza. Transporte únicamente sintético; **no se
+abrió, leyó ni modificó clipboard privado**. Source13B, encoding, id/revisión,
+catálogo y metadata Git sintética conservados. Un WM_PAINT, cero errores.
+
+Fallos retenidos: expectativa oversize debía contener espacios escapados `\s`
+(cuatro casos ya aprobados no repetidos, solo uno corregido), dos compilaciones
+del arnés por getter privado sustituido con vistas públicas, y Clippy large_enum
+resuelto con Box solo en handoff explícito. Clippy workspace/all-targets -D warnings,
+release workspace bins/examples y fmt finales aprobaron. Native a la primera;
+sin más suites/perfiles por docs. [Contrato](M2B_SELECTOR_INPUT.md),
+[logs/hashes/nombres únicos](evidence/m2b-selector-input-2026-11-03-metadata.json),
+[reporte](evidence/m2b-selector-input-2026-11-03-native-report.json).
+PNG1384×741 y984×641 GDI→PNG sin pérdida revisados visualmente. No OS clipboard
+interoperable/IME/DPI/accesibilidad/mouse-pantalla físicos/Unicode general/Linux/RAM
+global aceptados. Menús/draglineal/wheel, symlink opcional y notices GNU pendientes.
+Sin dependencias/proveedores/AVM/regex/instalaciones/CI/push/publicación ni seguridad.

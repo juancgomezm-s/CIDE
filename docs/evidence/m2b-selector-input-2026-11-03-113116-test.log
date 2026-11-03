@@ -1,0 +1,26 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+error[E0624]: method `view_count` is private
+   --> crates\jc-gui\src\windows\selector_input_smoke.rs:421:40
+    |
+421 |             || state.workbench.panes().view_count(source_tab) != 2
+    |                                        ^^^^^^^^^^ private method
+    |
+   ::: C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\panes.rs:362:5
+    |
+362 |     pub(crate) fn view_count(&self, tab: TabId) -> usize {
+    |     ---------------------------------------------------- private method defined here
+
+error[E0624]: method `view_count` is private
+   --> crates\jc-gui\src\windows\selector_input_smoke.rs:440:40
+    |
+440 |             || state.workbench.panes().view_count(source_tab) != 2
+    |                                        ^^^^^^^^^^ private method
+    |
+   ::: C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\panes.rs:362:5
+    |
+362 |     pub(crate) fn view_count(&self, tab: TabId) -> usize {
+    |     ---------------------------------------------------- private method defined here
+
+For more information about this error, try `rustc --explain E0624`.
+error: could not compile `jc-gui` (lib test) due to 2 previous errors

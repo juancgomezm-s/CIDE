@@ -1,0 +1,16 @@
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.11s
+     Running unittests src\lib.rs (target\debug\deps\jc_gui-a3c44ae95137d845.exe)
+
+running 8 tests
+test windows::selector::tests::input_paste_is_atomic_utf8_bounded_and_backspace_removes_one_scalar ... ok
+test windows::selector_paint::tests::query_cursor_and_selected_escape_share_bounded_field_projection ... ok
+test windows::clipboard::tests::selector_destination_budget_rejects_expansion_before_retaining_text ... ok
+test windows::selector_paint::tests::popup_and_every_row_stay_in_the_client_for_tiny_and_extreme_geometry ... ok
+test windows::selector_paint::tests::shrinking_an_owned_presentation_keeps_selected_row_without_mutation ... ok
+test windows::selector::tests::empty_file_presentation_is_read_only_and_tiny_viewport_allocates_no_rows ... ok
+test windows::selector::tests::selection_stays_visible_and_empty_filtered_results_have_no_target ... ok
+test windows::selector::tests::english_filter_shortcut_and_disabled_target_agree_with_registry ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+

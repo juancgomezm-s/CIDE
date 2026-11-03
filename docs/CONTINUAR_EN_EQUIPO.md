@@ -535,3 +535,27 @@ Matriz previa queda histórica;88 rutas GUI actuales. Otros pendientes del inven
 son entrada avanzada de selectores, menús y mouse general. No iniciar proveedores,
 regex/dependencias/AVM/CI/push por inferencia ni repetir perfiles cerrados. Gates
 físicos/globales/clipboard/Unicode, symlink y notices GNU permanecen abiertos.
+
+## Último cierre: entrada de selectores GUI — 2026-11-03
+
+Leer [contrato/evidencia](M2B_SELECTOR_INPUT.md). FieldSelection/edit_selected_field
+comparten fronteras y operación de campo; walker común de present_field/selected
+retiene solo <=32 filas visibles. GUI query256UTF8 sin controles/bidi: preflight
+posterior al reemplazo conserva input/caret/anchor/candidato/revisión al rechazar.
+Teclas/menú CopyCutPasteSelectAll del selector usan entry_context.field_input;
+filas de paleta siguen contexto invocador para ejecutar Source, no ese campo.
+CtrlV explícito nativo lee fuera del préstamo con salida máxima256UTF8; target
+captura generación no reutilizada, intención, candidato, Source metadata/ruta,
+invocador/encodingtarget/raíz/foco y se compara antes/después. Box solo en Action
+de ese handoff; no agrandar todas las acciones. Copy/Cut vacío y PasteNone/empty
+no cambian el campo. Nunca probar contra clipboard privado: usar transporte smoke.
+
+Home/End ahora son del caret; CtrlHome/End primero/último candidato. UpDown/Page/
+TabShiftTab recorren resultados. Escape conserva Search draft/Explorer invocador/
+Bottom; Files/Encoding aceptados vuelvenEditor. QueryUnicode es independiente de
+encoding de fuente. Sourcebytes/undo y reapertura/pin se mantienen en Workbench.
+23 Rust distintos (24 pases por un decoder solapado), cuatro nuevos;13 HWND/seis
+nuevos, fmt/Clippy/release aprobados. Logs conservan fallos de fixture/compile/lint;
+native a la primera. No suites/perfiles cerrados repetidos por documentación.
+El inventario conserva88 rutas; menús/mouse general y puertas previas pendientes.
+Sin proveedores/dependencias/AVM/regex/instalaciones/CI/push/publicación ni seguridad.

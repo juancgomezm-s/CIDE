@@ -120,6 +120,12 @@ ya consume resultados F3 tipados: Ctrl+J, View/paleta, Alt+1/2 dentro del panel 
 F6/Shift+F6 entre Editor/Explorer/panel. Enter navega Problems vigentes, Output es
 texto inerte. Sin proveedor conectado permanece vacío; no inicia Progress/AVM.
 
+[Entrada de selectores GUI](docs/M2B_SELECTOR_INPUT.md): Quick Open, paleta y encoding
+ya permiten caret/selección con Shift, Home/End, Delete y Ctrl+A/C/X/V, también por
+Edit. Up/Down/Tab recorren resultados; Ctrl+Home/End elige primero/último. Campos
+de256 bytes UTF8, pegado completo o rechazo sin cambios parciales; clipboard OS
+real sigue sin certificar, la automatización usa únicamente texto sintético.
+
 Abre una carpeta y usa Ctrl+Shift+F para consulta literal sensible a mayúsculas, inclusión/exclusión por globs y resultados progresivos. Enter navega; Esc en el panel inferior cancela. Tras una consulta completa sin avisos, Search / Replace in Project permite revisar sustituciones y confirmar con F9/Ctrl+Enter. Abiertos: edición con undo sin guardar; cerrados: guardado por archivo y conflictos explícitos. Véanse [uso, cuotas y límites](docs/S1_PROJECT_SEARCH.md) y [guardado Windows](docs/SAVE_WINDOWS_CONTENTION.md). En documento activo, Ctrl+F/Ctrl+H ya ofrecen búsqueda acotada, case folding completo Unicode 17, selección/historial y Ctrl+G escalar: [S0](docs/S0_DOCUMENT_SEARCH.md). No se certifican regex, normalización Unicode, GUI ni objetivos globales de rendimiento.
 
 En Windows, abre la raíz del repositorio y usa View / Git: Active File Diff; la primera vez solicita la ruta absoluta de Git para esa sesión. HEAD/index, refresh, cancelación y configuración están en View y palette. La comparación incluye cambios sin guardar (hasta 2 MiB por fuente), muestra identidad/OID y permite navegar hunks sin editar snapshots. Cambiar documento, vista, revisión o encoding exige refresh. [Entrega y límites](docs/GIT_DIFF_DELIVERY.md), [presentación TUI](docs/GIT_DIFF_PRESENTATION.md) y [proveedor Git](docs/GIT_READ_ONLY_PROVIDER.md). El estado de repositorio de solo lectura se describe abajo; no hay watcher; operaciones Git con escritura siguen en M5. La [escena de estudio GUI](docs/M2B_SCENE_STUDY.md) sigue como estudio histórico; el [frontend nativo actual](docs/M2B_NATIVE_WINDOWS.md) es un ejecutable Win32/GDI independiente de ese HTML.

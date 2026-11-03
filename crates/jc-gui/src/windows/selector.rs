@@ -1,6 +1,9 @@
 //! Input and bounded owned presentation only. No filesystem calls, worker,
 //! command execution, document ownership or Win32 dispatch lives here.
-use jc_app::{quick_open::QuickOpenController, CommandContext, CommandId, CommandRegistry, KeyMap};
+use jc_app::{
+    edit_selected_field, quick_open::QuickOpenController, CommandContext, CommandId,
+    CommandRegistry, FieldEdit, FieldSelection, KeyMap,
+};
 use jc_text::TextEncoding;
 const ENCODINGS: [TextEncoding; 4] = [
     TextEncoding::Utf8,
@@ -23,11 +26,14 @@ pub(super) enum SelectorKind {
 pub(super) struct Selector {
     kind: SelectorKind,
     input: String,
+    input_selection: FieldSelection,
+    input_revision: u64,
     selected: usize,
 }
 pub(super) struct SelectorPresentation {
     pub title: &'static str,
     pub query: String,
+    pub input_selection: FieldSelection,
     pub message: String,
     pub footer: &'static str,
     pub rows: Vec<SelectorRow>,
@@ -94,6 +100,7 @@ impl Selector {
         SelectorPresentation {
             title: "Choose Source Encoding",
             query: self.input.clone(),
+            input_selection: self.input_selection,
             message: "Interpret existing bytes; no conversion or save".into(),
             footer: "Enter choose | Esc cancel; bytes stay intact",
             rows,
@@ -105,6 +112,8 @@ impl Selector {
         Self {
             kind,
             input: String::new(),
+            input_selection: FieldSelection::default(),
+            input_revision: 0,
             selected: 0,
         }
     }
@@ -117,25 +126,66 @@ impl Selector {
     pub fn selected(&self) -> usize {
         self.selected
     }
+    pub fn input_revision(&self) -> u64 {
+        self.input_revision
+    }
+    pub fn field_selection(&self) -> FieldSelection {
+        self.input_selection
+    }
+    pub fn selected_text(&self) -> Option<&str> {
+        self.input_selection.range().map(|range| &self.input[range])
+    }
+    pub fn select_all_input(&mut self) -> Result<(), String> {
+        let next = self
+            .input_revision
+            .checked_add(1)
+            .ok_or("Selector input generation exhausted")?;
+        self.input_selection.select_all(&self.input);
+        self.input_revision = next;
+        Ok(())
+    }
+    pub fn edit_input(&mut self, edit: FieldEdit<'_>, selecting: bool) -> Result<bool, String> {
+        let next = self
+            .input_revision
+            .checked_add(1)
+            .ok_or("Selector input generation exhausted")?;
+        if let FieldEdit::Insert(value) = edit {
+            if !valid_query(value) {
+                return Err(
+                    "Selector accepts at most256 UTF-8 bytes and no controls/bidi markers".into(),
+                );
+            }
+        }
+        let before = self.input_selection;
+        let changed = edit_selected_field(
+            &mut self.input,
+            &mut self.input_selection,
+            edit,
+            selecting,
+            QUERY_BYTES,
+        )
+        .map_err(str::to_owned)?;
+        if changed {
+            self.selected = 0;
+        }
+        if changed || before != self.input_selection {
+            self.input_revision = next;
+        }
+        Ok(changed)
+    }
     /// Reject a whole paste atomically; never truncate inside UTF-8 or retain
     /// caller-owned large allocations. A changed query resets selection.
+    #[cfg(test)]
     pub fn append(&mut self, text: &str) -> bool {
-        if text.is_empty()
-            || self.input.len().saturating_add(text.len()) > QUERY_BYTES
-            || !valid_query(text)
-        {
-            return false;
-        }
-        self.input.push_str(text);
-        self.selected = 0;
-        true
+        !text.is_empty()
+            && self
+                .edit_input(FieldEdit::Insert(text), false)
+                .unwrap_or(false)
     }
+    #[cfg(test)]
     pub fn backspace(&mut self) -> bool {
-        if self.input.pop().is_none() {
-            return false;
-        }
-        self.selected = 0;
-        true
+        self.edit_input(FieldEdit::Backspace, false)
+            .unwrap_or(false)
     }
     /// Normalize against the latest count before accepting or presenting.
     pub fn move_selection(&mut self, delta: isize) {
@@ -193,6 +243,7 @@ impl Selector {
         SelectorPresentation {
             title: "Command Palette",
             query: self.input.clone(),
+            input_selection: self.input_selection,
             message: if registry.iter().take(MAX_COMMANDS + 1).count() > MAX_COMMANDS {
                 "Partial command list; registry limit reached"
             } else if total == 0 {
@@ -201,7 +252,7 @@ impl Selector {
                 "English label substring; unavailable commands disabled"
             }
             .into(),
-            footer: "Enter execute | Esc cancel",
+            footer: "Shift+arrows select | Ctrl+A/C/X/V | Tab results | Ctrl+Home/End first/last | Enter | Esc",
             rows,
             total,
             selected: self.selected,
@@ -245,6 +296,7 @@ impl Selector {
         SelectorPresentation {
             title: "Quick Open Project File",
             query: self.input.clone(),
+            input_selection: self.input_selection,
             message: controller.message().into(),
             footer: "Enter open | Ctrl+Enter side | F5 | Esc",
             rows,

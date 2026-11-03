@@ -507,3 +507,13 @@ de otros resultados; presentación nunca acepta/admite. Navegación Problems sol
 sobre documento abierto y contexto actual, preservando política de pin/grupos,
 sin abrir disco ni aplicar propuestas. Estado vacío/error/stale/recorte es explícito;
 el host no crea productores para poblarse. [Contrato/evidencia](M2B_BOTTOM_PANELS.md).
+
+## D48 — Intención de campo y comando de paleta son destinos distintos
+
+FieldSelection y edición/presentación compartidas gobiernan los tres selectores;
+no otro buffer fuente ni undo. Entry_context habilita clipboard/SelectAll del
+campo sin convertirlo en Editor; la lista de paleta conserva permisos del invocador.
+Un handoff nativo captura generación/intención/candidato y contexto completo, suelta
+préstamos, transfiere y revalida antes de mutar. Cuota256UTF8 se comprueba también
+antes de reservar salida del decoder; no pegado truncado. [Contrato y evidencia](M2B_SELECTOR_INPUT.md).
+La automatización usa solo backend sintético, sin leer/alterar clipboard privado.

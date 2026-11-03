@@ -137,6 +137,8 @@ pub struct CommandContext {
     /// The frontend's focused control targets source editing (including an
     /// editor-invoked menu/palette), rather than a modal field or read model.
     pub editor_input: bool,
+    /// A frontend field handles clipboard/select-all locally, never source edits.
+    pub field_input: bool,
     pub has_document: bool,
     pub document_dirty: bool,
     pub dirty_documents: usize,
@@ -173,6 +175,7 @@ impl Default for CommandContext {
         Self {
             focus: PrimaryFocus::Editor,
             editor_input: true,
+            field_input: false,
             has_document: false,
             document_dirty: false,
             dirty_documents: 0,
@@ -321,10 +324,13 @@ fn source_selection(ctx: &CommandContext) -> bool {
     linear_editor(ctx) && ctx.has_selection
 }
 fn paste(ctx: &CommandContext) -> bool {
-    rectangle_editor(ctx) && ctx.clipboard_has_text
+    (rectangle_editor(ctx) || ctx.field_input) && ctx.clipboard_has_text
 }
 fn source_clipboard_selection(ctx: &CommandContext) -> bool {
-    rectangle_editor(ctx) && ctx.has_selection
+    (rectangle_editor(ctx) || ctx.field_input) && ctx.has_selection
+}
+fn select_all(ctx: &CommandContext) -> bool {
+    rectangle_editor(ctx) || ctx.field_input
 }
 fn block_comment(ctx: &CommandContext) -> bool {
     linear_editor(ctx)
@@ -416,7 +422,7 @@ pub fn default_registry() -> CommandRegistry {
         spec!(EditCut, Edit, "Cut", source_clipboard_selection),
         spec!(EditCopy, Edit, "Copy", source_clipboard_selection),
         spec!(EditPaste, Edit, "Paste", paste),
-        spec!(EditSelectAll, Edit, "Select All", rectangle_editor),
+        spec!(EditSelectAll, Edit, "Select All", select_all),
         spec!(
             EditDuplicate,
             Edit,

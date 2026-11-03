@@ -87,6 +87,9 @@ fn encode(text: &str) -> Result<Vec<u16>, String> {
 }
 
 fn decode(units: &[u16]) -> Result<String, String> {
+    decode_limited(units, MAX_BYTES)
+}
+fn decode_limited(units: &[u16], limit: usize) -> Result<String, String> {
     let bytes = units
         .len()
         .checked_mul(2)
@@ -105,8 +108,8 @@ fn decode(units: &[u16]) -> Result<String, String> {
         let scalar = scalar.map_err(|_| "Clipboard text is not valid UTF-16")?;
         utf8_bytes = utf8_bytes
             .checked_add(scalar.len_utf8())
-            .filter(|bytes| *bytes <= MAX_BYTES)
-            .ok_or("Decoded clipboard text exceeds 2 MiB")?;
+            .filter(|bytes| *bytes <= limit.min(MAX_BYTES))
+            .ok_or("Decoded clipboard text exceeds the destination byte budget")?;
     }
     let mut decoded = String::new();
     decoded
@@ -240,6 +243,12 @@ impl Drop for Locked<'_> {
 /// command availability. None means CF_UNICODETEXT is unavailable; Some("") is
 /// a valid empty text payload. Errors never include clipboard contents.
 pub(super) fn read(hwnd: Hwnd) -> Result<Option<String>, String> {
+    read_limited(hwnd, MAX_BYTES)
+}
+pub(super) fn read_limited(hwnd: Hwnd, limit: usize) -> Result<Option<String>, String> {
+    if limit == 0 || limit > MAX_BYTES {
+        return Err("Invalid clipboard destination budget".into());
+    }
     let clipboard = Open::acquire(hwnd)?;
     if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) } == 0 {
         clipboard.close()?;
@@ -258,7 +267,11 @@ pub(super) fn read(hwnd: Hwnd) -> Result<Option<String>, String> {
         // u16 bit patterns are valid; strict surrogate validation happens above.
         let units =
             unsafe { std::slice::from_raw_parts(lock.pointer.as_ptr().cast::<u16>(), bytes / 2) };
-        let text = decode(units)?;
+        let text = if limit == MAX_BYTES {
+            decode(units)?
+        } else {
+            decode_limited(units, limit)?
+        };
         lock.unlock()?;
         text
     }; // Borrowed system handle is neither freed nor retained after CloseClipboard.
@@ -304,6 +317,18 @@ pub(super) fn write(hwnd: Hwnd, text: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn selector_destination_budget_rejects_expansion_before_retaining_text() {
+        let exact = "é".repeat(128);
+        let units = encode(&exact).unwrap();
+        assert_eq!(decode_limited(&units, 256).unwrap(), exact);
+        assert!(decode_limited(&units, 255).is_err());
+        assert!(decode_limited(&encode(&"€".repeat(86)).unwrap(), 256).is_err());
+        assert_eq!(
+            decode_limited(&encode("e\u{301}").unwrap(), 256).unwrap(),
+            "e\u{301}"
+        );
+    }
 
     #[test]
     fn strict_unicode_roundtrip_keeps_mixed_eol_tabs_and_no_normalization() {
