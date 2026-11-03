@@ -346,3 +346,20 @@ fmt/Clippy/release passed. No full workspace/native run, Explorer suites or clos
 profiles repeated. Raw failures/hashes retained; manual/global gates remain open.
 Next pending GUI parity is universal line/comment commands already in jc-app and
 language metadata. Build connected blocks before tests; no new providers/AVM/CI/push.
+
+## Native line/comment editing closure
+
+Read docs/M2B_NATIVE_LINE_EDIT.md. GUI Duplicate/DeleteLine/MoveLineUp/Down and
+ToggleLine/BlockComment now route to the existing Workbench and profile metadata.
+CommandContext.editor_input plus Editor focus/linear selection governs these six;
+GUI modal/read-model focus cannot edit hidden source. Palette also revalidates
+document/revision/encoding/ViewId/pane/caret/anchor from its invoker. Keep all byte
+edits, undo and view rebasing in Workbench, with read-only presentation.
+Delete/Move operate on caret line, Duplicate uses a selection when present. Preserve
+existing EOF-empty-line semantics; do not invent multi-line movement or guaranteed
+terminal-EOL preservation for explicit line transforms. No ABL frontend branches.
+23 directed Rust cases and14 own-HWND line-edit checks passed first run (3/7 new),
+fmt/Clippy/release approved. No navigation/Explorer suites or closed profiles rerun.
+Continue remaining universal GUI parity before optional provider APIs. Manual/global
+gates, omitted optional symlink and two missing GNU notices remain open. No new
+provider/AVM/dependency/install, CI, push, publication or intermediate manual request.

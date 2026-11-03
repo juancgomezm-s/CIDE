@@ -21,6 +21,7 @@ pub struct SmokeOptions {
     pub report: PathBuf,
     pub bitmap: Option<PathBuf>,
     pub navigation_only: bool,
+    pub line_edit_only: bool,
 }
 
 #[cfg(windows)]

@@ -444,3 +444,19 @@ Siguiente paridad GUI pendiente: edición universal de líneas y comentarios ya
 disponible en jc-app/perfiles (duplicar/eliminar/mover y delimitadores del perfil),
 con foco y registro compartidos antes de proveedores especializados. No ofrecer
 handlers sin cablear. M2A/M2B y las puertas físicas/globales siguen abiertos.
+
+## Paridad GUI de líneas y comentarios — 2026-11-03
+
+[Bloque implementado](M2B_NATIVE_LINE_EDIT.md): seis comandos universales ya
+cableados a teclado/menú Edit/paleta, Workbench y perfiles existentes. Disponibilidad
+central requiere editor_input/foco/selección lineal/capacidad del lenguaje; captura
+de origen de paleta rechaza documentos, revisiones, vistas y selecciones cambiados.
+Sin segunda implementación de edición ni cambios al motor o semántica TUI.
+
+Construcción amplia primero;23 casos dirigidos y14 checks nativos de sección
+line-edit aprobaron a la primera (3/7 nuevos), fmt/Clippy/release aprobados.
+Cuatro encodings, BOM/EOL, undo/redo, split/pin y modified limpio→sucio→limpio sin
+Save observados. No repetir navegación/Explorer ni perfiles cerrados para docs.
+Sigue pendiente la paridad de comandos universales restantes del registro en GUI
+(p. ej. búsqueda sobre selección y reapertura de pestaña cerrada); luego API de
+proveedores opcionales conforme al plan. No parser/AVM/CI nuevo; gates globales abiertos.

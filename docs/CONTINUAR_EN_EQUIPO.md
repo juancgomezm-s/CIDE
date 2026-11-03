@@ -434,3 +434,19 @@ Evidencia m2b-navigation-2026-11-03-*; Explorer y perfiles cerrados no se repiti
 Continuar con paridad GUI de líneas/comentarios sobre comandos/metadatos existentes,
 construcción amplia antes de checks. CI/push y proveedores/AVM no autorizados;
 clipboard OS/IME/DPI/accesibilidad/RAM/pantalla al final, sin pedir manual ahora.
+
+## Último cierre: líneas/comentarios GUI — 2026-11-03
+
+Leer M2B_NATIVE_LINE_EDIT.md. Seis comandos existentes pasan por registro/keymap/
+Workbench, sin otro motor. editor_input distingue edición de fuente de campos/
+readmodels; Palette conserva invocador y compara doc/rev/encoding/ViewId/pane/
+caret/anchor antes de aceptar. Comentarios vienen del perfil, sin condicional ABL
+en frontend. Delete/Move son caretline, Duplicate usa selección si existe; EOF
+vacío cuenta como línea. No asumir que mover a ese EOF conserva newline final.
+
+23 casos dirigidos y14 checks HWND line-edit aprobaron a la primera (3/7 nuevos),
+fmt/Clippy/release aprobados. Sin suites navegación/Explorer ni perfiles repetidos.
+Evidencia m2b-line-edit-2026-11-03-* con fuentes/binarios y PNGGDI sin pérdida.
+Sigue inventario de paridad universal GUI restante antes de proveedores opcionales;
+no añadir AVM/regex/dependencias/CI/push. Manual/global al final; GNU notices y
+symlink omitido siguen pendientes, no inferir certificación de distribución.

@@ -26,6 +26,8 @@ impl State {
         Ok(())
     }
     pub(super) fn close_selector(&mut self) {
+        self.selector_editor_input = false;
+        self.selector_edit_target = None;
         self.selector_search_panel = None;
         self.selector_explorer_focus = false;
         self.explorer_focused = false;
@@ -43,6 +45,8 @@ impl State {
     }
     pub(super) fn open_selector(&mut self, kind: SelectorKind) {
         let explorer_focus = self.explorer_focused;
+        let editor_input = self.context().editor_input;
+        let edit_target = self.source_edit_target();
         let search = if kind == SelectorKind::Palette {
             self.search_panel.take()
         } else {
@@ -56,6 +60,10 @@ impl State {
         self.selector = Some(Selector::new(kind));
         self.selector_explorer_focus = kind == SelectorKind::Palette && explorer_focus;
         self.selector_search_panel = search;
+        self.selector_editor_input = kind == SelectorKind::Palette && editor_input;
+        self.selector_edit_target = (kind == SelectorKind::Palette)
+            .then_some(edit_target)
+            .flatten();
         if kind == SelectorKind::Palette {
             self.workbench.cancel_search_navigation();
         }

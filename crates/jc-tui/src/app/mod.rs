@@ -30,6 +30,8 @@ mod keyboard_matrix_tests;
 #[cfg(test)]
 mod line_command_tests;
 #[cfg(test)]
+mod line_edit_integration_tests;
+#[cfg(test)]
 mod multiline_tests;
 #[cfg(test)]
 mod navigation_integration_tests;

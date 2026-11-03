@@ -1,0 +1,17 @@
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.15s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 3 tests
+test app::line_edit_integration_tests::move_caret_line_selection_eof_and_inactive_pinned_rebase_are_observable ... ok
+test app::line_edit_integration_tests::duplicate_selection_line_and_delete_eof_preserve_four_encodings_and_one_undo ... ok
+test app::line_edit_integration_tests::comment_events_use_profile_metadata_with_bom_legacy_and_selected_block_contracts ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 83 filtered out; finished in 0.01s
+
+     Running unittests src\main.rs (target\debug\deps\cide_tui-276d3eb826bfa013.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

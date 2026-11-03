@@ -1098,3 +1098,27 @@ inicial y fuentes/binarios SHA-256 en [contrato](M2B_NATIVE_NAVIGATION.md) y
 [metadata](evidence/m2b-navigation-2026-11-03-metadata.json). No perfiles repetidos,
 dependencias, instalaciones, CI o push; sin clipboard OS ni manual intermedio.
 M2A/M2B, IME/DPI/accesibilidad, Linux y aceptación RAM/pantalla continúan abiertos.
+
+## Líneas y comentarios nativos — 2026-11-03
+
+Bloque completo construido/cableado antes de checks: seis comandos, registro,
+foco/menús/atajos/paleta y recorridos. **23 casos dirigidos aprobados a la primera**:
+15 interacción, tres TUI nuevos y cinco parser CLI GUI; no corrida global. fmt,
+Clippy workspace/all-targets -D warnings y release bins/examples aprobados.
+
+**14 checks nativos aprobados**: siete nuevos y siete arranque/pintura, sección
+line-edit exclusiva en HWND propio oculto. Un WM_PAINT, cero errores. Selección/
+caretline, Delete/Move y EOF vacío/sin separador, BOM/EOL mixtos, ABL/C#/Python/plain,
+cuatro encodings, capacidades ausentes deshabilitadas, UN undo/redo exacto y split/
+pin con selección inactiva rebasada. Menú/teclas/paleta reales; modales/Explorer y
+paleta obsoleta no editan fuente oculta. Documento limpio→duplicate dirty→undo limpio
+preserva DocumentId/ViewId y disco13B sin Save. No se asumen IDs de revisión +1
+tras ramas undo/redo; la reversión exacta es la evidencia de un undo lógico.
+
+Seis ayudas/aliases, iconos siete frames/PE y guard de metadataGit propia aprobados;
+este último no es regresión de proveedores Git. Dos PNG1000×650 GDI→PNG sin pérdida
+revisados. [Evidencia](M2B_NATIVE_LINE_EDIT.md),
+[hashes](evidence/m2b-line-edit-2026-11-03-metadata.json). No suites de navegación/
+Explorer ni perfiles cerrados repetidos. Sin CI/push/dependencias/instalaciones,
+AVM o clipboard OS. Manual/global, Linux, symlink omitido y notices GNU pendientes
+siguen separados; M2A/M2B no se cierran por este bloque funcional.

@@ -8,6 +8,8 @@ mod folder;
 mod git_panel;
 mod git_smoke;
 mod git_view;
+mod line_edit;
+mod line_edit_smoke;
 mod navigation_paint;
 mod navigation_panel;
 mod navigation_smoke;
@@ -91,6 +93,16 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (115, CommandId::EditSelectAll, "Select &All"),
     (116, CommandId::EditJoinLines, "&Join Lines"),
     (117, CommandId::EditSplitLine, "&Split Line"),
+    (170, CommandId::EditDuplicate, "&Duplicate Selection / Line"),
+    (171, CommandId::EditDeleteLine, "De&lete Line"),
+    (172, CommandId::EditMoveLineUp, "Move Line &Up"),
+    (173, CommandId::EditMoveLineDown, "Move Line Do&wn"),
+    (174, CommandId::EditToggleLineComment, "Toggle &Comment"),
+    (
+        175,
+        CommandId::EditToggleBlockComment,
+        "Toggle &Block Comment",
+    ),
     (118, CommandId::FileSaveAll, "Save A&ll..."),
     (120, CommandId::EditorSplitRight, "Split &Right"),
     (121, CommandId::EditorOneGroup, "&One Group"),
@@ -193,6 +205,8 @@ struct State {
     selector: Option<Selector>,
     selector_explorer_focus: bool,
     selector_search_panel: Option<search_panel::SearchPanel>,
+    selector_editor_input: bool,
+    selector_edit_target: Option<line_edit::EditTarget>,
     search_panel: Option<search_panel::SearchPanel>,
     navigation_panel: Option<navigation_panel::NavigationPanel>,
     navigation_generation: u64,
@@ -277,6 +291,8 @@ impl State {
             selector: None,
             selector_explorer_focus: false,
             selector_search_panel: None,
+            selector_editor_input: false,
+            selector_edit_target: None,
             search_panel: None,
             navigation_panel: None,
             navigation_generation: 0,
@@ -381,6 +397,23 @@ impl State {
             PrimaryFocus::Editor
         };
         context.explorer_focused = explorer_focus;
+        context.editor_input = if self
+            .selector
+            .as_ref()
+            .is_some_and(|s| s.kind() == SelectorKind::Palette)
+        {
+            self.selector_editor_input
+                && self.selector_edit_target.is_some()
+                && self.selector_edit_target == self.source_edit_target()
+        } else {
+            !explorer_focus
+                && self.selector.is_none()
+                && self.search_panel.is_none()
+                && self.navigation_panel.is_none()
+                && !self.project_visible()
+                && self.replace_panel.is_none()
+                && self.git_panel.is_none()
+        };
         if explorer_focus {
             context.can_open_to_side = self
                 .explorer_view
@@ -567,6 +600,10 @@ impl State {
             }
             _ => {}
         }
+        let edit_before = self
+            .workbench
+            .active_document()
+            .map(|d| (d.id, d.session.document().revision()));
         match self.workbench.execute(command) {
             Ok(CommandOutcome::View(CommandId::ViewToggleInvisibles)) => {
                 self.status = if self.workbench.invisibles_visible() {
@@ -577,6 +614,19 @@ impl State {
                 .into()
             }
             Ok(CommandOutcome::None) => {
+                if line_edit::is_line_edit(command) {
+                    let label = self.registry.get(command).map_or("Line edit", |s| s.label);
+                    let edit_after = self
+                        .workbench
+                        .active_document()
+                        .map(|d| (d.id, d.session.document().revision()));
+                    self.status = if edit_before == edit_after {
+                        format!("No change · {label}")
+                    } else {
+                        format!("{label} · unsaved changes")
+                    };
+                    return Action::None;
+                }
                 if command == CommandId::FileSave {
                     self.save_count += 1;
                 }
@@ -668,6 +718,7 @@ impl State {
             0x27 => Some(Key::Right),
             0x28 => Some(Key::Down),
             0x30..=0x5a => char::from_u32(code as u32).map(|ch| Key::Char(ch.to_ascii_lowercase())),
+            0xbf => Some(Key::Char('/')),
             0x70..=0x87 => Some(Key::Function((code - 0x70 + 1) as u8)),
             _ => None,
         };
@@ -1340,10 +1391,9 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
             DestroyMenu(bar);
             return Err(os_error("AppendMenu"));
         }
-        for (id, command, label) in COMMANDS
-            .iter()
-            .filter(|(id, _, _)| *id >= start && *id < end)
-        {
+        for (id, command, label) in COMMANDS.iter().filter(|(id, _, _)| {
+            (*id >= start && *id < end) || (start == 110 && (170..176).contains(id))
+        }) {
             let text = match keymap.primary_shortcut(*command) {
                 Some(shortcut) => format!("{label}\t{shortcut}"),
                 None => (*label).to_owned(),

@@ -453,3 +453,14 @@ Desarmar F3 diferido es independiente de parar el scan. Menús verifican disponi
 antes de cerrar overlays; pegado suelta préstamos y revalida destino/generación.
 [Contrato/evidencia](M2B_NATIVE_NAVIGATION.md). Validación por bloque y sección
 nativa dedicada evita repetir Explorer/perfiles cerrados.
+
+## D43 — Edición GUI delegada y disponibilidad según el control de origen
+
+Los seis comandos de líneas/comentarios consumen Workbench y perfiles existentes.
+CommandContext.editor_input suma intención de fuente a foco Editor y selección
+lineal; no se usa un campo modal como autoridad para editar el documento oculto.
+Palette captura invocador y destino (document/rev/encoding/ViewId/pane/caret/anchor)
+y revalida al aceptar, sin clonar editores. Menús comprueban disponibilidad antes
+de cerrar overlays. Los bytes, transacciones, undo y geometría de vistas siguen en
+aplicación; paint solo presenta. Semántica caretline/EOF y límites de asignaciones
+existentes quedan explícitos en [contrato/evidencia](M2B_NATIVE_LINE_EDIT.md).

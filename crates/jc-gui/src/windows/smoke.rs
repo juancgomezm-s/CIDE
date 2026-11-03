@@ -229,8 +229,12 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             return Err("Native editor unexpectedly contains a child text control".into());
         }
         checks.push("no_child_edit_control");
-        if options.navigation_only {
-            checks.extend(super::navigation_smoke::run(hwnd, options)?);
+        if options.navigation_only || options.line_edit_only {
+            if options.line_edit_only {
+                checks.extend(super::line_edit_smoke::run(hwnd, options)?);
+            } else {
+                checks.extend(super::navigation_smoke::run(hwnd, options)?);
+            }
             SendMessageW(hwnd, WM_PAINT, 0, 0);
             let frame = {
                 let mut state = owner(hwnd).unwrap().state.borrow_mut();
@@ -401,6 +405,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         checks.extend(super::git_smoke::run(hwnd, options)?);
         checks.extend(super::explorer_smoke::run(hwnd, options)?);
         checks.extend(super::navigation_smoke::run(hwnd, options)?);
+        checks.extend(super::line_edit_smoke::run(hwnd, options)?);
         // A complete native selector flow: modal query input, real PostMessage
         // delivery, authoritative target, dirty session reuse and shared undo.
         position(hwnd, 0, 0)?;

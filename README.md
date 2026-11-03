@@ -96,6 +96,11 @@ Find/Replace para consultas aceptadas con opciones. Menú Navigation y paleta us
 los mismos comandos. Recuperar consultas conserva el reemplazo; navegar no edita
 ni guarda. Los destinos cambiados mientras el campo está abierto exigen reabrirlo.
 
+La [edición de líneas y comentarios GUI](docs/M2B_NATIVE_LINE_EDIT.md) ya conecta
+Ctrl+D, Ctrl+Shift+D, Alt+Up/Down y los comentarios del perfil a menú y paleta.
+Comparte bytes y undo entre vistas; Explorer y campos modales no editan fuente
+oculta. ABL usa `/* ... */` mediante metadata, sin iniciar OpenEdge.
+
 Abre una carpeta y usa Ctrl+Shift+F para consulta literal sensible a mayúsculas, inclusión/exclusión por globs y resultados progresivos. Enter navega; Esc en el panel inferior cancela. Tras una consulta completa sin avisos, Search / Replace in Project permite revisar sustituciones y confirmar con F9/Ctrl+Enter. Abiertos: edición con undo sin guardar; cerrados: guardado por archivo y conflictos explícitos. Véanse [uso, cuotas y límites](docs/S1_PROJECT_SEARCH.md) y [guardado Windows](docs/SAVE_WINDOWS_CONTENTION.md). En documento activo, Ctrl+F/Ctrl+H ya ofrecen búsqueda acotada, case folding completo Unicode 17, selección/historial y Ctrl+G escalar: [S0](docs/S0_DOCUMENT_SEARCH.md). No se certifican regex, normalización Unicode, GUI ni objetivos globales de rendimiento.
 
 En Windows, abre la raíz del repositorio y usa View / Git: Active File Diff; la primera vez solicita la ruta absoluta de Git para esa sesión. HEAD/index, refresh, cancelación y configuración están en View y palette. La comparación incluye cambios sin guardar (hasta 2 MiB por fuente), muestra identidad/OID y permite navegar hunks sin editar snapshots. Cambiar documento, vista, revisión o encoding exige refresh. [Entrega y límites](docs/GIT_DIFF_DELIVERY.md), [presentación TUI](docs/GIT_DIFF_PRESENTATION.md) y [proveedor Git](docs/GIT_READ_ONLY_PROVIDER.md). El estado de repositorio de solo lectura se describe abajo; no hay watcher; operaciones Git con escritura siguen en M5. La [escena de estudio GUI](docs/M2B_SCENE_STUDY.md) sigue como estudio histórico; el [frontend nativo actual](docs/M2B_NATIVE_WINDOWS.md) es un ejecutable Win32/GDI independiente de ese HTML.

@@ -10,6 +10,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut report = None;
     let mut bitmap = None;
     let mut navigation_only = false;
+    let mut line_edit_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -19,6 +20,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("duplicate --smoke-navigation-only".into());
                 }
                 navigation_only = true;
+            }
+            Some("--smoke-line-edit-only") => {
+                if line_edit_only {
+                    return Err("duplicate --smoke-line-edit-only".into());
+                }
+                line_edit_only = true;
             }
             Some("--git-executable") => {
                 if options.git_executable.is_some() {
@@ -83,7 +90,15 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             _ => options.paths.push(PathBuf::from(arg)),
         }
     }
-    if fixture.is_some() || report.is_some() || bitmap.is_some() || navigation_only {
+    if navigation_only && line_edit_only {
+        return Err("choose only one smoke section".into());
+    }
+    if fixture.is_some()
+        || report.is_some()
+        || bitmap.is_some()
+        || navigation_only
+        || line_edit_only
+    {
         if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("smoke uses only its explicit fixture".into());
         }
@@ -101,6 +116,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             report,
             bitmap,
             navigation_only,
+            line_edit_only,
         });
     }
     Ok(Some(options))
@@ -235,6 +251,19 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(navigation.smoke.unwrap().navigation_only);
+        let line_edit = args(&[
+            "--smoke-line-edit-only",
+            "--smoke-fixture",
+            &fixture,
+            "--smoke-report",
+            &report,
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(line_edit.smoke.unwrap().line_edit_only);
+        assert!(args(&["--smoke-line-edit-only"]).is_err());
+        assert!(args(&["--smoke-line-edit-only", "--smoke-line-edit-only"]).is_err());
+        assert!(args(&["--smoke-navigation-only", "--smoke-line-edit-only"]).is_err());
         assert!(args(&["--smoke-navigation-only"]).is_err());
         assert!(args(&["--smoke-navigation-only", "--smoke-navigation-only"]).is_err());
         assert!(args(&["--smoke-fixture", &fixture]).is_err());

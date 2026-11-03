@@ -76,6 +76,15 @@ NAVIGATION_REQUIRED = {
     "navigation_modal_cancel_accept_disarm_deferred_find_without_stopping_scan",
     "navigation_close_stale_target_original_source_and_undo_preserved",
 }
+LINE_EDIT_REQUIRED = {
+    "line_edit_duplicate_selection_line_bom_one_undo",
+    "line_edit_delete_move_caret_selection_eof_contract",
+    "line_edit_profile_comments_four_encodings_exact_eol",
+    "line_edit_selected_block_and_profile_disabled_comments",
+    "line_edit_split_pin_inactive_selection_rebase_readonly",
+    "line_edit_modal_explorer_and_stale_palette_no_hidden_edit",
+    "line_edit_owned_memory_cleanup_original_source_disk_preserved",
+}
 
 def ordinary_directory(path):
     info = path.lstat()
@@ -135,7 +144,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--section", choices=("all", "navigation"), default="all")
+    parser.add_argument("--section", choices=("all", "navigation", "line-edit"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -159,7 +168,8 @@ def main():
     with (output / "stdout.txt").open("xb") as stdout, (output / "stderr.txt").open("xb") as stderr:
         result = subprocess.run(
             [str(exe), "--git-executable", str(git_executable), "--smoke-fixture", str(fixture), "--smoke-report", str(report), "--smoke-bitmap", str(bitmap)]
-                + (["--smoke-navigation-only"] if args.section == "navigation" else []),
+                + (["--smoke-navigation-only"] if args.section == "navigation" else
+                   ["--smoke-line-edit-only"] if args.section == "line-edit" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -170,7 +180,9 @@ def main():
     if git_metadata(output) != git_before:
         raise RuntimeError("native GUI changed owned Git metadata/index/config/objects/refs")
     payload = json.loads(report.read_text(encoding="utf-8"))
-    required = NAVIGATION_REQUIRED if args.section == "navigation" else REQUIRED | NAVIGATION_REQUIRED
+    required = (NAVIGATION_REQUIRED if args.section == "navigation" else
+                LINE_EDIT_REQUIRED if args.section == "line-edit" else
+                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED)
     if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
     if payload.get("backend") != "Win32/GDI" or payload.get("window") != "own_hidden_hwnd" or payload.get("native_paints", 0) < 1:

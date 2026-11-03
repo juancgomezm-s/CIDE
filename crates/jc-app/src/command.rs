@@ -134,6 +134,9 @@ pub enum CommandId {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandContext {
     pub focus: PrimaryFocus,
+    /// The frontend's focused control targets source editing (including an
+    /// editor-invoked menu/palette), rather than a modal field or read model.
+    pub editor_input: bool,
     pub has_document: bool,
     pub document_dirty: bool,
     pub dirty_documents: usize,
@@ -169,6 +172,7 @@ impl Default for CommandContext {
     fn default() -> Self {
         Self {
             focus: PrimaryFocus::Editor,
+            editor_input: true,
             has_document: false,
             document_dirty: false,
             dirty_documents: 0,
@@ -313,6 +317,9 @@ fn rectangle_active(ctx: &CommandContext) -> bool {
 fn linear_document(ctx: &CommandContext) -> bool {
     ctx.has_document && !ctx.rectangular_selection
 }
+fn linear_editor(ctx: &CommandContext) -> bool {
+    linear_document(ctx) && ctx.focus == PrimaryFocus::Editor && ctx.editor_input
+}
 fn linear_selection(ctx: &CommandContext) -> bool {
     selection(ctx) && !ctx.rectangular_selection
 }
@@ -320,7 +327,7 @@ fn paste(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.clipboard_has_text
 }
 fn block_comment(ctx: &CommandContext) -> bool {
-    linear_document(ctx)
+    linear_editor(ctx)
         && ctx
             .active_language
             .as_deref()
@@ -328,7 +335,7 @@ fn block_comment(ctx: &CommandContext) -> bool {
             .is_some_and(|profile| profile.block_comment.is_some())
 }
 fn line_comment(ctx: &CommandContext) -> bool {
-    linear_document(ctx)
+    linear_editor(ctx)
         && ctx
             .active_language
             .as_deref()
@@ -414,11 +421,11 @@ pub fn default_registry() -> CommandRegistry {
             EditDuplicate,
             Edit,
             "Duplicate Selection/Line",
-            linear_document
+            linear_editor
         ),
-        spec!(EditDeleteLine, Edit, "Delete Line", linear_document),
-        spec!(EditMoveLineUp, Edit, "Move Line Up", linear_document),
-        spec!(EditMoveLineDown, Edit, "Move Line Down", linear_document),
+        spec!(EditDeleteLine, Edit, "Delete Line", linear_editor),
+        spec!(EditMoveLineUp, Edit, "Move Line Up", linear_editor),
+        spec!(EditMoveLineDown, Edit, "Move Line Down", linear_editor),
         spec!(EditToggleLineComment, Edit, "Toggle Comment", line_comment),
         spec!(
             EditToggleBlockComment,
