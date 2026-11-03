@@ -4,6 +4,9 @@ mod ffi;
 mod folder;
 mod notify;
 mod paint;
+mod save_flow;
+mod save_plan;
+mod save_smoke;
 mod search_paint;
 mod search_panel;
 mod selector;
@@ -57,6 +60,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (115, CommandId::EditSelectAll, "Select &All"),
     (116, CommandId::EditJoinLines, "&Join Lines"),
     (117, CommandId::EditSplitLine, "&Split Line"),
+    (118, CommandId::FileSaveAll, "Save A&ll..."),
     (120, CommandId::EditorSplitRight, "Split &Right"),
     (121, CommandId::EditorOneGroup, "&One Group"),
     (122, CommandId::EditorFocusPrimary, "Focus Group &1"),
@@ -88,6 +92,7 @@ enum Action {
     ChooseFolder,
     Open(bool),
     SaveAs,
+    SaveAll,
     CloseTab,
     Exit,
 }
@@ -119,6 +124,9 @@ struct State {
     pub paint_errors: usize,
     pub save_count: usize,
     pub smoke: bool,
+    smoke_root: Option<PathBuf>,
+    smoke_save_paths: std::collections::VecDeque<Option<PathBuf>>,
+    save_all_active: bool,
     pub key_override: Option<Modifiers>,
 }
 impl Drop for State {
@@ -174,6 +182,13 @@ impl State {
             paint_errors: 0,
             save_count: 0,
             smoke: options.smoke.is_some(),
+            smoke_root: options
+                .smoke
+                .as_ref()
+                .and_then(|s| s.fixture.parent())
+                .and_then(|p| p.canonicalize().ok()),
+            smoke_save_paths: Default::default(),
+            save_all_active: false,
             key_override: None,
         };
         if let Some(root) = options
@@ -266,9 +281,11 @@ impl State {
             CommandId::FileClose => return Action::CloseTab,
             CommandId::FileExit => return Action::Exit,
             CommandId::FileSaveAll => {
-                self.status =
-                    "Save each document; native Save All needs its own Save As flow".into();
-                return Action::None;
+                if self.save_all_active {
+                    self.status = "Save All is already in progress".into();
+                    return Action::None;
+                }
+                return Action::SaveAll;
             }
             CommandId::FileSave
                 if self
@@ -707,13 +724,20 @@ impl Drop for NativePaint {
 }
 
 unsafe fn file_dialog(hwnd: Hwnd, save: bool) -> Result<Option<PathBuf>, String> {
+    file_dialog_named(hwnd, save, None)
+}
+unsafe fn file_dialog_named(
+    hwnd: Hwnd,
+    save: bool,
+    title: Option<&str>,
+) -> Result<Option<PathBuf>, String> {
     let mut file = vec![0u16; 32768];
     let filter = wide("All files\0*.*\0");
-    let title = wide(if save {
+    let title = wide(title.unwrap_or(if save {
         "Save source as"
     } else {
         "Open source"
-    });
+    }));
     let mut options: OpenFileName = std::mem::zeroed();
     options.size = std::mem::size_of::<OpenFileName>() as u32;
     options.owner = hwnd;
@@ -758,6 +782,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::None => {}
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
+        Action::SaveAll => save_flow::perform(hwnd),
         Action::ChooseFolder => {
             let selected = folder::choose(hwnd);
             if let Some(owner) = owner(hwnd) {
@@ -798,11 +823,33 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             }
         }
         Action::SaveAs => {
+            let captured = owner(hwnd)
+                .ok_or_else(|| "Save As window closed".to_owned())
+                .and_then(|model| {
+                    let state = model.state.borrow();
+                    let document = state
+                        .workbench
+                        .active_document()
+                        .ok_or("No active Save As document")?;
+                    state
+                        .workbench
+                        .capture_save_target(document.id, document.session.document().revision())
+                        .map_err(|e| e.to_string())
+                });
+            let target = match captured {
+                Ok(target) => target,
+                Err(error) => {
+                    if let Some(model) = owner(hwnd) {
+                        model.state.borrow_mut().error(error);
+                    }
+                    return;
+                }
+            };
             let selected = file_dialog(hwnd, true);
             if let Some(owner) = owner(hwnd) {
                 let mut state = owner.state.borrow_mut();
                 match selected {
-                    Ok(Some(path)) => match state.workbench.save_active_as(path) {
+                    Ok(Some(path)) => match state.workbench.save_target(target, Some(path)) {
                         Ok(()) => {
                             state.save_count += 1;
                             state.status = "Saved".into();
@@ -911,6 +958,23 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
                 DestroyMenu(bar);
                 return Err(os_error("AppendMenu item"));
             }
+        }
+        if start == 101
+            && AppendMenuW(
+                popup,
+                0,
+                command_id(CommandId::FileSaveAll),
+                wide(&format!(
+                    "Save A&ll...\t{}",
+                    keymap
+                        .primary_shortcut(CommandId::FileSaveAll)
+                        .expect("shared Save All shortcut")
+                ))
+                .as_ptr(),
+            ) == 0
+        {
+            DestroyMenu(bar);
+            return Err(os_error("AppendMenu Save All"));
         }
         if start == 101
             && AppendMenuW(popup, 0, OPEN_SIDE, wide("Open File to &Side...").as_ptr()) == 0

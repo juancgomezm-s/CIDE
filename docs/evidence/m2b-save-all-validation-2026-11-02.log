@@ -1,0 +1,104 @@
+=== m2-visible-blocks-20261103T025146-test.log ===
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.29s
+     Running tests\f1.rs (target\debug\deps\f1-5adf030bf5b0872f.exe)
+
+running 8 tests
+test saved_view_selection_and_scroll_survive_switching_documents_in_each_group ... ok
+test closing_empty_primary_group_does_not_leave_document_without_active_view ... ok
+test provider_edits_inactive_document_without_focus_change_and_encodes_atomically ... ok
+test failed_or_stale_text_batch_preserves_content_selection_and_history ... ok
+test crlf_navigation_delete_and_jump_never_leave_an_internal_caret ... ok
+test replace_all_reverts_once_and_rebases_every_view ... ok
+test close_one_dirty_view_keeps_shared_document_then_discard_reopens_clean_disk ... ok
+test selecting_bom_document_in_another_group_starts_after_bom ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\save_targets.rs (target\debug\deps\save_targets-ced7a882ef6e4817.exe)
+
+running 3 tests
+test new_document_requires_explicit_destination_and_save_as_preserves_geometry_and_history ... ok
+test stale_revision_renamed_path_and_closed_identity_are_rejected_before_destination_io ... ok
+test save_one_captured_document_then_cancel_preserves_other_sources_views_and_undo ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\workbench.rs (target\debug\deps\workbench-8274ef34e5eb93ed.exe)
+
+running 18 tests
+test command_outcomes_keep_ui_prompts_out_of_widgets ... ok
+test reopen_closed_tab_restores_the_same_document_session ... ok
+test legacy_file_requires_explicit_encoding_before_text_editing ... ok
+test block_comment_preserves_utf8_bom_even_with_select_all ... ok
+test dirty_close_routes_to_one_explicit_decision ... ok
+test search_next_and_previous_share_byte_ranges_with_selection ... ok
+test duplicate_line_handles_final_line_without_a_terminal_newline ... ok
+test indent_and_outdent_selected_lines_preserve_mixed_line_endings ... ok
+test utf8_cursor_movement_never_splits_multibyte_characters ... ok
+test selected_multiline_abl_comment_wraps_and_unwraps_exact_bytes ... ok
+test utf8_bom_starts_cursor_after_bom ... ok
+test line_commands_are_real_workbench_operations ... ok
+test replace_current_and_all_use_the_document_encoding ... ok
+test abl_toggle_comment_preserves_legacy_bytes_and_is_one_undo_step ... ok
+test toggle_line_comment_uses_the_language_profile ... ok
+test selected_csharp_lines_comment_and_uncomment_as_one_edit ... ok
+test save_as_uses_safe_file_session_and_retitles_tab ... ok
+test workbench_edits_saves_and_tracks_command_context ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+=== m2-visible-blocks-20261103T025200-test.log ===
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.88s
+     Running unittests src\lib.rs (target\debug\deps\jc_gui-95bcfa7c5d16affe.exe)
+
+running 13 tests
+test windows::clipboard::tests::nul_malformed_surrogates_and_missing_terminators_are_rejected_without_truncation ... ok
+test windows::clipboard::tests::strict_unicode_roundtrip_keeps_mixed_eol_tabs_and_no_normalization ... ok
+test windows::save_plan::tests::acknowledgements_preserve_order_and_reject_stale_or_repeated_results ... ok
+test windows::save_plan::tests::cancellation_keeps_unsaved_count_and_cannot_acknowledge_pending_candidate ... ok
+test windows::selector::tests::input_paste_is_atomic_utf8_bounded_and_backspace_removes_one_scalar ... ok
+test windows::selector_paint::tests::popup_and_every_row_stay_in_the_client_for_tiny_and_extreme_geometry ... ok
+test windows::selector::tests::empty_file_presentation_is_read_only_and_tiny_viewport_allocates_no_rows ... ok
+test windows::selector_paint::tests::query_cursor_counts_scalars_and_retains_tail_without_control_interpretation ... ok
+test windows::selector_paint::tests::shrinking_an_owned_presentation_keeps_selected_row_without_mutation ... ok
+test windows::selector::tests::english_filter_shortcut_and_disabled_target_agree_with_registry ... ok
+test windows::selector::tests::selection_stays_visible_and_empty_filtered_results_have_no_target ... ok
+test windows::save_plan::tests::construction_accepts_empty_and_limit_but_rejects_duplicate_ids_and_overflow ... ok
+test windows::clipboard::tests::native_and_utf8_budgets_are_separate_and_enforced_before_expansion ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running unittests src\main.rs (target\debug\deps\jc_ide_gui-21284fb8d9156dd1.exe)
+
+running 3 tests
+test tests::project_root_is_explicit_and_preserves_native_path ... ok
+test tests::files_and_encodings_are_explicit_without_starting_a_window ... ok
+test tests::smoke_requires_distinct_absolute_owned_paths ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests jc_gui
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+=== m2-visible-blocks-20261103T025209-clippy.log ===
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.31s
+
+=== m2-visible-blocks-20261103T025221-build.log ===
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `release` profile [optimized] target(s) in 47.65s
+
+=== m2-visible-blocks-20261103T025412-build.log ===
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `release` profile [optimized] target(s) in 5.88s

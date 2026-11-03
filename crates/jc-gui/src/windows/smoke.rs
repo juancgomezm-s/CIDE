@@ -87,14 +87,14 @@ unsafe fn bytes(hwnd: Hwnd) -> Result<Vec<u8>, String> {
         .read_range(0..document.session.document().len())
         .map_err(|e| e.to_string())
 }
-unsafe fn expected(hwnd: Hwnd, value: &[u8]) -> Result<(), String> {
+pub(super) unsafe fn expected(hwnd: Hwnd, value: &[u8]) -> Result<(), String> {
     if bytes(hwnd)? != value {
         Err("Smoke model bytes differ from the expected action".into())
     } else {
         Ok(())
     }
 }
-unsafe fn command(hwnd: Hwnd, command: CommandId) -> Result<(), String> {
+pub(super) unsafe fn command(hwnd: Hwnd, command: CommandId) -> Result<(), String> {
     let id = command_id(command);
     if id == 0 {
         return Err("Smoke command is not exposed by the native menu".into());
@@ -102,7 +102,7 @@ unsafe fn command(hwnd: Hwnd, command: CommandId) -> Result<(), String> {
     SendMessageW(hwnd, WM_COMMAND, id, 0);
     Ok(())
 }
-unsafe fn key(hwnd: Hwnd, code: usize, modifiers: Modifiers) -> Result<(), String> {
+pub(super) unsafe fn key(hwnd: Hwnd, code: usize, modifiers: Modifiers) -> Result<(), String> {
     owner(hwnd)
         .ok_or("Smoke HWND unavailable")?
         .state
@@ -179,7 +179,7 @@ unsafe fn wait_for_search(hwnd: Hwnd) -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
-unsafe fn paste(hwnd: Hwnd, text: &str) -> Result<(), String> {
+pub(super) unsafe fn paste(hwnd: Hwnd, text: &str) -> Result<(), String> {
     owner(hwnd)
         .ok_or("Paste fixture lost HWND")?
         .state
@@ -345,14 +345,16 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
                 return Err("New native document bypassed Save As".into());
             }
             checks.push("unsaved_save_routes_to_save_as");
-            if !matches!(state.execute(CommandId::FileSaveAll), super::Action::None)
-                || new_path.exists()
+            if !matches!(
+                state.execute(CommandId::FileSaveAll),
+                super::Action::SaveAll
+            ) || new_path.exists()
             {
                 return Err(
                     "Native Save All wrote an unnamed document without its frontend flow".into(),
                 );
             }
-            checks.push("native_save_all_requires_flow");
+            checks.push("native_save_all_routes_explicit_flow");
             state
                 .workbench
                 .close_active(true)
@@ -360,6 +362,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             state.status = "Ready · internal clipboard · scalar-cell preview".into();
         }
         expected(hwnd, SOURCE)?;
+        checks.extend(super::save_smoke::run(hwnd, options)?);
         // A complete native selector flow: modal query input, real PostMessage
         // delivery, authoritative target, dirty session reuse and shared undo.
         position(hwnd, 0, 0)?;
@@ -411,7 +414,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         expected(hwnd, SOURCE)?;
         checks.push("palette_shared_command_one_undo");
         key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
-        type_query(hwnd, "Save All");
+        type_query(hwnd, "Go to Line / Column");
         key(hwnd, 0x0d, Modifiers::NONE)?;
         if owner(hwnd).unwrap().state.borrow().selector.is_none() {
             return Err("Palette executed an unsupported native flow".into());

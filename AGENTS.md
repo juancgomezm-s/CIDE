@@ -255,3 +255,17 @@ explicit cancellation and no generated untitled writes. Keep one integrator,
 exclusive worker files and broad construction before serial validation. Manual
 OS clipboard/IME/DPI/accessibility/display remain for the end, no request now.
 No new dependency/regex/CI/push or global CPU/RAM profiling.
+
+
+## Save All closure and next native project-search block
+
+Read docs/M2B_SAVE_ALL.md. Native Save All is implemented: bounded unique document
+metadata, per-new-document Save As, no generated-name writes, cancel/error stops
+with explicit saved/pending counts. SaveTarget validates id/revision/path/new
+after modal calls; ordinary Save As now uses this handoff too. No model borrow
+crosses native dialogs; no view/focus/undo cloning.45 directed cases passed,6 new,
+382 distinct historical total; fmt/workspace Clippy/release and32 native checks.
+Do not repeat complete suites/profiles for docs. Current next functional M2B block:
+project Search Plus GUI using existing S1 controller, bounded fields/visible
+versioned results, no new engine/permanent index. No dependencies/regex/CI/push;
+manual OS-dialog/clipboard/IME/DPI/display gates remain for the end.

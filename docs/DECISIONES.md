@@ -388,3 +388,12 @@ nuevo. Clipboard y encoding ya en curso se integran con handoffs validados, sin
 llamadas OS manteniendo préstamos ni transcodificación implícita. Smoke no toca
 el clipboard del usuario. [Contrato/evidencia](M2_INVISIBLES_MULTILINE.md):376 casos
 Rust distintos por suites y29 checks nativos. Manual/global continúa abierto.
+
+
+## D37 — Save All por documento y handoff de destino explícito
+
+El frontend captura intenciones de guardado por DocumentId/revisión, hasta1024;
+nuevos exigen Save As y cancel/error detienen restantes sin revertir los ya
+guardados. SaveTarget revalida id/revisión/path/is_new tras modal sin préstamos.
+Fuente/undo/vistas no se clonan; escrituras delegan a FileSession y mantienen
+conflicto/no-clobber. Save As normal comparte el handoff. [Contrato](M2B_SAVE_ALL.md).

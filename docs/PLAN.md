@@ -359,3 +359,15 @@ global. Regex/dependencias siguen aplazadas. Próximo pendiente funcional M2B:
 flujo Save All explícito por documento, incluyendo Save As para nuevos y cancelación;
 nunca guardar nombres untitled generados por un shortcut. Validar al cerrar ese
 bloque, sin repetir las pruebas de este cierre por documentación.
+
+
+## Save All GUI implementado; siguiente S1 gráfico
+
+[Save All nativo](M2B_SAVE_ALL.md) ya resuelve nuevos con Save As/cancelación,
+targets por revisión/path y resultados parciales explícitos, sin mover vistas.
+6 pruebas nuevas,45 dirigidas y32 checks nativos aprobados; conjunto histórico382
+distintos, Clippy/release aprobados. Las tres funciones prioritarias anteriores
+siguen implementadas. Próximo bloque amplio M2B: Search Plus de proyecto en GUI
+con controller S1 existente, entrada acotada y resultados versionados/solo lectura.
+No nuevo motor/índice permanente, regex ni dependencies/CI. Construir antes de
+otra ventana de tests; manual/aceptación global permanece abierta.

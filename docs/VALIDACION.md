@@ -951,3 +951,22 @@ El diagnóstico escapa todo noASCII para anchura cierta y no acepta un motor de
 graphemes/shaping normal. Cache diagnóstico128KiB + textual896KiB=1MiB lógico;
 una revisión invalida el cache diagnóstico y la línea fría puede escanearse entera
 con buffers acotados. No hubo dependencias nuevas, Actions/push ni nuevos perfiles.
+
+
+## Save All nativo y targets de guardado — 2026-11-02
+
+Bloque completo construido antes de su ventana de checks.45 pruebas dirigidas
+aprobaron:29 jc-app y16 GUI, con6 nuevas (targets y plan puro). Conjunto histórico
+**382 distintos**, no una corrida382. Formato/Clippy workspace all-targets/release
+workspace bins/examples aprobaron.32 checks nativos del release,0 errores de
+pintura y fixture13B intacto. No se repitió la suite376 por este bloque.
+
+Save All ejecuta una intención por DocumentId, nunca por vista; cap1024 y paths
+OsStr::len4096. Nuevos requieren path, modal sin préstamo, target revalidado tras
+retorno. Cancelación/error reportan éxitos/pending sin rollback global. Save As
+normal también captura target antes del diálogo. Tests observan source/EOL/legacy/
+BOM, rutas obsoletas por revisión/rename/cierre, vistas/selección/undo intactos y
+no escritura del nombre generado. Smoke prueba menú/tecla, cancelación parcial,
+Save As nuevo y conflicto externo sin overwrite con decisión inyectada propia.
+[Contrato/evidencia](M2B_SAVE_ALL.md). Diálogos físicos/OS clipboard/IME/DPI siguen
+sin certificar; no solicitudes manuales ahora, dependencias/CI/push/perfiles nuevos.

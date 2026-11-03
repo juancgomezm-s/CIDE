@@ -339,3 +339,15 @@ en memoria, no el clipboard del usuario. No inferir interoperabilidad OS.
 Siguiente pendiente M2B: Save All con Save As/cancelación explícita; seguir
 construcción amplia y una ventana serial de validación al cierre. No instalar,
 activar regex, correr CI/push ni pedir prueba manual ahora.
+
+
+## Último cierre: Save All GUI
+
+Leer M2B_SAVE_ALL.md. Nuevo SaveTarget valida id/rev/path/new tras modal y requiere
+destino explícito para un nuevo documento. Save All cap1024 ids únicos/metadata,
+avanza solo tras éxito, detiene por cancel/error con saved/pending y no mueve
+vistas/undo. Save As normal captura target antes del diálogo.45 tests dirigidos,
+6 nuevos, histórico382 distintos y32 checks nativos aprobaron; no repetirlos.
+Próximo bloque M2B es Search Plus de proyecto en GUI sobre el S1 existente, sin
+motor ni índice nuevos. Conservar exact bytes/encoding, snapshots acotados y
+entrega versionada. No CI/push/dependencias/regex, manual al final.

@@ -8,7 +8,9 @@ mod edit;
 mod line_commands;
 mod line_index;
 pub(crate) mod rectangular;
+mod save_target;
 mod search;
+pub use save_target::SaveTarget;
 mod text;
 use std::cell::RefCell;
 use text::TextProjection;
@@ -30,6 +32,7 @@ pub enum WorkbenchError {
     ClipboardEncoding,
     ClipboardLimit,
     ClipboardStale,
+    Save(String),
     SearchInput,
     SearchIncomplete,
     Rectangle(String),
@@ -39,6 +42,7 @@ pub enum WorkbenchError {
 impl fmt::Display for WorkbenchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Save(message) => f.write_str(message),
             Self::ClipboardLimit => f.write_str("clipboard transfer exceeds its byte budget"),
             Self::ClipboardStale => f.write_str("clipboard target changed; retry the action"),
             Self::Rectangle(message) => f.write_str(message),
@@ -756,20 +760,10 @@ impl Workbench {
     }
 
     pub fn save_active_as(&mut self, path: impl Into<PathBuf>) -> Result<(), WorkbenchError> {
-        let path = path.into();
-        let (tab_id, title) = {
-            let document = self
-                .active_document_mut()
-                .ok_or(WorkbenchError::NoDocument)?;
-            document.session.save_as(path)?;
-            (
-                document.tab_id,
-                title_for_path(document.session.path(), "<file>"),
-            )
-        };
-        self.tabs.set_title(tab_id, title);
-        self.tabs.set_dirty(tab_id, false);
-        Ok(())
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        let target =
+            self.capture_save_target(document.id, document.session.document().revision())?;
+        self.save_target(target, Some(path.into()))
     }
 
     pub fn save_all(&mut self) -> Result<(), WorkbenchError> {

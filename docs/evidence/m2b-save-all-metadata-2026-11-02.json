@@ -1,0 +1,93 @@
+{
+  "run_id": "20261103T025426Z-1664e4b68aea",
+  "binary": "target/release/jc-ide-gui.exe",
+  "binary_sha256": "fc1025269c035ebc7385e2496dcb2cd5648aad9e6c98857ad10b3d7ee2f2af7b",
+  "source_sha256": {
+    "crates/jc-app/src/command.rs": "d3e65d0f8c8581e11c3558a6c1e6d780a1296e2df2f23790e74bf5c5e82e2a1a",
+    "crates/jc-app/src/dialog.rs": "30b6b5688e210299c3f903846f4cb0f3060eb1bc6427ef8d9bb16603e9734dce",
+    "crates/jc-app/src/diff_model.rs": "d541ed4cf9ee72b347f39a4541a5f543c0ac0523193886f2bb301168b33fd91c",
+    "crates/jc-app/src/focus.rs": "1e1575e598b14fffe7ac80d8ce4767e5497aef716c04760189218f3b13457c6d",
+    "crates/jc-app/src/git_diff.rs": "cabf327c6370737ddf4e0636ef6f1a8359b34f0574dc1dc1f2b8866718ccc96a",
+    "crates/jc-app/src/git_read.rs": "de52fa1f61127efe272733a418b69137647cdfcfd383f5169383e40908c0b95b",
+    "crates/jc-app/src/git_status.rs": "3f96d121393b0528ba8921f3ff5724856e9a666c8b20c011ee0d94da8a42de29",
+    "crates/jc-app/src/git_status_tasks.rs": "b36941ba795b380e8a9960695439856f35de059e341d8643b5a4bd14e0a4ce34",
+    "crates/jc-app/src/jobs.rs": "46aac7d20ef8a38659b92046c966e562027229ede14be308ce67355da7e20693",
+    "crates/jc-app/src/keymap.rs": "778e96ab86a0af027d200943bcc07f571ac8bb53353d3bd815124a2e2365d736",
+    "crates/jc-app/src/lib.rs": "8cc93a1f3b2ad73d581a3771335ed48e11dbd7c7326cdbb92a8cf21111826850",
+    "crates/jc-app/src/menu.rs": "4cc777644ca1df13f5ed0140cf72765b5e13571fade2c1a20ca61aa481acc2e1",
+    "crates/jc-app/src/panels.rs": "d989a417f00d823bf0e0b3c44f88d9ad4fdfd2e6ff7ce68e84ea4daabb229c61",
+    "crates/jc-app/src/panes.rs": "46783986b2c71701e6f4690f57c754c5c09d7fe146ad07f64b3acc4456c71526",
+    "crates/jc-app/src/project_search/parallel.rs": "48d411cd1f853d786e2339d69001be46c358b08ad4b8329b693e820b92ee96a7",
+    "crates/jc-app/src/project_search/replace.rs": "0d8d5d1433b449d677d2681829c2310e1421a7a2da81b3c4d07597c41973cd9b",
+    "crates/jc-app/src/project_search/scan.rs": "ccd04906e670cff2a71ec0331d3fc0d8b8b9ac9edb88b00c07cdcd5287d29862",
+    "crates/jc-app/src/project_search.rs": "d9607699998111d5f4084cc7ebac2f5f3cf36cfb0739ac7556873129c4d978d8",
+    "crates/jc-app/src/quick_open.rs": "f07963e047b47d3eab52bdb4ef868f4bb7356c0ca8f64244d10bbfbd0940c6b2",
+    "crates/jc-app/src/rectangle.rs": "c3e77c4d315379b1946d2ef56d04735c3ad784b7baaa1add7364d3f43c399590",
+    "crates/jc-app/src/tabs.rs": "ed039a65fd08e8e0e57144304877159cd5106295732c51bf1a3d68a90b8f1714",
+    "crates/jc-app/src/text_field.rs": "cb0e21256f2f9bbfcf7e3bc292b478a11ebda521e7687a22b42d8bae13895049",
+    "crates/jc-app/src/text_search.rs": "d12054be4fec7797c3a890231805e8c1408e836c69394f637ebf5016f96195c7",
+    "crates/jc-app/src/workbench/clipboard_transfer.rs": "328e88887c32e38b260d88764b7f8acc3320b76dbd201da537ce17f166ee2cda",
+    "crates/jc-app/src/workbench/commands.rs": "afb894aa0b56a0e7b4f6a9f70a40f17d6f0486a1df222300747cdb402f16f5b5",
+    "crates/jc-app/src/workbench/display.rs": "8169bc99866d1103c0d6d3fc81f5ea0a11d6df285477b6d14055180df51e8c07",
+    "crates/jc-app/src/workbench/edit.rs": "0a5b9941667fd484c3bf15a48cf2a9b688559c190b01b87e90d94c4351866d3b",
+    "crates/jc-app/src/workbench/invisible_layout.rs": "d588ff0dc670be43f9dac910443e2d15da9dc873fb2d3f602fd7d453604ff60f",
+    "crates/jc-app/src/workbench/line_commands.rs": "6b8e93c416ee9f11c7bb8aba98e1b07ee29b9f17efccab918e763e5d8e402561",
+    "crates/jc-app/src/workbench/line_index.rs": "4d17a66439478ecf4d496e23a2a4d62a6fc3d08d39ea111f74fa9eceec6318d1",
+    "crates/jc-app/src/workbench/mod.rs": "88cf5596dcb188e7b29e8224aee2fe19ed70a045226d2571f3a83c1766603794",
+    "crates/jc-app/src/workbench/rectangular.rs": "7d99d45445e4ef238784823fc7f0bf900946fcd89d884f030d9e4ad3addb53e4",
+    "crates/jc-app/src/workbench/save_target.rs": "d9369728a488eab148d32394324a2220f11b2ac852d92a8c25733feb90330805",
+    "crates/jc-app/src/workbench/search.rs": "b074728d594a18160fa65207c259903c8059f035abb477baa0089aea3f8d8707",
+    "crates/jc-app/src/workbench/text.rs": "e240e2c15cf18603d44f508483991fbc83ad3ba342a14da2c4c322cb2df59b20",
+    "crates/jc-gui/src/lib.rs": "41a24b1a67cd555db5789a98a6a260bf47644ead086ecc7d75b1ccaa6a71c156",
+    "crates/jc-gui/src/main.rs": "eb74630fee88456680d2be53344577fcf65772e89345ac6682e5605d4a240d3a",
+    "crates/jc-gui/src/windows/clipboard.rs": "12357b1e91446eb26f9dae62ee50104b3383d5a24f7406405f0e24b6e3a6f0e3",
+    "crates/jc-gui/src/windows/clipboard_flow.rs": "2b0c6a0acbf76fecc75d9d8ac9bbfab7e7fc685a9e00e42ac2db1191fa16586d",
+    "crates/jc-gui/src/windows/ffi.rs": "9148eb98faf5df4e4637117f269e59773cfe79228a1f98a75a62bf2ed318ba66",
+    "crates/jc-gui/src/windows/folder.rs": "5d879f315a63941c4bdd274e661cc1d793d505d974c5bf5d5b69b38ea7a0261a",
+    "crates/jc-gui/src/windows/notify.rs": "4c63cd1df08e39b3ecbf3076e72cb505b1315fce230fc792a303f18e9a22e6d0",
+    "crates/jc-gui/src/windows/paint.rs": "e446add31312777694e1fe22e932986f31ed863862799f76c08ac4cb41a3729b",
+    "crates/jc-gui/src/windows/save_flow.rs": "6a3fd3537292d6c9416e896ec530250448678ae8203300d924fe2eb099528028",
+    "crates/jc-gui/src/windows/save_plan.rs": "2e672d8fa8556ec9c133fce9eaf89861929721eab74f573f93bf85423610b827",
+    "crates/jc-gui/src/windows/save_smoke.rs": "59ebfc21d539d25abd76f43dd521711d11604df780a3c37737b7651e0f89b9db",
+    "crates/jc-gui/src/windows/search_paint.rs": "00bb9bfd923d5dcc94fc032f5587e062a6d8bea8446fa340f7f87dc9eb9455e7",
+    "crates/jc-gui/src/windows/search_panel.rs": "2a7ee2b71b07b160f192bf83573f07c0e9c599f69bc2a2cc384c2668415647b3",
+    "crates/jc-gui/src/windows/selector.rs": "6c4be1418f5a908937371676b9f18bd425f59cb2fc2dff24b6570d920ce1b9ba",
+    "crates/jc-gui/src/windows/selector_flow.rs": "f6a0192716bb39637b714cd1c29b5b8874c360ed77d39e09a76689fe29e6c548",
+    "crates/jc-gui/src/windows/selector_paint.rs": "c916e2c20451cf3dc4dc429e4caffc3537e00daf7eb995df17161fe81095f220",
+    "crates/jc-gui/src/windows/smoke.rs": "001e62ea0ffaca8797226bae17a23d83cfa15dfad5f3778e83d084476003981d",
+    "crates/jc-gui/src/windows.rs": "dd2e2514ca6d7f67405af5eef2dbee8ae3e7532292a357d3aad9b8e551a48228"
+  },
+  "raw_logs": [
+    {
+      "path": "work/m2-visible-blocks-20261103T025146-test.log",
+      "sha256": "853b95b0dcd543ae91c2f2a92eb7401f45b61730bf0b77d8c3eaebcb3bb15dab"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T025200-test.log",
+      "sha256": "b4fecf4c20b81ac3895acb30292154a463670f2e42d7b9bf9131660bec55f1cf"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T025209-clippy.log",
+      "sha256": "5ac0ece6585e233e732d6a645bad63fa9360e293267be2ed0bb333ff936a92c8"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T025221-build.log",
+      "sha256": "05c68eb7d8034c1dc2067e060322e0c38d6cf359dbbab4a61ff5eafc1ba6f29e"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T025412-build.log",
+      "sha256": "7b7c712bcfbf194036e1efd355e956da37310f6e95745791405f74f24bcbe2a5"
+    }
+  ],
+  "targeted_tests_this_block": 45,
+  "new_tests": 6,
+  "distinct_cases_through_checkpoint": 382,
+  "one_full_382_run": false,
+  "native_checks": 32,
+  "native_report_sha256": "f495493072e8b0a72a207296683b6a81b9b4ebe429f6cf55036af32185f0f749",
+  "fixture_unchanged": true,
+  "new_assigned_file_final": "external owned disk snapshot",
+  "os_clipboard_verified": false,
+  "physical_display_verified": false,
+  "native_dialog_decisions_in_smoke": "owned new sibling path or cancel, private queue; no OS dialog accepted"
+}

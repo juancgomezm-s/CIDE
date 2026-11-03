@@ -202,3 +202,9 @@ guardan. La GUI también ofrece elección explícita de encoding y clipboard lin
 Windows (interoperabilidad OS aún sin certificar; smoke usa memoria).
 [Uso, mapas, cuotas y evidencia](docs/M2_INVISIBLES_MULTILINE.md):376 pruebas
 distintas por suites, Clippy/release y29 checks nativos; sin CI ni dependencias nuevas.
+
+
+Save All ya funciona en la GUI mediante Ctrl+Alt+S, File y Palette, solicitando
+destino para nuevos y reportando cancelación/conflictos sin perder pendientes.
+[Contrato/evidencia](docs/M2B_SAVE_ALL.md):32 checks nativos y6 pruebas nuevas;
+382 casos distintos acumulados, sin declarar una corrida global382.

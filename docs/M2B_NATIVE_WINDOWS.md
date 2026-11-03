@@ -147,3 +147,12 @@ cierre selectivo y29 checks del release. El smoke usa clipboard en memoria;
 no certifica OSclipboard entre apps, IME/DPI/accesibilidad/pantalla física ni RAM.
 Los párrafos del primer bloque describen ese checkpoint histórico, no limitan
 los nuevos flujos. Save All conserva su bloqueo hasta implementar su propio flujo.
+
+
+## Save All actual
+
+El bloqueo histórico de Save All fue sustituido por su flujo real: menú/Palette/
+CtrlAltS, path explícito para nuevos, target revalidado, cancelación/error y conteo
+parcial. [Contrato y evidencia](M2B_SAVE_ALL.md):6 pruebas nuevas/45 dirigidas y32
+checks nativos aprobaron; histórico382 distintos. No inferir diálogos físicos ni
+OS clipboard verificado por decisiones inyectadas sobre fixtures propios.

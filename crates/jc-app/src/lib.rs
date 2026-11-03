@@ -47,7 +47,8 @@ pub use tabs::{CloseRequest, Tab, TabId, TabManager};
 pub use workbench::rectangular::RectangleBounds;
 pub use workbench::{
     ClipboardExport, ClipboardTarget, CommandOutcome, DisplayCell, DocumentId, EditorDocument,
-    EditorRead, SearchHistoryEntry, SearchState, TextReplacement, Workbench, WorkbenchError,
+    EditorRead, SaveTarget, SearchHistoryEntry, SearchState, TextReplacement, Workbench,
+    WorkbenchError,
 };
 mod project_search;
 pub use project_search::{
