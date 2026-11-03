@@ -2,6 +2,30 @@
 use super::{clipboard, ffi::Hwnd, owner};
 use jc_app::CommandId;
 const LIMIT: usize = 2 * 1024 * 1024;
+pub(super) unsafe fn paste_navigation(hwnd: Hwnd, generation: u64) {
+    // The read happens without a model borrow. A new modal generation, view,
+    // encoding or revision cannot consume the returned text.
+    let smoke = owner(hwnd).is_some_and(|model| model.state.borrow().smoke);
+    let text = if smoke {
+        Ok(owner(hwnd).and_then(|model| model.state.borrow().smoke_clipboard.clone()))
+    } else {
+        clipboard::read(hwnd)
+    };
+    if let Some(model) = owner(hwnd) {
+        let mut state = model.state.borrow_mut();
+        if !state.navigation_target_current()
+            || state.navigation_panel.as_ref().map(|p| p.generation) != Some(generation)
+        {
+            state.error("Navigation field/target changed during clipboard read; retry");
+            return;
+        }
+        match text {
+            Ok(Some(text)) => state.edit_navigation_input(jc_app::FieldEdit::Insert(&text)),
+            Ok(None) => {}
+            Err(error) => state.error(error),
+        }
+    }
+}
 pub(super) unsafe fn paste_replacement(hwnd: Hwnd, generation: u64) {
     let root = owner(hwnd).and_then(|model| model.state.borrow().project_root.clone());
     let smoke = owner(hwnd).is_some_and(|model| model.state.borrow().smoke);

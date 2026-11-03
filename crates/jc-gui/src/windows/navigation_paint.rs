@@ -1,0 +1,61 @@
+//! Render bounded owned presentation only; no navigation or completion delivery.
+use super::{ffi::*, navigation_panel::NavigationPresentation, paint, wide};
+pub(super) unsafe fn draw(
+    dc: Hdc,
+    p: &NavigationPresentation,
+    width: i32,
+    height: i32,
+    cw: i32,
+    ch: i32,
+) -> Result<(), String> {
+    let left = 20.min(width.max(0));
+    let right = (width - 20).max(left);
+    let top = 60.min(height.max(0));
+    let bottom = (top + ch * 7).min((height - 30).max(top));
+    let rect = Rect {
+        left,
+        top,
+        right,
+        bottom,
+    };
+    paint::fill(dc, rect, 0x00202122)?;
+    let lines = [
+        "Go to line[:column] · one-based source scalars",
+        p.field.rows.first().map_or("", String::as_str),
+        "Column defaults to 1 · 64 bytes · no preview",
+        &p.message,
+        "Enter accepts | Esc cancels | arrows edit | Ctrl+U clear | Ctrl+V paste",
+    ];
+    for (index, line) in lines.iter().enumerate() {
+        let y = top + ch * (index as i32 + 1);
+        if y + ch <= bottom {
+            paint::text(
+                dc,
+                Rect {
+                    left: left + 8,
+                    top: y,
+                    right: right - 8,
+                    bottom: y + ch,
+                },
+                &wide(line),
+                0x00d5d7d8,
+                0x00202122,
+            )?;
+        }
+    }
+    let x = left + 8 + p.field.cursor_column as i32 * cw;
+    let y = top + ch * 2;
+    if x < right - 8 && y + ch <= bottom {
+        paint::fill(
+            dc,
+            Rect {
+                left: x,
+                top: y,
+                right: x + 2,
+                bottom: y + ch,
+            },
+            0x00a6d9e6,
+        )?;
+    }
+    Ok(())
+}

@@ -440,3 +440,16 @@ snapshot de FS ni confinamiento atómico del fallback no Windows. Labels escapad
 solo presentan nombres; nunca son autoridad de paths. Pintura no acepta ni admite
 tareas; GUI publica objetivos de mouse versionados solo en WM_PAINT.
 [Implementación, cuotas y evidencia](M2B_SHARED_EXPLORER.md).
+
+## D42 — Navegación nativa usa posiciones e historiales de aplicación
+
+La GUI consume los cinco comandos de navegación existentes. Parser line[:column]
+uno-based compartido con TUI y Workbench conserva validación escalar de fuente;
+un modal solo posee input64B y destino document/rev/encoding/ViewId/pane. No preview
+ni posición editable espejo. Back/forward y pin conservan semántica PaneManager.
+Historia recupera query+flags de Workbench sin otro catálogo; palette mueve el
+borrador único de Find/Replace para conservar reemplazo/campo al cancelar o recuperar.
+Desarmar F3 diferido es independiente de parar el scan. Menús verifican disponibilidad
+antes de cerrar overlays; pegado suelta préstamos y revalida destino/generación.
+[Contrato/evidencia](M2B_NATIVE_NAVIGATION.md). Validación por bloque y sección
+nativa dedicada evita repetir Explorer/perfiles cerrados.

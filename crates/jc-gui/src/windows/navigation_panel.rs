@@ -1,0 +1,161 @@
+//! A bounded modal intention; Workbench owns scalar conversion and jump history.
+use super::{Action, State};
+use jc_app::{
+    edit_field, present_field, FieldEdit, FieldPresentation, Modifiers, PaneId, TaskStamp,
+};
+
+pub(super) struct NavigationPanel {
+    pub input: String,
+    pub cursor: usize,
+    pub target: TaskStamp,
+    pub pane: PaneId,
+    pub generation: u64,
+}
+pub(super) struct NavigationPresentation {
+    pub field: FieldPresentation,
+    pub message: String,
+}
+impl State {
+    pub(super) fn open_navigation_panel(&mut self) {
+        let Some(document) = self.workbench.active_document() else {
+            self.error("No document for Go to Position");
+            return;
+        };
+        let Some(encoding) = document.session.encoding() else {
+            self.open_encoding_selector();
+            self.error("Choose source encoding before Go to Position");
+            return;
+        };
+        let pane = self.workbench.panes().active();
+        let view = self.workbench.panes().view(pane).and_then(|v| v.view_id());
+        let Some(view) = view else { return };
+        let target = TaskStamp {
+            document: document.id,
+            revision: document.session.document().revision(),
+            encoding,
+            view: Some(view),
+        };
+        let Some(generation) = self.navigation_generation.checked_add(1) else {
+            self.error("Navigation generation exhausted");
+            return;
+        };
+        self.close_selector();
+        self.workbench.cancel_search_navigation();
+        self.navigation_generation = generation;
+        self.navigation_panel = Some(NavigationPanel {
+            input: String::new(),
+            cursor: 0,
+            target,
+            pane,
+            generation,
+        });
+        self.status = "Use line[:column], one-based source scalar coordinates".into();
+    }
+    pub(super) fn navigation_target_current(&self) -> bool {
+        self.navigation_panel.as_ref().is_some_and(|panel| {
+            panel.pane == self.workbench.panes().active()
+                && self
+                    .workbench
+                    .panes()
+                    .view(panel.pane)
+                    .and_then(|v| v.view_id())
+                    == panel.target.view
+                && self.workbench.active_document().is_some_and(|d| {
+                    d.id == panel.target.document
+                        && d.session.document().revision() == panel.target.revision
+                        && d.session.encoding() == Some(panel.target.encoding)
+                })
+        })
+    }
+    pub(super) fn edit_navigation_input(&mut self, edit: FieldEdit<'_>) {
+        if !self.navigation_target_current() {
+            self.navigation_panel = None;
+            self.error("Navigation target changed; reopen Go to Position");
+            return;
+        }
+        let Some(generation) = self.navigation_generation.checked_add(1) else {
+            self.error("Navigation generation exhausted");
+            return;
+        };
+        self.navigation_generation = generation;
+        let panel = self.navigation_panel.as_mut().unwrap();
+        panel.generation = generation;
+        match edit_field(&mut panel.input, &mut panel.cursor, edit, 64) {
+            Ok(_) => self.status = "Go to Position · Enter accepts; Escape cancels".into(),
+            Err(error) => self.error(error),
+        }
+    }
+    fn accept_navigation(&mut self) {
+        if !self.navigation_target_current() {
+            self.navigation_panel = None;
+            self.error("Navigation target changed; reopen Go to Position");
+            return;
+        }
+        let Some(position) = self
+            .navigation_panel
+            .as_ref()
+            .and_then(|p| jc_app::parse_text_position(&p.input))
+        else {
+            self.error("Use line[:column], one-based source scalar coordinates");
+            return;
+        };
+        match self.workbench.go_to_position(position) {
+            Ok(()) => {
+                self.close_selector();
+                self.status = "Position selected · source scalar coordinates".into();
+            }
+            Err(error) => self.error(error),
+        }
+    }
+    pub(super) fn navigation_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
+        if code == 0x1b {
+            self.close_selector();
+            self.status = "Go to Position cancelled".into();
+            return Action::None;
+        }
+        if !self.navigation_target_current() {
+            self.navigation_panel = None;
+            self.error("Navigation target changed; reopen Go to Position");
+            return Action::None;
+        }
+        if modifiers == Modifiers::CTRL && code == 0x56 {
+            return Action::PasteNavigation(self.navigation_panel.as_ref().unwrap().generation);
+        }
+        if modifiers == Modifiers::CTRL && code == 0x55 {
+            self.edit_navigation_input(FieldEdit::Clear);
+            return Action::None;
+        }
+        if modifiers != Modifiers::NONE {
+            return Action::None;
+        }
+        if code == 0x0d {
+            self.accept_navigation();
+            return Action::None;
+        }
+        let edit = match code {
+            0x25 => Some(FieldEdit::Left),
+            0x27 => Some(FieldEdit::Right),
+            0x24 => Some(FieldEdit::Home),
+            0x23 => Some(FieldEdit::End),
+            0x08 => Some(FieldEdit::Backspace),
+            0x2e => Some(FieldEdit::Delete),
+            _ => None,
+        };
+        if let Some(edit) = edit {
+            self.edit_navigation_input(edit);
+        }
+        Action::None
+    }
+    pub(super) fn navigation_presentation(&self) -> Option<NavigationPresentation> {
+        let panel = self.navigation_panel.as_ref()?;
+        let columns = ((self.width - 80) / self.cell_width.clamp(1, 8192)).clamp(8, 64) as usize;
+        Some(NavigationPresentation {
+            field: present_field(&panel.input, panel.cursor, columns, 1),
+            message: if self.navigation_target_current() {
+                self.status.clone()
+            } else {
+                "Navigation target changed; reopen Go to Position".into()
+            },
+        })
+    }
+}

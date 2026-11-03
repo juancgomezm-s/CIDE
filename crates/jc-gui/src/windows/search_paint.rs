@@ -78,7 +78,7 @@ pub(super) unsafe fn draw(
         false,
     )?;
     line(
-        "Tab field | Shift+Enter LF | Esc cancel | limits4096 bytes/field",
+        "Alt+Up/Down history | Alt+C/W options | Tab field | Esc cancel | 4096B",
         false,
     )?;
     let (field, offset) = if p.replacement_active {

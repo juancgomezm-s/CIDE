@@ -67,6 +67,15 @@ REQUIRED = {
     "multiline_fields_gdi_and_invisibles_read_only",
     "invisibles_toggle_preserves_search_draft",
 }
+NAVIGATION_REQUIRED = {
+    "navigation_menu_palette_shortcut_source_scalars_bom_crlf_invisibles",
+    "navigation_invalid_cancel_atomic_field_limit_no_live_preview",
+    "navigation_group_local_back_forward_preserves_pin_and_shared_document",
+    "navigation_revision_encoding_view_pane_stale_targets_rejected",
+    "navigation_multiline_history_flags_replace_draft_menu_palette_preserved",
+    "navigation_modal_cancel_accept_disarm_deferred_find_without_stopping_scan",
+    "navigation_close_stale_target_original_source_and_undo_preserved",
+}
 
 def ordinary_directory(path):
     info = path.lstat()
@@ -126,6 +135,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
+    parser.add_argument("--section", choices=("all", "navigation"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -148,7 +158,8 @@ def main():
     git_before = git_metadata(output)
     with (output / "stdout.txt").open("xb") as stdout, (output / "stderr.txt").open("xb") as stderr:
         result = subprocess.run(
-            [str(exe), "--git-executable", str(git_executable), "--smoke-fixture", str(fixture), "--smoke-report", str(report), "--smoke-bitmap", str(bitmap)],
+            [str(exe), "--git-executable", str(git_executable), "--smoke-fixture", str(fixture), "--smoke-report", str(report), "--smoke-bitmap", str(bitmap)]
+                + (["--smoke-navigation-only"] if args.section == "navigation" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -159,7 +170,8 @@ def main():
     if git_metadata(output) != git_before:
         raise RuntimeError("native GUI changed owned Git metadata/index/config/objects/refs")
     payload = json.loads(report.read_text(encoding="utf-8"))
-    if payload.get("ok") is not True or not REQUIRED.issubset(payload.get("checks", [])):
+    required = NAVIGATION_REQUIRED if args.section == "navigation" else REQUIRED | NAVIGATION_REQUIRED
+    if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
     if payload.get("backend") != "Win32/GDI" or payload.get("window") != "own_hidden_hwnd" or payload.get("native_paints", 0) < 1:
         raise RuntimeError("report did not exercise a native window and paint")
@@ -181,6 +193,7 @@ def main():
         raise RuntimeError("native renderer produced an empty/flat bitmap")
     summary = {
         "ok": True, "executable": str(exe), "output": str(output),
+        "section": args.section,
         "fixture_bytes": len(SOURCE), "fixture_unchanged": True,
         "native_report": payload, "bitmap_width": width, "bitmap_height": abs(height),
         "bitmap_colors": len(colors), "physical_display_verified": False,

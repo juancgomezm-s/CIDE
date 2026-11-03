@@ -37,6 +37,12 @@ impl TuiApp {
             self.activate_explorer_entry_to_side();
             return;
         }
+        if matches!(
+            command,
+            CommandId::SearchGoToPosition | CommandId::NavigateBack | CommandId::NavigateForward
+        ) {
+            self.workbench.cancel_search_navigation();
+        }
         match self.workbench.execute(command) {
             Ok(outcome) => {
                 self.handle_outcome(outcome);
@@ -47,6 +53,7 @@ impl TuiApp {
                     command,
                     CommandId::SearchHistoryNext | CommandId::SearchHistoryPrevious
                 ) {
+                    self.find_cursor = self.workbench.search().query.len();
                     match &mut self.overlay {
                         UiOverlay::Find { input } => *input = self.workbench.search().query.clone(),
                         UiOverlay::Replace { find, .. } => {

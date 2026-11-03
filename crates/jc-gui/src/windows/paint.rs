@@ -39,6 +39,7 @@ pub(super) struct Frame {
     panes: Vec<Pane>,
     selector: Option<super::selector::SelectorPresentation>,
     search: Option<super::search_panel::SearchPresentation>,
+    navigation: Option<super::navigation_panel::NavigationPresentation>,
     project: Option<super::project_panel::ProjectPresentation>,
     replacement: Option<super::replace_panel::ReplaceFrame>,
     git: Option<super::git_panel::GitFrame>,
@@ -298,6 +299,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         status,
         panes,
         search: state.search_presentation(),
+        navigation: state.navigation_presentation(),
         project: state.project_presentation(),
         replacement: state.replace_presentation(),
         git: state.git_presentation(),
@@ -494,6 +496,16 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
     }
     if let Some(presentation) = &frame.search {
         super::search_paint::draw(
+            dc,
+            presentation,
+            frame.width,
+            frame.height,
+            frame.cell_width,
+            frame.cell_height,
+        )?;
+    }
+    if let Some(presentation) = &frame.navigation {
+        super::navigation_paint::draw(
             dc,
             presentation,
             frame.width,

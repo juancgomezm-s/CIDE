@@ -8,6 +8,9 @@ mod folder;
 mod git_panel;
 mod git_smoke;
 mod git_view;
+mod navigation_paint;
+mod navigation_panel;
+mod navigation_smoke;
 mod notify;
 mod paint;
 mod project_paint;
@@ -52,6 +55,21 @@ fn os_error(operation: &str) -> String {
 
 const OPEN_SIDE: usize = 190;
 const COMMANDS: &[(usize, CommandId, &str)] = &[
+    (
+        160,
+        CommandId::SearchGoToPosition,
+        "&Go to Line / Column...",
+    ),
+    (161, CommandId::NavigateBack, "Navigate &Back"),
+    (162, CommandId::NavigateForward, "Navigate &Forward"),
+    (
+        163,
+        CommandId::SearchHistoryPrevious,
+        "&Previous Search Query",
+    ),
+    (164, CommandId::SearchHistoryNext, "&Next Search Query"),
+    (138, CommandId::SearchToggleCase, "Toggle &Case Sensitive"),
+    (139, CommandId::SearchToggleWholeWord, "Toggle &Whole Word"),
     (101, CommandId::FileNew, "&New"),
     (102, CommandId::FileOpen, "&Open..."),
     (103, CommandId::FileSave, "&Save"),
@@ -150,6 +168,7 @@ enum Action {
     None,
     Clipboard(CommandId),
     PasteSearch(u64),
+    PasteNavigation(u64),
     PasteProject(u64),
     PasteReplacement(u64),
     ConfigureGit(git_panel::GitIntent),
@@ -173,7 +192,10 @@ struct State {
     explorer_hits: Option<explorer_panel::ExplorerHits>,
     selector: Option<Selector>,
     selector_explorer_focus: bool,
+    selector_search_panel: Option<search_panel::SearchPanel>,
     search_panel: Option<search_panel::SearchPanel>,
+    navigation_panel: Option<navigation_panel::NavigationPanel>,
+    navigation_generation: u64,
     project_panel: Option<project_panel::ProjectPanel>,
     project_search: jc_app::ProjectSearch,
     project_options: Option<jc_app::ProjectSearchOptions>,
@@ -254,7 +276,10 @@ impl State {
             explorer_hits: None,
             selector: None,
             selector_explorer_focus: false,
+            selector_search_panel: None,
             search_panel: None,
+            navigation_panel: None,
+            navigation_generation: 0,
             project_panel: None,
             project_search: jc_app::ProjectSearch::new(wakeup.clone()),
             project_options: None,
@@ -402,6 +427,21 @@ impl State {
             return Action::None;
         }
         match command {
+            CommandId::SearchGoToPosition => {
+                self.open_navigation_panel();
+                return Action::None;
+            }
+            CommandId::SearchHistoryPrevious
+            | CommandId::SearchHistoryNext
+            | CommandId::SearchToggleCase
+            | CommandId::SearchToggleWholeWord => {
+                self.execute_search_option(command);
+                return Action::None;
+            }
+            CommandId::NavigateBack | CommandId::NavigateForward => {
+                self.close_selector();
+                self.workbench.cancel_search_navigation();
+            }
             CommandId::ViewExplorer => {
                 self.show_explorer();
                 return Action::None;
@@ -563,6 +603,36 @@ impl State {
         }
         Action::None
     }
+    fn execute_menu(&mut self, command: CommandId) -> Action {
+        if !self.registry.is_enabled(command, &self.context()) {
+            return self.execute(command);
+        }
+        let explorer_focus = self.explorer_focused;
+        if !matches!(
+            command,
+            CommandId::ViewToggleInvisibles
+                | CommandId::SearchHistoryPrevious
+                | CommandId::SearchHistoryNext
+                | CommandId::SearchToggleCase
+                | CommandId::SearchToggleWholeWord
+                | CommandId::PaletteOpen
+        ) {
+            self.close_selector();
+        }
+        if matches!(
+            command,
+            CommandId::ViewExplorer
+                | CommandId::ExplorerRefresh
+                | CommandId::ExplorerCancel
+                | CommandId::EditorOpenToSide
+                | CommandId::FocusNext
+                | CommandId::FocusPrevious
+                | CommandId::PaletteOpen
+        ) {
+            self.explorer_focused = explorer_focus;
+        }
+        self.execute(command)
+    }
     fn modifiers(&self) -> Modifiers {
         if let Some(value) = self.key_override {
             return value;
@@ -608,10 +678,23 @@ impl State {
                 &self.registry,
                 &self.context(),
             );
+            if let Resolution::Disabled(
+                CommandId::SearchGoToPosition
+                | CommandId::NavigateBack
+                | CommandId::NavigateForward,
+            ) = global
+            {
+                self.status = "Navigation command unavailable in the current context".into();
+                return (true, Action::None);
+            }
             if let Resolution::Enabled(
                 command @ (CommandId::ViewToggleInvisibles
                 | CommandId::FileExit
-                | CommandId::SearchReplaceProject),
+                | CommandId::SearchReplaceProject
+                | CommandId::SearchGoToPosition
+                | CommandId::NavigateBack
+                | CommandId::NavigateForward
+                | CommandId::PaletteOpen),
             ) = global
             {
                 if command != CommandId::SearchReplaceProject || self.replace_panel.is_none() {
@@ -630,6 +713,9 @@ impl State {
         }
         if self.search_panel.is_some() {
             return (true, self.search_key(code, modifiers));
+        }
+        if self.navigation_panel.is_some() {
+            return (true, self.navigation_key(code, modifiers));
         }
         if self.selector.is_some() {
             return (true, self.selector_key(code, modifiers));
@@ -744,6 +830,10 @@ impl State {
         }
         if self.search_panel.is_some() {
             self.edit_search_input(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)));
+            return;
+        }
+        if self.navigation_panel.is_some() {
+            self.edit_navigation_input(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)));
             return;
         }
         if let Some(selector) = self.selector.as_mut() {
@@ -937,23 +1027,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 } else if let Some((_, command, _)) =
                     COMMANDS.iter().find(|(id, _, _)| *id == wparam & 0xffff)
                 {
-                    let explorer_focus = state.explorer_focused;
-                    if *command != CommandId::ViewToggleInvisibles {
-                        state.close_selector();
-                    }
-                    if matches!(
-                        command,
-                        CommandId::ViewExplorer
-                            | CommandId::ExplorerRefresh
-                            | CommandId::ExplorerCancel
-                            | CommandId::EditorOpenToSide
-                            | CommandId::FocusNext
-                            | CommandId::FocusPrevious
-                            | CommandId::PaletteOpen
-                    ) {
-                        state.explorer_focused = explorer_focus;
-                    }
-                    action = state.execute(*command);
+                    action = state.execute_menu(*command);
                 }
             }
             WM_INITMENU => {
@@ -983,6 +1057,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 let x = (lparam as u16) as i16 as i32;
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
                 if state.selector.is_none()
+                    && state.navigation_panel.is_none()
                     && state.search_panel.is_none()
                     && !state.project_visible()
                     && state.replace_panel.is_none()
@@ -1092,6 +1167,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::ConfigureGit(intent) => git_panel::configure(hwnd, intent),
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
+        Action::PasteNavigation(generation) => clipboard_flow::paste_navigation(hwnd, generation),
         Action::PasteProject(generation) => clipboard_flow::paste_project(hwnd, generation),
         Action::PasteReplacement(generation) => clipboard_flow::paste_replacement(hwnd, generation),
         Action::SaveAll => save_flow::perform(hwnd),
@@ -1250,7 +1326,8 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
         ("&Edit", 110, 118),
         ("&View", 120, 130),
         ("&Project", 150, 155),
-        ("&Search", 130, 138),
+        ("&Search", 130, 140),
+        ("&Navigation", 160, 165),
         ("&Git", 140, 149),
     ] {
         let popup = CreatePopupMenu();

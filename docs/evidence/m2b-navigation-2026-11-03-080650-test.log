@@ -1,0 +1,27 @@
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.12s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 4 tests
+test app::navigation_integration_tests::goto_open_cancel_and_accept_cancel_deferred_find_navigation_without_stopping_scan ... ok
+test app::navigation_integration_tests::multiline_history_restores_flags_and_cursor_without_replacing_replacement_draft ... ok
+test app::navigation_integration_tests::back_forward_are_group_local_and_do_not_replace_the_pinned_shared_view ... FAILED
+test app::navigation_integration_tests::goto_entrypoints_use_source_scalars_with_bom_crlf_and_invisible_display ... ok
+
+failures:
+
+---- app::navigation_integration_tests::back_forward_are_group_local_and_do_not_replace_the_pinned_shared_view stdout ----
+
+thread 'app::navigation_integration_tests::back_forward_are_group_local_and_do_not_replace_the_pinned_shared_view' panicked at crates\jc-tui\src\app\navigation_integration_tests.rs:178:5:
+assertion `left == right` failed
+  left: Some(TextPosition { line: 2, column: 1 })
+ right: Some(TextPosition { line: 0, column: 1 })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    app::navigation_integration_tests::back_forward_are_group_local_and_do_not_replace_the_pinned_shared_view
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 79 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p jc-tui --lib`

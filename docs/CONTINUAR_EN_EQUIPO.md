@@ -414,3 +414,23 @@ No repetir suites/perfiles aprobados para documentación. No solicitar pruebas
 manuales ahora: clipboard OS/IME/DPI/accesibilidad/RAM/pantalla siguen al final.
 Sigue M2B: paridad GUI pendiente y API de proveedores opcionales conforme al plan;
 no afirmar compilación OpenEdge, parser/LSP ni loader de extensiones inexistentes.
+
+## Último cierre: navegación nativa — 2026-11-03
+
+Leer M2B_NATIVE_NAVIGATION.md. GUI admite SearchGoToPosition, NavigateBack/Forward
+y SearchHistoryPrevious/Next, además de flags existentes case/whole-word. Parser
+line[:column]64B compartido con TUI; fuente escalar, no display/LSP. Go to captura
+document/rev/encoding/ViewId/pane y revalida al editar/aceptar/pegar. No preview.
+cancel_search_navigation abandona F3 diferido al iniciar otra intención modal sin
+parar el scan. Historial sigue en Workbench; palette mueve el único borrador de
+Replace y lo restaura en cancel/historia/flags. No clonar buffer/undo/drafts.
+
+78 casos dirigidos aprobados,cuatro nuevos;14 checks nativos navigation,siete nuevos.
+fmt/Clippy/release aprobados. El oráculo inicial TUI asumió Go to dentro de pin;
+se corrigió: navegación automática va al otro grupo, historia opera en el activo.
+No modificar PaneManager para volver verdadera una expectativa distinta.
+Evidencia m2b-navigation-2026-11-03-*; Explorer y perfiles cerrados no se repitieron.
+
+Continuar con paridad GUI de líneas/comentarios sobre comandos/metadatos existentes,
+construcción amplia antes de checks. CI/push y proveedores/AVM no autorizados;
+clipboard OS/IME/DPI/accesibilidad/RAM/pantalla al final, sin pedir manual ahora.

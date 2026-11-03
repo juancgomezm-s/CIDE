@@ -1071,3 +1071,30 @@ dirty activo y segundo grupo visibles. [Contrato/evidencia](M2B_SHARED_EXPLORER.
 [hashes](evidence/m2b-explorer-2026-11-03-metadata.json). No acredita Linux/fallback,
 pantalla física, clipboard OS, IME/DPI/accesibilidad ni RAM global; M2A/M2B abiertos.
 No CI/push/instalaciones, perfiles cerrados repetidos ni pruebas manuales solicitadas.
+
+## Navegación nativa compartida — 2026-11-03
+
+Construcción/cableado completos antes de validar. **78 casos Rust distintos**
+aprobados:44 S0/F1/panes/workbench,30 GUI y cuatro nuevos TUI. Primera corrida TUI:
+tres aprobados y uno falló al suponer que Go to desde grupo fijado permanece allí.
+PaneManager dirige navegación automática al otro grupo; corregido el oráculo en
+ambos arneses, solo ese caso TUI se repitió y pasó. No se alteró PaneManager ni se
+cuentan dos veces intentos solapados. fmt, Clippy workspace/all-targets -D warnings
+y release workspace bins/examples aprobaron. No corrida global del workspace.
+
+**14 checks nativos aprobados**, siete nuevos, sección navigation en HWND propio
+oculto: arranque4, navegación7, bitmap/pintura3. Un WM_PAINT, cero errores; invocación
+por menú/paleta/atajos, coordenadas BOM/Unicode/CRLF/invisibles, límites/gramática/
+fuera de fuente/cancel/no preview, dos historias con pin/split y destinos obsoletos
+por revisión/encoding/vista/pane/cierre. Historial multilínea+flags conserva reemplazo
+y campo activo incluso por palette/cancel. F3 diferido no navega tras Go to pero
+scan termina Complete; fuentes/undo intactos. Caso disabled no cierra el modal ni
+edita su cursor. Fuente13B y guard de metadataGit propios intactos, sin revalidar
+proveedores Git ni ejecutar recorridos Explorer cerrados. No full smoke global.
+
+Seis ayudas/aliases e iconos siete frames por PE aprobados. Dos PNG1000×650 GDI→PNG
+sin pérdida retenidos, panel y restauración de fuente revisados. Logs crudos, fallo
+inicial y fuentes/binarios SHA-256 en [contrato](M2B_NATIVE_NAVIGATION.md) y
+[metadata](evidence/m2b-navigation-2026-11-03-metadata.json). No perfiles repetidos,
+dependencias, instalaciones, CI o push; sin clipboard OS ni manual intermedio.
+M2A/M2B, IME/DPI/accesibilidad, Linux y aceptación RAM/pantalla continúan abiertos.

@@ -32,6 +32,8 @@ mod line_command_tests;
 #[cfg(test)]
 mod multiline_tests;
 #[cfg(test)]
+mod navigation_integration_tests;
+#[cfg(test)]
 mod quick_open_tests;
 #[cfg(test)]
 mod rectangle_tests;

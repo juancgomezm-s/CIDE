@@ -26,12 +26,14 @@ impl State {
         Ok(())
     }
     pub(super) fn close_selector(&mut self) {
+        self.selector_search_panel = None;
         self.selector_explorer_focus = false;
         self.explorer_focused = false;
         self.git_panel = None;
         self.cancel_project_replace();
         self.selector = None;
         self.search_panel = None;
+        self.navigation_panel = None;
         if let Some(panel) = self.project_panel.as_mut() {
             panel.visible = false;
         }
@@ -41,6 +43,11 @@ impl State {
     }
     pub(super) fn open_selector(&mut self, kind: SelectorKind) {
         let explorer_focus = self.explorer_focused;
+        let search = if kind == SelectorKind::Palette {
+            self.search_panel.take()
+        } else {
+            None
+        };
         self.close_selector();
         if kind == SelectorKind::Files && self.project_root.is_none() {
             self.status = "Open a project folder first".into();
@@ -48,6 +55,10 @@ impl State {
         }
         self.selector = Some(Selector::new(kind));
         self.selector_explorer_focus = kind == SelectorKind::Palette && explorer_focus;
+        self.selector_search_panel = search;
+        if kind == SelectorKind::Palette {
+            self.workbench.cancel_search_navigation();
+        }
         self.request_files();
     }
     pub(super) fn ensure_encoding_selector(&mut self) {
@@ -142,7 +153,9 @@ impl State {
     pub(super) fn selector_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
         match code {
             0x1b => {
+                let search = self.selector_search_panel.take();
                 self.close_selector();
+                self.search_panel = search;
                 self.status = "Selector cancelled".into();
             }
             0x08 => {
@@ -226,8 +239,18 @@ impl State {
                     return Action::None;
                 }
                 let explorer_focus = self.selector_explorer_focus;
+                let search = self.selector_search_panel.take();
                 self.close_selector();
                 self.explorer_focused = explorer_focus;
+                if matches!(
+                    command,
+                    jc_app::CommandId::SearchHistoryPrevious
+                        | jc_app::CommandId::SearchHistoryNext
+                        | jc_app::CommandId::SearchToggleCase
+                        | jc_app::CommandId::SearchToggleWholeWord
+                ) {
+                    self.search_panel = search;
+                }
                 self.execute(command)
             }
             SelectorKind::Files => {

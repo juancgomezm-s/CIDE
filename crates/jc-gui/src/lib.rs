@@ -20,6 +20,7 @@ pub struct SmokeOptions {
     pub fixture: PathBuf,
     pub report: PathBuf,
     pub bitmap: Option<PathBuf>,
+    pub navigation_only: bool,
 }
 
 #[cfg(windows)]

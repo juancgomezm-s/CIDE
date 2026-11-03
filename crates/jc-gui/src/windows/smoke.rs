@@ -229,6 +229,25 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             return Err("Native editor unexpectedly contains a child text control".into());
         }
         checks.push("no_child_edit_control");
+        if options.navigation_only {
+            checks.extend(super::navigation_smoke::run(hwnd, options)?);
+            SendMessageW(hwnd, WM_PAINT, 0, 0);
+            let frame = {
+                let mut state = owner(hwnd).unwrap().state.borrow_mut();
+                paint::prepare(&mut state)
+            };
+            if let Some(bitmap) = &options.bitmap {
+                paint::bitmap(hwnd, &frame, bitmap)?;
+                checks.push("actual_gdi_offscreen_bitmap");
+            }
+            let state = owner(hwnd).unwrap().state.borrow();
+            if state.paint_count == 0 || state.paint_errors != 0 {
+                return Err("Navigation WM_PAINT missing or failed".into());
+            }
+            checks.push("native_paint_handler");
+            checks.push("native_paint_no_errors");
+            return Ok(());
+        }
         let (x, y) = {
             let state = owner(hwnd).unwrap().state.borrow();
             (
@@ -381,6 +400,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         checks.extend(super::replace_smoke::run(hwnd, options)?);
         checks.extend(super::git_smoke::run(hwnd, options)?);
         checks.extend(super::explorer_smoke::run(hwnd, options)?);
+        checks.extend(super::navigation_smoke::run(hwnd, options)?);
         // A complete native selector flow: modal query input, real PostMessage
         // delivery, authoritative target, dirty session reuse and shared undo.
         position(hwnd, 0, 0)?;

@@ -328,3 +328,21 @@ fmt/Clippy/release passed; raw failures and source/binary hashes are retained.
 No new dependency, CI or push. Keep broad construction before integral checks;
 manual/global gates remain for the end. Continue pending GUI parity/provider API
 per PLAN/EXTENSION_ARCHITECTURE without claiming ABL/LSP/physical acceptance.
+
+## Native navigation closure
+
+Read docs/M2B_NATIVE_NAVIGATION.md. GUI Go to, Back/Forward and search history now
+use the existing registry/Workbench. parse_text_position is shared with TUI;
+positions are one-based source scalars at input, not display/LSP coordinates.
+Modal input64B captures document/revision/encoding/ViewId/pane; accept/edit/paste
+revalidate. cancel_search_navigation disarms deferred Find movement without
+stopping the scan. Search history remains in Workbench; palette moves the single
+Find/Replace draft and restores it for cancel/history/options, preserving replacement.
+Keep PaneManager pin semantics: automatic Go to routes to the other group, while
+Back/Forward stays in the active group's history. Do not change that contract to
+match the initial failed oracle. Menus gate availability before closing overlays.
+78 directed Rust cases and14 own-HWND section-navigation checks passed (4/7 new);
+fmt/Clippy/release passed. No full workspace/native run, Explorer suites or closed
+profiles repeated. Raw failures/hashes retained; manual/global gates remain open.
+Next pending GUI parity is universal line/comment commands already in jc-app and
+language metadata. Build connected blocks before tests; no new providers/AVM/CI/push.

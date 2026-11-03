@@ -424,3 +424,23 @@ Evidencia cruda y hashes en M2B_SHARED_EXPLORER. Sin dependencias nuevas/CI/push
 M2A/M2B y gates globales/manuales permanecen abiertos. Continuación: completar la
 paridad funcional GUI pendiente y preparar el API opcional de proveedores de
 lenguaje según EXTENSION_ARCHITECTURE, sin asumir parser/LSP/ABL ya disponibles.
+
+## Paridad de navegación GUI — 2026-11-03
+
+[Bloque integrado](M2B_NATIVE_NAVIGATION.md): Ctrl+G/línea-columna escalar con campo
+acotado, aceptación explícita y TaskStamp+ViewId/pane; atrás/adelante por grupo y
+historial de consultas/options en Find/Replace. Menú/atajos/paleta comparten registro
+y Workbench. Parser de posición compartido con TUI; cancelación de F3 diferido sin
+parar el scan, borrador de Replace conservado a través de la paleta. Pin mantiene
+su regla existente: Go to se dirige al otro grupo; back/forward usa el activo.
+
+78 casos dirigidos aprobados (cuatro TUI nuevos),14 checks nativos de sección
+navigation (siete nuevos), fmt/Clippy/release aprobados. El único fallo inicial fue
+el oráculo del pin, corregido sin cambiar el modelo. No se repitieron suites
+Explorer, recorrido nativo global ni perfiles cerrados. Evidencia cruda y hashes
+retenidos; sin dependencias/CI/push ni pruebas manuales solicitadas.
+
+Siguiente paridad GUI pendiente: edición universal de líneas y comentarios ya
+disponible en jc-app/perfiles (duplicar/eliminar/mover y delimitadores del perfil),
+con foco y registro compartidos antes de proveedores especializados. No ofrecer
+handlers sin cablear. M2A/M2B y las puertas físicas/globales siguen abiertos.

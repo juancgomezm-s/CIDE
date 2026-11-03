@@ -1,6 +1,9 @@
 //! Native multiline literal fields, sharing bounded editing/presentation with TUI.
 use super::{Action, State};
-use jc_app::{edit_field, present_field, FieldEdit, FieldPresentation, Modifiers};
+use jc_app::{
+    edit_field, present_field, CommandId, FieldEdit, FieldPresentation, Key, KeyScope, KeyStroke,
+    Modifiers, Resolution,
+};
 
 pub(super) struct SearchPanel {
     pub query: String,
@@ -45,6 +48,29 @@ impl SearchPanel {
     }
 }
 impl State {
+    pub(super) fn execute_search_option(&mut self, command: CommandId) {
+        if self.search_panel.is_none() {
+            if let Some(panel) = self.selector_search_panel.take() {
+                self.close_selector();
+                self.search_panel = Some(panel);
+            } else {
+                self.open_search_panel(false);
+            }
+        }
+        match self.workbench.execute(command) {
+            Ok(_) => {
+                let panel = self.search_panel.as_mut().unwrap();
+                panel.query = self.workbench.search().query.clone();
+                panel.query_cursor = panel.query.len();
+                // Invalidate a clipboard handoff even when the history endpoint
+                // repeats the same query. Replacement and active field stay owned.
+                panel.generation = panel.generation.wrapping_add(1);
+                self.status = "Search query/options restored · source unchanged".into();
+            }
+            Err(error) => self.error(error),
+        }
+        self.schedule_search();
+    }
     pub(super) fn open_search_panel(&mut self, replace: bool) {
         self.close_selector();
         self.search_panel = Some(SearchPanel::new(
@@ -83,6 +109,40 @@ impl State {
         self.schedule_search();
     }
     pub(super) fn search_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
+        let key = match code {
+            0x26 => Some(Key::Up),
+            0x28 => Some(Key::Down),
+            0x43 => Some(Key::Char('c')),
+            0x57 => Some(Key::Char('w')),
+            _ => None,
+        };
+        if let Some(key) = key {
+            let scope = if self.search_panel.as_ref().unwrap().replace {
+                KeyScope::Replace
+            } else {
+                KeyScope::Find
+            };
+            match self.keymap.resolve(
+                scope,
+                KeyStroke::new(modifiers, key),
+                &self.registry,
+                &self.context(),
+            ) {
+                Resolution::Enabled(
+                    command @ (CommandId::SearchHistoryPrevious
+                    | CommandId::SearchHistoryNext
+                    | CommandId::SearchToggleCase
+                    | CommandId::SearchToggleWholeWord),
+                ) => return self.execute(command),
+                Resolution::Disabled(
+                    CommandId::SearchHistoryPrevious | CommandId::SearchHistoryNext,
+                ) => {
+                    self.status = "Search history is empty".into();
+                    return Action::None;
+                }
+                _ => {}
+            }
+        }
         if code == 0x55 && modifiers.contains(Modifiers::CTRL) {
             self.edit_search_input(FieldEdit::Clear);
             return Action::None;

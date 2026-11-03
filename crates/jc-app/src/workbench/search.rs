@@ -81,6 +81,11 @@ impl Workbench {
             self.search.status = SearchStatus::Cancelled;
         }
     }
+    /// Abandon a deferred Find navigation when a frontend opens another modal
+    /// navigation intention, without discarding the bounded scan/results.
+    pub fn cancel_search_navigation(&mut self) {
+        self.search_navigation = None;
+    }
     /// Schedule only. All source scanning is in poll_document_search; query input,
     /// edits and view transitions never materialize/decode the document here.
     pub(crate) fn rebuild_search(&mut self) -> Result<(), WorkbenchError> {

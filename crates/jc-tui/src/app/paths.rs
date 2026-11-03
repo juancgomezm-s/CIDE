@@ -37,21 +37,7 @@ impl TuiApp {
             return;
         }
         if kind == PromptKind::GoToPosition {
-            let parse = || {
-                let mut fields = input.trim().split(':');
-                let line = fields.next()?.parse::<usize>().ok()?.checked_sub(1)?;
-                let column = fields
-                    .next()
-                    .unwrap_or("1")
-                    .parse::<usize>()
-                    .ok()?
-                    .checked_sub(1)?;
-                if fields.next().is_some() {
-                    return None;
-                }
-                Some(jc_text::TextPosition { line, column })
-            };
-            if let Some(position) = parse() {
+            if let Some(position) = jc_app::parse_text_position(&input) {
                 match self.workbench.go_to_position(position) {
                     Ok(()) => {
                         self.close_overlay();

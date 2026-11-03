@@ -1,0 +1,70 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.26s
+     Running tests\f1.rs (target\debug\deps\f1-5adf030bf5b0872f.exe)
+
+running 8 tests
+test saved_view_selection_and_scroll_survive_switching_documents_in_each_group ... ok
+test closing_empty_primary_group_does_not_leave_document_without_active_view ... ok
+test failed_or_stale_text_batch_preserves_content_selection_and_history ... ok
+test provider_edits_inactive_document_without_focus_change_and_encodes_atomically ... ok
+test crlf_navigation_delete_and_jump_never_leave_an_internal_caret ... ok
+test replace_all_reverts_once_and_rebases_every_view ... ok
+test close_one_dirty_view_keeps_shared_document_then_discard_reopens_clean_disk ... ok
+test selecting_bom_document_in_another_group_starts_after_bom ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\panes.rs (target\debug\deps\panes-b4a6ccfaa25679ea.exe)
+
+running 9 tests
+test closing_split_restores_the_primary_document ... ok
+test editor_groups_share_one_workbench_without_duplicating_document_bytes ... ok
+test open_to_side_preserves_pin_and_closing_one_view_preserves_shared_document ... ok
+test both_panes_show_same_tab_id_while_only_one_document_exists ... ok
+test linked_scroll_moves_viewports_without_moving_the_other_caret ... ok
+test pinning_reference_redirects_automatic_open_and_keeps_back_history ... ok
+test edits_and_shared_undo_rebase_the_other_groups_selection_and_history ... ok
+test selection_and_scroll_survive_focus_changes_on_a_shared_document ... ok
+test reopening_an_open_path_reuses_dirty_bytes_and_undo ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\s0_search.rs (target\debug\deps\s0_search-df0e21b97b6186a4.exe)
+
+running 9 tests
+test unicode_whole_words_include_marks_numbers_connectors_and_join_controls ... ok
+test navigation_and_replace_current_follow_the_active_view_not_a_global_match_index ... ok
+test selection_navigation_history_and_scalar_goto_are_shared_operations ... ok
+test full_fold_maps_expansions_and_never_matches_part_of_an_original_scalar ... ok
+test invalid_utf8_is_a_barrier_and_crlf_bom_and_chunk_boundaries_are_exact ... ok
+test deadlines_input_and_replacement_budgets_fail_without_mutating_source ... ok
+test source_pages_keep_bytes_eol_and_one_atomic_undo_with_strict_replacement ... ok
+test deferred_find_never_overwrites_a_new_view_caret_or_selection_intent ... ok
+test scheduling_is_range_bounded_cancelable_versioned_and_incomplete_replace_is_rejected ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\workbench.rs (target\debug\deps\workbench-8274ef34e5eb93ed.exe)
+
+running 18 tests
+test command_outcomes_keep_ui_prompts_out_of_widgets ... ok
+test dirty_close_routes_to_one_explicit_decision ... ok
+test indent_and_outdent_selected_lines_preserve_mixed_line_endings ... ok
+test reopen_closed_tab_restores_the_same_document_session ... ok
+test duplicate_line_handles_final_line_without_a_terminal_newline ... ok
+test legacy_file_requires_explicit_encoding_before_text_editing ... ok
+test line_commands_are_real_workbench_operations ... ok
+test block_comment_preserves_utf8_bom_even_with_select_all ... ok
+test search_next_and_previous_share_byte_ranges_with_selection ... ok
+test replace_current_and_all_use_the_document_encoding ... ok
+test selected_multiline_abl_comment_wraps_and_unwraps_exact_bytes ... ok
+test utf8_bom_starts_cursor_after_bom ... ok
+test utf8_cursor_movement_never_splits_multibyte_characters ... ok
+test selected_csharp_lines_comment_and_uncomment_as_one_edit ... ok
+test toggle_line_comment_uses_the_language_profile ... ok
+test save_as_uses_safe_file_session_and_retitles_tab ... ok
+test abl_toggle_comment_preserves_legacy_bytes_and_is_one_undo_step ... ok
+test workbench_edits_saves_and_tracks_command_context ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
