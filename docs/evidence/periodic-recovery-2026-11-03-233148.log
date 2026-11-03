@@ -1,0 +1,29 @@
+
+running 7 tests
+test recovery_gc_failed_initial_streams_leave_no_unpublished_payloads ... ok
+test recovery_gc_revalidates_corruption_before_replacing_backup ... ok
+test recovery_gc_unknown_file_and_hardlink_preflight_preserves_entire_batch ... FAILED
+test recovery_gc_reparse_candidate_never_follows_owned_outside_target ... FAILED
+test recovery_gc_locked_and_interrupted_candidates_resume_idempotently ... ok
+test recovery_gc_corrupt_head_or_backup_fails_before_any_removal ... ok
+test recovery_gc_retains_two_confirmed_generations_and_other_slots ... ok
+
+failures:
+
+failures:
+    recovery_gc_reparse_candidate_never_follows_owned_outside_target
+    recovery_gc_unknown_file_and_hardlink_preflight_preserves_entire_batch
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+     Running tests\recovery_gc.rs (target\gui-next\debug\deps\recovery_gc-95c5839defc2a44d.exe)
+
+thread 'recovery_gc_unknown_file_and_hardlink_preflight_preserves_entire_batch' panicked at crates\jc-files\tests\recovery_gc.rs:193:48:
+called `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: "Acceso denegado." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'recovery_gc_reparse_candidate_never_follows_owned_outside_target' panicked at crates\jc-files\tests\recovery_gc.rs:306:5:
+owned junction setup failed: [] [65, 99, 99, 101, 115, 111, 32, 100, 101, 110, 101, 103, 97, 100, 111, 46, 13, 10]
+error: test failed, to rerun pass `-p jc-files --test recovery_gc`

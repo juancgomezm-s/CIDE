@@ -1,0 +1,79 @@
+{
+  "base_commit": "a7227a1736cee52d98c957f3a3cb45a2bb679e0c",
+  "target": "target/recovery-next/release",
+  "runtime_language": "Rust",
+  "new_dependencies": false,
+  "remote_ci": false,
+  "new_tests_passed_by_suites_and_directed_closure": {
+    "core_cursor": 3,
+    "safe_retention": 7,
+    "controller_capture_maintenance": 8,
+    "frontend_exit_with_worker": 2
+  },
+  "regressions": "existing core/session/frontend recovery, partial writes, abrupt process-exit child and previous valid fallback",
+  "all_targets_clippy_deny_warnings": true,
+  "fmt_check": true,
+  "release_workspace_bins_examples": true,
+  "full_workspace_runtime_pass": false,
+  "native": {
+    "gui_checks": 7,
+    "gui_processes": 3,
+    "tui_checks": 7,
+    "tui_processes": 3,
+    "forced_termination_after_periodic_checkpoint": true,
+    "idle_no_rewrites": true,
+    "two_generations_after_cleanup": true,
+    "original_files_unchanged": true,
+    "physical_display_verified": false
+  },
+  "quotas": {
+    "source_chunk_bytes": 65536,
+    "queue_chunks": 1,
+    "source_payload_max_with_worker_queue_owner": 196608,
+    "gc_generations_per_pass": 64,
+    "gc_candidate_files_per_pass": 8192
+  },
+  "policy_seconds": {
+    "idle": 2,
+    "maximum_attempt_delay": 30,
+    "retry": 10
+  },
+  "sandbox_directed_closure": [
+    "hardlink and junction fixtures",
+    "SaveAs fixture publication"
+  ],
+  "package": {
+    "path": "work\\packages\\CIDE-windows-dev-periodic-recovery-20261103.zip",
+    "members": 82,
+    "payload_sha256_verified": 81,
+    "crc_verified": true,
+    "sha256": "b730a0dbbea631fdd4fcdd7520fbd7fc611769b56cc9f8b9066504b8581576e5",
+    "channel": "development",
+    "missing_notices": [
+      {
+        "package": "winapi-i686-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      },
+      {
+        "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      }
+    ]
+  },
+  "binaries": {
+    "cide.exe": "c9e0f2cd25c00577ac28f65d197bb2ed7dfaf75c09c36788aaf419cd8a541e05",
+    "cide-tui.exe": "66af063a43a5dd521a589e82c4c5bb54c35689d6674030d7b2063bf987719b45",
+    "cide-gui.exe": "3261039df84b1091c5e743ca843e15df1daa23a127063086dcaee02cc6fd802c",
+    "jc-ide.exe": "82f793e950b111210ef956f510084cdcd922edf393ab6a1eef28e188387c2fa9",
+    "jc-ide-tui.exe": "941d1d38bd202736dacf5f88c1833c3c5d2d362bfdf124e39852e117cdf297f4",
+    "jc-ide-gui.exe": "f8584d11e5bd41d2507fb5c1c64fa2fba22fdf75a47bee22bfcf8462a99a75a4"
+  },
+  "limitations": [
+    "maximum_delay is an admission attempt; pending mutations may cancel capture",
+    "source payload bound excludes metadata and existing document memory",
+    "cleanup touches current slot only; unknown/reparse/hardlinked entries retained",
+    "full-editor GB integration remains pending",
+    "power-loss/hardware and physical/global RAM/latency not certified"
+  ],
+  "previous_release_binaries_preserved": true
+}

@@ -1,0 +1,8 @@
+
+running 1 test
+test recovery_gc_reparse_candidate_never_follows_owned_outside_target ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.16s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running tests\recovery_gc.rs (target\gui-next\debug\deps\recovery_gc-95c5839defc2a44d.exe)

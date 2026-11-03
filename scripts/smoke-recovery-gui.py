@@ -10,9 +10,17 @@ import subprocess
 import time
 import uuid
 
+def read_head(path):
+    try:
+        data=path.read_bytes()
+        return data if len(data)==72 and data[:8]==b'CIDEHD01' else None
+    except (FileNotFoundError,PermissionError):
+        return None
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--exe',type=Path,required=True)
+    parser.add_argument('--periodic',action='store_true',help='Espera checkpoint periódico y termina el proceso sin cierre normal')
     args=parser.parse_args()
     workspace=Path(__file__).resolve().parents[1]
     exe=(workspace/args.exe).resolve(strict=True)
@@ -46,10 +54,11 @@ def main():
         result=c.c_size_t()
         if not api.SendMessageTimeoutW(hwnd,message,value,0,0x2,10000,c.byref(result)):
             raise c.WinError(c.get_last_error())
-    report=dict(ok=False,output=str(output),processes=0,checks=[],physical_display_verified=False)
+    report=dict(ok=False,output=str(output),processes=0,checks=[],physical_display_verified=False,periodic=args.periodic)
     process=None
     try:
         for phase,character in enumerate(['Q','Z',None]):
+            previous={str(path):path.read_bytes() for path in (output/'estado/gui').glob('slot-*/HEAD')}
             startup=subprocess.STARTUPINFO();startup.dwFlags|=subprocess.STARTF_USESHOWWINDOW;startup.wShowWindow=0
             with (output/f'gui-{phase}.stdout.log').open('xb') as stdout,(output/f'gui-{phase}.stderr.log').open('xb') as stderr:
                 process=subprocess.Popen([str(exe),'--encoding','utf8',str(source)],cwd=workspace,env=environment,stdin=subprocess.DEVNULL,stdout=stdout,stderr=stderr,startupinfo=startup)
@@ -61,8 +70,19 @@ def main():
                     if hwnd is None:time.sleep(.02)
                 assert hwnd and not api.IsWindowVisible(hwnd),'La prueba exige HWND propio oculto'
                 if character:send(hwnd,process,0x102,ord(character))
-                send(hwnd,process,0x10)
-                assert process.wait(timeout=15)==0
+                if args.periodic:
+                    deadline=time.monotonic()+20
+                    while True:
+                        heads=list((output/'estado/gui').glob('slot-*/HEAD'))
+                        if heads and any((value:=read_head(path)) is not None and value!=previous.get(str(path)) for path in heads) and len(list(heads[0].parent.glob('generation-*')))<=2:break
+                        if time.monotonic()>deadline:raise TimeoutError('No se confirmó el checkpoint periódico y su limpieza')
+                        time.sleep(.03)
+                    if phase==2:
+                        stable=read_head(heads[0]);time.sleep(2.3);assert stable is not None and read_head(heads[0])==stable,'La sesión en reposo no debe reescribirse'
+                    process.kill();process.wait(timeout=15)
+                else:
+                    send(hwnd,process,0x10)
+                    assert process.wait(timeout=15)==0
                 process=None
             result=subprocess.run([str(inspector),str(output/'estado/gui')],cwd=workspace,env=environment,capture_output=True,check=True,timeout=15)
             state=json.loads(result.stdout)
@@ -74,6 +94,7 @@ def main():
             assert source.read_bytes()==original
             report['processes']+=1
         report.update(ok=True,original_unchanged=True,checks=['production_gui_hidden_window_own_pid_only','three_processes_restore_unsaved_bytes_original_undo_and_caret','explicit_cli_open_reuses_recovered_document','original_never_written_by_close_or_restore'])
+        if args.periodic:report['checks']+=['periodic_commit_before_forced_exit_without_wm_close','obsolete_generations_pruned_to_two_protected_versions','idle_session_does_not_rewrite_checkpoint']
     except BaseException as error:
         report['error']=str(error)
         raise

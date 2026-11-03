@@ -3,6 +3,7 @@ mod display;
 pub(crate) mod invisible_layout;
 mod recovery;
 pub use invisible_layout::DisplayCell;
+pub use recovery::{CaptureChunk, CaptureError, RecoveryCapture, RecoveryKey};
 mod clipboard_transfer;
 pub use clipboard_transfer::{ClipboardExport, ClipboardTarget};
 mod edit;

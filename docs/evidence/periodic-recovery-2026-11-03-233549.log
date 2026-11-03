@@ -1,0 +1,17 @@
+
+running 7 tests
+test periodic_deadlines_use_idle_maximum_delay_and_validated_policy ... ok
+test cooperative_session_capture_rejects_closed_documents_and_save_info_changes ... ok
+test periodic_checkpoint_restores_binary_documents_views_and_frontend_without_unchanged_writes ... ok
+test periodic_completed_document_keeps_initial_snapshot_and_schedules_following_activity ... ok
+test periodic_deferred_cleanup_retries_without_rewriting_confirmed_documents ... ok
+test periodic_stale_partial_capture_never_publishes_and_retry_captures_latest ... ok
+test periodic_head_lock_preserves_confirmed_generation_and_retries_after_backoff ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+   Compiling jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.17s
+     Running tests\periodic_recovery.rs (target\gui-next\debug\deps\periodic_recovery-8e04c5cfdbdb1518.exe)

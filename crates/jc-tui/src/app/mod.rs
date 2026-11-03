@@ -137,6 +137,7 @@ pub struct TuiApp {
     replace_conflicts: usize,
     should_exit: bool,
     recovery: Option<jc_app::session::EditorRecovery>,
+    pub(crate) periodic_recovery: jc_app::session::PeriodicRecovery,
     default_encoding: Option<TextEncoding>,
 }
 
@@ -220,6 +221,7 @@ impl TuiApp {
                 .expect("valid default task quotas"),
             should_exit: false,
             recovery: None,
+            periodic_recovery: Default::default(),
             default_encoding: options.encoding,
         };
         for path in options.files {

@@ -1,0 +1,24 @@
+
+running 6 tests
+test periodic_deadlines_use_idle_maximum_delay_and_validated_policy ... ok
+test cooperative_session_capture_rejects_closed_documents_and_save_info_changes ... FAILED
+test periodic_checkpoint_restores_binary_documents_views_and_frontend_without_unchanged_writes ... ok
+test periodic_completed_document_keeps_initial_snapshot_and_schedules_following_activity ... ok
+test periodic_stale_partial_capture_never_publishes_and_retry_captures_latest ... ok
+test periodic_head_lock_preserves_confirmed_generation_and_retries_after_backoff ... ok
+
+failures:
+
+failures:
+    cooperative_session_capture_rejects_closed_documents_and_save_info_changes
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.90s
+     Running tests\periodic_recovery.rs (target\gui-next\debug\deps\periodic_recovery-8e04c5cfdbdb1518.exe)
+
+thread 'cooperative_session_capture_rejects_closed_documents_and_save_info_changes' panicked at crates\jc-app\tests\periodic_recovery.rs:388:18:
+called `Result::unwrap()` on an `Err` value: File(Io(Os { code: 5, kind: PermissionDenied, message: "Acceso denegado." }))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `-p jc-app --test periodic_recovery`

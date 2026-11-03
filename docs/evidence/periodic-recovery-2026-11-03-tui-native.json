@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\recovery-conpty\\20261103T233953Z-c1a5a599",
+  "original_unchanged": true,
+  "physical_display_verified": false,
+  "periodic": true,
+  "checks": [
+    "dirty_edit_visible_before_exit",
+    "new_process_restores_dirty_bytes_and_original_undo",
+    "restored_redo_retains_the_same_change",
+    "second_close_and_reopen_keeps_recovered_modification",
+    "periodic_commit_before_forced_job_termination_without_exit_command",
+    "obsolete_generations_pruned_to_two_protected_versions",
+    "idle_session_does_not_rewrite_checkpoint"
+  ],
+  "processes": 3
+}

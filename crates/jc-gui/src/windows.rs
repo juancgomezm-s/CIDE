@@ -374,6 +374,7 @@ enum Action {
 }
 struct State {
     recovery: Option<jc_app::session::EditorRecovery>,
+    periodic_recovery: jc_app::session::PeriodicRecovery,
     restore_window: Option<(i32, i32, bool)>,
     open_diff: jc_app::open_diff::OpenDiffController,
     open_diff_view: jc_app::open_diff_view::OpenDiffView,
@@ -508,6 +509,7 @@ impl State {
             markdown_gui: None,
             workbench: Workbench::default(),
             recovery: None,
+            periodic_recovery: Default::default(),
             restore_window: None,
             registry: default_registry(),
             keymap: default_keymap(),
@@ -1533,6 +1535,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             TASKS_MESSAGE => {
                 redraw = state.poll_tasks();
+                redraw |= state.poll_periodic_recovery();
+            }
+            0x113 if wparam == recovery::TIMER_ID => {
+                redraw = state.poll_periodic_recovery();
             }
             WM_SIZE => {
                 state.cancel_pointer();
@@ -1706,11 +1712,17 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         redraw |= state.validate_source();
         state.validate_rectangle_drag();
         state.validate_linear_drag();
+        if redraw && !matches!(message, TASKS_MESSAGE | 0x113 | WM_CREATE) {
+            state
+                .periodic_recovery
+                .note_activity(std::time::Instant::now());
+        }
     }
     if !handled {
         return DefWindowProcW(hwnd, message, wparam, lparam);
     }
     release_idle_capture(hwnd);
+    recovery::arm(hwnd);
     perform(hwnd, action);
     if let Some(current) = self::owner(hwnd) {
         current.state.borrow().schedule_search();
@@ -2053,6 +2065,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
             UnregisterClassW(class.as_ptr(), instance);
             return Err(error);
         }
+        recovery::arm(hwnd);
         if options.smoke.is_none() {
             let maximized = restored_size.is_some_and(|v| v.2);
             ShowWindow(hwnd, if maximized { 3 } else { 5 });

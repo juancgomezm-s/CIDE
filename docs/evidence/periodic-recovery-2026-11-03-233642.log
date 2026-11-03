@@ -1,0 +1,26 @@
+    Checking jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+    Checking jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+error[E0609]: no field `base` on type `Fixture`
+   --> crates\jc-app\tests\periodic_recovery.rs:227:42
+    |
+227 |         .begin_recovery_capture(&fixture.base, b"same UI")
+    |                                          ^^^^ unknown field
+    |
+    = note: available fields are: `root`, `parent`
+
+error[E0609]: no field `base` on type `Fixture`
+   --> crates\jc-app\tests\periodic_recovery.rs:230:42
+    |
+230 |         .begin_recovery_capture(&fixture.base, b"same UI")
+    |                                          ^^^^ unknown field
+    |
+    = note: available fields are: `root`, `parent`
+
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Checking jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `jc-app` (test "periodic_recovery") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

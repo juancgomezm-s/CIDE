@@ -1,0 +1,25 @@
+
+running 5 tests
+test recovery_truncated_metadata_hostile_counts_and_quotas_are_rejected_before_publication ... ok
+test recovery_concurrent_slots_are_exclusive_and_reopen_chooses_latest_free_confirmed_slot ... ok
+test recovery_corrupt_latest_document_and_head_fall_back_without_overwriting_prior_files ... ok
+test recovery_read_handles_are_immutable_and_retained_generation_quota_never_deletes_good_data ... ok
+test recovery_partial_writer_and_head_failure_keep_confirmed_generation_and_originals ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+
+running 2 tests
+test crash_writer_child ... ignored, Only invoked by its parent with an owned fixture directory
+
+running 1 test
+
+running 1 test
+test abrupt_process_exit_during_write_keeps_previous_commit_and_after_commit_keeps_new_data ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.64s
+     Running tests\recovery.rs (target\gui-next\debug\deps\recovery-918de4003fd33186.exe)
+     Running tests\recovery_crash.rs (target\gui-next\debug\deps\recovery_crash-a7015e8a4d1437b4.exe)

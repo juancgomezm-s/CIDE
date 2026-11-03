@@ -2,7 +2,7 @@ use std::fmt;
 use std::io::{self, Write};
 use std::ops::Range;
 mod recovery;
-pub use recovery::{RecoveryError, RecoveryLimits};
+pub use recovery::{RecoveryCursor, RecoveryError, RecoveryLimits};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditError {
@@ -190,6 +190,8 @@ impl ChangeSet {
 }
 
 pub struct Document {
+    recovery_identity: u64,
+    recovery_epoch: u64,
     original: Vec<u8>,
     added: Vec<u8>,
     state: State,
@@ -216,6 +218,26 @@ impl fmt::Debug for Document {
 }
 
 impl Document {
+    fn new_recovery_identity() -> u64 {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        NEXT.fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |n| n.checked_add(1),
+        )
+        .unwrap_or(0)
+    }
+    /// Process-local identity; never persisted or reused after restoring a document.
+    pub fn recovery_identity(&self) -> u64 {
+        self.recovery_identity
+    }
+    /// Changes conservatively on every mutation attempt, including history and storage changes.
+    pub fn recovery_epoch(&self) -> u64 {
+        self.recovery_epoch
+    }
+    fn bump_recovery_epoch(&mut self) {
+        self.recovery_epoch = self.recovery_epoch.saturating_add(1);
+    }
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         let len = bytes.len();
         let pieces = if len == 0 {
@@ -228,6 +250,8 @@ impl Document {
             }]
         };
         Self {
+            recovery_identity: Self::new_recovery_identity(),
+            recovery_epoch: 0,
             original: bytes,
             added: Vec::new(),
             state: State {
@@ -272,6 +296,7 @@ impl Document {
         self.state.revision != self.saved_revision
     }
     pub fn mark_saved(&mut self) {
+        self.bump_recovery_epoch();
         self.saved_revision = self.state.revision;
     }
     pub fn piece_count(&self) -> usize {
@@ -314,11 +339,13 @@ impl Document {
             })
     }
     pub fn set_history_bytes_limit(&mut self, limit: usize) {
+        self.bump_recovery_epoch();
         self.history_bytes_limit = limit;
         self.enforce_history_budget();
         self.reclaim_unused_storage();
     }
     pub fn set_history_limit(&mut self, limit: usize) {
+        self.bump_recovery_epoch();
         self.history_limit = limit;
         trim_history(&mut self.undo, limit);
         trim_history(&mut self.redo, limit);
@@ -352,6 +379,7 @@ impl Document {
 
     /// Relocate only reachable source intervals; revisions, history and maps remain unchanged.
     pub fn reclaim_unused_storage(&mut self) {
+        self.bump_recovery_epoch();
         type RelocationMap = Vec<(Range<usize>, usize)>;
         fn collect(document: &Document, source: Source) -> (Option<Vec<u8>>, RelocationMap) {
             let mut ranges: Vec<_> = std::iter::once(&document.state)
@@ -418,6 +446,7 @@ impl Document {
         }
     }
     pub fn compact_storage(&mut self) {
+        self.bump_recovery_epoch();
         let bytes = self.to_bytes();
         let len = bytes.len();
         self.original = bytes;
@@ -510,6 +539,7 @@ impl Document {
     }
 
     pub fn apply_batch(&mut self, mut batch: EditBatch) -> Result<(), EditError> {
+        self.bump_recovery_epoch();
         if batch.expected_revision != self.revision() {
             return Err(EditError::StaleRevision {
                 expected: batch.expected_revision,
@@ -654,6 +684,7 @@ impl Document {
     }
 
     pub fn undo(&mut self) -> bool {
+        self.bump_recovery_epoch();
         self.last_edit = None;
         let Some(previous) = self.undo.pop() else {
             return false;
@@ -669,6 +700,7 @@ impl Document {
     }
 
     pub fn redo(&mut self) -> bool {
+        self.bump_recovery_epoch();
         self.last_edit = None;
         let Some(next) = self.redo.pop() else {
             return false;

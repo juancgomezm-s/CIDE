@@ -1,0 +1,18 @@
+    Checking jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+    Checking jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+error: this block may be rewritten with the `?` operator
+   --> crates\jc-app\src\session\periodic.rs:231:13
+    |
+231 | /             if job.input.is_none() {
+232 | |                 return None;
+233 | |             }
+    | |_____________^ help: replace it with: `job.input.as_ref()?;`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#question_mark
+    = note: `-D clippy::question-mark` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::question_mark)]`
+
+error: could not compile `jc-app` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-app` (lib test) due to 1 previous error

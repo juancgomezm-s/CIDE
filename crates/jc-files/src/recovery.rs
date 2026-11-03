@@ -1,6 +1,8 @@
 //! Immutable recovery generations, streamed to owned files before atomic HEAD.
 //! Source document bytes/undo payloads and metadata are opaque to this layer.
 use crate::{fingerprint::FingerprintingWriter, ContentFingerprint, FileError};
+mod gc;
+pub use gc::PruneReport;
 use std::{
     fmt,
     fs::{self, File, OpenOptions},
@@ -149,7 +151,6 @@ pub struct RecoveryStore {
     limits: RecoveryLimits,
     _lease: File,
     confirmed: Option<Head>,
-    checked_previous: bool,
     retained_bytes: Option<u64>,
 }
 
@@ -210,7 +211,6 @@ impl RecoveryStore {
                 limits,
                 _lease: lease,
                 confirmed: None,
-                checked_previous: false,
                 retained_bytes: None,
             });
         }
@@ -236,7 +236,6 @@ impl RecoveryStore {
                         limits,
                         _lease: lease,
                         confirmed: None,
-                        checked_previous: true,
                         retained_bytes: Some(0),
                     });
                 }
@@ -276,9 +275,10 @@ impl RecoveryStore {
             ));
         }
         ensure_directory(&self.slot, false)?;
-        if !self.checked_previous {
-            drop(self.load_latest()?);
-        }
+        // Revalidate the previous commit on every publication. A cached HEAD
+        // must never overwrite a valid BACKUP after its payload became corrupt.
+        // Keep the prior document handles pinned through the new commit.
+        let _previous = self.load_latest()?;
         let existing = match self.retained_bytes {
             Some(bytes) => bytes,
             None => disk_charge(&self.slot, self.limits.max_total_bytes)?,
@@ -314,6 +314,7 @@ impl RecoveryStore {
         }
         let directory =
             reserved.ok_or(RecoveryError::Limit("no se pudo reservar una generación"))?;
+        let mut unpublished = self.unpublished_guard(generation)?;
         let mut fingerprints = Vec::with_capacity(documents + 1);
         let mut total = metadata.len() as u64;
         write_file(&directory.join("metadata.bin"), |file| {
@@ -380,8 +381,8 @@ impl RecoveryStore {
             publish(&self.slot, "BACKUP", &previous.encode())?;
         }
         publish(&self.slot, "HEAD", &head.encode())?;
+        unpublished.commit();
         self.confirmed = Some(head);
-        self.checked_previous = true;
         self.retained_bytes = Some(existing + total + manifest.len() as u64);
         Ok(generation)
     }
@@ -395,7 +396,6 @@ impl RecoveryStore {
                 {
                     Ok(loaded) => {
                         self.confirmed = Some(head);
-                        self.checked_previous = true;
                         return Ok(Some(loaded));
                     }
                     Err(error) => {
@@ -416,7 +416,6 @@ impl RecoveryStore {
             return Err(error);
         }
         self.confirmed = None;
-        self.checked_previous = true;
         Ok(None)
     }
     /// Retry a structurally invalid application payload from the previous commit.
@@ -428,7 +427,6 @@ impl RecoveryStore {
         };
         let loaded = load_generation(&self.slot, head, self.limits, true)?;
         self.confirmed = Some(head);
-        self.checked_previous = true;
         Ok(Some(loaded))
     }
 }

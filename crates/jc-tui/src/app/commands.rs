@@ -162,7 +162,10 @@ impl TuiApp {
                 self.overlay = UiOverlay::CloseDialog { tab };
             }
             CommandOutcome::ExitRequested => {
-                if self.recovery.is_some() || self.workbench.context().dirty_documents == 0 {
+                if self.recovery.is_some()
+                    || self.periodic_recovery.active()
+                    || self.workbench.context().dirty_documents == 0
+                {
                     self.request_exit();
                 } else {
                     self.status =

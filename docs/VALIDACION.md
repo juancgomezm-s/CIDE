@@ -1,6 +1,37 @@
 # Validación
 
-## Estado vigente — marco GUI, ratón TUI y recuperación Rust, 2026-11-03
+## Estado vigente — recuperación periódica y limpieza segura, 2026-11-03
+
+Recuperación automática en Rust integrada en GUI y TUI: captura cooperativa de
+64KiB por turno, cola de un tramo, escritura/verificación en worker y detección de
+versiones obsoletas. Programa tras2s sin actividad y fuerza un intento a30s;
+un documento pendiente que cambia cancela la captura incompleta. Fallos esperan10s.
+Tras la captura inicial, una sesión sin cambios no reescribe sus copias.
+
+La limpieza conserva HEAD/BACKUP verificados, borra únicamente generaciones
+obsoletas del slot propio por handles Win32 y rechaza enlaces/archivos desconocidos.
+Las escrituras incompletas propias tienen guarda RAII. La limpieza aplazada vuelve
+a intentarse sin reconstruir documentos ni avanzar HEAD. El cierre normal espera
+el worker y confirma después la última edición. [Contrato](PERIODIC_RECOVERY_RETENTION.md).
+
+20 nuevas pruebas aprobadas por suites/cierres dirigidos, más regresiones de
+recuperación y terminación abrupta. Tres procesos reales de GUI y tres de TUI
+pasaron7 comprobaciones por interfaz con terminación forzada, fuente original
+intacta, dos generaciones protegidas y ausencia de reescrituras en reposo.
+Los enlaces duros/junction y Guardar como de fixtures necesitaron ventana local
+sin la restricción del sandbox. No se cambiaron garantías para hacerlos pasar.
+Fmt, Clippy todos los targets sin advertencias y release offline aprobados;
+no corrida runtime global única. Evidencia: `docs/evidence/periodic-recovery-2026-11-03-*`.
+
+Ejecutables actuales: `target/recovery-next/release/cide-gui.exe` y `cide-tui.exe`.
+Se conservan los ejecutables anteriores. Depósitos personales intactos en pruebas.
+No se modifican archivos originales salvo Guardar explícito. Siguen abiertos la
+integración GB, aceptación física/global, IME/DPI/a11y/clipboard real y M3–M5.
+Sin dependencias nuevas, CI, push ni publicación.
+
+El siguiente avance es histórico y queda subordinado a este cierre.
+
+## Estado previo — marco GUI, ratón TUI y recuperación Rust, 2026-11-03
 
 GUI ahora tiene marco de título integrado, barra de menús con el mismo fondo
 `#2E3440`, pestañas redondeadas por grupo, selector de documentos abiertos y árbol

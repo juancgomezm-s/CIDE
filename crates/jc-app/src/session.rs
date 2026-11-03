@@ -2,6 +2,8 @@
 use jc_files::recovery::{RecoveryLimits, RecoveryStore};
 pub use jc_files::{read_recovery_path, write_recovery_path};
 use std::path::PathBuf;
+mod periodic;
+pub use periodic::{PeriodicRecovery, PeriodicStats, RecoveryPolicy};
 
 pub struct EditorRecovery {
     pub store: RecoveryStore,

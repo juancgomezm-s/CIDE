@@ -35,21 +35,23 @@ La implementación de bloqueo durable del depósito está admitida en Windows;
 en otras plataformas el lanzamiento conserva la sesión en memoria sin fingir un
 bloqueo exclusivo de recuperación.
 
-La integración inicial confirma al salir normalmente y restaura al iniciar,
+La recuperación periódica está integrada; ver [retención y programación](PERIODIC_RECOVERY_RETENTION.md).
+También confirma al salir normalmente y restaura al iniciar,
 incluidos documentos nuevos sin guardar. Si no puede confirmar la copia, no
 cierra la ventana. Cerrar una pestaña con descarte explícito mantiene su semántica
-propia. No hay todavía guardado periódico ni garantía de conservar las últimas
-teclas tras una caída antes de la confirmación. Las pruebas de terminación abrupta
+propia. Un crash recupera la última generación confirmada; las teclas posteriores
+a esa confirmación pueden no haberse conservado. Las pruebas de terminación abrupta
 del proceso no equivalen a una prueba de corte eléctrico o fallo del hardware.
 
 La admisión actual limita cada documento a256MiB de fuentes y cada sesión a512MiB
 codificados, además de cuotas explícitas de vistas, piezas e historial. Rechaza el
 checkpoint antes de publicarlo si después no podría restaurarlo con esos límites.
-El depósito conserva generaciones previas sin recolección automática y tiene una
-cuota de8GiB por sesión; al agotarse falla de forma visible y conserva los datos.
+El depósito conserva HEAD/BACKUP y limpia versiones obsoletas de forma segura, con
+cuota de8GiB por sesión; si los bloqueos impiden liberar espacio, falla de forma
+visible y conserva los datos.
 Estas cuotas pertenecen al motor actual en memoria. La integración de documentos
-de varios GB y la recolección segura de generaciones siguen siendo bloques
-pendientes; el prototipo de lectura paginada no demuestra su recuperación completa.
+de varios GB sigue siendo un bloque
+pendiente; el prototipo de lectura paginada no demuestra su recuperación completa.
 
 ## Evidencia de cierre
 

@@ -1,0 +1,31 @@
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+error[E0433]: failed to resolve: use of undeclared crate or module `jc_core`
+   --> crates\jc-tui\src\app\recovery.rs:414:24
+    |
+414 |         let previous = jc_core::Document::read_recovery(
+    |                        ^^^^^^^ use of undeclared crate or module `jc_core`
+
+error[E0433]: failed to resolve: use of undeclared crate or module `jc_core`
+   --> crates\jc-tui\src\app\recovery.rs:416:13
+    |
+416 |             jc_core::RecoveryLimits::default(),
+    |             ^^^^^^^ use of undeclared crate or module `jc_core`
+
+error[E0433]: failed to resolve: use of undeclared crate or module `jc_core`
+   --> crates\jc-gui\src\windows\recovery.rs:457:24
+    |
+457 |         let previous = jc_core::Document::read_recovery(
+    |                        ^^^^^^^ use of undeclared crate or module `jc_core`
+
+error[E0433]: failed to resolve: use of undeclared crate or module `jc_core`
+   --> crates\jc-gui\src\windows\recovery.rs:459:13
+    |
+459 |             jc_core::RecoveryLimits::default(),
+    |             ^^^^^^^ use of undeclared crate or module `jc_core`
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `jc-tui` (lib test) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-gui` (lib test) due to 2 previous errors

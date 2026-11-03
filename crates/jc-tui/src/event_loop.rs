@@ -171,9 +171,16 @@ pub(crate) fn run(mut options: LaunchOptions, search_workers: usize) -> io::Resu
                         terminal.invalidate();
                     }
                     if let Event::Mouse(event) = event {
-                        dirty |= app.handle_mouse(event);
+                        let changed = app.handle_mouse(event);
+                        dirty |= changed;
+                        if changed {
+                            app.periodic_recovery
+                                .note_activity(std::time::Instant::now());
+                        }
                     } else {
                         app.handle_event(event);
+                        app.periodic_recovery
+                            .note_activity(std::time::Instant::now());
                         dirty = true;
                     }
                 }
@@ -186,6 +193,7 @@ pub(crate) fn run(mut options: LaunchOptions, search_workers: usize) -> io::Resu
         }
         let tasks = app.poll_tasks();
         dirty |= tasks.changed;
+        dirty |= app.poll_periodic_recovery();
         if tasks.recover {
             terminal.invalidate();
             dirty = true;
@@ -210,7 +218,14 @@ pub(crate) fn run(mut options: LaunchOptions, search_workers: usize) -> io::Resu
         {
             continue;
         }
-        wakeup.wait(ticket, app.tasks.next_deadline());
+        let recovery_deadline = app
+            .recovery_deadline()
+            .map(|deadline| deadline.saturating_duration_since(std::time::Instant::now()));
+        let deadline = match (app.tasks.next_deadline(), recovery_deadline) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        wakeup.wait(ticket, deadline);
     }
     drop(input);
     drop(app);

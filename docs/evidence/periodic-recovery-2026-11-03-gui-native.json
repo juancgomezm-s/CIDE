@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\recovery-gui\\20261103T233906Z-cf7dd503",
+  "processes": 3,
+  "checks": [
+    "production_gui_hidden_window_own_pid_only",
+    "three_processes_restore_unsaved_bytes_original_undo_and_caret",
+    "explicit_cli_open_reuses_recovered_document",
+    "original_never_written_by_close_or_restore",
+    "periodic_commit_before_forced_exit_without_wm_close",
+    "obsolete_generations_pruned_to_two_protected_versions",
+    "idle_session_does_not_rewrite_checkpoint"
+  ],
+  "physical_display_verified": false,
+  "periodic": true,
+  "original_unchanged": true
+}

@@ -1,0 +1,41 @@
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Checking jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+error: the borrowed expression implements the required traits
+   --> crates\jc-app\tests\periodic_recovery.rs:244:20
+    |
+244 |         .open_file(&fixture.path("texto.rs"), Some(TextEncoding::Utf8))
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `fixture.path("texto.rs")`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrows_for_generic_args
+    = note: `-D clippy::needless-borrows-for-generic-args` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_borrows_for_generic_args)]`
+
+error: the borrowed expression implements the required traits
+   --> crates\jc-app\tests\periodic_recovery.rs:259:21
+    |
+259 |     bench.open_file(&fixture.path("binario.dat"), None).unwrap();
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `fixture.path("binario.dat")`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrows_for_generic_args
+
+error: the borrowed expression implements the required traits
+   --> crates\jc-app\tests\periodic_recovery.rs:308:20
+    |
+308 |         .open_file(&fixture.path("grande.txt"), Some(TextEncoding::Utf8))
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `fixture.path("grande.txt")`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrows_for_generic_args
+
+error: the borrowed expression implements the required traits
+   --> crates\jc-app\tests\periodic_recovery.rs:628:20
+    |
+628 |         .open_file(&fixture.path("original.txt"), Some(TextEncoding::Utf8))
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `fixture.path("original.txt")`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrows_for_generic_args
+
+error: could not compile `jc-app` (test "periodic_recovery") due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...

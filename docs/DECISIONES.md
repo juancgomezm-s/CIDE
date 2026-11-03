@@ -643,3 +643,20 @@ Hay cuotas previas coherentes con la restauración y depots por instancia/fronte
 El usuario eligió instantánea privada para archivos GB. La fuente paginada y el
 guardado streaming son bases verificadas; Document e índices GB siguen pendientes.
 No se añade un segundo modelo editable ni se afirma resistencia a fallos eléctricos.
+
+## D62 — Checkpoint cooperativo y retención por handles (2026-11-03)
+
+La captura periódica conserva metadatos iniciales y cursa el codec por tramos
+acotados, sin clones del documento ni de su historial. Identidad/época invalidan
+lecturas pendientes; el worker sólo recibe bytes propios por cola1. Se separan
+admisión/entrega del owner y escritura, sync, verificación y limpieza del worker.
+Programación por inactividad y plazo máximo de intento; fallos con backoff y cero
+reescrituras si no cambió la sesión. El cierre final confirma el estado más reciente.
+
+GC conserva HEAD/BACKUP verificados y elimina obsoletas por handles Win32 fijados,
+con preflight completo del lote, límites y rechazo de enlaces/nombres desconocidos.
+Una guarda retira generaciones incompletas propias; nunca elimina una referenciada.
+Revalidar el commit previo impide arrastrar una corrupción de HEAD a un BACKUP válido.
+La limpieza aplazada tiene reintento independiente y no genera otra copia documental.
+Se preservan original/encoding/undo/vistas y cuotas actuales. No certifica fallos
+eléctricos, RAM o latencia física ni integra todavía documentos de varios GB.

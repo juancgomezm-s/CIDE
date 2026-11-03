@@ -4,10 +4,427 @@
 use super::*;
 use std::io::Read;
 
+#[cfg(test)]
+mod cursor_tests {
+    use super::*;
+
+    fn collect(document: &Document, request: usize) -> Vec<u8> {
+        let mut cursor = RecoveryCursor::new(document).unwrap();
+        let mut bytes = Vec::new();
+        while let Some(chunk) = document.recovery_chunk(&mut cursor, request).unwrap() {
+            assert!(!chunk.is_empty() && chunk.len() <= request);
+            bytes.extend(chunk);
+        }
+        assert!(document
+            .recovery_chunk(&mut cursor, request)
+            .unwrap()
+            .is_none());
+        bytes
+    }
+
+    #[test]
+    fn cooperative_capture_matches_codec_with_binary_histories_and_partial_words() {
+        let mut document = Document::from_bytes(
+            [
+                b"\xef\xbb\xbfhead\r\n".as_slice(),
+                &[0, 255, 128],
+                b"\rtail",
+            ]
+            .concat(),
+        );
+        document.insert(3, b"one\r\n").unwrap();
+        document.mark_saved();
+        document.replace(2..5, &[254, 0, 10]).unwrap();
+        document.insert(document.len(), b"last").unwrap();
+        assert!(document.undo());
+        for operation in 0..4 {
+            let mut expected = Vec::new();
+            document.write_recovery(&mut expected).unwrap();
+            for request in [1, 3, 7, 8, 17, CHUNK] {
+                let captured = collect(&document, request);
+                assert_eq!(captured, expected);
+                let restored =
+                    Document::read_recovery(&mut captured.as_slice(), RecoveryLimits::default())
+                        .unwrap();
+                assert_eq!(restored.to_bytes(), document.to_bytes());
+                assert_eq!(restored.is_modified(), document.is_modified());
+                assert_eq!(restored.last_change(), document.last_change());
+                assert_eq!(
+                    (restored.undo_steps(), restored.redo_steps()),
+                    (document.undo_steps(), document.redo_steps())
+                );
+            }
+            match operation {
+                0 => {
+                    assert!(document.redo());
+                }
+                1 => document.compact_storage(),
+                2 => {
+                    document.delete(0..document.len()).unwrap();
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(collect(&Document::default(), 1).len(), 128);
+    }
+
+    #[test]
+    fn cooperative_capture_rejects_all_canonical_mutations_and_identity_reuse() {
+        let mutations: [fn(&mut Document); 9] = [
+            |d| {
+                d.insert(0, b"x").unwrap();
+            },
+            |d| {
+                d.undo();
+            },
+            |d| {
+                d.redo();
+            },
+            Document::mark_saved,
+            Document::reclaim_unused_storage,
+            Document::compact_storage,
+            |d| d.set_history_limit(0),
+            |d| d.set_history_bytes_limit(0),
+            |d| {
+                d.replace(0..1, b"a").unwrap();
+            },
+        ];
+        for mutate in mutations {
+            let mut document = Document::from_bytes(b"abc".to_vec());
+            document.insert(3, b"d").unwrap();
+            document.insert(4, b"e").unwrap();
+            assert!(document.undo());
+            let mut cursor = RecoveryCursor::new(&document).unwrap();
+            document.recovery_chunk(&mut cursor, 1).unwrap();
+            let before = document.recovery_epoch();
+            mutate(&mut document);
+            assert!(document.recovery_epoch() > before);
+            assert!(matches!(
+                document.recovery_chunk(&mut cursor, CHUNK),
+                Err(RecoveryError::StaleCapture)
+            ));
+        }
+        let mut document = Document::default();
+        let mut cursor = RecoveryCursor::new(&document).unwrap();
+        // Same stack slot and epoch, different document: no pointer-address ABA.
+        document = Document::default();
+        assert!(matches!(
+            document.recovery_chunk(&mut cursor, 8),
+            Err(RecoveryError::StaleCapture)
+        ));
+        document.recovery_epoch = u64::MAX - 1;
+        let mut cursor = RecoveryCursor::new(&document).unwrap();
+        document.mark_saved();
+        document.mark_saved();
+        assert!(matches!(
+            RecoveryCursor::new(&document),
+            Err(RecoveryError::StaleCapture)
+        ));
+        assert!(matches!(
+            document.recovery_chunk(&mut cursor, 8),
+            Err(RecoveryError::StaleCapture)
+        ));
+    }
+
+    #[test]
+    fn cooperative_capture_bounds_each_request_and_metadata_work() {
+        let mut document = Document::from_bytes(vec![255; CHUNK * 3 + 13]);
+        for _ in 0..128 {
+            document.insert(0, &[0]).unwrap();
+        }
+        let mut cursor = RecoveryCursor::new(&document).unwrap();
+        assert!(std::mem::size_of::<RecoveryCursor>() <= 128);
+        for invalid in [0, CHUNK + 1, usize::MAX] {
+            assert!(matches!(
+                document.recovery_chunk(&mut cursor, invalid),
+                Err(RecoveryError::LimitExceeded(_))
+            ));
+        }
+        let mut output = Vec::new();
+        loop {
+            let before = cursor.words;
+            let chunk = document.recovery_chunk(&mut cursor, 17).unwrap();
+            assert!(
+                cursor.words - before <= 4,
+                "metadata work exceeded the output budget"
+            );
+            let Some(chunk) = chunk else {
+                break;
+            };
+            assert!(chunk.len() <= 17 && chunk.capacity() <= 17);
+            output.extend(chunk);
+        }
+        let mut expected = Vec::new();
+        document.write_recovery(&mut expected).unwrap();
+        assert_eq!(output, expected);
+        // Cancellation is just dropping these small indices; a new cursor starts cleanly.
+        assert_eq!(collect(&document, CHUNK), expected);
+    }
+}
+
 const MAGIC: &[u8; 8] = b"CIDEDOC1";
 const END: &[u8; 8] = b"ENDCDOC1";
 const VERSION: u64 = 1;
 const CHUNK: usize = 64 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CapturePhase {
+    Header,
+    Original,
+    Added,
+    State,
+    Piece,
+    Change,
+    Edit,
+    Footer,
+    Done,
+}
+
+/// Resumable owner-thread serializer. It holds no document borrow, source copy,
+/// filesystem resource or history snapshot. Drop cancels without further work.
+#[derive(Debug)]
+pub struct RecoveryCursor {
+    identity: u64,
+    epoch: u64,
+    phase: CapturePhase,
+    state: usize,
+    item: usize,
+    field: usize,
+    arena_offset: usize,
+    word: [u8; 8],
+    word_offset: usize,
+    #[cfg(test)]
+    words: usize,
+}
+impl RecoveryCursor {
+    /// Constant work; callers may perform separate admission before capture.
+    pub fn new(document: &Document) -> Result<Self, RecoveryError> {
+        if document.recovery_identity == 0 || document.recovery_epoch == u64::MAX {
+            return Err(RecoveryError::StaleCapture);
+        }
+        Ok(Self {
+            identity: document.recovery_identity,
+            epoch: document.recovery_epoch,
+            phase: CapturePhase::Header,
+            state: 0,
+            item: 0,
+            field: 0,
+            arena_offset: 0,
+            word: [0; 8],
+            word_offset: 8,
+            #[cfg(test)]
+            words: 0,
+        })
+    }
+    fn state<'a>(&self, document: &'a Document) -> Option<&'a State> {
+        if self.state == 0 {
+            Some(&document.state)
+        } else if self.state <= document.undo.len() {
+            document.undo.get(self.state - 1)
+        } else {
+            document.redo.get(self.state - 1 - document.undo.len())
+        }
+    }
+    fn change<'a>(&self, document: &'a Document) -> Option<&'a ChangeSet> {
+        self.state(document)
+            .map_or(document.last_edit.as_ref(), |state| state.edit.as_ref())
+    }
+    fn finish_change(&mut self, document: &Document) {
+        self.field = 0;
+        self.item = 0;
+        if self.state(document).is_some() {
+            self.state += 1;
+            self.phase = if self.state(document).is_some() {
+                CapturePhase::State
+            } else {
+                CapturePhase::Change
+            };
+        } else {
+            self.phase = CapturePhase::Footer;
+        }
+    }
+    // Each call emits exactly one word. Empty arenas are the only non-emitting
+    // transitions, at most two per capture; no metadata prefix is replayed.
+    fn next_word(&mut self, document: &Document) -> [u8; 8] {
+        let value = match self.phase {
+            CapturePhase::Header => {
+                let values = [
+                    0,
+                    VERSION,
+                    document.original.len() as u64,
+                    document.added.len() as u64,
+                    document.saved_revision,
+                    document.next_revision,
+                    document.history_limit as u64,
+                    document.history_bytes_limit as u64,
+                    document.undo.len() as u64,
+                    document.redo.len() as u64,
+                ];
+                let field = self.field;
+                self.field += 1;
+                if self.field == values.len() {
+                    self.phase = CapturePhase::Original;
+                    self.field = 0;
+                }
+                if field == 0 {
+                    return *MAGIC;
+                }
+                values[field]
+            }
+            CapturePhase::State => {
+                let state = self.state(document).expect("cursor state");
+                let value =
+                    [state.len as u64, state.revision, state.pieces.len() as u64][self.field];
+                self.field += 1;
+                if self.field == 3 {
+                    self.field = 0;
+                    self.item = 0;
+                    self.phase = if state.pieces.is_empty() {
+                        CapturePhase::Change
+                    } else {
+                        CapturePhase::Piece
+                    };
+                }
+                value
+            }
+            CapturePhase::Piece => {
+                let state = self.state(document).expect("cursor state");
+                let piece = &state.pieces[self.item];
+                let source = match piece.source {
+                    Source::Original => 0,
+                    Source::Added => 1,
+                };
+                let value = [source, piece.start as u64, piece.len as u64][self.field];
+                self.field += 1;
+                if self.field == 3 {
+                    self.field = 0;
+                    self.item += 1;
+                    if self.item == state.pieces.len() {
+                        self.phase = CapturePhase::Change;
+                        self.item = 0;
+                    }
+                }
+                value
+            }
+            CapturePhase::Change => {
+                if let Some(change) = self.change(document) {
+                    let value = [
+                        1,
+                        change.before_revision,
+                        change.after_revision,
+                        change.edits.len() as u64,
+                    ][self.field];
+                    self.field += 1;
+                    if self.field == 4 {
+                        self.field = 0;
+                        self.item = 0;
+                        if change.edits.is_empty() {
+                            self.finish_change(document);
+                        } else {
+                            self.phase = CapturePhase::Edit;
+                        }
+                    }
+                    value
+                } else {
+                    self.finish_change(document);
+                    0
+                }
+            }
+            CapturePhase::Edit => {
+                let change = self.change(document).expect("cursor change");
+                let edit = &change.edits[self.item];
+                let value = [
+                    edit.replaced.start as u64,
+                    edit.replaced.end as u64,
+                    edit.inserted_len as u64,
+                ][self.field];
+                self.field += 1;
+                if self.field == 3 {
+                    self.field = 0;
+                    self.item += 1;
+                    if self.item == change.edits.len() {
+                        self.finish_change(document);
+                    }
+                }
+                value
+            }
+            CapturePhase::Footer => {
+                self.phase = CapturePhase::Done;
+                return *END;
+            }
+            _ => unreachable!("word requested outside metadata"),
+        };
+        value.to_le_bytes()
+    }
+}
+
+impl Document {
+    /// Produce at most 64KiB with bounded allocation and metadata work. A stale
+    /// cursor never emits further bytes, even after undo returns to a revision.
+    pub fn recovery_chunk(
+        &self,
+        cursor: &mut RecoveryCursor,
+        max_bytes: usize,
+    ) -> Result<Option<Vec<u8>>, RecoveryError> {
+        if max_bytes == 0 || max_bytes > CHUNK {
+            return Err(RecoveryError::LimitExceeded(
+                "fragmento fuera de 1..=65536 bytes",
+            ));
+        }
+        if cursor.identity != self.recovery_identity
+            || cursor.epoch != self.recovery_epoch
+            || self.recovery_epoch == u64::MAX
+        {
+            return Err(RecoveryError::StaleCapture);
+        }
+        if cursor.phase == CapturePhase::Done && cursor.word_offset == 8 {
+            return Ok(None);
+        }
+        let mut output = Vec::new();
+        output
+            .try_reserve_exact(max_bytes)
+            .map_err(|_| RecoveryError::Allocation)?;
+        while output.len() < max_bytes {
+            if cursor.word_offset < 8 {
+                let count = (8 - cursor.word_offset).min(max_bytes - output.len());
+                output.extend_from_slice(
+                    &cursor.word[cursor.word_offset..cursor.word_offset + count],
+                );
+                cursor.word_offset += count;
+                continue;
+            }
+            if matches!(cursor.phase, CapturePhase::Original | CapturePhase::Added) {
+                let arena = if cursor.phase == CapturePhase::Original {
+                    &self.original
+                } else {
+                    &self.added
+                };
+                let count = (arena.len() - cursor.arena_offset).min(max_bytes - output.len());
+                output.extend_from_slice(&arena[cursor.arena_offset..cursor.arena_offset + count]);
+                cursor.arena_offset += count;
+                if cursor.arena_offset == arena.len() {
+                    cursor.arena_offset = 0;
+                    cursor.phase = if cursor.phase == CapturePhase::Original {
+                        CapturePhase::Added
+                    } else {
+                        CapturePhase::State
+                    };
+                }
+                continue;
+            }
+            if cursor.phase == CapturePhase::Done {
+                break;
+            }
+            cursor.word = cursor.next_word(self);
+            cursor.word_offset = 0;
+            #[cfg(test)]
+            {
+                cursor.words += 1;
+            }
+        }
+        Ok(Some(output))
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct RecoveryLimits {
@@ -38,6 +455,7 @@ pub enum RecoveryError {
     LimitExceeded(&'static str),
     UnsupportedVersion(u64),
     Allocation,
+    StaleCapture,
 }
 impl fmt::Display for RecoveryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -51,6 +469,9 @@ impl fmt::Display for RecoveryError {
                 write!(f, "Versión de recuperación no admitida: {version}")
             }
             Self::Allocation => write!(f, "No se pudo reservar la memoria acotada de recuperación"),
+            Self::StaleCapture => {
+                write!(f, "El documento cambió durante la captura de recuperación")
+            }
         }
     }
 }
@@ -409,6 +830,8 @@ impl Document {
         // Every retained transition must link the exact neighboring states.
         validate_transitions(&undo, &state, &redo, next_revision)?;
         let document = Self {
+            recovery_identity: Self::new_recovery_identity(),
+            recovery_epoch: 0,
             original,
             added,
             state,

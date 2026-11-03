@@ -17,7 +17,7 @@ mod region;
 pub mod source;
 
 pub use document::{
-    ByteEdit, ChangeSet, Document, DocumentRead, EditBatch, EditError, RangeChunks, RecoveryError,
-    RecoveryLimits, Replacement,
+    ByteEdit, ChangeSet, Document, DocumentRead, EditBatch, EditError, RangeChunks, RecoveryCursor,
+    RecoveryError, RecoveryLimits, Replacement,
 };
 pub use region::Region;

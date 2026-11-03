@@ -5,6 +5,8 @@ use jc_files::{
     SessionRecoveryInfo, SessionRecoveryLimits,
 };
 use std::io::{self, Cursor, Read, Write};
+mod capture;
+pub use capture::{CaptureChunk, CaptureError, RecoveryCapture, RecoveryKey};
 
 const MAGIC: &[u8; 8] = b"CIDEAPP1";
 const MAX_DOCUMENTS: usize = 4096;
@@ -61,12 +63,7 @@ impl Write for Metadata {
 impl Workbench {
     /// Source paths are made absolute against the captured launch directory.
     /// No original file is read or written. Failure leaves the live model intact.
-    pub fn checkpoint_recovery(
-        &self,
-        store: &mut RecoveryStore,
-        base: &Path,
-        frontend: &[u8],
-    ) -> Result<u64, String> {
+    fn recovery_metadata(&self, base: &Path, frontend: &[u8]) -> Result<Vec<u8>, String> {
         if !base.is_absolute()
             || self.documents.len() > MAX_DOCUMENTS
             || frontend.len() > 1024 * 1024
@@ -110,8 +107,19 @@ impl Workbench {
             metadata.write_all(frontend)
         };
         build().map_err(|e| e.to_string())?;
+        Ok(metadata.0)
+    }
+
+    pub fn checkpoint_recovery(
+        &self,
+        store: &mut RecoveryStore,
+        base: &Path,
+        frontend: &[u8],
+    ) -> Result<u64, String> {
+        let metadata = self.recovery_metadata(base, frontend)?;
+        let tabs = self.tabs.tabs();
         store
-            .checkpoint(&metadata.0, tabs.len(), |index, writer| {
+            .checkpoint(&metadata, tabs.len(), |index, writer| {
                 self.document_by_tab(tabs[index].id)
                     .ok_or_else(invalid)?
                     .session

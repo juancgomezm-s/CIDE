@@ -5,7 +5,8 @@
 [recuperación de sesiones en Rust](docs/SESSION_RECOVERY.md) integrados con evidencia
 local. Fondo elegido `#2E3440`; título y menús GUI comparten el tema. Ambas interfaces
 conservan cambios sin guardar, historial y vistas al salir y reabrir.
-Ejecutables actuales en `target/gui-next/release/`; anteriores conservados.
+Recuperación periódica y limpieza segura de copias: [contrato y evidencia](docs/PERIODIC_RECOVERY_RETENTION.md).
+Ejecutables actuales en `target/recovery-next/release/`; anteriores conservados.
 Archivos de varios GB: fuente paginada aislada probada, integración al editor pendiente.
 Aceptación física/global y proveedores AVM/semánticos siguen abiertos.
 

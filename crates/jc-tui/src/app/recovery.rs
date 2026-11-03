@@ -3,6 +3,13 @@ use jc_app::{session::EditorRecovery, BottomPanel, PrimaryFocus, SidebarView, Wo
 use std::io::{Cursor, Read};
 
 impl TuiApp {
+    pub(crate) fn recovery_deadline(&self) -> Option<std::time::Instant> {
+        if self.recovery.is_some() || self.periodic_recovery.active() {
+            self.periodic_recovery.deadline()
+        } else {
+            None
+        }
+    }
     pub(crate) fn enable_recovery(&mut self) -> Result<(), String> {
         let Some(recovery) = EditorRecovery::open("tui")? else {
             return Ok(());
@@ -83,10 +90,7 @@ impl TuiApp {
         self.recovery = Some(recovery);
         Ok(())
     }
-    pub(crate) fn checkpoint_session(&mut self) -> Result<(), String> {
-        let Some(recovery) = self.recovery.as_mut() else {
-            return Ok(());
-        };
+    pub(crate) fn recovery_metadata(&self) -> Result<Vec<u8>, String> {
         let sidebar = match self.panels.sidebar() {
             SidebarView::Explorer => 0,
             SidebarView::Database => 1,
@@ -118,9 +122,47 @@ impl TuiApp {
         if let Some(root) = &self.project_root {
             jc_app::session::write_recovery_path(root, &mut metadata).map_err(|e| e.to_string())?;
         }
+        Ok(metadata)
+    }
+    pub(crate) fn checkpoint_session(&mut self) -> Result<(), String> {
+        self.periodic_recovery.cancel_and_join(&mut self.recovery);
+        if self.recovery.is_none() {
+            return Ok(());
+        }
+        let metadata = self.recovery_metadata()?;
+        let recovery = self.recovery.as_mut().unwrap();
+        let _ = recovery.store.prune_obsolete();
         self.workbench
             .checkpoint_recovery(&mut recovery.store, &recovery.base, &metadata)?;
+        let _ = recovery.store.prune_obsolete();
         Ok(())
+    }
+    pub(crate) fn poll_periodic_recovery(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        let metadata = if self.recovery.is_some() && self.periodic_recovery.needs_capture(now) {
+            match self.recovery_metadata() {
+                Ok(value) => value,
+                Err(error) => {
+                    self.periodic_recovery.defer_failure(now);
+                    self.status = error;
+                    return true;
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        if let Some(message) = self.periodic_recovery.poll(
+            &mut self.recovery,
+            &self.workbench,
+            &metadata,
+            now,
+            &self.syntax_wakeup,
+        ) {
+            self.status = message;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -301,5 +343,114 @@ mod tests {
         recovered.restore_from(fixture.recovery()).unwrap();
         assert_eq!(recovered.workbench.active_bytes().unwrap(), live);
         assert_eq!(fs::read(&original).unwrap(), b"disk\r\n");
+    }
+
+    #[test]
+    fn tui_file_exit_joins_active_periodic_writer_then_checkpoints_latest_edits() {
+        use jc_app::session::{PeriodicRecovery, RecoveryPolicy};
+        use std::time::{Duration, Instant};
+        let fixture = Fixture::new();
+        let original = fixture.root.join("original.p");
+        let bytes = b"ni\xf1o\r\noriginal\r\n";
+        fs::write(&original, bytes).unwrap();
+        let mut app = TuiApp::new(LaunchOptions::default());
+        app.workbench
+            .open_file(&original, Some(TextEncoding::Windows1252))
+            .unwrap();
+        app.workbench.insert_text("primero ").unwrap();
+        app.restore_from(fixture.recovery()).unwrap();
+        app.checkpoint_session().unwrap();
+        let baseline = app.workbench.active_bytes().unwrap();
+        let mut baseline_encoded = Vec::new();
+        app.workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .write_recovery(&mut baseline_encoded)
+            .unwrap();
+        let now = Instant::now();
+        app.periodic_recovery = PeriodicRecovery::new(
+            RecoveryPolicy {
+                idle: Duration::from_millis(1),
+                maximum_delay: Duration::from_millis(10),
+                retry: Duration::from_millis(10),
+            },
+            now,
+        )
+        .unwrap();
+        let metadata = app.recovery_metadata().unwrap();
+        assert!(app
+            .periodic_recovery
+            .poll(
+                &mut app.recovery,
+                &app.workbench,
+                &metadata,
+                now + Duration::from_millis(1),
+                &app.syntax_wakeup
+            )
+            .is_none());
+        assert!(app.periodic_recovery.active() && app.recovery.is_none());
+        app.workbench.insert_text("último ").unwrap();
+        let latest = app.workbench.active_bytes().unwrap();
+        let caret = app
+            .workbench
+            .panes()
+            .view(PaneId::Primary)
+            .unwrap()
+            .state()
+            .unwrap()
+            .cursor;
+        let undo = app
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .undo_steps();
+        app.dispatch(CommandId::FileExit);
+        assert!(app.should_exit(), "FileExit debe reconocer la recuperación activa aunque el trabajador posea la concesión");
+        assert!(!app.periodic_recovery.active() && app.recovery.is_some());
+        let mut backup = app
+            .recovery
+            .as_mut()
+            .unwrap()
+            .store
+            .load_backup()
+            .unwrap()
+            .unwrap();
+        let mut previous = Vec::new();
+        std::io::Read::read_to_end(&mut backup.documents[0], &mut previous).unwrap();
+        assert_eq!(previous, baseline_encoded);
+        drop(backup);
+        drop(app);
+        let mut recovered = TuiApp::new(LaunchOptions::default());
+        recovered.restore_from(fixture.recovery()).unwrap();
+        assert!(!recovered.should_exit());
+        assert_eq!(recovered.workbench.active_bytes().unwrap(), latest);
+        let source = recovered
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document();
+        assert!(source.is_modified());
+        assert_eq!(source.undo_steps(), undo);
+        assert_eq!(
+            recovered
+                .workbench
+                .panes()
+                .view(PaneId::Primary)
+                .unwrap()
+                .state()
+                .unwrap()
+                .cursor,
+            caret
+        );
+        recovered.workbench.undo().unwrap();
+        assert_eq!(recovered.workbench.active_bytes().unwrap(), baseline);
+        recovered.workbench.redo().unwrap();
+        assert_eq!(recovered.workbench.active_bytes().unwrap(), latest);
+        assert_eq!(fs::read(&original).unwrap(), bytes);
     }
 }

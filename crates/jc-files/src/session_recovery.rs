@@ -233,6 +233,12 @@ impl SessionRecoveryInfo {
     }
 }
 impl FileSession {
+    pub fn matches_recovery_info(&self, info: &SessionRecoveryInfo) -> bool {
+        self.path == info.path
+            && self.encoding == info.encoding
+            && self.encoding_source == info.encoding_source
+            && self.disk_fingerprint == info.disk_fingerprint
+    }
     /// Copies only path/encoding/fingerprint metadata, never document bytes.
     pub fn recovery_info(&self) -> SessionRecoveryInfo {
         SessionRecoveryInfo {

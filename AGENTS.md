@@ -1,6 +1,31 @@
 # Working on JC-IDE
 
-## Current GUI shell / Rust recovery closure — 2026-11-03
+## Current periodic recovery / retention closure — 2026-11-03
+
+Read docs/PERIODIC_RECOVERY_RETENTION.md and docs/SESSION_RECOVERY.md first.
+Current binaries: target/recovery-next/release; preserve all previous binary paths.
+Periodic capture uses an identity/epoch-checked cursor, bounded64KiB source chunks,
+queue1 and one disk worker. No Document/FileSession/undo clone or source I/O in render.
+Defaults:2s idle,30s maximum admission delay,10s retry;30s is an attempt, not a
+publication promise during uninterrupted edits. Completed documents retain their
+initial snapshot version; later activity schedules another capture. Preserve source
+identity in dedup keys to avoid ABA across workbenches. All mutation attempts that
+can alter the codec invalidate the core cursor, including save/history/storage.
+GC pins/validates HEAD and BACKUP and deletes only admitted obsolete generations
+by Win32 handles, never recursively or through document metadata paths. Keep unknown,
+hardlinked/reparse or blocked entries safe. Unpublished-generation RAII cleanup must
+check publication controls before deletion. Revalidate the previous commit before
+replacing BACKUP; corruption must not overwrite the only valid fallback.
+Deferred GC retries without new document checkpoints. Normal exit cancels/joins
+periodic work, regains the lease and confirms the final live state; failure keeps
+the editor open. Disabled mode must not retain a due deadline or busy loop.
+20 new tests passed by suites/directed closure plus existing recovery regressions;
+three forced-exit GUI and TUI processes each passed7 native checks. Fmt/all-target
+Clippy/release offline passed. No full runtime workspace pass or physical-display
+acceptance claim. Tests use only owned work fixtures; personal depot untouched.
+Keep CI dormant through M2–M4; do not repeat closed suites for documentation changes.
+
+## Previous GUI shell / Rust recovery closure — 2026-11-03
 
 Read docs/M2B_GUI_TABS_BROWSER.md, docs/M2_TUI_MOUSE.md, docs/SESSION_RECOVERY.md
 and docs/CORE_GIGABYTES_ADMISSION.md before extending these routes. Current binaries

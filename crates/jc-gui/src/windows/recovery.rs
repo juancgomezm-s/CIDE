@@ -1,6 +1,52 @@
 use super::State;
 use jc_app::{session::EditorRecovery, Workbench};
 use std::io::{Cursor, Read};
+pub(super) const TIMER_ID: usize = 0xc1de1;
+#[link(name = "user32")]
+extern "system" {
+    fn SetTimer(hwnd: super::ffi::Hwnd, id: usize, milliseconds: u32, callback: usize) -> usize;
+    fn KillTimer(hwnd: super::ffi::Hwnd, id: usize) -> i32;
+}
+pub(super) unsafe fn arm(hwnd: super::ffi::Hwnd) {
+    let Some(owner) = super::owner(hwnd) else {
+        return;
+    };
+    let delay = {
+        let state = owner.state.borrow();
+        if state.periodic_recovery.active() {
+            Some(250)
+        } else if state.recovery.is_some() {
+            state.periodic_recovery.deadline().map(|deadline| {
+                deadline
+                    .saturating_duration_since(std::time::Instant::now())
+                    .as_millis()
+                    .clamp(10, u32::MAX as u128) as u32
+            })
+        } else {
+            None
+        }
+    };
+    if delay == Some(10)
+        && owner
+            .state
+            .borrow()
+            .periodic_recovery
+            .deadline()
+            .is_some_and(|deadline| deadline <= std::time::Instant::now())
+    {
+        owner.state.borrow().wakeup.signal();
+    }
+    if let Some(delay) = delay {
+        if SetTimer(hwnd, TIMER_ID, delay, 0) == 0 {
+            owner
+                .state
+                .borrow_mut()
+                .error("No se pudo programar la recuperación automática");
+        }
+    } else {
+        KillTimer(hwnd, TIMER_ID);
+    }
+}
 
 impl State {
     pub(super) fn enable_recovery(&mut self) -> Result<(), String> {
@@ -65,10 +111,7 @@ impl State {
         self.recovery = Some(recovery);
         Ok(())
     }
-    pub(super) fn checkpoint_session(&mut self) -> Result<bool, String> {
-        let Some(recovery) = self.recovery.as_mut() else {
-            return Ok(false);
-        };
+    pub(super) fn recovery_metadata(&self) -> Result<Vec<u8>, String> {
         let mut metadata = vec![
             1,
             u8::from(self.project_root.is_some()),
@@ -86,9 +129,47 @@ impl State {
         if let Some(root) = &self.project_root {
             jc_app::session::write_recovery_path(root, &mut metadata).map_err(|e| e.to_string())?;
         }
+        Ok(metadata)
+    }
+    pub(super) fn checkpoint_session(&mut self) -> Result<bool, String> {
+        self.periodic_recovery.cancel_and_join(&mut self.recovery);
+        if self.recovery.is_none() {
+            return Ok(false);
+        }
+        let metadata = self.recovery_metadata()?;
+        let recovery = self.recovery.as_mut().unwrap();
+        let _ = recovery.store.prune_obsolete();
         self.workbench
             .checkpoint_recovery(&mut recovery.store, &recovery.base, &metadata)?;
+        let _ = recovery.store.prune_obsolete();
         Ok(true)
+    }
+    pub(super) fn poll_periodic_recovery(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        let metadata = if self.recovery.is_some() && self.periodic_recovery.needs_capture(now) {
+            match self.recovery_metadata() {
+                Ok(value) => value,
+                Err(error) => {
+                    self.periodic_recovery.defer_failure(now);
+                    self.status = error;
+                    return true;
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        if let Some(message) = self.periodic_recovery.poll(
+            &mut self.recovery,
+            &self.workbench,
+            &metadata,
+            now,
+            &self.wakeup,
+        ) {
+            self.status = message;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -302,5 +383,117 @@ mod tests {
         recovered.restore_from(fixture.recovery()).unwrap();
         assert_eq!(recovered.workbench.active_bytes().unwrap(), live);
         assert_eq!(fs::read(&original).unwrap(), b"disk\r\n");
+    }
+
+    #[test]
+    fn gui_hot_exit_joins_active_periodic_writer_then_checkpoints_latest_edits() {
+        use jc_app::session::{PeriodicRecovery, RecoveryPolicy};
+        use std::time::{Duration, Instant};
+        let fixture = Fixture::new();
+        let original = fixture.root.join("original.rs");
+        let bytes = b"\xef\xbb\xbforiginal\r\n";
+        fs::write(&original, bytes).unwrap();
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.workbench = Workbench::default();
+        state
+            .workbench
+            .open_file(&original, Some(TextEncoding::Utf8))
+            .unwrap();
+        state.workbench.insert_text("primero ").unwrap();
+        state.restore_from(fixture.recovery()).unwrap();
+        assert!(state.checkpoint_session().unwrap());
+        let baseline = state.workbench.active_bytes().unwrap();
+        let mut baseline_encoded = Vec::new();
+        state
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .write_recovery(&mut baseline_encoded)
+            .unwrap();
+        let now = Instant::now();
+        state.periodic_recovery = PeriodicRecovery::new(
+            RecoveryPolicy {
+                idle: Duration::from_millis(1),
+                maximum_delay: Duration::from_millis(10),
+                retry: Duration::from_millis(10),
+            },
+            now,
+        )
+        .unwrap();
+        let metadata = state.recovery_metadata().unwrap();
+        assert!(state
+            .periodic_recovery
+            .poll(
+                &mut state.recovery,
+                &state.workbench,
+                &metadata,
+                now + Duration::from_millis(1),
+                &state.wakeup
+            )
+            .is_none());
+        assert!(state.periodic_recovery.active() && state.recovery.is_none());
+        // No End has been emitted. The worker owns the store while the model
+        // receives an edit that must be captured by the final synchronous save.
+        state.workbench.insert_text("último ").unwrap();
+        let latest = state.workbench.active_bytes().unwrap();
+        let caret = state
+            .workbench
+            .panes()
+            .view(PaneId::Primary)
+            .unwrap()
+            .state()
+            .unwrap()
+            .cursor;
+        let undo = state
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .undo_steps();
+        assert!(state.checkpoint_session().unwrap());
+        assert!(!state.periodic_recovery.active() && state.recovery.is_some());
+        let mut backup = state
+            .recovery
+            .as_mut()
+            .unwrap()
+            .store
+            .load_backup()
+            .unwrap()
+            .unwrap();
+        let mut previous = Vec::new();
+        std::io::Read::read_to_end(&mut backup.documents[0], &mut previous).unwrap();
+        assert_eq!(previous, baseline_encoded);
+        drop(backup);
+        drop(state);
+        let mut recovered = State::new(&GuiOptions::default()).unwrap();
+        recovered.restore_from(fixture.recovery()).unwrap();
+        assert_eq!(recovered.workbench.active_bytes().unwrap(), latest);
+        let source = recovered
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document();
+        assert!(source.is_modified());
+        assert_eq!(source.undo_steps(), undo);
+        assert_eq!(
+            recovered
+                .workbench
+                .panes()
+                .view(PaneId::Primary)
+                .unwrap()
+                .state()
+                .unwrap()
+                .cursor,
+            caret
+        );
+        recovered.workbench.undo().unwrap();
+        assert_eq!(recovered.workbench.active_bytes().unwrap(), baseline);
+        recovered.workbench.redo().unwrap();
+        assert_eq!(recovered.workbench.active_bytes().unwrap(), latest);
+        assert_eq!(fs::read(&original).unwrap(), bytes);
     }
 }
