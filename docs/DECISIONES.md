@@ -584,3 +584,9 @@ La precedencia de Event::Paste coincide con teclas: primero overlay superior,
 después modal de función y por último área primaria. Límites se aplican antes de
 retener entrada y también al submit. Paginación conserva selección visible y no
 ejecuta comandos. Evidencia `m2-tui-closure-2026-11-03-*`.
+
+## D56 — Transporte Windows compartido y clipboard TUI explícito
+jc-platform contiene el adaptador estricto existente sin segunda implementación.
+GUI aporta HWND y TUI crea propietario message-only lazy. Disponibilidad no lee OS.
+Headless/inyección para pruebas; rectángulos internos y paste lineal transaccional.
+Interoperabilidad física sigue abierta. [Contrato](M2_TUI_CLIPBOARD.md).

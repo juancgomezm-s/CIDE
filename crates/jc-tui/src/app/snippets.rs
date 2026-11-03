@@ -145,6 +145,21 @@ pub(crate) fn is_command(command: CommandId) -> bool {
     )
 }
 impl TuiApp {
+    pub(super) fn snippet_clipboard_budget(&self) -> Option<usize> {
+        let ui = self.snippet_ui.as_ref()?;
+        if !ui.current(&self.workbench) {
+            return None;
+        }
+        match ui.stage {
+            Stage::Choose => Some(256usize.saturating_sub(ui.query.len()).max(1)),
+            Stage::Parameter(index) => ui
+                .session
+                .as_ref()?
+                .parameter(index)
+                .map(|(_, value, _)| 256usize.saturating_sub(value.len()).max(1)),
+            Stage::Preview => None,
+        }
+    }
     pub(crate) fn keep_snippet_for(command: CommandId) -> bool {
         is_command(command)
             || matches!(

@@ -699,3 +699,26 @@ Event::Paste y sus cuotas sí están cubiertos por casos Rust; no clipboard OS r
 
 Siguiente bloque activo: adaptar clipboard Windows estricto a la TUI, solo por
 acción explícita; separar validación inyectada de interoperabilidad física.
+
+## Clipboard Windows TUI — cierre local 2026-11-03
+
+Adaptador CF_UNICODETEXT de la GUI extraído a jc-platform (sin dependencias
+externas); ambos frontends comparten implementación. TUI conecta transporte en
+el loop real y crea HWND propio invisible bajo demanda, solo por Copy/Cut/Paste.
+Headless conserva clipboard interno; pruebas inyectan memoria, no el clipboard
+personal. Cortar después de publicar, pegar por destino/revisión y un undo;
+cuotas/encoding estricto, campos del overlay superior y rectángulos internos.
+
+32 casos Rust distintos aprobaron: cinco de plataforma (cuatro migrados y
+uno nuevo de HWND propio), siete TUI nuevos y regresiones de clipboard/F1/registro.
+Fmt, Clippy workspace/all-targets y release bins/examples aprobaron offline.
+GUI HWND propio:13 checks selector-input, GDI sin error, fixture y metadata Git
+intactos, clipboard sintético. ConPTY TUI: tres flujos,27436 bytes VT/salida0,
+fixture intacto. No lectura/escritura de clipboard personal ni certificación OS.
+Un fixture usó un nombre de método inexistente y un campo tenía visibilidad más
+amplia que su trait; se corrigieron antes del cierre, logs retenidos.
+
+[Contrato y límites](M2_TUI_CLIPBOARD.md). Sigue layout Unicode general: Juan
+autorizó unicode-segmentation=1.13.3 y unicode-width=0.2.2; [admisión](M2_UNICODE_LAYOUT_ADMISSION.md).
+Esa autorización sustituye la restricción previa para estas dos dependencias;
+no pedirla de nuevo. Sin instalación de programas, CI ni AVM.

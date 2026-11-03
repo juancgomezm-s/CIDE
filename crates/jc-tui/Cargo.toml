@@ -23,3 +23,5 @@ jc-app = { path = "../jc-app" }
 jc-languages = { path = "../jc-languages" }
 jc-text = { path = "../jc-text" }
 jc-progress = { path = "../jc-progress", features = ["source-services"] }
+
+jc-platform = { path = "../jc-platform" }

@@ -9,6 +9,7 @@ members = [
     "crates/jc-tui",
     "crates/jc-gui",
     "crates/jc-cli",
+    "crates/jc-platform",
 ]
 resolver = "2"
 

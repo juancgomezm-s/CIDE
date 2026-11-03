@@ -1,0 +1,7 @@
+[package]
+name = "jc-platform"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+publish = false
+description = "Explicit native platform transports shared by CIDE frontends"

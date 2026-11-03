@@ -284,3 +284,5 @@ RUN estáticos abren candidatos confinados, con elección si son ambiguos; no ej
 código. El completado se acepta explícitamente y usa un undo. [Uso, cuotas y evidencia](docs/M2_SOURCE_SERVICES.md).
 
 La TUI ofrece Insert Snippet y Surround With en Edit/Palette: parámetros, vista previa y aceptación explícita con un undo. Siete plantillas ABL opcionales; [uso y límites](docs/M2_SNIPPETS.md). No compiladas en AVM.
+
+En Windows la TUI ya usa clipboard Unicode del sistema para Copy/Cut/Paste lineales explícitos; CtrlV también pega en campos modales. Rectángulos conservan clipboard interno. [Cuotas, errores y evidencia local](docs/M2_TUI_CLIPBOARD.md); interoperabilidad física aún abierta.

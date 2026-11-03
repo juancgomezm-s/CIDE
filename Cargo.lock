@@ -105,11 +105,16 @@ name = "jc-gui"
 version = "0.1.0"
 dependencies = [
  "jc-app",
+ "jc-platform",
  "jc-text",
 ]
 
 [[package]]
 name = "jc-languages"
+version = "0.1.0"
+
+[[package]]
+name = "jc-platform"
 version = "0.1.0"
 
 [[package]]
@@ -132,6 +137,7 @@ dependencies = [
  "crossterm",
  "jc-app",
  "jc-languages",
+ "jc-platform",
  "jc-progress",
  "jc-text",
 ]

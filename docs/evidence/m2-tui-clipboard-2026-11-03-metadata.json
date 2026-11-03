@@ -1,0 +1,86 @@
+{
+  "baseline": "8a904ba",
+  "distinct_rust_cases_passed": 32,
+  "new_cases": 8,
+  "test_names": [
+    "abl_comment_and_duplicate_delete_shortcuts_resolve_consistently",
+    "app::clipboard_tests::clipboard_tui_availability_render_and_disabled_areas_do_not_access_transport",
+    "app::clipboard_tests::clipboard_tui_bad_encoding_or_oversize_paste_is_atomic_and_bom_is_retained",
+    "app::clipboard_tests::clipboard_tui_headless_model_retains_internal_transport_by_default",
+    "app::clipboard_tests::clipboard_tui_linear_copy_cut_paste_preserves_encoding_eol_and_atomic_history",
+    "app::clipboard_tests::clipboard_tui_paste_goes_to_topmost_fields_with_destination_limits",
+    "app::clipboard_tests::clipboard_tui_rectangle_keeps_internal_rows_and_never_calls_unicode_transport",
+    "app::clipboard_tests::clipboard_tui_transport_failure_keeps_source_and_never_falls_back_to_old_internal_text",
+    "clipboard::tests::native_and_utf8_budgets_are_separate_and_enforced_before_expansion",
+    "clipboard::tests::nul_malformed_surrogates_and_missing_terminators_are_rejected_without_truncation",
+    "clipboard::tests::selector_destination_budget_rejects_expansion_before_retaining_text",
+    "clipboard::tests::strict_unicode_roundtrip_keeps_mixed_eol_tabs_and_no_normalization",
+    "clipboard_owner::tests::owner_is_lazy_invisible_ours_and_destroyed_without_opening_clipboard",
+    "contextual_bottom_panel_shortcuts_override_global_tab_shortcuts",
+    "ctrl_tab_and_ctrl_page_down_share_one_semantic_command",
+    "default_registry_keymap_and_menus_are_internally_consistent",
+    "deferred_transfer_rejects_caret_anchor_view_revision_encoding_and_document_changes",
+    "dirty_tabs_cannot_close_without_an_explicit_choice",
+    "display_strings_are_stable_and_human_readable",
+    "escape_closes_transient_layers_before_returning_to_editor",
+    "external_unicode_text_encodes_strictly_in_legacy_and_undo_is_shared",
+    "f6_focus_cycle_only_visits_visible_primary_areas",
+    "invalid_utf8_and_unknown_encoding_are_never_exported_as_lossy_text",
+    "mixed_eol_bom_cut_and_internal_paste_are_one_undo_each_shared_across_views",
+    "progress_shortcuts_require_abl_and_a_progress_profile",
+    "quotas_encoding_and_rectangles_reject_atomically_and_export_preserves_internal_clipboard",
+    "repository_status_commands_need_repository_context_but_no_document",
+    "save_binding_remains_visible_but_disabled_when_document_is_clean",
+    "save_is_the_same_command_from_menu_and_keyboard",
+    "tab_and_shift_tab_are_editor_indentation_not_global_focus",
+    "tab_navigation_wraps_and_alt_9_semantics_can_select_last",
+    "unsaved_dialog_has_stable_unique_keyboard_choices"
+  ],
+  "conpty_checks": 3,
+  "gui_checks": 13,
+  "private_clipboard_accessed": false,
+  "physical_display_verified": false,
+  "new_external_dependencies": 0,
+  "ci_runs": 0,
+  "package": {
+    "archive": "work/packages/CIDE-windows-dev-tui-clipboard-2026-11-03.zip",
+    "bytes": 5509606,
+    "sha256": "dcb18a76d27a162cb945ae25ff032a5b4e2d12d8849af88c535267b47f227205",
+    "members": 76,
+    "missing_notices": [
+      {
+        "package": "winapi-i686-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      },
+      {
+        "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      }
+    ],
+    "crc_and_manifest_hashes_verified": true
+  },
+  "sources_sha256": {
+    "Cargo.lock": "0c2fc663b213c138c7fb6b36b0d2a2b06a86a2830bee4d17898041c54ae19fbe",
+    "Cargo.toml": "1c9f03accede85506ef9ac95afe3610e6a9258774082c7ce97a04f7e7d61a1ac",
+    "crates/jc-app/src/command.rs": "55564749ae4a85864ac8926cbeef5f3dcec7a5ab1715fbc32f0b7e191e12d30a",
+    "crates/jc-gui/Cargo.toml": "d57e47949439ee130a93c01ec72325153f835cd3add058d1427082d5ea117ec8",
+    "crates/jc-gui/src/windows/clipboard.rs": "31981f5e30df801c0b5b11ef92a9ea0b019a8d4094443cece460db5b0514607c",
+    "crates/jc-platform/Cargo.toml": "f63c379bf57ce1aab3dd7c6b030eca1572227eb6b976e66381d67387f680008a",
+    "crates/jc-platform/src/clipboard.rs": "f475809e8f8e2332aec0f1404c2e1806ab0c5f344a67ddf4c43fe81e3269f8e3",
+    "crates/jc-platform/src/clipboard_owner.rs": "e28761d412b79ea098dfc9f321474a8c099369659ec5cf4c77b6389e8e24e910",
+    "crates/jc-platform/src/lib.rs": "a012fe00c7b4c26910590fc06284a00375b1888d747655d6e5006c00850bb1a2",
+    "crates/jc-tui/Cargo.toml": "1b7c2830bacb257d2a795e286d2e80d81e9ec04f1dbc6ec8efa96b0434d5fef3",
+    "crates/jc-tui/src/app/clipboard.rs": "efd2688dcf08f446763caf781d165d15ea6e8a0f3029829335b666693730c411",
+    "crates/jc-tui/src/app/clipboard_tests.rs": "4e0dfe4dad419e7d530bc4da3aed1a3f0a17507298ae6df983b1c418122f9ab5",
+    "crates/jc-tui/src/app/commands.rs": "bc3c38a7aa3d1086fa5e2f614f2976000c37c0c03745d5a9b419d7613f94b140",
+    "crates/jc-tui/src/app/events.rs": "3882ce6ff7f0b34a3564089f5975734fa489ff1447102ff5c1c18d226eb1b957",
+    "crates/jc-tui/src/app/mod.rs": "94371e1034bc9400ccf0e7af7cfe9ca709a640d8ff3d0d0a909aea3c436f5103",
+    "crates/jc-tui/src/app/snippets.rs": "18f4bc75b118b938eb4bc0fac1b3831741de204173c941f219573e7288504545",
+    "crates/jc-tui/src/event_loop.rs": "af3d7dbee4f96eecfeac0c5950b427655813455508efc2760694e267e48c5aed"
+  },
+  "binary_sha256": {
+    "cide-gui.exe": "63aab1fefcff4f01bd95012e94f1d62c943e8638a9ec0163c7c5504b2e5c0421",
+    "cide-tui.exe": "50417c3d801b8c6aa99824dc0b032723ca244c9d39d2d88b17ead8e53601fbe6",
+    "cide.exe": "2242bfdaca05d3afafd1f877fdb9dbf07a67d6f678d28feb14c8cdae9360d6ee"
+  }
+}

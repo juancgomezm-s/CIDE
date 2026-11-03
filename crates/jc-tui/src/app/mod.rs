@@ -1,3 +1,6 @@
+mod clipboard;
+#[cfg(test)]
+mod clipboard_tests;
 mod commands;
 mod events;
 mod explorer;
@@ -82,6 +85,7 @@ pub struct TuiApp {
     pub(crate) panels: PanelManager,
     pub(crate) overlay: UiOverlay,
     pub(crate) last_frame_height: u16,
+    clipboard_transport: Option<Box<dyn clipboard::ClipboardTransport>>,
     pub(crate) status: String,
     pub(crate) project_root: Option<PathBuf>,
     pub(crate) explorer: jc_app::explorer::ProjectExplorer,
@@ -156,6 +160,7 @@ impl TuiApp {
             panels: PanelManager::default(),
             overlay: UiOverlay::None,
             last_frame_height: 24,
+            clipboard_transport: None,
             find_cursor: usize::MAX,
             replacement_cursor: usize::MAX,
             status: "Ready".to_owned(),
@@ -363,6 +368,14 @@ impl TuiApp {
         self.open_diff_context(&mut context);
         self.source_context(&mut context);
         self.snippet_context(&mut context);
+        if self.clipboard_transport.is_some() {
+            context.field_paste = self.clipboard_field_budget().is_some();
+            if context.field_paste
+                || !context.rectangular_selection && !self.workbench.clipboard_is_rectangular()
+            {
+                context.clipboard_has_text = context.has_document || context.field_paste;
+            }
+        }
         context
     }
 

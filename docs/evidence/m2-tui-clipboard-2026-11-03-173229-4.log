@@ -1,0 +1,13 @@
+
+running 5 tests
+test external_unicode_text_encodes_strictly_in_legacy_and_undo_is_shared ... ok
+test mixed_eol_bom_cut_and_internal_paste_are_one_undo_each_shared_across_views ... ok
+test quotas_encoding_and_rectangles_reject_atomically_and_export_preserves_internal_clipboard ... ok
+test deferred_transfer_rejects_caret_anchor_view_revision_encoding_and_document_changes ... ok
+test invalid_utf8_and_unknown_encoding_are_never_exported_as_lossy_text ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.52s
+     Running tests\clipboard_transfer.rs (target\debug\deps\clipboard_transfer-02e0481f411aff9d.exe)

@@ -1,0 +1,29 @@
+
+running 7 tests
+test app::clipboard_tests::clipboard_tui_rectangle_keeps_internal_rows_and_never_calls_unicode_transport ... ok
+test app::clipboard_tests::clipboard_tui_transport_failure_keeps_source_and_never_falls_back_to_old_internal_text ... ok
+test app::clipboard_tests::clipboard_tui_headless_model_retains_internal_transport_by_default ... ok
+test app::clipboard_tests::clipboard_tui_paste_goes_to_topmost_fields_with_destination_limits ... ok
+test app::clipboard_tests::clipboard_tui_availability_render_and_disabled_areas_do_not_access_transport ... ok
+test app::clipboard_tests::clipboard_tui_bad_encoding_or_oversize_paste_is_atomic_and_bom_is_retained ... ok
+test app::clipboard_tests::clipboard_tui_linear_copy_cut_paste_preserves_encoding_eol_and_atomic_history ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 117 filtered out; finished in 0.00s
+
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+warning: trait `ClipboardTransport` is more private than the item `app::TuiApp::clipboard_transport`
+  --> crates\jc-tui\src\app\mod.rs:88:5
+   |
+88 |     pub(crate) clipboard_transport: Option<Box<dyn clipboard::ClipboardTransport>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `app::TuiApp::clipboard_transport` is reachable at visibility `pub(crate)`
+   |
+note: but trait `ClipboardTransport` is only usable at visibility `pub(app)`
+  --> crates\jc-tui\src\app\clipboard.rs:6:1
+   |
+6  | pub(super) trait ClipboardTransport {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `#[warn(private_interfaces)]` on by default
+
+warning: `jc-tui` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.74s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-db228cca31ac3b19.exe)

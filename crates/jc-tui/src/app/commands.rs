@@ -14,6 +14,9 @@ impl TuiApp {
                 .unwrap_or_else(|| "Command unavailable".to_owned());
             return;
         }
+        if self.clipboard_command(command) {
+            return;
+        }
         if super::snippets::is_command(command) {
             self.snippet_command(command);
             return;

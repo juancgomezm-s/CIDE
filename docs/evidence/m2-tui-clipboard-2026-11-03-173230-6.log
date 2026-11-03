@@ -1,0 +1,27 @@
+    Checking jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+    Checking jc-text v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-text)
+    Checking jc-languages v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-languages)
+    Checking jc-platform v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-platform)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+   Compiling jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+    Checking jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+error: trait `app::clipboard::ClipboardTransport` is more private than the item `app::TuiApp::clipboard_transport`
+  --> crates\jc-tui\src\app\mod.rs:88:5
+   |
+88 |     pub(crate) clipboard_transport: Option<Box<dyn clipboard::ClipboardTransport>>,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ field `app::TuiApp::clipboard_transport` is reachable at visibility `pub(crate)`
+   |
+note: but trait `app::clipboard::ClipboardTransport` is only usable at visibility `pub(app)`
+  --> crates\jc-tui\src\app\clipboard.rs:6:1
+   |
+6  | pub(super) trait ClipboardTransport {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: `-D private-interfaces` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(private_interfaces)]`
+
+error: could not compile `jc-tui` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-tui` (lib test) due to 1 previous error

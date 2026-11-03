@@ -1,0 +1,19 @@
+
+running 5 tests
+test clipboard::tests::nul_malformed_surrogates_and_missing_terminators_are_rejected_without_truncation ... ok
+test clipboard::tests::selector_destination_budget_rejects_expansion_before_retaining_text ... ok
+test clipboard::tests::strict_unicode_roundtrip_keeps_mixed_eol_tabs_and_no_normalization ... ok
+test clipboard_owner::tests::owner_is_lazy_invisible_ours_and_destroyed_without_opening_clipboard ... ok
+test clipboard::tests::native_and_utf8_budgets_are_separate_and_enforced_before_expansion ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling jc-platform v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-platform)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.57s
+     Running unittests src\lib.rs (target\debug\deps\jc_platform-1315d8d7654758a0.exe)
+   Doc-tests jc_platform

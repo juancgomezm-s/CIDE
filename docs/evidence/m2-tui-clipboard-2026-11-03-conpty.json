@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "avm_started": false,
+  "physical_display_verified": false,
+  "os_clipboard_verified": false,
+  "checks": [
+    "keyboard_targets_palette_above_snippet_without_changing_parameter_or_source",
+    "view_menu_home_end_and_page_remain_visible_at_40x10",
+    "oversize_path_keyboard_input_is_bounded"
+  ],
+  "exit_code": 0,
+  "fixture_unchanged": true,
+  "vt_bytes": 27436
+}

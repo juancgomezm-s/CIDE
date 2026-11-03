@@ -15,6 +15,14 @@ impl TuiApp {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        if self.clipboard_transport.is_some()
+            && key.code == KeyCode::Char('v')
+            && key.modifiers == KeyModifiers::CONTROL
+            && self.clipboard_field_budget().is_some()
+        {
+            self.dispatch(jc_app::CommandId::EditPaste);
+            return;
+        }
         if !matches!(self.overlay, UiOverlay::None) {
             self.handle_overlay_key(key);
             return;

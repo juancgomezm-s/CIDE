@@ -1,0 +1,23 @@
+
+running 15 tests
+test abl_comment_and_duplicate_delete_shortcuts_resolve_consistently ... ok
+test ctrl_tab_and_ctrl_page_down_share_one_semantic_command ... ok
+test contextual_bottom_panel_shortcuts_override_global_tab_shortcuts ... ok
+test dirty_tabs_cannot_close_without_an_explicit_choice ... ok
+test display_strings_are_stable_and_human_readable ... ok
+test f6_focus_cycle_only_visits_visible_primary_areas ... ok
+test default_registry_keymap_and_menus_are_internally_consistent ... ok
+test tab_navigation_wraps_and_alt_9_semantics_can_select_last ... ok
+test escape_closes_transient_layers_before_returning_to_editor ... ok
+test repository_status_commands_need_repository_context_but_no_document ... ok
+test progress_shortcuts_require_abl_and_a_progress_profile ... ok
+test save_binding_remains_visible_but_disabled_when_document_is_clean ... ok
+test unsaved_dialog_has_stable_unique_keyboard_choices ... ok
+test tab_and_shift_tab_are_editor_indentation_not_global_focus ... ok
+test save_is_the_same_command_from_menu_and_keyboard ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.51s
+     Running tests\interaction.rs (target\debug\deps\interaction-2a03c4de2bc2c9c4.exe)

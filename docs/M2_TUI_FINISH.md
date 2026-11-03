@@ -11,10 +11,12 @@ evalúa por comportamiento/evidencia; las puertas externas no se declaran cumpli
 | Capacidades internas y navegación textual | Integrado/validado: registro interno, proveedor opcional y símbolos versionados, sin segundo buffer; inferencia lexical separada del compilador. [Evidencia](M2_SOURCE_SERVICES.md). |
 | Includes/RUN y completado | Includes/RUN léxicos y candidatos confinados integrados; dinámicos no resueltos. Completado textual local integrado; semántico permanece M4/servicio real. |
 | Plantillas/snippets M2A | Integrado y validado: motor universal, siete plantillas del proveedor opcional, parámetros/preview/aceptación y undo único. [Evidencia](M2_SNIPPETS.md). |
-| Auditoría final de teclado/flujo | Teclado/overlays auditados:117 casos TUI y tres flujos ConPTY, límites y foco corregidos; sigue clipboard Windows explícito. |
+| Auditoría final de teclado/flujo | Teclado/overlays auditados:117 casos TUI y tres flujos ConPTY, límites y foco corregidos; clipboard Windows explícito integrado y validado con transporte inyectado. |
 | Aceptación física/global | RAM/arranque/latencia real, teclado/terminales, Unicode general/IME y clipboard OS conservan evidencia y límites; no se cierran con modelo o ConPTY. |
 
 Progress Check/Compile/Run/Schema exige perfil/herramientas/versión reales y
 permanece deshabilitado si no existe proveedor validado. Git con escritura/CI
 es M5; runtime externo de plugins post-M5. El shell embebido no se activa por
 llamar «terminada» a la TUI: el contrato actual usa la terminal anfitriona.
+
+Layout Unicode general: siguiente bloque autorizado (dos crates fijados; sin nuevos programas). Ver M2_UNICODE_LAYOUT_ADMISSION.

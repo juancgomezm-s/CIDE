@@ -164,6 +164,8 @@ pub struct CommandContext {
     pub has_selection: bool,
     pub rectangular_selection: bool,
     pub clipboard_has_text: bool,
+    /// Frontend has a working paste handler for an otherwise unselected field.
+    pub field_paste: bool,
     pub has_project: bool,
     pub explorer_focused: bool,
     pub project_search_running: bool,
@@ -216,6 +218,7 @@ impl Default for CommandContext {
             has_selection: false,
             rectangular_selection: false,
             clipboard_has_text: false,
+            field_paste: false,
             has_project: false,
             explorer_focused: false,
             project_search_running: false,
@@ -371,7 +374,7 @@ fn source_selection(ctx: &CommandContext) -> bool {
     linear_editor(ctx) && ctx.has_selection
 }
 fn paste(ctx: &CommandContext) -> bool {
-    (rectangle_editor(ctx) || ctx.field_input) && ctx.clipboard_has_text
+    (rectangle_editor(ctx) || ctx.field_input || ctx.field_paste) && ctx.clipboard_has_text
 }
 fn source_clipboard_selection(ctx: &CommandContext) -> bool {
     (rectangle_editor(ctx) || ctx.field_input) && ctx.has_selection
