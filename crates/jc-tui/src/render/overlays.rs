@@ -399,7 +399,7 @@ fn draw_close(screen: &mut Screen) {
 fn draw_encoding(screen: &mut Screen) {
     let (x, y, width, height) = centered(screen, 62, 9);
     panel(screen, x, y, width, height, "Select source encoding");
-    screen.text(x + 2, y + 2, "JC-IDE will not guess this legacy source.");
+    screen.text(x + 2, y + 2, "CIDE will not guess this legacy source.");
     screen.text(x + 2, y + 4, "1  Windows-1252");
     screen.text(x + 2, y + 5, "2  ISO-8859-1");
     screen.text(x + 30, y + 4, "3  IBM850");

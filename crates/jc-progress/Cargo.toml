@@ -3,7 +3,7 @@ name = "jc-progress"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
-description = "Explicit process and byte-safe result protocol for the JC-IDE ABL bridge"
+description = "Explicit process and byte-safe result protocol for the CIDE ABL bridge"
 publish = false
 
 [dependencies]

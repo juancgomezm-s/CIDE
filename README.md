@@ -1,4 +1,11 @@
-# JC-IDE
+# CIDE
+
+CIDE es el nombre actual del proyecto, antes JC-IDE. Comandos canónicos: `cide`
+(CLI), `cide-tui` y `cide-gui`. Los ejecutables `jc-ide*` siguen como aliases de la
+misma entrada. La carpeta/repositorio/remoto y crates `jc-*` no se renombraron.
+[Compatibilidad y marca](docs/CIDE_REBRAND.md). Icono JG+CIDE original verde para
+TUI y variante naranja para GUI: [recursos y procedencia](assets/branding/README.md).
+
 
 Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integración
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
@@ -137,7 +144,7 @@ La parte portada de Lime se limita a las operaciones de `Region` indicadas en el
 y sus casos de compatibilidad. El buffer, historial, CLI y adaptador son trabajo nuevo.
 No se incorpora la aplicación PIEW ni su motor gráfico.
 
-La licencia de distribución del código nuevo está pendiente de decisión del propietario.
+El archivo LICENSE declara MIT para el código nuevo; se conservan los avisos propios de terceros.
 Las condiciones BSD de la parte derivada de Lime se conservan: [LICENSING.md](LICENSING.md).
 
 Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para construir, probar y ampliar el proyecto.
@@ -178,7 +185,7 @@ conserva el salto final y produce un undo. [Semántica, cuotas y validación](do
 Ya hay un **GUI Windows ejecutable** sobre el mismo Workbench: abrir/crear,
 editar, seleccionar, undo/redo, guardar/Save As, pestañas y dos grupos. Backend
 Win32/GDI sin framework descargado; clipboard interno y layout escalar con límites
-explícitos. Binario local: `target/release/jc-ide-gui.exe`; admite `--encoding`.
+explícitos. Binario local: `target/release/cide-gui.exe`; admite `--encoding`.
 [Uso, canvas nativo y checklist manual posterior](docs/M2B_NATIVE_WINDOWS.md).
 
 Quick Open TUI ya responde a Ctrl+P, File y Palette sobre una carpeta de proyecto;

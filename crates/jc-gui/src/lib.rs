@@ -8,6 +8,7 @@ pub struct GuiOptions {
     pub paths: Vec<PathBuf>,
     pub project_root: Option<PathBuf>,
     pub encoding: Option<TextEncoding>,
+    pub search_workers: Option<usize>,
     pub smoke: Option<SmokeOptions>,
 }
 

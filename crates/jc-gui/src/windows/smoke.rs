@@ -114,7 +114,7 @@ pub(super) unsafe fn key(hwnd: Hwnd, code: usize, modifiers: Modifiers) -> Resul
     }
     Ok(())
 }
-unsafe fn position(hwnd: Hwnd, line: usize, column: usize) -> Result<(), String> {
+pub(super) unsafe fn position(hwnd: Hwnd, line: usize, column: usize) -> Result<(), String> {
     owner(hwnd)
         .ok_or("Smoke HWND unavailable")?
         .state
@@ -211,6 +211,20 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
     let result = (|| {
         expected(hwnd, SOURCE)?;
         checks.push("startup_shared_open_bytes");
+        let mut title = [0u16; 160];
+        let length = GetWindowTextW(hwnd, title.as_mut_ptr(), title.len() as i32);
+        if length <= 0
+            || !String::from_utf16(&title[..length as usize])
+                .map_err(|e| e.to_string())?
+                .starts_with("CIDE")
+        {
+            return Err("Native HWND did not expose the CIDE title".into());
+        }
+        checks.push("cide_native_window_title");
+        if GetClassLongPtrW(hwnd, -14) == 0 {
+            return Err("CIDE orange GUI icon resource was not loaded by the HWND class".into());
+        }
+        checks.push("cide_native_gui_icon_resource");
         if !GetWindow(hwnd, 5).is_null() {
             return Err("Native editor unexpectedly contains a child text control".into());
         }
@@ -363,6 +377,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         }
         expected(hwnd, SOURCE)?;
         checks.extend(super::save_smoke::run(hwnd, options)?);
+        checks.extend(super::project_smoke::run(hwnd, options)?);
         // A complete native selector flow: modal query input, real PostMessage
         // delivery, authoritative target, dirty session reuse and shared undo.
         position(hwnd, 0, 0)?;

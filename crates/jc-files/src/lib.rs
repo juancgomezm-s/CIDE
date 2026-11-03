@@ -1,4 +1,4 @@
-//! File lifecycle for JC-IDE.
+//! File lifecycle for CIDE.
 //!
 //! A FileSession owns the byte-preserving document plus the selected text
 //! encoding. Saving verifies that the on-disk content still matches the version
@@ -33,19 +33,23 @@ pub struct ContentFingerprint {
 type Fingerprint = ContentFingerprint;
 impl ContentFingerprint {
     pub fn of(bytes: &[u8]) -> Self {
+        Self::of_chunks([bytes])
+    }
+    /// The same fingerprint over borrowed pieces, with no flattening allocation.
+    pub fn of_chunks<'a>(chunks: impl IntoIterator<Item = &'a [u8]>) -> Self {
         let mut first = 0xcbf29ce484222325u64;
         let mut second = 0x9e3779b97f4a7c15u64;
-        for byte in bytes {
-            first ^= u64::from(*byte);
-            first = first.wrapping_mul(0x100000001b3);
-            second ^= u64::from(*byte).wrapping_add(0x9e3779b97f4a7c15);
-            second = second.rotate_left(13).wrapping_mul(0xbf58476d1ce4e5b9);
+        let mut len = 0u64;
+        for bytes in chunks {
+            len = len.saturating_add(bytes.len() as u64);
+            for byte in bytes {
+                first ^= u64::from(*byte);
+                first = first.wrapping_mul(0x100000001b3);
+                second ^= u64::from(*byte).wrapping_add(0x9e3779b97f4a7c15);
+                second = second.rotate_left(13).wrapping_mul(0xbf58476d1ce4e5b9);
+            }
         }
-        Self {
-            len: bytes.len() as u64,
-            first,
-            second,
-        }
+        Self { len, first, second }
     }
 }
 
@@ -169,6 +173,24 @@ impl FileSession {
         }
         let (path, bytes) = read_in_root(&root, &path.into(), max_bytes)?;
         Ok(Self::from_open_bytes(path, bytes, explicit))
+    }
+    /// Compare the actual loaded bytes before admitting a session to a catalog.
+    /// The stored initial fingerprint avoids a second source read/hash/copy.
+    pub fn open_in_root_at_version(
+        root: &Path,
+        path: impl Into<PathBuf>,
+        explicit: Option<TextEncoding>,
+        max_bytes: usize,
+        expected: ContentFingerprint,
+    ) -> Result<Self, FileError> {
+        let session = Self::open_in_root(root, path, explicit, max_bytes)?;
+        if session.disk_fingerprint != Some(expected) {
+            return Err(io::Error::other(
+                "File content differs from the expected version; refresh the result",
+            )
+            .into());
+        }
+        Ok(session)
     }
 
     fn from_open_bytes(path: PathBuf, bytes: Vec<u8>, explicit: Option<TextEncoding>) -> Self {

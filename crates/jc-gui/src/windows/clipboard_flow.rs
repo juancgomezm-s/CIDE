@@ -2,6 +2,34 @@
 use super::{clipboard, ffi::Hwnd, owner};
 use jc_app::CommandId;
 const LIMIT: usize = 2 * 1024 * 1024;
+pub(super) unsafe fn paste_project(hwnd: Hwnd, generation: u64) {
+    let root = owner(hwnd).and_then(|model| model.state.borrow().project_root.clone());
+    let smoke = owner(hwnd).is_some_and(|model| model.state.borrow().smoke);
+    let text = if smoke {
+        Ok(owner(hwnd).and_then(|model| model.state.borrow().smoke_clipboard.clone()))
+    } else {
+        clipboard::read(hwnd)
+    };
+    if let Some(model) = owner(hwnd) {
+        let mut state = model.state.borrow_mut();
+        if state.project_root != root
+            || state
+                .project_panel
+                .as_ref()
+                .filter(|p| p.visible && !p.results)
+                .map(|p| p.generation)
+                != Some(generation)
+        {
+            state.error("Project field/root changed during clipboard read; retry");
+            return;
+        }
+        match text {
+            Ok(Some(text)) => state.edit_project_field(jc_app::FieldEdit::Insert(&text)),
+            Ok(None) => {}
+            Err(error) => state.error(error),
+        }
+    }
+}
 pub(super) unsafe fn paste_search(hwnd: Hwnd, generation: u64) {
     let target = owner(hwnd).and_then(|o| {
         o.state

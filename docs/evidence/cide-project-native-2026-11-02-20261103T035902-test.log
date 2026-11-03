@@ -1,0 +1,223 @@
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.54s
+     Running unittests src\lib.rs (target\debug\deps\jc_gui-a3c44ae95137d845.exe)
+
+running 18 tests
+test windows::save_plan::tests::cancellation_keeps_unsaved_count_and_cannot_acknowledge_pending_candidate ... ok
+test windows::clipboard::tests::nul_malformed_surrogates_and_missing_terminators_are_rejected_without_truncation ... ok
+test windows::project_paint::tests::field_and_result_budgets_match_normal_layout_and_output_is_control_free ... ok
+test windows::selector::tests::input_paste_is_atomic_utf8_bounded_and_backspace_removes_one_scalar ... ok
+test windows::project_results::tests::selection_and_viewport_keep_end_then_up_visible_under_resizing_and_reset ... ok
+test windows::save_plan::tests::acknowledgements_preserve_order_and_reject_stale_or_repeated_results ... ok
+test windows::clipboard::tests::strict_unicode_roundtrip_keeps_mixed_eol_tabs_and_no_normalization ... ok
+test windows::project_results::tests::idle_and_state_presentation_are_bounded_without_starting_a_worker ... ok
+test windows::selector_paint::tests::popup_and_every_row_stay_in_the_client_for_tiny_and_extreme_geometry ... ok
+test windows::project_paint::tests::geometry_stays_inside_client_for_tiny_and_extreme_metrics ... ok
+test windows::selector::tests::empty_file_presentation_is_read_only_and_tiny_viewport_allocates_no_rows ... ok
+test windows::project_results::tests::labels_escape_invalid_controls_bidi_unicode_and_paths_without_partial_tokens ... ok
+test windows::selector_paint::tests::query_cursor_counts_scalars_and_retains_tail_without_control_interpretation ... ok
+test windows::selector::tests::english_filter_shortcut_and_disabled_target_agree_with_registry ... ok
+test windows::selector::tests::selection_stays_visible_and_empty_filtered_results_have_no_target ... ok
+test windows::selector_paint::tests::shrinking_an_owned_presentation_keeps_selected_row_without_mutation ... ok
+test windows::save_plan::tests::construction_accepts_empty_and_limit_but_rejects_duplicate_ids_and_overflow ... ok
+test windows::clipboard::tests::native_and_utf8_budgets_are_separate_and_enforced_before_expansion ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running unittests src\main.rs (target\debug\deps\cide_gui-f2c83c5ffc8392a1.exe)
+
+running 4 tests
+test entry::tests::smoke_requires_distinct_absolute_owned_paths ... ok
+test entry::tests::files_and_encodings_are_explicit_without_starting_a_window ... ok
+test entry::tests::project_root_is_explicit_and_preserves_native_path ... ok
+test entry::tests::project_workers_are_bounded_and_explicit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\jc_languages-fc63eea379f3818d.exe)
+
+running 4 tests
+test tests::built_in_comments_are_capability_data_not_app_specific_conditions ... ok
+test tests::explicit_filenames_precede_extension_hints ... ok
+test tests::unknowns_are_text_and_windows_paths_are_portable ... ok
+test tests::every_extension_resolves_to_its_profile ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\jc_progress-cc20beed8c29edc2.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\bridge.rs (target\debug\deps\bridge-22918b190f406adc.exe)
+
+running 9 tests
+test code_pages_are_mandatory_and_not_silently_defaulted ... ok
+test legacy_bytes_and_record_delimiters_survive_response_parsing ... ok
+test paths_with_spaces_remain_single_arguments_and_no_shell_is_used ... ok
+test rejects_unknown_or_ambiguous_request_transport_inputs ... ok
+test request_does_not_mix_path_commas_with_parameter_fields ... ok
+test incomplete_malformed_or_contradictory_results_are_never_successful ... ok
+test schema_carries_fields_indexes_and_distinguishes_unknown_from_empty ... ok
+test windows_line_endings_and_missing_positions_are_supported ... ok
+test adversarial_headers_are_bounded_before_field_allocation ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\jc_text-cb81063c36e28fad.exe)
+
+running 2 tests
+test unicode_search::tests::word_rule_includes_marks_connectors_and_supplementary_letters ... ok
+test unicode_search::tests::full_folding_conforms_to_every_default_upstream_mapping ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\scalars.rs (target\debug\deps\scalars-dbb112242681ac07.exe)
+
+running 2 tests
+test borrowed_decoding_preserves_invalid_groups_literal_bom_and_absolute_offsets ... ok
+test explicit_single_byte_pages_roundtrip_every_valid_byte_with_exact_ranges ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\text.rs (target\debug\deps\text-7b72e79af795555e.exe)
+
+running 9 tests
+test ascii_is_explicitly_marked_ambiguous_but_safe_to_treat_as_utf8 ... ok
+test fragments_preserve_literal_mid_file_bom_and_report_absolute_issue_offsets ... ok
+test explicit_single_byte_encodings_roundtrip_representable_text ... ok
+test invalid_utf8_is_not_guessed_as_a_legacy_code_page ... ok
+test mixed_line_endings_and_final_newline_are_reported_without_normalization ... ok
+test text_positions_roundtrip_to_source_bytes_for_utf8_and_crlf ... ok
+test unsupported_inserted_characters_fail_strictly ... ok
+test utf8_bom_is_interpreted_but_remains_part_of_source_byte_coordinates ... ok
+test cp1252_undefined_bytes_are_visible_issues_not_silent_replacements_on_disk ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 78 tests
+test app::git_status::tests::paths_preserve_unicode_escape_bytes_controls_and_backslashes_without_partial_tokens ... ok
+test app::git_status::tests::headers_flags_and_filter_message_remain_bounded_and_explicit ... ok
+test app::git_status::tests::idle_clear_cancel_and_invalid_request_do_not_start_a_provider ... ok
+test app::git_diff::tests::prefixes_preserve_explicit_encoding_invalid_bytes_bom_and_eol_tokens ... ok
+test app::git_status::tests::accepted_rows_are_hidden_after_context_change_or_cancel_without_reinterpreting_paths ... ok
+test app::git_diff::tests::selected_hunk_prepares_only_three_context_lines_and_keeps_byte_sources_immutable ... ok
+test app::git_integration_tests::git_commands_require_context_and_explicit_configuration_without_starting_workers ... ok
+test app::keyboard_matrix_tests::closing_a_shared_view_preserves_dirty_document_then_last_view_requires_a_choice ... ok
+test app::keyboard_matrix_tests::disabled_database_command_has_no_effect_from_shortcut_palette_or_menu ... ok
+test app::invisibles_tests::rectangle_keeps_source_visual_geometry_and_highlights_partial_tab_as_one_atom ... ok
+test app::invisibles_tests::linear_byte_selection_marks_complete_tab_unicode_and_crlf_atoms ... ok
+test app::keyboard_matrix_tests::enhanced_keyboard_release_does_not_repeat_an_edit_but_repeat_events_do ... ok
+test app::keyboard_matrix_tests::f6_and_escape_follow_visible_areas_and_restore_the_area_under_a_palette ... ok
+test app::invisibles_tests::view_and_palette_toggle_ascii_spans_without_changing_source_revision_or_undo ... ok
+test app::keyboard_matrix_tests::replace_tab_and_backtab_route_paste_to_fields_before_one_undoable_commit ... ok
+test app::invisibles_tests::horizontal_display_cursor_and_shared_views_survive_resize_with_read_only_composition ... ok
+test app::keyboard_matrix_tests::tab_aliases_preserve_selection_and_bottom_panel_alt_one_does_not_select_a_tab ... ok
+test app::line_command_tests::sidebar_overlay_enter_and_global_control_j_never_fall_through_to_split_or_join ... ok
+test app::explorer::tests::directories_sort_before_files_and_navigation_stays_rooted ... ok
+test app::multiline_tests::find_blocks_preserve_exact_eol_controls_eof_navigation_and_case_word_toggles ... ok
+test app::git_integration_tests::failed_git_task_is_delivered_without_input_and_frame_composition_preserves_document ... ok
+test app::project_search::worker_settings_tests::invalid_cpu_budget_is_rejected_before_entering_a_terminal ... ok
+test app::multiline_tests::legacy_multiline_replacement_rejects_unrepresentable_text_before_any_mutation ... ok
+test app::line_command_tests::rectangles_disable_line_actions_in_keys_menu_palette_and_direct_model ... ok
+test app::line_command_tests::join_shortcut_and_palette_preserve_encoding_bom_final_eol_and_one_undo ... ok
+test app::project_search::worker_settings_tests::launch_budget_reaches_every_new_project_query_without_starting_work ... ok
+test app::line_command_tests::split_enter_palette_and_edit_menu_share_selection_replacement_one_undo_and_views ... ok
+test app::rectangle_tests::partial_tab_latin1_punctuation_and_virtual_cells_use_visual_selection ... ok
+test app::quick_open_tests::keyboard_palette_and_file_menu_open_without_document_and_wakeup_owns_delivery ... ok
+test app::quick_open_tests::paste_matches_full_fold_path_and_rejects_control_and_oversized_queries_without_editing_input ... ok
+test app::rectangle_tests::resizing_keeps_virtual_cursor_visible_without_reinterpreting_visual_bounds ... ok
+test app::quick_open_tests::control_enter_reuses_dirty_document_undo_and_reference_pin_without_reloading_disk ... ok
+test app::rectangle_tests::zero_width_after_a_tab_has_visual_cursor_and_keyboard_extension_can_be_cancelled ... ok
+test app::tests::background_completion_wakes_and_updates_panels_without_input_or_applying_edits ... ok
+test app::rectangle_tests::split_views_keep_independent_rectangles_through_narrow_fallback ... ok
+test app::tests::composing_prepared_frames_changes_neither_views_nor_text_caches ... ok
+test app::multiline_tests::field_navigation_paste_in_middle_token_keys_and_overflow_do_not_edit_the_document ... ok
+test app::quick_open_tests::supersession_root_change_before_prepare_and_escape_cannot_open_stale_candidates ... ok
+test app::tests::document_search_runs_between_events_with_unicode_markers_history_and_goto ... ok
+test app::quick_open_tests::enter_opens_original_unknown_legacy_bytes_then_requires_encoding_choice ... ok
+test app::tests::keyboard_and_palette_drive_split_pin_history_and_responsive_rendering ... ok
+test app::tests::explorer_open_to_side_works_without_an_existing_document ... ok
+test app::tests::opening_legacy_from_prompt_keeps_encoding_choice_until_selection ... ok
+test event_loop::tests::closing_a_full_queue_releases_a_blocked_reader ... ok
+test app::tests::view_menu_scrolls_to_the_selected_command_in_a_short_terminal ... ok
+test event_loop::tests::input_queue_rejects_oversized_paste_and_accounts_retained_strings ... ok
+test frame_encoder::tests::erasing_text_and_changing_style_emit_cells_and_reset_attributes ... ok
+test app::git_diff::tests::huge_changed_hunk_scrolls_by_ranges_without_preparing_every_line ... ok
+test frame_encoder::tests::resize_invalidation_and_output_failure_require_a_full_frame ... ok
+test input::tests::backtab_is_shift_tab ... ok
+test input::tests::ctrl_shortcuts_normalize_ascii_case ... ok
+test frame_encoder::tests::unchanged_frames_emit_nothing_and_cursor_only_change_does_not_repaint ... ok
+test app::tests::keyboard_edit_matrix_keeps_legacy_bytes_and_non_editor_tab_scope ... ok
+test render::git_diff::tests::short_sidebar_keeps_selected_hunk_visible_without_changing_selection ... ok
+test render::git_diff::tests::both_components_clip_to_their_rectangle_even_when_it_exceeds_the_screen ... ok
+test render::git_diff::tests::unified_signs_line_numbers_and_eol_remain_visible_at_45_and_140_columns ... ok
+test render::git_diff::tests::repeated_composition_changes_neither_prepared_content_nor_selection ... ok
+test render::git_status::tests::clipping_tiny_and_outside_rectangles_never_write_neighbor_cells ... ok
+test render::git_status::tests::compact_and_wide_panels_show_counter_flags_and_focused_selection ... ok
+test render::git_status::tests::smaller_physical_view_keeps_selection_and_repeated_composition_is_read_only ... ok
+test render::git_status::tests::unicode_and_preescaped_paths_are_composed_as_text_not_terminal_controls ... ok
+test render::tests::logical_lines_handle_all_supported_line_endings ... ok
+test screen::tests::box_does_not_write_outside_screen ... ok
+test screen::tests::styles_and_cursor_are_part_of_render_model ... ok
+test render::tests::empty_app_renders_without_panicking ... ok
+test screen::tests::text_is_clipped_and_control_chars_are_visible ... ok
+test app::tests::project_search_prompts_cancel_and_deliver_navigable_rows_without_more_input ... ok
+test app::git_status::tests::viewport_prepares_only_visible_entries_and_retains_selection_across_resize ... ok
+test app::tests::document_search_escape_and_input_limits_leave_no_hidden_work_or_edits ... ok
+test app::tests::project_replace_preview_cancel_confirmation_and_file_scheduling_are_explicit ... ok
+test app::multiline_tests::multiline_replace_all_is_one_undo_and_save_preserves_exact_unicode_mixed_eol_bytes ... ok
+test app::tests::drawing_shared_views_reads_visible_ranges_without_rescanning_the_document ... ok
+test app::quick_open_tests::deleted_or_link_replaced_target_keeps_overlay_and_opens_no_document ... ok
+test app::git_status_integration_tests::executable_prompt_resumes_only_its_status_or_diff_intent_and_escape_removes_it ... ok
+test app::git_status_integration_tests::repository_status_without_document_or_encoding_delivers_mm_and_untracked_via_wakeup ... ok
+test app::git_status_integration_tests::cancel_refresh_and_context_changes_invalidate_before_prepare_without_consuming_completion ... ok
+test app::git_status_integration_tests::configured_filter_is_a_static_ui_failure_and_never_a_partial_ready_list ... ok
+test app::git_status_integration_tests::status_selection_enter_and_repeated_composition_preserve_shared_editor_and_disk ... ok
+
+test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.14s
+
+     Running unittests src\main.rs (target\debug\deps\cide_tui-276d3eb826bfa013.exe)
+
+running 5 tests
+test entry::tests::encoding_aliases_are_explicit ... ok
+test entry::tests::help_still_short_circuits_launch_and_unknown_flags_are_rejected ... ok
+test entry::tests::parser_keeps_multiple_files ... ok
+test entry::tests::search_workers_default_and_explicit_counts_preserve_launch_arguments ... ok
+test entry::tests::search_workers_reject_invalid_missing_and_duplicate_values ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests jc_gui
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests jc_languages
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests jc_progress
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests jc_text
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests jc_tui
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

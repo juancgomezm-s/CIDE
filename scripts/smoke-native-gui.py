@@ -15,6 +15,12 @@ import uuid
 SOURCE = b"alpha\r\nbeta\r\n"
 REQUIRED = {
     "startup_shared_open_bytes", "no_child_edit_control", "utf16_pair_one_undo",
+    "cide_native_window_title",
+    "cide_native_gui_icon_resource",
+    "project_dirty_multiline_native_notification", "project_results_gdi_read_only",
+    "project_enter_dirty_document_no_reload_one_undo", "project_stale_rejected_refresh_no_hit",
+    "project_cancel_no_late_result_revival", "project_changed_disk_fingerprint_rejected",
+    "project_root_change_clears_results_source_preserved",
     "native_mouse_caret_without_jump_history",
     "unpaired_utf16_rejected", "selection_internal_clipboard_and_undo",
     "enter_shared_split_one_undo", "join_shared_transaction_one_undo",
@@ -44,9 +50,9 @@ def main():
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
     workspace = Path(__file__).resolve().parents[1]
-    exe = (args.exe or workspace / "target/release/jc-ide-gui.exe").resolve(strict=True)
-    if not exe.is_relative_to(workspace) or exe.name != "jc-ide-gui.exe":
-        parser.error("use the built jc-ide-gui.exe inside this workspace")
+    exe = (args.exe or workspace / "target/release/cide-gui.exe").resolve(strict=True)
+    if not exe.is_relative_to(workspace) or exe.name not in {"cide-gui.exe", "jc-ide-gui.exe"}:
+        parser.error("use the built cide-gui.exe or compatible jc-ide-gui.exe inside this workspace")
     base = workspace
     for name in ("work", "native-gui-smoke"):
         base = base / name

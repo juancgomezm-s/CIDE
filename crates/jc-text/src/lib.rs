@@ -1,4 +1,4 @@
-//! Text interpretation for byte-preserving JC-IDE documents.
+//! Text interpretation for byte-preserving CIDE documents.
 //!
 //! This crate never owns or rewrites the canonical source bytes. It provides
 //! explicit decoding, strict encoding for inserted text, line-ending analysis,

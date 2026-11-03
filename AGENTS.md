@@ -269,3 +269,22 @@ Do not repeat complete suites/profiles for docs. Current next functional M2B blo
 project Search Plus GUI using existing S1 controller, bounded fields/visible
 versioned results, no new engine/permanent index. No dependencies/regex/CI/push;
 manual OS-dialog/clipboard/IME/DPI/display gates remain for the end.
+
+## CIDE and native project Search Plus closure
+
+Read docs/CIDE_REBRAND.md and docs/M2B_PROJECT_SEARCH_NATIVE.md. Visible branding
+is CIDE; canonical cide/cide-tui/cide-gui retain jc-ide aliases through shared entry
+modules. Keep crates, APIs, workspace/repository/remotes and historical evidence.
+The supplied JG+CIDE green icon belongs to TUI/CLI; orange variant belongs to GUI.
+Seven frames are embedded in all six Windows/MSVC executables; GUI loads group101.
+
+Native project search consumes existing S1, bounded drafts/results,1..4 workers,
+two batches per notification, revision/generation/cancel and root invalidation.
+validate_context never consumes completions. Version-checked project opening
+checks expected source/encoding and confined disk before catalog/focus changes;
+do not flatten a live document or remove disk revalidation for a reused disk hit.
+391 distinct tests passed across260+131 suites, fmt/Clippy/release and41 native
+checks. Raw logs/failures/hashes retained; no new dependency, CI or push. Do not
+repeat passing suites or closed profiles for documentation. Project replacement
+and diff/status GUI remain pending; manual OS clipboard/IME/DPI/accessibility and
+global RAM/display acceptance remain for the end. No user manual request now.

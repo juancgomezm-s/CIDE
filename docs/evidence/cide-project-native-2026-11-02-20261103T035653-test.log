@@ -1,0 +1,51 @@
+   Compiling jc-text v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-text)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+   Compiling jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+error[E0428]: the name `run` is defined multiple times
+  --> crates\jc-cli\src\entry.rs:20:1
+   |
+13 | pub(super) fn run() {
+   | ------------------- previous definition of the value `run` here
+...
+20 | fn run(args: Vec<OsString>) -> Result<(), Box<dyn Error>> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `run` redefined here
+   |
+   = note: `run` must be defined only once in the value namespace of this module
+
+error[E0061]: this function takes 0 arguments but 1 argument was supplied
+  --> crates\jc-cli\src\entry.rs:14:25
+   |
+14 |     if let Err(error) = run(env::args_os().skip(1).collect()) {
+   |                         ^^^ -------------------------------- unexpected argument
+   |
+note: function defined here
+  --> crates\jc-cli\src\entry.rs:13:15
+   |
+13 | pub(super) fn run() {
+   |               ^^^
+help: remove the extra argument
+   |
+14 -     if let Err(error) = run(env::args_os().skip(1).collect()) {
+14 +     if let Err(error) = run() {
+   |
+
+error[E0308]: mismatched types
+  --> crates\jc-cli\src\entry.rs:14:12
+   |
+14 |     if let Err(error) = run(env::args_os().skip(1).collect()) {
+   |            ^^^^^^^^^^   ------------------------------------- this expression has type `()`
+   |            |
+   |            expected `()`, found `Result<_, _>`
+   |
+   = note: expected unit type `()`
+                   found enum `Result<_, _>`
+
+Some errors have detailed explanations: E0061, E0308, E0428.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `jc-cli` (bin "jc-ide") due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-cli` (bin "cide") due to 3 previous errors
+error: could not compile `jc-cli` (bin "cide" test) due to 3 previous errors

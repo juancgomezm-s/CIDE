@@ -2,12 +2,14 @@
 
 ## Código nuevo
 
-El propietario todavía no ha elegido una licencia de distribución para el código nuevo
-de JC-IDE. Esta base se prepara inicialmente como repositorio privado. No se atribuye
-automáticamente una licencia MIT, Apache o BSD al proyecto completo.
+El archivo [LICENSE](LICENSE) del repositorio declara MIT para el código nuevo,
+con el copyright del propietario. Este texto sustituye la nota antigua que decía
+que la elección seguía pendiente; no cambia el contenido de LICENSE ni atribuye
+esa licencia a terceros. Los avisos de cada componente se conservan abajo.
 
-Los manifiestos tienen `publish = false` para evitar una publicación accidental en crates.io.
-La elección de licencia para distribuir el proyecto es una decisión pendiente del propietario.
+Los manifiestos mantienen `publish = false`: el rebranding no publica paquetes,
+cambia derechos de terceros ni instala el producto. Los recursos gráficos nuevos
+y su procedencia están descritos en [assets/branding](assets/branding/README.md).
 
 ## Port parcial de Lime Text
 
@@ -22,7 +24,7 @@ buffer Go basado en runas ni su infraestructura de canales.
 
 El documento de bytes, el historial y la integración de este workspace son implementaciones
 nuevas. La investigación de PIEW se usa como referencia de arquitectura; sus binarios,
-DLL y aplicación gráfica no forman parte del repositorio. Los auxiliares ABL de JC-IDE
+DLL y aplicación gráfica no forman parte del repositorio. Los auxiliares ABL de CIDE
 son nuevos y no se presentan como una versión certificada de PIEW.
 
 No se incluyen gramáticas, temas, paquetes de Sublime, componentes GUI, servidores LSP

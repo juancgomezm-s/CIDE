@@ -39,6 +39,7 @@ pub(super) struct Frame {
     panes: Vec<Pane>,
     selector: Option<super::selector::SelectorPresentation>,
     search: Option<super::search_panel::SearchPresentation>,
+    project: Option<super::project_panel::ProjectPresentation>,
 }
 impl Frame {
     pub(super) fn contains_source_row(&self, needle: &str) -> bool {
@@ -93,6 +94,7 @@ fn areas(state: &State) -> Vec<(PaneId, Rect)> {
 }
 
 pub(super) fn prepare(state: &mut State) -> Frame {
+    state.validate_project_search();
     let areas = areas(state);
     let columns = areas.first().map_or(1, |(_, rect)| {
         ((rect.right - rect.left) / state.cell_width - 7).clamp(1, 256) as usize
@@ -253,7 +255,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             caret,
         });
     }
-    let mut top = String::from("JC-IDE  ");
+    let mut top = String::from("CIDE  ");
     for tab in state.workbench.tabs().tabs().iter().take(12) {
         let title: String = tab.title.chars().take(24).collect();
         if Some(tab.id) == state.workbench.tabs().active_id() {
@@ -286,6 +288,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         status,
         panes,
         search: state.search_presentation(),
+        project: state.project_presentation(),
         selector: state.selector_presentation(super::selector_paint::list_capacity(
             state.width,
             state.height,
@@ -477,6 +480,16 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         super::search_paint::draw(
             dc,
             presentation,
+            frame.width,
+            frame.height,
+            frame.cell_width,
+            frame.cell_height,
+        )?;
+    }
+    if let Some(project) = &frame.project {
+        super::project_paint::draw(
+            dc,
+            project,
             frame.width,
             frame.height,
             frame.cell_width,

@@ -4,6 +4,10 @@ mod ffi;
 mod folder;
 mod notify;
 mod paint;
+mod project_paint;
+mod project_panel;
+mod project_results;
+mod project_smoke;
 mod save_flow;
 mod save_plan;
 mod save_smoke;
@@ -77,6 +81,17 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (131, CommandId::SearchReplace, "&Replace Multiline..."),
     (132, CommandId::SearchFindNext, "Find &Next"),
     (133, CommandId::SearchFindPrevious, "Find &Previous"),
+    (
+        134,
+        CommandId::SearchProject,
+        "Search Plus: Find in &Project...",
+    ),
+    (
+        135,
+        CommandId::SearchCancelProject,
+        "&Cancel Project Search",
+    ),
+    (136, CommandId::ViewSearchResults, "Project Search &Results"),
 ];
 pub(super) fn command_id(command: CommandId) -> usize {
     COMMANDS
@@ -89,6 +104,7 @@ enum Action {
     None,
     Clipboard(CommandId),
     PasteSearch(u64),
+    PasteProject(u64),
     ChooseFolder,
     Open(bool),
     SaveAs,
@@ -104,6 +120,10 @@ struct State {
     project_root: Option<PathBuf>,
     selector: Option<Selector>,
     search_panel: Option<search_panel::SearchPanel>,
+    project_panel: Option<project_panel::ProjectPanel>,
+    project_search: jc_app::ProjectSearch,
+    project_options: Option<jc_app::ProjectSearchOptions>,
+    project_workers: usize,
     encoding_target: Option<(jc_app::DocumentId, u64, Option<TextEncoding>)>,
     smoke_clipboard: Option<String>,
     quick_open: QuickOpenController,
@@ -162,6 +182,10 @@ impl State {
             project_root: None,
             selector: None,
             search_panel: None,
+            project_panel: None,
+            project_search: jc_app::ProjectSearch::new(wakeup.clone()),
+            project_options: None,
+            project_workers: options.search_workers.unwrap_or(2),
             encoding_target: None,
             smoke_clipboard: None,
             quick_open: QuickOpenController::new(wakeup.clone()),
@@ -232,6 +256,8 @@ impl State {
         let mut context = self.workbench.context();
         context.focus = PrimaryFocus::Editor;
         context.has_project = self.project_root.is_some();
+        context.project_search_running =
+            self.project_search.state == jc_app::ProjectSearchState::Running;
         // Availability is an intention gate, never a read of another owner's
         // clipboard. Content is requested only by explicit Paste.
         if !context.rectangular_selection {
@@ -245,6 +271,19 @@ impl State {
             return Action::None;
         }
         match command {
+            CommandId::SearchProject => {
+                self.open_project_search(false);
+                return Action::None;
+            }
+            CommandId::SearchCancelProject => {
+                self.project_search.cancel();
+                self.status = "Project search cancelled".into();
+                return Action::None;
+            }
+            CommandId::ViewSearchResults => {
+                self.open_project_search(true);
+                return Action::None;
+            }
             CommandId::SearchFind | CommandId::SearchReplace => {
                 self.open_search_panel(command == CommandId::SearchReplace);
                 return Action::None;
@@ -385,6 +424,9 @@ impl State {
                 return (true, self.execute(command));
             }
         }
+        if self.project_visible() {
+            return (true, self.project_key(code, modifiers));
+        }
         if self.search_panel.is_some() {
             return (true, self.search_key(code, modifiers));
         }
@@ -467,6 +509,10 @@ impl State {
             return;
         }
         let mut bytes = [0u8; 4];
+        if self.project_visible() {
+            self.edit_project_field(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)));
+            return;
+        }
         if self.search_panel.is_some() {
             self.edit_search_input(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)));
             return;
@@ -545,7 +591,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         if let Some(owner) = owner(hwnd) {
             owner.state.borrow().bridge.attach(hwnd);
         }
-        return 1;
+        // DefWindowProc establishes native non-client state, including the
+        // supplied window title. Attaching our owner does not replace it.
+        return DefWindowProcW(hwnd, message, wparam, lparam);
     }
     if message == WM_NCDESTROY {
         let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Owner;
@@ -683,7 +731,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             WM_LBUTTONDOWN => {
                 let x = (lparam as u16) as i16 as i32;
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
-                if state.selector.is_none() && state.search_panel.is_none() {
+                if state.selector.is_none()
+                    && state.search_panel.is_none()
+                    && !state.project_visible()
+                {
                     paint::click(&mut state, x, y);
                 }
             }
@@ -691,6 +742,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             _ => handled = false,
         }
         state.schedule_search();
+        redraw |= state.validate_project_search();
     }
     if !handled {
         return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -782,6 +834,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::None => {}
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
+        Action::PasteProject(generation) => clipboard_flow::paste_project(hwnd, generation),
         Action::SaveAll => save_flow::perform(hwnd),
         Action::ChooseFolder => {
             let selected = folder::choose(hwnd);
@@ -887,7 +940,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             if MessageBoxW(
                 hwnd,
                 wide("Discard unsaved changes in this tab? Save first to keep them.").as_ptr(),
-                wide("JC-IDE").as_ptr(),
+                wide("CIDE").as_ptr(),
                 0x134,
             ) != 6
             {
@@ -914,7 +967,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                         "Close and discard ALL unsaved changes? Save documents first to keep them.",
                     )
                     .as_ptr(),
-                    wide("JC-IDE").as_ptr(),
+                    wide("CIDE").as_ptr(),
                     0x134,
                 ) != 6
             {
@@ -934,7 +987,7 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
         ("&File", 101, 110),
         ("&Edit", 110, 118),
         ("&View", 120, 128),
-        ("&Search", 130, 134),
+        ("&Search", 130, 137),
     ] {
         let popup = CreatePopupMenu();
         if popup.is_null() {
@@ -987,6 +1040,12 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
 }
 
 pub(super) fn run(options: GuiOptions) -> Result<(), String> {
+    if options
+        .search_workers
+        .is_some_and(|n| !(1..=4).contains(&n))
+    {
+        return Err("Project workers require1..4".into());
+    }
     if options.smoke.is_some() && !options.paths.is_empty() {
         return Err("Smoke mode does not accept startup source paths".into());
     }
@@ -1006,7 +1065,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
             class_extra: 0,
             window_extra: 0,
             instance,
-            icon: null_mut(),
+            icon: LoadIconW(instance, 101usize as *const u16),
             cursor: LoadCursorW(null_mut(), 32512usize as *const u16),
             background: null_mut(),
             menu_name: std::ptr::null(),
@@ -1025,7 +1084,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
         let hwnd = CreateWindowExW(
             0,
             class.as_ptr(),
-            wide("JC-IDE — native Win32/GDI development frontend").as_ptr(),
+            wide("CIDE — native Win32/GDI development frontend").as_ptr(),
             0x00cf0000,
             0x80000000u32 as i32,
             0x80000000u32 as i32,

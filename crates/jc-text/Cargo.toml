@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
 publish = false
-description = "Explicit text decoding, encoding and source-position mapping for JC-IDE"
+description = "Explicit text decoding, encoding and source-position mapping for CIDE"
 
 [dependencies]

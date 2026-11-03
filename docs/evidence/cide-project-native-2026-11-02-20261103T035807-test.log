@@ -1,0 +1,31 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+error[E0277]: `?` couldn't convert the error to `WorkbenchError`
+   --> crates\jc-app\src\workbench\mod.rs:613:80
+    |
+613 |                     let (_, bytes) = jc_files::read_in_root(root, &path, limit)?;
+    |                                                                                ^ the trait `From<std::io::Error>` is not implemented for `WorkbenchError`
+    |
+    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+    = help: the following other types implement trait `From<T>`:
+              `WorkbenchError` implements `From<FileError>`
+              `WorkbenchError` implements `From<PositionError>`
+              `WorkbenchError` implements `From<RectangleError>`
+    = note: required for `Result<TabId, WorkbenchError>` to implement `FromResidual<Result<Infallible, std::io::Error>>`
+
+error[E0277]: `?` couldn't convert the error to `WorkbenchError`
+   --> crates\jc-app\src\workbench\mod.rs:613:80
+    |
+613 |                     let (_, bytes) = jc_files::read_in_root(root, &path, limit)?;
+    |                                                                                ^ the trait `From<std::io::Error>` is not implemented for `WorkbenchError`
+    |
+    = note: the question mark operation (`?`) implicitly performs a conversion on the error value using the `From` trait
+    = help: the following other types implement trait `From<T>`:
+              `WorkbenchError` implements `From<FileError>`
+              `WorkbenchError` implements `From<PositionError>`
+              `WorkbenchError` implements `From<rectangle::RectangleError>`
+    = note: required for `Result<tabs::TabId, WorkbenchError>` to implement `FromResidual<Result<Infallible, std::io::Error>>`
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `jc-app` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-app` (lib test) due to 1 previous error

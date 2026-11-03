@@ -14,6 +14,9 @@ impl State {
             return Err("Project root must be a directory".into());
         }
         self.close_selector();
+        self.project_search.clear();
+        self.project_panel = None;
+        self.project_options = None;
         self.project_root = Some(root);
         self.status = "Project folder selected · Ctrl+P Quick Open".into();
         Ok(())
@@ -21,6 +24,9 @@ impl State {
     pub(super) fn close_selector(&mut self) {
         self.selector = None;
         self.search_panel = None;
+        if let Some(panel) = self.project_panel.as_mut() {
+            panel.visible = false;
+        }
         self.encoding_target = None;
         self.pending_surrogate = None;
         self.quick_open.clear();
@@ -98,6 +104,14 @@ impl State {
             self.bridge.signal();
         }
         changed |= self.workbench.poll_document_search();
+        changed |= self.project_search.poll(&self.workbench, 2);
+        if self.project_search.take_recovery() {
+            self.status = "Project search worker failed; refresh to retry".into();
+            changed = true;
+        }
+        if self.project_search.ready() {
+            self.bridge.signal();
+        }
         self.schedule_search();
         changed
     }

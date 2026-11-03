@@ -351,3 +351,22 @@ vistas/undo. Save As normal captura target antes del diálogo.45 tests dirigidos
 Próximo bloque M2B es Search Plus de proyecto en GUI sobre el S1 existente, sin
 motor ni índice nuevos. Conservar exact bytes/encoding, snapshots acotados y
 entrega versionada. No CI/push/dependencias/regex, manual al final.
+
+## Último cierre: CIDE, iconos y Search Plus GUI
+
+Leer CIDE_REBRAND.md y M2B_PROJECT_SEARCH_NATIVE.md. Comandos canónicos cide,
+cide-tui y cide-gui, aliases jc-ide compatibles; crates/raíz/remoto intactos. Icono
+JG+CIDE original verde para TUI/CLI; naranja para GUI. Siete tamaños embebidos en
+los seis PE, título/icono nativos comprobados. Recursos/procedencia en assets/branding.
+
+GUI usa S1 existente: tres drafts acotados, globs, worker1..4, lotes por evento,
+resultados solo lectura, Enter validado, refresh, stale/cancel/root invalidation.
+open_project_file_at_version rechaza antes de cambiar catálogo/foco; no aplanar el
+buffer para comparar y conservar comprobación de disco al reutilizar un abierto.
+391 casos distintos aprobados por suites260+131, fmt/Clippy/release y41 nativos.
+Evidencia cide-project-native-2026-11-02-* conserva fallos y hashes. No repetir esas
+suites/perfiles por docs. Paquete local de desarrollo, sin instalar ni publicar.
+
+Pendientes funcionales M2B: replace de proyecto y diff/status read-only gráficos;
+manual IME/clipboard/DPI/accesibilidad y gates globales permanecen al final. No
+motor nuevo, dependencias, regex, CI/push ni tocar RAG/servicios de otros proyectos.

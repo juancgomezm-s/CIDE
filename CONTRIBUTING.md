@@ -1,6 +1,6 @@
 # Desarrollo
 
-JC-IDE está en M2A: la TUI está en construcción sobre el núcleo de edición, archivos y modelo de interacción compartido.
+CIDE está en M2A: la TUI está en construcción sobre el núcleo de edición, archivos y modelo de interacción compartido.
 El objetivo es llegar a un editor ligero para Windows con varios lenguajes y una integración ABL útil.
 
 ## Preparar el entorno

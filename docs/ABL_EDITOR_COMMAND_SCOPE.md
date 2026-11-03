@@ -58,7 +58,7 @@ Ctrl+Shift+F pertenece a Buscar en proyecto, no a Correct Case; Ctrl+Shift+O abr
 | Override/Implement Members | Resolución de herencia/interfaces |
 | Define Service Interface | Solo si hay contrato real del proyecto |
 
-El compilador de ABL puede producir XREF / XREF-XML para referencias de RUN, includes, tablas, campos e índices. JC-IDE aprovechará dichos artefactos bajo demanda; las referencias dinámicas que el compilador no determina deben etiquetarse como inciertas.
+El compilador de ABL puede producir XREF / XREF-XML para referencias de RUN, includes, tablas, campos e índices. CIDE aprovechará dichos artefactos bajo demanda; las referencias dinámicas que el compilador no determina deben etiquetarse como inciertas.
 
 ## D — Opcionales o excluidos
 

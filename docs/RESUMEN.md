@@ -1,6 +1,6 @@
-# Resumen de JC-IDE
+# Resumen de CIDE
 
-JC-IDE es un proyecto de editor de código multilenguaje para Windows, con atención prioritaria a Progress OpenEdge/ABL. Su prioridad es abrir, editar y guardar fuentes con un consumo reducido, conservando sus bytes y la codificación que utiliza cada archivo. La integración con Progress debe permitir comprobar, compilar, ejecutar y consultar el esquema de las bases de datos desde una interfaz sencilla.
+CIDE es un proyecto de editor de código multilenguaje para Windows, con atención prioritaria a Progress OpenEdge/ABL. Su prioridad es abrir, editar y guardar fuentes con un consumo reducido, conservando sus bytes y la codificación que utiliza cada archivo. La integración con Progress debe permitir comprobar, compilar, ejecutar y consultar el esquema de las bases de datos desde una interfaz sencilla.
 
 ## Punto de partida
 
@@ -21,12 +21,12 @@ La investigación previa examinó Lime Text como donante de lógica de edición 
 
 ## Experiencia inicial buscada
 
-El usuario configura un perfil con el ejecutable de Progress, `.pf`, `.ini`, `PROPATH`, codificaciones y procedimiento de entrada. Puede editar sin iniciar una AVM. Un catálogo obtenido de la BD o de un `.df` permite explorar nombres y completar campos. Al pedir comprobar o ejecutar, JC-IDE invoca el entorno seleccionado y presenta sus resultados.
+El usuario configura un perfil con el ejecutable de Progress, `.pf`, `.ini`, `PROPATH`, codificaciones y procedimiento de entrada. Puede editar sin iniciar una AVM. Un catálogo obtenido de la BD o de un `.df` permite explorar nombres y completar campos. Al pedir comprobar o ejecutar, CIDE invoca el entorno seleccionado y presenta sus resultados.
 
 Una base con solo esquema puede servir para compilar referencias estáticas sin cargar datos de negocio. El catálogo del editor y esa base tienen responsabilidades distintas: leer un `.df` no convierte al editor en el compilador de Progress.
 
 ## Evolución posterior
 
-El soporte multilenguaje es un requisito base; sus capacidades se completan por etapas mediante proveedores independientes. Después del registro y la detección vienen el resaltado, la navegación, las tareas y la integración opcional de servicios de lenguaje. También se contemplan búsquedas de proyecto, Git y una integración opcional con OmniCore. OmniCore mantiene su núcleo C# y su propia gestión de sesiones y agentes; JC-IDE no implica reescribirlo. El undo de edición y la reversión de una operación de agente también requieren contratos separados.
+El soporte multilenguaje es un requisito base; sus capacidades se completan por etapas mediante proveedores independientes. Después del registro y la detección vienen el resaltado, la navegación, las tareas y la integración opcional de servicios de lenguaje. También se contemplan búsquedas de proyecto, Git y una integración opcional con OmniCore. OmniCore mantiene su núcleo C# y su propia gestión de sesiones y agentes; CIDE no implica reescribirlo. El undo de edición y la reversión de una operación de agente también requieren contratos separados.
 
 La elección de interfaz gráfica permanece abierta. Las opciones evaluadas y sus consecuencias están en [ARQUITECTURA.md](ARQUITECTURA.md); los hitos y criterios de aceptación están en [PLAN.md](PLAN.md).

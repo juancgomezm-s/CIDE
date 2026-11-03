@@ -970,3 +970,34 @@ no escritura del nombre generado. Smoke prueba menú/tecla, cancelación parcial
 Save As nuevo y conflicto externo sin overwrite con decisión inyectada propia.
 [Contrato/evidencia](M2B_SAVE_ALL.md). Diálogos físicos/OS clipboard/IME/DPI siguen
 sin certificar; no solicitudes manuales ahora, dependencias/CI/push/perfiles nuevos.
+
+## CIDE, iconos y Search Plus GUI — 2026-11-02
+
+Bloque amplio construido antes de validar.391 casos distintos aprobados por
+suites:260 completos en el primer recorrido y131 de los paquetes restantes tras
+corregir geometría de cliente diminuto; dos benchmarks ignorados. No se declara
+una corrida391 ininterrumpida. Nueve regresiones nuevas observables: apertura
+versionada3, lista3, geometría2 y parser1. fmt, Clippy workspace all-targets y build
+release workspace bins/examples aprobaron; tras corregir WM_NCCREATE solo GUI
+se recompiló/revisó. Doc-tests restantes completaron sin casos adicionales.
+
+41 checks del ejecutable canónico en HWND oculto propio:1 pintura nativa,0 errores,
+fixture13B intacto. S1 usa snapshot dirty/multilínea, notificación sin otra tecla,
+navegación sin reload/undo, stale/refresh, cancelación sin resultados tardíos,
+conflicto de disco y root invalidation. Se corrigieron errores detectados, incluidos
+el título y la revalidación de disco al reutilizar un documento ya abierto. Primer
+smoke con filesystem sandbox falló; release idéntico pasó fuera del sandbox.
+
+Se ejecutaron seis ayudas, pares canónico/alias idénticos y exit0. Se inspeccionaron
+recursos PE en seis ejecutables: siete frames16..256 exactos a los ICO fuente,
+verde TUI/CLI y naranja GUI. Ventana verifica título CIDE y carga de grupo101.
+Cargo.lock y dependencias no cambiaron. ZIP de desarrollo local, sin instalador ni
+publicación; notices offline con limitaciones explícitas.
+
+[Contrato y logs](M2B_PROJECT_SEARCH_NATIVE.md),
+[metadata/hashes](evidence/cide-project-native-2026-11-02-metadata.json),
+[reporte41](evidence/cide-project-native-2026-11-02-native-report.json),
+[marca/recursos](CIDE_REBRAND.md). PNG retenidos son conversiones sin pérdida de
+bitmaps GDI, no capturas de pantalla física. IME, clipboard OS, DPI/accesibilidad,
+targets globales RAM/pantalla y demás puertas siguen abiertos. Sin CI/push,
+instalaciones ni nuevos perfiles. Las pruebas manuales del propietario son al final.

@@ -1,6 +1,6 @@
 # Arquitectura
 
-JC-IDE separa almacenamiento de bytes, interpretación textual, estado de aplicación, servicios opcionales y presentación. Esta es la arquitectura de destino; el estado implementado y sus diferencias están en la [auditoría del 2026-11-01](AUDITORIA_ECODE_ARQUITECTURA.md).
+CIDE separa almacenamiento de bytes, interpretación textual, estado de aplicación, servicios opcionales y presentación. Esta es la arquitectura de destino; el estado implementado y sus diferencias están en la [auditoría del 2026-11-01](AUDITORIA_ECODE_ARQUITECTURA.md).
 
 F1 ya separó documento y vistas, retiró campos espejo e introdujo transacciones multiposición y mapas completos. El [checkpoint F1](F1_DOCUMENT_VIEWS_TRANSACTIONS.md) documenta la implementación real. F2 ya incorpora rangos, índice por revisión, EOL/checkpoints incrementales y cuotas. F3 separa preparación y composición de solo lectura, emite diffs de celdas y añade snapshots propios acotados, generaciones, cancelación cooperativa y despertar por resultados. El [checkpoint F3](F3_PRESENTATION_TASKS.md) precisa cuotas y evidencia; la latencia física y RAM global siguen abiertas. El [checkpoint F2](F2_RANGES_INDEX_MEMORY.md) distingue resultados del modelo de objetivos de RAM/latencia globales.
 

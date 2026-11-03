@@ -1,0 +1,7 @@
+   Compiling jc-text v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-text)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+   Compiling jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `release` profile [optimized] target(s) in 22.58s

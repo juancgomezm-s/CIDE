@@ -1,6 +1,6 @@
 # jc-core
 
-Núcleo inicial de documentos de JC-IDE, sin dependencias externas.
+Núcleo inicial de documentos de CIDE, sin dependencias externas.
 
 ## Contrato
 

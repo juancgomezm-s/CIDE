@@ -19,7 +19,7 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
     let height = frame.layout.height;
     let mut screen = Screen::new(width, height);
     if width < 40 || height < 10 {
-        screen.text(0, 0, "JC-IDE: terminal too small (minimum 40x10)");
+        screen.text(0, 0, "CIDE: terminal too small (minimum 40x10)");
         return screen;
     }
 
@@ -275,7 +275,7 @@ fn draw_editor(
     let y = y + 1;
     let height = height.saturating_sub(1);
     let Some(_document) = document else {
-        screen.text(x + 2, y + 2, "JC-IDE");
+        screen.text(x + 2, y + 2, "CIDE");
         screen.text_styled(
             x + 2,
             y + 4,
@@ -598,7 +598,7 @@ fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
             position.column + 1
         )
     } else {
-        " JC-IDE ".to_owned()
+        " CIDE ".to_owned()
     };
     screen.text_styled(0, y, &clip(&left, screen.width()), CellStyle::Reverse);
     let status_width = app.status.chars().count() as u16 + 2;
@@ -673,7 +673,7 @@ mod tests {
         let mut app = TuiApp::new(crate::state::LaunchOptions::default());
         let frame = app.prepare_frame(80, 24);
         let screen = render(&frame);
-        assert!((0..screen.height()).any(|row| screen.row_text(row).contains("JC-IDE")));
+        assert!((0..screen.height()).any(|row| screen.row_text(row).contains("CIDE")));
         let _ = Workbench::default();
     }
 }

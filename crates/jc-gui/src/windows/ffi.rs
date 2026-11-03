@@ -201,6 +201,8 @@ extern "system" {
     pub fn ReleaseDC(hwnd: Hwnd, dc: Hdc) -> i32;
     pub fn FillRect(dc: Hdc, rect: *const Rect, brush: Handle) -> i32;
     pub fn LoadCursorW(instance: Handle, name: *const u16) -> Handle;
+    pub fn LoadIconW(instance: Handle, name: *const u16) -> Handle;
+    pub fn GetClassLongPtrW(hwnd: Hwnd, index: i32) -> usize;
     pub fn GetKeyState(key: i32) -> i16;
     pub fn CreateMenu() -> Handle;
     pub fn CreatePopupMenu() -> Handle;
@@ -211,6 +213,7 @@ extern "system" {
     pub fn GetMenu(hwnd: Hwnd) -> Handle;
     pub fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, kind: u32) -> i32;
     pub fn GetWindow(hwnd: Hwnd, relation: u32) -> Hwnd;
+    pub fn GetWindowTextW(hwnd: Hwnd, text: *mut u16, max: i32) -> i32;
 }
 #[link(name = "gdi32")]
 extern "system" {

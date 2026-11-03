@@ -1,4 +1,4 @@
-//! UI-independent application interaction model for JC-IDE.
+//! UI-independent application interaction model for CIDE.
 //!
 //! The TUI and GUI must share this layer. Action shortcuts, command enablement,
 //! focus transitions, menu contents and tab behavior are data here rather than

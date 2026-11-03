@@ -557,7 +557,23 @@ impl Workbench {
         to_side: bool,
         max_bytes: usize,
     ) -> Result<TabId, WorkbenchError> {
-        self.open_file_with_scope(path, encoding, to_side, Some((root, max_bytes)))
+        self.open_file_with_scope(path, encoding, to_side, Some((root, max_bytes, None)))
+    }
+    pub fn open_project_file_at_version(
+        &mut self,
+        root: &Path,
+        path: PathBuf,
+        encoding: Option<TextEncoding>,
+        to_side: bool,
+        max_bytes: usize,
+        expected: jc_files::ContentFingerprint,
+    ) -> Result<TabId, WorkbenchError> {
+        self.open_file_with_scope(
+            path,
+            encoding,
+            to_side,
+            Some((root, max_bytes, Some(expected))),
+        )
     }
 
     fn open_file_with_scope(
@@ -565,10 +581,10 @@ impl Workbench {
         path: PathBuf,
         encoding: Option<TextEncoding>,
         to_side: bool,
-        scope: Option<(&Path, usize)>,
+        scope: Option<(&Path, usize, Option<jc_files::ContentFingerprint>)>,
     ) -> Result<TabId, WorkbenchError> {
         if let Ok(canonical) = std::fs::canonicalize(&path) {
-            if let Some((root, _)) = scope {
+            if let Some((root, _, _)) = scope {
                 let root = root.canonicalize().map_err(FileError::from)?;
                 if !canonical.starts_with(&root) {
                     return Err(FileError::Io(std::io::Error::other(
@@ -580,6 +596,29 @@ impl Workbench {
             if let Some(document) = self.documents.iter().find(|document| {
                 std::fs::canonicalize(document.session.path()).ok().as_ref() == Some(&canonical)
             }) {
+                if let Some((root, limit, Some(expected))) = scope {
+                    let source = document.session.document();
+                    if source.len() > limit
+                        || document.session.encoding() != encoding
+                        || jc_files::ContentFingerprint::of_chunks(
+                            source
+                                .range_chunks(0..source.len())
+                                .map_err(FileError::from)?,
+                        ) != expected
+                    {
+                        return Err(FileError::Io(std::io::Error::other("Open document differs from the expected content/encoding; refresh the result")).into());
+                    }
+                    // Disk-origin results describe disk even after a previous
+                    // selection opened the document. Check both before focus.
+                    let (_, bytes) =
+                        jc_files::read_in_root(root, &path, limit).map_err(FileError::from)?;
+                    if jc_files::ContentFingerprint::of(&bytes) != expected {
+                        return Err(FileError::Io(std::io::Error::other(
+                            "File content differs from the expected version; refresh the result",
+                        ))
+                        .into());
+                    }
+                }
                 let (tab, cursor) = (document.tab_id, self.cursor_for_tab(document.tab_id));
                 if to_side {
                     self.prepare_side_target();
@@ -589,7 +628,12 @@ impl Workbench {
             }
         }
         let session = match scope {
-            Some((root, max_bytes)) => FileSession::open_in_root(root, &path, encoding, max_bytes)?,
+            Some((root, max_bytes, Some(expected))) => {
+                FileSession::open_in_root_at_version(root, &path, encoding, max_bytes, expected)?
+            }
+            Some((root, max_bytes, None)) => {
+                FileSession::open_in_root(root, &path, encoding, max_bytes)?
+            }
             None => FileSession::open(&path, encoding)?,
         };
         // Read failures leave the current group, selection and history intact.

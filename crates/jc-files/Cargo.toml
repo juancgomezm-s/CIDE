@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.82"
 publish = false
-description = "Safe file sessions, external-change detection and atomic save for JC-IDE"
+description = "Safe file sessions, external-change detection and atomic save for CIDE"
 
 [dependencies]
 jc-core = { path = "../jc-core" }

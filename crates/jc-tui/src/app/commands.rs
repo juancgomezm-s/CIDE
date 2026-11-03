@@ -177,7 +177,7 @@ impl TuiApp {
             ViewSearchResults => self.show_bottom(BottomPanel::SearchResults),
             ViewTerminal => {
                 self.status =
-                    "Embedded shell is deferred; JC-IDE itself remains terminal-native".to_owned();
+                    "Embedded shell is deferred; CIDE TUI uses the current terminal".to_owned();
             }
             FocusNext => {
                 self.focus.next(&self.panels);

@@ -1,0 +1,9 @@
+{
+  "source_archive_sha256": "33aac16a7a2f53ff894f68fbdb1be0c0e2ac743f278cbf2d5bc300429f087936",
+  "original_member": "CIDE_icon_pack/cide/cide_256.png",
+  "tui": "original supplied JG + CIDE design, green, unmodified PNGs",
+  "gui": "palette variant made with built-in image_gen, orange/amber JG + white CIDE, dark tile, alpha outside",
+  "generated_source": "exec-7f25dd10-8ac9-4af0-befc-36106d636541.png",
+  "imagegen_mode": "built-in edit, no API key",
+  "prompt": "Change only green/lime/yellow accents to terminal orange/amber #FF8A1F; preserve JG initials, exact white CIDE, terminal frame, three dots, >_, dark rounded tile and transparency. No redesign or extra text."
+}

@@ -316,12 +316,19 @@ impl ProjectSearch {
     }
     /// No filesystem reads here. Open-source revision/encoding/lifetime is checked
     /// both on arrival and again for previously displayed rows after user edits.
-    pub fn poll(&mut self, app: &Workbench, max_batches: usize) -> bool {
+    /// Invalidate old open-document rows without consuming worker completions.
+    /// Frontends may call before preparation; acceptance remains in poll.
+    pub fn validate_context(&mut self, app: &Workbench) -> bool {
         let before = self.rows.len();
         let mut validity = std::collections::HashMap::new();
         self.rows.retain(|r| r.current(app, &mut validity));
-        let mut changed = before != self.rows.len();
+        let changed = before != self.rows.len();
         self.stale |= changed;
+        changed
+    }
+    pub fn poll(&mut self, app: &Workbench, max_batches: usize) -> bool {
+        let mut changed = self.validate_context(app);
+        let mut validity = std::collections::HashMap::new();
         for _ in 0..max_batches.min(4) {
             let event = self
                 .shared
@@ -379,27 +386,16 @@ impl ProjectSearch {
             }
             SearchOrigin::Disk(expected) => {
                 let root = self.root.as_deref().ok_or("Project changed")?;
-                let bytes =
-                    scan::read_file(root, &m.path, 2 * 1024 * 1024).map_err(|e| e.to_string())?;
-                if ContentFingerprint::of(&bytes) != expected {
-                    return Err("File changed on disk; run the query again".into());
-                }
                 let tab = app
-                    .open_file(m.path.clone(), Some(m.encoding))
+                    .open_project_file_at_version(
+                        root,
+                        m.path.clone(),
+                        Some(m.encoding),
+                        false,
+                        2 * 1024 * 1024,
+                        expected,
+                    )
                     .map_err(|e| e.to_string())?;
-                let doc = app.document_by_tab(tab).ok_or("Open failed")?;
-                if doc.session.document().len() > 2 * 1024 * 1024
-                    || ContentFingerprint::of(
-                        &doc.session
-                            .document()
-                            .read_range(0..doc.session.document().len())
-                            .map_err(|e| e.to_string())?,
-                    ) != expected
-                {
-                    return Err(
-                        "Open document differs from search result; run the query again".into(),
-                    );
-                }
                 if !app.jump_to_location(tab, m.range.start) {
                     return Err("Invalid search destination".into());
                 }

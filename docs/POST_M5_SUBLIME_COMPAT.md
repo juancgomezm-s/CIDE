@@ -2,7 +2,7 @@
 
 **Inicio:** únicamente después de cerrar M5.
 
-Este anexo define una línea de evolución posterior al roadmap principal. Su objetivo es permitir que JC-IDE aproveche una parte significativa del ecosistema de Sublime Text sin convertir al editor en una reimplementación de Sublime ni introducir su modelo de plugins dentro del núcleo.
+Este anexo define una línea de evolución posterior al roadmap principal. Su objetivo es permitir que CIDE aproveche una parte significativa del ecosistema de Sublime Text sin convertir al editor en una reimplementación de Sublime ni introducir su modelo de plugins dentro del núcleo.
 
 ## Relación con extensiones internas
 
@@ -11,7 +11,7 @@ El contrato de capacidades de lenguaje se prepara en M2–M5 para que `progress.
 ## Principios
 
 1. **El core no conoce Sublime.** `jc-core`, `jc-text` y `jc-files` permanecen independientes.
-2. **Todo se adapta a los contratos de JC-IDE.** Comandos, menús y atajos terminan en `CommandId`; lenguajes y sintaxis pasan por `jc-languages`.
+2. **Todo se adapta a los contratos de CIDE.** Comandos, menús y atajos terminan en `CommandId`; lenguajes y sintaxis pasan por `jc-languages`.
 3. **Compatibilidad por niveles, no promesa de 100 %.** Cada formato/API declara qué subconjunto está soportado.
 4. **Datos antes que código.** Se implementan primero recursos declarativos; ejecutar plugins Python es la última etapa.
 5. **Seguridad explícita.** Un paquete no obtiene filesystem, procesos, red o shell implícitamente.
@@ -40,7 +40,7 @@ Formatos candidatos:
 - Los menús se traducen al `MenuModel`.
 - Los builds se convierten en tareas/commands con argumentos explícitos; no se ejecutan por abrir un proyecto.
 - Las sintaxis se usan solo para highlighting/parsing donde su semántica sea compatible.
-- La precedencia entre configuración de JC-IDE y Sublime debe quedar documentada y determinista.
+- La precedencia entre configuración de CIDE y Sublime debe quedar documentada y determinista.
 
 ## Fase B — Paquetes Sublime
 
@@ -50,7 +50,7 @@ Agregar soporte para cargar paquetes desde:
 - archivos `.sublime-package` compatibles;
 - un catálogo de paquetes instalado por el usuario.
 
-Cada paquete tendrá manifiesto interno de JC-IDE con:
+Cada paquete tendrá manifiesto interno de CIDE con:
 
 - nombre y versión;
 - formatos encontrados;
@@ -88,7 +88,7 @@ APIs fuertemente ligadas al renderer de Sublime, internals privados, comportamie
 - no soportados;
 - parcialmente soportados;
 - disponibles solo en GUI;
-- reemplazados por una API nativa de JC-IDE.
+- reemplazados por una API nativa de CIDE.
 
 ## Runtime y seguridad
 
@@ -114,7 +114,7 @@ jc-plugin-api
       └── Tasks
 ```
 
-El host debe poder reiniciarse o terminarse sin cerrar JC-IDE.
+El host debe poder reiniciarse o terminarse sin cerrar CIDE.
 
 Capacidades sensibles requerirán permisos explícitos, por ejemplo:
 
@@ -154,7 +154,7 @@ Opciones:
 
 1. leer repositorios/metadatos compatibles y descargar paquetes;
 2. importar paquetes ya instalados desde una instalación local de Sublime;
-3. mantener un catálogo propio de paquetes verificados para JC-IDE.
+3. mantener un catálogo propio de paquetes verificados para CIDE.
 
 No se ejecutará código remoto durante instalación sin inspección y permisos.
 
@@ -186,7 +186,7 @@ Esto evita el estado ambiguo de “plugin instalado” cuando solo funciona una 
 - mostrar compatibilidad y errores por paquete;
 - probar un conjunto representativo de plugins reales de distintas categorías;
 - medir RAM y tiempo de arranque con cero plugins y con plugins activos;
-- mantener JC-IDE plenamente utilizable con todo el subsistema Sublime deshabilitado.
+- mantener CIDE plenamente utilizable con todo el subsistema Sublime deshabilitado.
 
 ## Fuera de alcance inicial
 
@@ -194,8 +194,8 @@ Esto evita el estado ambiguo de “plugin instalado” cuando solo funciona una 
 - ejecución de módulos binarios arbitrarios;
 - replicar internals privados;
 - garantizar que un plugin orientado exclusivamente a UI gráfica funcione en TUI;
-- incorporar Python al proceso principal de JC-IDE.
+- incorporar Python al proceso principal de CIDE.
 
 ## Resultado esperado
 
-JC-IDE debe poder adoptar sintaxis, snippets, themes, keymaps, build systems y una selección creciente de plugins Sublime sin sacrificar sus objetivos originales de ligereza, aislamiento, teclado coherente y núcleo independiente.
+CIDE debe poder adoptar sintaxis, snippets, themes, keymaps, build systems y una selección creciente de plugins Sublime sin sacrificar sus objetivos originales de ligereza, aislamiento, teclado coherente y núcleo independiente.

@@ -6,8 +6,8 @@ esta sesión. El valor predeterminado es 2. El total incluye el coordinador:
 pool F3, la CPU de otros proveedores ni la decodificación o el diff independientes.
 
 ```powershell
-jc-ide-tui --search-workers 1 --encoding cp1252 programa.p
-jc-ide-tui --encoding utf-8 --search-workers 2 "primer archivo.p" segundo.cs
+cide-tui --search-workers 1 --encoding cp1252 programa.p
+cide-tui --encoding utf-8 --search-workers 2 "primer archivo.p" segundo.cs
 ```
 
 El ejecutor limita el total efectivo al menor entre lo solicitado y las CPUs

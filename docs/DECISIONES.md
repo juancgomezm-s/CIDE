@@ -397,3 +397,21 @@ nuevos exigen Save As y cancel/error detienen restantes sin revertir los ya
 guardados. SaveTarget revalida id/revisión/path/is_new tras modal sin préstamos.
 Fuente/undo/vistas no se clonan; escrituras delegan a FileSession y mantienen
 conflicto/no-clobber. Save As normal comparte el handoff. [Contrato](M2B_SAVE_ALL.md).
+
+## D38 — CIDE visible con compatibilidad de ejecutables
+
+Por decisión del propietario, CIDE sustituye la marca visible. Binarios canónicos
+cide/cide-tui/cide-gui mantienen aliases jc-ide sin duplicar implementación. No se
+renombran crates, raíz ni remoto, ni se reescribe evidencia histórica. Icono original
+JG+CIDE verde para TUI/CLI; variante naranja GUI, procedencia/prompt conservados.
+Recursos Windows se generan con std y MSVC ya disponible, sin dependencias nuevas.
+[Inventario y validación](CIDE_REBRAND.md).
+
+## D39 — GUI de proyecto consume S1 y abre por versión
+
+Campos/resultados nativos acotados reutilizan el controller S1. Preparar presentación
+solo invalida contexto; completions se aceptan por mensaje, no por pintura.
+Apertura versionada compara antes de mutar catálogo/foco y recorre piezas prestadas.
+Un resultado de disco conserva su validación de disco aunque ya haya abierto el
+documento. No nuevo índice/motor ni edición directa desde worker/frontend.
+[Contrato y evidencia](M2B_PROJECT_SEARCH_NATIVE.md).

@@ -1,4 +1,4 @@
-param([string]$Executable='target/release/jc-ide-tui.exe',[string]$OutputPath='docs/benchmarks/F3-conpty.json',[switch]$ProjectSearch,[switch]$DocumentSearch,[string]$GitExecutable,[switch]$GitMetrics,[int]$GitFixtureBytes=0)
+param([string]$Executable='target/release/cide-tui.exe',[string]$OutputPath='docs/benchmarks/F3-conpty.json',[switch]$ProjectSearch,[switch]$DocumentSearch,[string]$GitExecutable,[switch]$GitMetrics,[int]$GitFixtureBytes=0)
 $ErrorActionPreference='Stop'
 if ($ProjectSearch -and $OutputPath -eq 'docs/benchmarks/F3-conpty.json') {$OutputPath='docs/benchmarks/S1-conpty.json'}
 if ($DocumentSearch -and $OutputPath -eq 'docs/benchmarks/F3-conpty.json') {$OutputPath='docs/benchmarks/S0-conpty.json'}

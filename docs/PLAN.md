@@ -371,3 +371,19 @@ siguen implementadas. Próximo bloque amplio M2B: Search Plus de proyecto en GUI
 con controller S1 existente, entrada acotada y resultados versionados/solo lectura.
 No nuevo motor/índice permanente, regex ni dependencies/CI. Construir antes de
 otra ventana de tests; manual/aceptación global permanece abierta.
+
+## CIDE y Search Plus de proyecto GUI — cierre 2026-11-02
+
+Marca visible CIDE; comandos cide/cide-tui/cide-gui con aliases jc-ide compatibles.
+Crates, raíz, remoto e historia no se renombran. Icono original JG+CIDE verde para
+TUI/CLI; variante naranja para GUI, recursos PE de siete tamaños y HWND verificados.
+[Inventario/contrato](CIDE_REBRAND.md).
+
+[S1 gráfico](M2B_PROJECT_SEARCH_NATIVE.md) implementa campos Query/Include/Excludes,
+worker configurable1..4, resultados acotados por notificación, apertura validada,
+refresh, stale/cancel y cambio de raíz. Misma lógica S1; sin índice/motor nuevo.
+391 casos distintos aprobaron por suites (260+131), fmt/Clippy/release y41 checks
+nativos. ZIP local de desarrollo con manifiesto, sin instalación/publicación.
+Quedan los flujos GUI de proyecto replace y diff/status read-only, proveedores y
+puertas físicas/globales ya documentadas. No se cierra M2A/M2B ni se solicita prueba
+manual intermedia; no repetir suites/perfiles aprobados para cambios documentales.

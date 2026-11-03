@@ -4,7 +4,7 @@
 
 ## Regla central
 
-JC-IDE es un editor general. El núcleo universal no debe saber cómo funciona la sintaxis, compilador, base de datos ni generadores de Progress ABL.
+CIDE es un editor general. El núcleo universal no debe saber cómo funciona la sintaxis, compilador, base de datos ni generadores de Progress ABL.
 
 **Tres niveles distintos:**
 

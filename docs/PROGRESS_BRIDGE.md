@@ -1,6 +1,6 @@
 # Puente Progress
 
-El puente evita implementar un compilador ABL propio. JC-IDE prepara una solicitud y una sesión de Progress ejecuta un helper ABL.
+El puente evita implementar un compilador ABL propio. CIDE prepara una solicitud y una sesión de Progress ejecuta un helper ABL.
 
 ## Perfil
 

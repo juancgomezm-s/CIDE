@@ -1,0 +1,1 @@
+{"ok":false,"backend":"Win32/GDI","window":"own_hidden_hwnd","native_paints":0,"native_paint_errors":0,"wall_ms":0,"checks":["startup_shared_open_bytes"],"error":"Native HWND did not expose the CIDE title","physical_display_verified":false,"os_clipboard_verified":false}

@@ -1,0 +1,21 @@
+{
+  "archive": "work/packages/CIDE-windows-dev.zip",
+  "files": 69,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ],
+  "ok": true,
+  "bytes": 3480193,
+  "sha256": "2f2028bf8aaf9a8b5ce3d6d1fed887458aa9c03dee3e410150a574121eec01f3",
+  "all_manifest_hashes_verified": true,
+  "zip_crc_verified": true,
+  "installation_performed": false,
+  "published": false
+}
