@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "archive": "work/packages/CIDE-windows-dev-selection-reopen-2026-11-03.zip",
+  "bytes": 3934566,
+  "sha256": "c7dd7656984b7682255f678b24f4369dba1dade8446f879bd966ce186ac079ef",
+  "members": 69,
+  "crc_all_passed": true,
+  "manifest_hashes_all_passed": true,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ],
+  "channel": "local development; no installer or release certification"
+}

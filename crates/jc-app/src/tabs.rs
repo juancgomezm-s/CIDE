@@ -38,6 +38,9 @@ impl TabManager {
     pub fn can_reopen(&self) -> bool {
         !self.closed.is_empty()
     }
+    pub(crate) fn last_closed_id(&self) -> Option<TabId> {
+        self.closed.back().map(|tab| tab.id)
+    }
 
     pub fn open(&mut self, title: impl Into<String>) -> TabId {
         let id = TabId(self.next_id);

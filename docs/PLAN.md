@@ -460,3 +460,19 @@ Save observados. No repetir navegación/Explorer ni perfiles cerrados para docs.
 Sigue pendiente la paridad de comandos universales restantes del registro en GUI
 (p. ej. búsqueda sobre selección y reapertura de pestaña cerrada); luego API de
 proveedores opcionales conforme al plan. No parser/AVM/CI nuevo; gates globales abiertos.
+
+## Selección literal y ciclo de pestañas GUI — 2026-11-03
+
+[Implementado](M2B_SELECTION_REOPEN.md): selección next/previous, reapertura,
+cancelación explícita y posiciones de pestaña por menú/atajo/paleta sobre comandos
+existentes. Source-selection exige foco/selección lineal y target actual; errores
+de decode/cuota no sustituyen la consulta. Reopen propaga IO y conserva historial;
+rechaza ruta ya abierta para impedir otro buffer. Cierre dirty confirma el mismo
+doc/rev/vista/intención tras modal; solo la última vista crea metadata de cierre.
+
+11 casos dirigidos (cuatro nuevos) y15 checks HWND de sección (ocho nuevos)
+aprobados; fmt/Clippy/release aprobados. Fallos iniciales de montaje diferido/getter
+privado retenidos, sin repetir otros casos aprobados ni suites cerradas.
+Seguimiento M2B: capacidades universales GUI restantes de selección/rectángulo y
+presentación según contratos ya existentes, antes de proveedores opcionales.
+M2A/M2B y gates físicos/globales abiertos; no AVM/dependencias/CI/push nuevos.

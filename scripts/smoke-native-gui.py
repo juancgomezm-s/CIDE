@@ -85,6 +85,16 @@ LINE_EDIT_REQUIRED = {
     "line_edit_modal_explorer_and_stale_palette_no_hidden_edit",
     "line_edit_owned_memory_cleanup_original_source_disk_preserved",
 }
+SELECTION_REOPEN_REQUIRED = {
+    "selection_search_unicode_multiline_four_encodings_flags_preserved",
+    "selection_search_invalid_bytes_range_budget_empty_rectangle_denied",
+    "selection_search_modal_explorer_stale_palette_no_hidden_navigation",
+    "selection_search_cancel_and_view_revision_delivery_not_replayed",
+    "reopen_closed_current_disk_same_tab_new_document",
+    "reopen_closed_dirty_last_view_new_blank_contract",
+    "reopen_closed_error_retry_lifo_metadata_preserved",
+    "tabs_index_last_preserve_caret_selection_flags_and_document_identity",
+}
 
 def ordinary_directory(path):
     info = path.lstat()
@@ -144,7 +154,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--section", choices=("all", "navigation", "line-edit"), default="all")
+    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -169,7 +179,8 @@ def main():
         result = subprocess.run(
             [str(exe), "--git-executable", str(git_executable), "--smoke-fixture", str(fixture), "--smoke-report", str(report), "--smoke-bitmap", str(bitmap)]
                 + (["--smoke-navigation-only"] if args.section == "navigation" else
-                   ["--smoke-line-edit-only"] if args.section == "line-edit" else []),
+                   ["--smoke-line-edit-only"] if args.section == "line-edit" else
+                   ["--smoke-selection-reopen-only"] if args.section == "selection-reopen" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -182,7 +193,8 @@ def main():
     payload = json.loads(report.read_text(encoding="utf-8"))
     required = (NAVIGATION_REQUIRED if args.section == "navigation" else
                 LINE_EDIT_REQUIRED if args.section == "line-edit" else
-                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED)
+                SELECTION_REOPEN_REQUIRED if args.section == "selection-reopen" else
+                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED)
     if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
     if payload.get("backend") != "Win32/GDI" or payload.get("window") != "own_hidden_hwnd" or payload.get("native_paints", 0) < 1:

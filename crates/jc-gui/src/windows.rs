@@ -1,5 +1,6 @@
 mod clipboard;
 mod clipboard_flow;
+mod close_flow;
 mod explorer_paint;
 mod explorer_panel;
 mod explorer_smoke;
@@ -27,6 +28,8 @@ mod save_plan;
 mod save_smoke;
 mod search_paint;
 mod search_panel;
+mod selection_reopen;
+mod selection_reopen_smoke;
 mod selector;
 mod selector_flow;
 mod selector_paint;
@@ -104,6 +107,27 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "Toggle &Block Comment",
     ),
     (118, CommandId::FileSaveAll, "Save A&ll..."),
+    (119, CommandId::FileReopenClosed, "Reopen Closed &Tab"),
+    (194, CommandId::SearchSelectionNext, "Find Selection Ne&xt"),
+    (
+        195,
+        CommandId::SearchSelectionPrevious,
+        "Find Selection Pre&vious",
+    ),
+    (
+        196,
+        CommandId::SearchCancel,
+        "Cancel Document S&earch / Rectangle",
+    ),
+    (180, CommandId::Tab1, "Tab &1"),
+    (181, CommandId::Tab2, "Tab &2"),
+    (182, CommandId::Tab3, "Tab &3"),
+    (183, CommandId::Tab4, "Tab &4"),
+    (184, CommandId::Tab5, "Tab &5"),
+    (185, CommandId::Tab6, "Tab &6"),
+    (186, CommandId::Tab7, "Tab &7"),
+    (187, CommandId::Tab8, "Tab &8"),
+    (188, CommandId::Tab9, "&Last Tab (Alt+9)"),
     (120, CommandId::EditorSplitRight, "Split &Right"),
     (121, CommandId::EditorOneGroup, "&One Group"),
     (122, CommandId::EditorFocusPrimary, "Focus Group &1"),
@@ -248,6 +272,7 @@ struct State {
     pub smoke: bool,
     smoke_root: Option<PathBuf>,
     smoke_save_paths: std::collections::VecDeque<Option<PathBuf>>,
+    smoke_close_decisions: std::collections::VecDeque<bool>,
     save_all_active: bool,
     pub key_override: Option<Modifiers>,
 }
@@ -339,6 +364,7 @@ impl State {
                 .and_then(|s| s.fixture.parent())
                 .and_then(|p| p.canonicalize().ok()),
             smoke_save_paths: Default::default(),
+            smoke_close_decisions: Default::default(),
             save_all_active: false,
             key_override: None,
         };
@@ -460,6 +486,14 @@ impl State {
             return Action::None;
         }
         match command {
+            CommandId::FileReopenClosed => {
+                self.reopen_tab();
+                return Action::None;
+            }
+            CommandId::SearchSelectionNext | CommandId::SearchSelectionPrevious => {
+                self.search_selection(command);
+                return Action::None;
+            }
             CommandId::SearchGoToPosition => {
                 self.open_navigation_panel();
                 return Action::None;
@@ -579,6 +613,17 @@ impl State {
             | CommandId::TabPrevious => {
                 self.explorer_focused = false;
             }
+            CommandId::Tab1
+            | CommandId::Tab2
+            | CommandId::Tab3
+            | CommandId::Tab4
+            | CommandId::Tab5
+            | CommandId::Tab6
+            | CommandId::Tab7
+            | CommandId::Tab8
+            | CommandId::Tab9 => {
+                self.explorer_focused = false;
+            }
             CommandId::FileOpen => return Action::Open(false),
             CommandId::FileSaveAs => return Action::SaveAs,
             CommandId::FileClose => return Action::CloseTab,
@@ -614,6 +659,10 @@ impl State {
                 .into()
             }
             Ok(CommandOutcome::None) => {
+                if command == CommandId::SearchCancel {
+                    self.status = "Document search / rectangle cancelled".into();
+                    return Action::None;
+                }
                 if line_edit::is_line_edit(command) {
                     let label = self.registry.get(command).map_or("Line edit", |s| s.label);
                     let edit_after = self
@@ -1303,49 +1352,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                 }
             }
         }
-        Action::CloseTab => {
-            // F1 decides whether this closes only a view or needs a decision
-            // for the last dirty document. Do not duplicate view-count logic.
-            let decision = if let Some(owner) = owner(hwnd) {
-                let mut state = owner.state.borrow_mut();
-                match state.workbench.close_active(false) {
-                    Ok(decision) => decision,
-                    Err(error) => {
-                        state.error(error);
-                        return;
-                    }
-                }
-            } else {
-                return;
-            };
-            let Some(tab) = decision else {
-                return;
-            };
-            if owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke) {
-                owner(hwnd).unwrap().state.borrow_mut().status =
-                    "Smoke prevented an unexpected discard dialog".into();
-                return;
-            }
-            if MessageBoxW(
-                hwnd,
-                wide("Discard unsaved changes in this tab? Save first to keep them.").as_ptr(),
-                wide("CIDE").as_ptr(),
-                0x134,
-            ) != 6
-            {
-                return;
-            }
-            if let Some(owner) = owner(hwnd) {
-                let mut state = owner.state.borrow_mut();
-                if state.workbench.tabs().active_id() != Some(tab) {
-                    state.status = "Active tab changed before close confirmation".into();
-                    return;
-                }
-                if let Err(error) = state.workbench.close_active(true) {
-                    state.error(error);
-                }
-            }
-        }
+        Action::CloseTab => close_flow::perform(hwnd),
         Action::Exit => {
             let dirty = owner(hwnd)
                 .is_some_and(|owner| owner.state.borrow().workbench.context().dirty_documents > 0);
@@ -1392,7 +1399,11 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
             return Err(os_error("AppendMenu"));
         }
         for (id, command, label) in COMMANDS.iter().filter(|(id, _, _)| {
-            (*id >= start && *id < end) || (start == 110 && (170..176).contains(id))
+            (*id >= start && *id < end)
+                || (start == 110 && (170..176).contains(id))
+                || (start == 101 && *id == 119)
+                || (start == 130 && (194..197).contains(id))
+                || (start == 160 && (180..189).contains(id))
         }) {
             let text = match keymap.primary_shortcut(*command) {
                 Some(shortcut) => format!("{label}\t{shortcut}"),

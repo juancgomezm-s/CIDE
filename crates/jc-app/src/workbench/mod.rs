@@ -868,20 +868,40 @@ impl Workbench {
     }
 
     pub fn reopen_closed(&mut self) -> bool {
+        self.try_reopen_closed().unwrap_or(false)
+    }
+
+    /// Recreate from minimal metadata, never discarded content/undo. Failures
+    /// keep both closed stacks and the current document/view untouched.
+    pub fn try_reopen_closed(&mut self) -> Result<bool, WorkbenchError> {
         let Some(closed) = self.closed_documents.last() else {
-            return false;
+            return Ok(false);
         };
+        if self.tabs.last_closed_id() != Some(closed.tab) {
+            return Err(
+                FileError::Io(std::io::Error::other("Closed-tab history is inconsistent")).into(),
+            );
+        }
+        let canonical = std::fs::canonicalize(&closed.path).ok();
+        if self.documents.iter().any(|document| {
+            document.session.path() == closed.path
+                || canonical.as_ref().is_some_and(|path| {
+                    std::fs::canonicalize(document.session.path()).ok().as_ref() == Some(path)
+                })
+        }) {
+            return Err(FileError::Io(std::io::Error::other(
+                "Closed path is already open; select its existing tab. Closed history retained",
+            ))
+            .into());
+        }
         let session = if closed.new_file {
             FileSession::new(&closed.path, closed.encoding.unwrap_or(TextEncoding::Utf8))
         } else {
-            let Ok(session) = FileSession::open(&closed.path, closed.encoding) else {
-                return false;
-            };
-            session
+            FileSession::open(&closed.path, closed.encoding)?
         };
         let expected = closed.tab;
         if self.tabs.reopen_last() != Some(expected) {
-            return false;
+            unreachable!("closed stacks validated before source admission");
         }
         self.closed_documents.pop();
         let cursor = session_content_start(&session);
@@ -897,7 +917,7 @@ impl Workbench {
         self.panes
             .navigate(NavLocation::new(expected, cursor), false);
         let _ = self.rebuild_search();
-        true
+        Ok(true)
     }
 
     /// Validate all text and byte boundaries before publishing a transaction.

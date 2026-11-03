@@ -40,6 +40,8 @@ mod quick_open_tests;
 #[cfg(test)]
 mod rectangle_tests;
 #[cfg(test)]
+mod selection_reopen_integration_tests;
+#[cfg(test)]
 mod tests;
 
 use crate::render;

@@ -25,7 +25,7 @@ impl Workbench {
                 None => Ok(CommandOutcome::None),
             },
             FileReopenClosed => {
-                self.reopen_closed();
+                self.try_reopen_closed()?;
                 Ok(CommandOutcome::None)
             }
             FileExit => Ok(CommandOutcome::ExitRequested),

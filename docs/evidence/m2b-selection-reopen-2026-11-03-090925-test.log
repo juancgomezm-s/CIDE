@@ -1,0 +1,27 @@
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.29s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 4 tests
+test app::selection_reopen_integration_tests::tab_indices_last_and_alt_keys_preserve_per_document_carets_selection_and_flags ... ok
+test app::selection_reopen_integration_tests::selected_search_cancel_and_late_view_revision_delivery_do_not_replay_navigation ... FAILED
+test app::selection_reopen_integration_tests::selected_multiline_search_preserves_encoding_flags_and_rejects_invalid_raw_ranges ... ok
+test app::selection_reopen_integration_tests::reopen_observes_disk_lifo_retry_collision_last_view_and_new_blank_contracts ... ok
+
+failures:
+
+---- app::selection_reopen_integration_tests::selected_search_cancel_and_late_view_revision_delivery_do_not_replay_navigation stdout ----
+
+thread 'app::selection_reopen_integration_tests::selected_search_cancel_and_late_view_revision_delivery_do_not_replay_navigation' panicked at crates\jc-tui\src\app\selection_reopen_integration_tests.rs:286:5:
+assertion `left == right` failed
+  left: [110, 105, 195, 177, 111, 13, 10, 102, 105, 110, 124, 88]
+ right: [88, 124, 110, 105, 195, 177, 111, 13, 10, 102, 105, 110]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    app::selection_reopen_integration_tests::selected_search_cancel_and_late_view_revision_delivery_do_not_replay_navigation
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 86 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p jc-tui --lib`

@@ -464,3 +464,14 @@ y revalida al aceptar, sin clonar editores. Menús comprueban disponibilidad ant
 de cerrar overlays. Los bytes, transacciones, undo y geometría de vistas siguen en
 aplicación; paint solo presenta. Semántica caretline/EOF y límites de asignaciones
 existentes quedan explícitos en [contrato/evidencia](M2B_NATIVE_LINE_EDIT.md).
+
+## D44 — Selección estricta y reapertura desde metadata, no recuperación
+
+La selección literal usa S0/flags actuales y límites de rango y UTF8, rechazando
+invalid decode/expansión antes de modificar query. GUI revalida control y origen
+de paleta; cancelación/tabs usan el registro existente. try_reopen_closed propaga
+lectura fallida y mantiene stacks; colisión exacta/canónica con un path abierto
+falla explícitamente para conservar su buffer dirty. Solo metadata32, no documento
+cerrado/undo; saved-file usa disco actual y new-file vacío. La confirmación dirty
+revalida doc/rev/encoding/vista/pane/caret/anchor tras modal, delegando cuentas de
+vistas a F1. [Contrato y evidencia](M2B_SELECTION_REOPEN.md).

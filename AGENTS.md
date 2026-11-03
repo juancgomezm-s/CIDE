@@ -363,3 +363,21 @@ fmt/Clippy/release approved. No navigation/Explorer suites or closed profiles re
 Continue remaining universal GUI parity before optional provider APIs. Manual/global
 gates, omitted optional symlink and two missing GNU notices remain open. No new
 provider/AVM/dependency/install, CI, push, publication or intermediate manual request.
+
+## Selection search and reopen closure
+
+Read docs/M2B_SELECTION_REOPEN.md. GUI selection next/previous, ReopenClosed,
+SearchCancel and Tab1…9 share registry/Workbench. Source selection requires Editor
+input/linear selection and current palette target; cap both raw range and decoded
+UTF8 before query mutation. Complete cached queries may navigate immediately;
+deferred-delivery tests must force a new Running scan before editing the source.
+try_reopen_closed propagates errors without consuming closed metadata; old bool
+API delegates. Already-open exact/canonical paths fail without another buffer or
+dirty reload. Reopen uses current disk or blank new-file, sameTabId/newDocumentId,
+no discarded draft/undo recovery. close_flow owns the sole native confirmation
+route and revalidates source intention; F1 still decides view vs last document.
+11 directed cases and15 own-HWND checks passed (4/8 new), fmt/Clippy/release approved.
+Retain setup/compile fixture failures and hashes; no closed suites/profiles rerun.
+Continue remaining universal GUI selection/rectangle parity under existing scope;
+manual/global gates, omitted symlink and GNU notices remain open. No new provider,
+AVM/dependency/install/security changes, CI, push or publication.

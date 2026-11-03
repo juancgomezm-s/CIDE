@@ -1,0 +1,9 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.18s
+     Running tests\workbench.rs (target\debug\deps\workbench-8274ef34e5eb93ed.exe)
+
+running 1 test
+test reopen_closed_tab_restores_the_same_document_session ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+

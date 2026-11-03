@@ -450,3 +450,20 @@ Evidencia m2b-line-edit-2026-11-03-* con fuentes/binarios y PNGGDI sin pérdida.
 Sigue inventario de paridad universal GUI restante antes de proveedores opcionales;
 no añadir AVM/regex/dependencias/CI/push. Manual/global al final; GNU notices y
 symlink omitido siguen pendientes, no inferir certificación de distribución.
+
+## Último cierre: selección y reapertura — 2026-11-03
+
+Leer M2B_SELECTION_REOPEN.md. SearchSelectionNext/Previous, FileReopenClosed,
+SearchCancel y Tab1…9 ya están en GUI teclado/menús/paleta. S0 literal conserva
+flags/cuotas; decodedUTF8>4096 se rechaza antes de set_query. Un resultado Complete
+vigente puede navegar sincrónicamente; test tardío debe iniciar Running nuevo.
+try_reopen_closed informa IO/collision sin consumir metadata, bool wrapper compat;
+no recuperar dirty descartado o undo destruido. MismoTabId, DocumentId nuevo;
+new-file vacío, saved-file disco actual. No segundo buffer para path ya abierto.
+close_flow reemplazó inline y revalida SourceEditTarget después de confirmación.
+
+11 casos dirigidos y15 propios-HWND aprobados (4/8 nuevos), fmt/Clippy/release.
+Evidencia m2b-selection-reopen-2026-11-03-*; dos fallos de arnés conservados, ninguna
+suite cerrada/perfil repetido. Seguir capacidades universales GUI restantes de
+selección/rectángulo antes de proveedores. No nuevos servicios/AVM/CI/push ni
+preguntas manuales ahora; globales/físicos/notices GNU/symlink siguen pendientes.

@@ -1122,3 +1122,29 @@ revisados. [Evidencia](M2B_NATIVE_LINE_EDIT.md),
 Explorer ni perfiles cerrados repetidos. Sin CI/push/dependencias/instalaciones,
 AVM o clipboard OS. Manual/global, Linux, symlink omitido y notices GNU pendientes
 siguen separados; M2A/M2B no se cierran por este bloque funcional.
+
+## Selección literal y reapertura GUI — 2026-11-03
+
+Construcción integral antes de checks; **11 casos dirigidos** aprobados:dos core,
+cuatro TUI nuevos y cinco parser CLI. Primera TUI:3 aprobados/1 falló por asumir
+scan pendiente con query Complete; corregido setup para exigir Running/selección
+original y repetido solo ese caso. Primer compile GUI falló por getter privado
+en fixture; usa ahora observación de vistas públicas y cola de decisiones propia.
+Se retienen ambos logs. fmt, Clippy workspace/all-targets -D warnings y release
+bins/examples aprobados; no corrida global del workspace ni API ampliada para tests.
+
+**15 checks nativos aprobados**, ocho nuevos y siete arranque/pintura, sección
+selection-reopen; un WM_PAINT/cero errores. Cuatro encodings y selección multiline,
+flags,4096 raw válido/4098raw y8192UTF8expansion rechazados, invalidbytes/empty/rect,
+foco y paleta stale, cancel y versión/vista tardías. Saved-file reaparece con disco
+actual/TabId retenido/DocumentId nuevo, sin undo; new-file vacío. Cierre compartido
+no crea closedentry, último dirty cancel/discard y confirmación obsoleta verificados;
+missingfile retry/LIFO y colisión con dirty abierto preservan metadata/datos. Tab1…8/
+último mantienen identidad/caret/selección/flags. Sin guardado del fixture original13B.
+
+Dos PNG1000×650 GDI→PNG sin pérdida revisados, fuente y metadataGit propias intactas
+(no otra suite de proveedores). Seis ayudas e iconos PE aprobados.
+[Contrato/reportes/logs](M2B_SELECTION_REOPEN.md),
+[hashes](evidence/m2b-selection-reopen-2026-11-03-metadata.json). No suites cerradas
+de líneas/nav/Explorer ni perfiles repetidos, OS clipboard/AVM/CI/push o instalación.
+M2A/M2B y gates físicos/globales siguen abiertos; notices GNU/symlink no resueltos.

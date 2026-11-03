@@ -11,6 +11,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut bitmap = None;
     let mut navigation_only = false;
     let mut line_edit_only = false;
+    let mut selection_reopen_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -38,6 +39,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     );
                 }
                 options.git_executable = Some(path);
+            }
+            Some("--smoke-selection-reopen-only") => {
+                if selection_reopen_only {
+                    return Err("duplicate --smoke-selection-reopen-only".into());
+                }
+                selection_reopen_only = true;
             }
             Some("--search-workers") => {
                 if options.search_workers.is_some() {
@@ -90,7 +97,11 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             _ => options.paths.push(PathBuf::from(arg)),
         }
     }
-    if navigation_only && line_edit_only {
+    if usize::from(navigation_only)
+        + usize::from(line_edit_only)
+        + usize::from(selection_reopen_only)
+        > 1
+    {
         return Err("choose only one smoke section".into());
     }
     if fixture.is_some()
@@ -98,6 +109,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || bitmap.is_some()
         || navigation_only
         || line_edit_only
+        || selection_reopen_only
     {
         if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("smoke uses only its explicit fixture".into());
@@ -117,6 +129,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             bitmap,
             navigation_only,
             line_edit_only,
+            selection_reopen_only,
         });
     }
     Ok(Some(options))
@@ -261,6 +274,23 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(line_edit.smoke.unwrap().line_edit_only);
+        let selection_reopen = args(&[
+            "--smoke-selection-reopen-only",
+            "--smoke-fixture",
+            &fixture,
+            "--smoke-report",
+            &report,
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(selection_reopen.smoke.unwrap().selection_reopen_only);
+        assert!(args(&["--smoke-selection-reopen-only"]).is_err());
+        assert!(args(&[
+            "--smoke-selection-reopen-only",
+            "--smoke-selection-reopen-only"
+        ])
+        .is_err());
+        assert!(args(&["--smoke-line-edit-only", "--smoke-selection-reopen-only"]).is_err());
         assert!(args(&["--smoke-line-edit-only"]).is_err());
         assert!(args(&["--smoke-line-edit-only", "--smoke-line-edit-only"]).is_err());
         assert!(args(&["--smoke-navigation-only", "--smoke-line-edit-only"]).is_err());

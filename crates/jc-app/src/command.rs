@@ -320,8 +320,8 @@ fn linear_document(ctx: &CommandContext) -> bool {
 fn linear_editor(ctx: &CommandContext) -> bool {
     linear_document(ctx) && ctx.focus == PrimaryFocus::Editor && ctx.editor_input
 }
-fn linear_selection(ctx: &CommandContext) -> bool {
-    selection(ctx) && !ctx.rectangular_selection
+fn source_selection(ctx: &CommandContext) -> bool {
+    linear_editor(ctx) && ctx.has_selection
 }
 fn paste(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.clipboard_has_text
@@ -481,13 +481,13 @@ pub fn default_registry() -> CommandRegistry {
             SearchSelectionNext,
             Search,
             "Find Selection Next",
-            linear_selection
+            source_selection
         ),
         spec!(
             SearchSelectionPrevious,
             Search,
             "Find Selection Previous",
-            linear_selection
+            source_selection
         ),
         spec!(
             SearchGoToPosition,

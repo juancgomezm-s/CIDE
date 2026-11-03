@@ -365,7 +365,7 @@ impl Workbench {
             .read_range(range.clone())
             .map_err(FileError::from)?;
         let decoded = decode_fragment(&bytes, encoding, range.start);
-        if !decoded.issues.is_empty() {
+        if !decoded.issues.is_empty() || decoded.text.len() > 4096 {
             return Err(WorkbenchError::SearchInput);
         }
         self.set_search_query(decoded.text)?;
