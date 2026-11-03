@@ -13,7 +13,7 @@ use std::path::Path;
 const MAX_ROWS: usize = 256;
 const MAX_COLUMNS: usize = 256;
 const PATH_LIMIT: usize = 4096;
-const POLICY: &str = "no renames/submodules";
+const POLICY: &str = "sin renombrados/submódulos";
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct GitStatusPresentation {
@@ -123,7 +123,7 @@ impl ViewState {
             })
             .collect();
         GitStatusPresentation {
-            title: plain_prefix("Git status [iso]", width),
+            title: plain_prefix("Estado Git [aislado]", width),
             message: plain_prefix(&format!("{message} | {POLICY}"), width),
             rows,
             total,
@@ -153,7 +153,7 @@ impl GitStatusView {
         {
             self.controller.cancel();
             self.view.options = None;
-            let message = "Choose absolute repository and Git paths";
+            let message = "Elige rutas absolutas del repositorio y de Git";
             self.view.mode = Mode::Rejected(message);
             return Err(message.into());
         }
@@ -266,10 +266,10 @@ impl GitStatusView {
 
 fn request_error(error: GitStatusRequestError) -> &'static str {
     match error {
-        GitStatusRequestError::InvalidOptions => "Invalid Git status configuration",
-        GitStatusRequestError::NoConfiguration => "Configure repository and Git first",
-        GitStatusRequestError::GenerationExhausted => "Git status generation exhausted",
-        GitStatusRequestError::WorkerUnavailable => "Git status worker unavailable",
+        GitStatusRequestError::InvalidOptions => "Configuración de estado Git inválida",
+        GitStatusRequestError::NoConfiguration => "Configura primero el repositorio y Git",
+        GitStatusRequestError::GenerationExhausted => "Se agotó la generación del estado Git",
+        GitStatusRequestError::WorkerUnavailable => "El lector de estado Git no está disponible",
     }
 }
 fn state_message(state: GitStatusTaskState, failure: Option<&GitStatusFailure>) -> &'static str {
@@ -279,18 +279,18 @@ fn state_message(state: GitStatusTaskState, failure: Option<&GitStatusFailure>) 
             GitReadError::ConfiguredFilter
         )))
     ) {
-        return "Filters unsupported";
+        return "Filtros no admitidos";
     }
     match state {
-        GitStatusTaskState::Idle => "Request status",
-        GitStatusTaskState::Queued => "Queued",
-        GitStatusTaskState::Running => "Reading",
-        GitStatusTaskState::Ready => "Ready",
-        GitStatusTaskState::Limited => "Limited; refresh",
-        GitStatusTaskState::Cancelled => "Cancelled",
-        GitStatusTaskState::Stale => "Stale; refresh",
-        GitStatusTaskState::Failed => "Status failed",
-        GitStatusTaskState::TimedOut => "Timed out; refresh",
+        GitStatusTaskState::Idle => "Solicitar estado",
+        GitStatusTaskState::Queued => "En cola",
+        GitStatusTaskState::Running => "Leyendo",
+        GitStatusTaskState::Ready => "Listo",
+        GitStatusTaskState::Limited => "Límite alcanzado; actualiza",
+        GitStatusTaskState::Cancelled => "Cancelado",
+        GitStatusTaskState::Stale => "Obsoleto; actualiza",
+        GitStatusTaskState::Failed => "Falló la lectura del estado",
+        GitStatusTaskState::TimedOut => "Tiempo agotado; actualiza",
     }
 }
 fn change(change: GitStatusChange) -> char {
@@ -455,25 +455,25 @@ mod tests {
             mode: Mode::Current,
             ..ViewState::default()
         };
-        let first = view.prepare(Some(&snapshot), "Ready", 20, 4);
+        let first = view.prepare(Some(&snapshot), "Listo", 20, 4);
         assert_eq!(first.total, 2000);
         assert_eq!(first.rows.len(), 4);
         assert_eq!(first.rows[0].ordinal, 0);
         assert!(first.rows.iter().all(|r| r.path.chars().count() <= 16));
         assert!(view.select(1999, 2000));
-        let last = view.prepare(Some(&snapshot), "Ready", 12, 3);
+        let last = view.prepare(Some(&snapshot), "Listo", 12, 3);
         assert_eq!(
             last.rows.iter().map(|r| r.ordinal).collect::<Vec<_>>(),
             vec![1997, 1998, 1999]
         );
         assert!(last.rows.last().unwrap().selected);
-        let larger = view.prepare(Some(&snapshot), "Ready", 40, 8);
+        let larger = view.prepare(Some(&snapshot), "Listo", 40, 8);
         assert_eq!(larger.rows.len(), 8);
         assert!(larger.rows.last().unwrap().selected);
-        let hidden = view.prepare(Some(&snapshot), "Ready", 0, 0);
+        let hidden = view.prepare(Some(&snapshot), "Listo", 0, 0);
         assert!(hidden.rows.is_empty());
         assert_eq!(hidden.selected, 1999);
-        let capped = view.prepare(Some(&snapshot), "Ready", u16::MAX, u16::MAX);
+        let capped = view.prepare(Some(&snapshot), "Listo", u16::MAX, u16::MAX);
         assert_eq!(capped.rows.len(), MAX_ROWS);
         assert!(capped
             .rows
@@ -489,7 +489,7 @@ mod tests {
             mode: Mode::Current,
             ..ViewState::default()
         };
-        assert_eq!(state.prepare(Some(&snapshot), "Ready", 40, 3).rows.len(), 1);
+        assert_eq!(state.prepare(Some(&snapshot), "Listo", 40, 3).rows.len(), 1);
         assert!(!state.validate_context(Some(&configured.root), Some(&configured.git_executable)));
         assert!(state.validate_context(Some(Path::new("root-b")), Some(&configured.git_executable)));
         assert_eq!(state.mode, Mode::Stale);
@@ -501,7 +501,7 @@ mod tests {
         state.options = Some(configured);
         state.mode = Mode::Cancelled;
         assert!(state
-            .prepare(Some(&snapshot), "Cancelled", 40, 3)
+            .prepare(Some(&snapshot), "Cancelado", 40, 3)
             .rows
             .is_empty());
         assert!(state.validate_context(None, None));
@@ -565,11 +565,11 @@ mod tests {
             GitStatusFailure::Provider(GitStatusError::Read(GitReadError::ConfiguredFilter));
         assert_eq!(
             state_message(GitStatusTaskState::Failed, Some(&failure)),
-            "Filters unsupported"
+            "Filtros no admitidos"
         );
         let mut view = ViewState::default();
-        let frame = view.prepare(None, "Filters unsupported", 64, 4);
-        assert!(frame.title.contains("iso"));
+        let frame = view.prepare(None, "Filtros no admitidos", 64, 4);
+        assert!(frame.title.contains("aislado"));
         assert!(frame.message.contains(POLICY));
         assert!(frame.rows.is_empty());
     }

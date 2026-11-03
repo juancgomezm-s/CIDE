@@ -100,6 +100,7 @@ pub(crate) struct EditorText {
     pub cursor_column: Option<usize>,
 }
 pub(crate) struct Presentation<'a> {
+    pub markdown: Option<jc_app::markdown_preview::MarkdownPresentation>,
     pub app: &'a TuiApp,
     pub layout: FrameLayout,
     pub primary: EditorText,
@@ -149,7 +150,11 @@ impl TuiApp {
         let mut secondary = EditorText::default();
         let mut search_positions = Vec::new();
         let mut status_position = None;
-        if layout.width >= 40 && layout.height >= 10 && !self.open_diff_visible {
+        if layout.width >= 40
+            && layout.height >= 10
+            && !self.open_diff_visible
+            && self.markdown_ui.is_none()
+        {
             let number_width = self
                 .workbench
                 .active_document()
@@ -246,7 +251,7 @@ impl TuiApp {
                                 }
                             });
                             row.unwrap_or_else(|| {
-                                "[Unicode layout unavailable/budget]"
+                                "[Layout Unicode no disponible: límite]"
                                     .chars()
                                     .take(text_width)
                                     .enumerate()
@@ -332,7 +337,7 @@ impl TuiApp {
             if self.panels.sidebar_visible()
                 && self.panels.sidebar() == jc_app::SidebarView::Explorer
             {
-                usize::from(layout.content_height.saturating_sub(2))
+                usize::from(layout.content_height.saturating_sub(4))
             } else {
                 0
             },
@@ -366,6 +371,10 @@ impl TuiApp {
             usize::from(layout.width.saturating_sub(8)),
         );
         Presentation {
+            markdown: self.prepare_markdown(
+                usize::from(layout.height.saturating_sub(7)),
+                usize::from(layout.width.saturating_sub(6)),
+            ),
             snippet,
             source,
             open_diff,

@@ -108,22 +108,17 @@ fn clipped(value: &str, columns: usize) -> Vec<u16> {
     clipped_parts(&[value], columns)
 }
 fn clipped_parts(values: &[&str], columns: usize) -> Vec<u16> {
-    let mut text = String::with_capacity(columns.min(100));
-    for ch in values.iter().flat_map(|value| value.chars()) {
-        if text.len() >= columns.min(100) {
+    let limit = columns.min(100);
+    let mut text = String::new();
+    let mut used = 0usize;
+    for value in values {
+        let part = jc_app::source_services::display_ui_label(value, limit.saturating_sub(used));
+        used += jc_text::grapheme::graphemes(&part)
+            .map(jc_text::grapheme::width)
+            .sum::<usize>();
+        text.push_str(&part);
+        if used >= limit {
             break;
-        }
-        if ch.is_ascii() && !ch.is_control() {
-            text.push(ch);
-            continue;
-        }
-        // Prepared fields/results already contain ASCII. Defensive escaping of
-        // status/title strings cannot emit controls or an invisible bidi glyph.
-        for escaped in ch.escape_default() {
-            if text.len() >= columns.min(100) {
-                return wide(&text);
-            }
-            text.push(escaped);
         }
     }
     wide(&text)
@@ -155,12 +150,12 @@ pub(super) unsafe fn draw(
         cw,
         ch,
         PanelLabels {
-            draft: "Project Search Plus - draft",
-            policy: "Literal case-sensitive | exact EOL | no permanent index",
+            draft: "Search Plus de proyecto: borrador",
+            policy: "Literal, distingue mayúsculas | EOL exacto | sin índice permanente",
             footer: if p.results.is_some() {
-                "Enter open | arrows select | F5 refresh | F2 edit | Esc cancel"
+                "Intro abre | flechas eligen | F5 actualiza | F2 edita | Esc cancela"
             } else {
-                "Enter search | Tab field | F2 LF F4 CRLF | Ctrl+V paste | Esc"
+                "Intro busca | Tab cambia campo | F2 LF F4 CRLF | Ctrl+V pega | Esc"
             },
         },
     )
@@ -359,9 +354,13 @@ mod tests {
         );
         let units = clipped("line\r\n\t\u{202e}é", 100);
         assert_eq!(units.last(), Some(&0));
-        assert!(units[..units.len() - 1]
-            .iter()
-            .all(|&u| (32..=126).contains(&u)));
+        let text = String::from_utf16(&units[..units.len() - 1]).unwrap();
+        assert_eq!(text, "line\\r\\n\\t\\u{202e}é");
+        assert!(!text.chars().any(char::is_control));
+        assert_eq!(
+            String::from_utf16(&clipped("Edición de código", 7)[..7]).unwrap(),
+            "Edición"
+        );
         assert!(clipped(&"x".repeat(1000), usize::MAX).len() <= 101);
     }
 }

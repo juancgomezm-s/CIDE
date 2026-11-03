@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "physical_display_verified": false,
+  "os_clipboard_verified": false,
+  "avm_started": false,
+  "raster_scope": "decoded VT cells and emitted RGB/attributes, not a physical terminal screenshot",
+  "checks": [
+    "spanish_menus_rgb_and_eight_real_alt_underlines",
+    "spanish_sidebar_focus_and_visible_navigation_help",
+    "markdown_preview_formatted_inert_readonly_and_return_source",
+    "spanish_compact_resize_retains_focus_and_source"
+  ],
+  "exit_code": 0,
+  "fixture_unchanged": true,
+  "vt_bytes": 58733
+}

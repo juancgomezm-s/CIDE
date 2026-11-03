@@ -108,6 +108,10 @@ pub(super) struct Frame {
     project: Option<super::project_panel::ProjectPresentation>,
     replacement: Option<super::replace_panel::ReplaceFrame>,
     git: Option<super::git_panel::GitFrame>,
+    comparison: Option<super::open_diff_panel::ComparisonFrame>,
+    source: Option<super::git_panel::GitFrame>,
+    snippet: Option<super::git_panel::GitFrame>,
+    markdown: Option<super::markdown_panel::MarkdownFrame>,
     explorer: Option<super::explorer_panel::ExplorerFrame>,
     bottom: Option<super::bottom_panel::BottomFrame>,
 }
@@ -436,7 +440,8 @@ pub(super) fn prepare(state: &mut State) -> Frame {
     state.syntax_pending = false;
     state.syntax_targets = [None, None];
     state.validate_project_search();
-    let areas = areas(state);
+    let covered = state.open_diff_visible || state.markdown_gui.is_some();
+    let areas = if covered { Vec::new() } else { areas(state) };
     let columns = areas.first().map_or(1, |(_, rect)| {
         ((rect.right - rect.left) / state.cell_width - 7).clamp(1, 256) as usize
     });
@@ -444,7 +449,9 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         ((rect.bottom - rect.top - state.cell_height - 6) / state.cell_height).clamp(1, 128)
             as usize
     });
-    state.workbench.reveal_active_pane(rows, columns);
+    if !covered {
+        state.workbench.reveal_active_pane(rows, columns);
+    }
     let mut panes = Vec::with_capacity(areas.len());
     let mut glyph_budget = jc_app::MAX_PRESENTATION_TEXT_BYTES;
     let mut syntax_limited = false;
@@ -537,7 +544,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                 }
             })
             .unwrap_or_else(|| {
-                "[Unicode layout unavailable/budget]"
+                "[Layout Unicode no disponible: límite]"
                     .chars()
                     .take(columns)
                     .enumerate()
@@ -660,22 +667,22 @@ pub(super) fn prepare(state: &mut State) -> Frame {
     let encoding = state
         .workbench
         .active_encoding()
-        .map_or("choose encoding", |encoding| encoding.name());
+        .map_or("elige codificación", |encoding| encoding.name());
     let status = wide(&format!(
-        "Ln {} Col {} (scalar) · {encoding}{}{} · {}",
+        "Lín {} Col {} (escalar) · {encoding}{}{} · {}",
         position.line + 1,
         position.column + 1,
         if state.workbench.panes().scroll_linked() {
-            " · Scroll linked"
+            " · Desplazamiento vinculado"
         } else {
             ""
         },
         if state.syntax_pending {
-            " · Syntax preparing"
+            " · Preparando resaltado"
         } else if syntax_limited {
-            " · Syntax plain: budget"
+            " · Texto plano: límite"
         } else if syntax_plain {
-            " · Syntax: plain"
+            " · Resaltado: texto plano"
         } else {
             ""
         },
@@ -698,6 +705,10 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         project: state.project_presentation(),
         replacement: state.replace_presentation(),
         git: state.git_presentation(),
+        comparison: state.open_diff_presentation(),
+        source: state.source_presentation(),
+        snippet: state.snippet_presentation(),
+        markdown: state.markdown_presentation(),
         explorer: state.explorer_presentation(),
         bottom: state.bottom_presentation(),
         selector: state.selector_presentation(super::selector_paint::list_capacity(
@@ -958,6 +969,37 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                 policy: git.labels.policy,
                 footer: git.labels.footer,
             },
+        )?;
+    }
+    if let Some(p) = &frame.comparison {
+        super::open_diff_panel::draw(dc, p)?;
+    }
+    if let Some(p) = &frame.markdown {
+        super::markdown_panel::draw(dc, p)?;
+    }
+    for p in [&frame.source, &frame.snippet].into_iter().flatten() {
+        super::project_paint::draw_labeled(
+            dc,
+            &p.panel,
+            frame.width,
+            frame.height,
+            frame.cell_width,
+            frame.cell_height,
+            super::project_paint::PanelLabels {
+                draft: p.labels.draft,
+                policy: p.labels.policy,
+                footer: p.labels.footer,
+            },
+        )?;
+    }
+    if let Some(p) = &frame.selector {
+        super::selector_paint::draw(
+            dc,
+            p,
+            frame.width,
+            frame.height,
+            frame.cell_width,
+            frame.cell_height,
         )?;
     }
     drop(selected);

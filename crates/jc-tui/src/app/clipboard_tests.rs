@@ -105,7 +105,7 @@ fn clipboard_tui_bad_encoding_or_oversize_paste_is_atomic_and_bom_is_retained() 
     m.borrow_mut().text = Some("😀".into());
     paste(&mut a);
     assert_eq!(a.workbench.active_bytes().unwrap(), before);
-    assert!(a.status.contains("encoding"));
+    assert!(a.status.contains("codificación"));
     m.borrow_mut().text = Some("x".repeat(2 * 1024 * 1024 + 1));
     paste(&mut a);
     assert_eq!(a.workbench.active_bytes().unwrap(), before);
@@ -142,14 +142,14 @@ fn clipboard_tui_availability_render_and_disabled_areas_do_not_access_transport(
 #[test]
 fn clipboard_tui_paste_goes_to_topmost_fields_with_destination_limits() {
     let (mut a, m) = editor("source", TextEncoding::Utf8);
-    m.borrow_mut().text = Some("Procedure".into());
+    m.borrow_mut().text = Some("Procedimiento".into());
     a.dispatch(CommandId::EditInsertSnippet);
     paste(&mut a);
     key(&mut a, KeyCode::Enter);
     a.dispatch(CommandId::PaletteOpen);
-    m.borrow_mut().text = Some("Surround With".into());
+    m.borrow_mut().text = Some("Envolver selección".into());
     paste(&mut a);
-    assert!(matches!(&a.overlay,UiOverlay::Palette {input,..} if input=="Surround With"));
+    assert!(matches!(&a.overlay,UiOverlay::Palette {input,..} if input=="Envolver selección"));
     key(&mut a, KeyCode::Esc);
     key(&mut a, KeyCode::Enter);
     assert!(a

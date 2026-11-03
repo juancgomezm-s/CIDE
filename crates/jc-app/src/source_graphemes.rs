@@ -63,7 +63,7 @@ impl<'a> SourceGraphemes<'a> {
             .scanned
             .checked_add(raw_end - raw_start)
             .filter(|&n| n <= MAX_SCAN)
-            .ok_or("Grapheme scan exceeds16 MiB work budget")?;
+            .ok_or("El recorrido de grafemas excede la cuota de trabajo de16 MiB")?;
         let raw = self
             .doc
             .read_range(raw_start..raw_end)
@@ -86,7 +86,7 @@ impl<'a> SourceGraphemes<'a> {
         }
         let actual_start = actual_start.unwrap_or(start);
         if actual_start > actual_end {
-            return Err("Empty grapheme context".into());
+            return Err("Contexto de grafema vacío".into());
         }
         let mut bytes = raw[actual_start - raw_start..actual_end - raw_start].to_vec();
         for bad in &invalid {
@@ -98,7 +98,7 @@ impl<'a> SourceGraphemes<'a> {
         if actual_end == self.content.end {
             bytes.push(b'\n');
         }
-        let text = String::from_utf8(bytes).map_err(|_| "Invalid grapheme context")?;
+        let text = String::from_utf8(bytes).map_err(|_| "Contexto de grafema inválido")?;
         Ok(Chunk {
             range: actual_start..actual_end,
             text,
@@ -159,11 +159,11 @@ impl<'a> SourceGraphemes<'a> {
                     let end = byte
                         .checked_sub(context.range.start)
                         .filter(|&n| n <= context.text.len())
-                        .ok_or("Grapheme pre-context is incomplete")?;
+                        .ok_or("El contexto previo del grafema está incompleto")?;
                     let text = context
                         .text()
                         .get(..end)
-                        .ok_or("Grapheme context splits scalar")?;
+                        .ok_or("El contexto del grafema divide un escalar")?;
                     self.cursor
                         .provide_context(text, context.range.start - self.content.start);
                 }
@@ -178,7 +178,7 @@ impl<'a> SourceGraphemes<'a> {
                             .min(self.content.end),
                     )?;
                     if chunk.range.end <= next {
-                        return Err("No forward grapheme progress".into());
+                        return Err("El recorrido de grafemas no avanzó".into());
                     }
                     self.chunk = Some(chunk);
                 }
@@ -187,12 +187,12 @@ impl<'a> SourceGraphemes<'a> {
                     let chunk =
                         self.load(old.saturating_sub(FRAGMENT / 2).max(self.content.start))?;
                     if chunk.range.start >= old {
-                        return Err("No backward grapheme progress".into());
+                        return Err("El recorrido de grafemas no retrocedió".into());
                     }
                     self.chunk = Some(chunk);
                 }
                 Err(GraphemeIncomplete::InvalidOffset) => {
-                    return Err("Invalid grapheme source offset".into())
+                    return Err("Offset de fuente del grafema inválido".into())
                 }
             }
         }
@@ -221,7 +221,7 @@ impl<'a> SourceGraphemes<'a> {
             .scanned
             .checked_add(range.len())
             .filter(|&n| n <= MAX_SCAN)
-            .ok_or("Grapheme scan exceeds16 MiB work budget")?;
+            .ok_or("El recorrido de grafemas excede la cuota de trabajo de16 MiB")?;
         let raw = self.doc.read_range(range).map_err(|e| e.to_string())?;
         Ok(visit(&raw, std::str::from_utf8(&raw).is_ok()))
     }

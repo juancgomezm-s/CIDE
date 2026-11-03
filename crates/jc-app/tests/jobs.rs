@@ -308,7 +308,7 @@ fn panel_logs_bound_bytes_and_mark_truncated_lines_without_changing_documents() 
         );
         assert!(log
             .iter()
-            .all(|s| s.len() <= 4096 && s.ends_with("[truncated]")));
+            .all(|s| s.len() <= 4096 && s.ends_with("[truncado]")));
     }
     assert_eq!(app.active_bytes().unwrap(), b"abc");
 }

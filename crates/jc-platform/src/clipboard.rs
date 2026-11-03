@@ -56,31 +56,31 @@ fn failed(operation: &str) -> String {
 }
 fn validate_allocation(bytes: usize) -> Result<usize, String> {
     if !(2..=MAX_BYTES).contains(&bytes) || bytes % 2 != 0 {
-        return Err("Clipboard UTF-16 allocation is invalid or exceeds 2 MiB".into());
+        return Err("La reserva UTF-16 del portapapeles no es válida o supera 2 MiB".into());
     }
     Ok(bytes / 2)
 }
 
 fn encode(text: &str) -> Result<Vec<u16>, String> {
     if text.len() > MAX_BYTES {
-        return Err("Clipboard UTF-8 text exceeds 2 MiB".into());
+        return Err("El texto UTF-8 del portapapeles supera 2 MiB".into());
     }
     if text.as_bytes().contains(&0) {
-        return Err("Clipboard text contains an interior NUL".into());
+        return Err("El texto del portapapeles contiene un NUL intermedio".into());
     }
     let count = text
         .encode_utf16()
         .count()
         .checked_add(1)
-        .ok_or("Clipboard UTF-16 length overflow")?;
+        .ok_or("Desbordamiento de longitud UTF-16 del portapapeles")?;
     let bytes = count
         .checked_mul(2)
-        .ok_or("Clipboard UTF-16 length overflow")?;
+        .ok_or("Desbordamiento de longitud UTF-16 del portapapeles")?;
     validate_allocation(bytes)?;
     let mut encoded = Vec::new();
     encoded
         .try_reserve_exact(count)
-        .map_err(|_| "Clipboard encoding allocation failed")?;
+        .map_err(|_| "No se pudo reservar memoria para codificar el portapapeles")?;
     encoded.extend(text.encode_utf16());
     encoded.push(0);
     Ok(encoded)
@@ -93,34 +93,40 @@ fn decode_limited(units: &[u16], limit: usize) -> Result<String, String> {
     let bytes = units
         .len()
         .checked_mul(2)
-        .ok_or("Clipboard UTF-16 length overflow")?;
+        .ok_or("Desbordamiento de longitud UTF-16 del portapapeles")?;
     validate_allocation(bytes)?;
     let end = units
         .iter()
         .position(|unit| *unit == 0)
-        .ok_or("Clipboard text lacks a NUL terminator")?;
+        .ok_or("Al texto del portapapeles le falta el terminador NUL")?;
     if units[end + 1..].iter().any(|unit| *unit != 0) {
-        return Err("Clipboard text contains an interior NUL or nonzero trailing data".into());
+        return Err(
+            "El portapapeles contiene un NUL intermedio o datos finales distintos de cero".into(),
+        );
     }
     // Preflight strict decoding and the UTF-8 expansion before allocating it.
     let mut utf8_bytes = 0usize;
     for scalar in char::decode_utf16(units[..end].iter().copied()) {
-        let scalar = scalar.map_err(|_| "Clipboard text is not valid UTF-16")?;
+        let scalar = scalar.map_err(|_| "El texto del portapapeles no es UTF-16 válido")?;
         utf8_bytes = utf8_bytes
             .checked_add(scalar.len_utf8())
             .filter(|bytes| *bytes <= limit.min(MAX_BYTES))
-            .ok_or("Decoded clipboard text exceeds the destination byte budget")?;
+            .ok_or(
+                "El texto decodificado del portapapeles supera el límite de bytes del destino",
+            )?;
     }
     let mut decoded = String::new();
     decoded
         .try_reserve_exact(utf8_bytes)
-        .map_err(|_| "Clipboard decoding allocation failed")?;
+        .map_err(|_| "No se pudo reservar memoria para decodificar el portapapeles")?;
     for scalar in char::decode_utf16(units[..end].iter().copied()) {
-        let scalar = scalar.map_err(|_| "Clipboard text is not valid UTF-16")?;
+        let scalar = scalar.map_err(|_| "El texto del portapapeles no es UTF-16 válido")?;
         // Never silently grow beyond the preflight reservation. Under the
         // Windows ownership contract this is the same immutable input as above.
         if scalar.len_utf8() > utf8_bytes.saturating_sub(decoded.len()) {
-            return Err("Clipboard text changed during strict decoding".into());
+            return Err(
+                "El texto del portapapeles cambió durante la decodificación estricta".into(),
+            );
         }
         decoded.push(scalar);
     }
@@ -135,7 +141,7 @@ struct Open {
 impl Open {
     fn acquire(hwnd: Hwnd) -> Result<Self, String> {
         if hwnd.is_null() {
-            return Err("Clipboard requires an owning native window".into());
+            return Err("El portapapeles requiere una ventana nativa propietaria".into());
         }
         if unsafe { OpenClipboard(hwnd) } == 0 {
             return Err(failed("OpenClipboard"));
@@ -195,7 +201,7 @@ impl Memory {
             active: true,
         };
         if pointer.as_ptr() as usize % std::mem::align_of::<u16>() != 0 {
-            return Err("Clipboard memory is not aligned for UTF-16".into());
+            return Err("La memoria del portapapeles no está alineada para UTF-16".into());
         }
         Ok(lock)
     }
@@ -223,7 +229,7 @@ impl Locked<'_> {
         let result = unsafe { GlobalUnlock(self.memory.handle.as_ptr()) };
         let error = unsafe { GetLastError() };
         if result == 0 && error != 0 {
-            return Err(format!("GlobalUnlock failed (Windows error {error})"));
+            return Err(format!("Falló GlobalUnlock (error de Windows {error})"));
         }
         self.active = false;
         Ok(())
@@ -247,7 +253,7 @@ pub fn read(owner: usize) -> Result<Option<String>, String> {
 }
 pub fn read_limited(owner: usize, limit: usize) -> Result<Option<String>, String> {
     if limit == 0 || limit > MAX_BYTES {
-        return Err("Invalid clipboard destination budget".into());
+        return Err("El límite de bytes del destino del portapapeles no es válido".into());
     }
     let clipboard = Open::acquire(owner as Hwnd)?;
     if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) } == 0 {
@@ -287,7 +293,7 @@ pub fn write(owner: usize, text: &str) -> Result<(), String> {
     let mut memory = Memory::allocate(encoded.len() * 2)?;
     let allocated = memory.size()?;
     if allocated < encoded.len() * 2 {
-        return Err("Clipboard allocation is smaller than its encoded payload".into());
+        return Err("La reserva del portapapeles es menor que su contenido codificado".into());
     }
     {
         let lock = memory.lock()?;

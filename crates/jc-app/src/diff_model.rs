@@ -37,6 +37,17 @@ pub enum DiffLimit {
     Metadata,
     Hunks,
 }
+impl DiffLimit {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::InputBytes => "bytes de entrada",
+            Self::Lines => "líneas",
+            Self::Work => "trabajo de comparación",
+            Self::Metadata => "metadatos",
+            Self::Hunks => "bloques de diferencias",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffStatus {

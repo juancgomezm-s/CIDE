@@ -5,7 +5,8 @@ use crate::state::UiOverlay;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{
     source_services::{
-        display_label, SourceAction, SourceMode, SourcePresentation, SourceRow, SourceState,
+        display_label, display_ui_label, SourceAction, SourceMode, SourcePresentation, SourceRow,
+        SourceState,
     },
     CommandId, PrimaryFocus, SidebarView,
 };
@@ -119,7 +120,7 @@ impl TuiApp {
                 let result = if let Some((paths, index)) = &self.source_candidates {
                     paths
                         .get(*index)
-                        .ok_or_else(|| "No reference candidate selected".into())
+                        .ok_or_else(|| "No hay un destino de referencia seleccionado".into())
                         .and_then(|path| {
                             self.source.activate_candidate(
                                 &mut self.workbench,
@@ -139,7 +140,7 @@ impl TuiApp {
                         self.source_popup = true;
                         self.close_overlay();
                         self.status =
-                            "Ambiguous reference: choose a confined candidate explicitly".into();
+                            "Referencia ambigua: elige explícitamente un destino dentro del proyecto".into();
                     }
                     Ok(None) => {
                         self.source_popup = false;
@@ -147,7 +148,8 @@ impl TuiApp {
                         self.close_overlay();
                         let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
                         self.ensure_encoding_choice();
-                        self.status = "Source item accepted · lexical evidence only".into();
+                        self.status =
+                            "Elemento del documento aceptado · solo evidencia léxica".into();
                     }
                     Err(e) => self.status = e,
                 }
@@ -215,9 +217,9 @@ impl TuiApp {
     pub(crate) fn source_presentation(&self, rows: usize, columns: usize) -> SourcePresentation {
         if let Some((paths, index)) = &self.source_candidates {
             return SourcePresentation {
-                title: display_label("Reference candidates", columns),
-                message: display_label(
-                    "Enter opens chosen path; Ctrl+Enter to side; Esc cancels",
+                title: display_ui_label("Destinos de la referencia", columns),
+                message: display_ui_label(
+                    "Intro abre la ruta elegida; Ctrl+Intro al lado; Esc cancela",
                     columns,
                 ),
                 rows: paths

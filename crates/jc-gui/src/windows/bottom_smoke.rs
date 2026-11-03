@@ -131,7 +131,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             .bottom_presentation()
             .ok_or("Missing empty bottom frame")?;
         if !f.rows.is_empty()
-            || !f.message.contains("Empty")
+            || !f.message.contains("Vacío")
             || s.jobs.worker_count() != existing_workers
         {
             return Err("Opening empty panel admitted a provider".into());

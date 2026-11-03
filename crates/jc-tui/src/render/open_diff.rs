@@ -31,7 +31,7 @@ pub(super) fn draw(frame: &Presentation<'_>, screen: &mut Screen) {
         screen.text_styled(
             1,
             end - 1,
-            "Up/Down hunk | Pg body | Enter right / Shift+Enter left | F5 refresh | Esc",
+            "↑↓ bloque | Pág contenido | Intro derecha / Mayús+Intro izquierda | F5 actualizar | Esc",
             CellStyle::Dim,
         );
     }

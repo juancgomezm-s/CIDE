@@ -2,7 +2,7 @@
 use crate::screen::{CellStyle, Screen};
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor},
+    style::{Attribute, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType},
     Command,
 };
@@ -22,6 +22,24 @@ pub struct FrameEncoder {
 fn command(out: &mut String, value: impl Command) {
     value.write_ansi(out).expect("format to String");
 }
+fn apply_style(out: &mut String, role: CellStyle, color: bool) {
+    let style = crate::theme::style(role);
+    if role == CellStyle::Dim {
+        command(out, SetAttribute(Attribute::Dim));
+    }
+    if color {
+        command(out, SetForegroundColor(style.foreground));
+        command(out, SetBackgroundColor(style.background));
+    } else if style.reverse {
+        command(out, SetAttribute(Attribute::Reverse));
+    }
+    if style.bold {
+        command(out, SetAttribute(Attribute::Bold));
+    }
+    if style.underline {
+        command(out, SetAttribute(Attribute::Underlined));
+    }
+}
 impl FrameEncoder {
     pub fn invalidate(&mut self) {
         self.previous = None;
@@ -39,14 +57,16 @@ impl FrameEncoder {
             full,
             ..DrawStats::default()
         };
+        let color = std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty());
         let mut out = String::new();
         if full {
             command(&mut out, Hide);
             command(&mut out, ResetColor);
             command(&mut out, SetAttribute(Attribute::Reset));
+            apply_style(&mut out, CellStyle::Normal, color);
             command(&mut out, Clear(ClearType::All));
         }
-        let mut active = CellStyle::Normal;
+        let mut active = None;
         for y in 0..screen.height() {
             let mut x = 0;
             let mut in_run = false;
@@ -78,26 +98,11 @@ impl FrameEncoder {
                     in_run = true;
                 }
                 let cell = screen.cell(x, y);
-                if active != cell.style {
+                if active != Some(cell.style) {
                     command(&mut out, ResetColor);
                     command(&mut out, SetAttribute(Attribute::Reset));
-                    match cell.style {
-                        CellStyle::Normal => {}
-                        CellStyle::Reverse => command(&mut out, SetAttribute(Attribute::Reverse)),
-                        CellStyle::Dim => command(&mut out, SetAttribute(Attribute::Dim)),
-                        CellStyle::Syntax(kind) => {
-                            let rgb = jc_app::syntax_theme::foreground(kind);
-                            command(
-                                &mut out,
-                                SetForegroundColor(Color::Rgb {
-                                    r: rgb.r,
-                                    g: rgb.g,
-                                    b: rgb.b,
-                                }),
-                            );
-                        }
-                    }
-                    active = cell.style;
+                    apply_style(&mut out, cell.style, color);
+                    active = Some(cell.style);
                 }
                 screen.append_atom(x, y, &mut out);
                 stats.cells += width;

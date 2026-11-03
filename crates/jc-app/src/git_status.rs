@@ -217,8 +217,24 @@ pub enum GitStatusError {
 impl fmt::Display for GitStatusError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Read(error) => write!(f, "Git status: {error}"),
-            other => write!(f, "Git status: {other:?}"),
+            Self::Read(error) => write!(f, "Estado Git: {error}"),
+            Self::InvalidLimits => f.write_str("Estado Git: límites inválidos"),
+            Self::Protocol => f.write_str("Estado Git: protocolo inválido"),
+            Self::InvalidPath => f.write_str("Estado Git: ruta inválida"),
+            Self::Limited(limit) => write!(
+                f,
+                "Estado Git: cuota excedida ({})",
+                match limit {
+                    GitStatusLimit::InputBytes => "bytes de entrada",
+                    GitStatusLimit::Entries => "entradas",
+                    GitStatusLimit::Records => "registros",
+                    GitStatusLimit::PathBytes => "bytes de ruta",
+                    GitStatusLimit::OwnedBytes => "bytes retenidos",
+                }
+            ),
+            Self::Cancelled => f.write_str("Estado Git: cancelado"),
+            Self::TimedOut => f.write_str("Estado Git: tiempo agotado"),
+            Self::Allocation => f.write_str("Estado Git: fallo al reservar memoria"),
         }
     }
 }

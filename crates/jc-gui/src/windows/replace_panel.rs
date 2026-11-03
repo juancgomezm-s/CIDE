@@ -54,7 +54,7 @@ impl ReplacePanel {
     }
     fn summary(&self, action: &str) -> String {
         format!(
-            "{action}: {} changed; {} conflicts; {} unchanged; {} pending",
+            "{action}: {} cambiados; {} conflictos; {} sin cambios; {} pendientes",
             self.changed,
             self.conflicts,
             self.unchanged,
@@ -70,21 +70,24 @@ impl State {
     pub(super) fn open_project_replace(&mut self) {
         self.validate_project_search();
         if !self.project_search.can_replace() {
-            self.error("Run a complete project search without notices or stale results first");
+            self.error(
+                "Primero completa una búsqueda del proyecto sin avisos ni resultados obsoletos",
+            );
             return;
         }
         self.close_selector();
         let generation = self.bump_replace_generation();
         self.replace_panel = Some(ReplacePanel::new(generation));
-        self.status = "Replacement draft: Enter previews; empty text deletes matches".into();
+        self.status =
+            "Borrador de reemplazo: Intro previsualiza; vacío elimina coincidencias".into();
     }
     pub(super) fn cancel_project_replace(&mut self) {
         self.bump_replace_generation();
         if let Some(panel) = self.replace_panel.take() {
             let summary = panel.summary(if panel.stage == ReplaceStage::Applying {
-                "Replacement stopped"
+                "Reemplazo detenido"
             } else {
-                "Replacement closed"
+                "Reemplazo cerrado"
             });
             if panel.stage == ReplaceStage::Applying {
                 self.workbench.push_output(summary.clone());
@@ -106,7 +109,7 @@ impl State {
             panel.stage = ReplaceStage::Draft;
             panel.generation = generation;
             self.status =
-                "Source/query changed: preview discarded; run a fresh project search".into();
+                "Cambió el fuente/consulta: vista previa descartada; vuelve a buscar".into();
             return true;
         }
         false
@@ -122,7 +125,9 @@ impl State {
         };
         panel.generation = generation;
         match edit_field(&mut panel.draft, &mut panel.cursor, edit, 4096) {
-            Ok(_) => self.status = "Enter builds preview; F9 confirms only after review".into(),
+            Ok(_) => {
+                self.status = "Intro genera vista previa; F9 confirma después de revisarla".into()
+            }
             Err(error) => self.error(error),
         }
     }
@@ -146,8 +151,7 @@ impl State {
                 panel.stage = ReplaceStage::Preview;
                 panel.view.first();
                 self.status =
-                    "Review -/+ lines; F9 or Ctrl+Enter confirms; Enter alone does not apply"
-                        .into();
+                    "Revisa líneas -/+; F9 o Ctrl+Intro confirma; Intro solo no aplica".into();
             }
             Err(error) => self.error(error),
         }
@@ -170,7 +174,7 @@ impl State {
         panel.unchanged = 0;
         panel.processed = 0;
         panel.outcomes.clear();
-        self.status = panel.summary("Replacement queued");
+        self.status = panel.summary("Reemplazo en cola");
         self.bridge.signal();
     }
     /// Exactly one file per native task turn. The main loop prioritizes input
@@ -206,18 +210,18 @@ impl State {
                 .to_string();
             let message = if let Some(error) = outcome.error {
                 panel.conflicts += 1;
-                format!("CONFLICT {path}: {error}")
+                format!("CONFLICTO {path}: {error}")
             } else if outcome.matches == 0 {
                 panel.unchanged += 1;
-                format!("Unchanged {path}")
+                format!("Sin cambios {path}")
             } else {
                 panel.changed += 1;
                 format!(
-                    "{} {path}: {} edits",
+                    "{} {path}: {} ediciones",
                     if outcome.saved_to_disk {
-                        "Saved"
+                        "Guardado"
                     } else {
-                        "Edited open buffer (not saved)"
+                        "Documento abierto editado (sin guardar)"
                     },
                     outcome.matches
                 )
@@ -233,10 +237,10 @@ impl State {
         if preview.files_remaining() == 0 {
             panel.preview = None;
             panel.stage = ReplaceStage::Finished;
-            self.status = panel.summary("Replacement finished");
+            self.status = panel.summary("Reemplazo terminado");
             self.workbench.push_output(self.status.clone());
         } else {
-            self.status = panel.summary("Replacing; Esc stops remaining");
+            self.status = panel.summary("Reemplazando; Esc detiene los pendientes");
             self.bridge.signal();
         }
         true
@@ -342,7 +346,7 @@ impl State {
         );
         let fields = if draft {
             vec![(
-                "Replacement (empty deletes matches)",
+                "Reemplazo (vacío elimina coincidencias)",
                 present_field(&panel.draft, panel.cursor, columns, rows),
             )]
         } else {
@@ -359,7 +363,7 @@ impl State {
             Some(ProjectResultsPresentation {
                 title: presentation.title,
                 message: if panel.stage == ReplaceStage::Applying {
-                    panel.summary("Applying")
+                    panel.summary("Aplicando")
                 } else {
                     presentation.message
                 },
@@ -378,8 +382,8 @@ impl State {
             })
         } else if panel.stage == ReplaceStage::Finished {
             Some(ProjectResultsPresentation {
-                title: "Project Replacement - finished".into(),
-                message: panel.summary("Finished"),
+                title: "Reemplazo de proyecto: terminado".into(),
+                message: panel.summary("Terminado"),
                 selected: 0,
                 total: panel.outcomes.len(),
                 rows: panel
@@ -391,7 +395,7 @@ impl State {
                         index,
                         label: line.clone(),
                         selected: false,
-                        is_match: !line.starts_with("CONFLICT"),
+                        is_match: !line.starts_with("CONFLICTO"),
                     })
                     .collect(),
             })
@@ -399,13 +403,13 @@ impl State {
             None
         };
         let footer = match panel.stage {
-            ReplaceStage::Draft => "Enter preview | F2 LF F4 CRLF F7 TAB F8 CR | Ctrl+V paste | Esc cancel",
-            ReplaceStage::Preview => "F9 / Ctrl+Enter CONFIRM | Enter does not apply | F2 edit | arrows review | Esc cancel",
-            ReplaceStage::Applying => "Applying one file per turn | Esc stops pending files | completed files are retained",
-            ReplaceStage::Finished => "Finished | open buffers: undo per document, not saved | Esc closes",
+            ReplaceStage::Draft => "Intro previsualiza | F2 LF F4 CRLF F7 TAB F8 CR | Ctrl+V pega | Esc cancela",
+            ReplaceStage::Preview => "F9/Ctrl+Intro CONFIRMA | Intro no aplica | F2 edita | flechas revisan | Esc cancela",
+            ReplaceStage::Applying => "Un archivo por turno | Esc detiene pendientes | se conservan los completados",
+            ReplaceStage::Finished => "Terminado | abiertos: deshacer por documento, sin guardar | Esc cierra",
         };
         Some(ReplaceFrame { panel: ProjectPresentation { fields, active: 0, results, status: self.status.clone() }, labels: super::project_paint::PanelLabels {
-            draft: "Replace in Project - draft", policy: "Open buffers: one undo, not saved | Closed files: saved individually | No global rollback", footer,
+            draft: "Reemplazar en proyecto: borrador", policy: "Abiertos: un deshacer, sin guardar | cerrados: guardado individual | sin reversión global", footer,
         } })
     }
 }

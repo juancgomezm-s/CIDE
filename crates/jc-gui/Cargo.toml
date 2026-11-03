@@ -11,6 +11,7 @@ description = "Native Windows frontend sharing the CIDE application model"
 jc-platform = { path = "../jc-platform" }
 jc-app = { path = "../jc-app" }
 jc-text = { path = "../jc-text" }
+jc-progress = { path = "../jc-progress", features = ["source-services"] }
 
 [[bin]]
 name = "cide-gui"

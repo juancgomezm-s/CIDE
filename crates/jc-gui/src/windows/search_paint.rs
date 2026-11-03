@@ -38,13 +38,10 @@ pub(super) unsafe fn draw(
         row += ch;
         Ok(())
     };
-    line(
-        "Document literal search / replacement · exact LF / CRLF / CR",
-        false,
-    )?;
+    line("Buscar/reemplazar en documento · LF/CRLF/CR exactos", false)?;
     line(
         &format!(
-            "Find: rows {}..{} / {}",
+            "Buscar: filas {}..{} / {}",
             p.find.first_row + 1,
             p.find.first_row + p.find.rows.len(),
             p.find.total_rows
@@ -57,7 +54,7 @@ pub(super) unsafe fn draw(
     if let Some(field) = &p.replacement {
         line(
             &format!(
-                "Replace: rows {}..{} / {}",
+                "Reemplazar: filas {}..{} / {}",
                 field.first_row + 1,
                 field.first_row + field.rows.len(),
                 field.total_rows
@@ -70,15 +67,15 @@ pub(super) unsafe fn draw(
     }
     line(&p.message, false)?;
     line(
-        "F2 LF | F4 CRLF | F8 CR | F7 TAB | arrows edit | Ctrl+V paste",
+        "F2 LF | F4 CRLF | F8 CR | F7 TAB | flechas editan | Ctrl+V pega",
         false,
     )?;
     line(
-        "Enter/F6 replace one | Ctrl+Enter/F9 all | F3/Shift+F3 next/prev",
+        "Intro/F6 reemplaza uno | Ctrl+Intro/F9 todos | F3/Mayús+F3 siguiente/anterior",
         false,
     )?;
     line(
-        "Alt+Up/Down history | Alt+C/W options | Tab field | Esc cancel | 4096B",
+        "Alt+Arriba/Abajo historial | Alt+C/W opciones | Tab campo | Esc cancela | 4096B",
         false,
     )?;
     let (field, offset) = if p.replacement_active {

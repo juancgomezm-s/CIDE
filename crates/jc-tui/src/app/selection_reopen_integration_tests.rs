@@ -340,7 +340,7 @@ fn reopen_observes_disk_lifo_retry_collision_last_view_and_new_blank_contracts()
     plain(&mut a, KeyCode::Esc);
     assert!(a.workbench.document_by_id(dirty).is_some());
     close(&mut a);
-    plain(&mut a, KeyCode::Char('d'));
+    plain(&mut a, KeyCode::Char('n'));
     reopen(&mut a);
     assert_eq!(a.workbench.active_bytes().unwrap(), b"changed\r\n");
     assert_ne!(a.workbench.active_document().unwrap().id, dirty);
@@ -350,7 +350,7 @@ fn reopen_observes_disk_lifo_retry_collision_last_view_and_new_blank_contracts()
     a.workbench.insert_text("discarded draft").unwrap();
     let blank = a.workbench.tabs().active_id().unwrap();
     close(&mut a);
-    plain(&mut a, KeyCode::Char('d'));
+    plain(&mut a, KeyCode::Char('n'));
     reopen(&mut a);
     assert_eq!(a.workbench.tabs().active_id(), Some(blank));
     assert!(a.workbench.active_bytes().unwrap().is_empty());

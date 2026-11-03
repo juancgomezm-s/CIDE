@@ -79,7 +79,7 @@ impl DirectoryListing {
 fn interrupted() -> io::Error {
     io::Error::new(
         io::ErrorKind::Interrupted,
-        "Directory listing cancelled or timed out",
+        "La lectura del directorio se canceló o agotó su tiempo",
     )
 }
 pub fn list_directory_in_root(
@@ -96,17 +96,21 @@ pub fn list_directory_in_root(
         || root.as_os_str().len() > 4096
         || path.as_os_str().len() > 4096
     {
-        return Err(io::Error::other("Invalid directory root/path/budget"));
+        return Err(io::Error::other(
+            "La raíz, ruta o límite del directorio no es válido",
+        ));
     }
     let relative = path
         .strip_prefix(root)
-        .map_err(|_| io::Error::other("Directory is outside project root"))?;
+        .map_err(|_| io::Error::other("El directorio está fuera de la raíz del proyecto"))?;
     if relative.components().count() > 32
         || relative
             .components()
             .any(|c| !matches!(c, Component::Normal(_)))
     {
-        return Err(io::Error::other("Invalid directory components"));
+        return Err(io::Error::other(
+            "Los componentes del directorio no son válidos",
+        ));
     }
     if cancelled() {
         return Err(interrupted());
@@ -148,7 +152,7 @@ fn platform_list(
     let mut ancestors = Vec::new();
     let relative = path
         .strip_prefix(root)
-        .map_err(|_| io::Error::other("Directory escaped root"))?;
+        .map_err(|_| io::Error::other("El directorio quedó fuera de la raíz"))?;
     let mut current = root.to_path_buf();
     for component in std::iter::once(None).chain(relative.components().map(Some)) {
         if cancelled() {
@@ -160,7 +164,7 @@ fn platform_list(
         let metadata = fs::symlink_metadata(&current)?;
         if !metadata.is_dir() || metadata.file_attributes() & 0x400 != 0 {
             return Err(io::Error::other(
-                "Directory links/reparse points are excluded",
+                "Se excluyen enlaces de directorio y puntos de reanálisis",
             ));
         }
         let file = fs::OpenOptions::new()
@@ -170,14 +174,16 @@ fn platform_list(
             .open(&current)?;
         let metadata = file.metadata()?;
         if !metadata.is_dir() || metadata.file_attributes() & 0x400 != 0 {
-            return Err(io::Error::other("Directory became a reparse point"));
+            return Err(io::Error::other(
+                "El directorio se convirtió en un punto de reanálisis",
+            ));
         }
         crate::verify_file_in_root(root, &file)?;
         ancestors.push(file);
     }
     let file = ancestors
         .last()
-        .ok_or_else(|| io::Error::other("Missing directory handle"))?;
+        .ok_or_else(|| io::Error::other("Falta el identificador del directorio"))?;
     let mut buffer = vec![0u64; 8192]; // 64KiB, 8-byte aligned, separate OS scratch.
     let mut first = true;
     let mut listing = DirectoryListing::default();
@@ -211,7 +217,7 @@ fn platform_list(
                 return Err(interrupted());
             }
             if bytes.len() - at < 68 {
-                return Err(io::Error::other("Truncated directory record"));
+                return Err(io::Error::other("El registro del directorio está truncado"));
             }
             let word = |offset| {
                 u32::from_le_bytes(bytes[at + offset..at + offset + 4].try_into().unwrap()) as usize
@@ -222,14 +228,16 @@ fn platform_list(
             let end = at
                 .checked_add(68)
                 .and_then(|n| n.checked_add(name_bytes))
-                .ok_or_else(|| io::Error::other("Directory record overflow"))?;
+                .ok_or_else(|| io::Error::other("Desbordamiento del registro del directorio"))?;
             if name_bytes == 0
                 || name_bytes % 2 != 0
                 || end > bytes.len()
                 || (next != 0
                     && (next % 8 != 0 || next < 68 + name_bytes || next > bytes.len() - at))
             {
-                return Err(io::Error::other("Invalid directory record bounds"));
+                return Err(io::Error::other(
+                    "Los límites del registro del directorio no son válidos",
+                ));
             }
             listing.examined += 1;
             if listing.examined > 50_000 {
@@ -282,7 +290,7 @@ fn platform_list(
         || !path.canonicalize()?.starts_with(root)
     {
         return Err(io::Error::other(
-            "Directory is not an ordinary project directory",
+            "El directorio no es un directorio ordinario del proyecto",
         ));
     }
     let mut listing = DirectoryListing::default();
@@ -317,7 +325,7 @@ fn platform_list(
         || metadata.file_type().is_symlink()
         || !path.canonicalize()?.starts_with(root)
     {
-        return Err(io::Error::other("Directory changed during listing"));
+        return Err(io::Error::other("El directorio cambió durante su lectura"));
     }
     Ok(listing)
 }

@@ -319,6 +319,27 @@ pub enum SubmitError {
     WorkerUnavailable,
     IdExhausted,
 }
+impl SubmitError {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::InvalidLimits => "límites inválidos",
+            Self::Busy => "capacidad ocupada",
+            Self::SnapshotLimit => "cuota de capturas excedida",
+            Self::NoDocument => "sin documento",
+            Self::NoEncoding => "sin codificación",
+            Self::InvalidView => "vista inválida",
+            Self::InvalidRange => "rango inválido",
+            Self::WorkerUnavailable => "tarea de fondo no disponible",
+            Self::IdExhausted => "identificadores agotados",
+        }
+    }
+}
+impl std::fmt::Display for SubmitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+impl std::error::Error for SubmitError {}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskStatus {
     Completed,
@@ -328,6 +349,24 @@ pub enum TaskStatus {
     Panicked,
     LimitExceeded,
     InvalidRange,
+}
+impl TaskStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Completed => "Completada",
+            Self::Cancelled => "Cancelada",
+            Self::TimedOut => "Tiempo agotado",
+            Self::Failed => "Fallida",
+            Self::Panicked => "Fallo de la tarea",
+            Self::LimitExceeded => "Cuota excedida",
+            Self::InvalidRange => "Rango inválido",
+        }
+    }
+}
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
 }
 pub struct CompletedTask {
     pub id: JobId,

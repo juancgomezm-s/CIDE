@@ -29,6 +29,10 @@ impl State {
             && !self.project_visible()
             && self.replace_panel.is_none()
             && self.git_panel.is_none()
+            && !self.open_diff_visible
+            && !self.source_visible()
+            && self.snippet_gui.is_none()
+            && self.markdown_gui.is_none()
     }
     pub(super) fn pointer_context(&self, pane: PaneId) -> Option<PointerContext> {
         let view = self.workbench.panes().view(pane)?;
@@ -98,7 +102,7 @@ impl State {
                 || self.pointer_context(drag.context.pane).as_ref() != Some(&drag.context)
         }) {
             self.linear_drag = None;
-            self.status = "Linear drag target changed; selection retained".into();
+            self.status = "Cambió el destino del arrastre lineal; selección conservada".into();
         }
         self.linear_drag.is_some()
     }

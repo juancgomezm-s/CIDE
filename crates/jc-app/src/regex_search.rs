@@ -13,7 +13,7 @@ use std::{ops::Range, sync::Arc, time::Instant};
 pub(crate) type Dfa = dense::DFA<Vec<u32>>;
 pub(crate) fn compile(query: &str, case: bool) -> Result<Arc<Dfa>, String> {
     if query.is_empty() || query.len() > 4096 {
-        return Err("Regex must contain 1..4096 UTF-8 bytes".into());
+        return Err("La expresión regular debe contener1..4096 bytes UTF8".into());
     }
     dense::Builder::new()
         .configure(
@@ -25,7 +25,7 @@ pub(crate) fn compile(query: &str, case: bool) -> Result<Arc<Dfa>, String> {
         .thompson(thompson::Config::new().nfa_size_limit(Some(1024 * 1024)))
         .build(query)
         .map(Arc::new)
-        .map_err(|e| format!("Regex syntax/capability or compile budget: {e}"))
+        .map_err(|e| format!("Sintaxis/capacidad regex o cuota de compilación: {e}"))
 }
 
 #[derive(Debug, Clone, Copy)]

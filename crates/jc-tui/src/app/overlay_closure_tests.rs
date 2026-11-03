@@ -25,12 +25,14 @@ fn overlay_closure_paste_follows_palette_and_menu_above_snippet_parameter() {
     let mut a = editor();
     let before = a.workbench.active_bytes().unwrap();
     a.dispatch(CommandId::EditInsertSnippet);
-    paste(&mut a, "Procedure");
+    paste(&mut a, "Procedimiento");
     key(&mut a, KeyCode::Enter);
     let parameter = field(&mut a);
     a.dispatch(CommandId::PaletteOpen);
-    paste(&mut a, "Snippet Next");
-    assert!(matches!(&a.overlay,UiOverlay::Palette { input, .. } if input == "Snippet Next"));
+    paste(&mut a, "Plantilla: paso siguiente");
+    assert!(
+        matches!(&a.overlay,UiOverlay::Palette { input, .. } if input == "Plantilla: paso siguiente")
+    );
     key(&mut a, KeyCode::Esc);
     assert_eq!(field(&mut a), parameter);
     a.dispatch(CommandId::MenuEdit);
@@ -96,7 +98,7 @@ fn overlay_closure_all_prompt_ingress_is_atomic_and_byte_bounded() {
         )));
         assert!(matches!(&a.overlay,UiOverlay::Prompt {input, ..} if input.is_empty()));
         a.submit_prompt(kind, "x".repeat(limit + 1));
-        assert!(a.status.contains("exceeds"));
+        assert!(a.status.contains("supera"));
         assert_eq!(a.workbench.active_bytes().unwrap(), before);
         assert_eq!(a.workbench.tabs().tabs().len(), 1);
     }
@@ -178,9 +180,9 @@ fn overlay_closure_palette_page_clamps_and_disabled_command_remains_inert() {
     key(&mut a, KeyCode::PageDown);
     assert!(matches!(a.overlay,UiOverlay::Palette {selected,..} if selected == last));
     key(&mut a, KeyCode::Home);
-    paste(&mut a, "Database / Schema");
+    paste(&mut a, "Base de datos/esquema");
     key(&mut a, KeyCode::Enter);
     assert!(matches!(a.overlay, UiOverlay::Palette { .. }));
-    assert!(a.status.contains("disabled"));
+    assert!(a.status.contains("deshabilitado"));
     assert_eq!(a.workbench.active_bytes().unwrap(), before);
 }

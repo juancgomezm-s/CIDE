@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{
     edit_field, present_field,
     snippets::{SnippetSession, SnippetTarget, SnippetTemplate},
-    source_services::display_label,
+    source_services::display_ui_label as display_label,
     CommandId, FieldEdit, FieldPresentation, PrimaryFocus, Workbench,
 };
 pub(crate) enum Stage {
@@ -34,11 +34,11 @@ pub(crate) struct SnippetPresentation {
 }
 impl SnippetUi {
     fn choices(&self) -> Vec<usize> {
-        let query = self.query.to_ascii_lowercase();
+        let query = self.query.to_lowercase();
         self.catalog
             .iter()
             .enumerate()
-            .filter(|(_, t)| t.name.to_ascii_lowercase().contains(&query))
+            .filter(|(_, t)| t.name.to_lowercase().contains(&query))
             .map(|(i, _)| i)
             .collect()
     }
@@ -52,15 +52,19 @@ impl SnippetUi {
     }
     fn next(&mut self, app: &Workbench) -> Result<(), String> {
         if !self.current(app) {
-            return Err("Snippet target changed; cancel and reopen".into());
+            return Err("Cambió el destino de la plantilla; cancela y vuelve a abrir".into());
         }
         match self.stage {
             Stage::Choose => {
                 let indices = self.choices();
                 let template = *self
                     .catalog
-                    .get(*indices.get(self.selected).ok_or("No snippet selected")?)
-                    .ok_or("No snippet selected")?;
+                    .get(
+                        *indices
+                            .get(self.selected)
+                            .ok_or("No hay una plantilla seleccionada")?,
+                    )
+                    .ok_or("No hay una plantilla seleccionada")?;
                 let mut session = if self
                     .session
                     .as_ref()
@@ -80,9 +84,12 @@ impl SnippetUi {
                 self.scroll = 0;
             }
             Stage::Parameter(index) => {
-                let session = self.session.as_mut().ok_or("No snippet session")?;
+                let session = self
+                    .session
+                    .as_mut()
+                    .ok_or("No hay una sesión de plantilla")?;
                 if !session.valid_parameter(index) {
-                    return Err("Invalid parameter; use a valid nonempty single-line value".into());
+                    return Err("Parámetro inválido; escribe un valor válido de una línea".into());
                 }
                 if index + 1 < session.template().parameters.len() {
                     self.stage = Stage::Parameter(index + 1);
@@ -116,7 +123,7 @@ impl SnippetUi {
     }
     fn edit(&mut self, edit: FieldEdit<'_>, app: &Workbench) -> Result<(), String> {
         if !self.current(app) {
-            return Err("Snippet target changed; cancel and reopen".into());
+            return Err("Cambió el destino de la plantilla; cancela y vuelve a abrir".into());
         }
         match self.stage {
             Stage::Choose => {
@@ -126,7 +133,7 @@ impl SnippetUi {
             Stage::Parameter(i) => self
                 .session
                 .as_mut()
-                .ok_or("No snippet session")?
+                .ok_or("No hay una sesión de plantilla")?
                 .edit_parameter(i, edit)?,
             Stage::Preview => {}
         }
@@ -211,7 +218,7 @@ impl TuiApp {
                     let target = SnippetTarget::capture(&self.workbench)?;
                     if target.has_selection() != surround {
                         return Err(
-                            "Choose a text caret for Insert, a linear selection for Surround"
+                            "Para insertar coloca el cursor; para envolver selecciona un rango de texto"
                                 .into(),
                         );
                     }
@@ -223,7 +230,7 @@ impl TuiApp {
                         .filter(|t| t.surround == surround)
                         .collect::<Vec<_>>();
                     if catalog.is_empty() {
-                        return Err("No snippet contribution for this profile".into());
+                        return Err("No hay plantillas disponibles para este perfil".into());
                     }
                     Ok(SnippetUi {
                         target,
@@ -245,7 +252,7 @@ impl TuiApp {
                         self.open_diff_visible = false;
                         self.snippet_ui = Some(ui);
                         self.status =
-                            "Choose a template; no source edits before preview confirmation".into();
+                            "Elige una plantilla; la fuente cambia solo al confirmar la vista previa".into();
                     }
                     Err(e) => self.status = e,
                 }
@@ -254,34 +261,35 @@ impl TuiApp {
                 if let Some(ui) = &mut self.snippet_ui {
                     self.status = ui
                         .next(&self.workbench)
-                        .map(|()| "Snippet stage ready; source unchanged".into())
+                        .map(|()| "Paso de plantilla listo; fuente sin cambios".into())
                         .unwrap_or_else(|e| e);
                 }
             }
             CommandId::SnippetPrevious => {
                 if let Some(ui) = &mut self.snippet_ui {
                     ui.previous();
-                    self.status = "Previous snippet stage; source unchanged".into();
+                    self.status = "Paso anterior de plantilla; fuente sin cambios".into();
                 }
             }
             CommandId::SnippetCancel => {
                 self.snippet_ui = None;
                 self.close_overlay();
-                self.status = "Snippet cancelled; source unchanged".into();
+                self.status = "Plantilla cancelada; fuente sin cambios".into();
             }
             CommandId::SnippetAccept => {
                 let result = self
                     .snippet_ui
                     .as_mut()
                     .and_then(|ui| ui.session.as_mut())
-                    .ok_or_else(|| "No reviewed snippet".to_owned())
+                    .ok_or_else(|| "No hay una plantilla revisada".to_owned())
                     .and_then(|session| session.apply(&mut self.workbench));
                 match result {
                     Ok(()) => {
                         self.snippet_ui = None;
                         self.close_overlay();
                         let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-                        self.status = "Snippet applied as one undo transaction; not saved".into();
+                        self.status =
+                            "Plantilla aplicada en un paso de deshacer; aún sin guardar".into();
                     }
                     Err(e) => self.status = e,
                 }
@@ -400,20 +408,24 @@ impl TuiApp {
         };
         ui.page_rows = rows;
         let mut p = SnippetPresentation {
-            title: "Snippet · source unchanged until confirmation".into(),
+            title: "Plantilla · fuente sin cambios hasta confirmar".into(),
             message: display_label(&self.status, columns),
-            footer: "Enter/Tab next | Shift+Tab back | arrows edit | Ctrl+U clear | Esc",
+            footer: "Intro/Tab siguiente | Mayús+Tab atrás | Flechas editar | Ctrl+U vaciar | Esc",
             field: None,
             rows: Vec::new(),
         };
         if !ui.current(&self.workbench) {
-            p.message = display_label("Source changed; acceptance disabled. Esc cancels.", columns);
+            p.message = display_label(
+                "La fuente cambió; no se puede aplicar. Esc cancela.",
+                columns,
+            );
             return Some(p);
         }
         match ui.stage {
             Stage::Choose => {
-                p.title = display_label("Choose snippet / Surround With", columns);
-                p.footer = "Enter choose | arrows list | type filter | Ctrl+U clear | Esc";
+                p.title = display_label("Elegir plantilla / Envolver selección", columns);
+                p.footer =
+                    "Intro elegir | Flechas lista | Escribe para filtrar | Ctrl+U vaciar | Esc";
                 p.field = Some(present_field(&ui.query, ui.cursor, columns, 1));
                 let choices = ui.choices();
                 let first = ui.selected.saturating_sub(rows.saturating_sub(1));
@@ -435,7 +447,7 @@ impl TuiApp {
                     if let Some((parameter, value, cursor)) = session.parameter(index) {
                         p.title = display_label(
                             &format!(
-                                "Parameter {}/{}: {}",
+                                "Parámetro {}/{}: {}",
                                 index + 1,
                                 session.template().parameters.len(),
                                 parameter.label
@@ -447,9 +459,11 @@ impl TuiApp {
                 }
             }
             Stage::Preview => {
-                p.title =
-                    display_label("Review snippet: F9 / Ctrl+Enter applies; F2 edits", columns);
-                p.footer = "F9/Ctrl+Enter apply | F2 edit | Pg/Home/End preview | Esc cancel";
+                p.title = display_label(
+                    "Revisar plantilla: F9 / Ctrl+Intro aplica; F2 edita",
+                    columns,
+                );
+                p.footer = "F9/Ctrl+Intro aplicar | F2 editar | Pág/Inicio/Fin vista previa | Esc cancelar";
                 if let Some(plan) = ui.session.as_ref().and_then(|s| s.plan()) {
                     ui.scroll = ui.scroll.min(plan.total_rows().saturating_sub(rows));
                     p.rows = plan

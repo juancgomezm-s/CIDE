@@ -1,0 +1,36 @@
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Checking jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+error: this boolean expression can be simplified
+  --> crates\jc-tui\src\frame_encoder.rs:58:21
+   |
+58 |         let color = !std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty())`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#nonminimal_bool
+   = note: `-D clippy::nonminimal-bool` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::nonminimal_bool)]`
+
+error: could not compile `jc-tui` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: this boolean expression can be simplified
+  --> crates\jc-tui\src\app\visual_spanish_tests.rs:91:12
+   |
+91 |         if !std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty()) {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty())`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#nonminimal_bool
+   = note: `-D clippy::nonminimal-bool` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::nonminimal_bool)]`
+
+error: this boolean expression can be simplified
+  --> crates\jc-tui\src\frame_encoder.rs:58:21
+   |
+58 |         let color = !std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty())`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#nonminimal_bool
+
+error: could not compile `jc-tui` (lib test) due to 2 previous errors

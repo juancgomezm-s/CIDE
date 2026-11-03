@@ -17,8 +17,8 @@ pub const GIT_DIFF_JOB_KEY: JobKey = JobKey(0x4a43_4744_4946_4601);
 const SNAPSHOT_LIMIT: usize = 2 * 1024 * 1024;
 const PATH_LIMIT: usize = 4096;
 const ERROR_LIMIT: usize = 512;
-const READ_TIMEOUT: &str = "Git blob read timed out";
-const READ_LIMIT: &str = "Git blob exceeds the comparison limits";
+const READ_TIMEOUT: &str = "Se agotó el tiempo de lectura del blob Git";
+const READ_LIMIT: &str = "El blob Git excede los límites de comparación";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitDiffOptions {
@@ -40,6 +40,21 @@ pub enum GitDiffState {
     Stale,
     Failed,
     TimedOut,
+}
+impl GitDiffState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "Inactivo",
+            Self::Queued => "En cola",
+            Self::Running => "En curso",
+            Self::Ready => "Listo",
+            Self::Limited => "Limitado",
+            Self::Cancelled => "Cancelado",
+            Self::Stale => "Obsoleto",
+            Self::Failed => "Fallido",
+            Self::TimedOut => "Tiempo agotado",
+        }
+    }
 }
 #[derive(Debug)]
 pub struct GitDiffResult {
@@ -166,7 +181,7 @@ impl GitDiffController {
     }
     pub fn cancel(&mut self, jobs: &mut JobSystem) {
         self.invalidate(jobs);
-        self.status(GitDiffState::Cancelled, "Git comparison cancelled");
+        self.status(GitDiffState::Cancelled, "Comparación Git cancelada");
     }
     pub fn clear(&mut self, jobs: &mut JobSystem) {
         self.invalidate(jobs);
@@ -180,21 +195,24 @@ impl GitDiffController {
     ) -> Result<(), String> {
         if self.generation == u64::MAX {
             self.invalidate(jobs);
-            self.status(GitDiffState::Failed, "Git comparison generation exhausted");
+            self.status(
+                GitDiffState::Failed,
+                "Se agotó la generación de comparación Git",
+            );
             return Err(self.message.clone());
         }
         self.invalidate(jobs);
         let request = (|| {
-            let document = app.active_document().ok_or("No active document")?;
+            let document = app.active_document().ok_or("No hay documento activo")?;
             let encoding = document
                 .session
                 .encoding()
-                .ok_or("Choose the document encoding before comparing")?;
+                .ok_or("Elige la codificación del documento antes de comparar")?;
             let view = app
                 .panes()
                 .view(app.panes().active())
                 .and_then(|view| view.view_id())
-                .ok_or("No active editor view")?;
+                .ok_or("No hay vista de editor activa")?;
             if document.session.document().len() > SNAPSHOT_LIMIT {
                 return Err(READ_LIMIT);
             }
@@ -207,14 +225,14 @@ impl GitDiffController {
             .iter()
             .any(|path| path.as_os_str().len() > PATH_LIMIT)
             {
-                return Err("Git comparison path exceeds its metadata limit");
+                return Err("La ruta de comparación Git excede el límite de metadatos");
             }
             if !options.git_executable.is_absolute()
                 || !options.root.is_absolute()
                 || !options.cwd.is_absolute()
             {
                 return Err(
-                    "Git executable, repository root and launch directory must be absolute",
+                    "El ejecutable Git, la raíz del repositorio y el directorio de inicio deben ser absolutos",
                 );
             }
             let stamp = TaskStamp {
@@ -234,7 +252,7 @@ impl GitDiffController {
             Ok(work) => self.pending = Some(work),
             Err(message) => {
                 let state = if message == READ_LIMIT
-                    || message == "Git comparison path exceeds its metadata limit"
+                    || message == "La ruta de comparación Git excede el límite de metadatos"
                 {
                     GitDiffState::Limited
                 } else {
@@ -244,7 +262,7 @@ impl GitDiffController {
                 return Err(message.into());
             }
         }
-        self.status(GitDiffState::Queued, "Git comparison queued");
+        self.status(GitDiffState::Queued, "Comparación Git en cola");
         self.tick(app, jobs);
         if matches!(
             self.state,
@@ -267,7 +285,7 @@ impl GitDiffController {
             self.discard_result();
             changed |= self.status(
                 GitDiffState::Stale,
-                "Document/view changed; refresh Git comparison",
+                "Cambió el documento/vista; actualiza la comparación Git",
             );
         }
         if self.in_flight.as_ref().is_some_and(|flight| {
@@ -278,7 +296,7 @@ impl GitDiffController {
             jobs.cancel(GIT_DIFF_JOB_KEY);
             changed |= self.status(
                 GitDiffState::Stale,
-                "Document/view changed; refresh Git comparison",
+                "Cambió el documento/vista; actualiza la comparación Git",
             );
         }
         if self
@@ -287,7 +305,7 @@ impl GitDiffController {
             .is_some_and(|work| !current(work.stamp, &work.document_path, app))
         {
             self.pending = None;
-            changed |= self.status(GitDiffState::Stale, "Queued comparison became stale");
+            changed |= self.status(GitDiffState::Stale, "La comparación en cola quedó obsoleta");
         }
         changed
     }
@@ -312,11 +330,14 @@ impl GitDiffController {
                 });
                 changed |= self.status(
                     GitDiffState::Running,
-                    "Reading immutable Git snapshot and comparing",
+                    "Leyendo captura inmutable Git y comparando",
                 );
             }
             Err(SubmitError::Busy) => {
-                changed |= self.status(GitDiffState::Queued, "Waiting for background capacity");
+                changed |= self.status(
+                    GitDiffState::Queued,
+                    "Esperando capacidad de tareas de fondo",
+                );
             }
             Err(error) => {
                 self.pending = None;
@@ -325,7 +346,7 @@ impl GitDiffController {
                 } else {
                     GitDiffState::Failed
                 };
-                changed |= self.status(state, format!("Git comparison admission: {error:?}"));
+                changed |= self.status(state, format!("Admisión de comparación Git: {error}"));
             }
         }
         changed
@@ -352,23 +373,30 @@ impl GitDiffController {
             self.discard_result();
             self.status(
                 GitDiffState::Stale,
-                "Git comparison source changed before delivery",
+                "El fuente de comparación Git cambió antes de su entrega",
             );
             return true;
         }
         if task.status != TaskStatus::Completed {
             let (state, message) = match task.status {
-                TaskStatus::Cancelled => (GitDiffState::Cancelled, "Git comparison cancelled"),
-                TaskStatus::TimedOut => (GitDiffState::TimedOut, "Git comparison timed out"),
-                TaskStatus::LimitExceeded => {
-                    (GitDiffState::Limited, "Git comparison exceeded its budgets")
-                }
+                TaskStatus::Cancelled => (GitDiffState::Cancelled, "Comparación Git cancelada"),
+                TaskStatus::TimedOut => (
+                    GitDiffState::TimedOut,
+                    "Se agotó el tiempo de comparación Git",
+                ),
+                TaskStatus::LimitExceeded => (
+                    GitDiffState::Limited,
+                    "La comparación Git excedió sus cuotas",
+                ),
                 TaskStatus::InvalidRange => (
                     GitDiffState::Stale,
-                    "Git comparison snapshot became invalid",
+                    "La captura de comparación Git dejó de ser válida",
                 ),
-                TaskStatus::Panicked => (GitDiffState::Failed, "Git comparison worker panicked"),
-                _ => (GitDiffState::Failed, "Git comparison worker failed"),
+                TaskStatus::Panicked => (
+                    GitDiffState::Failed,
+                    "La tarea de comparación Git sufrió un fallo",
+                ),
+                _ => (GitDiffState::Failed, "Falló la tarea de comparación Git"),
             };
             self.status(state, message);
             return true;
@@ -376,7 +404,7 @@ impl GitDiffController {
         if !task.current || !task.applicable {
             self.status(
                 GitDiffState::Stale,
-                "Git comparison delivery is no longer current",
+                "La entrega de comparación Git ya no está vigente",
             );
             return true;
         }
@@ -385,7 +413,7 @@ impl GitDiffController {
         }) else {
             self.status(
                 GitDiffState::Failed,
-                "Git comparison returned an invalid delivery stamp",
+                "La comparación Git devolvió una identidad de entrega inválida",
             );
             return true;
         };
@@ -395,16 +423,16 @@ impl GitDiffController {
                     self.selected = 0;
                     self.accepted = Some(flight.intent);
                     self.result = Some(result);
-                    self.status(GitDiffState::Ready, "Git snapshot comparison ready");
+                    self.status(GitDiffState::Ready, "Comparación de captura Git lista");
                 }
                 DiffStatus::Limited(limit) => {
                     self.status(
                         GitDiffState::Limited,
-                        format!("Git comparison limit: {limit:?}"),
+                        format!("Límite de comparación Git: {}", limit.label()),
                     );
                 }
                 DiffStatus::Cancelled => {
-                    self.status(GitDiffState::Cancelled, "Git comparison cancelled");
+                    self.status(GitDiffState::Cancelled, "Comparación Git cancelada");
                 }
             },
             Err(message) => {
@@ -432,7 +460,7 @@ impl GitDiffController {
     }
     pub fn select_hunk(&mut self, index: usize, app: &mut Workbench) -> Result<(), String> {
         if self.state != GitDiffState::Ready {
-            return Err("No current Git comparison".into());
+            return Err("No hay comparación Git vigente".into());
         }
         let Some(intent) = self
             .accepted
@@ -442,12 +470,19 @@ impl GitDiffController {
             self.discard_result();
             self.status(
                 GitDiffState::Stale,
-                "Document/view changed; refresh Git comparison",
+                "Cambió el documento/vista; actualiza la comparación Git",
             );
             return Err(self.message.clone());
         };
-        let result = self.result.as_ref().ok_or("No Git comparison result")?;
-        let hunk = result.model.hunks().nth(index).ok_or("No such Git hunk")?;
+        let result = self
+            .result
+            .as_ref()
+            .ok_or("No hay resultado de comparación Git")?;
+        let hunk = result
+            .model
+            .hunks()
+            .nth(index)
+            .ok_or("No existe ese bloque Git")?;
         let mut offset = result
             .model
             .line_byte_range(DiffSide::Right, hunk.right.start)
@@ -465,10 +500,10 @@ impl GitDiffController {
         }
         let tab = app
             .document_by_id(intent.stamp.document)
-            .ok_or("Comparison document closed")?
+            .ok_or("Se cerró el documento de la comparación")?
             .tab_id;
         if !app.jump_to_location(tab, offset) {
-            return Err("Git hunk is not a valid text navigation boundary".into());
+            return Err("El bloque Git no es una frontera textual válida".into());
         }
         self.selected = index;
         Ok(())
@@ -492,7 +527,7 @@ fn resolve_path(work: &GitDiffWork) -> Result<(PathBuf, PathBuf), String> {
         .options
         .root
         .canonicalize()
-        .map_err(|e| bounded_error(format!("Repository root: {e}")))?;
+        .map_err(|e| bounded_error(format!("Raíz del repositorio: {e}")))?;
     let requested = if work.document_path.is_absolute() {
         work.document_path.clone()
     } else {
@@ -503,25 +538,25 @@ fn resolve_path(work: &GitDiffWork) -> Result<(PathBuf, PathBuf), String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let name = requested
                 .file_name()
-                .ok_or("Document path has no file name")?;
+                .ok_or("La ruta del documento no tiene nombre de archivo")?;
             let parent = requested
                 .parent()
-                .ok_or("Document path has no parent")?
+                .ok_or("La ruta del documento no tiene directorio padre")?
                 .canonicalize()
-                .map_err(|e| bounded_error(format!("Document parent: {e}")))?;
+                .map_err(|e| bounded_error(format!("Directorio padre del documento: {e}")))?;
             parent.join(name)
         }
-        Err(error) => return Err(bounded_error(format!("Document path: {error}"))),
+        Err(error) => return Err(bounded_error(format!("Ruta del documento: {error}"))),
     };
     let path = resolved
         .strip_prefix(&root)
-        .map_err(|_| "Document is outside the repository root")?;
+        .map_err(|_| "El documento está fuera de la raíz del repositorio")?;
     if path.as_os_str().is_empty()
         || path
             .components()
             .any(|c| !matches!(c, Component::Normal(_)))
     {
-        return Err("Invalid repository-relative document path".into());
+        return Err("Ruta relativa del documento inválida".into());
     }
     Ok((root, path.to_owned()))
 }
@@ -532,10 +567,10 @@ fn compute(
 ) -> Result<GitDiffResult, String> {
     let (root, path) = resolve_path(work)?;
     if cancel.is_cancelled() {
-        return Err("Git comparison cancelled".into());
+        return Err("Comparación Git cancelada".into());
     }
     let reader = GitReader::new(&work.options.git_executable)
-        .map_err(|e| bounded_error(format!("Git executable: {e}")))?;
+        .map_err(|e| bounded_error(format!("Ejecutable Git: {e}")))?;
     let blob = reader
         .read_blob(
             &root,

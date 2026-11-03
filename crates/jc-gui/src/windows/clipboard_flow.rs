@@ -2,6 +2,32 @@
 use super::{clipboard, ffi::Hwnd, owner};
 use jc_app::CommandId;
 const LIMIT: usize = 2 * 1024 * 1024;
+pub(super) unsafe fn paste_snippet(hwnd: Hwnd, target: super::snippet_panel::SnippetInputTarget) {
+    let captured = owner(hwnd).and_then(|m| {
+        let s = m.state.borrow();
+        (s.snippet_input_target() == Some(target))
+            .then(|| s.snippet_field_budget())
+            .flatten()
+            .map(|budget| (s.smoke, budget))
+    });
+    let Some((smoke, budget)) = captured else {
+        return;
+    };
+    // Delayed rendering can reenter the window; no model borrow crosses read.
+    let text = if smoke {
+        Ok(owner(hwnd).and_then(|m| m.state.borrow().smoke_clipboard.clone()))
+    } else {
+        clipboard::read_limited(hwnd, budget)
+    };
+    if let Some(m) = owner(hwnd) {
+        let mut s = m.state.borrow_mut();
+        match text {
+            Ok(Some(text)) if !text.is_empty() => s.snippet_paste_to(target, &text),
+            Ok(_) => {}
+            Err(e) => s.error(e),
+        }
+    }
+}
 /// Explicit selector field handoff. The injectable transport also exercises
 /// reentrant delivery using controlled synthetic text on an owned test HWND.
 pub(super) unsafe fn selector_transfer_with(
@@ -14,13 +40,13 @@ pub(super) unsafe fn selector_transfer_with(
         command,
         CommandId::EditCopy | CommandId::EditCut | CommandId::EditPaste
     ) {
-        return Err("Unsupported selector clipboard action".into());
+        return Err("Acción de portapapeles no admitida en el selector".into());
     }
     let export = {
-        let model = owner(hwnd).ok_or("Selector window closed")?;
+        let model = owner(hwnd).ok_or("La ventana del selector está cerrada")?;
         let state = model.state.borrow();
         if state.selector_input_target() != Some(target.clone()) {
-            return Err("Selector destination changed before clipboard action".into());
+            return Err("Cambió el destino del selector antes de usar el portapapeles".into());
         }
         if command == CommandId::EditPaste {
             None
@@ -34,17 +60,19 @@ pub(super) unsafe fn selector_transfer_with(
     // No RefCell/Workbench borrow crosses this call (native delayed rendering
     // can pump messages). Text remains at most256 UTF-8 bytes before retention.
     let returned = transport(export.as_deref())?;
-    let model = owner(hwnd).ok_or("Selector window closed during clipboard action")?;
+    let model = owner(hwnd).ok_or("Se cerró la ventana del selector durante la transferencia")?;
     let mut state = model.state.borrow_mut();
     if state.selector_input_target() != Some(target) {
-        return Err("Selector field/context changed during clipboard action; retry".into());
+        return Err(
+            "Cambió el campo/contexto del selector durante la transferencia; reintenta".into(),
+        );
     }
     match command {
         CommandId::EditCut => {
             let changed = state
                 .selector
                 .as_mut()
-                .ok_or("Selector closed")?
+                .ok_or("Selector cerrado")?
                 .edit_input(jc_app::FieldEdit::Delete, false)?;
             if changed {
                 state.request_files();
@@ -57,7 +85,7 @@ pub(super) unsafe fn selector_transfer_with(
                 let changed = state
                     .selector
                     .as_mut()
-                    .ok_or("Selector closed")?
+                    .ok_or("Selector cerrado")?
                     .edit_input(jc_app::FieldEdit::Insert(&text), false)?;
                 if changed {
                     state.request_files();
@@ -65,7 +93,7 @@ pub(super) unsafe fn selector_transfer_with(
             }
         }
         CommandId::EditCopy => {}
-        _ => return Err("Unsupported selector clipboard action".into()),
+        _ => return Err("Acción de portapapeles no admitida en el selector".into()),
     }
     Ok(())
 }
@@ -79,7 +107,7 @@ pub(super) unsafe fn selector_transfer(
         if let Some(text) = export {
             if smoke {
                 owner(hwnd)
-                    .ok_or("Selector test window closed")?
+                    .ok_or("Se cerró la ventana de prueba del selector")?
                     .state
                     .borrow_mut()
                     .smoke_clipboard = Some(text.to_owned());
@@ -96,7 +124,7 @@ pub(super) unsafe fn selector_transfer(
     if let Some(model) = owner(hwnd) {
         let mut state = model.state.borrow_mut();
         match result {
-            Ok(()) => state.status = "Selector clipboard action completed".into(),
+            Ok(()) => state.status = "Transferencia del selector completada".into(),
             Err(error) => state.error(error),
         }
     }
@@ -115,7 +143,7 @@ pub(super) unsafe fn paste_navigation(hwnd: Hwnd, generation: u64) {
         if !state.navigation_target_current()
             || state.navigation_panel.as_ref().map(|p| p.generation) != Some(generation)
         {
-            state.error("Navigation field/target changed during clipboard read; retry");
+            state.error("Cambió el campo/destino de navegación al leer el portapapeles; reintenta");
             return;
         }
         match text {
@@ -143,7 +171,7 @@ pub(super) unsafe fn paste_replacement(hwnd: Hwnd, generation: u64) {
                 .map(|p| p.generation)
                 != Some(generation)
         {
-            state.error("Replacement field/root changed during clipboard read; retry");
+            state.error("Cambió el campo/raíz del reemplazo al leer el portapapeles; reintenta");
             return;
         }
         match text {
@@ -171,7 +199,7 @@ pub(super) unsafe fn paste_project(hwnd: Hwnd, generation: u64) {
                 .map(|p| p.generation)
                 != Some(generation)
         {
-            state.error("Project field/root changed during clipboard read; retry");
+            state.error("Cambió el campo/raíz del proyecto al leer el portapapeles; reintenta");
             return;
         }
         match text {
@@ -204,7 +232,7 @@ pub(super) unsafe fn paste_search(hwnd: Hwnd, generation: u64) {
         if current != target
             || state.search_panel.as_ref().map(|p| p.generation) != Some(generation)
         {
-            state.error("Search field changed during clipboard read; retry");
+            state.error("Cambió el campo de búsqueda al leer el portapapeles; reintenta");
             return;
         }
         match text {
@@ -220,15 +248,13 @@ pub(super) unsafe fn perform(hwnd: Hwnd, command: CommandId) {
     if let Some(owner) = owner(hwnd) {
         let mut state = owner.state.borrow_mut();
         match result {
-            Ok(()) => {
-                state.status = "Ready · Windows text clipboard; rectangle clipboard internal".into()
-            }
+            Ok(()) => state.status = "Listo · portapapeles de Windows; rectángulos internos".into(),
             Err(error) => state.error(error),
         }
     }
 }
 unsafe fn transfer(hwnd: Hwnd, command: CommandId) -> Result<(), String> {
-    let model = owner(hwnd).ok_or("Clipboard window is closed")?;
+    let model = owner(hwnd).ok_or("La ventana del portapapeles está cerrada")?;
     match command {
         CommandId::EditCopy | CommandId::EditCut => {
             let export = model
@@ -250,7 +276,7 @@ unsafe fn transfer(hwnd: Hwnd, command: CommandId) -> Result<(), String> {
             }
             if command == CommandId::EditCut {
                 owner(hwnd)
-                    .ok_or("Clipboard window closed during publication")?
+                    .ok_or("Se cerró la ventana al publicar en el portapapeles")?
                     .state
                     .borrow_mut()
                     .workbench
@@ -258,7 +284,7 @@ unsafe fn transfer(hwnd: Hwnd, command: CommandId) -> Result<(), String> {
                     .map_err(|e| e.to_string())?;
             } else {
                 owner(hwnd)
-                    .ok_or("Clipboard window closed during publication")?
+                    .ok_or("Se cerró la ventana al publicar en el portapapeles")?
                     .state
                     .borrow_mut()
                     .workbench
@@ -281,7 +307,7 @@ unsafe fn transfer(hwnd: Hwnd, command: CommandId) -> Result<(), String> {
             };
             if let Some(text) = text {
                 owner(hwnd)
-                    .ok_or("Clipboard window closed during read")?
+                    .ok_or("Se cerró la ventana al leer el portapapeles")?
                     .state
                     .borrow_mut()
                     .workbench
@@ -289,7 +315,7 @@ unsafe fn transfer(hwnd: Hwnd, command: CommandId) -> Result<(), String> {
                     .map_err(|e| e.to_string())?;
             }
         }
-        _ => return Err("Unsupported clipboard action".into()),
+        _ => return Err("Acción de portapapeles no admitida".into()),
     }
     Ok(())
 }

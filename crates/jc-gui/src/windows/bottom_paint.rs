@@ -51,7 +51,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &BottomFrame, ch: i32) -> Result<(), S
             bottom: rect.bottom,
         },
         &wide(
-            "F6 focus | Alt+1 Problems / Alt+2 Output | Enter navigate | Esc Editor | Ctrl+J hide",
+            "F6 cambia área | Alt+1 Problemas/Alt+2 Salida | Intro navega | Esc editor | Ctrl+J oculta",
         ),
         0x008d8b87,
         0x00222222,

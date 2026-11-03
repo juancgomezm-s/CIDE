@@ -1,5 +1,25 @@
 # Validación
 
+## Estado vigente — GUI y TUI en español, 2026-11-03
+
+Comparación de documentos abiertos, servicios de fuente opcionales y plantillas
+están conectados en GUI. Ambas interfaces incorporan español y Markdown de
+lectura; TUI añade tema inspirado en OmniCore, letras Alt subrayadas y ayuda lateral.
+[Contrato, uso y evidencia](M2B_GUI_WORKFLOWS_ES.md).
+549 nombres de pruebas aprobados por suites/cierres dirigidos,19 nuevos; dos
+helpers se ejecutan por sus padres. Fmt/Clippy/release offline, cuatro recorridos
+ConPTY y15 checks HWND propios aprobados. No corrida runtime global única.
+
+Ejecutables actuales: `target/ui-es/release/cide-tui.exe` y `cide-gui.exe` en esa
+misma carpeta; el antiguo `target/release` se conserva. F10/Alt abre menús, F6
+cambia panel y Ctrl+Alt+M alterna Markdown. Se preservan F1/F2/F3, bytes y undo.
+Sin nuevas dependencias externas; GUI usa el proveedor opcional existente.
+
+Quedan abiertas aceptación física/global de RAM/arranque/pantalla, IME/DPI y
+accesibilidad/clipboard real. AVM M3, semántica M4, Git escritura/CI M5 y runtime
+externo post-M5 conservan su alcance. Sin CI, push ni publicación.
+Los siguientes estados y pendientes históricos se subordinan a este cierre.
+
 ## Estado vigente — cierre funcional TUI, 2026-11-03
 
 Los bloques admitidos de TUI están implementados y validados localmente: regex,

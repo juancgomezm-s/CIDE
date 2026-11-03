@@ -363,7 +363,7 @@ fn background_completion_wakes_and_updates_panels_without_input_or_applying_edit
     assert_ne!(wakeup.ticket(), ticket);
     assert!(app.poll_tasks().changed);
     assert!(app.workbench.problems()[0].contains("background diagnostic"));
-    assert!(app.workbench.output()[0].contains("proposed"));
+    assert!(app.workbench.output()[0].contains("no se aplicó"));
     assert_eq!(app.workbench.active_bytes().unwrap(), b"abc");
     let target = app.workbench.problems()[0].target.as_ref().unwrap();
     assert_eq!(target.stamp.document, id);
@@ -399,7 +399,7 @@ fn drawing_shared_views_reads_visible_ranges_without_rescanning_the_document() {
     let after = app.workbench.text_statistics(tab).unwrap();
     assert_eq!(before.0, after.0);
     assert!(after.1 - before.1 < 65536);
-    assert!((0..screen.height()).any(|row| screen.row_text(row).contains("Group 1")));
+    assert!((0..screen.height()).any(|row| screen.row_text(row).contains("Grupo 1")));
 }
 
 fn palette(app: &mut TuiApp, label: &str) {
@@ -418,10 +418,10 @@ fn keyboard_and_palette_drive_split_pin_history_and_responsive_rendering() {
     let mut app = TuiApp::new(LaunchOptions::default());
     let first = app.workbench.new_file("left.txt", TextEncoding::Utf8);
     text(&mut app, "left text");
-    palette(&mut app, "Split Right");
+    palette(&mut app, "Dividir a la derecha");
     key(&mut app, KeyCode::Char('2'), KeyModifiers::CONTROL);
     assert_eq!(app.workbench.panes().active(), PaneId::Secondary);
-    palette(&mut app, "Pin / Unpin Reference");
+    palette(&mut app, "Anclar/desanclar referencia");
     assert!(app
         .workbench
         .panes()
@@ -433,16 +433,16 @@ fn keyboard_and_palette_drive_split_pin_history_and_responsive_rendering() {
     text(&mut app, "right text");
     let wide = app.frame(140, 30);
     let headers = wide.row_text(2);
-    assert!(headers.contains("Group 1: right.txt"));
-    assert!(headers.contains("Group 2: left.txt [PIN]"));
+    assert!(headers.contains("Grupo 1: right.txt"));
+    assert!(headers.contains("Grupo 2: left.txt [FIJO]"));
     assert!(wide.row_text(3).contains("right text"));
     assert!(wide.row_text(3).contains("left text"));
     let narrow = app.frame(45, 15);
-    assert!(narrow.row_text(2).contains("Group 1: right.txt"));
-    assert!(!narrow.row_text(2).contains("Group 2"));
+    assert!(narrow.row_text(2).contains("Grupo 1: right.txt"));
+    assert!(!narrow.row_text(2).contains("Grupo 2"));
     key(&mut app, KeyCode::Char('2'), KeyModifiers::CONTROL);
     let narrow = app.frame(45, 15);
-    assert!(narrow.row_text(2).contains("Group 2: left.txt"));
+    assert!(narrow.row_text(2).contains("Grupo 2: left.txt"));
     key(&mut app, KeyCode::Char('1'), KeyModifiers::CONTROL);
     key(&mut app, KeyCode::Left, KeyModifiers::ALT);
     assert_eq!(app.workbench.tabs().active_id(), Some(first));
@@ -450,10 +450,10 @@ fn keyboard_and_palette_drive_split_pin_history_and_responsive_rendering() {
     assert_eq!(app.workbench.tabs().active_id(), Some(second));
     key(&mut app, KeyCode::F(6), KeyModifiers::NONE);
     assert_ne!(app.focus.primary(), PrimaryFocus::Editor);
-    palette(&mut app, "Focus Group 2");
+    palette(&mut app, "Enfocar grupo 2");
     assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
     assert_eq!(app.workbench.panes().active(), PaneId::Secondary);
-    palette(&mut app, "One Group");
+    palette(&mut app, "Un grupo");
     assert!(!app.workbench.panes().is_split());
     assert_eq!(app.workbench.tabs().active_id(), Some(second));
 }
@@ -509,7 +509,7 @@ fn view_menu_scrolls_to_the_selected_command_in_a_short_terminal() {
     app.dispatch(CommandId::MenuView);
     key(&mut app, KeyCode::Up, KeyModifiers::NONE); // wrap to the final registered command
     let screen = app.frame(45, 10);
-    assert!((1..9).any(|row| screen.row_text(row).contains("Open Comparison Hunk")));
+    assert!((1..9).any(|row| screen.row_text(row).contains("bloque de diferencias")));
     // Menu interiors must be opaque even when shorter labels leave spare cells.
     for row in 2..8 {
         assert!(!screen

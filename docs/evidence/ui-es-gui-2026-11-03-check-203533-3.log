@@ -1,0 +1,47 @@
+    Checking jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+    Checking unicode-width v0.2.2
+    Checking unicode-segmentation v1.13.3
+    Checking regex-syntax v0.8.11
+    Checking jc-languages v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-languages)
+    Checking jc-platform v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-platform)
+    Checking scopeguard v1.2.0
+    Checking cfg-if v1.0.5
+    Checking windows-link v0.2.1
+    Checking smallvec v1.16.4
+    Checking bitflags v2.13.2
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Checking winapi v0.3.9
+   Compiling jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+    Checking lock_api v0.4.14
+    Checking parking_lot_core v0.9.12
+    Checking jc-text v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-text)
+    Checking parking_lot v0.12.5
+    Checking jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Checking regex-automata v0.4.18
+    Checking crossterm_winapi v0.9.1
+    Checking crossterm v0.29.0
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+error: stripping a prefix manually
+   --> crates\jc-app\src\markdown_preview.rs:398:31
+    |
+398 |             if let Some(ch) = rest[1..].chars().next() {
+    |                               ^^^^^^^^^
+    |
+note: the prefix was tested here
+   --> crates\jc-app\src\markdown_preview.rs:397:9
+    |
+397 |         if rest.starts_with('\\') {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#manual_strip
+    = note: `-D clippy::manual-strip` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_strip)]`
+help: try using the `strip_prefix` method
+    |
+397 ~         if let Some(<stripped>) = rest.strip_prefix('\\') {
+398 ~             if let Some(ch) = <stripped>.chars().next() {
+    |
+
+error: could not compile `jc-app` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-app` (lib test) due to 1 previous error

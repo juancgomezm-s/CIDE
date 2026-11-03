@@ -18,12 +18,12 @@ pub(super) struct NavigationPresentation {
 impl State {
     pub(super) fn open_navigation_panel(&mut self) {
         let Some(document) = self.workbench.active_document() else {
-            self.error("No document for Go to Position");
+            self.error("No hay documento para ir a una posición");
             return;
         };
         let Some(encoding) = document.session.encoding() else {
             self.open_encoding_selector();
-            self.error("Choose source encoding before Go to Position");
+            self.error("Elige la codificación del fuente antes de ir a una posición");
             return;
         };
         let pane = self.workbench.panes().active();
@@ -36,7 +36,7 @@ impl State {
             view: Some(view),
         };
         let Some(generation) = self.navigation_generation.checked_add(1) else {
-            self.error("Navigation generation exhausted");
+            self.error("Se agotó la generación de navegación");
             return;
         };
         self.close_selector();
@@ -49,7 +49,7 @@ impl State {
             pane,
             generation,
         });
-        self.status = "Use line[:column], one-based source scalar coordinates".into();
+        self.status = "Usa línea[:columna], coordenadas escalares del fuente desde1".into();
     }
     pub(super) fn navigation_target_current(&self) -> bool {
         self.navigation_panel.as_ref().is_some_and(|panel| {
@@ -70,25 +70,25 @@ impl State {
     pub(super) fn edit_navigation_input(&mut self, edit: FieldEdit<'_>) {
         if !self.navigation_target_current() {
             self.navigation_panel = None;
-            self.error("Navigation target changed; reopen Go to Position");
+            self.error("Cambió el destino; vuelve a abrir Ir a posición");
             return;
         }
         let Some(generation) = self.navigation_generation.checked_add(1) else {
-            self.error("Navigation generation exhausted");
+            self.error("Se agotó la generación de navegación");
             return;
         };
         self.navigation_generation = generation;
         let panel = self.navigation_panel.as_mut().unwrap();
         panel.generation = generation;
         match edit_field(&mut panel.input, &mut panel.cursor, edit, 64) {
-            Ok(_) => self.status = "Go to Position · Enter accepts; Escape cancels".into(),
+            Ok(_) => self.status = "Ir a posición · Intro acepta; Escape cancela".into(),
             Err(error) => self.error(error),
         }
     }
     fn accept_navigation(&mut self) {
         if !self.navigation_target_current() {
             self.navigation_panel = None;
-            self.error("Navigation target changed; reopen Go to Position");
+            self.error("Cambió el destino; vuelve a abrir Ir a posición");
             return;
         }
         let Some(position) = self
@@ -96,14 +96,14 @@ impl State {
             .as_ref()
             .and_then(|p| jc_app::parse_text_position(&p.input))
         else {
-            self.error("Use line[:column], one-based source scalar coordinates");
+            self.error("Usa línea[:columna], coordenadas escalares del fuente desde1");
             return;
         };
         match self.workbench.go_to_position(position) {
             Ok(()) => {
                 self.close_selector();
                 self.bottom.focused = false;
-                self.status = "Position selected · source scalar coordinates".into();
+                self.status = "Posición elegida · coordenadas escalares del fuente".into();
             }
             Err(error) => self.error(error),
         }
@@ -111,12 +111,12 @@ impl State {
     pub(super) fn navigation_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
         if code == 0x1b {
             self.close_selector();
-            self.status = "Go to Position cancelled".into();
+            self.status = "Ir a posición cancelado".into();
             return Action::None;
         }
         if !self.navigation_target_current() {
             self.navigation_panel = None;
-            self.error("Navigation target changed; reopen Go to Position");
+            self.error("Cambió el destino; vuelve a abrir Ir a posición");
             return Action::None;
         }
         if modifiers == Modifiers::CTRL && code == 0x56 {
@@ -155,7 +155,7 @@ impl State {
             message: if self.navigation_target_current() {
                 self.status.clone()
             } else {
-                "Navigation target changed; reopen Go to Position".into()
+                "Cambió el destino; vuelve a abrir Ir a posición".into()
             },
         })
     }

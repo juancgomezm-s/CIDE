@@ -31,6 +31,13 @@ impl State {
             context.has_selection = selector.selected_text().is_some();
             context.clipboard_has_text = true; // explicit-action intention; never reads OS
         }
+        if self.selector.is_none()
+            && command == CommandId::EditPaste
+            && self.snippet_input_target().is_some()
+        {
+            context.field_paste = true;
+            context.clipboard_has_text = true;
+        }
         context
     }
     pub(super) fn selector_input_target(&self) -> Option<SelectorInputTarget> {

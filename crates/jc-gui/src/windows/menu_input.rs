@@ -17,6 +17,15 @@ pub(super) struct MenuStamp {
     replace: Option<u64>,
     git: Option<super::git_panel::GitIntent>,
     epoch: u64,
+    comparison: (bool, jc_app::open_diff::OpenDiffState, usize),
+    source_ui: (
+        u64,
+        jc_app::source_services::SourceState,
+        Option<jc_app::source_services::SourceMode>,
+        usize,
+        bool,
+    ),
+    snippet: Option<super::snippet_panel::SnippetInputTarget>,
 }
 impl State {
     pub(super) fn current_menu_stamp(&self) -> MenuStamp {
@@ -45,6 +54,13 @@ impl State {
             replace: self.replace_panel.as_ref().map(|p| p.generation),
             git: self.git_panel,
             epoch: self.interaction_epoch,
+            comparison: (
+                self.open_diff_visible,
+                self.open_diff.state(),
+                self.open_diff.selected(),
+            ),
+            source_ui: self.source_gui.stamp(),
+            snippet: self.snippet_stamp(),
         }
     }
     pub(super) fn accept_menu_selection(&mut self) -> bool {
@@ -53,7 +69,7 @@ impl State {
             .take()
             .is_some_and(|stamp| *stamp != self.current_menu_stamp())
         {
-            self.status = "Menu target changed; action discarded".into();
+            self.status = "Cambió el destino del menú; acción descartada".into();
             return false;
         }
         true

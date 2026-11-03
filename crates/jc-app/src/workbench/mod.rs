@@ -47,22 +47,22 @@ impl fmt::Display for WorkbenchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Save(message) | Self::UnicodeLayout(message) => f.write_str(message),
-            Self::ClipboardLimit => f.write_str("clipboard transfer exceeds its byte budget"),
-            Self::ClipboardStale => f.write_str("clipboard target changed; retry the action"),
+            Self::ClipboardLimit => f.write_str("El portapapeles supera su límite de bytes"),
+            Self::ClipboardStale => f.write_str("Cambió el destino del portapapeles; repite la acción"),
             Self::Rectangle(message) => f.write_str(message),
             Self::LineCommand(message) => f.write_str(message),
-            Self::NoDocument => f.write_str("no active document"),
+            Self::NoDocument => f.write_str("No hay un documento activo"),
             Self::File(error) => write!(f, "{error}"),
             Self::Position(error) => write!(f, "{error}"),
             Self::SearchPattern(message) => f.write_str(message),
             Self::ClipboardEncoding => {
-                f.write_str("clipboard text cannot be represented in the target document encoding")
+                f.write_str("El texto del portapapeles no se puede representar en la codificación del documento")
             }
             Self::SearchInput => {
-                f.write_str("search input or replacement exceeds its configured budget")
+                f.write_str("La búsqueda o el reemplazo supera su límite configurado")
             }
             Self::SearchIncomplete => {
-                f.write_str("search is incomplete; wait, restart or refine before replacing")
+                f.write_str("La búsqueda está incompleta; espera, reinicia o afínala antes de reemplazar")
             }
         }
     }
@@ -628,7 +628,7 @@ impl Workbench {
                         jc_files::read_in_root(root, &path, limit).map_err(FileError::from)?;
                     if jc_files::ContentFingerprint::of(&bytes) != expected {
                         return Err(FileError::Io(std::io::Error::other(
-                            "File content differs from the expected version; refresh the result",
+                            "El contenido difiere de la versión esperada; actualiza el resultado",
                         ))
                         .into());
                     }

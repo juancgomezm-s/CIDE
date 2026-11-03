@@ -44,17 +44,17 @@ pub(super) unsafe fn perform(hwnd: Hwnd) {
         state.save_all_active = false;
         state.status = match result {
             Ok(()) => format!(
-                "Save All {}: {} saved; {} pending",
+                "Guardar todo {}: {} guardados; {} pendientes",
                 if plan.remaining() > 0 {
-                    "cancelled"
+                    "cancelado"
                 } else {
-                    "complete"
+                    "completado"
                 },
                 plan.saved_count(),
                 plan.remaining()
             ),
             Err(error) => format!(
-                "Save All stopped: {} saved; {} pending · {error}",
+                "Guardar todo detenido: {} guardados; {} pendientes · {error}",
                 plan.saved_count(),
                 plan.remaining()
             )
@@ -68,24 +68,24 @@ unsafe fn run(hwnd: Hwnd, plan: &mut SavePlan) -> Result<(), String> {
     while let Some(candidate) = plan.next() {
         let (target, title) = {
             let state = owner(hwnd)
-                .ok_or("Window closed during Save All")?
+                .ok_or("Se cerró la ventana durante Guardar todo")?
                 .state
                 .borrow();
             let document = state
                 .workbench
                 .document_by_id(candidate.document)
-                .ok_or("Save All document was closed")?;
+                .ok_or("Se cerró un documento de Guardar todo")?;
             if document.session.is_new() != candidate.new_file {
-                return Err("Save All path assignment changed; retry".into());
+                return Err("Cambió la asignación de ruta en Guardar todo; reintenta".into());
             }
             let title = format!(
-                "Save All — {}",
+                "Guardar todo — {}",
                 document
                     .session
                     .path()
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .unwrap_or("<native path>")
+                    .unwrap_or("<ruta nativa>")
                     .chars()
                     .take(100)
                     .collect::<String>()
@@ -100,7 +100,7 @@ unsafe fn run(hwnd: Hwnd, plan: &mut SavePlan) -> Result<(), String> {
         };
         let destination = if candidate.new_file {
             let smoke = owner(hwnd)
-                .ok_or("Save All window closed")?
+                .ok_or("La ventana de Guardar todo está cerrada")?
                 .state
                 .borrow()
                 .smoke;
@@ -127,7 +127,7 @@ unsafe fn run(hwnd: Hwnd, plan: &mut SavePlan) -> Result<(), String> {
             None
         };
         let mut state = owner(hwnd)
-            .ok_or("Save All window closed before commit")?
+            .ok_or("Se cerró la ventana de Guardar todo antes de publicar")?
             .state
             .borrow_mut();
         state
@@ -142,27 +142,29 @@ unsafe fn run(hwnd: Hwnd, plan: &mut SavePlan) -> Result<(), String> {
 unsafe fn validate_smoke_destination(hwnd: Hwnd, path: &Path) -> Result<(), String> {
     use std::os::windows::fs::MetadataExt;
     let state = owner(hwnd)
-        .ok_or("Smoke Save All window closed")?
+        .ok_or("Se cerró la ventana de prueba de Guardar todo")?
         .state
         .borrow();
     let root = state
         .smoke_root
         .as_ref()
-        .ok_or("Smoke Save All has no owned directory")?;
+        .ok_or("La prueba de Guardar todo no tiene directorio propio")?;
     if !path.is_absolute()
         || path.exists()
         || path.parent().and_then(|p| p.canonicalize().ok()).as_ref() != Some(root)
     {
-        return Err("Smoke Save As needs a new owned sibling path".into());
+        return Err("La prueba de Guardar como requiere una ruta hermana nueva y propia".into());
     }
-    let parent = path.parent().ok_or("Smoke save has no parent")?;
+    let parent = path
+        .parent()
+        .ok_or("La prueba de guardado no tiene directorio padre")?;
     if std::fs::symlink_metadata(parent)
         .map_err(|e| e.to_string())?
         .file_attributes()
         & 0x400
         != 0
     {
-        return Err("Smoke Save As parent cannot be redirected".into());
+        return Err("El directorio padre de la prueba no puede redirigirse".into());
     }
     Ok(())
 }

@@ -8,6 +8,7 @@ mod render;
 mod screen;
 mod state;
 mod terminal;
+mod theme;
 
 pub use state::LaunchOptions;
 
@@ -26,7 +27,7 @@ pub(crate) fn validate_search_workers(workers: usize) -> std::io::Result<()> {
     if !(1..=4).contains(&workers) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "Project search workers must be between 1 and 4",
+            "La búsqueda del proyecto requiere entre 1 y 4 trabajadores",
         ));
     }
     Ok(())

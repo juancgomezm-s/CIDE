@@ -288,7 +288,9 @@ impl Workbench {
         let current = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let column = self
             .visual_column_for_pane(self.panes.active())
-            .ok_or_else(|| WorkbenchError::UnicodeLayout("Visual caret unavailable".into()))?;
+            .ok_or_else(|| {
+                WorkbenchError::UnicodeLayout("Columna visual del cursor no disponible".into())
+            })?;
         let line = if delta < 0 {
             current.line.saturating_sub(delta.unsigned_abs())
         } else {
@@ -297,9 +299,9 @@ impl Workbench {
                 .saturating_add(delta as usize)
                 .min(self.line_count_for_tab(tab).unwrap_or(1) - 1)
         };
-        let offset = self.visual_byte_at(tab, line, column).ok_or_else(|| {
-            WorkbenchError::UnicodeLayout("Visual destination unavailable".into())
-        })?;
+        let offset = self
+            .visual_byte_at(tab, line, column)
+            .ok_or_else(|| WorkbenchError::UnicodeLayout("Destino visual no disponible".into()))?;
         self.move_cursor_to(offset, select)
     }
     fn move_to_position(

@@ -24,7 +24,7 @@ impl SavePlan {
     /// catalog or copy of document contents, names or paths is constructed.
     pub(super) fn new(candidates: Vec<SaveCandidate>) -> Result<Self, &'static str> {
         if candidates.len() > 1024 {
-            return Err("Save All exceeds the 1024 document limit");
+            return Err("Guardar todo excede el límite de1024 documentos");
         }
         // The bound makes this allocation-free uniqueness check inexpensive;
         // preserving the input order also preserves the caller's dialog order.
@@ -33,7 +33,7 @@ impl SavePlan {
                 .iter()
                 .any(|previous| previous.document == candidate.document)
             {
-                return Err("Save All contains duplicate document identities");
+                return Err("Guardar todo contiene identidades de documento duplicadas");
             }
         }
         Ok(Self {
@@ -55,7 +55,7 @@ impl SavePlan {
     /// revision and new-file status. Errors leave the plan unchanged.
     pub(super) fn saved(&mut self, candidate: SaveCandidate) -> Result<(), &'static str> {
         if self.next() != Some(candidate) {
-            return Err("Save All acknowledgement does not match the pending candidate");
+            return Err("La confirmación de Guardar todo no coincide con el candidato pendiente");
         }
         self.saved += 1;
         self.ended = self.saved == self.candidates.len();

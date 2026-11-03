@@ -270,6 +270,8 @@ fn tab_navigation_wraps_and_alt_9_semantics_can_select_last() {
 fn unsaved_dialog_has_stable_unique_keyboard_choices() {
     let dialog = DialogSpec::unsaved_changes("customer.p");
     assert!(dialog.has_unique_mnemonics());
+    assert_eq!(dialog.resolve_mnemonic('G'), Some(DialogAction::Save));
+    assert_eq!(dialog.resolve_mnemonic('n'), Some(DialogAction::Discard));
     assert_eq!(dialog.resolve_mnemonic('S'), Some(DialogAction::Save));
     assert_eq!(dialog.resolve_mnemonic('d'), Some(DialogAction::Discard));
     assert_eq!(
@@ -283,7 +285,7 @@ fn unsaved_dialog_has_stable_unique_keyboard_choices() {
 fn display_strings_are_stable_and_human_readable() {
     assert_eq!(
         KeyStroke::ctrl_shift(Key::Char('p')).to_string(),
-        "Ctrl+Shift+P"
+        "Ctrl+Mayús+P"
     );
     assert_eq!(KeyStroke::alt(Key::Function(4)).to_string(), "Alt+F4");
     assert_eq!(KeyStroke::ctrl(Key::Char('`')).to_string(), "Ctrl+`");

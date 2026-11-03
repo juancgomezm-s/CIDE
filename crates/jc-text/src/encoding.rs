@@ -214,7 +214,7 @@ impl fmt::Display for EncodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} cannot represent U+{:04X} at scalar {}",
+            "{} no puede representar U+{:04X} en el escalar {}",
             self.encoding.name(),
             self.character as u32,
             self.scalar_index

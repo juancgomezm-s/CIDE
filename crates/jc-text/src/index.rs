@@ -19,14 +19,20 @@ impl fmt::Display for PositionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::SourceOffsetNotBoundary(offset) => {
-                write!(f, "source byte {offset} is not a text boundary")
+                write!(f, "El byte fuente {offset} no es un límite de texto")
             }
             Self::InsideLineEnding(offset) => {
-                write!(f, "source byte {offset} is inside a line ending")
+                write!(
+                    f,
+                    "El byte fuente {offset} está dentro de un final de línea"
+                )
             }
-            Self::LineOutOfRange(line) => write!(f, "line {line} is out of range"),
+            Self::LineOutOfRange(line) => write!(f, "La línea {line} está fuera de rango"),
             Self::ColumnOutOfRange { line, column } => {
-                write!(f, "column {column} is out of range for line {line}")
+                write!(
+                    f,
+                    "La columna {column} está fuera de rango en la línea {line}"
+                )
             }
         }
     }

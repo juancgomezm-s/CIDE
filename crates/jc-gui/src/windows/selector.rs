@@ -98,11 +98,11 @@ impl Selector {
             })
             .collect();
         SelectorPresentation {
-            title: "Choose Source Encoding",
+            title: "Elegir codificación del fuente",
             query: self.input.clone(),
             input_selection: self.input_selection,
-            message: "Interpret existing bytes; no conversion or save".into(),
-            footer: "Enter choose | Esc cancel; bytes stay intact",
+            message: "Interpretar bytes existentes; sin convertir ni guardar".into(),
+            footer: "Intro elige | Esc cancela; bytes intactos",
             rows,
             total,
             selected: self.selected,
@@ -139,7 +139,7 @@ impl Selector {
         let next = self
             .input_revision
             .checked_add(1)
-            .ok_or("Selector input generation exhausted")?;
+            .ok_or("Se agotó la generación del campo del selector")?;
         self.input_selection.select_all(&self.input);
         self.input_revision = next;
         Ok(())
@@ -148,11 +148,11 @@ impl Selector {
         let next = self
             .input_revision
             .checked_add(1)
-            .ok_or("Selector input generation exhausted")?;
+            .ok_or("Se agotó la generación del campo del selector")?;
         if let FieldEdit::Insert(value) = edit {
             if !valid_query(value) {
                 return Err(
-                    "Selector accepts at most256 UTF-8 bytes and no controls/bidi markers".into(),
+                    "El selector admite hasta256 bytes UTF8 y ningún control/marcador bidi".into(),
                 );
             }
         }
@@ -241,18 +241,18 @@ impl Selector {
             })
             .collect();
         SelectorPresentation {
-            title: "Command Palette",
+            title: "Paleta de comandos",
             query: self.input.clone(),
             input_selection: self.input_selection,
             message: if registry.iter().take(MAX_COMMANDS + 1).count() > MAX_COMMANDS {
-                "Partial command list; registry limit reached"
+                "Lista parcial; se alcanzó el límite del registro"
             } else if total == 0 {
-                "No matching commands"
+                "No hay comandos coincidentes"
             } else {
-                "English label substring; unavailable commands disabled"
+                "Subcadena de etiqueta; comandos no disponibles deshabilitados"
             }
             .into(),
-            footer: "Shift+arrows select | Ctrl+A/C/X/V | Tab results | Ctrl+Home/End first/last | Enter | Esc",
+            footer: "Mayús+flechas seleccionan | Ctrl+A/C/X/V | Tab resultados | Ctrl+Inicio/Fin primero/último | Intro | Esc",
             rows,
             total,
             selected: self.selected,
@@ -294,11 +294,11 @@ impl Selector {
             })
             .collect();
         SelectorPresentation {
-            title: "Quick Open Project File",
+            title: "Apertura rápida de archivo del proyecto",
             query: self.input.clone(),
             input_selection: self.input_selection,
             message: controller.message().into(),
-            footer: "Enter open | Ctrl+Enter side | F5 | Esc",
+            footer: "Intro abre | Ctrl+Intro al lado | F5 | Esc",
             rows,
             total,
             selected: self.selected,
@@ -337,13 +337,13 @@ mod tests {
         let keymap = default_keymap();
         let context = CommandContext::default();
         let mut selector = Selector::new(SelectorKind::Palette);
-        selector.append("sAvE");
+        selector.append("gUaRdAr");
         let frame = selector.prepare_palette(&registry, &keymap, &context, |_| false, 32);
         assert!(!frame.rows.is_empty());
         assert!(frame
             .rows
             .iter()
-            .all(|row| !row.enabled && row.label.to_ascii_lowercase().contains("save")));
+            .all(|row| !row.enabled && row.label.to_ascii_lowercase().contains("guardar")));
         let target = selector
             .palette_target(&registry, &keymap, &context, |_| false)
             .unwrap();

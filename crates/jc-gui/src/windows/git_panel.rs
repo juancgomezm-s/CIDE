@@ -41,7 +41,7 @@ pub(super) unsafe fn configure(hwnd: super::ffi::Hwnd, intent: GitIntent) {
     let selected = super::file_dialog_named(
         hwnd,
         false,
-        Some("Choose your trusted Git executable (session only)"),
+        Some("Elige tu ejecutable Git de confianza (solo esta sesión)"),
     );
     if let Some(model) = super::owner(hwnd) {
         let mut state = model.state.borrow_mut();
@@ -52,14 +52,18 @@ pub(super) unsafe fn configure(hwnd: super::ffi::Hwnd, intent: GitIntent) {
                     root != &current.0
                         || (matches!(intent, GitIntent::Diff(_)) && document != &current.1)
                 }) {
-                    state.error("Git destination context changed during configuration; retry");
+                    state.error(
+                        "Cambió el contexto de destino Git durante la configuración; reintenta",
+                    );
                 } else if let Err(error) = state.set_git_executable(path) {
                     state.error(error);
                 } else {
                     state.request_git(intent);
                 }
             }
-            Ok(None) => state.status = "Git configuration cancelled; no read started".into(),
+            Ok(None) => {
+                state.status = "Configuración Git cancelada; no se inició ninguna lectura".into()
+            }
             Err(error) => state.error(error),
         }
     }
@@ -85,7 +89,9 @@ impl State {
     }
     pub(super) fn set_git_executable(&mut self, path: PathBuf) -> Result<(), String> {
         if !path.is_absolute() || path.as_os_str().len() > 4096 {
-            return Err("Choose an absolute Git executable path within4096 native units".into());
+            return Err(
+                "Elige una ruta absoluta del ejecutable Git de hasta4096 unidades nativas".into(),
+            );
         }
         self.clear_git();
         self.git_executable = Some(path);
@@ -95,11 +101,11 @@ impl State {
         self.close_selector();
         self.git_last_intent = intent;
         let Some(root) = self.project_root.clone() else {
-            self.error("Open the repository root folder first");
+            self.error("Abre primero la carpeta raíz del repositorio");
             return Action::None;
         };
         let Some(executable) = self.git_executable.clone() else {
-            self.status = "Choose your trusted Git executable for this session".into();
+            self.status = "Elige tu ejecutable Git de confianza para esta sesión".into();
             return Action::ConfigureGit(intent);
         };
         self.git_panel = Some(intent);
@@ -114,8 +120,8 @@ impl State {
                 self.git_status_options = Some(options.clone());
                 self.git_view.first_status();
                 match self.git_status.request(options) {
-                    Ok(()) => self.status = "Reading Git repository status; disk/index only".into(),
-                    Err(error) => self.error(format!("Git status admission: {error:?}")),
+                    Ok(()) => self.status = "Leyendo estado Git; solo disco/índice".into(),
+                    Err(error) => self.error(format!("Admisión del estado Git: {error}")),
                 }
             }
             GitIntent::Diff(source) => {
@@ -154,21 +160,32 @@ impl State {
     /// The sole F3 poll: dispatch Git-owned completions first, other typed rows
     /// to Workbench. Called only from TASKS_MESSAGE, never prepare/draw.
     pub(super) fn poll_git(&mut self) -> bool {
-        let mut changed = self.validate_git_context();
+        let mut changed =
+            self.validate_git_context() | self.validate_open_diff() | self.validate_source();
         let mut diff_changed = false;
         for mut completion in self.jobs.poll(&self.workbench, 4) {
             if completion.status == TaskStatus::Panicked {
-                self.status = "Background worker recovered from failure; refresh explicitly".into();
+                self.status =
+                    "La tarea de fondo se recuperó de un fallo; actualiza explícitamente".into();
                 changed = true;
             }
             if self.git_diff.accept(&self.workbench, &mut completion) {
                 diff_changed = true;
+            } else if self.open_diff.accept(&self.workbench, &mut completion) {
+                changed = true;
+                if self.open_diff_visible {
+                    self.status = self.open_diff.message().into();
+                }
+            } else if self.accept_source(&mut completion) {
+                changed = true;
             } else {
                 changed |= self.workbench.accept_task_completion(&completion);
             }
         }
         diff_changed |= self.git_diff.tick(&self.workbench, &mut self.jobs);
         changed |= diff_changed;
+        changed |= self.open_diff.tick(&self.workbench, &mut self.jobs);
+        changed |= self.tick_source();
         let mut status_changed = false;
         if let Some(options) = &self.git_status_options {
             status_changed = self.git_status.poll(options);
@@ -184,7 +201,8 @@ impl State {
             _ => {}
         }
         if self.git_status.take_recovery() {
-            self.status = "Git status worker recovered from failure; refresh explicitly".into();
+            self.status =
+                "La tarea de estado Git se recuperó de un fallo; actualiza explícitamente".into();
             changed = true;
         }
         if self.jobs.has_completed() || self.git_status.ready() {
@@ -197,7 +215,7 @@ impl State {
             GitIntent::Status => self.git_status.cancel(),
             GitIntent::Diff(_) => self.git_diff.cancel(&mut self.jobs),
         }
-        self.status = "Git read cancelled; refresh is explicit".into();
+        self.status = "Lectura Git cancelada; actualización explícita".into();
     }
     pub(super) fn git_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
         let Some(intent) = self.git_panel else {
@@ -226,7 +244,9 @@ impl State {
                     0x24 => self.git_view.first_status(),
                     0x23 => self.git_view.last_status(),
                     0x0d => {
-                        self.status = "Status paths are read-only; opening is not enabled".into()
+                        self.status =
+                            "Las rutas del estado son de solo lectura; abrir no está habilitado"
+                                .into()
                     }
                     _ => {}
                 }
@@ -253,7 +273,7 @@ impl State {
                             Ok(()) => {
                                 self.git_panel = None;
                                 self.bottom.focused = false;
-                                self.status = "Git hunk selected; source unchanged".into();
+                                self.status = "Bloque Git seleccionado; fuente intacto".into();
                             }
                             Err(error) => self.error(error),
                         }
@@ -294,15 +314,15 @@ impl State {
             ),
         };
         let footer = match intent {
-            GitIntent::Status => "Arrows select | F5 refresh | Enter never opens paths | Esc cancel/close",
-            GitIntent::Diff(_) => "Up/Down hunk | PgUp/PgDn body | Enter navigate | F2 HEAD F3 index | F5 refresh | Esc",
+            GitIntent::Status => "Flechas eligen | F5 actualiza | Intro no abre rutas | Esc cancela/cierra",
+            GitIntent::Diff(_) => "Arriba/abajo bloque | RePág/AvPág contenido | Intro navega | F2 HEAD F3 índice | F5 | Esc",
         };
         Some(GitFrame {
             panel: ProjectPresentation { fields: Vec::new(), active: 0, status: self.status.clone(), results: Some(ProjectResultsPresentation {
                 title: presentation.title, message: presentation.message, total: presentation.total, selected: presentation.selected,
                 rows: presentation.rows.into_iter().map(|row| ProjectResultRow {index:row.index,label:row.label,selected:row.selected,is_match:true}).collect(),
             }) },
-            labels: super::project_paint::PanelLabels {draft:"Git read-only", policy: "Read-only snapshots | explicit refresh | isolated Git config | no watcher / writes", footer},
+            labels: super::project_paint::PanelLabels {draft:"Git de solo lectura", policy: "Capturas de solo lectura | actualización explícita | Git aislado | sin vigilancia/escrituras", footer},
         })
     }
     pub(super) fn git_diff_running(&self) -> bool {

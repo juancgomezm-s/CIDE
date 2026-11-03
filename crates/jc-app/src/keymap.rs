@@ -79,22 +79,22 @@ impl fmt::Display for KeyStroke {
             f.write_str("Alt+")?;
         }
         if self.modifiers.contains(Modifiers::SHIFT) {
-            f.write_str("Shift+")?;
+            f.write_str("Mayús+")?;
         }
         match self.key {
             Key::Char(c) => write!(f, "{}", c.to_ascii_uppercase()),
             Key::Function(n) => write!(f, "F{n}"),
             Key::Tab => f.write_str("Tab"),
-            Key::Enter => f.write_str("Enter"),
+            Key::Enter => f.write_str("Intro"),
             Key::Escape => f.write_str("Esc"),
-            Key::Up => f.write_str("Up"),
-            Key::Down => f.write_str("Down"),
-            Key::Left => f.write_str("Left"),
-            Key::Right => f.write_str("Right"),
-            Key::PageUp => f.write_str("PageUp"),
-            Key::PageDown => f.write_str("PageDown"),
-            Key::Home => f.write_str("Home"),
-            Key::End => f.write_str("End"),
+            Key::Up => f.write_str("Arriba"),
+            Key::Down => f.write_str("Abajo"),
+            Key::Left => f.write_str("Izquierda"),
+            Key::Right => f.write_str("Derecha"),
+            Key::PageUp => f.write_str("RePág"),
+            Key::PageDown => f.write_str("AvPág"),
+            Key::Home => f.write_str("Inicio"),
+            Key::End => f.write_str("Fin"),
         }
     }
 }
@@ -246,6 +246,8 @@ pub fn default_keymap() -> KeyMap {
         bind(Global, KeyStroke::ctrl_shift(c('o')), FileOpenFolder),
         bind(Editor, KeyStroke::ctrl_alt(c('e')), FileChooseEncoding),
         bind(Global, KeyStroke::ctrl_alt(c('i')), ViewToggleInvisibles),
+        bind(Global, KeyStroke::ctrl_alt(c('m')), ViewMarkdownPreview),
+        bind(Global, KeyStroke::plain(Key::Function(10)), MenuFile),
         bind(Global, KeyStroke::ctrl(c('s')), FileSave),
         bind(Global, KeyStroke::ctrl_shift(c('s')), FileSaveAs),
         bind(Global, KeyStroke::ctrl_alt(c('s')), FileSaveAll),
@@ -347,13 +349,13 @@ pub fn default_keymap() -> KeyMap {
         bind(Global, KeyStroke::plain(f(7)), ProgressCheck),
         bind(Global, KeyStroke::ctrl(f(7)), ProgressCompile),
         bind(Global, KeyStroke::shift(f(7)), ProgressRefreshSchema),
-        bind(Global, KeyStroke::alt(c('f')), MenuFile),
+        bind(Global, KeyStroke::alt(c('a')), MenuFile),
         bind(Global, KeyStroke::alt(c('e')), MenuEdit),
-        bind(Global, KeyStroke::alt(c('s')), MenuSearch),
+        bind(Global, KeyStroke::alt(c('b')), MenuSearch),
         bind(Global, KeyStroke::alt(c('p')), MenuProject),
-        bind(Global, KeyStroke::alt(c('b')), MenuBuild),
-        bind(Global, KeyStroke::alt(c('t')), MenuTools),
+        bind(Global, KeyStroke::alt(c('c')), MenuBuild),
+        bind(Global, KeyStroke::alt(c('h')), MenuTools),
         bind(Global, KeyStroke::alt(c('v')), MenuView),
-        bind(Global, KeyStroke::alt(c('h')), MenuHelp),
+        bind(Global, KeyStroke::alt(c('y')), MenuHelp),
     ])
 }

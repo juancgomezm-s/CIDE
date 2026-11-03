@@ -8,6 +8,15 @@ pub enum CellStyle {
     Reverse,
     Dim,
     Syntax(jc_languages::syntax::SyntaxKind),
+    Menu,
+    MenuActive,
+    MenuMnemonic,
+    MenuMnemonicActive,
+    Panel,
+    PanelTitle,
+    Status,
+    Accent,
+    Border,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -221,6 +230,11 @@ impl Screen {
     pub fn hline(&mut self, x: u16, y: u16, width: u16, ch: char) {
         for offset in 0..width {
             self.put(x.saturating_add(offset), y, ch);
+        }
+    }
+    pub fn hline_styled(&mut self, x: u16, y: u16, width: u16, ch: char, style: CellStyle) {
+        for offset in 0..width.min(self.width.saturating_sub(x)) {
+            self.put_styled(x + offset, y, ch, style);
         }
     }
 

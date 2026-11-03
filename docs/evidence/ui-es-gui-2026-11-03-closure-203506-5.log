@@ -1,0 +1,8 @@
+
+running 1 test
+test render::git_status::tests::compact_and_wide_panels_show_counter_flags_and_focused_selection ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 134 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src\lib.rs (target\ui-es\debug\deps\jc_tui-c24792ef3ef15fde.exe)

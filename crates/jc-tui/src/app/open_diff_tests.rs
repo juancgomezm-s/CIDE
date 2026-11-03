@@ -66,7 +66,9 @@ fn open_diff_tui_palette_stale_refresh_cancel_and_shared_undo_keep_source_identi
     a.dispatch(CommandId::DiffCompareOpen);
     finish(&mut a);
     a.dispatch(CommandId::PaletteOpen);
-    a.handle_event(Event::Paste("Open Comparison Hunk in Left Group".into()));
+    a.handle_event(Event::Paste(
+        "Abrir bloque de diferencias en el grupo izquierdo".into(),
+    ));
     key(&mut a, KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(a.workbench.panes().active(), PaneId::Primary);
     a.dispatch(CommandId::DiffCompareOpen);
@@ -79,7 +81,7 @@ fn open_diff_tui_palette_stale_refresh_cancel_and_shared_undo_keep_source_identi
     finish(&mut a);
     key(&mut a, KeyCode::Esc, KeyModifiers::NONE);
     assert_eq!(a.open_diff.state(), OpenDiffState::Cancelled);
-    assert!(a.status.contains("cancelled"));
+    assert!(a.status.contains("cancelada"));
     assert!(!a.open_diff_visible);
     a.workbench.undo().unwrap();
     assert_eq!(a.workbench.active_bytes().unwrap(), b"same\r\nleft\n");

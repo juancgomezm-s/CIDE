@@ -214,7 +214,7 @@ fn recursive_globs_unicode_coordinates_notices_and_safe_navigation() {
     assert_eq!(results[0].range, 7..12);
     assert_eq!(results[0].position, TextPosition { line: 1, column: 0 });
     assert!(search.rows().iter().any(
-        |r| matches!(r,ProjectSearchRow::Issue{message,..} if message.contains("Unknown legacy"))
+        |r| matches!(r,ProjectSearchRow::Issue{message,..} if message.contains("legacy desconocida"))
     ));
     let row = search
         .rows()
@@ -354,7 +354,7 @@ fn file_and_snapshot_budgets_are_explicit_and_crlf_interiors_never_match() {
     assert!(search
         .start(&app, &fixture.0, options)
         .unwrap_err()
-        .contains("snapshot budget"));
+        .contains("cuota de capturas"));
 }
 
 #[test]
@@ -376,7 +376,7 @@ fn links_and_junctions_do_not_expose_files_outside_root() {
     finish(&mut search, &app, &wake);
     assert!(hits(&search).is_empty());
     assert!(search.rows().iter().any(
-        |r| matches!(r,ProjectSearchRow::Issue{message,..} if message.contains("Link/reparse"))
+        |r| matches!(r,ProjectSearchRow::Issue{message,..} if message.contains("enlace/punto de reanálisis"))
     ));
     #[cfg(windows)]
     fs::remove_dir(link).unwrap(); // remove junction itself before fixture cleanup

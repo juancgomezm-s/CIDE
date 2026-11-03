@@ -67,7 +67,7 @@ fn walk(body: &str, mut emit: impl FnMut(Part<'_>) -> Result<(), String>) -> Res
             let end = body[dollar + 2..]
                 .find('}')
                 .map(|p| p + dollar + 2)
-                .ok_or("Unclosed snippet variable")?;
+                .ok_or("Variable de plantilla sin cerrar")?;
             emit(Part::Field(&body[dollar + 2..end]))?;
             at = end + 1;
         } else {
@@ -97,7 +97,7 @@ impl SnippetTemplate {
                 .chars()
                 .any(|c| c.is_control() && !matches!(c, '\n' | '\t'))
         {
-            return Err("Invalid snippet metadata/budget".into());
+            return Err("Metadatos/cuota de plantilla inválidos".into());
         }
         for (i, p) in self.parameters.iter().enumerate() {
             if p.key.is_empty()
@@ -112,7 +112,7 @@ impl SnippetTemplate {
                 || !p.rule.valid(p.default)
                 || self.parameters[..i].iter().any(|other| other.key == p.key)
             {
-                return Err("Invalid snippet parameter metadata/default".into());
+                return Err("Metadatos/valor inicial de parámetro inválidos".into());
             }
         }
         let mut selection = 0;
@@ -128,7 +128,7 @@ impl SnippetTemplate {
                             .parameters
                             .iter()
                             .position(|p| p.key == key)
-                            .ok_or("Unknown snippet variable")?;
+                            .ok_or("Variable de plantilla desconocida")?;
                         used[index] = true;
                     }
                 }
@@ -139,7 +139,9 @@ impl SnippetTemplate {
             || cursor > 1
             || used[..self.parameters.len()].iter().any(|v| !*v)
         {
-            return Err("Snippet selection/cursor/parameter contract mismatch".into());
+            return Err(
+                "No coincide el contrato de selección/cursor/parámetros de la plantilla".into(),
+            );
         }
         Ok(())
     }
@@ -156,22 +158,26 @@ pub struct SnippetTarget {
 }
 impl SnippetTarget {
     pub fn capture(app: &Workbench) -> Result<Self, String> {
-        let editor = app.active_editor().ok_or("No snippet document")?;
-        let doc = app.active_document().ok_or("No snippet document")?;
+        let editor = app
+            .active_editor()
+            .ok_or("No hay documento para la plantilla")?;
+        let doc = app
+            .active_document()
+            .ok_or("No hay documento para la plantilla")?;
         let pane = app.panes().active();
         if app.rectangle_for_pane(pane).is_some() {
-            return Err("Snippet requires a linear caret/selection".into());
+            return Err("La plantilla requiere cursor/selección lineal".into());
         }
         let encoding = doc
             .session
             .encoding()
-            .ok_or("Choose document encoding before snippets")?;
+            .ok_or("Elige la codificación del documento antes de usar plantillas")?;
         if doc.session.path().as_os_str().len() > 4096 {
-            return Err("Snippet source metadata limit".into());
+            return Err("Límite de metadatos del fuente para la plantilla".into());
         }
         let mut range = editor.selection().unwrap_or(editor.cursor..editor.cursor);
         if range.len() > MAX_SELECTION {
-            return Err("Snippet selection exceeds16KiB source bytes".into());
+            return Err("La selección de plantilla excede16KiB de bytes fuente".into());
         }
         if range.start == 0
             && encoding == TextEncoding::Utf8
@@ -188,13 +194,13 @@ impl SnippetTarget {
             } else if range.end >= 3 {
                 range.start = 3;
             } else {
-                return Err("Snippet selection is inside BOM".into());
+                return Err("La selección de plantilla está dentro del BOM".into());
             }
         }
         if app.position_for_tab(doc.tab_id, range.start).is_none()
             || app.position_for_tab(doc.tab_id, range.end).is_none()
         {
-            return Err("Snippet range is not a legal text boundary".into());
+            return Err("El rango de plantilla no es una frontera textual válida".into());
         }
         Ok(Self {
             stamp: TaskStamp {
@@ -205,7 +211,7 @@ impl SnippetTarget {
                     app.panes()
                         .view(pane)
                         .and_then(|v| v.view_id())
-                        .ok_or("No snippet ViewId")?,
+                        .ok_or("No hay ViewId para la plantilla")?,
                 ),
             },
             path: doc.session.path().to_owned(),
@@ -300,12 +306,12 @@ impl SnippetPlan {
             (
                 "-",
                 self.before.as_str(),
-                format!("--- source bytes {}..{}", self.range.start, self.range.end),
+                format!("--- bytes fuente {}..{}", self.range.start, self.range.end),
             ),
             (
                 "+",
                 self.after.as_str(),
-                format!("+++ proposal {} UTF8 bytes", self.after.len()),
+                format!("+++ propuesta {} bytes UTF8", self.after.len()),
             ),
         ] {
             if logical >= first && logical < end {
@@ -347,11 +353,12 @@ impl SnippetSession {
                 .id
                 .rsplit_once('.')
                 .map(|(provider, _)| provider)
-                .ok_or("Snippet ID must be namespaced")?,
+                .ok_or("El identificador de plantilla debe tener espacio de nombres")?,
         )?;
         if target.has_selection() != template.surround {
             return Err(
-                "Template caret/selection requirement differs from the original target".into(),
+                "El requisito de cursor/selección de la plantilla difiere del destino original"
+                    .into(),
             );
         }
         Ok(Self {
@@ -384,7 +391,10 @@ impl SnippetSession {
         ))
     }
     pub fn edit_parameter(&mut self, index: usize, edit: FieldEdit<'_>) -> Result<(), String> {
-        let value = self.values.get_mut(index).ok_or("No snippet parameter")?;
+        let value = self
+            .values
+            .get_mut(index)
+            .ok_or("No hay parámetro de plantilla")?;
         edit_field(value, &mut self.cursors[index], edit, 256).map_err(str::to_owned)?;
         self.plan = None;
         Ok(())
@@ -401,17 +411,19 @@ impl SnippetSession {
     pub fn prepare(&mut self, app: &Workbench) -> Result<(), String> {
         self.plan = None;
         if !self.current(app) {
-            return Err("Snippet target changed; reopen the wizard".into());
+            return Err("Cambió el destino de la plantilla; vuelve a abrir el asistente".into());
         }
         for i in 0..self.values.len() {
             if !self.valid_parameter(i) {
                 return Err(format!(
-                    "Invalid snippet parameter: {}",
+                    "Parámetro de plantilla inválido: {}",
                     self.template.parameters[i].label
                 ));
             }
         }
-        let doc = app.active_document().ok_or("No snippet document")?;
+        let doc = app
+            .active_document()
+            .ok_or("No hay documento para la plantilla")?;
         let bytes = doc
             .session
             .document()
@@ -419,7 +431,7 @@ impl SnippetSession {
             .map_err(|e| e.to_string())?;
         let decoded = decode_fragment(&bytes, self.target.stamp.encoding, self.target.range.start);
         if !decoded.issues.is_empty() {
-            return Err("Snippet selection contains uninterpretable bytes; no edits made".into());
+            return Err("La selección contiene bytes no interpretables; no se editó".into());
         }
         let before = decoded.text;
         let mut selection = before.as_str();
@@ -439,7 +451,7 @@ impl SnippetSession {
         let mut cursor = None;
         let append = |after: &mut String, text: &str| -> Result<(), String> {
             if after.len().saturating_add(text.len()) > MAX_PROPOSAL {
-                return Err("Snippet proposal exceeds64KiB UTF8".into());
+                return Err("La propuesta de plantilla excede64KiB UTF8".into());
             }
             after.push_str(text);
             Ok(())
@@ -454,7 +466,7 @@ impl SnippetSession {
                         .parameters
                         .iter()
                         .position(|p| p.key == key)
-                        .ok_or("Unknown snippet variable")?;
+                        .ok_or("Variable de plantilla desconocida")?;
                     append(&mut after, &self.values[i])?;
                 }
                 Part::Literal(text) => {
@@ -486,7 +498,7 @@ impl SnippetSession {
             && encoded.starts_with(b"\xef\xbb\xbf")
             && cursor_bytes < 3
         {
-            return Err("Snippet cursor would enter the new BOM; no edits made".into());
+            return Err("El cursor de plantilla entraría al nuevo BOM; no se editó".into());
         }
         let left = if cursor_bytes > 0 {
             encoded.get(cursor_bytes - 1).copied()
@@ -513,7 +525,7 @@ impl SnippetSession {
             None
         };
         if left == Some(b'\r') && right == Some(b'\n') {
-            return Err("Snippet cursor would enter CRLF; no edits made".into());
+            return Err("El cursor de plantilla entraría en CRLF; no se editó".into());
         }
         let total_rows = 2 + Lines::new(&before).count() + Lines::new(&after).count();
         self.plan = Some(SnippetPlan {
@@ -527,12 +539,12 @@ impl SnippetSession {
     }
     pub fn apply(&mut self, app: &mut Workbench) -> Result<(), String> {
         if !self.current(app) {
-            return Err("Snippet target changed; reopen the wizard".into());
+            return Err("Cambió el destino de la plantilla; vuelve a abrir el asistente".into());
         }
         let plan = self
             .plan
             .take()
-            .ok_or("Review the snippet proposal before applying")?;
+            .ok_or("Revisa la propuesta de plantilla antes de aplicarla")?;
         let cursor = plan.range.start + plan.cursor_bytes;
         app.apply_text_edits(
             self.target.stamp.document,

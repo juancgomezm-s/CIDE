@@ -107,7 +107,7 @@ fn unicode_tui_owned_source_payload_is_bounded_across_a_tall_frame() {
         for atom in row {
             atom.glyph.with_str(|s| text.push_str(s));
         }
-        text.contains("Unicode layout")
+        text.contains("Layout Unicode")
     }));
     assert_eq!(p.app.workbench.active_bytes().unwrap(), source.as_bytes());
 }

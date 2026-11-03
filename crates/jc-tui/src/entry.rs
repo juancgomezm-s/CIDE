@@ -35,25 +35,25 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Option<Parsed>, 
         match arg.as_str() {
             "-h" | "--help" => return Ok(None),
             "--encoding" => {
-                let value = args.next().ok_or("--encoding requires a value")?;
+                let value = args.next().ok_or("--encoding requiere un valor")?;
                 options.encoding = Some(parse_encoding(&value)?);
             }
             "--search-workers" => {
                 if search_workers.is_some() {
-                    return Err("--search-workers may be specified only once".into());
+                    return Err("--search-workers solo se puede indicar una vez".into());
                 }
                 let value = args
                     .next()
-                    .ok_or("--search-workers requires a value in 1..4")?;
+                    .ok_or("--search-workers requiere un valor entre 1 y 4")?;
                 search_workers = Some(match value.as_str() {
                     "1" => 1,
                     "2" => 2,
                     "3" => 3,
                     "4" => 4,
-                    _ => return Err("--search-workers requires an integer in 1..4".into()),
+                    _ => return Err("--search-workers requiere un entero entre 1 y 4".into()),
                 });
             }
-            value if value.starts_with('-') => return Err(format!("unknown option: {value}")),
+            value if value.starts_with('-') => return Err(format!("Opción desconocida: {value}")),
             path => options.files.push(PathBuf::from(path)),
         }
     }
@@ -69,21 +69,12 @@ fn parse_encoding(value: &str) -> Result<TextEncoding, String> {
         "windows-1252" | "cp1252" | "1252" => Ok(TextEncoding::Windows1252),
         "iso-8859-1" | "iso8859-1" | "latin1" => Ok(TextEncoding::Iso8859_1),
         "ibm850" | "cp850" | "850" => Ok(TextEncoding::Ibm850),
-        _ => Err(format!("unsupported encoding: {value}")),
+        _ => Err(format!("Codificación no admitida: {value}")),
     }
 }
 
 fn print_help() {
-    println!(
-        "CIDE TUI\n\
-Usage: cide-tui [--encoding NAME] [--search-workers 1..4] [FILE ...]\n\
-Legacy alias: jc-ide-tui.\n\
-Encodings: utf-8, windows-1252, iso-8859-1, ibm850\n\
-Search workers: default 2; total includes the coordinator.\n\
-Effective count is capped to available logical CPUs minus 4, clamped to 1..4.\n\
-More workers may increase total CPU; other running workloads are not inspected.\n\
-Inside the TUI use Alt+F for File, Ctrl+Shift+P for the command palette, F6 to cycle focus."
-    );
+    println!("CIDE TUI\nUso: cide-tui [--encoding NOMBRE] [--search-workers 1..4] [ARCHIVO ...]\nAlias anterior: jc-ide-tui.\nCodificaciones: utf-8, windows-1252, iso-8859-1, ibm850\nBúsqueda: 2 trabajadores por defecto, incluido el coordinador; límite1..4 y margen de4 CPU lógicos.\nF10 menús · Alt+A Archivo · Ctrl+Mayús+P comandos · F6 cambiar panel.\nMarkdown: Ctrl+Alt+M alterna vista previa/fuente; Esc vuelve a la fuente.");
 }
 
 #[cfg(test)]

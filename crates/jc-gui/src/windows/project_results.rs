@@ -1,6 +1,8 @@
 //! Bounded, read-only projection of S1 results. Paths and source coordinates
 //! remain authoritative in ProjectSearch; labels are never navigation inputs.
-use jc_app::{ProjectSearch, ProjectSearchRow, ProjectSearchState};
+#[cfg(test)]
+use jc_app::ProjectSearchState;
+use jc_app::{ProjectSearch, ProjectSearchRow};
 use std::path::Path;
 
 const ROW_LIMIT: usize = 32;
@@ -127,7 +129,7 @@ fn label(row: &ProjectSearchRow, index: usize, root: Option<&Path>, cols: usize)
     match row {
         ProjectSearchRow::Match(hit) => {
             out.text(&format!(
-                "Ln {} Col {} ",
+                "Lin {} Col {} ",
                 hit.position.line.saturating_add(1),
                 hit.position.column.saturating_add(1)
             ));
@@ -184,26 +186,19 @@ impl ProjectResultsView {
                 is_match: !stale && matches!(&source[index], ProjectSearchRow::Match(_)),
             })
             .collect();
-        let state = match controller.state {
-            ProjectSearchState::Idle => "Idle",
-            ProjectSearchState::Running => "Searching",
-            ProjectSearchState::Complete => "Complete",
-            ProjectSearchState::Limited => "Limited",
-            ProjectSearchState::Cancelled => "Cancelled",
-            ProjectSearchState::Failed => "Failed",
-        };
+        let state = controller.state.label();
         let mut message = Label::new(max_cols);
         message.text(&format!(
-            "{state} | {} rows | {}",
+            "{state} | {} filas | {}",
             self.total,
             if stale {
-                "STALE: refresh before opening"
+                "OBSOLETO: actualiza antes de abrir"
             } else {
-                "Ln/Col are scalar positions"
+                "Lin/Col son posiciones escalares"
             }
         ));
         ProjectResultsPresentation {
-            title: "Search Plus - project literal".into(),
+            title: "Search Plus: proyecto".into(),
             message: message.text,
             rows,
             selected: self.selected,
@@ -239,7 +234,7 @@ mod tests {
                     .message
                     .chars()
                     .all(|ch| ch.is_ascii() && !ch.is_control()));
-                assert_eq!(p.title, "Search Plus - project literal");
+                assert_eq!(p.title, "Search Plus: proyecto");
             }
         }
     }

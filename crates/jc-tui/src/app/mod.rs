@@ -9,6 +9,7 @@ mod explorer_integration_tests;
 mod git_diff;
 mod git_repository;
 mod git_status;
+mod markdown;
 mod menus;
 mod open_diff;
 #[cfg(test)]
@@ -31,6 +32,8 @@ mod source_services_tests;
 mod syntax_integration_tests;
 #[cfg(test)]
 mod unicode_tests;
+#[cfg(test)]
+mod visual_spanish_tests;
 use git_repository::GitConfigurationTarget;
 #[cfg(test)]
 pub(crate) use git_status::GitStatusRow;
@@ -77,6 +80,7 @@ use jc_text::TextEncoding;
 use std::path::PathBuf;
 
 pub struct TuiApp {
+    pub(crate) markdown_ui: Option<markdown::MarkdownUi>,
     pub(crate) find_cursor: usize,
     pub(crate) replacement_cursor: usize,
     pub(crate) workbench: Workbench,
@@ -154,6 +158,7 @@ impl TuiApp {
             .register(jc_progress::source_services::descriptor())
             .expect("valid built-in provider");
         let mut app = Self {
+            markdown_ui: None,
             workbench: Workbench::default(),
             registry,
             keymap,
@@ -165,7 +170,7 @@ impl TuiApp {
             clipboard_transport: None,
             find_cursor: usize::MAX,
             replacement_cursor: usize::MAX,
-            status: "Ready".to_owned(),
+            status: "Listo · F10 menús · F6 cambiar panel".to_owned(),
             project_root: None,
             explorer: jc_app::explorer::ProjectExplorer::new(wakeup.clone(), Default::default())
                 .expect("valid Explorer quotas"),
@@ -370,6 +375,9 @@ impl TuiApp {
         self.open_diff_context(&mut context);
         self.source_context(&mut context);
         self.snippet_context(&mut context);
+        if self.markdown_ui.is_some() {
+            context.editor_input = false;
+        }
         if self.clipboard_transport.is_some() {
             context.field_paste = self.clipboard_field_budget().is_some();
             if context.field_paste

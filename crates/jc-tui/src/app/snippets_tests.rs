@@ -26,7 +26,7 @@ fn snippet_tui_insert_parameters_preview_confirmation_and_shared_undo() {
     let original = b"DISPLAY TRUE.\n";
     let mut a = editor(std::str::from_utf8(original).unwrap(), TextEncoding::Utf8);
     a.dispatch(CommandId::EditInsertSnippet);
-    paste(&mut a, "Procedure");
+    paste(&mut a, "Procedimiento");
     plain(&mut a, KeyCode::Enter);
     clear(&mut a);
     paste(&mut a, "hellxo");
@@ -61,14 +61,14 @@ fn snippet_tui_surround_keeps_bom_mixed_eol_terminal_newline_and_cancel() {
     let mut a = editor(original, TextEncoding::Utf8);
     a.workbench.select_all().unwrap();
     a.dispatch(CommandId::EditSurroundWith);
-    paste(&mut a, "DO block");
+    paste(&mut a, "bloque DO");
     plain(&mut a, KeyCode::Enter);
     assert_eq!(a.workbench.active_bytes().unwrap(), original.as_bytes());
     plain(&mut a, KeyCode::Esc);
     assert!(a.snippet_ui.is_none());
     assert_eq!(a.workbench.active_bytes().unwrap(), original.as_bytes());
     a.dispatch(CommandId::EditSurroundWith);
-    paste(&mut a, "DO block");
+    paste(&mut a, "bloque DO");
     plain(&mut a, KeyCode::Enter);
     key(&mut a, KeyCode::Enter, KeyModifiers::CONTROL);
     assert_eq!(
@@ -82,7 +82,7 @@ fn snippet_tui_surround_keeps_bom_mixed_eol_terminal_newline_and_cancel() {
 fn snippet_tui_stale_preview_never_overwrites_new_source_intent() {
     let mut a = editor("DISPLAY TRUE.", TextEncoding::Utf8);
     a.dispatch(CommandId::EditInsertSnippet);
-    paste(&mut a, "Procedure");
+    paste(&mut a, "Procedimiento");
     plain(&mut a, KeyCode::Enter);
     plain(&mut a, KeyCode::Enter);
     a.workbench.insert_text("changed").unwrap();
@@ -93,7 +93,7 @@ fn snippet_tui_stale_preview_never_overwrites_new_source_intent() {
         .as_ref()
         .unwrap()
         .message
-        .contains("Source changed"));
+        .contains("La fuente cambió"));
     plain(&mut a, KeyCode::F(9));
     assert_eq!(a.workbench.active_bytes().unwrap(), before);
     assert!(a.snippet_ui.is_some());
@@ -113,7 +113,7 @@ fn snippet_tui_tiny_picker_multi_parameter_back_edit_validation_and_preview_scro
         .unwrap()
         .rows
         .iter()
-        .any(|(row, selected)| *selected && row.contains("Function")));
+        .any(|(row, selected)| *selected && row.contains("Función")));
     plain(&mut a, KeyCode::Enter);
     clear(&mut a);
     paste(&mut a, "hello");
@@ -143,7 +143,7 @@ fn snippet_tui_tiny_picker_multi_parameter_back_edit_validation_and_preview_scro
     plain(&mut a, KeyCode::F(2));
     clear(&mut a);
     plain(&mut a, KeyCode::Enter);
-    assert!(a.status.contains("Invalid parameter"));
+    assert!(a.status.contains("Parámetro inválido"));
     assert!(a.workbench.active_bytes().unwrap().is_empty());
     paste(&mut a, "LOGICAL");
     plain(&mut a, KeyCode::Enter);

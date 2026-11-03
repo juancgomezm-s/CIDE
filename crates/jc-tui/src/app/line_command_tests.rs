@@ -87,7 +87,7 @@ fn join_shortcut_and_palette_preserve_encoding_bom_final_eol_and_one_undo() {
             assert!(menu_enabled(&app, CommandId::EditJoinLines));
             let before = revision(&app);
             if via_palette {
-                palette(&mut app, "Join Lines");
+                palette(&mut app, "Unir líneas");
             } else {
                 key(
                     &mut app,
@@ -124,7 +124,7 @@ fn join_shortcut_and_palette_preserve_encoding_bom_final_eol_and_one_undo() {
             // Multiple selected lines join their interior separators, not EOF's
             // synthetic empty line; the last real CRLF and BOM remain bytes.
             app.workbench.select_all().unwrap();
-            palette(&mut app, "Join Lines");
+            palette(&mut app, "Unir líneas");
             assert_eq!(
                 app.workbench.active_bytes().unwrap(),
                 encode(&format!("{bom}niño segundo fin\r\n"), encoding).unwrap()
@@ -170,7 +170,7 @@ fn split_enter_palette_and_edit_menu_share_selection_replacement_one_undo_and_vi
             let before = revision(&app);
             match route {
                 0 => key(&mut app, KeyCode::Enter, KeyModifiers::NONE),
-                1 => palette(&mut app, "Split Line"),
+                1 => palette(&mut app, "Dividir línea"),
                 _ => menu(&mut app, CommandId::EditSplitLine),
             }
             assert!(matches!(app.overlay, UiOverlay::None));
@@ -261,8 +261,8 @@ fn rectangles_disable_line_actions_in_keys_menu_palette_and_direct_model() {
     let original = app.workbench.active_bytes().unwrap();
     let before = revision(&app);
     for (command, label) in [
-        (CommandId::EditJoinLines, "Join Lines"),
-        (CommandId::EditSplitLine, "Split Line"),
+        (CommandId::EditJoinLines, "Unir líneas"),
+        (CommandId::EditSplitLine, "Dividir línea"),
     ] {
         assert!(!app.registry.is_enabled(command, &app.command_context()));
         assert!(!menu_enabled(&app, command));

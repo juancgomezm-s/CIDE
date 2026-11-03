@@ -48,6 +48,8 @@ class Session:
         self.sync=threading.Condition();self.send_lock=threading.Lock();self.error=None;self.bytes=0;self.raw_limit=2*1024*1024
         self.width=120;self.height=32;self.x=0;self.y=0;self.saved=(0,0);self.escape='';self.reverse=False;self.sequence=''
         self.cells=[[' ']*self.width for _ in range(self.height)];self.styles=[[False]*self.width for _ in range(self.height)]
+        self.foreground=(244,247,251);self.background=(0,0,0);self.bold=False;self.underline=False
+        self.inks=[[((244,247,251),(0,0,0),False,False)]*self.width for _ in range(self.height)]
         try:
             iread,iwrite,oread,owrite=[w.HANDLE() for _ in range(4)]
             self.check(self.api.CreatePipe(c.byref(iread),c.byref(iwrite),None,0));self.handles += [iread,iwrite]
@@ -82,6 +84,7 @@ class Session:
             if written.value!=len(data):raise OSError('partial owned ConPTY input')
     def clear(self):
         self.cells=[[' ']*self.width for _ in range(self.height)];self.styles=[[False]*self.width for _ in range(self.height)]
+        self.inks=[[(self.foreground,self.background,self.bold,self.underline)]*self.width for _ in range(self.height)]
     def feed(self,ch):
         if self.escape=='osc':
             if ch=='\x07':self.escape=''
@@ -111,13 +114,33 @@ class Session:
             elif ch=='K':
                 mode=int(body) if body.isdigit() else 0
                 for x in range(self.width):
-                    if mode==2 or mode==0 and x>=self.x or mode==1 and x<=self.x:self.cells[self.y][x]=' ';self.styles[self.y][x]=False
+                    if mode==2 or mode==0 and x>=self.x or mode==1 and x<=self.x:
+                        self.cells[self.y][x]=' ';self.styles[self.y][x]=self.reverse or self.background==(61,80,104)
+                        self.inks[self.y][x]=(self.foreground,self.background,self.bold,self.underline)
             elif ch=='X':
-                for x in range(self.x,min(self.width,self.x+number)):self.cells[self.y][x]=' ';self.styles[self.y][x]=False
+                for x in range(self.x,min(self.width,self.x+number)):
+                    self.cells[self.y][x]=' ';self.styles[self.y][x]=self.reverse or self.background==(61,80,104)
+                    self.inks[self.y][x]=(self.foreground,self.background,self.bold,self.underline)
             elif ch=='m':
-                for part in parts:
-                    if part in ('','0','27'):self.reverse=False
+                index=0
+                while index<len(parts):
+                    part=parts[index]
+                    if part in ('','0'):
+                        self.reverse=False;self.bold=False;self.underline=False;self.foreground=(244,247,251);self.background=(0,0,0)
+                    elif part=='27':self.reverse=False
                     elif part=='7':self.reverse=True
+                    elif part=='1':self.bold=True
+                    elif part=='22':self.bold=False
+                    elif part=='4':self.underline=True
+                    elif part=='24':self.underline=False
+                    elif part=='39':self.foreground=(244,247,251)
+                    elif part=='49':self.background=(0,0,0)
+                    elif part in ('38','48') and index+4<len(parts) and parts[index+1]=='2':
+                        color=tuple(int(n) for n in parts[index+2:index+5])
+                        if part=='38':self.foreground=color
+                        else:self.background=color
+                        index+=4
+                    index+=1
             elif ch=='n' and body=='6':self.send('\x1b[1;1R')
             elif ch=='s':self.saved=(self.x,self.y)
             elif ch=='u':self.x,self.y=self.saved
@@ -127,7 +150,9 @@ class Session:
         if ch=='\n':self.y=min(self.height-1,self.y+1);return
         if ch<' ':return
         if self.x>=self.width:self.x=0;self.y=min(self.height-1,self.y+1)
-        self.cells[self.y][self.x]=ch;self.styles[self.y][self.x]=self.reverse;self.x+=1
+        self.cells[self.y][self.x]=ch;self.styles[self.y][self.x]=self.reverse or self.background==(61,80,104)
+        fg,bg=(self.background,self.foreground) if self.reverse else (self.foreground,self.background)
+        self.inks[self.y][self.x]=(fg,bg,self.bold,self.underline);self.x+=1
     def read(self):
         decoder=codecs.getincrementaldecoder('utf-8')('strict');data=c.create_string_buffer(8192);count=w.DWORD()
         try:

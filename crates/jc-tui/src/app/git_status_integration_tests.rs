@@ -542,14 +542,14 @@ fn configured_filter_is_a_static_ui_failure_and_never_a_partial_ready_list() {
     let (mut app, wake) = fixture.app(false);
     app.dispatch(CommandId::GitRepositoryStatus);
     assert_eq!(wait_status(&mut app, &wake), GitStatusTaskState::Failed);
-    assert_eq!(app.git_status.message(), "Filters unsupported");
+    assert_eq!(app.git_status.message(), "Filtros no admitidos");
     let prepared = app.prepare_frame(140, 40);
     assert_eq!(prepared.git_status.total, 0);
     assert!(prepared.git_status.rows.is_empty());
     assert!(prepared
         .git_status
         .message
-        .starts_with("Filters unsupported"));
+        .starts_with("Filtros no admitidos"));
     assert!(!prepared.git_status.message.contains("jc-fixture-driver"));
     assert_eq!(fixture.disk(), before);
 }

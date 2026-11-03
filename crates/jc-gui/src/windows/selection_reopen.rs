@@ -5,7 +5,8 @@ impl State {
     pub(super) fn search_selection(&mut self, command: CommandId) {
         match self.workbench.execute(command) {
             Ok(_) => {
-                self.status = "Literal selection search requested · F3 / Shift+F3 continues".into();
+                self.status =
+                    "Búsqueda literal de selección solicitada · F3/Mayús+F3 continúa".into();
                 self.schedule_search();
             }
             Err(error) => self.error(error),
@@ -17,10 +18,10 @@ impl State {
                 self.close_selector();
                 self.bottom.focused = false;
                 self.ensure_encoding_selector();
-                self.status = "Tab reopened · discarded changes are not restored".into();
+                self.status = "Pestaña reabierta · no se restauran los cambios descartados".into();
                 self.schedule_search();
             }
-            Ok(false) => self.status = "No closed tab available".into(),
+            Ok(false) => self.status = "No hay pestaña cerrada disponible".into(),
             Err(error) => self.error(error),
         }
     }

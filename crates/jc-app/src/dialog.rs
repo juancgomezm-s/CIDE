@@ -31,22 +31,22 @@ impl DialogSpec {
     pub fn unsaved_changes(document: &str) -> Self {
         Self {
             kind: DialogKind::UnsavedChanges,
-            title: "Unsaved changes".into(),
-            message: format!("{document} has unsaved changes."),
+            title: "Cambios sin guardar".into(),
+            message: format!("{document} tiene cambios sin guardar."),
             buttons: vec![
                 DialogButton {
-                    mnemonic: 's',
-                    label: "Save",
+                    mnemonic: 'g',
+                    label: "Guardar",
                     action: DialogAction::Save,
                 },
                 DialogButton {
-                    mnemonic: 'd',
-                    label: "Don't Save",
+                    mnemonic: 'n',
+                    label: "No guardar",
                     action: DialogAction::Discard,
                 },
                 DialogButton {
                     mnemonic: '\u{1b}',
-                    label: "Cancel",
+                    label: "Cancelar",
                     action: DialogAction::Cancel,
                 },
             ],
@@ -54,7 +54,12 @@ impl DialogSpec {
     }
 
     pub fn resolve_mnemonic(&self, key: char) -> Option<DialogAction> {
-        let key = key.to_ascii_lowercase();
+        let key = match key.to_ascii_lowercase() {
+            // Hidden compatibility aliases; visible choices are Spanish G/N.
+            's' => 'g',
+            'd' => 'n',
+            key => key,
+        };
         self.buttons
             .iter()
             .find(|button| button.mnemonic.to_ascii_lowercase() == key)

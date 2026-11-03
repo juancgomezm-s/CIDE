@@ -23,14 +23,14 @@ impl TuiApp {
             self.git_configuration_target =
                 Some(super::git_repository::GitConfigurationTarget::Diff);
             self.git_diff.clear(&mut self.tasks);
-            self.status = "Choose an absolute Git executable path".into();
+            self.status = "Elige una ruta absoluta al ejecutable Git".into();
             self.open_prompt(PromptKind::GitExecutable);
             return;
         };
         self.git_configuration_target = None;
         let Some(root) = self.project_root.clone() else {
             self.git_diff.clear(&mut self.tasks);
-            self.status = "Open the repository root folder before comparing".into();
+            self.status = "Abre la carpeta raíz del repositorio antes de comparar".into();
             return;
         };
         let options = GitDiffOptions {
@@ -76,28 +76,28 @@ impl TuiApp {
         let Some(result) = self.git_diff.result() else {
             let source = match self.git_source {
                 GitBlobSource::Head => "HEAD",
-                GitBlobSource::Index => "index",
+                GitBlobSource::Index => "índice",
             };
             prepared.details.push(plain_prefix(
-                &format!("{source} vs active document; read-only"),
+                &format!("{source} frente al documento activo; solo lectura"),
                 width,
             ));
             if self.git_executable.is_none() {
                 prepared.details.push(plain_prefix(
-                    "Configure an absolute Git executable path",
+                    "Configura una ruta absoluta al ejecutable Git",
                     width,
                 ));
             } else if self.project_root.is_none() {
                 prepared
                     .details
-                    .push(plain_prefix("Open the repository root folder", width));
+                    .push(plain_prefix("Abre la carpeta raíz del repositorio", width));
             }
             return prepared;
         };
         let identity = &result.identity;
         let source = match identity.source {
-            GitBlobSource::Head => "HEAD snapshot",
-            GitBlobSource::Index => "index snapshot",
+            GitBlobSource::Head => "Copia de HEAD",
+            GitBlobSource::Index => "Copia del índice",
         };
         prepared
             .details
@@ -113,28 +113,28 @@ impl TuiApp {
         }
         let Some(document) = self.workbench.active_document() else {
             prepared.details.push(plain_prefix(
-                "Comparison document is no longer active",
+                "El documento comparado ya no está activo",
                 width,
             ));
             return prepared;
         };
         let Some(encoding) = document.session.encoding() else {
             prepared.details.push(plain_prefix(
-                "Choose a document encoding to display source prefixes",
+                "Elige una codificación para mostrar los prefijos de la fuente",
                 width,
             ));
             return prepared;
         };
         prepared.details.push(plain_prefix(
             &format!(
-                "working revision {} | {}",
+                "Revisión de trabajo {} | {}",
                 document.session.document().revision(),
                 encoding.name()
             ),
             width,
         ));
         prepared.details.push(plain_prefix(
-            "Snapshot identity; refresh to re-read HEAD/index",
+            "Identidad de la copia; actualiza para volver a leer HEAD/índice",
             width,
         ));
         prepared.total_hunks = result.model.hunks().count();
@@ -174,7 +174,10 @@ impl TuiApp {
             Ok(()) => {
                 self.git_diff_scroll = 0;
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-                self.status = format!("Git hunk {} selected", selected.saturating_add(1));
+                self.status = format!(
+                    "Bloque de diferencias Git {} seleccionado",
+                    selected.saturating_add(1)
+                );
             }
             Err(error) => self.status = error,
         }
@@ -262,9 +265,9 @@ fn model_rows(
     }
     let Some(hunk) = model.hunks().nth(selected) else {
         let message = if model.hunks().next().is_none() {
-            "No byte differences in the accepted snapshots"
+            "No hay diferencias de bytes en las copias aceptadas"
         } else {
-            "Selected hunk is not available"
+            "El bloque de diferencias seleccionado no está disponible"
         };
         return (
             vec![GitDiffRow {
@@ -384,7 +387,7 @@ fn source_prefix(
     } else if bytes.ends_with(b"\r") {
         (&bytes[..bytes.len() - 1], "CR")
     } else {
-        (bytes, "no EOL")
+        (bytes, "sin fin de línea")
     };
     let columns = usize::from(width).min(PREFIX_BYTES);
     let mut result = String::with_capacity(columns.saturating_mul(4).min(PREFIX_BYTES));
@@ -484,11 +487,11 @@ mod tests {
         );
         assert_eq!(
             source_prefix("\u{feff}x".as_bytes(), 7, TextEncoding::Utf8, 80),
-            ("[BOM]x".into(), "no EOL")
+            ("[BOM]x".into(), "sin fin de línea")
         );
         let (text, eol) = source_prefix(&b"x".repeat(32 * 1024), 0, TextEncoding::Utf8, u16::MAX);
         assert!(text.len() <= PREFIX_BYTES);
-        assert_eq!(eol, "no EOL");
+        assert_eq!(eol, "sin fin de línea");
     }
 
     #[test]

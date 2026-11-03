@@ -1,0 +1,49 @@
+
+running 6 tests
+test entry::tests::project_root_is_explicit_and_preserves_native_path ... ok
+test entry::tests::files_and_encodings_are_explicit_without_starting_a_window ... ok
+test entry::tests::git_executable_is_explicit_absolute_metadata_and_duplicate_or_missing_reject ... ok
+test entry::interaction_options_tests::interaction_section_requires_owned_paths_and_is_exclusive ... ok
+test entry::tests::project_workers_are_bounded_and_explicit ... ok
+test entry::tests::smoke_requires_distinct_absolute_owned_paths ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test entry::tests::project_root_is_explicit_and_preserves_native_path ... ok
+test entry::tests::files_and_encodings_are_explicit_without_starting_a_window ... ok
+test entry::tests::git_executable_is_explicit_absolute_metadata_and_duplicate_or_missing_reject ... ok
+test entry::interaction_options_tests::interaction_section_requires_owned_paths_and_is_exclusive ... ok
+test entry::tests::project_workers_are_bounded_and_explicit ... ok
+test entry::tests::smoke_requires_distinct_absolute_owned_paths ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test entry::tests::encoding_aliases_are_explicit ... ok
+test entry::tests::help_still_short_circuits_launch_and_unknown_flags_are_rejected ... ok
+test entry::tests::parser_keeps_multiple_files ... ok
+test entry::tests::search_workers_default_and_explicit_counts_preserve_launch_arguments ... ok
+test entry::tests::search_workers_reject_invalid_missing_and_duplicate_values ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test entry::tests::encoding_aliases_are_explicit ... ok
+test entry::tests::help_still_short_circuits_launch_and_unknown_flags_are_rejected ... ok
+test entry::tests::parser_keeps_multiple_files ... ok
+test entry::tests::search_workers_default_and_explicit_counts_preserve_launch_arguments ... ok
+test entry::tests::search_workers_reject_invalid_missing_and_duplicate_values ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.76s
+     Running unittests src\main.rs (target\ui-es\debug\deps\cide_gui-c32568962397e783.exe)
+     Running unittests src\legacy_main.rs (target\ui-es\debug\deps\jc_ide_gui-ad62848ce0bf3bfe.exe)
+     Running unittests src\main.rs (target\ui-es\debug\deps\cide_tui-52b635e2fdc52243.exe)
+     Running unittests src\legacy_main.rs (target\ui-es\debug\deps\jc_ide_tui-cd0da11f4ab0251d.exe)

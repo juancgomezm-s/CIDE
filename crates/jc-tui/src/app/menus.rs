@@ -46,10 +46,10 @@ impl TuiApp {
     }
 
     pub(crate) fn palette_commands(&self, query: &str) -> Vec<CommandId> {
-        let query = query.to_ascii_lowercase();
+        let query = query.to_lowercase();
         self.registry
             .iter()
-            .filter(|spec| query.is_empty() || spec.label.to_ascii_lowercase().contains(&query))
+            .filter(|spec| query.is_empty() || spec.label.to_lowercase().contains(&query))
             .map(|spec| spec.id)
             .collect()
     }

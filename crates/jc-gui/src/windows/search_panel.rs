@@ -65,7 +65,7 @@ impl State {
                 // Invalidate a clipboard handoff even when the history endpoint
                 // repeats the same query. Replacement and active field stay owned.
                 panel.generation = panel.generation.wrapping_add(1);
-                self.status = "Search query/options restored · source unchanged".into();
+                self.status = "Consulta/opciones restauradas · fuente intacto".into();
             }
             Err(error) => self.error(error),
         }
@@ -100,10 +100,12 @@ impl State {
                 if let Err(error) = self.workbench.set_search_query(query) {
                     self.error(error);
                 } else {
-                    self.status = "Search query updated · exact source EOL".into();
+                    self.status = "Consulta actualizada · EOL exacto del fuente".into();
                 }
             }
-            Ok(false) => self.status = "Field ready · exact source text; no normalization".into(),
+            Ok(false) => {
+                self.status = "Campo listo · texto exacto del fuente; sin normalización".into()
+            }
             Err(error) => self.error(error),
         }
         self.schedule_search();
@@ -139,7 +141,7 @@ impl State {
                 Resolution::Disabled(
                     CommandId::SearchHistoryPrevious | CommandId::SearchHistoryNext,
                 ) => {
-                    self.status = "Search history is empty".into();
+                    self.status = "El historial de búsqueda está vacío".into();
                     return Action::None;
                 }
                 _ => {}
@@ -197,24 +199,24 @@ impl State {
                 if code == 0x78 || modifiers.contains(Modifiers::CTRL) {
                     self.workbench
                         .replace_all(&panel.replacement)
-                        .map(|n| format!("Replaced {n} matches"))
+                        .map(|n| format!("Se reemplazaron {n} coincidencias"))
                 } else {
                     self.workbench
                         .replace_current(&panel.replacement)
                         .map(|yes| {
                             if yes {
-                                "Replaced current match".into()
+                                "Se reemplazó la coincidencia actual".into()
                             } else {
-                                "No match to replace".into()
+                                "No hay coincidencia para reemplazar".into()
                             }
                         })
                 }
             } else {
                 self.workbench.find_next().map(|hit| {
                     if hit.is_some() {
-                        "Match selected".into()
+                        "Coincidencia seleccionada".into()
                     } else {
-                        "No match yet".into()
+                        "Aún no hay coincidencias".into()
                     }
                 })
             };
@@ -257,11 +259,11 @@ impl State {
             }),
             replacement_active: panel.replacement_active,
             message: format!(
-                "Regex:{} (literal replacement) · Case:{} Word:{} · {:?} · {} matches · {}",
-                self.workbench.search().regex,
-                self.workbench.search().case_sensitive,
-                self.workbench.search().whole_word,
-                self.workbench.search().status,
+                "Regex:{} (reemplazo literal) · Mayúsculas:{} Palabra:{} · {} · {} coincidencias · {}",
+                if self.workbench.search().regex { "sí" } else { "no" },
+                if self.workbench.search().case_sensitive { "sí" } else { "no" },
+                if self.workbench.search().whole_word { "sí" } else { "no" },
+                self.workbench.search().status.label(),
                 self.workbench.search().matches.len(),
                 self.status
             ),

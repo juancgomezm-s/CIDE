@@ -240,6 +240,7 @@ impl LanguageProfile {
             "json" => syntax::SyntaxProfile::Json,
             "jsonc" => syntax::SyntaxProfile::Jsonc,
             "rust" => syntax::SyntaxProfile::Rust,
+            "markdown" => syntax::SyntaxProfile::Markdown,
             _ => syntax::SyntaxProfile::Plain,
         }
     }

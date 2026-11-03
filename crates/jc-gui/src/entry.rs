@@ -19,104 +19,113 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut interaction_only = false;
     let mut menu_invoker_only = false;
     let mut syntax_only = false;
+    let mut workflow_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("-h" | "--help") => return Ok(None),
             Some("--smoke-navigation-only") => {
                 if navigation_only {
-                    return Err("duplicate --smoke-navigation-only".into());
+                    return Err("Opción --smoke-navigation-only duplicada".into());
                 }
                 navigation_only = true;
             }
             Some("--smoke-line-edit-only") => {
                 if line_edit_only {
-                    return Err("duplicate --smoke-line-edit-only".into());
+                    return Err("Opción --smoke-line-edit-only duplicada".into());
                 }
                 line_edit_only = true;
             }
             Some("--git-executable") => {
                 if options.git_executable.is_some() {
-                    return Err("duplicate --git-executable".into());
+                    return Err("Opción --git-executable duplicada".into());
                 }
-                let path = PathBuf::from(args.next().ok_or("missing Git executable path")?);
+                let path = PathBuf::from(args.next().ok_or("Falta la ruta al ejecutable Git")?);
                 if !path.is_absolute() || path.as_os_str().len() > 4096 {
                     return Err(
-                        "--git-executable requires an absolute path within4096 native units".into(),
+                        "--git-executable requiere una ruta absoluta de hasta4096 unidades nativas"
+                            .into(),
                     );
                 }
                 options.git_executable = Some(path);
             }
             Some("--smoke-rectangle-only") => {
                 if rectangle_only {
-                    return Err("duplicate --smoke-rectangle-only".into());
+                    return Err("Opción --smoke-rectangle-only duplicada".into());
                 }
                 rectangle_only = true;
             }
             Some("--smoke-parity-only") => {
                 if parity_only {
-                    return Err("duplicate --smoke-parity-only".into());
+                    return Err("Opción --smoke-parity-only duplicada".into());
                 }
                 parity_only = true;
             }
             Some("--smoke-bottom-only") => {
                 if bottom_only {
-                    return Err("duplicate --smoke-bottom-only".into());
+                    return Err("Opción --smoke-bottom-only duplicada".into());
                 }
                 bottom_only = true;
             }
+            Some("--smoke-workflow-only") => {
+                if workflow_only {
+                    return Err("Opción --smoke-workflow-only duplicada".into());
+                }
+                workflow_only = true;
+            }
             Some("--smoke-syntax-only") => {
                 if syntax_only {
-                    return Err("duplicate --smoke-syntax-only".into());
+                    return Err("Opción --smoke-syntax-only duplicada".into());
                 }
                 syntax_only = true;
             }
             Some("--smoke-menu-invoker-only") => {
                 if menu_invoker_only {
-                    return Err("duplicate --smoke-menu-invoker-only".into());
+                    return Err("Opción --smoke-menu-invoker-only duplicada".into());
                 }
                 menu_invoker_only = true;
             }
             Some("--smoke-interaction-only") => {
                 if interaction_only {
-                    return Err("duplicate --smoke-interaction-only".into());
+                    return Err("Opción --smoke-interaction-only duplicada".into());
                 }
                 interaction_only = true;
             }
             Some("--smoke-selector-input-only") => {
                 if selector_input_only {
-                    return Err("duplicate --smoke-selector-input-only".into());
+                    return Err("Opción --smoke-selector-input-only duplicada".into());
                 }
                 selector_input_only = true;
             }
             Some("--smoke-selection-reopen-only") => {
                 if selection_reopen_only {
-                    return Err("duplicate --smoke-selection-reopen-only".into());
+                    return Err("Opción --smoke-selection-reopen-only duplicada".into());
                 }
                 selection_reopen_only = true;
             }
             Some("--search-workers") => {
                 if options.search_workers.is_some() {
-                    return Err("duplicate --search-workers".into());
+                    return Err("Opción --search-workers duplicada".into());
                 }
                 let value = args
                     .next()
                     .and_then(|v| v.into_string().ok())
                     .and_then(|s| s.parse::<usize>().ok())
                     .filter(|n| (1..=4).contains(n))
-                    .ok_or("--search-workers requires1..4")?;
+                    .ok_or("--search-workers requiere1..4")?;
                 options.search_workers = Some(value);
             }
             Some("--project-root") => {
                 if options.project_root.is_some() {
-                    return Err("duplicate --project-root".into());
+                    return Err("Opción --project-root duplicada".into());
                 }
-                options.project_root =
-                    Some(PathBuf::from(args.next().ok_or("missing project root")?));
+                options.project_root = Some(PathBuf::from(
+                    args.next().ok_or("Falta la raíz del proyecto")?,
+                ));
             }
             Some("--encoding") => {
                 if options.encoding.is_some() {
-                    return Err("duplicate --encoding".into());
+                    return Err("Opción --encoding duplicada".into());
                 }
                 options.encoding = Some(
                     match args.next().and_then(|s| s.into_string().ok()).as_deref() {
@@ -124,14 +133,14 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                         Some("cp1252" | "windows-1252") => TextEncoding::Windows1252,
                         Some("latin1" | "iso-8859-1") => TextEncoding::Iso8859_1,
                         Some("ibm850" | "cp850") => TextEncoding::Ibm850,
-                        _ => return Err("use --encoding utf-8|cp1252|latin1|ibm850".into()),
+                        _ => return Err("Usa --encoding utf-8|cp1252|latin1|ibm850".into()),
                     },
                 );
             }
             Some("--smoke-fixture" | "--smoke-report" | "--smoke-bitmap") => {
-                let path = PathBuf::from(args.next().ok_or("missing smoke path")?);
+                let path = PathBuf::from(args.next().ok_or("Falta una ruta de prueba")?);
                 if !path.is_absolute() {
-                    return Err("smoke paths must be absolute".into());
+                    return Err("Las rutas de prueba deben ser absolutas".into());
                 }
                 let target = match arg.to_str().expect("matched option") {
                     "--smoke-fixture" => &mut fixture,
@@ -139,10 +148,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     _ => &mut bitmap,
                 };
                 if target.replace(path).is_some() {
-                    return Err("duplicate smoke path option".into());
+                    return Err("Opción de ruta de prueba duplicada".into());
                 }
             }
-            Some(word) if word.starts_with('-') => return Err(format!("unknown option: {word}")),
+            Some(word) if word.starts_with('-') => {
+                return Err(format!("Opción desconocida: {word}"))
+            }
             _ => options.paths.push(PathBuf::from(arg)),
         }
     }
@@ -156,9 +167,10 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(interaction_only)
         + usize::from(menu_invoker_only)
         + usize::from(syntax_only)
+        + usize::from(workflow_only)
         > 1
     {
-        return Err("choose only one smoke section".into());
+        return Err("Elige una sola sección de prueba".into());
     }
     if fixture.is_some()
         || report.is_some()
@@ -173,9 +185,10 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || interaction_only
         || menu_invoker_only
         || syntax_only
+        || workflow_only
     {
         if !options.paths.is_empty() || options.project_root.is_some() {
-            return Err("smoke uses only its explicit fixture".into());
+            return Err("La prueba usa únicamente su archivo de muestra explícito".into());
         }
         let fixture = fixture.ok_or("--smoke-fixture requires --smoke-report")?;
         let report = report.ok_or("--smoke-report requires --smoke-fixture")?;
@@ -184,7 +197,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                 .as_ref()
                 .is_some_and(|p| p == &fixture || p == &report)
         {
-            return Err("smoke fixture, report and bitmap must be distinct".into());
+            return Err("Las rutas de muestra, informe e imagen deben ser distintas".into());
         }
         options.smoke = Some(SmokeOptions {
             fixture,
@@ -200,6 +213,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             interaction_only,
             menu_invoker_only,
             syntax_only,
+            workflow_only,
         });
     }
     Ok(Some(options))
@@ -207,7 +221,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
 
 pub(super) fn run() {
     match parse(std::env::args_os().skip(1)) {
-        Ok(None) => println!("CIDE native GUI\nUsage: cide-gui [--project-root DIR] [--git-executable ABS] [--search-workers 1..4] [--encoding utf-8|cp1252|latin1|ibm850] [files...]\nLegacy alias: jc-ide-gui. Windows native frontend. Smoke: --smoke-fixture ABS --smoke-report ABS [--smoke-bitmap ABS]"),
+        Ok(None) => println!("Interfaz gráfica CIDE\nUso: cide-gui [--project-root DIR] [--git-executable ABS] [--search-workers 1..4] [--encoding utf-8|cp1252|latin1|ibm850] [ARCHIVOS...]\nAlias anterior: jc-ide-gui. Interfaz nativa de Windows. Prueba: --smoke-fixture ABS --smoke-report ABS [--smoke-bitmap ABS]"),
         Ok(Some(options)) => {
             if let Err(error) = jc_gui::run(options) {
                 eprintln!("{error}");
@@ -215,7 +229,7 @@ pub(super) fn run() {
             }
         }
         Err(error) => {
-            eprintln!("{error}; use --help");
+            eprintln!("{error}; usa --help");
             std::process::exit(2);
         }
     }

@@ -15,6 +15,7 @@ mod git_view;
 mod interaction_smoke;
 mod line_edit;
 mod line_edit_smoke;
+mod markdown_panel;
 mod menu_input;
 mod menu_invoker_smoke;
 mod native_menu;
@@ -22,6 +23,7 @@ mod navigation_paint;
 mod navigation_panel;
 mod navigation_smoke;
 mod notify;
+mod open_diff_panel;
 mod paint;
 mod parity_smoke;
 mod pointer_input;
@@ -47,7 +49,10 @@ mod selector_input;
 mod selector_input_smoke;
 mod selector_paint;
 mod smoke;
+mod snippet_panel;
+mod source_panel;
 mod syntax_smoke;
+mod workflow_smoke;
 use crate::GuiOptions;
 use ffi::*;
 use jc_app::quick_open::QuickOpenController;
@@ -75,165 +80,260 @@ fn os_error(operation: &str) -> String {
 const OPEN_SIDE: usize = 190;
 const COMMANDS: &[(usize, CommandId, &str)] = &[
     (
+        220,
+        CommandId::DiffCompareOpen,
+        "Comparar grupos abiertos (solo lectura)",
+    ),
+    (
+        221,
+        CommandId::DiffRefreshOpen,
+        "Actualizar comparación de abiertos",
+    ),
+    (
+        222,
+        CommandId::DiffCancelOpen,
+        "Cancelar comparación de abiertos",
+    ),
+    (
+        223,
+        CommandId::DiffOpenNavigateLeft,
+        "Abrir bloque en grupo izquierdo",
+    ),
+    (
+        224,
+        CommandId::DiffOpenNavigateRight,
+        "Abrir bloque en grupo derecho",
+    ),
+    (230, CommandId::ViewSymbols, "Símbolos"),
+    (
+        231,
+        CommandId::SourceReferences,
+        "Referencias del documento",
+    ),
+    (232, CommandId::SourceComplete, "Completar palabra local"),
+    (
+        233,
+        CommandId::SourceRefresh,
+        "Actualizar servicio del documento",
+    ),
+    (
+        234,
+        CommandId::SourceCancel,
+        "Cancelar servicio del documento",
+    ),
+    (
+        235,
+        CommandId::SourceAccept,
+        "Aceptar elemento del documento",
+    ),
+    (236, CommandId::SourceOpenToSide, "Abrir elemento al lado"),
+    (240, CommandId::EditInsertSnippet, "Insertar plantilla"),
+    (241, CommandId::EditSurroundWith, "Envolver selección"),
+    (242, CommandId::SnippetNext, "Plantilla: siguiente paso"),
+    (243, CommandId::SnippetPrevious, "Plantilla: paso anterior"),
+    (
+        244,
+        CommandId::SnippetAccept,
+        "Plantilla: aplicar vista previa",
+    ),
+    (245, CommandId::SnippetCancel, "Plantilla: cancelar"),
+    (
+        250,
+        CommandId::ViewMarkdownPreview,
+        "Vista previa de Markdown",
+    ),
+    (
         210,
         CommandId::ViewToggleBottomPanel,
-        "Toggle &Bottom Panel",
+        "Mostrar/ocultar panel &inferior",
     ),
-    (211, CommandId::ViewProblems, "&Problems"),
-    (212, CommandId::ViewOutput, "&Output"),
+    (211, CommandId::ViewProblems, "&Problemas"),
+    (212, CommandId::ViewOutput, "&Salida"),
     (
         200,
         CommandId::EditRectangleStart,
-        "Rectangle: &Start From Caret / Selection",
+        "Rectángulo: &iniciar desde cursor/selección",
     ),
-    (201, CommandId::EditRectangleCancel, "Rectangle: &Cancel"),
-    (202, CommandId::EditRectangleLeft, "Rectangle: Extend &Left"),
+    (201, CommandId::EditRectangleCancel, "Rectángulo: &cancelar"),
+    (
+        202,
+        CommandId::EditRectangleLeft,
+        "Rectángulo: extender &izquierda",
+    ),
     (
         203,
         CommandId::EditRectangleRight,
-        "Rectangle: Extend &Right",
+        "Rectángulo: extender &derecha",
     ),
-    (204, CommandId::EditRectangleUp, "Rectangle: Extend &Up"),
-    (205, CommandId::EditRectangleDown, "Rectangle: Extend &Down"),
     (
-        160,
-        CommandId::SearchGoToPosition,
-        "&Go to Line / Column...",
+        204,
+        CommandId::EditRectangleUp,
+        "Rectángulo: extender &arriba",
     ),
-    (161, CommandId::NavigateBack, "Navigate &Back"),
-    (162, CommandId::NavigateForward, "Navigate &Forward"),
     (
-        163,
-        CommandId::SearchHistoryPrevious,
-        "&Previous Search Query",
+        205,
+        CommandId::EditRectangleDown,
+        "Rectángulo: extender a&bajo",
     ),
-    (164, CommandId::SearchHistoryNext, "&Next Search Query"),
-    (138, CommandId::SearchToggleCase, "Toggle &Case Sensitive"),
-    (139, CommandId::SearchToggleWholeWord, "Toggle &Whole Word"),
-    (165, CommandId::SearchToggleRegex, "Regular E&xpression"),
-    (101, CommandId::FileNew, "&New"),
-    (102, CommandId::FileOpen, "&Open..."),
-    (103, CommandId::FileSave, "&Save"),
-    (104, CommandId::FileSaveAs, "Save &As..."),
-    (105, CommandId::FileClose, "&Close Tab"),
-    (106, CommandId::FileExit, "E&xit"),
-    (107, CommandId::FileOpenFolder, "Open &Folder..."),
-    (108, CommandId::FileQuickOpen, "&Quick Open..."),
+    (160, CommandId::SearchGoToPosition, "Ir a &línea/columna..."),
+    (161, CommandId::NavigateBack, "Navegar &atrás"),
+    (162, CommandId::NavigateForward, "Navegar a&delante"),
+    (163, CommandId::SearchHistoryPrevious, "Consulta &anterior"),
+    (164, CommandId::SearchHistoryNext, "Consulta &siguiente"),
+    (138, CommandId::SearchToggleCase, "Distinguir &mayúsculas"),
+    (
+        139,
+        CommandId::SearchToggleWholeWord,
+        "Solo &palabras completas",
+    ),
+    (165, CommandId::SearchToggleRegex, "E&xpresión regular"),
+    (101, CommandId::FileNew, "&Nuevo"),
+    (102, CommandId::FileOpen, "&Abrir..."),
+    (103, CommandId::FileSave, "&Guardar"),
+    (104, CommandId::FileSaveAs, "Guardar &como..."),
+    (105, CommandId::FileClose, "&Cerrar pestaña"),
+    (106, CommandId::FileExit, "&Salir"),
+    (107, CommandId::FileOpenFolder, "Abrir &carpeta..."),
+    (108, CommandId::FileQuickOpen, "Apertura &rápida..."),
     (
         109,
         CommandId::FileChooseEncoding,
-        "Choose Source &Encoding...",
+        "Elegir &codificación del fuente...",
     ),
-    (110, CommandId::EditUndo, "&Undo"),
-    (111, CommandId::EditRedo, "&Redo"),
-    (112, CommandId::EditCut, "Cu&t"),
-    (113, CommandId::EditCopy, "&Copy"),
-    (114, CommandId::EditPaste, "&Paste"),
-    (115, CommandId::EditSelectAll, "Select &All"),
-    (116, CommandId::EditJoinLines, "&Join Lines"),
-    (117, CommandId::EditSplitLine, "&Split Line"),
-    (170, CommandId::EditDuplicate, "&Duplicate Selection / Line"),
-    (171, CommandId::EditDeleteLine, "De&lete Line"),
-    (172, CommandId::EditMoveLineUp, "Move Line &Up"),
-    (173, CommandId::EditMoveLineDown, "Move Line Do&wn"),
-    (174, CommandId::EditToggleLineComment, "Toggle &Comment"),
+    (110, CommandId::EditUndo, "&Deshacer"),
+    (111, CommandId::EditRedo, "&Rehacer"),
+    (112, CommandId::EditCut, "Cor&tar"),
+    (113, CommandId::EditCopy, "&Copiar"),
+    (114, CommandId::EditPaste, "&Pegar"),
+    (115, CommandId::EditSelectAll, "Seleccionar &todo"),
+    (116, CommandId::EditJoinLines, "&Unir líneas"),
+    (117, CommandId::EditSplitLine, "&Dividir línea"),
+    (170, CommandId::EditDuplicate, "&Duplicar selección/línea"),
+    (171, CommandId::EditDeleteLine, "E&liminar línea"),
+    (172, CommandId::EditMoveLineUp, "Subir &línea"),
+    (173, CommandId::EditMoveLineDown, "Bajar lí&nea"),
+    (
+        174,
+        CommandId::EditToggleLineComment,
+        "Alternar &comentario",
+    ),
     (
         175,
         CommandId::EditToggleBlockComment,
-        "Toggle &Block Comment",
+        "Alternar comentario de &bloque",
     ),
-    (176, CommandId::EditIndent, "&Indent"),
-    (177, CommandId::EditOutdent, "&Outdent"),
+    (176, CommandId::EditIndent, "&Aumentar sangría"),
+    (177, CommandId::EditOutdent, "&Reducir sangría"),
     (
         178,
         CommandId::EditorToggleScrollLink,
-        "Link / Unlink &Scroll",
+        "Vincular/desvincular &desplazamiento",
     ),
-    (118, CommandId::FileSaveAll, "Save A&ll..."),
-    (119, CommandId::FileReopenClosed, "Reopen Closed &Tab"),
-    (194, CommandId::SearchSelectionNext, "Find Selection Ne&xt"),
+    (118, CommandId::FileSaveAll, "Guardar &todo..."),
+    (119, CommandId::FileReopenClosed, "Reabrir &pestaña cerrada"),
+    (
+        194,
+        CommandId::SearchSelectionNext,
+        "Buscar selección &siguiente",
+    ),
     (
         195,
         CommandId::SearchSelectionPrevious,
-        "Find Selection Pre&vious",
+        "Buscar selección &anterior",
     ),
     (
         196,
         CommandId::SearchCancel,
-        "Cancel Document S&earch / Rectangle",
+        "Cancelar &búsqueda/rectángulo",
     ),
-    (180, CommandId::Tab1, "Tab &1"),
-    (181, CommandId::Tab2, "Tab &2"),
-    (182, CommandId::Tab3, "Tab &3"),
-    (183, CommandId::Tab4, "Tab &4"),
-    (184, CommandId::Tab5, "Tab &5"),
-    (185, CommandId::Tab6, "Tab &6"),
-    (186, CommandId::Tab7, "Tab &7"),
-    (187, CommandId::Tab8, "Tab &8"),
-    (188, CommandId::Tab9, "&Last Tab (Alt+9)"),
-    (120, CommandId::EditorSplitRight, "Split &Right"),
-    (121, CommandId::EditorOneGroup, "&One Group"),
-    (122, CommandId::EditorFocusPrimary, "Focus Group &1"),
-    (123, CommandId::EditorFocusSecondary, "Focus Group &2"),
-    (124, CommandId::TabNext, "&Next Tab"),
-    (125, CommandId::TabPrevious, "&Previous Tab"),
-    (126, CommandId::PaletteOpen, "Command &Palette..."),
+    (180, CommandId::Tab1, "Pestaña &1"),
+    (181, CommandId::Tab2, "Pestaña &2"),
+    (182, CommandId::Tab3, "Pestaña &3"),
+    (183, CommandId::Tab4, "Pestaña &4"),
+    (184, CommandId::Tab5, "Pestaña &5"),
+    (185, CommandId::Tab6, "Pestaña &6"),
+    (186, CommandId::Tab7, "Pestaña &7"),
+    (187, CommandId::Tab8, "Pestaña &8"),
+    (188, CommandId::Tab9, "Ú&ltima pestaña (Alt+9)"),
+    (120, CommandId::EditorSplitRight, "Dividir a la &derecha"),
+    (121, CommandId::EditorOneGroup, "&Un grupo"),
+    (122, CommandId::EditorFocusPrimary, "Enfocar grupo &1"),
+    (123, CommandId::EditorFocusSecondary, "Enfocar grupo &2"),
+    (124, CommandId::TabNext, "Pestaña &siguiente"),
+    (125, CommandId::TabPrevious, "Pestaña &anterior"),
+    (126, CommandId::PaletteOpen, "&Paleta de comandos..."),
     (
         127,
         CommandId::ViewToggleInvisibles,
-        "Show &Invisible Characters",
+        "Mostrar caracteres &invisibles",
     ),
-    (130, CommandId::SearchFind, "&Find Multiline..."),
-    (128, CommandId::ViewExplorer, "Project E&xplorer"),
-    (129, CommandId::EditorTogglePin, "&Pin / Unpin Reference"),
-    (150, CommandId::ExplorerRefresh, "&Refresh Directory"),
+    (130, CommandId::SearchFind, "&Buscar multilínea..."),
+    (128, CommandId::ViewExplorer, "E&xplorador del proyecto"),
+    (
+        129,
+        CommandId::EditorTogglePin,
+        "&Anclar/desanclar referencia",
+    ),
+    (150, CommandId::ExplorerRefresh, "&Actualizar directorio"),
     (
         151,
         CommandId::ExplorerCancel,
-        "Cancel Loading / Return to &Editor",
+        "Cancelar carga/volver al &editor",
     ),
-    (152, CommandId::EditorOpenToSide, "Open to &Side"),
-    (153, CommandId::FocusNext, "&Next Focus"),
-    (154, CommandId::FocusPrevious, "&Previous Focus"),
-    (131, CommandId::SearchReplace, "&Replace Multiline..."),
-    (132, CommandId::SearchFindNext, "Find &Next"),
-    (133, CommandId::SearchFindPrevious, "Find &Previous"),
+    (152, CommandId::EditorOpenToSide, "Abrir al &lado"),
+    (153, CommandId::FocusNext, "Área &siguiente"),
+    (154, CommandId::FocusPrevious, "Área &anterior"),
+    (131, CommandId::SearchReplace, "&Reemplazar multilínea..."),
+    (132, CommandId::SearchFindNext, "Buscar &siguiente"),
+    (133, CommandId::SearchFindPrevious, "Buscar &anterior"),
     (
         134,
         CommandId::SearchProject,
-        "Search Plus: Find in &Project...",
+        "Search Plus: buscar en &proyecto...",
     ),
     (
         135,
         CommandId::SearchCancelProject,
-        "&Cancel Project Search",
+        "&Cancelar búsqueda del proyecto",
     ),
-    (136, CommandId::ViewSearchResults, "Project Search &Results"),
+    (
+        136,
+        CommandId::ViewSearchResults,
+        "&Resultados de búsqueda del proyecto",
+    ),
     (
         137,
         CommandId::SearchReplaceProject,
-        "Replace in Pro&ject...",
+        "Reemplazar en pro&yecto...",
     ),
     (
         140,
         CommandId::GitRepositoryStatus,
-        "Repository &Status (Read-Only)",
+        "&Estado del repositorio (solo lectura)",
     ),
-    (141, CommandId::ViewGit, "Active File &Diff"),
-    (142, CommandId::GitDiffHead, "Compare &HEAD Snapshot"),
-    (143, CommandId::GitDiffIndex, "Compare &Index Snapshot"),
-    (144, CommandId::GitDiffRefresh, "&Refresh Active Diff"),
-    (145, CommandId::GitDiffCancel, "&Cancel Diff"),
+    (141, CommandId::ViewGit, "&Diferencias del archivo activo"),
+    (142, CommandId::GitDiffHead, "Comparar captura de &HEAD"),
+    (143, CommandId::GitDiffIndex, "Comparar captura del &índice"),
+    (
+        144,
+        CommandId::GitDiffRefresh,
+        "&Actualizar comparación activa",
+    ),
+    (145, CommandId::GitDiffCancel, "&Cancelar comparación"),
     (
         146,
         CommandId::GitStatusRefresh,
-        "Refresh Repository S&tatus",
+        "Actualizar es&tado del repositorio",
     ),
-    (147, CommandId::GitStatusCancel, "Cancel Repositor&y Status"),
+    (
+        147,
+        CommandId::GitStatusCancel,
+        "Cancelar estado del re&positorio",
+    ),
     (
         148,
         CommandId::GitConfigureExecutable,
-        "Choose Git &Executable...",
+        "Elegir &ejecutable Git...",
     ),
 ];
 pub(super) fn command_id(command: CommandId) -> usize {
@@ -250,6 +350,7 @@ enum Action {
     Clipboard(CommandId),
     PasteSearch(u64),
     PasteNavigation(u64),
+    PasteSnippet(snippet_panel::SnippetInputTarget),
     SelectorClipboard(CommandId, Box<selector_input::SelectorInputTarget>),
     PasteProject(u64),
     PasteReplacement(u64),
@@ -262,6 +363,12 @@ enum Action {
     Exit,
 }
 struct State {
+    open_diff: jc_app::open_diff::OpenDiffController,
+    open_diff_view: jc_app::open_diff_view::OpenDiffView,
+    open_diff_visible: bool,
+    source_gui: source_panel::SourceGui,
+    snippet_gui: Option<snippet_panel::SnippetGui>,
+    markdown_gui: Option<markdown_panel::MarkdownGui>,
     pub workbench: Workbench,
     registry: CommandRegistry,
     keymap: KeyMap,
@@ -357,9 +464,15 @@ impl State {
             created
         };
         if font.is_null() {
-            return Err(os_error("Create native fixed font"));
+            return Err(os_error("Crear fuente monoespaciada nativa"));
         }
         let mut state = Self {
+            open_diff: Default::default(),
+            open_diff_view: Default::default(),
+            open_diff_visible: false,
+            source_gui: source_panel::SourceGui::new(),
+            snippet_gui: None,
+            markdown_gui: None,
             workbench: Workbench::default(),
             registry: default_registry(),
             keymap: default_keymap(),
@@ -405,14 +518,14 @@ impl State {
             git_status: jc_app::git_status_tasks::GitStatusController::new(wakeup.clone()),
             git_status_options: None,
             jobs: jc_app::JobSystem::new(Default::default(), wakeup.clone())
-                .map_err(|e| format!("Native task admission: {e:?}"))?,
+                .map_err(|e| format!("Admisión de tarea nativa: {e:?}"))?,
             encoding_target: None,
             smoke_clipboard: None,
             quick_open: QuickOpenController::new(wakeup.clone()),
             wakeup,
             bridge,
             deliveries: 0,
-            status: "Native Win32/GDI · scalar cells · Windows text clipboard".into(),
+            status: "Win32/GDI nativo · grafemas · portapapeles de texto de Windows".into(),
             width: 1000,
             height: 650,
             cell_width: 9,
@@ -552,6 +665,12 @@ impl State {
             context.clipboard_has_text = false;
             context.has_selection = false;
         }
+        self.open_diff_context(&mut context);
+        self.source_context(&mut context);
+        self.snippet_context(&mut context);
+        if self.markdown_gui.is_some() {
+            context.editor_input = false;
+        }
         context
     }
     fn execute(&mut self, command: CommandId) -> Action {
@@ -560,16 +679,46 @@ impl State {
             .registry
             .is_enabled(command, &self.entry_context(command))
         {
-            self.status = "Command unavailable in the current context".into();
+            self.status = "Comando no disponible en el contexto actual".into();
             return Action::None;
         }
         if let Some(group) = native_menu::group_for_command(command) {
             return Action::NativeMenu(group);
         }
-        match command {
-            command if self.selector.is_some() && selector_input::field_command(command) => {
-                return self.selector_field_action(command);
+        if self.selector.is_some() && selector_input::field_command(command) {
+            return self.selector_field_action(command);
+        }
+        if self.selector.is_none() && command == CommandId::EditPaste {
+            if let Some(target) = self.snippet_input_target() {
+                return Action::PasteSnippet(target);
             }
+        }
+        if open_diff_panel::is_command(command) {
+            self.close_source_ui();
+            self.snippet_gui = None;
+            self.markdown_gui = None;
+            return self.open_diff_command(command);
+        }
+        if source_panel::is_command(command) {
+            self.open_diff_visible = false;
+            self.snippet_gui = None;
+            self.markdown_gui = None;
+            return self.source_command(command);
+        }
+        if snippet_panel::is_command(command) {
+            self.markdown_gui = None;
+            return self.snippet_command(command);
+        }
+        if command == CommandId::ViewMarkdownPreview {
+            return self.toggle_markdown();
+        }
+        if !snippet_panel::keep_for(command) && command != CommandId::ViewToggleInvisibles {
+            self.open_diff_visible = false;
+            self.close_source_ui();
+            self.snippet_gui = None;
+            self.markdown_gui = None;
+        }
+        match command {
             CommandId::ViewToggleBottomPanel | CommandId::ViewProblems | CommandId::ViewOutput => {
                 self.show_bottom(command);
                 return Action::None;
@@ -663,7 +812,7 @@ impl State {
             }
             CommandId::SearchCancelProject => {
                 self.project_search.cancel();
-                self.status = "Project search cancelled".into();
+                self.status = "Búsqueda del proyecto cancelada".into();
                 return Action::None;
             }
             CommandId::ViewSearchResults => {
@@ -729,7 +878,7 @@ impl State {
             CommandId::FileExit => return Action::Exit,
             CommandId::FileSaveAll => {
                 if self.save_all_active {
-                    self.status = "Save All is already in progress".into();
+                    self.status = "Guardar todo ya está en curso".into();
                     return Action::None;
                 }
                 return Action::SaveAll;
@@ -751,27 +900,30 @@ impl State {
         match self.workbench.execute(command) {
             Ok(CommandOutcome::View(CommandId::ViewToggleInvisibles)) => {
                 self.status = if self.workbench.invisibles_visible() {
-                    "Invisible characters: ASCII spans on"
+                    "Caracteres invisibles: representación ASCII activada"
                 } else {
-                    "Invisible characters hidden"
+                    "Caracteres invisibles ocultos"
                 }
                 .into()
             }
             Ok(CommandOutcome::None) => {
                 if command == CommandId::SearchCancel {
-                    self.status = "Document search / rectangle cancelled".into();
+                    self.status = "Búsqueda documental/rectángulo cancelados".into();
                     return Action::None;
                 }
                 if line_edit::is_line_edit(command) {
-                    let label = self.registry.get(command).map_or("Line edit", |s| s.label);
+                    let label = self
+                        .registry
+                        .get(command)
+                        .map_or("Edición de línea", |s| s.label);
                     let edit_after = self
                         .workbench
                         .active_document()
                         .map(|d| (d.id, d.session.document().revision()));
                     self.status = if edit_before == edit_after {
-                        format!("No change · {label}")
+                        format!("Sin cambios · {label}")
                     } else {
-                        format!("{label} · unsaved changes")
+                        format!("{label} · cambios sin guardar")
                     };
                     return Action::None;
                 }
@@ -779,9 +931,9 @@ impl State {
                     self.save_count += 1;
                 }
                 self.status = if self.context().rectangular_selection {
-                    "Ready · rectangular clipboard stays internal"
+                    "Listo · el portapapeles rectangular sigue interno"
                 } else {
-                    "Ready · Windows text clipboard · scalar-cell preview"
+                    "Listo · portapapeles de Windows · vista por grafemas"
                 }
                 .into();
             }
@@ -795,8 +947,11 @@ impl State {
                 | CommandId::EditorOpenToSide
                 | CommandId::NavigateBack
                 | CommandId::NavigateForward,
-            )) => self.status = "Ready · shared editor groups".into(),
-            Ok(_) => self.status = "This command needs a frontend flow not provided here".into(),
+            )) => self.status = "Listo · grupos de editor compartidos".into(),
+            Ok(_) => {
+                self.status =
+                    "Este comando requiere un flujo aún no conectado en esta interfaz".into()
+            }
             Err(error) => self.error(error),
         }
         Action::None
@@ -872,6 +1027,7 @@ impl State {
             return (true, Action::NativeMenu(native_menu::NativeMenuGroup::File));
         }
         let key = match code {
+            0x20 => Some(Key::Char(' ')),
             0x09 => Some(Key::Tab),
             0x0d => Some(Key::Enter),
             0x1b => Some(Key::Escape),
@@ -901,7 +1057,7 @@ impl State {
                 | CommandId::NavigateForward,
             ) = global
             {
-                self.status = "Navigation command unavailable in the current context".into();
+                self.status = "Comando de navegación no disponible en el contexto actual".into();
                 return (true, Action::None);
             }
             if let Resolution::Enabled(
@@ -911,6 +1067,7 @@ impl State {
                 | CommandId::SearchGoToPosition
                 | CommandId::NavigateBack
                 | CommandId::NavigateForward
+                | CommandId::ViewMarkdownPreview
                 | CommandId::PaletteOpen),
             ) = global
             {
@@ -918,6 +1075,21 @@ impl State {
                     return (true, self.execute(command));
                 }
             }
+        }
+        if self.selector.is_some() {
+            return (true, self.selector_key(code, modifiers));
+        }
+        if self.snippet_gui.is_some() {
+            return (true, self.snippet_key(code, modifiers));
+        }
+        if self.source_visible() {
+            return (true, self.source_key(code, modifiers));
+        }
+        if self.open_diff_visible {
+            return (true, self.open_diff_key(code, modifiers));
+        }
+        if self.markdown_gui.is_some() {
+            return (true, self.markdown_key(code, modifiers));
         }
         if self.git_panel.is_some() {
             return (true, self.git_key(code, modifiers));
@@ -952,7 +1124,7 @@ impl State {
                         return (true, self.execute(command))
                     }
                     Resolution::Disabled(command) if supported(command) => {
-                        self.status = "Command unavailable in Explorer".into();
+                        self.status = "Comando no disponible en el explorador".into();
                         return (true, Action::None);
                     }
                     _ => {}
@@ -973,7 +1145,7 @@ impl State {
                     return (true, self.execute(command))
                 }
                 Resolution::Disabled(command) if supported(command) => {
-                    self.status = "Command unavailable".into();
+                    self.status = "Comando no disponible".into();
                     return (true, Action::None);
                 }
                 _ => {}
@@ -1011,19 +1183,19 @@ impl State {
         }
         if (0xd800..=0xdbff).contains(&unit) {
             if self.pending_surrogate.replace(unit).is_some() {
-                self.status = "Unpaired UTF-16 high surrogate rejected".into();
+                self.status = "Se rechazó un sustituto alto UTF16 sin pareja".into();
             }
             return;
         }
         let scalar = if (0xdc00..=0xdfff).contains(&unit) {
             let Some(high) = self.pending_surrogate.take() else {
-                self.status = "Unpaired UTF-16 low surrogate rejected".into();
+                self.status = "Se rechazó un sustituto bajo UTF16 sin pareja".into();
                 return;
             };
             0x10000 + ((u32::from(high) - 0xd800) << 10) + (u32::from(unit) - 0xdc00)
         } else {
             if self.pending_surrogate.take().is_some() {
-                self.status = "Unpaired UTF-16 sequence rejected".into();
+                self.status = "Se rechazó una secuencia UTF16 sin pareja".into();
                 return;
             }
             u32::from(unit)
@@ -1038,6 +1210,21 @@ impl State {
             return;
         }
         let mut bytes = [0u8; 4];
+        if self.selector.is_some() {
+            self.edit_selector_input(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)), false);
+            return;
+        }
+        if self.snippet_gui.is_some() {
+            self.snippet_character(ch);
+            return;
+        }
+        if self.source_visible() {
+            self.source_character(ch);
+            return;
+        }
+        if self.open_diff_visible || self.markdown_gui.is_some() {
+            return;
+        }
         if self.git_panel.is_some() {
             return;
         }
@@ -1068,7 +1255,7 @@ impl State {
             return;
         }
         match self.workbench.insert_text(ch.encode_utf8(&mut bytes)) {
-            Ok(()) => self.status = "Ready".into(),
+            Ok(()) => self.status = "Listo".into(),
             Err(error) => self.error(error),
         }
     }
@@ -1181,7 +1368,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
         } else if let Ok(mut state) = owner.state.try_borrow_mut() {
             state.paint_errors += 1;
-            state.error("BeginPaint did not return a device context");
+            state.error("BeginPaint no devolvió un contexto de dispositivo");
         }
         return 0;
     }
@@ -1357,6 +1544,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         state.schedule_search();
         redraw |= state.validate_project_search();
         redraw |= state.validate_git_context();
+        redraw |= state.validate_open_diff();
+        redraw |= state.validate_source();
         state.validate_rectangle_drag();
         state.validate_linear_drag();
     }
@@ -1402,11 +1591,11 @@ unsafe fn file_dialog_named(
     title: Option<&str>,
 ) -> Result<Option<PathBuf>, String> {
     let mut file = vec![0u16; 32768];
-    let filter = wide("All files\0*.*\0");
+    let filter = wide("Todos los archivos\0*.*\0");
     let title = wide(title.unwrap_or(if save {
-        "Save source as"
+        "Guardar fuente como"
     } else {
-        "Open source"
+        "Abrir fuente"
     }));
     let mut options: OpenFileName = std::mem::zeroed();
     options.size = std::mem::size_of::<OpenFileName>() as u32;
@@ -1426,13 +1615,13 @@ unsafe fn file_dialog_named(
         return if error == 0 {
             Ok(None)
         } else {
-            Err(format!("Native file dialog failed ({error:#x})"))
+            Err(format!("Falló el diálogo nativo de archivos ({error:#x})"))
         };
     }
     let end = file
         .iter()
         .position(|unit| *unit == 0)
-        .ok_or("Invalid file-dialog result")?;
+        .ok_or("Resultado inválido del diálogo de archivos")?;
     Ok(Some(PathBuf::from(std::ffi::OsString::from_wide(
         &file[..end],
     ))))
@@ -1455,7 +1644,8 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
     ) && owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke)
     {
         if let Some(owner) = owner(hwnd) {
-            owner.state.borrow_mut().status = "Smoke prevented an unexpected native dialog".into();
+            owner.state.borrow_mut().status =
+                "La prueba impidió un diálogo nativo inesperado".into();
         }
         return;
     }
@@ -1466,7 +1656,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                 if let Some(model) = owner(hwnd) {
                     let mut state = model.state.borrow_mut();
                     state.cancel_pointer();
-                    state.error("Mouse capture unavailable; selection retained");
+                    state.error("Captura del ratón no disponible; selección conservada");
                 }
             }
         }
@@ -1482,6 +1672,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
         Action::PasteNavigation(generation) => clipboard_flow::paste_navigation(hwnd, generation),
+        Action::PasteSnippet(target) => clipboard_flow::paste_snippet(hwnd, target),
         Action::SelectorClipboard(command, target) => {
             clipboard_flow::selector_transfer(hwnd, command, *target)
         }
@@ -1520,7 +1711,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                         if let Err(error) = result {
                             state.error(error);
                         } else {
-                            state.status = "Opened".into();
+                            state.status = "Abierto".into();
                             state.explorer_focused = false;
                             state.bottom.focused = false;
                             state.ensure_encoding_selector();
@@ -1533,13 +1724,13 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         }
         Action::SaveAs => {
             let captured = owner(hwnd)
-                .ok_or_else(|| "Save As window closed".to_owned())
+                .ok_or_else(|| "Se cerró la ventana de Guardar como".to_owned())
                 .and_then(|model| {
                     let state = model.state.borrow();
                     let document = state
                         .workbench
                         .active_document()
-                        .ok_or("No active Save As document")?;
+                        .ok_or("No hay documento activo para Guardar como")?;
                     state
                         .workbench
                         .capture_save_target(document.id, document.session.document().revision())
@@ -1561,7 +1752,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                     Ok(Some(path)) => match state.workbench.save_target(target, Some(path)) {
                         Ok(()) => {
                             state.save_count += 1;
-                            state.status = "Saved".into();
+                            state.status = "Guardado".into();
                         }
                         Err(error) => state.error(error),
                     },
@@ -1578,7 +1769,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                 && MessageBoxW(
                     hwnd,
                     wide(
-                        "Close and discard ALL unsaved changes? Save documents first to keep them.",
+                        "¿Cerrar y descartar TODOS los cambios sin guardar? Guarda los documentos para conservarlos.",
                     )
                     .as_ptr(),
                     wide("CIDE").as_ptr(),
@@ -1598,16 +1789,18 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
         .as_ref()
         .is_some_and(|p| !p.is_absolute() || p.as_os_str().len() > 4096)
     {
-        return Err("Choose an absolute Git executable path within4096 native units".into());
+        return Err(
+            "Elige una ruta absoluta del ejecutable Git de hasta4096 unidades nativas".into(),
+        );
     }
     if options
         .search_workers
         .is_some_and(|n| !(1..=4).contains(&n))
     {
-        return Err("Project workers require1..4".into());
+        return Err("Las tareas del proyecto requieren1..4 trabajadores".into());
     }
     if options.smoke.is_some() && !options.paths.is_empty() {
-        return Err("Smoke mode does not accept startup source paths".into());
+        return Err("El modo de prueba no admite rutas de fuente al iniciar".into());
     }
     if let Some(smoke) = &options.smoke {
         smoke::validate(smoke)?;
@@ -1644,7 +1837,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
         let hwnd = CreateWindowExW(
             0,
             class.as_ptr(),
-            wide("CIDE — native Win32/GDI development frontend").as_ptr(),
+            wide("CIDE — interfaz nativa Win32/GDI de desarrollo").as_ptr(),
             0x00cf0000,
             0x80000000u32 as i32,
             0x80000000u32 as i32,
@@ -1702,7 +1895,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
                 break if message.wparam == 0 {
                     Ok(())
                 } else {
-                    Err("Native window callback failed".into())
+                    Err("Falló el callback de la ventana nativa".into())
                 };
             }
             if message.hwnd == hwnd && message.message == SMOKE_MESSAGE {

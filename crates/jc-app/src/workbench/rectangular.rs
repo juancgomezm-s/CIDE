@@ -86,9 +86,9 @@ impl Workbench {
             .ok_or(FileError::EncodingRequired)?;
         let (range, _) = self
             .line_range_for_tab(tab, line)
-            .ok_or_else(|| rejected("rectangle line is outside the document"))?;
+            .ok_or_else(|| rejected("La línea del rectángulo está fuera del documento"))?;
         if range.len() > MAX_LINE_BYTES || range.len() > MAX_BYTES.saturating_sub(*charged) {
-            return Err(rejected("rectangle exceeds its line/source budget"));
+            return Err(rejected("El rectángulo supera su límite de líneas/fuente"));
         }
         *charged += range.len();
         let bytes = document
@@ -106,16 +106,16 @@ impl Workbench {
     ) -> Result<(), WorkbenchError> {
         if rect.last_line.saturating_sub(rect.first_line) >= MAX_ROWS || rect.right > MAX_COLUMN {
             return Err(rejected(
-                "rectangle exceeds 1024 rows or 4096 visual columns",
+                "El rectángulo supera 1024 filas o 4096 columnas visuales",
             ));
         }
         let mut charged = 0;
         for line in rect.first_line..=rect.last_line {
             let (range, _) = self
                 .line_range_for_tab(tab, line)
-                .ok_or_else(|| rejected("rectangle line is outside the document"))?;
+                .ok_or_else(|| rejected("La línea del rectángulo está fuera del documento"))?;
             if range.len() > MAX_LINE_BYTES || range.len() > MAX_BYTES.saturating_sub(charged) {
-                return Err(rejected("rectangle exceeds its line/source budget"));
+                return Err(rejected("El rectángulo supera su límite de líneas/fuente"));
             }
             charged += range.len();
         }
@@ -148,7 +148,7 @@ impl Workbench {
         let first = self
             .position_for_tab(editor.tab_id, anchor)
             .ok_or_else(|| {
-                rejected("rectangle requires text boundaries outside the BOM and CRLF")
+                rejected("El rectángulo requiere límites de texto fuera de BOM y CRLF")
             })?;
         let head = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let mut charged = 0;
@@ -289,7 +289,7 @@ impl Workbench {
     pub(super) fn require_linear_selection(&self) -> Result<(), WorkbenchError> {
         if self.active_rectangle().is_some() {
             Err(rejected(
-                "command requires a linear selection; cancel the rectangle first",
+                "El comando requiere selección lineal; cancela primero el rectángulo",
             ))
         } else {
             Ok(())
@@ -319,7 +319,7 @@ impl Workbench {
             .ok_or(WorkbenchError::NoDocument)?;
         let (content, _) = self
             .line_range_for_tab(tab, line)
-            .ok_or_else(|| rejected("Rectangle visible line unavailable"))?;
+            .ok_or_else(|| rejected("La línea visible del rectángulo no está disponible"))?;
         // Admission/editing use strict LineLayout. Presentation reuses the
         // document's sparse Unicode cache; never rebuild/decode a full line on
         // every frame. Source outside selected rows may be escaped diagnostically.
@@ -359,7 +359,7 @@ impl Workbench {
     ) -> Result<VisualPosition, WorkbenchError> {
         let position = self
             .position_for_tab(tab, byte)
-            .ok_or_else(|| rejected("rectangle byte is not a source boundary"))?;
+            .ok_or_else(|| rejected("El byte del rectángulo no es un límite de fuente"))?;
         Ok(VisualPosition {
             line: position.line,
             column: self
@@ -417,7 +417,7 @@ impl Workbench {
     fn rectangle_copy_rows(&self) -> Result<Vec<String>, WorkbenchError> {
         let rect = self
             .active_rectangle()
-            .ok_or_else(|| rejected("no rectangle selected"))?;
+            .ok_or_else(|| rejected("No hay un rectángulo seleccionado"))?;
         let tab = self
             .active_document()
             .ok_or(WorkbenchError::NoDocument)?
@@ -430,7 +430,7 @@ impl Workbench {
             let row = layout.copy_columns(VisualColumn(rect.left), VisualColumn(rect.right))?;
             owned += row.capacity() + std::mem::size_of::<String>();
             if owned > MAX_BYTES {
-                return Err(rejected("rectangular clipboard exceeds 2 MiB"));
+                return Err(rejected("El portapapeles rectangular supera 2 MiB"));
             }
             rows.push(row);
         }
@@ -452,7 +452,7 @@ impl Workbench {
 
     pub(super) fn insert_rectangle_text(&mut self, text: &str) -> Result<(), WorkbenchError> {
         if text.len() > MAX_BYTES {
-            return Err(rejected("rectangular paste exceeds 2 MiB"));
+            return Err(rejected("El pegado rectangular supera 2 MiB"));
         }
         // CRLF is one separator. Bare CR is a separator too, never source content.
         let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
@@ -462,7 +462,7 @@ impl Workbench {
             .map(str::to_owned)
             .collect();
         if rows.len() > MAX_ROWS {
-            return Err(rejected("rectangular paste exceeds 1024 rows"));
+            return Err(rejected("El pegado rectangular supera 1024 filas"));
         }
         self.replace_rectangle_rows(&rows, None)
     }
@@ -472,7 +472,9 @@ impl Workbench {
             return self.replace_rectangle_rows(rows, None);
         }
         if self.active_editor().and_then(|e| e.selection()).is_some() {
-            return Err(rejected("rectangular paste requires a caret or rectangle"));
+            return Err(rejected(
+                "El pegado rectangular requiere un cursor o rectángulo",
+            ));
         }
         // Compute a temporary target; failed admission never enables column mode.
         let (anchor, cursor, seed) = self.rectangle_seed()?;
@@ -482,7 +484,9 @@ impl Workbench {
             .ok_or(WorkbenchError::NoDocument)?
             .line;
         if rows.is_empty() || rows.len() > MAX_ROWS {
-            return Err(rejected("invalid rectangular clipboard height"));
+            return Err(rejected(
+                "La altura del portapapeles rectangular no es válida",
+            ));
         }
         let bounds = RectangleBounds {
             first_line: line,
@@ -498,7 +502,7 @@ impl Workbench {
     pub(super) fn delete_rectangle(&mut self, backwards: bool) -> Result<(), WorkbenchError> {
         let mut rect = self
             .active_rectangle()
-            .ok_or_else(|| rejected("no rectangle selected"))?;
+            .ok_or_else(|| rejected("No hay un rectángulo seleccionado"))?;
         if rect.left == rect.right {
             if backwards {
                 if rect.left == 0 {
@@ -519,14 +523,14 @@ impl Workbench {
     ) -> Result<(), WorkbenchError> {
         let rect = bounds
             .or_else(|| self.active_rectangle())
-            .ok_or_else(|| rejected("no rectangle selected"))?;
+            .ok_or_else(|| rejected("No hay un rectángulo seleccionado"))?;
         let height = rect
             .last_line
             .saturating_sub(rect.first_line)
             .saturating_add(1);
         if rows.len() != 1 && rows.len() != height {
             return Err(rejected(
-                "paste must contain one row or exactly the rectangle height",
+                "El pegado debe contener una fila o exactamente la altura del rectángulo",
             ));
         }
         let editor = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
@@ -553,7 +557,9 @@ impl Workbench {
             owned +=
                 bytes.capacity() + edit.text.capacity() + std::mem::size_of::<TextReplacement>();
             if owned > MAX_BYTES {
-                return Err(rejected("rectangular edits exceed 2 MiB staging"));
+                return Err(rejected(
+                    "Las ediciones rectangulares superan 2 MiB de preparación",
+                ));
             }
             let original = editor
                 .session

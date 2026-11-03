@@ -22,13 +22,13 @@ pub(super) enum NativeMenuGroup {
 impl NativeMenuGroup {
     fn title(self) -> &'static str {
         match self {
-            Self::File => "&File",
-            Self::Edit => "&Edit",
-            Self::Search => "&Search",
-            Self::Project => "&Project",
-            Self::Tools => "&Tools",
-            Self::View => "&View",
-            Self::Navigation => "&Navigation",
+            Self::File => "&Archivo",
+            Self::Edit => "&Editar",
+            Self::Search => "&Buscar",
+            Self::Project => "&Proyecto",
+            Self::Tools => "&Herramientas",
+            Self::View => "&Ver",
+            Self::Navigation => "&Navegación",
             Self::Git => "&Git",
         }
     }
@@ -59,11 +59,11 @@ pub(super) fn mnemonic(code: usize, modifiers: Modifiers) -> Option<NativeMenuGr
         return None;
     }
     match code {
-        0x46 => Some(NativeMenuGroup::File),
+        0x41 => Some(NativeMenuGroup::File),
         0x45 => Some(NativeMenuGroup::Edit),
-        0x53 => Some(NativeMenuGroup::Search),
+        0x42 => Some(NativeMenuGroup::Search),
         0x50 => Some(NativeMenuGroup::Project),
-        0x54 => Some(NativeMenuGroup::Tools),
+        0x48 => Some(NativeMenuGroup::Tools),
         0x56 => Some(NativeMenuGroup::View),
         0x4e => Some(NativeMenuGroup::Navigation),
         0x47 => Some(NativeMenuGroup::Git),
@@ -226,13 +226,13 @@ fn command_for_id(id: usize) -> Option<CommandId> {
 }
 fn label(id: usize, shortcut: Option<KeyStroke>) -> Result<Vec<u16>, String> {
     let text = if id == OPEN_SIDE {
-        "Open File to &Side..."
+        "Abrir archivo al &lado..."
     } else {
         COMMANDS
             .iter()
             .find(|item| item.0 == id)
             .map(|item| item.2)
-            .ok_or("Native menu references an unimplemented command")?
+            .ok_or("El menú nativo referencia un comando sin implementar")?
     };
     Ok(wide(&match shortcut {
         Some(shortcut) => format!("{text}\t{shortcut}"),
@@ -308,12 +308,12 @@ fn checked(command: CommandId, state: &State) -> bool {
 pub(super) unsafe fn refresh(hwnd: Hwnd, state: &State) -> Result<(), String> {
     let bar = GetMenu(hwnd);
     if bar.is_null() || IsMenu(bar) == 0 {
-        return Err("Owned native menu is unavailable".into());
+        return Err("El menú nativo propio no está disponible".into());
     }
     for (index, spec) in definitions().iter().enumerate() {
         let popup = GetSubMenu(bar, index as i32);
         if popup.is_null() || IsMenu(popup) == 0 {
-            return Err("Native menu group is missing".into());
+            return Err("Falta el grupo del menú nativo".into());
         }
         for id in spec.items.iter().flatten().copied() {
             let command = command_for_id(id);
@@ -361,13 +361,13 @@ pub(super) unsafe fn open_with(
 ) -> Result<(), String> {
     let result = (|| -> Result<(), String> {
         if IsWindow(hwnd) == 0 {
-            return Err("Menu owner window is closed".into());
+            return Err("La ventana propietaria del menú está cerrada".into());
         }
         let specs = definitions();
         let index = specs
             .iter()
             .position(|spec| spec.group == group)
-            .ok_or("Native menu group is not implemented")?;
+            .ok_or("El grupo del menú nativo no está implementado")?;
         let bar = GetMenu(hwnd);
         let popup = if bar.is_null() {
             std::ptr::null_mut()
@@ -375,11 +375,11 @@ pub(super) unsafe fn open_with(
             GetSubMenu(bar, index as i32)
         };
         if !current_menu(hwnd, bar, popup, index as i32) {
-            return Err("Native menu ownership changed".into());
+            return Err("Cambió el propietario del menú nativo".into());
         }
         SendMessageW(hwnd, WM_INITMENU, bar as usize, 0);
         if !current_menu(hwnd, bar, popup, index as i32) {
-            return Err("Native menu changed during initialization".into());
+            return Err("El menú nativo cambió durante su inicialización".into());
         }
         let mut rect = Rect::default();
         let (x, y) = if GetMenuItemRect(hwnd, bar, index as u32, &mut rect) != 0 {
@@ -399,20 +399,20 @@ pub(super) unsafe fn open_with(
         };
         let selected = transport(popup, x, y);
         if !current_menu(hwnd, bar, popup, index as i32) {
-            return Err("Native menu changed during selection".into());
+            return Err("El menú nativo cambió durante la selección".into());
         }
         if selected == 0 {
             clear_stamp(hwnd);
             return Ok(());
         }
         if !specs[index].items.contains(&Some(selected)) {
-            return Err("Chosen command does not belong to the opened native menu".into());
+            return Err("El comando elegido no pertenece al menú nativo abierto".into());
         }
-        let selected_u32 =
-            u32::try_from(selected).map_err(|_| "Native command identity is out of range")?;
+        let selected_u32 = u32::try_from(selected)
+            .map_err(|_| "El identificador del comando nativo está fuera de rango")?;
         let state = GetMenuState(popup, selected_u32, 0);
         if state == u32::MAX || state & 3 != 0 {
-            return Err("Chosen native menu command is missing or disabled".into());
+            return Err("El comando nativo elegido falta o está deshabilitado".into());
         }
         SendMessageW(hwnd, WM_COMMAND, selected, 0);
         Ok(())
@@ -429,7 +429,7 @@ pub(super) unsafe fn open_with(
 }
 pub(super) unsafe fn open(hwnd: Hwnd, group: NativeMenuGroup) -> Result<(), String> {
     let choice = {
-        let model = owner(hwnd).ok_or("Menu owner window is closed")?;
+        let model = owner(hwnd).ok_or("La ventana propietaria del menú está cerrada")?;
         let mut state = model.state.borrow_mut();
         if state.smoke {
             Some(state.smoke_menu_choices.pop_front().flatten().unwrap_or(0))
@@ -530,11 +530,11 @@ mod tests {
             assert!(!is_supported_macro(command));
         }
         for (code, group) in [
-            (0x46, NativeMenuGroup::File),
+            (0x41, NativeMenuGroup::File),
             (0x45, NativeMenuGroup::Edit),
-            (0x53, NativeMenuGroup::Search),
+            (0x42, NativeMenuGroup::Search),
             (0x50, NativeMenuGroup::Project),
-            (0x54, NativeMenuGroup::Tools),
+            (0x48, NativeMenuGroup::Tools),
             (0x56, NativeMenuGroup::View),
             (0x4e, NativeMenuGroup::Navigation),
             (0x47, NativeMenuGroup::Git),
@@ -542,7 +542,10 @@ mod tests {
             assert_eq!(mnemonic(code, Modifiers::ALT), Some(group));
             assert_eq!(mnemonic(code, Modifiers::CTRL.union(Modifiers::ALT)), None);
         }
-        assert_eq!(mnemonic(0x42, Modifiers::ALT), None);
-        assert_eq!(mnemonic(0x48, Modifiers::ALT), None);
+        assert_eq!(mnemonic(0x43, Modifiers::ALT), None);
+        assert_eq!(mnemonic(0x59, Modifiers::ALT), None);
+        for code in [0x46, 0x53, 0x54] {
+            assert_eq!(mnemonic(code, Modifiers::ALT), None);
+        }
     }
 }

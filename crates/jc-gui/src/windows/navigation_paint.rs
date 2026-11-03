@@ -20,11 +20,11 @@ pub(super) unsafe fn draw(
     };
     paint::fill(dc, rect, 0x00202122)?;
     let lines = [
-        "Go to line[:column] · one-based source scalars",
+        "Ir a línea[:columna] · escalares del fuente desde1",
         p.field.rows.first().map_or("", String::as_str),
-        "Column defaults to 1 · 64 bytes · no preview",
+        "Columna predeterminada1 · 64 bytes · sin vista previa",
         &p.message,
-        "Enter accepts | Esc cancels | arrows edit | Ctrl+U clear | Ctrl+V paste",
+        "Intro acepta | Esc cancela | flechas editan | Ctrl+U vacía | Ctrl+V pega",
     ];
     for (index, line) in lines.iter().enumerate() {
         let y = top + ch * (index as i32 + 1);

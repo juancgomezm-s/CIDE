@@ -51,6 +51,21 @@ pub enum GitStatusTaskState {
     Failed,
     TimedOut,
 }
+impl GitStatusTaskState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "Inactivo",
+            Self::Queued => "En cola",
+            Self::Running => "En curso",
+            Self::Ready => "Listo",
+            Self::Limited => "Limitado",
+            Self::Cancelled => "Cancelado",
+            Self::Stale => "Obsoleto",
+            Self::Failed => "Fallido",
+            Self::TimedOut => "Tiempo agotado",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitStatusRequestError {
@@ -61,7 +76,16 @@ pub enum GitStatusRequestError {
 }
 impl std::fmt::Display for GitStatusRequestError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Git status request: {self:?}")
+        write!(
+            f,
+            "Solicitud de estado Git: {}",
+            match self {
+                Self::InvalidOptions => "opciones inválidas",
+                Self::NoConfiguration => "sin configuración",
+                Self::GenerationExhausted => "generación agotada",
+                Self::WorkerUnavailable => "tarea de fondo no disponible",
+            }
+        )
     }
 }
 impl std::error::Error for GitStatusRequestError {}
@@ -159,14 +183,14 @@ impl GitStatusController {
     pub fn message(&self) -> &'static str {
         match self.state {
             GitStatusTaskState::Idle => "",
-            GitStatusTaskState::Queued => "Git status queued",
-            GitStatusTaskState::Running => "Reading Git status",
-            GitStatusTaskState::Ready => "Git status ready",
-            GitStatusTaskState::Limited => "Git status exceeded its limits",
-            GitStatusTaskState::Cancelled => "Git status cancelled",
-            GitStatusTaskState::Stale => "Git status configuration changed; refresh required",
-            GitStatusTaskState::Failed => "Git status failed",
-            GitStatusTaskState::TimedOut => "Git status timed out",
+            GitStatusTaskState::Queued => "Estado Git en cola",
+            GitStatusTaskState::Running => "Leyendo estado Git",
+            GitStatusTaskState::Ready => "Estado Git listo",
+            GitStatusTaskState::Limited => "El estado Git excedió sus límites",
+            GitStatusTaskState::Cancelled => "Estado Git cancelado",
+            GitStatusTaskState::Stale => "Cambió la configuración del estado Git; actualiza",
+            GitStatusTaskState::Failed => "Falló el estado Git",
+            GitStatusTaskState::TimedOut => "Se agotó el tiempo del estado Git",
         }
     }
 

@@ -70,6 +70,21 @@ pub enum QuickOpenState {
     Failed,
     TimedOut,
 }
+impl QuickOpenState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "Inactivo",
+            Self::Queued => "En cola",
+            Self::Running => "Buscando",
+            Self::Complete => "Completado",
+            Self::Limited => "Limitado",
+            Self::Cancelled => "Cancelado",
+            Self::Stale => "Obsoleto",
+            Self::Failed => "Fallido",
+            Self::TimedOut => "Tiempo agotado",
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuickOpenLimit {
     Entries,
@@ -88,11 +103,31 @@ pub enum QuickOpenRequestError {
     WorkerUnavailable,
     GenerationExhausted,
 }
+impl QuickOpenRequestError {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::InvalidRoot => "raíz inválida",
+            Self::InvalidQuery => "consulta inválida",
+            Self::InvalidLimits => "límites inválidos",
+            Self::WorkerUnavailable => "tarea de fondo no disponible",
+            Self::GenerationExhausted => "generación agotada",
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuickOpenFailure {
     InvalidRoot,
     Io,
     WorkerPanic,
+}
+impl QuickOpenFailure {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::InvalidRoot => "raíz inválida",
+            Self::Io => "fallo de entrada/salida",
+            Self::WorkerPanic => "fallo de la tarea de fondo",
+        }
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuickOpenAcceptError {
@@ -107,19 +142,35 @@ pub enum QuickOpenAcceptError {
     TargetChanged,
     Io,
 }
+impl QuickOpenAcceptError {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Stale => "resultado obsoleto",
+            Self::NotReady => "resultado aún no disponible",
+            Self::NoCandidate => "sin candidato",
+            Self::InvalidRoot => "raíz inválida",
+            Self::RootChanged => "la raíz cambió",
+            Self::Link => "enlace no admitido",
+            Self::OutsideRoot => "destino fuera de la raíz",
+            Self::NotFile => "el destino no es un archivo",
+            Self::TargetChanged => "el destino cambió",
+            Self::Io => "fallo de entrada/salida",
+        }
+    }
+}
 macro_rules! error_display {
     ($ty:ty, $prefix:literal) => {
         impl fmt::Display for $ty {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, concat!($prefix, ": {:?}"), self)
+                write!(f, concat!($prefix, ": {}"), self.label())
             }
         }
         impl std::error::Error for $ty {}
     };
 }
-error_display!(QuickOpenRequestError, "Quick Open request");
-error_display!(QuickOpenFailure, "Quick Open");
-error_display!(QuickOpenAcceptError, "Quick Open selection");
+error_display!(QuickOpenRequestError, "Solicitud de apertura rápida");
+error_display!(QuickOpenFailure, "Apertura rápida");
+error_display!(QuickOpenAcceptError, "Selección de apertura rápida");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct QuickOpenCounters {
@@ -383,15 +434,15 @@ impl QuickOpenController {
     }
     pub fn message(&self) -> &'static str {
         match self.state {
-            QuickOpenState::Idle => "Type a path substring",
-            QuickOpenState::Queued => "Quick Open queued",
-            QuickOpenState::Running => "Finding paths",
-            QuickOpenState::Complete => "Paths complete; substring search",
-            QuickOpenState::Limited => "Partial path list; refine query",
-            QuickOpenState::Cancelled => "Quick Open cancelled",
-            QuickOpenState::Stale => "Root or query changed; refresh",
-            QuickOpenState::Failed => "Quick Open failed",
-            QuickOpenState::TimedOut => "Quick Open timed out",
+            QuickOpenState::Idle => "Escribe parte de una ruta",
+            QuickOpenState::Queued => "Apertura rápida en cola",
+            QuickOpenState::Running => "Buscando rutas",
+            QuickOpenState::Complete => "Rutas completas; búsqueda por subcadena",
+            QuickOpenState::Limited => "Lista parcial de rutas; precisa la consulta",
+            QuickOpenState::Cancelled => "Apertura rápida cancelada",
+            QuickOpenState::Stale => "Cambió la raíz o consulta; actualiza",
+            QuickOpenState::Failed => "Falló la apertura rápida",
+            QuickOpenState::TimedOut => "Se agotó el tiempo de apertura rápida",
         }
     }
     /// Consume only a completion for the exact current root/query/generation.

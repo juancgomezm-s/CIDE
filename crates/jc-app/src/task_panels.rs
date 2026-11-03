@@ -12,7 +12,7 @@ use std::{
 
 const MAX_BYTES: usize = 256 * 1024;
 const MAX_TEXT: usize = 4096;
-const TRUNCATED: &str = " [truncated]";
+const TRUNCATED: &str = " [truncado]";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PanelKind {
@@ -297,13 +297,17 @@ impl Workbench {
                 .is_some_and(|doc| doc.session.path() == path);
         if !applicable || !current || status != TaskStatus::Completed {
             let message = match status {
-                TaskStatus::Cancelled => "Task cancelled; output discarded",
-                TaskStatus::TimedOut => "Task timed out; output discarded",
-                TaskStatus::Failed => "Task failed; output discarded",
-                TaskStatus::Panicked => "Task provider panicked; output discarded",
-                TaskStatus::LimitExceeded => "Task result limit exceeded; output discarded",
-                TaskStatus::InvalidRange => "Task returned an invalid range; output discarded",
-                TaskStatus::Completed => "Task result stale or superseded; output discarded",
+                TaskStatus::Cancelled => "Tarea cancelada; salida descartada",
+                TaskStatus::TimedOut => "Se agotó el tiempo de la tarea; salida descartada",
+                TaskStatus::Failed => "La tarea falló; salida descartada",
+                TaskStatus::Panicked => "El proveedor de la tarea falló; salida descartada",
+                TaskStatus::LimitExceeded => {
+                    "Se excedió la cuota de resultados de la tarea; salida descartada"
+                }
+                TaskStatus::InvalidRange => {
+                    "La tarea devolvió un rango inválido; salida descartada"
+                }
+                TaskStatus::Completed => "Resultado obsoleto o sustituido; salida descartada",
             };
             return self
                 .task_panels
@@ -314,7 +318,7 @@ impl Workbench {
         if path.as_os_str().len() > MAX_BYTES - MAX_TEXT - size_of::<PanelRow>() {
             return self.task_panels.push_borrowed(
                 PanelKind::Output,
-                "Task output discarded: source metadata limit exceeded",
+                "Salida descartada: se excedió el límite de metadatos del fuente",
                 None,
             );
         }
@@ -332,7 +336,7 @@ impl Workbench {
                     if !valid {
                         changed |= self.task_panels.push_borrowed(
                             PanelKind::Output,
-                            "Task diagnostic discarded: invalid range",
+                            "Diagnóstico descartado: rango inválido",
                             None,
                         );
                         continue;
@@ -361,7 +365,7 @@ impl Workbench {
                     changed |= self.task_panels.push_borrowed(
                         PanelKind::Output,
                         &format!(
-                            "Task proposed edit at bytes {}..{} ({} UTF-8 bytes); not applied",
+                            "La tarea propuso editar bytes {}..{} ({} bytes UTF8); no se aplicó",
                             range.start,
                             range.end,
                             text.len()
@@ -378,9 +382,9 @@ impl Workbench {
         changed |= self.task_panels.push_borrowed(
             PanelKind::Output,
             if items.is_empty() {
-                "Task completed with no items"
+                "Tarea completada sin elementos"
             } else {
-                "Task completed"
+                "Tarea completada"
             },
             Some(PanelTarget {
                 stamp,
@@ -399,27 +403,27 @@ impl Workbench {
             .iter()
             .find(|row| row.id == row_id)
             .and_then(|row| row.target.clone())
-            .ok_or("Problem has no current navigation target")?;
+            .ok_or("El problema no tiene destino de navegación vigente")?;
         if !self.task_stamp_is_current(target.stamp) {
-            return Err("Problem target is stale; refresh the task".into());
+            return Err("El destino del problema está obsoleto; actualiza la tarea".into());
         }
         let doc = self
             .document_by_id(target.stamp.document)
-            .ok_or("Problem document is closed")?;
+            .ok_or("El documento del problema está cerrado")?;
         if doc.session.path() != target.path
             || target.range.start > target.range.end
             || target.range.end > doc.session.document().len()
         {
-            return Err("Problem path or byte range changed".into());
+            return Err("Cambió la ruta o rango de bytes del problema".into());
         }
         let tab = doc.tab_id;
         if self.position_for_tab(tab, target.range.start).is_none()
             || self.position_for_tab(tab, target.range.end).is_none()
         {
-            return Err("Problem range is not a valid source boundary".into());
+            return Err("El rango del problema no es una frontera válida del fuente".into());
         }
         if !self.jump_to_location(tab, target.range.start) {
-            return Err("Problem target could not be activated".into());
+            return Err("No se pudo activar el destino del problema".into());
         }
         Ok(())
     }
@@ -540,7 +544,7 @@ mod tests {
         assert_eq!(target.path, path);
         let output = app.task_panels.rows(PanelKind::Output);
         assert!(output.iter().any(|row| row.text == "provider message"));
-        assert!(output.iter().any(|row| row.text.contains("not applied")));
+        assert!(output.iter().any(|row| row.text.contains("no se aplicó")));
         assert!(output
             .iter()
             .all(|row| !row.text.contains("CRLF interior must not navigate")));
@@ -558,7 +562,7 @@ mod tests {
         assert!(provider_row.target.is_some());
         assert!(output
             .iter()
-            .find(|row| row.text.contains("not applied"))
+            .find(|row| row.text.contains("no se aplicó"))
             .unwrap()
             .target
             .is_some());
@@ -623,7 +627,7 @@ mod tests {
             .last()
             .unwrap()
             .text
-            .contains("no items"));
+            .contains("sin elementos"));
     }
     #[test]
     fn problem_activation_respects_pin_and_rejects_changed_revision_and_closed_view() {

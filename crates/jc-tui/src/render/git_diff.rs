@@ -62,7 +62,7 @@ impl Area {
 /// Status and snapshot identity are already formatted by the preparation layer.
 /// Keep some room for the actual list when the caller supplies a short panel.
 fn summary(screen: &mut Screen, prepared: &GitPresentation, area: Area, reserve_rows: u16) -> u16 {
-    area.line(screen, 0, "Git diff (read-only)", CellStyle::Dim);
+    area.line(screen, 0, "Diferencias Git (solo lectura)", CellStyle::Dim);
     if area.height == 1 {
         return 1;
     }
@@ -96,7 +96,7 @@ pub(super) fn sidebar(
     area.line(
         screen,
         row,
-        &format!("Hunks: {}", prepared.total_hunks),
+        &format!("Bloques: {}", prepared.total_hunks),
         CellStyle::Dim,
     );
     row += 1;
@@ -104,7 +104,7 @@ pub(super) fn sidebar(
         return;
     }
     if prepared.hunks.is_empty() {
-        area.line(screen, row, "No visible hunks", CellStyle::Dim);
+        area.line(screen, row, "No hay bloques visibles", CellStyle::Dim);
         return;
     }
     let available = usize::from(area.height - row);
@@ -160,7 +160,12 @@ pub(super) fn unified(
         .len()
         .clamp(3, 7);
     if prepared.rows.is_empty() {
-        area.line(screen, row, "No visible diff rows", CellStyle::Dim);
+        area.line(
+            screen,
+            row,
+            "No hay filas de diferencias visibles",
+            CellStyle::Dim,
+        );
     }
     for line in prepared.rows.iter().take(available) {
         let sign = match line.kind {
@@ -265,7 +270,7 @@ mod tests {
                     left_line: None,
                     right_line: Some(13),
                     text: "new ".repeat(80),
-                    eol: "no EOL",
+                    eol: "sin fin de línea",
                 },
                 GitDiffRow {
                     kind: GitRowKind::Notice,
@@ -307,7 +312,7 @@ mod tests {
         for width in [45, 140] {
             let mut screen = Screen::new(width, 14);
             unified(&mut screen, &prepared, 0, 0, width, 14);
-            assert!(screen.row_text(0).contains("read-only"));
+            assert!(screen.row_text(0).contains("solo lectura"));
             assert!(screen.row_text(1).contains("Ready"));
             assert!(screen.row_text(2).contains("revision 7"));
             assert!(screen.row_text(3).contains("OID abcdef012345"));
@@ -317,7 +322,7 @@ mod tests {
             assert!(screen.row_text(6).contains("13"));
             assert!(screen.row_text(6).ends_with("[CRLF]"));
             assert!(screen.row_text(7).starts_with('+'));
-            assert!(screen.row_text(7).ends_with("[no EOL]"));
+            assert!(screen.row_text(7).ends_with("[sin fin de línea]"));
         }
     }
 
@@ -329,7 +334,7 @@ mod tests {
         let before = contents(&prepared);
         let mut screen = Screen::new(45, 10);
         sidebar(&mut screen, &prepared, 2, 1, 28, 4);
-        assert!(screen.row_text(3).contains("Hunks: 3"));
+        assert!(screen.row_text(3).contains("Bloques: 3"));
         assert!(screen.row_text(4).contains("> 3 "));
         assert_eq!(screen.cell(2, 4).style, CellStyle::Reverse);
         assert_eq!(screen.cell(29, 4).style, CellStyle::Reverse);

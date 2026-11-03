@@ -198,7 +198,7 @@ impl State {
                     label: safe_label(
                         &format!(
                             "{}{}{}",
-                            if stale { "[stale] " } else { "" },
+                            if stale { "[obsoleto] " } else { "" },
                             origin,
                             r.text
                         ),
@@ -212,19 +212,22 @@ impl State {
             rect,
             kind,
             title: format!(
-                "{:?} · {} retained · dropped {} · truncated {}",
-                kind,
+                "{} · {} retenidos · {} descartados · {} truncados",
+                match kind {
+                    PanelKind::Problems => "Problemas",
+                    PanelKind::Output => "Salida",
+                },
                 total,
                 log.dropped(kind),
                 log.truncated(kind)
             ),
             message: format!(
-                "F3 results · {} outstanding (includes Git) · {}",
+                "Resultados F3 · {} pendientes (incluye Git) · {}",
                 self.jobs.outstanding(),
                 if total == 0 {
-                    "Empty; no business provider starts automatically"
+                    "Vacío; ningún proveedor de negocio se inicia automáticamente"
                 } else {
-                    "Enter navigates current Problems; Output is inert text"
+                    "Intro navega problemas vigentes; la salida es texto inerte"
                 }
             ),
             rows: presentation,
@@ -233,21 +236,21 @@ impl State {
     }
     pub(super) fn activate_bottom(&mut self) {
         if self.bottom.kind == PanelKind::Output {
-            self.status = "Output is read-only data; nothing executed".into();
+            self.status = "La salida es de solo lectura; no se ejecutó nada".into();
             return;
         }
         let kind = self.bottom.kind;
         let log = self.workbench.task_panels();
         self.bottom.selection().normalize(log, kind, 1);
         let Some(id) = self.bottom.selection().selected else {
-            self.status = "No problem selected".into();
+            self.status = "No hay problema seleccionado".into();
             return;
         };
         match self.workbench.activate_problem(id) {
             Ok(()) => {
                 self.bottom.focused = false;
                 self.explorer_focused = false;
-                self.status = "Problem selected; shared source unchanged".into();
+                self.status = "Problema seleccionado; fuente compartido intacto".into();
             }
             Err(error) => self.error(error),
         }

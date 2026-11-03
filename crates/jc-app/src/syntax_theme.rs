@@ -15,6 +15,10 @@ pub fn foreground(kind: SyntaxKind) -> Rgb {
         SyntaxKind::Number => (174, 129, 255),
         SyntaxKind::Preprocessor => (102, 217, 239),
         SyntaxKind::Operator => (253, 151, 31),
+        SyntaxKind::Heading => (103, 212, 208),
+        SyntaxKind::Emphasis => (239, 154, 112),
+        SyntaxKind::Code => (166, 217, 155),
+        SyntaxKind::Link => (133, 214, 245),
     };
     Rgb { r, g, b }
 }

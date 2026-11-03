@@ -67,10 +67,10 @@ impl Apartment {
         if result >= 0 {
             Ok(Self(PhantomData))
         } else if result as u32 == RPC_E_CHANGED_MODE {
-            Err("Folder picker requires a COM STA UI thread; this thread already has an incompatible apartment".into())
+            Err("El selector de carpetas requiere un hilo UI COM STA; el hilo actual usa un modelo incompatible".into())
         } else {
             Err(format!(
-                "COM initialization for folder picker failed (HRESULT {:#010x})",
+                "Falló la inicialización COM del selector de carpetas (HRESULT {:#010x})",
                 result as u32
             ))
         }
@@ -97,13 +97,13 @@ impl Drop for SelectedFolder {
 /// project mutation, or background selection is started here.
 pub(super) unsafe fn choose(hwnd: Hwnd) -> Result<Option<PathBuf>, String> {
     if hwnd.is_null() {
-        return Err("Folder picker requires an owning native window".into());
+        return Err("El selector de carpetas requiere una ventana nativa propietaria".into());
     }
     let _apartment = Apartment::enter()?;
     // BROWSEINFO's display-name buffer is MAX_PATH, independently of the longer
     // filesystem-path buffer used by SHGetPathFromIDListEx below.
     let mut display_name = [0u16; 260];
-    let title: Vec<u16> = "Choose the project folder"
+    let title: Vec<u16> = "Elige la carpeta del proyecto"
         .encode_utf16()
         .chain(Some(0))
         .collect();
@@ -128,25 +128,24 @@ pub(super) unsafe fn choose(hwnd: Hwnd) -> Result<Option<PathBuf>, String> {
         // In particular, a bare network-server PIDL may pass RETURNONLYFSDIRS
         // yet cannot identify a usable filesystem directory. Do not accept it.
         return Err(
-            "Selected Shell item has no filesystem folder path, or exceeds the native path budget"
-                .into(),
+            "El elemento elegido no tiene ruta de carpeta o excede el límite de ruta nativa".into(),
         );
     }
     let end = path
         .iter()
         .position(|unit| *unit == 0)
-        .ok_or("Folder picker returned an unterminated native path")?;
+        .ok_or("El selector devolvió una ruta nativa sin terminador")?;
     if end == 0 {
-        return Err("Folder picker returned an empty filesystem path".into());
+        return Err("El selector devolvió una ruta vacía".into());
     }
     let path = PathBuf::from(OsString::from_wide(&path[..end]));
     if !path.is_absolute() {
-        return Err("Folder picker returned a non-absolute filesystem path".into());
+        return Err("El selector devolvió una ruta que no es absoluta".into());
     }
     let metadata = std::fs::metadata(&path)
-        .map_err(|error| format!("Selected folder is unavailable: {error}"))?;
+        .map_err(|error| format!("La carpeta elegida no está disponible: {error}"))?;
     if !metadata.is_dir() {
-        return Err("Selected filesystem item is not a directory".into());
+        return Err("El elemento elegido no es un directorio".into());
     }
     // selected drops before _apartment on every return path: PIDL allocation is
     // freed before this call's successful COM initialization is balanced.

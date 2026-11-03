@@ -135,7 +135,7 @@ pub struct ProjectExplorer {
 impl ProjectExplorer {
     pub fn new(wakeup: Wakeup, limits: ExplorerLimits) -> Result<Self, String> {
         if !limits.valid() {
-            return Err("Invalid Explorer limits".into());
+            return Err("Límites del explorador inválidos".into());
         }
         Ok(Self {
             shared: Arc::new(worker::Shared::new(wakeup)),
@@ -146,7 +146,7 @@ impl ProjectExplorer {
             generation: 0,
             revision: 0,
             ordinal: 0,
-            message: "Choose a project folder",
+            message: "Elige una carpeta de proyecto",
             examined: 0,
             skipped: 0,
         })
@@ -202,12 +202,12 @@ impl ProjectExplorer {
             self.stop_all();
             self.root = None;
             self.nodes = Vec::new();
-            self.message = "Explorer revision exhausted";
+            self.message = "Se agotó la revisión del explorador";
         }
     }
     fn mutable(&self) -> Result<(), String> {
         if self.revision == u64::MAX {
-            Err("Explorer revision exhausted".into())
+            Err("Se agotó la revisión del explorador".into())
         } else {
             Ok(())
         }
@@ -216,7 +216,7 @@ impl ProjectExplorer {
         self.nodes
             .iter()
             .position(|n| n.id == id && id.generation == self.generation)
-            .ok_or_else(|| "Explorer node is stale".into())
+            .ok_or_else(|| "El nodo del explorador está obsoleto".into())
     }
     fn stop_all(&self) {
         let mut q = self.shared.lock();
@@ -238,7 +238,7 @@ impl ProjectExplorer {
         self.root = None;
         self.nodes = Vec::new();
         self.ordinal = 0;
-        self.message = "Choose a project folder";
+        self.message = "Elige una carpeta de proyecto";
         self.examined = 0;
         self.skipped = 0;
         self.bump();
@@ -251,15 +251,15 @@ impl ProjectExplorer {
                 .components()
                 .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
         {
-            return Err("Explorer requires an absolute admitted project root".into());
+            return Err("El explorador requiere una raíz absoluta admitida".into());
         }
         if root.capacity().saturating_add(size_of::<ExplorerNode>()) > self.limits.max_owned_bytes {
-            return Err("Explorer root exceeds catalog budget".into());
+            return Err("La raíz del explorador excede la cuota del catálogo".into());
         }
         let generation = self
             .generation
             .checked_add(1)
-            .ok_or("Explorer generation exhausted")?;
+            .ok_or("Se agotó la generación del explorador")?;
         self.stop_all();
         self.generation = generation;
         self.ordinal = 1;
@@ -295,7 +295,7 @@ impl ProjectExplorer {
                 std::thread::Builder::new()
                     .name("cide-explorer".into())
                     .spawn(move || worker::run(shared))
-                    .map_err(|_| "Cannot start Explorer metadata worker")?,
+                    .map_err(|_| "No se pudo iniciar la tarea de metadatos del explorador")?,
             );
         }
         Ok(())
@@ -323,24 +323,24 @@ impl ProjectExplorer {
                 node.state = ExplorerLoadState::Failed;
             }
         }
-        self.message = "Explorer worker stopped; refresh to retry";
+        self.message = "Se detuvo la tarea del explorador; actualiza para reintentar";
         self.shared.recovery.store(true, Ordering::Release);
         self.bump();
         true
     }
     fn enqueue(&mut self, index: usize) -> Result<(), String> {
         if self.ordinal == u64::MAX {
-            return Err("Explorer node identity exhausted; select the root again".into());
+            return Err("Se agotó la identidad de nodos; elige de nuevo la raíz".into());
         }
-        let root = self.root.as_ref().ok_or("Explorer has no root")?;
+        let root = self.root.as_ref().ok_or("El explorador no tiene raíz")?;
         let node = &self.nodes[index];
         if node.depth >= self.limits.max_depth {
-            return Err("Explorer depth limit reached".into());
+            return Err("Se alcanzó el límite de profundidad del explorador".into());
         }
         let directory_revision = node
             .directory_revision
             .checked_add(1)
-            .ok_or("Explorer directory revision exhausted")?;
+            .ok_or("Se agotó la revisión del directorio")?;
         let request = worker::Request {
             generation: self.generation,
             node: node.id,
@@ -351,7 +351,7 @@ impl ProjectExplorer {
             cancel: Cancellation::new(self.limits.timeout),
         };
         if path_units(&request.root.join(&request.relative)) > 4096 {
-            return Err("Explorer directory path exceeds limit".into());
+            return Err("La ruta del directorio excede el límite".into());
         }
         {
             let q = self.shared.lock();
@@ -369,7 +369,7 @@ impl ProjectExplorer {
                     - size_of::<worker::Request>()
                     > self.limits.max_pending_bytes
             {
-                return Err("Explorer is busy; retry expansion".into());
+                return Err("El explorador está ocupado; reintenta la expansión".into());
             }
         }
         self.ensure_worker()?;
@@ -391,7 +391,7 @@ impl ProjectExplorer {
                     > self.limits.max_pending_bytes
             {
                 q.pending.shrink_to_fit();
-                return Err("Explorer is busy; retry expansion".into());
+                return Err("El explorador está ocupado; reintenta la expansión".into());
             }
             q.pending.retain(|old| {
                 if old.node == request.node {
@@ -417,7 +417,7 @@ impl ProjectExplorer {
         self.nodes[index].directory_revision = directory_revision;
         self.nodes[index].state = ExplorerLoadState::Queued;
         self.nodes[index].expanded = true;
-        self.message = "Reading directory metadata";
+        self.message = "Leyendo metadatos del directorio";
         self.bump();
         self.shared.changed.notify_all();
         Ok(())
@@ -426,12 +426,12 @@ impl ProjectExplorer {
         self.mutable()?;
         let index = self.index(id)?;
         if !self.nodes[index].is_dir {
-            return Err("Explorer node is not a directory".into());
+            return Err("El nodo del explorador no es un directorio".into());
         }
         if !self.nodes[index].expanded
             && self.nodes.iter().filter(|n| n.expanded).count() >= self.limits.max_expanded
         {
-            return Err("Explorer expanded-directory limit reached".into());
+            return Err("Se alcanzó el límite de directorios expandidos".into());
         }
         if matches!(
             self.nodes[index].state,
@@ -495,12 +495,12 @@ impl ProjectExplorer {
         self.mutable()?;
         let index = self.index(id)?;
         if !self.nodes[index].is_dir {
-            return Err("Explorer node is not a directory".into());
+            return Err("El nodo del explorador no es un directorio".into());
         }
         let revision = self.nodes[index]
             .directory_revision
             .checked_add(1)
-            .ok_or("Explorer directory revision exhausted")?;
+            .ok_or("Se agotó la revisión del directorio")?;
         let end = self.subtree_end(index);
         let ids: Vec<_> = self.nodes[index..end].iter().map(|n| n.id).collect();
         self.cancel_ids(&ids);
@@ -514,7 +514,7 @@ impl ProjectExplorer {
         }
         self.nodes[index].directory_revision = revision;
         self.nodes[index].state = ExplorerLoadState::Cancelled;
-        self.message = "Directory load cancelled; refresh to retry";
+        self.message = "Carga del directorio cancelada; actualiza para reintentar";
         self.bump();
         Ok(())
     }
@@ -531,7 +531,7 @@ impl ProjectExplorer {
         self.mutable()?;
         let index = self.index(id)?;
         if !self.nodes[index].is_dir {
-            return Err("Refresh requires a directory ID".into());
+            return Err("Actualizar requiere un identificador de directorio".into());
         }
         // Busy leaves existing children and the old view unchanged.
         self.enqueue(index)?;
@@ -717,11 +717,11 @@ impl ProjectExplorer {
             ExplorerLoadState::Ready
         };
         self.message = if identity_exhausted {
-            "Explorer node identity exhausted; select the root again"
+            "Se agotó la identidad de nodos; elige de nuevo la raíz"
         } else if limited {
-            "Directory metadata limited; refresh to retry"
+            "Metadatos del directorio limitados; actualiza para reintentar"
         } else {
-            "Directory metadata ready"
+            "Metadatos del directorio listos"
         };
     }
     pub fn open_file(
@@ -732,11 +732,13 @@ impl ProjectExplorer {
         to_side: bool,
         max_bytes: usize,
     ) -> Result<TabId, String> {
-        let node = self.node(id).ok_or("Explorer node is stale")?;
+        let node = self
+            .node(id)
+            .ok_or("El nodo del explorador está obsoleto")?;
         if node.is_dir {
-            return Err("Explorer directory cannot be opened as a file".into());
+            return Err("Un directorio del explorador no puede abrirse como archivo".into());
         }
-        let root = self.root.as_ref().ok_or("Explorer has no root")?;
+        let root = self.root.as_ref().ok_or("El explorador no tiene raíz")?;
         let path = root.join(&node.relative);
         // An already-open target takes Workbench's deduplication route. Check
         // the current native leaf/chain first so a replacement link cannot
@@ -761,24 +763,24 @@ fn reparse(metadata: &std::fs::Metadata) -> bool {
 fn ordinary_chain(root: &Path, path: &Path) -> Result<(), String> {
     let relative = path
         .strip_prefix(root)
-        .map_err(|_| "Explorer target is outside project root")?;
+        .map_err(|_| "El destino del explorador está fuera de la raíz del proyecto")?;
     let root_metadata =
-        std::fs::symlink_metadata(root).map_err(|_| "Explorer root is unavailable")?;
+        std::fs::symlink_metadata(root).map_err(|_| "La raíz del explorador no está disponible")?;
     if !root_metadata.is_dir() || reparse(&root_metadata) {
-        return Err("Explorer root is not an ordinary directory".into());
+        return Err("La raíz del explorador no es un directorio ordinario".into());
     }
     let mut current = root.to_owned();
     let mut components = relative.components().peekable();
     if components.peek().is_none() {
-        return Err("Explorer target is not a file".into());
+        return Err("El destino del explorador no es un archivo".into());
     }
     while let Some(component) = components.next() {
         if !matches!(component, Component::Normal(_)) {
-            return Err("Explorer target contains invalid components".into());
+            return Err("El destino del explorador contiene componentes inválidos".into());
         }
         current.push(component.as_os_str());
-        let metadata =
-            std::fs::symlink_metadata(&current).map_err(|_| "Explorer target is unavailable")?;
+        let metadata = std::fs::symlink_metadata(&current)
+            .map_err(|_| "El destino del explorador no está disponible")?;
         if reparse(&metadata)
             || if components.peek().is_some() {
                 !metadata.is_dir()
@@ -786,7 +788,9 @@ fn ordinary_chain(root: &Path, path: &Path) -> Result<(), String> {
                 !metadata.is_file()
             }
         {
-            return Err("Explorer target contains a link/reparse point or changed type".into());
+            return Err(
+                "El destino contiene un enlace/punto de reanálisis o cambió de tipo".into(),
+            );
         }
     }
     Ok(())
@@ -804,15 +808,15 @@ fn verified_open_target(root: &Path, path: &Path) -> Result<std::fs::File, Strin
     }
     let file = options
         .open(path)
-        .map_err(|_| "Explorer target cannot be opened safely")?;
+        .map_err(|_| "El destino del explorador no puede abrirse de forma segura")?;
     let metadata = file
         .metadata()
-        .map_err(|_| "Explorer target metadata is unavailable")?;
+        .map_err(|_| "Los metadatos del destino no están disponibles")?;
     if !metadata.is_file() || reparse(&metadata) {
-        return Err("Explorer target is not an ordinary file".into());
+        return Err("El destino del explorador no es un archivo ordinario".into());
     }
     jc_files::verify_file_in_root(root, &file)
-        .map_err(|_| "Explorer opened target escaped project root")?;
+        .map_err(|_| "El destino abierto salió de la raíz del proyecto")?;
     ordinary_chain(root, path)?;
     Ok(file)
 }

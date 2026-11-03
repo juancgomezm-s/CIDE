@@ -63,7 +63,7 @@ impl ProjectSearchOptions {
                 .any(|s| s.len() > 128 || s.is_empty() || s.contains('\\'))
         {
             return Err(
-                "Invalid project query or search budget; use forward slashes in globs".into(),
+                "Consulta/cuota de búsqueda inválida; usa diagonales / en los patrones".into(),
             );
         }
         Ok(())
@@ -123,6 +123,18 @@ pub enum ProjectSearchState {
     Limited,
     Cancelled,
     Failed,
+}
+impl ProjectSearchState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "Inactivo",
+            Self::Running => "Buscando",
+            Self::Complete => "Completado",
+            Self::Limited => "Limitado",
+            Self::Cancelled => "Cancelado",
+            Self::Failed => "Fallido",
+        }
+    }
 }
 pub(super) struct OpenSource {
     bytes: Vec<u8>,
@@ -240,12 +252,12 @@ impl ProjectSearch {
             crate::text_search::Pattern::compile_mode(&options.query, true, false, options.regex)?;
         let root = root.canonicalize().map_err(|e| e.to_string())?;
         if !root.is_dir() {
-            return Err("Search root must be a directory".into());
+            return Err("La raíz de búsqueda debe ser un directorio".into());
         }
         let generation = self
             .generation
             .checked_add(1)
-            .ok_or("Search generation exhausted")?;
+            .ok_or("Se agotó la generación de búsqueda")?;
         self.cancel(); // Drop a superseded pending snapshot before capturing another.
         let mut open = BTreeMap::new();
         let mut bytes = 0;
@@ -258,19 +270,20 @@ impl ProjectSearch {
                 continue;
             }
             if path.as_os_str().len() > 4096 {
-                return Err("Open-buffer path exceeds the project path budget".into());
+                return Err(
+                    "La ruta del documento abierto excede la cuota de rutas del proyecto".into(),
+                );
             }
             let len = doc.session.document().len();
             if len > options.max_file_bytes || bytes + len > 8 * 1024 * 1024 || open.len() >= 128 {
                 return Err(
-                    "Open-buffer snapshot budget exceeded; narrow the workspace or close files"
+                    "Se excedió la cuota de capturas abiertas; limita el espacio o cierra archivos"
                         .into(),
                 );
             }
-            let encoding = doc
-                .session
-                .encoding()
-                .ok_or("Select encoding for open workspace documents before project search")?;
+            let encoding = doc.session.encoding().ok_or(
+                "Elige la codificación de los documentos abiertos antes de buscar en el proyecto",
+            )?;
             bytes += len;
             open.insert(
                 path,
@@ -375,23 +388,23 @@ impl ProjectSearch {
     /// it is never trusted after an external edit, nor substituted for dirty text.
     pub fn select(&self, index: usize, app: &mut Workbench) -> Result<(), String> {
         let Some(ProjectSearchRow::Match(m)) = self.rows.get(index) else {
-            return Err("This row is a search notice".into());
+            return Err("Esta fila es un aviso de búsqueda".into());
         };
         match m.origin {
             SearchOrigin::Open(stamp) => {
                 if !app.task_stamp_is_current(stamp) {
-                    return Err("Search result is stale; run the query again".into());
+                    return Err("El resultado está obsoleto; vuelve a ejecutar la consulta".into());
                 }
                 let tab = app
                     .document_by_id(stamp.document)
-                    .ok_or("Document closed")?
+                    .ok_or("Documento cerrado")?
                     .tab_id;
                 if !app.jump_to_location(tab, m.range.start) {
-                    return Err("Invalid search destination".into());
+                    return Err("Destino de búsqueda inválido".into());
                 }
             }
             SearchOrigin::Disk(expected) => {
-                let root = self.root.as_deref().ok_or("Project changed")?;
+                let root = self.root.as_deref().ok_or("El proyecto cambió")?;
                 let tab = app
                     .open_project_file_at_version(
                         root,
@@ -403,7 +416,7 @@ impl ProjectSearch {
                     )
                     .map_err(|e| e.to_string())?;
                 if !app.jump_to_location(tab, m.range.start) {
-                    return Err("Invalid search destination".into());
+                    return Err("Destino de búsqueda inválido".into());
                 }
             }
         }

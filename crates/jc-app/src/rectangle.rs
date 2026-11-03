@@ -68,29 +68,41 @@ impl fmt::Display for RectangleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::LineTooLong(bytes) => {
-                write!(f, "Rectangle line exceeds {MAX_LINE_BYTES} bytes ({bytes})")
+                write!(
+                    f,
+                    "La línea rectangular excede {MAX_LINE_BYTES} bytes ({bytes})"
+                )
             }
             Self::ClusterTooLong(bytes) => write!(
                 f,
-                "Rectangle grapheme exceeds {} UTF-8 bytes ({bytes})",
+                "El grafema rectangular excede {} bytes UTF8 ({bytes})",
                 grapheme::MAX_CLUSTER_BYTES
             ),
             Self::ColumnLimit(column) => {
-                write!(f, "Rectangle column exceeds {MAX_COLUMNS} ({column})")
+                write!(f, "La columna rectangular excede {MAX_COLUMNS} ({column})")
             }
             Self::InvalidColumns { start, end } => {
-                write!(f, "Rectangle columns are reversed: {}..{}", start.0, end.0)
+                write!(
+                    f,
+                    "Las columnas rectangulares están invertidas: {}..{}",
+                    start.0, end.0
+                )
             }
             Self::InvalidDecode(byte) => {
-                write!(f, "Rectangle source has invalid encoding at byte {byte}")
+                write!(
+                    f,
+                    "El fuente rectangular tiene codificación inválida en el byte {byte}"
+                )
             }
-            Self::LineEnding => f.write_str("Rectangle line/replacement must exclude CR and LF"),
-            Self::UnsupportedScalar(ch) => write!(f, "Rectangle width is unsupported for {ch:?}"),
+            Self::LineEnding => f.write_str("La línea/reemplazo rectangular debe excluir CR y LF"),
+            Self::UnsupportedScalar(ch) => {
+                write!(f, "El ancho rectangular no está admitido para {ch:?}")
+            }
             Self::ByteNotBoundary(byte) => write!(
                 f,
-                "Rectangle byte {byte} is not a supported scalar boundary"
+                "El byte rectangular {byte} no es una frontera escalar admitida"
             ),
-            Self::OffsetOverflow => f.write_str("Rectangle source offset overflow"),
+            Self::OffsetOverflow => f.write_str("Desbordamiento del offset de fuente rectangular"),
         }
     }
 }

@@ -465,7 +465,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         s.explorer_hits = None;
     }
     block(hwnd)?;
-    palette_open(hwnd, "Find Selection Next")?;
+    palette_open(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::SearchSelectionNext)
+            .unwrap()
+            .label,
+    )?;
     owner(hwnd)
         .unwrap()
         .state
@@ -508,7 +514,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     }
     block(hwnd)?;
     key(hwnd, 0x72, Modifiers::CTRL)?;
-    palette(hwnd, "Cancel Document Search / Rectangle")?;
+    palette(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::SearchCancel)
+            .unwrap()
+            .label,
+    )?;
     drain(hwnd)?;
     if owner(hwnd)
         .unwrap()
@@ -859,7 +871,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             );
         }
     }
-    palette(hwnd, "Last Tab")?;
+    palette(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::Tab9)
+            .unwrap()
+            .label,
+    )?;
     if owner(hwnd)
         .unwrap()
         .state

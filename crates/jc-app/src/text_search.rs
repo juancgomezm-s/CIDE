@@ -150,6 +150,19 @@ pub enum SearchStatus {
     TimedOut,
     Unavailable,
 }
+impl SearchStatus {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "Inactivo",
+            Self::Running => "Buscando",
+            Self::Complete => "Completado",
+            Self::Limited => "Limitado",
+            Self::Cancelled => "Cancelado",
+            Self::TimedOut => "Tiempo agotado",
+            Self::Unavailable => "No disponible",
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SearchLimits {
     pub step_bytes: usize,
@@ -208,7 +221,7 @@ impl Pattern {
     }
     pub(crate) fn compile(query: &str, case: bool, word: bool) -> Result<Arc<Self>, &'static str> {
         if query.is_empty() || query.len() > 4096 {
-            return Err("Search text must contain 1..4096 UTF-8 bytes");
+            return Err("El texto buscado debe contener1..4096 bytes UTF8");
         }
         let chars: Vec<char> = if case {
             query.chars().collect()

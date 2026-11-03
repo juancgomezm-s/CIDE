@@ -5,7 +5,7 @@ use jc_app::{BottomPanel, PrimaryFocus, ProjectSearchOptions};
 impl TuiApp {
     pub(crate) fn submit_project_prompt(&mut self, kind: PromptKind, input: String) {
         if input.len() > 4096 {
-            self.status = "Project query/filter exceeds 4096 bytes".into();
+            self.status = "La consulta/filtro del proyecto supera 4096 bytes".into();
             return;
         }
         match kind {
@@ -17,7 +17,7 @@ impl TuiApp {
                         self.overlay =
                             crate::state::UiOverlay::ProjectReplacePreview { selected: 0 };
                         self.status =
-                            "Review search snapshot; versions will be checked before each file"
+                            "Revisa la copia de búsqueda; se comprobarán versiones antes de cada archivo"
                                 .into();
                     }
                     Err(error) => self.status = error,
@@ -25,7 +25,7 @@ impl TuiApp {
             }
             PromptKind::ProjectQuery => {
                 if input.is_empty() {
-                    self.status = "Search text cannot be empty".into();
+                    self.status = "El texto de búsqueda no puede estar vacío".into();
                     return;
                 }
                 let mut draft = ProjectSearchOptions::literal(input);
@@ -49,7 +49,7 @@ impl TuiApp {
                 draft.exclude.extend(patterns(&input));
                 draft.encoding = self.default_encoding;
                 let Some(root) = &self.project_root else {
-                    self.status = "Open a project folder first".into();
+                    self.status = "Abre primero una carpeta de proyecto".into();
                     return;
                 };
                 match self.project_search.start(&self.workbench, root, draft) {
@@ -59,7 +59,7 @@ impl TuiApp {
                         self.bottom_selected = 0;
                         self.panels.show_bottom(BottomPanel::SearchResults);
                         let _ = self.focus.focus(PrimaryFocus::BottomPanel, &self.panels);
-                        self.status = "Searching project; Esc cancels".into();
+                        self.status = "Buscando en el proyecto; Esc cancela".into();
                     }
                     Err(error) => {
                         self.status = error;
@@ -88,7 +88,7 @@ impl TuiApp {
     pub(crate) fn cancel_project_replace(&mut self) {
         if self.project_replace.take().is_some() {
             self.workbench.push_output(format!(
-                "Replacement stopped: {} files changed, {} conflicts; remaining files untouched",
+                "Reemplazo detenido: {} archivos cambiados, {} conflictos; restantes sin cambios",
                 self.replace_files, self.replace_conflicts
             ));
         }
@@ -105,19 +105,19 @@ impl TuiApp {
             if let Some(error) = outcome.error {
                 self.replace_conflicts += 1;
                 self.workbench
-                    .push_output(format!("CONFLICT {}: {error}", outcome.path.display()));
+                    .push_output(format!("CONFLICTO {}: {error}", outcome.path.display()));
             } else {
                 if outcome.matches > 0 {
                     self.replace_files += 1;
                 }
                 self.workbench.push_output(format!(
-                    "{} {}: {} edits",
+                    "{} {}: {} ediciones",
                     if outcome.matches == 0 {
-                        "Unchanged"
+                        "Sin cambios"
                     } else if outcome.saved_to_disk {
-                        "Saved"
+                        "Guardado"
                     } else {
-                        "Edited open buffer (not saved)"
+                        "Documento abierto editado (sin guardar)"
                     },
                     outcome.path.display(),
                     outcome.matches
@@ -128,13 +128,13 @@ impl TuiApp {
             self.project_replace = None;
             self.project_results = false;
             self.status = format!(
-                "Replacement finished: {} files changed, {} conflicts",
+                "Reemplazo terminado: {} archivos cambiados, {} conflictos",
                 self.replace_files, self.replace_conflicts
             );
             self.workbench.push_output(self.status.clone());
         } else {
             self.status = format!(
-                "Replacing: {} files remain; Esc stops after current file",
+                "Reemplazando: quedan {} archivos; Esc detiene después del actual",
                 preview.files_remaining()
             );
         }
@@ -147,7 +147,7 @@ impl TuiApp {
         {
             Ok(()) => {
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-                self.status = "Project result opened".into();
+                self.status = "Resultado del proyecto abierto".into();
             }
             Err(error) => self.status = error,
         }

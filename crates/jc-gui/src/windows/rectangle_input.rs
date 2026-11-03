@@ -26,11 +26,11 @@ impl State {
             .rectangle_for_pane(self.workbench.panes().active())
         {
             Some(rect) => format!(
-                "Rectangle TAB4 · {} rows × {} cells · internal clipboard",
+                "Rectángulo TAB4 · {} filas × {} celdas · portapapeles interno",
                 rect.last_line - rect.first_line + 1,
                 rect.right - rect.left
             ),
-            None => "Rectangle cancelled".into(),
+            None => "Rectángulo cancelado".into(),
         };
     }
     pub(super) fn begin_rectangle_drag(&mut self, x: i32, y: i32) -> bool {
@@ -77,7 +77,7 @@ impl State {
                 || self.workbench.rectangle_for_pane(drag.pane).is_none()
         }) {
             self.rectangle_drag = None;
-            self.status = "Rectangle drag target changed".into();
+            self.status = "Cambió el destino del arrastre rectangular".into();
             return false;
         }
         self.rectangle_drag.is_some()

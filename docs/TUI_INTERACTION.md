@@ -1,5 +1,12 @@
 # Contrato de interacción de la TUI
 
+> Actualización 2026-11-03: [GUI/TUI en español](M2B_GUI_WORKFLOWS_ES.md)
+> incorpora comparación, fuente opcional y plantillas en GUI; color/menús Alt,
+> ayuda lateral y Markdown en TUI, Markdown también en GUI. F10 abre menús,
+> F6 cambia panel y Ctrl+Alt+M alterna Markdown. Las matrices, cifras o pendientes
+> anteriores de este documento se conservan como evidencia histórica.
+
+
 Este documento es normativo para `jc-tui`. La TUI ya existe como frontend en desarrollo y debe obedecer los comandos, foco, menús y atajos definidos en `jc-app`; ningún widget puede inventar un comportamiento paralelo.
 
 El estado descrito corresponde a los flujos conectados actuales. Los checkpoints

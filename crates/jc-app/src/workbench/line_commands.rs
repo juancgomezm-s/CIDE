@@ -107,7 +107,7 @@ impl Workbench {
             return Ok(());
         }
         if last - first > MAX_JOIN_BOUNDARIES {
-            return Err(rejected("Join Lines exceeds 1024 boundaries"));
+            return Err(rejected("Unir líneas supera 1024 separadores"));
         }
         let first_range = self
             .line_range_for_tab(tab, first)
@@ -119,9 +119,9 @@ impl Workbench {
             .1
             .end
             .checked_sub(first_range.0.start)
-            .ok_or_else(|| rejected("Join Lines has inconsistent line metadata"))?;
+            .ok_or_else(|| rejected("Unir líneas encontró metadatos de línea inconsistentes"))?;
         if affected > MAX_AFFECTED_SOURCE {
-            return Err(rejected("Join Lines exceeds 2 MiB of affected source"));
+            return Err(rejected("Unir líneas supera 2 MiB de fuente afectada"));
         }
         // Enforce both bounds from metadata before allocating the plan or
         // examining any indentation, including a long all-whitespace prefix.
@@ -143,7 +143,9 @@ impl Workbench {
         for pair in slices.windows(2) {
             let (previous, next) = (&pair[0], &pair[1]);
             if previous.1.is_empty() || previous.1.end != next.0.start {
-                return Err(rejected("Join Lines has inconsistent line metadata"));
+                return Err(rejected(
+                    "Unir líneas encontró metadatos de línea inconsistentes",
+                ));
             }
             let next_start = indent_end(source, &next.0)?;
             let next_nonempty = next_start < next.0.end;

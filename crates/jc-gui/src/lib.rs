@@ -30,6 +30,7 @@ pub struct SmokeOptions {
     pub interaction_only: bool,
     pub menu_invoker_only: bool,
     pub syntax_only: bool,
+    pub workflow_only: bool,
 }
 
 #[cfg(windows)]
@@ -43,6 +44,6 @@ pub fn run(options: GuiOptions) -> Result<(), String> {
     #[cfg(not(windows))]
     {
         let _ = options;
-        Err("The native Win32/GDI frontend is unavailable on this platform".into())
+        Err("La interfaz nativa Win32/GDI no está disponible en esta plataforma".into())
     }
 }

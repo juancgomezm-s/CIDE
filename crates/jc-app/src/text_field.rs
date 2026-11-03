@@ -93,7 +93,7 @@ pub fn edit_selected_field(
             let replaced = range.as_ref().map_or(0, |range| range.len());
             let result_len = text.len().saturating_sub(replaced).checked_add(value.len());
             if result_len.is_none_or(|length| length > limit) {
-                return Err("Field exceeds its byte budget; insertion rejected");
+                return Err("El campo supera su límite de bytes; inserción rechazada");
             }
             if let Some(range) = range {
                 let changed = &text[range.clone()] != value;
@@ -189,7 +189,7 @@ pub fn edit_field(
         }
         FieldEdit::Insert(value) => {
             if value.len() > limit.saturating_sub(text.len()) {
-                return Err("Field exceeds its byte budget; insertion rejected");
+                return Err("El campo supera su límite de bytes; inserción rechazada");
             }
             if value.is_empty() {
                 return Ok(false);
@@ -359,7 +359,7 @@ pub fn present_selected_field(
     let text = if text.len() <= 4096 {
         text
     } else {
-        "[field exceeds4096 bytes]"
+        "[campo supera4096 bytes]"
     };
     let (caret, total_rows) = walk_field(text, at, width, |_, _, _, _| {});
     let first_row = caret.0.saturating_sub(height - 1);
@@ -596,7 +596,7 @@ mod tests {
         let oversized = "x".repeat(4097);
         all.select_all(&oversized);
         let error = present_selected_field(&oversized, all, 80, 32);
-        assert_eq!(error.field.rows, ["[field\\sexceeds4096\\sbytes]"]);
+        assert_eq!(error.field.rows, ["[campo\\ssupera4096\\sbytes]"]);
         assert!(error.selections.iter().all(Vec::is_empty));
     }
 }

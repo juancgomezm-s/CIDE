@@ -10,9 +10,30 @@ impl TuiApp {
             self.status = self
                 .registry
                 .get(command)
-                .map(|spec| format!("{} is unavailable in this context", spec.label))
-                .unwrap_or_else(|| "Command unavailable".to_owned());
+                .map(|spec| format!("{} no está disponible en este contexto", spec.label))
+                .unwrap_or_else(|| "Comando no disponible".to_owned());
             return;
+        }
+        if command == CommandId::ViewMarkdownPreview {
+            self.toggle_markdown();
+            return;
+        }
+        if self.markdown_ui.is_some()
+            && !matches!(
+                command,
+                CommandId::MenuFile
+                    | CommandId::MenuEdit
+                    | CommandId::MenuSearch
+                    | CommandId::MenuProject
+                    | CommandId::MenuBuild
+                    | CommandId::MenuTools
+                    | CommandId::MenuView
+                    | CommandId::MenuHelp
+                    | CommandId::PaletteOpen
+                    | CommandId::ViewToggleInvisibles
+            )
+        {
+            self.markdown_ui = None;
         }
         if self.clipboard_command(command) {
             return;
@@ -73,7 +94,7 @@ impl TuiApp {
             Ok(outcome) => {
                 self.handle_outcome(outcome);
                 if command == CommandId::SearchCancel {
-                    self.status = "Document search cancelled".into();
+                    self.status = "Búsqueda del documento cancelada".into();
                 }
                 if matches!(
                     command,
@@ -98,7 +119,7 @@ impl TuiApp {
 
     fn handle_outcome(&mut self, outcome: CommandOutcome) {
         match outcome {
-            CommandOutcome::None => self.status = "Ready".to_owned(),
+            CommandOutcome::None => self.status = "Listo".to_owned(),
             CommandOutcome::PromptOpen => self.open_prompt(PromptKind::Open),
             CommandOutcome::PromptNew => self.open_prompt(PromptKind::New),
             CommandOutcome::PromptSaveAs => self.open_prompt(PromptKind::SaveAs),
@@ -130,7 +151,11 @@ impl TuiApp {
             CommandOutcome::OpenMenu(command) => self.open_menu(command),
             CommandOutcome::View(command) => self.handle_view(command),
             CommandOutcome::Progress(command) => {
-                self.status = format!("{:?} requires a configured Progress profile (M3)", command);
+                let label = self
+                    .registry
+                    .get(command)
+                    .map_or("Comando Progress", |spec| spec.label);
+                self.status = format!("{label} requiere un perfil Progress configurado (M3)");
             }
             CommandOutcome::NeedsCloseDecision(tab) => {
                 self.open_focus_overlay(Overlay::Dialog);
@@ -140,7 +165,8 @@ impl TuiApp {
                 if self.workbench.context().dirty_documents == 0 {
                     self.request_exit();
                 } else {
-                    self.status = "Unsaved documents remain; save or close them first".to_owned();
+                    self.status =
+                        "Hay documentos sin guardar; guárdalos o ciérralos primero".to_owned();
                 }
             }
         }
@@ -151,9 +177,9 @@ impl TuiApp {
         match command {
             ViewToggleInvisibles => {
                 self.status = if self.workbench.invisibles_visible() {
-                    "Invisible characters: ASCII spans on"
+                    "Caracteres invisibles: representación ASCII activa"
                 } else {
-                    "Invisible characters hidden"
+                    "Caracteres invisibles ocultos"
                 }
                 .into();
             }
@@ -215,7 +241,8 @@ impl TuiApp {
             ViewSearchResults => self.show_bottom(BottomPanel::SearchResults),
             ViewTerminal => {
                 self.status =
-                    "Embedded shell is deferred; CIDE TUI uses the current terminal".to_owned();
+                    "La consola integrada está pendiente; CIDE TUI usa la terminal actual"
+                        .to_owned();
             }
             FocusNext => {
                 self.focus.next(&self.panels);
@@ -230,7 +257,7 @@ impl TuiApp {
             SearchCancelProject => {
                 self.project_search.cancel();
                 self.cancel_project_replace();
-                self.status = "Project search cancelled".into();
+                self.status = "Búsqueda del proyecto cancelada".into();
             }
             SearchReplaceProject => {
                 self.open_prompt(PromptKind::ProjectReplacement);

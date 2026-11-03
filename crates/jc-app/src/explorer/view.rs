@@ -197,16 +197,15 @@ impl ExplorerView {
             })
             .collect();
         ExplorerPresentation {
-            title: escaped(b"Explorer", cols),
-            message: escaped(
-                format!(
-                    "{} | {} nodes | {} examined / {} skipped",
+            title: crate::source_services::display_ui_label("Explorador", cols),
+            message: crate::source_services::display_ui_label(
+                &format!(
+                    "{} | {} nodos | {} examinados/{} omitidos",
                     catalog.message,
                     catalog.nodes.len(),
                     catalog.examined,
                     catalog.skipped
-                )
-                .as_bytes(),
+                ),
                 cols,
             ),
             rows,

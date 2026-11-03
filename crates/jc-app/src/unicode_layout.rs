@@ -181,10 +181,10 @@ impl<'a> Walker<'a> {
         let (glyph, width, marker) = if let Some(cursor) = &mut self.utf8 {
             self.byte = cursor
                 .adjacent(true)?
-                .ok_or("Grapheme boundary unavailable")?;
+                .ok_or("Frontera de grafema no disponible")?;
             let source = from..self.byte;
             if source.len() > grapheme::MAX_CLUSTER_BYTES {
-                let label = format!("<cluster {}B>", source.len());
+                let label = format!("<grafema {}B>", source.len());
                 let len = label.len();
                 (Glyph::Cluster(Arc::from(label)), len, true)
             } else {
@@ -215,7 +215,7 @@ impl<'a> Walker<'a> {
         self.visual = self
             .visual
             .checked_add(width)
-            .ok_or("Display column overflow")?;
+            .ok_or("Desbordamiento de columna visual")?;
         Ok(Some(DecodedAtom {
             source: from..self.byte,
             glyph,
@@ -368,7 +368,7 @@ impl UnicodeLayout {
         self.lines
             .iter()
             .position(|l| l.range == range)
-            .ok_or_else(|| "Unicode line metadata exceeds cache budget".into())
+            .ok_or_else(|| "Los metadatos de línea Unicode exceden la cuota del caché".into())
     }
     pub fn column(
         &mut self,
@@ -383,7 +383,7 @@ impl UnicodeLayout {
             return Ok(line.width);
         }
         if byte < range.start || byte > range.end {
-            return Err("Byte outside visual line".into());
+            return Err("Byte fuera de la línea visual".into());
         }
         let point = &line.points[line
             .points
@@ -395,7 +395,7 @@ impl UnicodeLayout {
                 return Ok(walker.visual - width);
             }
         }
-        Err("Visual boundary unavailable".into())
+        Err("Frontera visual no disponible".into())
     }
     pub fn adjacent(
         &mut self,
@@ -466,7 +466,7 @@ impl UnicodeLayout {
                 return Ok(source.start);
             }
         }
-        Err("Visual column unavailable".into())
+        Err("Columna visual no disponible".into())
     }
     pub fn row(
         &mut self,
@@ -478,7 +478,7 @@ impl UnicodeLayout {
         mode: RowMode,
     ) -> Result<Vec<VisualAtom>, String> {
         if width > MAX_WIDTH {
-            return Err("Visible Unicode row exceeds4096 cells".into());
+            return Err("La fila Unicode visible excede 4096 celdas".into());
         }
         let (markers, pad) = match mode {
             RowMode::Plain => (false, false),
@@ -525,7 +525,7 @@ impl UnicodeLayout {
             text_bytes = text_bytes
                 .checked_add(charge)
                 .filter(|&n| n <= MAX_VISUAL_ROW_TEXT_BYTES)
-                .ok_or("Unicode row exceeds64 KiB glyph budget")?;
+                .ok_or("La fila Unicode excede la cuota de64 KiB de glifos")?;
             if glyph == Glyph::Scalar('\t') || left < scroll || right > end {
                 // Clip a wide glyph atomically: show padding at an edge, never
                 // emit half a cluster or attach a combining suffix to a border.
@@ -565,7 +565,7 @@ impl UnicodeLayout {
             if end.saturating_sub(walker.visual.max(scroll))
                 > MAX_VISUAL_ROW_TEXT_BYTES.saturating_sub(text_bytes)
             {
-                return Err("Unicode row padding exceeds glyph budget".into());
+                return Err("El relleno de fila Unicode excede la cuota de glifos".into());
             }
             for column in walker.visual.max(scroll)..end {
                 atoms.push(VisualAtom {

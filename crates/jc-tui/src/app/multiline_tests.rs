@@ -372,7 +372,7 @@ fn field_navigation_paste_in_middle_token_keys_and_overflow_do_not_edit_the_docu
     paste(&mut app, &"x".repeat(4096));
     assert_eq!(replacement(&app), before);
     assert_eq!(app.replacement_cursor, 8);
-    assert!(app.status.contains("budget"));
+    assert!(app.status.contains("límite"));
     plain(&mut app, KeyCode::Tab);
     clear(&mut app);
     assert_eq!(query(&app), "");

@@ -1,0 +1,264 @@
+
+running 109 tests
+test diff_model::tests::repeated_lines_and_separate_hunks_keep_ordered_equal_mappings ... ok
+test explorer::tests::view_escapes_complete_tokens_and_keeps_opaque_path_bytes ... ok
+test diff_model::tests::insert_delete_replace_and_line_correspondence_are_exact ... ok
+test diff_model::tests::eol_bom_invalid_bytes_and_terminal_newline_remain_significant ... ok
+test diff_model::tests::owned_alignment_retains_original_sources_and_exact_line_mapping ... ok
+test explorer::admission_regressions::cancelled_descendant_cannot_accept_a_late_success_even_with_matching_revision ... ok
+test diff_model::tests::quotas_and_cancellation_never_publish_partial_equivalences ... ok
+test git_read::tests::fixture_descendant_child ... ignored, Owned subprocess fixture, invoked explicitly by the descendant cleanup test
+test git_read::tests::fixture_sleep_child ... ignored, Owned subprocess fixture, invoked explicitly by the process-control test
+test git_read::platform::tests::structured_windows_arguments_roundtrip_without_shell_expansion ... ok
+test diff_model::tests::long_lines_and_adversarial_changes_obey_work_and_trace_budgets ... ok
+test explorer::tests::superseded_root_cannot_publish_old_nodes_even_when_provider_returns_after_cancel ... ok
+test explorer::tests::catalog_and_visible_budgets_are_global_not_per_directory ... ok
+test explorer::tests::bounded_pending_busy_and_cancelled_subtree_do_not_resurrect ... ok
+test explorer::tests::lazy_expansion_sorted_ids_and_readonly_view_survive_collapse_refresh_and_resize ... ok
+test git_status::tests::cancellation_is_checked_inside_long_records_and_expired_deadline_is_typed ... ok
+test explorer::tests::provider_panic_is_terminal_and_refresh_recovers_without_document_snapshots ... ok
+test git_status::tests::explicit_input_record_entry_path_and_owned_quotas_are_distinct ... ok
+test git_status::tests::conflicts_are_not_misrepresented_as_staged_worktree_changes ... ok
+test git_status::tests::v1_and_v2_rename_copy_keep_destination_then_original_without_unquoting ... ok
+test git_status::tests::malformed_or_ambiguous_protocol_never_returns_a_partial_status ... ok
+test git_status::tests::v2_preserves_opaque_paths_states_headers_submodule_and_zero_sha256 ... ok
+test git_status_tasks::tests::cancel_clears_completion_and_refresh_reuses_configuration ... ok
+test git_status_tasks::tests::active_success_after_cancel_is_discarded_and_only_latest_pending_runs ... ok
+test git_status_tasks::tests::construction_and_invalid_metadata_do_not_start_a_provider ... ok
+test git_status_tasks::tests::bounded_typed_failures_and_provider_panic_have_terminal_states ... ok
+test git_status_tasks::tests::every_configuration_change_rejects_an_unpolled_or_accepted_result ... ok
+test git_status_tasks::tests::stale_provider_panic_still_requests_one_terminal_recovery ... ok
+test markdown_preview::tests::markdown_indented_fenced_code_keeps_markup_literal_and_source_bytes_exact ... ok
+test markdown_preview::tests::markdown_preview_formats_and_wraps_without_executing_links_or_mutating_bytes ... ok
+test markdown_preview::tests::markdown_end_and_up_reach_last_wrapped_rows_without_prior_history ... ok
+test panes::tests::forgetting_a_closed_tab_clears_stale_history_and_pins ... ok
+test panes::tests::navigation_history_is_group_local_and_tracks_positions ... ok
+test panes::tests::pinned_reference_is_not_replaced_by_automatic_navigation ... ok
+test markdown_preview::tests::markdown_preview_scroll_keeps_wrapped_clusters_and_returns_to_previous_page ... ok
+test panes::tests::pinning_second_group_unpins_first_and_preserves_an_automatic_target ... ok
+test panes::tests::scroll_link_is_independent_of_reference_pin ... ok
+test panes::tests::split_views_share_tab_identity_not_document_copies ... ok
+test diff_model::tests::small_repeated_line_corpus_agrees_with_an_independent_lcs_oracle ... ok
+test project_search::parallel::tests::coordinator_unwind_closes_sender_and_releases_old_snapshot_before_reuse ... ok
+test project_search::parallel::tests::helper_drops_request_before_idle_and_closing_receiver_releases_backpressure ... ok
+test quick_open::tests::full_fold_expansions_do_not_allow_half_a_source_scalar_match ... ok
+test quick_open::tests::labels_escape_opaque_bytes_and_controls_without_interpreting_as_a_path ... ok
+test quick_open::tests::only_latest_pending_metadata_runs_and_completion_remains_until_poll ... ok
+test quick_open::tests::stale_panic_recovery_survives_invalidation_and_provider_metadata_is_not_retained ... ok
+test git_status_tasks::tests::drop_cancels_and_joins_the_running_provider ... ok
+test rectangle::tests::partial_tab_copy_mapping_and_replacement_preserve_unaffected_tabs ... ok
+test rectangle::tests::supported_utf8_and_legacy_have_explicit_distinct_byte_coordinates ... ok
+test rectangle::tests::unsupported_widths_controls_and_invalid_decoding_fail_explicitly ... ok
+test rectangle::tests::virtual_copy_pads_but_deletion_does_not_extend_source ... ok
+test rectangle::tests::zero_width_inside_atom_preserves_left_right_cells_and_empty_insert_is_noop ... ok
+test task_panels::tests::completed_items_have_typed_targets_and_proposals_never_apply ... ok
+test task_panels::tests::failure_stale_cancel_and_empty_completion_publish_only_explicit_status ... ok
+test explorer::admission_regressions::explicit_open_reuses_dirty_document_but_rejects_changed_leaf_before_focus ... ok
+test task_panels::tests::problem_activation_respects_pin_and_rejects_changed_revision_and_closed_view ... ok
+test text_field::tests::field_preview_is_bounded_navigable_and_emits_no_controls ... ok
+test text_field::tests::multiline_editing_preserves_eol_and_rejects_whole_overflow ... ok
+test task_panels::tests::retained_capacity_unicode_truncation_and_ids_survive_clear_and_eviction ... ok
+test text_field::tests::selected_replacement_preflights_utf8_budget_and_keeps_crlf_atomic ... ok
+test text_field::tests::selection_movement_collapses_or_extends_using_existing_line_boundaries ... ok
+test rectangle::tests::line_columns_input_and_result_limits_do_not_overflow ... ok
+test project_search::parallel::tests::helper_reuses_its_thread_for_owned_open_snapshots_with_exact_positions ... ok
+test text_field::tests::selected_preview_highlights_complete_escape_fragments_and_retains_only_visible_rows ... ok
+test text_search::tests::dense_folded_matches_resume_across_slots_without_losing_source_positions ... ok
+test unicode_layout_tests::unicode_invalid_source_groups_and_literal_bom_remain_atomic_without_lossy_decode ... ok
+test project_search::scan::tests::handle_verification_rejects_an_outside_handle_even_with_an_inside_path ... ok
+test unicode_layout_tests::unicode_visual_columns_cells_clipping_tabs_and_complete_source_ranges ... ok
+test text_search::tests::streaming_ranges_match_an_independent_flat_folded_oracle ... ok
+test workbench::invisible_layout::tests::ascii_indicators_tab_stops_and_crlf_are_mapped_atomically ... ok
+test unicode_layout_tests::unicode_visual_escape_budget_and_legacy_mapping_are_explicit ... ok
+test workbench::invisible_layout::tests::bom_unicode_legacy_and_invalid_groups_preserve_source_ranges ... ok
+test workbench::invisible_layout::tests::fragment_edge_scalar_and_invalid_group_match_whole_input_decoder ... ok
+test workbench::invisible_layout::tests::many_line_cache_and_revision_changes_keep_metadata_bounded_and_current ... ok
+test unicode_layout_tests::unicode_cold_prefix_is_lazy_and_large_cluster_row_has_explicit_text_quota ... ok
+test unicode_layout_tests::unicode_range_cursor_matches_uax29_through_fragments_long_clusters_and_regional_context ... ok
+test git_read::tests::reader_startup_failures_and_callback_unwind_reap_the_created_process ... ok
+test workbench::line_index::tests::adding_one_boundary_does_not_double_a_dense_index_and_inverse_keeps_eol_offsets ... ok
+test workbench::line_index::tests::large_deletion_releases_idle_catalog_and_can_regrow_with_correct_geometry ... ok
+test workbench::line_index::tests::replacement_growth_preserves_full_width_offsets_and_endings ... ok
+test workbench::line_index::tests::replacing_line_boundaries_retains_the_continuing_tail_eol ... ok
+test workbench::line_index::tests::source_offsets_and_endings_survive_distant_blocks_and_tail_changes ... ok
+test workbench::syntax::tests::alternating_deep_and_limited_windows_preserve_progress ... ok
+test workbench::syntax::tests::deep_context_advances_cooperatively_without_false_colors_or_global_rescan ... ok
+test workbench::syntax::tests::edit_and_undo_invalidation_reuses_only_prefix_context_and_recolors_suffix ... ok
+test git_read::tests::real_process_timeout_and_cancellation_return_and_reap_the_job ... ok
+test git_read::tests::cancellation_reaps_a_descendant_that_inherits_output_pipes ... ok
+test workbench::syntax::tests::visible_caps_are_finite_plain_fallback_and_unsupported_profiles_do_no_work ... ok
+test workbench::syntax::tests::token_exhaustion_finishes_plain_and_encoding_or_path_changes_clear_context ... ok
+test workbench::line_index::tests::newline_bursts_retain_bounded_metadata_at_small_and_large_offsets ... ok
+test git_read::tests::traversal_ambiguous_paths_and_parent_repository_discovery_are_rejected ... ok
+test workbench::text::tests::cold_sparse_layout_preserves_chunk_edge_scalars_invalid_groups_and_eof ... ok
+test workbench::text::tests::changing_another_line_preserves_cached_layout_of_an_unchanged_long_line ... ok
+test workbench::text::tests::incremental_projection_matches_full_decoder_through_byte_edits_undo_and_redo ... ok
+test workbench::viewport::tests::viewport_and_byte_selection_preserve_source_history_and_linked_independent_views ... ok
+test workbench::invisible_layout::tests::sparse_warm_rows_do_not_read_the_whole_long_line_and_cache_is_bounded ... ok
+test workbench::text::tests::sparse_layout_bounds_warm_reads_even_for_a_long_line_and_preserves_literal_bom ... ok
+test git_read::tests::status_discovery_cancellation_and_large_output_are_bounded ... ok
+test unicode_layout_tests::unicode_cache_warm_ranges_and_suffix_edits_stay_bounded_and_match_cold_reference ... ok
+test git_read::tests::successful_capture_drains_the_complete_blob_after_process_exit ... ok
+test workbench::line_index::tests::dispersed_newline_roundtrips_do_not_accumulate_an_allocation_per_edit ... ok
+test git_read::tests::blob_metadata_and_stderr_output_limits_are_enforced ... ok
+test git_read::tests::status_rejects_clean_and_process_filters_without_invoking_them ... ok
+test git_read::tests::repository_status_observes_staged_worktree_untracked_without_index_refresh ... ok
+test workbench::line_index::tests::multiblock_replacements_deletions_and_inverse_match_coordinate_oracle ... ok
+test git_read::tests::head_and_index_are_distinct_immutable_raw_blobs_without_worktree_or_index_writes ... ok
+test git_read::tests::missing_unmerged_and_non_regular_paths_are_explicit ... ok
+test workbench::text::tests::layouts_remain_within_quota_after_visiting_many_different_lines ... ok
+test workbench::text::tests::sparse_checkpoints_update_after_invalid_utf8_changes_and_multirange_transactions ... ok
+test workbench::text::tests::local_changes_update_only_a_source_neighborhood_and_shift_the_tail ... ok
+
+test result: ok. 107 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 11.99s
+
+
+running 3 tests
+test dense_four_mib_range_navigation_and_local_undo_keep_bounded_scan_and_projection_retention ... ok
+test explicit_windows1252_and_mixed_endings_survive_multiblock_transactions_and_shared_history ... ok
+test utf8_bom_invalid_bytes_and_mixed_endings_survive_multiblock_transactions_and_shared_history ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.76s
+
+
+running 1 test
+test ordinary_caret_and_selection_placement_preserve_navigation_history_and_byte_boundaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test external_unicode_text_encodes_strictly_in_legacy_and_undo_is_shared ... ok
+test quotas_encoding_and_rectangles_reject_atomically_and_export_preserves_internal_clipboard ... ok
+test mixed_eol_bom_cut_and_internal_paste_are_one_undo_each_shared_across_views ... ok
+test deferred_transfer_rejects_caret_anchor_view_revision_encoding_and_document_changes ... ok
+test invalid_utf8_and_unknown_encoding_are_never_exported_as_lossy_text ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 8 tests
+test closing_empty_primary_group_does_not_leave_document_without_active_view ... ok
+test saved_view_selection_and_scroll_survive_switching_documents_in_each_group ... ok
+test failed_or_stale_text_batch_preserves_content_selection_and_history ... ok
+test provider_edits_inactive_document_without_focus_change_and_encodes_atomically ... ok
+test replace_all_reverts_once_and_rebases_every_view ... ok
+test crlf_navigation_delete_and_jump_never_leave_an_internal_caret ... ok
+test close_one_dirty_view_keeps_shared_document_then_discard_reopens_clean_disk ... ok
+test selecting_bom_document_in_another_group_starts_after_bom ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 2 tests
+test local_edit_and_shared_undo_reuse_line_index_instead_of_scanning_the_whole_document ... ok
+test warm_navigation_and_viewport_visit_only_bounded_text_and_no_global_source_scan ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 9 tests
+test byte_and_artifact_quotas_fail_before_copy_or_worker_creation ... ok
+test cancelled_or_cleared_delivery_never_resurrects_and_a_new_request_waits_for_its_ack ... ok
+test completed_but_undelivered_artifacts_reject_revision_encoding_view_document_path_and_close_changes ... ok
+test deleted_hunk_at_eof_navigates_without_replacing_bytes ... ok
+test dirty_document_snapshot_compares_head_or_index_and_hunk_navigation_preserves_bytes_and_undo ... ok
+test legacy_dirty_snapshot_stays_in_its_page_and_encoding_change_invalidates_navigation ... ok
+test root_escape_and_missing_executable_are_worker_failures_without_source_writes ... ok
+test supersession_keeps_one_snapshot_and_only_latest_pending_metadata_until_acknowledgement ... ok
+test temporary_shared_snapshot_pressure_keeps_git_queued_until_plain_completion_is_polled ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.54s
+
+
+running 15 tests
+test f6_focus_cycle_only_visits_visible_primary_areas ... ok
+test display_strings_are_stable_and_human_readable ... ok
+test unsaved_dialog_has_stable_unique_keyboard_choices ... ok
+test abl_comment_and_duplicate_delete_shortcuts_resolve_consistently ... ok
+test ctrl_tab_and_ctrl_page_down_share_one_semantic_command ... ok
+test repository_status_commands_need_repository_context_but_no_document ... ok
+test save_is_the_same_command_from_menu_and_keyboard ... ok
+test contextual_bottom_panel_shortcuts_override_global_tab_shortcuts ... ok
+test progress_shortcuts_require_abl_and_a_progress_profile ... ok
+test dirty_tabs_cannot_close_without_an_explicit_choice ... ok
+test save_binding_remains_visible_but_disabled_when_document_is_clean ... ok
+test tab_navigation_wraps_and_alt_9_semantics_can_select_last ... ok
+test escape_closes_transient_layers_before_returning_to_editor ... ok
+test default_registry_keymap_and_menus_are_internally_consistent ... ok
+test tab_and_shift_tab_are_editor_indentation_not_global_focus ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+test visual_spans_map_caret_selection_tabs_and_crlf_without_scalar_column_aliasing ... ok
+test invisible_view_preserves_source_dirty_undo_copy_encoding_and_exact_save ... ok
+test literal_multiline_replace_all_is_one_undo_exact_eol_and_strict_legacy ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 8 tests
+test closed_view_encoding_change_and_reopened_document_invalidate_stamps ... ok
+test replacing_a_generation_cancels_the_old_job_and_delivers_only_the_latest ... ok
+test admission_is_lazy_and_bounded_including_completed_work_until_delivery ... ok
+test worker_snapshot_is_owned_and_revision_staleness_prevents_delivery_after_edit ... ok
+test completion_wakes_a_waiter_without_keyboard_input_or_polling_the_provider ... ok
+test output_quotas_are_latched_and_reject_partial_results_and_invalid_ranges ... ok
+test panel_logs_bound_bytes_and_mark_truncated_lines_without_changing_documents ... FAILED
+test deadline_cancel_and_provider_panic_release_admission_and_keep_worker_usable ... ok
+
+failures:
+
+---- panel_logs_bound_bytes_and_mark_truncated_lines_without_changing_documents stdout ----
+
+thread 'panel_logs_bound_bytes_and_mark_truncated_lines_without_changing_documents' panicked at crates\jc-app\tests\jobs.rs:309:9:
+assertion failed: log.iter().all(|s| s.len() <= 4096 && s.ends_with("[truncated]"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    panel_logs_bound_bytes_and_mark_truncated_lines_without_changing_documents
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+   Compiling jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+   Compiling unicode-width v0.2.2
+   Compiling unicode-segmentation v1.13.3
+   Compiling jc-languages v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-languages)
+   Compiling regex-syntax v0.8.11
+   Compiling jc-platform v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-platform)
+   Compiling parking_lot_core v0.9.12
+   Compiling winapi v0.3.9
+   Compiling scopeguard v1.2.0
+   Compiling smallvec v1.16.4
+   Compiling cfg-if v1.0.5
+   Compiling windows-link v0.2.1
+   Compiling litrs v1.0.1
+   Compiling bitflags v2.13.2
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+   Compiling jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+   Compiling lock_api v0.4.14
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+   Compiling jc-text v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-text)
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+   Compiling document-features v0.2.12
+   Compiling parking_lot v0.12.5
+   Compiling regex-automata v0.4.18
+   Compiling crossterm_winapi v0.9.1
+   Compiling crossterm v0.29.0
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.16s
+     Running unittests src\lib.rs (target\ui-es\debug\deps\jc_app-7715ebcb52ea1d10.exe)
+     Running tests\block_index.rs (target\ui-es\debug\deps\block_index-28ef64a61c8e201f.exe)
+     Running tests\caret_placement.rs (target\ui-es\debug\deps\caret_placement-7e18bb33d62815a7.exe)
+     Running tests\clipboard_transfer.rs (target\ui-es\debug\deps\clipboard_transfer-b9c8955e1d0aad14.exe)
+     Running tests\f1.rs (target\ui-es\debug\deps\f1-067141f8573a331d.exe)
+     Running tests\f2.rs (target\ui-es\debug\deps\f2-358b6c974cc2da8d.exe)
+     Running tests\git_diff.rs (target\ui-es\debug\deps\git_diff-ab23c11773dd85bc.exe)
+     Running tests\interaction.rs (target\ui-es\debug\deps\interaction-58285e5a73ddc7af.exe)
+     Running tests\invisibles_multiline.rs (target\ui-es\debug\deps\invisibles_multiline-73000f565c7e5a16.exe)
+     Running tests\jobs.rs (target\ui-es\debug\deps\jobs-6fb623946bd9a9d0.exe)
+error: test failed, to rerun pass `-p jc-app --test jobs`

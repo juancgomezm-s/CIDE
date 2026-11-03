@@ -1,10 +1,11 @@
 # CIDE
 
-[Cierre funcional TUI y pendientes externos](docs/M2_TUI_FINISH.md):530 nombres de
-pruebas aprobadas por suites/cierres dirigidos,18 nuevas; cuatro flujos ConPTY y17
-checks HWND propios. [Unicode y mediciones](docs/M2_UNICODE_LAYOUT.md). Ejecutable
-local `target/release/cide-tui.exe`; no aceptación física/global ni AVM certificada.
-
+[GUI/TUI en español y evidencia local](docs/M2B_GUI_WORKFLOWS_ES.md):549 nombres
+de pruebas aprobadas por suites/cierres dirigidos,19 nuevas; cuatro recorridos
+ConPTY y15 checks HWND propios. Ejecutables nuevos en `target/ui-es/release/`.
+Tema TUI inspirado en OmniCore, menús Alt subrayados, ayuda lateral y Markdown;
+GUI incorpora comparación de abiertos, servicios opcionales y plantillas.
+Aceptación física/global y proveedores AVM/semánticos reales siguen abiertos.
 
 CIDE es el nombre actual del proyecto, antes JC-IDE. Comandos canónicos: `cide`
 (CLI), `cide-tui` y `cide-gui`. Los ejecutables `jc-ide*` siguen como aliases de la
@@ -17,7 +18,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M2 en desarrollo — F1/F2/F3 implementados con evidencia local: vistas independientes, transacciones, rangos/índices, cuotas, presentación de solo lectura, terminal incremental y tareas acotadas/versionadas. Metas globales de rendimiento abiertas. Search Plus de proyecto ya busca por lotes y ofrece reemplazo literal con preview y conflictos; S0 literal ya usa tramos cooperativos y case folding completo Unicode 17. Regex, comparación de abiertos, servicios léxicos opcionales, snippets, clipboard explícito y layout por grafemas están integrados en TUI. Pendientes funcionales del alcance TUI implementados con evidencia local; aceptación física/global de M2A abierta. GUI con dirección visual de Sublime Text y servicios de fuente pendientes.**
+**Estado: M2 en desarrollo — F1/F2/F3 implementados con evidencia local: vistas independientes, transacciones, rangos/índices, cuotas, presentación de solo lectura, terminal incremental y tareas acotadas/versionadas. Metas globales de rendimiento abiertas. Search Plus de proyecto ya busca por lotes y ofrece reemplazo literal con preview y conflictos; S0 literal ya usa tramos cooperativos y case folding completo Unicode 17. Regex, comparación de abiertos, servicios léxicos opcionales, snippets, clipboard explícito y layout por grafemas están integrados en TUI. Pendientes funcionales del alcance TUI implementados con evidencia local; aceptación física/global de M2A abierta. GUI con dirección visual de Sublime Text, comparación de abiertos, servicios de fuente opcionales, plantillas y Markdown integrados con evidencia local.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 

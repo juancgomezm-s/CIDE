@@ -92,7 +92,7 @@ pub(super) fn draw_git_status(
         let text = if headers == 0 && !p.message.is_empty() {
             p.message.as_str()
         } else {
-            "No visible rows"
+            "No hay filas visibles"
         };
         area.write(screen, headers, 0, area.width, text, CellStyle::Dim);
         return;

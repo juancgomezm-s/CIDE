@@ -135,7 +135,7 @@ impl<'a> Walker<'a> {
             if path.as_os_str().len() > 4096 {
                 return Some(WalkItem::Issue(
                     self.request.root.clone(),
-                    "Path exceeds 4096 units".into(),
+                    "La ruta excede4096 unidades".into(),
                 ));
             }
             let metadata = match fs::symlink_metadata(&path) {
@@ -157,21 +157,26 @@ impl<'a> Walker<'a> {
                 continue;
             }
             if reparse(&metadata) {
-                return Some(WalkItem::Issue(path, "Link/reparse point skipped".into()));
+                return Some(WalkItem::Issue(
+                    path,
+                    "Se omitió enlace/punto de reanálisis".into(),
+                ));
             }
             if metadata.is_dir() {
                 if self.stack.len() >= 32 {
                     self.finished = true;
                     return Some(WalkItem::Limited(Some((
                         path,
-                        "Directory depth limit reached".into(),
+                        "Se alcanzó el límite de profundidad de directorios".into(),
                     ))));
                 }
                 match path.canonicalize().and_then(|canonical| {
                     if canonical.starts_with(&self.request.root) {
                         fs::read_dir(canonical)
                     } else {
-                        Err(io::Error::other("Directory escaped the search root"))
+                        Err(io::Error::other(
+                            "El directorio salió de la raíz de búsqueda",
+                        ))
                     }
                 }) {
                     Ok(dir) => self.stack.push(dir),
@@ -243,7 +248,10 @@ pub(super) fn file(
         return report;
     }
     if bytes.contains(&0) {
-        emit(issue(&task.path, "Binary/NUL file skipped".into()));
+        emit(issue(
+            &task.path,
+            "Se omitió archivo binario/con NUL".into(),
+        ));
         return report;
     }
     let probe = probe_encoding(
@@ -253,7 +261,7 @@ pub(super) fn file(
     let Some(encoding) = probe.encoding else {
         emit(issue(
             &task.path,
-            "Unknown legacy encoding; choose a project encoding".into(),
+            "Codificación legacy desconocida; elige una codificación del proyecto".into(),
         ));
         return report;
     };
@@ -266,7 +274,7 @@ pub(super) fn file(
     {
         emit(issue(
             &task.path,
-            "Invalid UTF-8; file skipped without converting bytes".into(),
+            "UTF8 inválido; archivo omitido sin convertir bytes".into(),
         ));
         return report;
     }

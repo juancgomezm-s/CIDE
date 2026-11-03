@@ -1,0 +1,11 @@
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui\src\frame_encoder.rs:24:
+ }
+ fn apply_style(out: &mut String, role: CellStyle, color: bool) {
+     let style = crate::theme::style(role);
+-    if role == CellStyle::Dim {command(out,SetAttribute(Attribute::Dim));}
++    if role == CellStyle::Dim {
++        command(out, SetAttribute(Attribute::Dim));
++    }
+     if color {
+         command(out, SetForegroundColor(style.foreground));
+         command(out, SetBackgroundColor(style.background));

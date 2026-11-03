@@ -539,7 +539,7 @@ fn root_escape_and_missing_executable_are_worker_failures_without_source_writes(
         .unwrap();
     pump(&app, &mut jobs, &mut controller);
     assert_eq!(controller.state(), GitDiffState::Failed);
-    assert!(controller.message().contains("outside"));
+    assert!(controller.message().contains("fuera"));
     assert!(controller.result().is_none());
     assert_eq!(fs::read(&outside).unwrap(), b"outside\r\n");
     let app = fixture.app();

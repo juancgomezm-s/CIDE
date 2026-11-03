@@ -27,12 +27,12 @@ impl Workbench {
             .ok_or(WorkbenchError::NoDocument)?;
         if document.session.document().revision() != expected_revision {
             return Err(WorkbenchError::Save(
-                "Document changed before save admission".into(),
+                "El documento cambió antes de admitir el guardado".into(),
             ));
         }
         if document.session.path().as_os_str().len() > 4096 {
             return Err(WorkbenchError::Save(
-                "Save target path exceeds4096 native units".into(),
+                "La ruta de guardado supera 4096 unidades nativas".into(),
             ));
         }
         Ok(SaveTarget {
@@ -60,20 +60,20 @@ impl Workbench {
             || document.session.is_new() != target.new_file
         {
             return Err(WorkbenchError::Save(
-                "Save target changed during the frontend decision; retry".into(),
+                "El destino cambió durante la decisión de guardado; inténtalo de nuevo".into(),
             ));
         }
         if let Some(path) = destination {
             if path.as_os_str().len() > 4096 {
                 return Err(WorkbenchError::Save(
-                    "Save destination exceeds4096 native units".into(),
+                    "El destino de guardado supera 4096 unidades nativas".into(),
                 ));
             }
             document.session.save_as(path)?;
         } else {
             if target.new_file {
                 return Err(WorkbenchError::Save(
-                    "New document requires an explicit Save As path".into(),
+                    "Un documento nuevo requiere una ruta explícita de Guardar como".into(),
                 ));
             }
             document.session.save()?;

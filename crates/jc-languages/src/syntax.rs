@@ -2,6 +2,7 @@
 //! This is presentation metadata, not an ABL/JSON/Rust parser or compiler.
 //! ASCII delimiters work across pieces and legacy pages without decoding text.
 use std::ops::Range;
+mod markdown;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -14,6 +15,10 @@ pub enum SyntaxKind {
     Number,
     Preprocessor,
     Operator,
+    Heading,
+    Emphasis,
+    Code,
+    Link,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenSpan {
@@ -28,6 +33,7 @@ pub enum SyntaxProfile {
     Json,
     Jsonc,
     Rust,
+    Markdown,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Mode {
@@ -55,6 +61,7 @@ pub const RUST_RAW_HASH_LIMIT: u8 = 32;
 /// Longer identifiers are known Plain immediately rather than retained whole.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LexerState {
+    markdown: markdown::MarkdownState,
     mode: Mode,
     start: usize,
     word: [u8; 64],
@@ -76,6 +83,7 @@ pub struct LexerState {
 impl Default for LexerState {
     fn default() -> Self {
         Self {
+            markdown: Default::default(),
             mode: Mode::Normal,
             start: 0,
             word: [0; 64],
@@ -167,6 +175,11 @@ pub fn scan(
     final_chunk: bool,
     mut emit: impl FnMut(TokenSpan),
 ) {
+    if profile == SyntaxProfile::Markdown {
+        markdown::scan(&mut state.markdown, bytes, source_start, final_chunk, emit);
+        state.limited |= state.markdown.limited;
+        return;
+    }
     if profile == SyntaxProfile::Plain {
         return;
     }

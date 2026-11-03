@@ -11,7 +11,7 @@ impl State {
     pub(super) fn set_project_root(&mut self, path: PathBuf) -> Result<(), String> {
         let root = path.canonicalize().map_err(|e| e.to_string())?;
         if !root.is_dir() {
-            return Err("Project root must be a directory".into());
+            return Err("La raíz del proyecto debe ser un directorio".into());
         }
         self.explorer.set_root(root.clone())?;
         self.jobs.cancel_all();
@@ -25,7 +25,7 @@ impl State {
         self.project_panel = None;
         self.project_options = None;
         self.project_root = Some(root);
-        self.status = "Project folder selected · Ctrl+P Quick Open".into();
+        self.status = "Carpeta de proyecto elegida · Ctrl+P apertura rápida".into();
         Ok(())
     }
     pub(super) fn close_selector(&mut self) {
@@ -59,11 +59,11 @@ impl State {
         };
         self.close_selector();
         if kind == SelectorKind::Files && self.project_root.is_none() {
-            self.status = "Open a project folder first".into();
+            self.status = "Abre primero una carpeta de proyecto".into();
             return;
         }
         if self.selector_generation == u64::MAX {
-            self.error("Selector generation exhausted");
+            self.error("Se agotó la generación del selector");
             return;
         }
         self.selector = Some(Selector::new(kind));
@@ -96,7 +96,7 @@ impl State {
             document.session.encoding(),
         ));
         if self.selector_generation == u64::MAX {
-            self.error("Selector generation exhausted");
+            self.error("Se agotó la generación del selector");
             return;
         }
         self.selector = Some(Selector::new(SelectorKind::Encoding));
@@ -118,7 +118,7 @@ impl State {
             .quick_open
             .request(root.clone(), selector.input().to_owned())
         {
-            self.status = format!("Quick Open request rejected: {error:?}");
+            self.status = format!("Solicitud de apertura rápida rechazada: {error}");
         }
     }
     pub(super) fn poll_tasks(&mut self) -> bool {
@@ -157,10 +157,11 @@ impl State {
         }
         if self.quick_open.take_recovery() {
             changed = true;
-            self.status = "Quick Open worker recovered from a failure; refresh to retry".into();
+            self.status =
+                "Apertura rápida se recuperó de un fallo; actualiza para reintentar".into();
         }
         if failed {
-            self.status = "Background notification failed; refresh the active query".into();
+            self.status = "Falló la notificación de fondo; actualiza la consulta activa".into();
         }
         // Completion publication can race the acknowledgement. Coalescing leaves
         // at most one queued message and readiness closes the notification gap.
@@ -173,7 +174,8 @@ impl State {
         changed |= self.poll_git();
         changed |= self.poll_explorer();
         if self.project_search.take_recovery() {
-            self.status = "Project search worker failed; refresh to retry".into();
+            self.status =
+                "Falló la tarea de búsqueda del proyecto; actualiza para reintentar".into();
             changed = true;
         }
         if self.project_search.ready() {
@@ -201,7 +203,7 @@ impl State {
             self.close_selector();
             self.search_panel = search;
             self.explorer_focused = explorer;
-            self.status = "Selector cancelled".into();
+            self.status = "Selector cancelado".into();
             return Action::None;
         }
         if modifiers.contains(Modifiers::CTRL) && !modifiers.contains(Modifiers::ALT) {
@@ -293,7 +295,8 @@ impl State {
                     .map(|d| (d.id, d.session.document().revision(), d.session.encoding()));
                 if self.encoding_target.is_none() || current != self.encoding_target {
                     self.close_selector();
-                    self.status = "Encoding target changed; reopen the selector".into();
+                    self.status =
+                        "Cambió el destino de codificación; vuelve a abrir el selector".into();
                     return Action::None;
                 }
                 match self.workbench.set_encoding(encoding) {
@@ -301,7 +304,7 @@ impl State {
                         self.close_selector();
                         self.bottom.focused = false;
                         self.status = format!(
-                            "Interpretation: {} · bytes unchanged; no conversion/save",
+                            "Interpretación: {} · bytes intactos; sin conversión/guardado",
                             encoding.name()
                         );
                     }
@@ -319,7 +322,7 @@ impl State {
                     return Action::None;
                 };
                 if !supported(command) || !self.registry.is_enabled(command, &self.context()) {
-                    self.status = "Command unavailable in this frontend/context".into();
+                    self.status = "Comando no disponible en esta interfaz/contexto".into();
                     return Action::None;
                 }
                 let explorer_focus = self.selector_explorer_focus;
@@ -358,12 +361,16 @@ impl State {
                         Ok(_) => {
                             self.close_selector();
                             self.bottom.focused = false;
-                            self.status = "Opened project file · shared document/undo".into();
+                            self.status =
+                                "Archivo de proyecto abierto · documento/deshacer compartidos"
+                                    .into();
                             self.ensure_encoding_selector();
                         }
                         Err(error) => self.error(error),
                     },
-                    Err(error) => self.status = format!("Quick Open target unavailable: {error:?}"),
+                    Err(error) => {
+                        self.status = format!("Destino de apertura rápida no disponible: {error}")
+                    }
                 }
                 Action::None
             }

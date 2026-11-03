@@ -87,6 +87,7 @@ pub enum CommandId {
     ExplorerRefresh,
     ExplorerCancel,
     ViewToggleInvisibles,
+    ViewMarkdownPreview,
     ViewDatabase,
     ViewGit,
     GitDiffHead,
@@ -334,6 +335,14 @@ fn never(_: &CommandContext) -> bool {
 fn has_document(ctx: &CommandContext) -> bool {
     ctx.has_document
 }
+fn markdown_preview(ctx: &CommandContext) -> bool {
+    ctx.has_document
+        && ctx
+            .active_language
+            .as_deref()
+            .and_then(jc_languages::by_id)
+            .is_some_and(|p| p.syntax_profile() == jc_languages::syntax::SyntaxProfile::Markdown)
+}
 fn split(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.split_editor
 }
@@ -508,317 +517,373 @@ macro_rules! spec {
 
 pub fn default_registry() -> CommandRegistry {
     let specs: Vec<CommandSpec> = vec![
-        spec!(FileNew, File, "New", always),
-        spec!(FileOpen, File, "Open…", always),
-        spec!(FileQuickOpen, File, "Quick Open Project File", project),
-        spec!(FileOpenFolder, File, "Open Folder…", always),
+        spec!(FileNew, File, "Nuevo", always),
+        spec!(FileOpen, File, "Abrir…", always),
+        spec!(
+            FileQuickOpen,
+            File,
+            "Abrir archivo del proyecto rápidamente",
+            project
+        ),
+        spec!(FileOpenFolder, File, "Abrir carpeta…", always),
         spec!(
             FileChooseEncoding,
             File,
-            "Choose Source Encoding…",
+            "Elegir codificación del documento…",
             has_document
         ),
-        spec!(FileSave, File, "Save", dirty_document),
-        spec!(FileSaveAs, File, "Save As…", has_document),
-        spec!(FileSaveAll, File, "Save All", dirty_documents),
-        spec!(FileClose, File, "Close", has_document),
-        spec!(FileReopenClosed, File, "Reopen Closed Tab", reopen),
-        spec!(FileExit, File, "Exit", always),
-        spec!(EditUndo, Edit, "Undo", can_undo),
-        spec!(EditRedo, Edit, "Redo", can_redo),
-        spec!(EditCut, Edit, "Cut", source_clipboard_selection),
-        spec!(EditCopy, Edit, "Copy", source_clipboard_selection),
-        spec!(EditPaste, Edit, "Paste", paste),
-        spec!(EditSelectAll, Edit, "Select All", select_all),
+        spec!(FileSave, File, "Guardar", dirty_document),
+        spec!(FileSaveAs, File, "Guardar como…", has_document),
+        spec!(FileSaveAll, File, "Guardar todo", dirty_documents),
+        spec!(FileClose, File, "Cerrar", has_document),
+        spec!(FileReopenClosed, File, "Reabrir pestaña cerrada", reopen),
+        spec!(FileExit, File, "Salir", always),
+        spec!(EditUndo, Edit, "Deshacer", can_undo),
+        spec!(EditRedo, Edit, "Rehacer", can_redo),
+        spec!(EditCut, Edit, "Cortar", source_clipboard_selection),
+        spec!(EditCopy, Edit, "Copiar", source_clipboard_selection),
+        spec!(EditPaste, Edit, "Pegar", paste),
+        spec!(EditSelectAll, Edit, "Seleccionar todo", select_all),
         spec!(
             EditDuplicate,
             Edit,
-            "Duplicate Selection/Line",
+            "Duplicar selección/línea",
             linear_editor
         ),
-        spec!(EditDeleteLine, Edit, "Delete Line", linear_editor),
-        spec!(EditMoveLineUp, Edit, "Move Line Up", linear_editor),
-        spec!(EditMoveLineDown, Edit, "Move Line Down", linear_editor),
-        spec!(EditToggleLineComment, Edit, "Toggle Comment", line_comment),
+        spec!(EditDeleteLine, Edit, "Eliminar línea", linear_editor),
+        spec!(EditMoveLineUp, Edit, "Mover línea arriba", linear_editor),
+        spec!(EditMoveLineDown, Edit, "Mover línea abajo", linear_editor),
+        spec!(
+            EditToggleLineComment,
+            Edit,
+            "Alternar comentario",
+            line_comment
+        ),
         spec!(
             EditToggleBlockComment,
             Edit,
-            "Toggle Block Comment",
+            "Alternar comentario de bloque",
             block_comment
         ),
-        spec!(EditIndent, Edit, "Indent", rectangle_editor),
-        spec!(EditOutdent, Edit, "Outdent", linear_editor),
-        spec!(EditJoinLines, Edit, "Join Lines", linear_editor),
-        spec!(EditSplitLine, Edit, "Split Line", linear_editor),
+        spec!(EditIndent, Edit, "Aumentar sangría", rectangle_editor),
+        spec!(EditOutdent, Edit, "Reducir sangría", linear_editor),
+        spec!(EditJoinLines, Edit, "Unir líneas", linear_editor),
+        spec!(EditSplitLine, Edit, "Dividir línea", linear_editor),
         spec!(
             EditRectangleStart,
             Edit,
-            "Rectangle: Select From Caret/Selection",
+            "Rectángulo: iniciar desde cursor/selección",
             rectangle_editor
         ),
         spec!(
             EditRectangleLeft,
             Edit,
-            "Rectangle: Extend Left",
+            "Rectángulo: extender a la izquierda",
             rectangle_editor
         ),
         spec!(
             EditRectangleRight,
             Edit,
-            "Rectangle: Extend Right",
+            "Rectángulo: extender a la derecha",
             rectangle_editor
         ),
         spec!(
             EditRectangleUp,
             Edit,
-            "Rectangle: Extend Up",
+            "Rectángulo: extender arriba",
             rectangle_editor
         ),
         spec!(
             EditRectangleDown,
             Edit,
-            "Rectangle: Extend Down",
+            "Rectángulo: extender abajo",
             rectangle_editor
         ),
         spec!(
             EditRectangleCancel,
             Edit,
-            "Rectangle: Cancel",
+            "Rectángulo: cancelar",
             rectangle_active
         ),
-        spec!(SearchFind, Search, "Find", has_document),
-        spec!(SearchReplace, Search, "Replace", has_document),
-        spec!(SearchFindNext, Search, "Find Next", has_document),
-        spec!(SearchFindPrevious, Search, "Find Previous", has_document),
+        spec!(SearchFind, Search, "Buscar", has_document),
+        spec!(SearchReplace, Search, "Reemplazar", has_document),
+        spec!(SearchFindNext, Search, "Buscar siguiente", has_document),
+        spec!(SearchFindPrevious, Search, "Buscar anterior", has_document),
         spec!(
             SearchSelectionNext,
             Search,
-            "Find Selection Next",
+            "Buscar selección siguiente",
             source_selection
         ),
         spec!(
             SearchSelectionPrevious,
             Search,
-            "Find Selection Previous",
+            "Buscar selección anterior",
             source_selection
         ),
         spec!(
             SearchGoToPosition,
             Search,
-            "Go to Line / Column",
+            "Ir a línea/columna",
             has_document
         ),
         spec!(
             SearchCancel,
             Search,
-            "Cancel Document Search / Rectangle",
+            "Cancelar búsqueda del documento/rectángulo",
             document_search_running
         ),
         spec!(
             SearchHistoryPrevious,
             Search,
-            "Previous Search Query",
+            "Consulta anterior",
             search_history
         ),
         spec!(
             SearchHistoryNext,
             Search,
-            "Next Search Query",
+            "Consulta siguiente",
             search_history
         ),
-        spec!(SearchProject, Search, "Find in Project", project),
+        spec!(SearchProject, Search, "Buscar en el proyecto", project),
         spec!(
             SearchReplaceProject,
             Search,
-            "Replace in Project",
+            "Reemplazar en el proyecto",
             project_replace_ready
         ),
         spec!(
             SearchCancelProject,
             Search,
-            "Cancel Project Search",
+            "Cancelar búsqueda del proyecto",
             project_search_running
         ),
-        spec!(SearchToggleCase, Search, "Match Case", always),
-        spec!(SearchToggleWholeWord, Search, "Whole Word", always),
-        spec!(SearchToggleRegex, Search, "Regular Expression", always),
-        spec!(PaletteOpen, Tools, "Command Palette…", always),
-        spec!(TabNext, Navigation, "Next Tab", has_document),
-        spec!(TabPrevious, Navigation, "Previous Tab", has_document),
-        spec!(Tab1, Navigation, "Tab 1", has_document),
-        spec!(Tab2, Navigation, "Tab 2", has_document),
-        spec!(Tab3, Navigation, "Tab 3", has_document),
-        spec!(Tab4, Navigation, "Tab 4", has_document),
-        spec!(Tab5, Navigation, "Tab 5", has_document),
-        spec!(Tab6, Navigation, "Tab 6", has_document),
-        spec!(Tab7, Navigation, "Tab 7", has_document),
-        spec!(Tab8, Navigation, "Tab 8", has_document),
-        spec!(Tab9, Navigation, "Last Tab", has_document),
-        spec!(ViewExplorer, View, "Explorer", always),
+        spec!(SearchToggleCase, Search, "Distinguir mayúsculas", always),
+        spec!(SearchToggleWholeWord, Search, "Palabra completa", always),
+        spec!(SearchToggleRegex, Search, "Expresión regular", always),
+        spec!(PaletteOpen, Tools, "Paleta de comandos…", always),
+        spec!(TabNext, Navigation, "Pestaña siguiente", has_document),
+        spec!(TabPrevious, Navigation, "Pestaña anterior", has_document),
+        spec!(Tab1, Navigation, "Pestaña 1", has_document),
+        spec!(Tab2, Navigation, "Pestaña 2", has_document),
+        spec!(Tab3, Navigation, "Pestaña 3", has_document),
+        spec!(Tab4, Navigation, "Pestaña 4", has_document),
+        spec!(Tab5, Navigation, "Pestaña 5", has_document),
+        spec!(Tab6, Navigation, "Pestaña 6", has_document),
+        spec!(Tab7, Navigation, "Pestaña 7", has_document),
+        spec!(Tab8, Navigation, "Pestaña 8", has_document),
+        spec!(Tab9, Navigation, "Última pestaña", has_document),
+        spec!(ViewExplorer, View, "Explorador", always),
         spec!(
             ExplorerRefresh,
             View,
-            "Explorer: Refresh Directory",
+            "Explorador: actualizar directorio",
             explorer
         ),
         spec!(
             ExplorerCancel,
             View,
-            "Explorer: Cancel Loading / Return to Editor",
+            "Explorador: cancelar carga/volver al editor",
             explorer_focus
         ),
         spec!(
             ViewToggleInvisibles,
             View,
-            "Show Invisible Characters",
+            "Mostrar caracteres invisibles",
             always
         ),
-        spec!(ViewDatabase, View, "Database / Schema", never),
-        spec!(ViewGit, View, "Git: Active File Diff", git_diff),
-        spec!(GitDiffHead, View, "Git: Compare HEAD Snapshot", git_diff),
-        spec!(GitDiffIndex, View, "Git: Compare Index Snapshot", git_diff),
-        spec!(GitDiffRefresh, View, "Git: Refresh Snapshot", git_diff),
-        spec!(GitDiffCancel, View, "Git: Cancel Diff", git_diff_running),
+        spec!(ViewDatabase, View, "Base de datos/esquema", never),
+        spec!(
+            ViewMarkdownPreview,
+            View,
+            "Vista previa de Markdown",
+            markdown_preview
+        ),
+        spec!(
+            ViewGit,
+            View,
+            "Git: diferencias del archivo activo",
+            git_diff
+        ),
+        spec!(GitDiffHead, View, "Git: comparar copia de HEAD", git_diff),
+        spec!(
+            GitDiffIndex,
+            View,
+            "Git: comparar copia del índice",
+            git_diff
+        ),
+        spec!(GitDiffRefresh, View, "Git: actualizar copia", git_diff),
+        spec!(
+            GitDiffCancel,
+            View,
+            "Git: cancelar comparación",
+            git_diff_running
+        ),
         spec!(
             GitConfigureExecutable,
             View,
-            "Git: Configure Executable…",
+            "Git: configurar ejecutable…",
             git_repository
         ),
         spec!(
             GitRepositoryStatus,
             View,
-            "Git: Repository Status (Read-Only)",
+            "Git: estado del repositorio (solo lectura)",
             git_repository
         ),
         spec!(
             GitStatusRefresh,
             View,
-            "Git: Refresh Repository Status",
+            "Git: actualizar estado del repositorio",
             git_repository
         ),
         spec!(
             GitStatusCancel,
             View,
-            "Git: Cancel Repository Status",
+            "Git: cancelar lectura del estado",
             git_status_running
         ),
         spec!(
             DiffCompareOpen,
             View,
-            "Compare Open Groups (Read-Only)",
+            "Comparar grupos abiertos (solo lectura)",
             open_diff_available
         ),
         spec!(
             DiffRefreshOpen,
             View,
-            "Refresh Open Groups Comparison",
+            "Actualizar comparación de grupos abiertos",
             open_diff_available
         ),
         spec!(
             DiffCancelOpen,
             View,
-            "Cancel Open Groups Comparison",
+            "Cancelar comparación de grupos abiertos",
             open_diff_active
         ),
         spec!(
             DiffOpenNavigateLeft,
             View,
-            "Open Comparison Hunk in Left Group",
+            "Abrir bloque de diferencias en el grupo izquierdo",
             open_diff_ready
         ),
         spec!(
             DiffOpenNavigateRight,
             View,
-            "Open Comparison Hunk in Right Group",
+            "Abrir bloque de diferencias en el grupo derecho",
             open_diff_ready
         ),
-        spec!(EditInsertSnippet, Edit, "Insert Snippet", snippet_insert),
-        spec!(EditSurroundWith, Edit, "Surround With", snippet_surround),
-        spec!(SnippetNext, Edit, "Snippet: Next Stage", snippet_next),
+        spec!(
+            EditInsertSnippet,
+            Edit,
+            "Insertar plantilla",
+            snippet_insert
+        ),
+        spec!(
+            EditSurroundWith,
+            Edit,
+            "Envolver selección",
+            snippet_surround
+        ),
+        spec!(SnippetNext, Edit, "Plantilla: paso siguiente", snippet_next),
         spec!(
             SnippetPrevious,
             Edit,
-            "Snippet: Previous Stage",
+            "Plantilla: paso anterior",
             snippet_previous
         ),
         spec!(
             SnippetAccept,
             Edit,
-            "Snippet: Apply Reviewed Proposal",
+            "Plantilla: aplicar propuesta revisada",
             snippet_ready
         ),
-        spec!(SnippetCancel, Edit, "Snippet: Cancel", snippet_active),
-        spec!(ViewSymbols, View, "Symbols", source_symbols),
+        spec!(SnippetCancel, Edit, "Plantilla: cancelar", snippet_active),
+        spec!(ViewSymbols, View, "Símbolos", source_symbols),
         spec!(
             SourceReferences,
             Navigation,
-            "References in Document",
+            "Referencias del documento",
             source_references
         ),
         spec!(
             SourceComplete,
             Edit,
-            "Complete Local Word",
+            "Completar palabra local",
             source_completion
         ),
         spec!(
             SourceRefresh,
             Navigation,
-            "Refresh Source Capability",
+            "Actualizar servicio del documento",
             source_active
         ),
         spec!(
             SourceCancel,
             Navigation,
-            "Cancel Source Capability",
+            "Cancelar servicio del documento",
             source_active
         ),
-        spec!(SourceAccept, Navigation, "Accept Source Item", source_ready),
+        spec!(
+            SourceAccept,
+            Navigation,
+            "Aceptar elemento del documento",
+            source_ready
+        ),
         spec!(
             SourceOpenToSide,
             Navigation,
-            "Open Source Item to Side",
+            "Abrir elemento del documento al lado",
             source_side_ready
         ),
-        spec!(ViewToggleBottomPanel, View, "Toggle Bottom Panel", always),
+        spec!(
+            ViewToggleBottomPanel,
+            View,
+            "Mostrar/ocultar panel inferior",
+            always
+        ),
         spec!(ViewTerminal, View, "Terminal", terminal),
-        spec!(ViewProblems, View, "Problems", always),
-        spec!(ViewOutput, View, "Output", always),
-        spec!(ViewSearchResults, View, "Search Results", always),
-        spec!(EditorSplitRight, View, "Split Right", has_document),
-        spec!(EditorOneGroup, View, "One Group", split),
+        spec!(ViewProblems, View, "Problemas", always),
+        spec!(ViewOutput, View, "Salida", always),
+        spec!(ViewSearchResults, View, "Resultados de búsqueda", always),
+        spec!(EditorSplitRight, View, "Dividir a la derecha", has_document),
+        spec!(EditorOneGroup, View, "Un grupo", split),
         spec!(
             EditorFocusPrimary,
             Navigation,
-            "Focus Group 1",
+            "Enfocar grupo 1",
             has_document
         ),
-        spec!(EditorFocusSecondary, Navigation, "Focus Group 2", split),
-        spec!(EditorTogglePin, View, "Pin / Unpin Reference", split),
-        spec!(EditorToggleScrollLink, View, "Link / Unlink Scroll", split),
-        spec!(EditorOpenToSide, Navigation, "Open to Side", open_to_side),
-        spec!(NavigateBack, Navigation, "Navigate Back", nav_back),
-        spec!(NavigateForward, Navigation, "Navigate Forward", nav_forward),
-        spec!(FocusNext, Navigation, "Focus Next Area", always),
-        spec!(FocusPrevious, Navigation, "Focus Previous Area", always),
-        spec!(ProgressCheck, Build, "Check Syntax", abl),
-        spec!(ProgressCompile, Build, "Compile", abl),
-        spec!(ProgressRun, Build, "Run", abl),
+        spec!(EditorFocusSecondary, Navigation, "Enfocar grupo 2", split),
+        spec!(EditorTogglePin, View, "Anclar/desanclar referencia", split),
+        spec!(
+            EditorToggleScrollLink,
+            View,
+            "Vincular/desvincular desplazamiento",
+            split
+        ),
+        spec!(EditorOpenToSide, Navigation, "Abrir al lado", open_to_side),
+        spec!(NavigateBack, Navigation, "Navegar atrás", nav_back),
+        spec!(NavigateForward, Navigation, "Navegar adelante", nav_forward),
+        spec!(FocusNext, Navigation, "Enfocar área siguiente", always),
+        spec!(FocusPrevious, Navigation, "Enfocar área anterior", always),
+        spec!(ProgressCheck, Build, "Comprobar sintaxis", abl),
+        spec!(ProgressCompile, Build, "Compilar", abl),
+        spec!(ProgressRun, Build, "Ejecutar", abl),
         spec!(
             ProgressRefreshSchema,
             Build,
-            "Refresh Database Schema",
+            "Actualizar esquema de base de datos",
             abl_project
         ),
-        spec!(MenuFile, Menu, "File Menu", always),
-        spec!(MenuEdit, Menu, "Edit Menu", always),
-        spec!(MenuSearch, Menu, "Search Menu", always),
-        spec!(MenuProject, Menu, "Project Menu", always),
-        spec!(MenuBuild, Menu, "Build Menu", always),
-        spec!(MenuTools, Menu, "Tools Menu", always),
-        spec!(MenuView, Menu, "View Menu", always),
-        spec!(MenuHelp, Menu, "Help Menu", always),
+        spec!(MenuFile, Menu, "Menú Archivo", always),
+        spec!(MenuEdit, Menu, "Menú Editar", always),
+        spec!(MenuSearch, Menu, "Menú Buscar", always),
+        spec!(MenuProject, Menu, "Menú Proyecto", always),
+        spec!(MenuBuild, Menu, "Menú Compilar", always),
+        spec!(MenuTools, Menu, "Menú Herramientas", always),
+        spec!(MenuView, Menu, "Menú Ver", always),
+        spec!(MenuHelp, Menu, "Menú Ayuda", always),
     ];
     CommandRegistry::new(specs).expect("built-in command ids are unique")
 }

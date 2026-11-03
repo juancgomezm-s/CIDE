@@ -24,6 +24,21 @@ pub enum OpenDiffState {
     Failed,
     TimedOut,
 }
+impl OpenDiffState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "Inactivo",
+            Self::Queued => "En cola",
+            Self::Running => "En curso",
+            Self::Ready => "Listo",
+            Self::Limited => "Limitado",
+            Self::Cancelled => "Cancelado",
+            Self::Stale => "Obsoleto",
+            Self::Failed => "Fallido",
+            Self::TimedOut => "Tiempo agotado",
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenDiffOrigin {
     pub stamp: TaskStamp,
@@ -36,24 +51,24 @@ impl OpenDiffOrigin {
         let view = app
             .panes()
             .view(pane)
-            .ok_or("Both editor groups must be open")?;
+            .ok_or("Ambos grupos del editor deben estar abiertos")?;
         let location = view
             .location()
-            .ok_or("Both editor groups need a document")?;
+            .ok_or("Ambos grupos del editor necesitan un documento")?;
         let document = app
             .document_by_tab(location.tab)
-            .ok_or("Comparison document closed")?;
+            .ok_or("Se cerró el documento de la comparación")?;
         if document.session.document().len() > SOURCE_LIMIT {
-            return Err("Open comparison source exceeds 2 MiB per side");
+            return Err("El fuente de comparación excede2MiB por lado");
         }
         if document.session.path().as_os_str().len() > PATH_LIMIT {
-            return Err("Open comparison path exceeds its metadata limit");
+            return Err("La ruta de comparación excede el límite de metadatos");
         }
         let encoding = document
             .session
             .encoding()
-            .ok_or("Choose both document encodings before comparing")?;
-        let view = view.view_id().ok_or("Comparison view is missing")?;
+            .ok_or("Elige ambas codificaciones antes de comparar")?;
+        let view = view.view_id().ok_or("Falta la vista de comparación")?;
         Ok(Self {
             stamp: TaskStamp {
                 document: document.id,
@@ -171,7 +186,10 @@ impl OpenDiffController {
     }
     pub fn cancel(&mut self, jobs: &mut JobSystem) {
         self.invalidate(jobs);
-        self.status(OpenDiffState::Cancelled, "Open comparison cancelled");
+        self.status(
+            OpenDiffState::Cancelled,
+            "Comparación de abiertos cancelada",
+        );
     }
     pub fn clear(&mut self, jobs: &mut JobSystem) {
         self.invalidate(jobs);
@@ -182,19 +200,19 @@ impl OpenDiffController {
             self.invalidate(jobs);
             self.status(
                 OpenDiffState::Failed,
-                "Open comparison generation exhausted",
+                "Se agotó la generación de comparación de abiertos",
             );
             return Err(self.message.clone());
         }
         self.invalidate(jobs);
         let work = (|| {
             if !app.panes().is_split() {
-                return Err("Split the editor before comparing open documents");
+                return Err("Divide el editor antes de comparar documentos abiertos");
             }
             let left = OpenDiffOrigin::capture(app, PaneId::Primary)?;
             let right = OpenDiffOrigin::capture(app, PaneId::Secondary)?;
             if left.stamp.document == right.stamp.document {
-                return Err("Choose different documents in the two groups");
+                return Err("Elige documentos distintos en los dos grupos");
             }
             Ok(OpenDiffWork {
                 generation: self.generation,
@@ -205,12 +223,12 @@ impl OpenDiffController {
         match work {
             Ok(work) => {
                 self.pending = Some(work);
-                self.status(OpenDiffState::Queued, "Open comparison queued");
+                self.status(OpenDiffState::Queued, "Comparación de abiertos en cola");
                 self.tick(app, jobs);
             }
             Err(message) => {
-                let state = if message == "Open comparison source exceeds 2 MiB per side"
-                    || message == "Open comparison path exceeds its metadata limit"
+                let state = if message == "El fuente de comparación excede2MiB por lado"
+                    || message == "La ruta de comparación excede el límite de metadatos"
                 {
                     OpenDiffState::Limited
                 } else {
@@ -244,7 +262,7 @@ impl OpenDiffController {
             self.invalidate(jobs);
             return self.status(
                 OpenDiffState::Stale,
-                "Comparison documents/groups changed; refresh",
+                "Cambiaron los documentos/grupos de comparación; actualiza",
             );
         }
         false
@@ -268,11 +286,14 @@ impl OpenDiffController {
                 });
                 changed |= self.status(
                     OpenDiffState::Running,
-                    "Comparing immutable open-document snapshots",
+                    "Comparando capturas inmutables de documentos abiertos",
                 );
             }
             Err(SubmitError::Busy) => {
-                changed |= self.status(OpenDiffState::Queued, "Waiting for background capacity")
+                changed |= self.status(
+                    OpenDiffState::Queued,
+                    "Esperando capacidad de tareas de fondo",
+                )
             }
             Err(error) => {
                 self.pending = None;
@@ -282,7 +303,7 @@ impl OpenDiffController {
                     } else {
                         OpenDiffState::Failed
                     },
-                    format!("Open comparison admission: {error:?}"),
+                    format!("Admisión de comparación de abiertos: {error}"),
                 );
             }
         }
@@ -310,24 +331,36 @@ impl OpenDiffController {
             self.discard_result();
             self.status(
                 OpenDiffState::Stale,
-                "Open comparison changed before delivery",
+                "La comparación de abiertos cambió antes de su entrega",
             );
             return true;
         }
         if task.status != TaskStatus::Completed {
             let (state, message) = match task.status {
-                TaskStatus::Cancelled => (OpenDiffState::Cancelled, "Open comparison cancelled"),
-                TaskStatus::TimedOut => (OpenDiffState::TimedOut, "Open comparison timed out"),
+                TaskStatus::Cancelled => (
+                    OpenDiffState::Cancelled,
+                    "Comparación de abiertos cancelada",
+                ),
+                TaskStatus::TimedOut => (
+                    OpenDiffState::TimedOut,
+                    "Se agotó el tiempo de comparación de abiertos",
+                ),
                 TaskStatus::LimitExceeded => (
                     OpenDiffState::Limited,
-                    "Open comparison exceeded its budgets",
+                    "La comparación de abiertos excedió sus cuotas",
                 ),
                 TaskStatus::InvalidRange => (
                     OpenDiffState::Stale,
-                    "Open comparison snapshot became invalid",
+                    "La captura de comparación de abiertos dejó de ser válida",
                 ),
-                TaskStatus::Panicked => (OpenDiffState::Failed, "Open comparison worker panicked"),
-                _ => (OpenDiffState::Failed, "Open comparison worker failed"),
+                TaskStatus::Panicked => (
+                    OpenDiffState::Failed,
+                    "La tarea de comparación de abiertos sufrió un fallo",
+                ),
+                _ => (
+                    OpenDiffState::Failed,
+                    "Falló la tarea de comparación de abiertos",
+                ),
             };
             self.status(state, message);
             return true;
@@ -335,7 +368,7 @@ impl OpenDiffController {
         if !task.current || !task.applicable {
             self.status(
                 OpenDiffState::Stale,
-                "Open comparison delivery is no longer current",
+                "La entrega de comparación de abiertos ya no está vigente",
             );
             return true;
         }
@@ -346,7 +379,7 @@ impl OpenDiffController {
         }) else {
             self.status(
                 OpenDiffState::Failed,
-                "Open comparison returned an invalid delivery",
+                "La comparación de abiertos devolvió una entrega inválida",
             );
             return true;
         };
@@ -355,16 +388,22 @@ impl OpenDiffController {
                 self.accepted = Some(flight.work);
                 self.result = Some(reply.result);
                 self.selected = 0;
-                self.status(OpenDiffState::Ready, "Open documents comparison ready");
+                self.status(
+                    OpenDiffState::Ready,
+                    "Comparación de documentos abiertos lista",
+                );
             }
             DiffStatus::Limited(limit) => {
                 self.status(
                     OpenDiffState::Limited,
-                    format!("Open comparison limit: {limit:?}"),
+                    format!("Límite de comparación de abiertos: {}", limit.label()),
                 );
             }
             DiffStatus::Cancelled => {
-                self.status(OpenDiffState::Cancelled, "Open comparison cancelled");
+                self.status(
+                    OpenDiffState::Cancelled,
+                    "Comparación de abiertos cancelada",
+                );
             }
         }
         true
@@ -386,7 +425,7 @@ impl OpenDiffController {
         app: &mut Workbench,
     ) -> Result<(), String> {
         if self.state != OpenDiffState::Ready {
-            return Err("No current open comparison".into());
+            return Err("No hay comparación de abiertos vigente".into());
         }
         if self
             .accepted
@@ -396,16 +435,19 @@ impl OpenDiffController {
             self.discard_result();
             self.status(
                 OpenDiffState::Stale,
-                "Comparison documents/groups changed; refresh",
+                "Cambiaron los documentos/grupos de comparación; actualiza",
             );
             return Err(self.message.clone());
         }
-        let result = self.result.as_ref().ok_or("No open comparison result")?;
+        let result = self
+            .result
+            .as_ref()
+            .ok_or("No hay resultado de comparación de abiertos")?;
         let hunk = result
             .model
             .hunks()
             .nth(index)
-            .ok_or("No such comparison hunk")?;
+            .ok_or("No existe ese bloque de comparación")?;
         let (origin, line) = match side {
             DiffSide::Left => (&result.left, hunk.left.start),
             DiffSide::Right => (&result.right, hunk.right.start),
@@ -426,14 +468,14 @@ impl OpenDiffController {
             && bytes[offset - 1] == b'\r'
             && bytes[offset] == b'\n'
         {
-            return Err("Cannot navigate inside CRLF".into());
+            return Err("No se puede navegar al interior de CRLF".into());
         }
         let tab = app
             .document_by_id(origin.stamp.document)
-            .ok_or("Comparison document closed")?
+            .ok_or("Se cerró el documento de la comparación")?
             .tab_id;
         if !app.jump_to_pane_location(origin.pane, tab, offset) {
-            return Err("Hunk is not a valid boundary in its original group".into());
+            return Err("El bloque no es una frontera válida en su grupo original".into());
         }
         self.selected = index;
         Ok(())

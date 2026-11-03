@@ -8,11 +8,11 @@ pub(super) fn commit(
     confirmed: bool,
 ) -> Result<bool, String> {
     if !confirmed {
-        state.status = "Close cancelled".into();
+        state.status = "Cierre cancelado".into();
         return Ok(false);
     }
     if state.source_edit_target() != Some(target) {
-        return Err("Close target changed during confirmation; retry".into());
+        return Err("Cambió el destino durante la confirmación de cierre; reintenta".into());
     }
     let document = state.workbench.active_document().map(|d| d.id);
     state
@@ -20,9 +20,9 @@ pub(super) fn commit(
         .close_active(true)
         .map_err(|e| e.to_string())?;
     state.status = if document.is_some_and(|id| state.workbench.document_by_id(id).is_some()) {
-        "View closed · shared document retained"
+        "Vista cerrada · documento compartido conservado"
     } else {
-        "Closed; discarded changes are not retained"
+        "Cerrado; no se conservan los cambios descartados"
     }
     .into();
     state.ensure_encoding_selector();
@@ -35,7 +35,7 @@ pub(super) unsafe fn perform(hwnd: Hwnd) {
         let target = state.source_edit_target();
         match state.workbench.close_active(false) {
             Ok(None) => {
-                state.status = "View / tab closed".into();
+                state.status = "Vista/pestaña cerrada".into();
                 state.ensure_encoding_selector();
                 return;
             }
@@ -61,7 +61,7 @@ pub(super) unsafe fn perform(hwnd: Hwnd) {
     } else {
         MessageBoxW(
             hwnd,
-            wide("Discard unsaved changes in this tab? Save first to keep them.").as_ptr(),
+            wide("¿Descartar los cambios sin guardar de esta pestaña? Guarda antes para conservarlos.").as_ptr(),
             wide("CIDE").as_ptr(),
             0x134,
         ) == 6

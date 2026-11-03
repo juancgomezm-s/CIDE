@@ -31,14 +31,14 @@ impl TuiApp {
                     self.status = error.to_string();
                 } else {
                     self.status = if self.workbench.search().regex {
-                        "Regex query updated · replacement is literal"
+                        "Consulta regex actualizada · reemplazo literal"
                     } else {
-                        "Literal query updated · exact EOL"
+                        "Consulta literal actualizada · finales de línea exactos"
                     }
                     .into();
                 }
             }
-            Ok(None) => self.status = "Field ready · exact source text; no normalization".into(),
+            Ok(None) => self.status = "Campo listo · texto fuente exacto; sin normalización".into(),
             Err(error) => self.status = error.into(),
         }
     }
@@ -86,13 +86,13 @@ impl TuiApp {
                 self.status = if all {
                     self.workbench
                         .replace_all(replacement)
-                        .map(|n| format!("Replaced {n} matches"))
+                        .map(|n| format!("Se reemplazaron {n} coincidencias"))
                 } else {
                     self.workbench.replace_current(replacement).map(|yes| {
                         if yes {
-                            "Replaced current match".into()
+                            "Coincidencia actual reemplazada".into()
                         } else {
-                            "No match to replace".into()
+                            "No hay coincidencias para reemplazar".into()
                         }
                     })
                 }

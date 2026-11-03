@@ -134,6 +134,15 @@ pub enum GitOutputLimit {
     Blob,
     Stderr,
 }
+impl GitOutputLimit {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Metadata => "metadatos",
+            Self::Blob => "blob",
+            Self::Stderr => "salida de error",
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum GitReadError {
@@ -161,10 +170,30 @@ pub enum GitReadError {
 impl fmt::Display for GitReadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(error) => write!(f, "Git read I/O: {error}"),
-            Self::Containment(error) => write!(f, "Git process containment: {error}"),
-            Self::CommandFailed { code, .. } => write!(f, "Git read command failed ({code})"),
-            other => write!(f, "Git read: {other:?}"),
+            Self::Io(error) => write!(f, "Lectura Git, entrada/salida: {error}"),
+            Self::Containment(error) => write!(f, "Contención del proceso Git: {error}"),
+            Self::CommandFailed { code, .. } => {
+                write!(f, "Falló el comando de lectura Git ({code})")
+            }
+            Self::UnsupportedPlatform => f.write_str("Lectura Git: plataforma no admitida"),
+            Self::InvalidLimits => f.write_str("Lectura Git: límites inválidos"),
+            Self::InvalidPath => f.write_str("Lectura Git: ruta inválida"),
+            Self::UnsupportedPathEncoding => {
+                f.write_str("Lectura Git: codificación de ruta no admitida")
+            }
+            Self::NotRepositoryRoot => {
+                f.write_str("Lectura Git: el directorio no es la raíz del repositorio")
+            }
+            Self::Missing => f.write_str("Lectura Git: objeto o entrada no encontrado"),
+            Self::Unmerged => f.write_str("Lectura Git: entrada con conflicto sin resolver"),
+            Self::UnsupportedMode => f.write_str("Lectura Git: modo de archivo no admitido"),
+            Self::ConfiguredFilter => f.write_str("Lectura Git: filtro configurado no admitido"),
+            Self::Protocol => f.write_str("Lectura Git: protocolo inválido"),
+            Self::Cancelled => f.write_str("Lectura Git: cancelada"),
+            Self::TimedOut => f.write_str("Lectura Git: tiempo agotado"),
+            Self::OutputLimit(limit) => {
+                write!(f, "Lectura Git: cuota excedida ({})", limit.label())
+            }
         }
     }
 }
@@ -1641,7 +1670,7 @@ mod platform {
                 InitializeProcThreadAttributeList(ptr::null_mut(), 2, 0, &mut size);
             }
             if size == 0 || size > 64 * 1024 {
-                return Err(io::Error::other("Invalid process attribute size"));
+                return Err(io::Error::other("Tamaño de atributos del proceso inválido"));
             }
             let mut result = Self {
                 storage: vec![0; size.div_ceil(std::mem::size_of::<usize>())],
@@ -1907,7 +1936,7 @@ mod platform {
                     cancel = true;
                     issue.get_or_insert_with(|| {
                         GitReadError::Containment(io::Error::other(
-                            "Git output did not drain during cleanup",
+                            "La salida Git no se vació durante la limpieza",
                         ))
                     });
                 }
@@ -1940,7 +1969,7 @@ mod platform {
                 if let Some(reader) = reader.take() {
                     self.results[index] = Some(reader.join().unwrap_or_else(|_| {
                         Err(GitReadError::Io(io::Error::other(
-                            "Git output reader panicked",
+                            "Falló el lector de salida Git",
                         )))
                     }));
                 }
@@ -2003,7 +2032,11 @@ mod platform {
             match running.failed.load(Ordering::Acquire) {
                 1 => break Some(GitReadError::OutputLimit(stdout_limit)),
                 2 => break Some(GitReadError::OutputLimit(GitOutputLimit::Stderr)),
-                3 => break Some(GitReadError::Io(io::Error::other("Git output pipe failed"))),
+                3 => {
+                    break Some(GitReadError::Io(io::Error::other(
+                        "Falló la tubería de salida Git",
+                    )))
+                }
                 _ => {}
             }
             match unsafe { WaitForSingleObject(running.process.as_raw_handle(), 5) } {

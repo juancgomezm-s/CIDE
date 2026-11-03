@@ -197,6 +197,7 @@ def copy_member(archive: zipfile.ZipFile, source: Path, name: str, workspace: Pa
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("work/packages/CIDE-windows-dev.zip"))
+    parser.add_argument("--bin-dir", type=Path, default=Path("target/release"), help="built binaries inside this workspace")
     args = parser.parse_args()
     workspace = Path(__file__).resolve().parents[1]
     output = args.output if args.output.is_absolute() else workspace / args.output
@@ -210,7 +211,9 @@ def main() -> int:
             raise PackagingError("output must be a new workspace file")
         # Parent is checked before creation; exclusive open refuses existing
         # files, including dangling links. No directories are created here.
-        payload = [(checked(workspace / "target/release" / name, workspace), "bin/" + name) for name in BINARIES]
+        binary_directory = args.bin_dir if args.bin_dir.is_absolute() else workspace / args.bin_dir
+        checked(binary_directory, workspace, directory=True)
+        payload = [(checked(binary_directory / name, workspace), "bin/" + name) for name in BINARIES]
         payload += [(checked(workspace / relative, workspace), relative) for relative in FIXED]
         notices, missing = notice_sources(workspace)
         payload += notices

@@ -49,7 +49,7 @@ impl State {
     pub(super) fn open_project_search(&mut self, results: bool) {
         self.close_selector();
         if self.project_root.is_none() {
-            self.status = "Open a project folder first".into();
+            self.status = "Abre primero una carpeta de proyecto".into();
             return;
         }
         let panel = self.project_panel.get_or_insert_with(ProjectPanel::default);
@@ -75,12 +75,12 @@ impl State {
     }
     pub(super) fn start_project_search(&mut self, refresh: bool) {
         let Some(root) = self.project_root.as_ref() else {
-            self.error("Open a project folder first");
+            self.error("Abre primero una carpeta de proyecto");
             return;
         };
         let options = if refresh {
             let Some(options) = self.project_options.clone() else {
-                self.error("Run a project query before refresh");
+                self.error("Ejecuta una consulta del proyecto antes de actualizar");
                 return;
             };
             options
@@ -109,7 +109,7 @@ impl State {
                 panel.results = true;
                 panel.view.first();
                 self.status =
-                    "Search Plus running · Find regex option, case-sensitive, exact EOL".into();
+                    "Search Plus en curso · opción regex de Buscar, mayúsculas y EOL exacto".into();
             }
             Err(error) => self.error(error),
         }
@@ -129,7 +129,7 @@ impl State {
             edit,
             4096,
         ) {
-            Ok(_) => self.status = "Project draft ready · Enter starts a bounded scan".into(),
+            Ok(_) => self.status = "Borrador listo · Intro inicia una búsqueda acotada".into(),
             Err(error) => self.error(error),
         }
     }
@@ -139,7 +139,7 @@ impl State {
             if let Some(panel) = self.project_panel.as_mut() {
                 panel.visible = false;
             }
-            self.status = "Project search cancelled/hidden".into();
+            self.status = "Búsqueda del proyecto cancelada/oculta".into();
             return Action::None;
         }
         let results = self.project_panel.as_ref().is_some_and(|p| p.results);
@@ -150,8 +150,12 @@ impl State {
             let panel = self.project_panel.as_mut().unwrap();
             panel.generation = panel.generation.wrapping_add(1);
             self.status = format!(
-                "Project regex: {} · replacement is literal",
-                self.workbench.search().regex
+                "Regex de proyecto: {} · reemplazo literal",
+                if self.workbench.search().regex {
+                    "activada"
+                } else {
+                    "desactivada"
+                }
             );
             return Action::None;
         }
@@ -189,7 +193,7 @@ impl State {
                 }
                 0x0d => {
                     if self.project_search.is_stale() {
-                        self.error("Project results are stale; F5 refresh before opening");
+                        self.error("Resultados obsoletos; actualiza con F5 antes de abrir");
                         return Action::None;
                     }
                     let index = self.project_panel.as_ref().map_or(0, |p| p.view.selected());
@@ -200,7 +204,7 @@ impl State {
                                 panel.visible = false;
                             }
                             self.status =
-                                "Project result opened · source coordinates revalidated".into();
+                                "Resultado abierto · coordenadas del fuente revalidadas".into();
                         }
                         Err(error) => self.error(error),
                     }
@@ -274,12 +278,12 @@ impl State {
         );
         let labels = [
             if self.workbench.search().regex {
-                "Query REGEX (Alt+R; literal replacement)"
+                "Consulta REGEX (Alt+R; reemplazo literal)"
             } else {
-                "Query literal (Alt+R toggles regex)"
+                "Consulta literal (Alt+R alterna regex)"
             },
-            "Include globs (comma; empty=all)",
-            "Extra excludes (comma)",
+            "Incluir patrones (coma; vacío=todos)",
+            "Exclusiones adicionales (coma)",
         ];
         let fields = (0..count)
             .map(|i| {

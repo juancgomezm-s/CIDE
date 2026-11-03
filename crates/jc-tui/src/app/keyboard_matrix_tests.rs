@@ -114,7 +114,7 @@ fn disabled_database_command_has_no_effect_from_shortcut_palette_or_menu() {
         KeyCode::Char('p'),
         KeyModifiers::CONTROL | KeyModifiers::SHIFT,
     );
-    app.handle_event(Event::Paste("Database / Schema".into()));
+    app.handle_event(Event::Paste("Base de datos/esquema".into()));
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     assert!(matches!(app.overlay, UiOverlay::Palette { .. }));
     assert_eq!(app.panels.sidebar(), SidebarView::Explorer);
@@ -168,7 +168,7 @@ fn closing_a_shared_view_preserves_dirty_document_then_last_view_requires_a_choi
     assert_eq!(app.workbench.active_document().unwrap().id, id);
     assert_eq!(app.workbench.active_bytes().unwrap(), b"abc\r\n");
     key(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL);
-    key(&mut app, KeyCode::Char('d'), KeyModifiers::NONE);
+    key(&mut app, KeyCode::Char('n'), KeyModifiers::NONE);
     assert!(app.workbench.active_document().is_none());
     assert!(matches!(app.overlay, UiOverlay::None));
     assert!(!app.should_exit());

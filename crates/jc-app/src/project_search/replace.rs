@@ -54,13 +54,13 @@ impl ProjectSearch {
     ) -> Result<ProjectReplacePreview, String> {
         if !self.can_replace() {
             return Err(
-                "Run a complete search without notices or stale sources before replace".into(),
+                "Completa una búsqueda sin avisos ni fuentes obsoletos antes de reemplazar".into(),
             );
         }
         if replacement.len() > 4096 {
-            return Err("Replacement exceeds 4096 bytes".into());
+            return Err("El reemplazo excede4096 bytes".into());
         }
-        let root = self.root.clone().ok_or("Project changed")?;
+        let root = self.root.clone().ok_or("El proyecto cambió")?;
         let mut grouped: BTreeMap<PathBuf, Vec<&ProjectSearchMatch>> = BTreeMap::new();
         for row in &self.rows {
             if let ProjectSearchRow::Match(m) = row {
@@ -76,7 +76,7 @@ impl ProjectSearch {
             let first = matches[0];
             if let SearchOrigin::Open(stamp) = first.origin {
                 if !app.task_stamp_is_current(stamp) {
-                    return Err("Open document changed since search".into());
+                    return Err("El documento abierto cambió desde la búsqueda".into());
                 }
             }
             let encoded =
@@ -84,9 +84,9 @@ impl ProjectSearch {
             let payload = replacement
                 .len()
                 .checked_mul(matches.len())
-                .ok_or("Replacement budget overflow")?;
+                .ok_or("Desbordamiento de cuota del reemplazo")?;
             if payload > 2 * 1024 * 1024 {
-                return Err("Replacement proposals exceed 2 MiB per file".into());
+                return Err("Las propuestas de reemplazo exceden2MiB por archivo".into());
             }
             let removed: usize = matches.iter().map(|m| m.range.len()).sum();
             let new_len = first
@@ -98,14 +98,17 @@ impl ProjectSearch {
                         .checked_mul(matches.len())
                         .and_then(|add| n.checked_add(add))
                 })
-                .ok_or("Invalid replacement size")?;
+                .ok_or("Tamaño de reemplazo inválido")?;
             total += new_len;
             input += first.source_len;
             if new_len > 2 * 1024 * 1024 || total > 8 * 1024 * 1024 || input > 8 * 1024 * 1024 {
-                return Err("Replacement output budget exceeded (2 MiB/file, 8 MiB/query)".into());
+                return Err(
+                    "Se excedió la cuota de salida del reemplazo (2MiB/archivo,8MiB/consulta)"
+                        .into(),
+                );
             }
             lines.push(format!(
-                "{}  ({} matches)",
+                "{}  ({} coincidencias)",
                 path.strip_prefix(&root)
                     .unwrap_or(&path)
                     .as_os_str()
@@ -143,7 +146,7 @@ impl ProjectSearch {
                 .map(String::capacity)
                 .sum::<usize>();
             if charge > 2 * 1024 * 1024 {
-                return Err("Preview exceeds 2 MiB; narrow the search".into());
+                return Err("La vista previa excede2MiB; limita la búsqueda".into());
             }
             files.push_back(FilePlan {
                 path,
@@ -175,13 +178,13 @@ impl ProjectSearch {
                 || self.root.as_ref() != Some(&preview.root)
                 || self.state != ProjectSearchState::Complete
             {
-                return Err("Query/project changed since preview".into());
+                return Err("La consulta/proyecto cambió desde la vista previa".into());
             }
             // Revalidate every file at the actual acceptance/commit boundary.
             match plan.origin {
                 SearchOrigin::Open(stamp) => {
                     if !app.task_stamp_is_current(stamp) {
-                        return Err("Open document changed since preview".into());
+                        return Err("El documento abierto cambió desde la vista previa".into());
                     }
                     app.apply_text_edits(
                         stamp.document,
@@ -206,7 +209,7 @@ impl ProjectSearch {
                     // Opening a file after preview changes ownership; never save
                     // behind that open document, even if it currently looks clean.
                     if find_open(app, &plan.path)?.is_some() {
-                        return Err("File was opened since search; search again".into());
+                        return Err("Se abrió el archivo después de buscar; vuelve a buscar".into());
                     }
                     let mut session = FileSession::open_in_root_at_version(
                         &preview.root,

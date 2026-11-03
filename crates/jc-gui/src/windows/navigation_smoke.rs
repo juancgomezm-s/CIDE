@@ -27,7 +27,13 @@ unsafe fn dialog(hwnd: Hwnd, input: &str, entry: usize) -> Result<(), String> {
     match entry {
         0 => key(hwnd, 0x47, Modifiers::CTRL)?,
         1 => command(hwnd, CommandId::SearchGoToPosition)?,
-        _ => palette(hwnd, "Go to Line / Column")?,
+        _ => palette(
+            hwnd,
+            jc_app::default_registry()
+                .get(CommandId::SearchGoToPosition)
+                .unwrap()
+                .label,
+        )?,
     }
     {
         let s = owner(hwnd)
@@ -454,7 +460,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
     key(hwnd, 0x1b, Modifiers::NONE)?;
     history_panel(hwnd, b, false, false)?;
-    palette(hwnd, "Previous Search Query")?;
+    palette(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::SearchHistoryPrevious)
+            .unwrap()
+            .label,
+    )?;
     search_complete(hwnd)?;
     history_panel(hwnd, a, true, true)?;
     command(hwnd, CommandId::SearchHistoryNext)?;

@@ -36,7 +36,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     key(hwnd, 0x53, Modifiers::CTRL.union(Modifiers::ALT))?;
     {
         let state = owner(hwnd).unwrap().state.borrow();
-        if !state.status.contains("cancelled")
+        if !state.status.contains("cancelado")
             || !state.status.contains("1 saved; 1 pending")
             || !state.workbench.active_document().unwrap().session.is_new()
             || generated.exists()

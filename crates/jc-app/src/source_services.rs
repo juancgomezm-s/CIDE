@@ -17,6 +17,15 @@ pub enum SourceMode {
     References,
     Completion,
 }
+impl SourceMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Symbols => "Símbolos",
+            Self::References => "Referencias",
+            Self::Completion => "Completado",
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceAction {
     Navigate,
@@ -118,15 +127,15 @@ impl SourceRegistry {
                 .iter()
                 .any(|p| p.id == descriptor.id || p.language == descriptor.language)
         {
-            return Err("Duplicate/invalid source provider or registry budget");
+            return Err("Proveedor de fuente duplicado/inválido o cuota del registro");
         }
         if descriptor.snippets.len() > 16 {
-            return Err("Snippet catalog exceeds16 entries");
+            return Err("El catálogo de plantillas excede16 entradas");
         }
         for (index, template) in descriptor.snippets.iter().enumerate() {
             template
                 .validate(descriptor.id)
-                .map_err(|_| "Invalid snippet metadata")?;
+                .map_err(|_| "Metadatos de plantilla inválidos")?;
             if descriptor.snippets[..index]
                 .iter()
                 .any(|other| other.id == template.id)
@@ -136,7 +145,7 @@ impl SourceRegistry {
                     .flat_map(|p| p.snippets)
                     .any(|other| other.id == template.id)
             {
-                return Err("Duplicate snippet ID");
+                return Err("Identificador de plantilla duplicado");
             }
         }
         self.providers.push(descriptor);
@@ -177,6 +186,20 @@ pub enum SourceState {
     Limited,
     Failed,
 }
+impl SourceState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "Inactivo",
+            Self::Queued => "En cola",
+            Self::Running => "En curso",
+            Self::Ready => "Listo",
+            Self::Stale => "Obsoleto",
+            Self::Cancelled => "Cancelado",
+            Self::Limited => "Limitado",
+            Self::Failed => "Fallido",
+        }
+    }
+}
 #[derive(Clone)]
 struct Origin {
     stamp: TaskStamp,
@@ -189,25 +212,25 @@ struct Origin {
 }
 impl Origin {
     fn capture(app: &Workbench, root: Option<&Path>) -> Result<Self, String> {
-        let doc = app.active_document().ok_or("No source document")?;
+        let doc = app.active_document().ok_or("No hay documento fuente")?;
         let pane = app.panes().active();
-        let view = app.panes().view(pane).ok_or("No source view")?;
-        let editor = app.active_editor().ok_or("No source editor")?;
+        let view = app.panes().view(pane).ok_or("No hay vista de fuente")?;
+        let editor = app.active_editor().ok_or("No hay editor de fuente")?;
         let encoding = doc
             .session
             .encoding()
-            .ok_or("Choose source encoding first")?;
+            .ok_or("Elige primero la codificación del fuente")?;
         if doc.session.path().as_os_str().len() > 4096
             || root.is_some_and(|r| r.as_os_str().len() > 4096)
         {
-            return Err("Source metadata budget".into());
+            return Err("Cuota de metadatos de fuente".into());
         }
         Ok(Self {
             stamp: TaskStamp {
                 document: doc.id,
                 revision: doc.session.document().revision(),
                 encoding,
-                view: Some(view.view_id().ok_or("No source ViewId")?),
+                view: Some(view.view_id().ok_or("No hay ViewId de fuente")?),
             },
             path: doc.session.path().to_owned(),
             pane,
@@ -287,6 +310,42 @@ pub fn display_label(text: &str, columns: usize) -> String {
     }
     out
 }
+/// Locale-facing labels retain complete printable graphemes. Source/path
+/// diagnostics keep using `display_label` and their established ASCII notation.
+/// Control and bidi formatting cannot become terminal/native UI instructions.
+pub fn display_ui_label(text: &str, columns: usize) -> String {
+    use std::borrow::Cow;
+    let mut out = String::new();
+    let mut used = 0usize;
+    for cluster in jc_text::grapheme::graphemes(text) {
+        if cluster.len() > jc_text::grapheme::MAX_CLUSTER_BYTES {
+            break;
+        }
+        let width = jc_text::grapheme::width(cluster);
+        let unsafe_text = width == 0 || cluster.chars().any(|ch| {
+            ch.is_control() || matches!(ch, '\u{61c}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{206f}' | '\u{feff}')
+        });
+        let token = if unsafe_text {
+            Cow::Owned(
+                cluster
+                    .chars()
+                    .flat_map(char::escape_default)
+                    .collect::<String>(),
+            )
+        } else {
+            Cow::Borrowed(cluster)
+        };
+        let width = if unsafe_text { token.len() } else { width };
+        if used.saturating_add(width) > columns.min(256)
+            || out.len().saturating_add(token.len()) > 2048
+        {
+            break;
+        }
+        out.push_str(&token);
+        used += width;
+    }
+    out
+}
 impl SourceController {
     pub fn state(&self) -> SourceState {
         self.state
@@ -315,15 +374,15 @@ impl SourceController {
         let count = max_rows.min(64);
         let first = self.selected.saturating_sub(count.saturating_sub(1));
         SourcePresentation {
-            title: display_label(
+            title: display_ui_label(
                 match self.mode {
-                    Some(SourceMode::Symbols) => "Symbols (lexical)",
-                    Some(SourceMode::References) => "References (lexical)",
-                    _ => "Completion (local words)",
+                    Some(SourceMode::Symbols) => "Símbolos (léxicos)",
+                    Some(SourceMode::References) => "Referencias (léxicas)",
+                    _ => "Completado (palabras locales)",
                 },
                 columns,
             ),
-            message: display_label(&self.message, columns),
+            message: display_ui_label(&self.message, columns),
             rows: self
                 .items
                 .iter()
@@ -370,7 +429,7 @@ impl SourceController {
     }
     pub fn cancel(&mut self, jobs: &mut JobSystem) {
         self.invalidate(jobs);
-        self.status(SourceState::Cancelled, "Source service cancelled");
+        self.status(SourceState::Cancelled, "Servicio de código cancelado");
     }
     pub fn request(
         &mut self,
@@ -381,28 +440,28 @@ impl SourceController {
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
         if self.generation == u64::MAX {
-            return Err("Source generation exhausted".into());
+            return Err("Se agotó la generación de código".into());
         }
         self.invalidate(jobs);
         self.mode = Some(mode);
-        self.status(SourceState::Failed, "Source request unavailable");
+        self.status(SourceState::Failed, "Solicitud de código no disponible");
         if mode == SourceMode::Completion
             && (app.active_editor().is_some_and(|e| e.selection().is_some())
                 || app.rectangle_for_pane(app.panes().active()).is_some())
         {
-            return Err("Completion requires an unselected text caret".into());
+            return Err("El completado requiere cursor de texto sin selección".into());
         }
         let origin = Origin::capture(app, root)?;
         let provider = registry
             .resolve(&origin.language, mode)
-            .ok_or("No provider for this source capability")?;
+            .ok_or("No hay proveedor para esta capacidad de código")?;
         self.pending = Some(Request {
             generation: self.generation,
             origin,
             mode,
             provider,
         });
-        self.status(SourceState::Queued, "Source capability queued");
+        self.status(SourceState::Queued, "Capacidad de código en cola");
         self.tick(app, root, jobs);
         if matches!(self.state, SourceState::Limited | SourceState::Failed) {
             Err(self.message.clone())
@@ -431,7 +490,7 @@ impl SourceController {
             self.invalidate(jobs);
             return self.status(
                 SourceState::Stale,
-                "Source context changed; refresh explicitly",
+                "Cambió el contexto del código; actualiza explícitamente",
             );
         }
         false
@@ -452,7 +511,10 @@ impl SourceController {
         };
         if len > SNAPSHOT {
             self.pending = None;
-            return self.status(SourceState::Limited, "Source service snapshot exceeds2MiB");
+            return self.status(
+                SourceState::Limited,
+                "La captura del servicio de código excede2MiB",
+            );
         }
         match jobs.submit_source(
             app,
@@ -470,13 +532,13 @@ impl SourceController {
                 });
                 changed |= self.status(
                     SourceState::Running,
-                    "Reading bounded source snapshot; lexical evidence only",
+                    "Leyendo captura acotada del fuente; solo evidencia léxica",
                 );
             }
             Err(SubmitError::Busy) => {
                 changed |= self.status(
                     SourceState::Queued,
-                    "Waiting for shared background capacity",
+                    "Esperando capacidad de fondo compartida",
                 )
             }
             Err(e) => {
@@ -487,7 +549,7 @@ impl SourceController {
                     } else {
                         SourceState::Failed
                     },
-                    format!("Source admission: {e:?}"),
+                    format!("Admisión de código: {e}"),
                 );
             }
         }
@@ -514,7 +576,10 @@ impl SourceController {
             || !task.current
             || task.path != request.origin.path
         {
-            self.status(SourceState::Stale, "Source result no longer current");
+            self.status(
+                SourceState::Stale,
+                "El resultado del código ya no está vigente",
+            );
             return true;
         }
         if task.status != TaskStatus::Completed {
@@ -524,12 +589,12 @@ impl SourceController {
                 } else {
                     SourceState::Failed
                 },
-                format!("Source task: {:?}", task.status),
+                format!("Tarea de código: {}", task.status),
             );
             return true;
         }
         if !task.applicable {
-            self.status(SourceState::Stale, "Source delivery not applicable");
+            self.status(SourceState::Stale, "La entrega del código no es aplicable");
             return true;
         }
         let tab = app
@@ -541,7 +606,7 @@ impl SourceController {
             let TaskItem::Source(item) = item else {
                 self.status(
                     SourceState::Failed,
-                    "Provider returned a foreign result kind",
+                    "El proveedor devolvió un tipo de resultado ajeno",
                 );
                 return true;
             };
@@ -553,7 +618,7 @@ impl SourceController {
             {
                 self.status(
                     SourceState::Failed,
-                    "Provider returned invalid source boundaries/action",
+                    "El proveedor devolvió fronteras/acción inválidas",
                 );
                 return true;
             }
@@ -566,7 +631,7 @@ impl SourceController {
         self.status(
             SourceState::Ready,
             format!(
-                "{provider}: {} lexical results (not compiler verified)",
+                "{provider}: {} resultados léxicos (sin verificación del compilador)",
                 self.items.len()
             ),
         );
@@ -578,17 +643,20 @@ impl SourceController {
         root: Option<&Path>,
         to_side: bool,
     ) -> Result<Option<Vec<PathBuf>>, String> {
-        let request = self.accepted.as_ref().ok_or("No current source result")?;
+        let request = self
+            .accepted
+            .as_ref()
+            .ok_or("No hay resultado de código vigente")?;
         if !request.origin.current(app, root, request.mode) {
-            return Err("Source result changed; refresh".into());
+            return Err("Cambió el resultado del código; actualiza".into());
         }
         let item = self
             .items
             .get(self.selected)
-            .ok_or("No source item selected")?;
+            .ok_or("No hay elemento de código seleccionado")?;
         match &item.action {
             SourceAction::Unresolved(reason) => {
-                Err(format!("Unresolved lexical reference: {reason}"))
+                Err(format!("Referencia léxica sin resolver: {reason}"))
             }
             SourceAction::Navigate => {
                 let tab = app
@@ -596,7 +664,7 @@ impl SourceController {
                     .unwrap()
                     .tab_id;
                 if !app.jump_to_pane_location(request.origin.pane, tab, item.range.start) {
-                    return Err("Invalid source destination".into());
+                    return Err("Destino de código inválido".into());
                 }
                 Ok(None)
             }
@@ -613,10 +681,10 @@ impl SourceController {
                 Ok(None)
             }
             SourceAction::RelativeFile(relative) => {
-                let root = root.ok_or("Open a project folder to resolve references")?;
+                let root = root.ok_or("Abre una carpeta de proyecto para resolver referencias")?;
                 let paths = reference_candidates(root, &request.origin.path, relative)?;
                 if paths.is_empty() {
-                    return Err("No existing candidate inside the project root".into());
+                    return Err("No hay candidato existente dentro de la raíz del proyecto".into());
                 }
                 if paths.len() > 1 {
                     return Ok(Some(paths));
@@ -634,23 +702,26 @@ impl SourceController {
         candidate: &Path,
         to_side: bool,
     ) -> Result<(), String> {
-        let request = self.accepted.as_ref().ok_or("No current source result")?;
+        let request = self
+            .accepted
+            .as_ref()
+            .ok_or("No hay resultado de código vigente")?;
         if !request.origin.current(app, root, request.mode) {
-            return Err("Source result changed; refresh".into());
+            return Err("Cambió el resultado del código; actualiza".into());
         }
         let item = self
             .items
             .get(self.selected)
-            .ok_or("No source item selected")?;
+            .ok_or("No hay elemento de código seleccionado")?;
         let SourceAction::RelativeFile(relative) = &item.action else {
-            return Err("Not a file reference".into());
+            return Err("No es una referencia de archivo".into());
         };
-        let root = root.ok_or("Open a project folder to resolve references")?;
+        let root = root.ok_or("Abre una carpeta de proyecto para resolver referencias")?;
         if !reference_candidates(root, &request.origin.path, relative)?
             .iter()
             .any(|path| path == candidate)
         {
-            return Err("Reference candidate changed".into());
+            return Err("Cambió el candidato de referencia".into());
         }
         app.open_project_file(root, candidate.to_owned(), None, to_side, SNAPSHOT)
             .map_err(|e| e.to_string())?;
@@ -667,7 +738,7 @@ pub fn reference_candidates(
     let canonical_parent = source.parent().and_then(|p| p.canonicalize().ok());
     let path = Path::new(relative);
     if path.is_absolute() || relative.contains(':') || relative.contains('\0') {
-        return Err("Reference must be relative to the project".into());
+        return Err("La referencia debe ser relativa al proyecto".into());
     }
     let mut candidates = Vec::new();
     for parent in [canonical_parent.as_deref().unwrap_or(root), root] {
@@ -741,7 +812,7 @@ fn local_words(
         if word.starts_with(&prefix) && *word != prefix && seen.insert(word.clone()) {
             out.push(TaskItem::Source(SourceItem {
                 range: range.clone(),
-                label: format!("{} (local word)", word),
+                label: format!("{} (palabra local)", word),
                 action: SourceAction::Replace(word.clone()),
             }))?;
         }

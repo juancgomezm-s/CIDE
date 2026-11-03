@@ -28,16 +28,20 @@ fn read_retry(file: &mut File, buffer: &mut [u8]) -> io::Result<usize> {
 pub fn read_in_root(root: &Path, path: &Path, limit: usize) -> io::Result<(PathBuf, Vec<u8>)> {
     if !root.is_absolute() {
         return Err(io::Error::other(
-            "Project root must be canonical and absolute",
+            "La raíz del proyecto debe ser canónica y absoluta",
         ));
     }
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_file() || reparse(&metadata) {
-        return Err(io::Error::other("Links/reparse points are excluded"));
+        return Err(io::Error::other(
+            "Se excluyen enlaces y puntos de reanálisis",
+        ));
     }
     let resolved = path.canonicalize()?;
     if !resolved.starts_with(root) {
-        return Err(io::Error::other("File is outside the search root"));
+        return Err(io::Error::other(
+            "El archivo está fuera de la raíz de búsqueda",
+        ));
     }
     let mut options = fs::OpenOptions::new();
     options.read(true);
@@ -48,11 +52,15 @@ pub fn read_in_root(root: &Path, path: &Path, limit: usize) -> io::Result<(PathB
     }
     let file = options.open(&resolved)?;
     if reparse(&file.metadata()?) {
-        return Err(io::Error::other("File became a reparse point"));
+        return Err(io::Error::other(
+            "El archivo se convirtió en un punto de reanálisis",
+        ));
     }
     verify_file_in_root(root, &file)?;
     if file.metadata()?.len() > limit as u64 {
-        return Err(io::Error::other("File exceeds the search byte budget"));
+        return Err(io::Error::other(
+            "El archivo supera el límite de bytes de búsqueda",
+        ));
     }
     let initial = usize::try_from(file.metadata()?.len())
         .unwrap_or(limit)
@@ -76,14 +84,16 @@ pub fn read_in_root(root: &Path, path: &Path, limit: usize) -> io::Result<(PathB
             return Ok((resolved, bytes));
         }
         if filled == limit {
-            return Err(io::Error::other("File grew beyond the search byte budget"));
+            return Err(io::Error::other(
+                "El archivo creció más allá del límite de bytes de búsqueda",
+            ));
         }
         let target = bytes.len().saturating_mul(2).max(filled + 1).min(limit);
         bytes.reserve_exact(target - bytes.len());
         bytes.resize(target, 0);
         if bytes.capacity() > limit {
             return Err(io::Error::other(
-                "File buffer exceeds the search byte budget",
+                "El búfer de archivo supera el límite de bytes de búsqueda",
             ));
         }
         bytes[filled] = guard[0];
@@ -115,11 +125,13 @@ pub fn verify_file_in_root(root: &Path, file: &File) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     if len >= buffer.len() as u32 {
-        return Err(io::Error::other("Resolved path too long"));
+        return Err(io::Error::other("La ruta resuelta es demasiado larga"));
     }
     let path = PathBuf::from(std::ffi::OsString::from_wide(&buffer[..len as usize]));
     if !path.starts_with(root) {
-        return Err(io::Error::other("Opened handle escaped the search root"));
+        return Err(io::Error::other(
+            "El archivo abierto quedó fuera de la raíz de búsqueda",
+        ));
     }
     Ok(())
 }
@@ -127,13 +139,15 @@ pub fn verify_file_in_root(root: &Path, file: &File) -> io::Result<()> {
 pub fn verify_file_in_root(root: &Path, file: &File) -> io::Result<()> {
     use std::os::fd::AsRawFd;
     if !fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?.starts_with(root) {
-        return Err(io::Error::other("Opened handle escaped the search root"));
+        return Err(io::Error::other(
+            "El archivo abierto quedó fuera de la raíz de búsqueda",
+        ));
     }
     Ok(())
 }
 #[cfg(not(any(windows, target_os = "linux")))]
 pub fn verify_file_in_root(_: &Path, _: &File) -> io::Result<()> {
     Err(io::Error::other(
-        "Secure project file traversal not supported on this platform yet",
+        "Esta plataforma aún no admite apertura segura de archivos del proyecto",
     ))
 }

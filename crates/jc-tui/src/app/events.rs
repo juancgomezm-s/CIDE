@@ -27,6 +27,35 @@ impl TuiApp {
             self.handle_overlay_key(key);
             return;
         }
+        if self.showing_markdown() {
+            if let Some(stroke) = to_stroke(key) {
+                let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
+                if let Resolution::Enabled(command) =
+                    self.keymap
+                        .resolve(scope, stroke, &self.registry, &self.command_context())
+                {
+                    if matches!(
+                        command,
+                        jc_app::CommandId::MenuFile
+                            | jc_app::CommandId::MenuEdit
+                            | jc_app::CommandId::MenuSearch
+                            | jc_app::CommandId::MenuProject
+                            | jc_app::CommandId::MenuBuild
+                            | jc_app::CommandId::MenuTools
+                            | jc_app::CommandId::MenuView
+                            | jc_app::CommandId::MenuHelp
+                            | jc_app::CommandId::PaletteOpen
+                            | jc_app::CommandId::ViewMarkdownPreview
+                            | jc_app::CommandId::FileExit
+                    ) {
+                        self.dispatch(command);
+                        return;
+                    }
+                }
+            }
+            self.markdown_key(key);
+            return;
+        }
         if self.showing_snippet() {
             if let Some(stroke) = to_stroke(key) {
                 let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
@@ -106,8 +135,8 @@ impl TuiApp {
                     self.status = self
                         .registry
                         .get(command)
-                        .map(|spec| format!("{} is unavailable in this context", spec.label))
-                        .unwrap_or_else(|| "Command unavailable".to_owned());
+                        .map(|spec| format!("{} no está disponible en este contexto", spec.label))
+                        .unwrap_or_else(|| "Comando no disponible".to_owned());
                     return;
                 }
                 Resolution::None => {}
@@ -201,9 +230,11 @@ impl TuiApp {
                 match self.workbench.select_search_match(self.bottom_selected) {
                     Ok(true) => {
                         let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-                        self.status = format!("Search result {}", self.bottom_selected + 1);
+                        self.status = format!("Resultado de búsqueda {}", self.bottom_selected + 1);
                     }
-                    Ok(false) => self.status = "No search result selected".to_owned(),
+                    Ok(false) => {
+                        self.status = "No hay un resultado de búsqueda seleccionado".to_owned()
+                    }
                     Err(error) => self.status = error.to_string(),
                 }
             }
@@ -236,6 +267,9 @@ impl TuiApp {
             self.append_overlay_text(text);
             return;
         }
+        if self.showing_markdown() {
+            return;
+        }
         if self.showing_snippet() {
             self.edit_snippet(jc_app::FieldEdit::Insert(text));
             return;
@@ -253,7 +287,7 @@ impl TuiApp {
 
     pub(crate) fn apply_result(&mut self, result: Result<(), jc_app::WorkbenchError>) {
         match result {
-            Ok(()) => self.status = "Ready".to_owned(),
+            Ok(()) => self.status = "Listo".to_owned(),
             Err(error) => self.status = error.to_string(),
         }
     }

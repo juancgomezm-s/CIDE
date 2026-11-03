@@ -200,7 +200,9 @@ fn keyboard_palette_and_file_menu_open_without_document_and_wakeup_owns_delivery
         KeyCode::Char('p'),
         KeyModifiers::CONTROL | KeyModifiers::SHIFT,
     );
-    app.handle_event(Event::Paste("Quick Open Project File".into()));
+    app.handle_event(Event::Paste(
+        "Abrir archivo del proyecto rápidamente".into(),
+    ));
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     assert!(matches!(app.overlay, UiOverlay::QuickOpen { .. }));
     key(&mut app, KeyCode::Esc, KeyModifiers::NONE);

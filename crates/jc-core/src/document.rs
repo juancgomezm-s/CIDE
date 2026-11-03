@@ -23,14 +23,16 @@ impl fmt::Display for EditError {
             Self::InvalidRange { start, end, len } => {
                 write!(
                     f,
-                    "invalid byte range {start}..{end} for document length {len}"
+                    "rango de bytes {start}..{end} inválido para un documento de longitud {len}"
                 )
             }
             Self::StaleRevision { expected, actual } => {
-                write!(f, "expected revision {expected}, found {actual}")
+                write!(f, "se esperaba revisión {expected}; se encontró {actual}")
             }
-            Self::OverlappingEdits => write!(f, "overlapping or ambiguous edits"),
-            Self::CapacityOverflow => write!(f, "document capacity or revision overflow"),
+            Self::OverlappingEdits => write!(f, "ediciones solapadas o ambiguas"),
+            Self::CapacityOverflow => {
+                write!(f, "desbordamiento de capacidad o revisión del documento")
+            }
         }
     }
 }

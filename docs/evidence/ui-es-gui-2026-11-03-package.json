@@ -1,0 +1,17 @@
+{
+  "path": "work/packages/CIDE-windows-dev-es-gui-2026-11-03.zip",
+  "bytes": 5986619,
+  "sha256": "f9b87d9f5f0d88764f7d52a27a5a84cd4253b6893ebb0c2dedaf40c0bbcf88fa",
+  "members": 82,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ],
+  "crc_and_manifest_hashes_verified": true
+}

@@ -27,22 +27,22 @@ pub fn draw(app: &TuiApp, screen: &mut Screen) {
 
 fn draw_prompt(app: &TuiApp, screen: &mut Screen, kind: PromptKind, input: &str) {
     let title = match kind {
-        PromptKind::Open => "Open file",
-        PromptKind::New => "New file path",
-        PromptKind::SaveAs => "Save As",
-        PromptKind::OpenFolder => "Open folder",
+        PromptKind::Open => "Abrir archivo",
+        PromptKind::New => "Ruta del archivo nuevo",
+        PromptKind::SaveAs => "Guardar como",
+        PromptKind::OpenFolder => "Abrir carpeta",
         PromptKind::ProjectQuery => {
             if app.workbench.search().regex {
-                "Find in Project: REGEX, case sensitive"
+                "Buscar en proyecto: regex, distingue mayúsculas"
             } else {
-                "Find in Project: literal, case sensitive"
+                "Buscar en proyecto: literal, distingue mayúsculas"
             }
         }
-        PromptKind::ProjectInclude => "Include globs, comma separated (empty = **)",
-        PromptKind::ProjectExclude => "Extra exclude globs (.git/target/work always excluded)",
-        PromptKind::ProjectReplacement => "Replacement text (empty deletes matches)",
-        PromptKind::GoToPosition => "Go to line[:column] (one-based scalars)",
-        PromptKind::GitExecutable => "Absolute path to Git executable (this session)",
+        PromptKind::ProjectInclude => "Incluir patrones, separados por comas (vacío = **)",
+        PromptKind::ProjectExclude => "Excluir patrones (.git/target/work siempre excluidos)",
+        PromptKind::ProjectReplacement => "Texto de reemplazo (vacío elimina coincidencias)",
+        PromptKind::GoToPosition => "Ir a línea[:columna] (escalares desde uno)",
+        PromptKind::GitExecutable => "Ruta absoluta al ejecutable Git (esta sesión)",
     };
     let (x, y, width, height) = centered(screen, 64, 5);
     panel(screen, x, y, width, height, title);
@@ -63,7 +63,14 @@ fn draw_quick_open(app: &TuiApp, screen: &mut Screen, input: &str, selected: usi
     }
     let x = (screen.width() - width) / 2;
     let y = (screen.height() - height) / 2;
-    panel(screen, x, y, width, height, "Quick Open — project paths");
+    panel(
+        screen,
+        x,
+        y,
+        width,
+        height,
+        "Apertura rápida — archivos del proyecto",
+    );
     screen.text(x + 2, y + 1, &clip(&format!("> {input}"), width - 4));
     let rows = app.quick_open.results();
     screen.text_styled(
@@ -71,7 +78,7 @@ fn draw_quick_open(app: &TuiApp, screen: &mut Screen, input: &str, selected: usi
         y + 2,
         &clip(
             &format!(
-                "{} / {} paths; literal substring",
+                "{} / {} rutas; fragmento literal",
                 app.quick_open.message(),
                 rows.len()
             ),
@@ -97,7 +104,7 @@ fn draw_quick_open(app: &TuiApp, screen: &mut Screen, input: &str, selected: usi
         x + 2,
         y + height - 2,
         &clip(
-            "Enter open | Ctrl+Enter side | F5 refresh | Esc cancel",
+            "Intro abrir | Ctrl+Intro al lado | F5 actualizar | Esc cancelar",
             width - 4,
         ),
         CellStyle::Dim,
@@ -114,13 +121,20 @@ fn draw_project_preview(app: &TuiApp, screen: &mut Screen, selected: usize) {
         return;
     };
     let (x, y, width, height) = centered(screen, 92, 22);
-    panel(screen, x, y, width, height, "Replace in Project — Preview");
+    panel(
+        screen,
+        x,
+        y,
+        width,
+        height,
+        "Reemplazar en proyecto — vista previa",
+    );
     screen.text(
         x + 2,
         y + 1,
         &clip(
             &format!(
-                "{} files / {} matches; search snapshot",
+                "{} archivos / {} coincidencias; copia de búsqueda",
                 preview.files_remaining(),
                 preview.matches()
             ),
@@ -151,14 +165,17 @@ fn draw_project_preview(app: &TuiApp, screen: &mut Screen, selected: usize) {
         x + 2,
         y + height.saturating_sub(3),
         &clip(
-            "Closed files are saved; open buffers stay unsaved.",
+            "Se guardan los archivos cerrados; los abiertos quedan sin guardar.",
             width.saturating_sub(4),
         ),
     );
     screen.text(
         x + 2,
         y + height.saturating_sub(2),
-        &clip("F9 / Ctrl+Enter apply; Esc cancel", width.saturating_sub(4)),
+        &clip(
+            "F9 / Ctrl+Intro aplicar; Esc cancelar",
+            width.saturating_sub(4),
+        ),
     );
 }
 
@@ -187,7 +204,7 @@ fn draw_search_fields(
         y,
         width,
         height,
-        "Document literal blocks — exact EOL",
+        "Buscar/reemplazar — finales de línea exactos",
     );
     let columns = usize::from(width.saturating_sub(4)).max(1);
     let count = if replacement.is_some() { 2 } else { 1 };
@@ -202,13 +219,13 @@ fn draw_search_fields(
         y + 1,
         &clip(
             &format!(
-                "Find R:{} C:{} W:{} {}/{} {:?}, {} hits",
+                "Buscar R:{} M:{} P:{} {}/{} {}, {} coincidencias",
                 u8::from(app.workbench.search().regex),
                 u8::from(app.workbench.search().case_sensitive),
                 u8::from(app.workbench.search().whole_word),
                 field.first_row + 1,
                 field.total_rows,
-                app.workbench.search().status,
+                app.workbench.search().status.label(),
                 app.workbench.search().matches.len()
             ),
             width.saturating_sub(4),
@@ -233,7 +250,7 @@ fn draw_search_fields(
             x + 2,
             top,
             &clip(
-                &format!("Replace {}/{}", field.first_row + 1, field.total_rows),
+                &format!("Reemplazar {}/{}", field.first_row + 1, field.total_rows),
                 width.saturating_sub(4),
             ),
             if replacement_active {
@@ -253,9 +270,9 @@ fn draw_search_fields(
         }
     }
     for (row, text) in [
-        "F2 LF | F4 CRLF | F8 CR | F7 TAB | arrows edit",
-        "Enter/F6 one | Ctrl+Enter/F9 all | F3/Shift+F3 next/prev",
-        "Tab field | Shift/Alt+Enter LF | Esc | 4096 bytes/field",
+        "F2 LF | F4 CRLF | F8 CR | F7 TAB | Flechas editar",
+        "Intro/F6 uno | Ctrl+Intro/F9 todos | F3/Mayús+F3 sig./ant.",
+        "Tab campo | Mayús/Alt+Intro LF | Esc | 4096 bytes/campo",
     ]
     .iter()
     .enumerate()
@@ -276,7 +293,7 @@ fn draw_search_fields(
 
 fn draw_palette(app: &TuiApp, screen: &mut Screen, input: &str, selected: usize) {
     let (x, y, width, height) = centered(screen, 78, 16);
-    panel(screen, x, y, width, height, "Command Palette");
+    panel(screen, x, y, width, height, "Paleta de comandos");
     screen.text(x + 2, y + 1, "> ");
     screen.text(x + 4, y + 1, &clip(input, width.saturating_sub(6)));
     let commands = app.palette_commands(input);
@@ -323,7 +340,7 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         .iter()
         .flatten()
         .map(|entry| {
-            entry.label.len()
+            jc_text::grapheme::width(entry.label)
                 + usize::from(entry.command == jc_app::CommandId::ViewToggleInvisibles) * 4
                 + entry.shortcut.map_or(0, |s| s.to_string().len())
                 + 5
@@ -344,7 +361,7 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         .menus()
         .iter()
         .take(menu_index)
-        .map(|m| m.title.len() as u16 + 2)
+        .map(|m| jc_text::grapheme::width(m.title) as u16 + 2)
         .sum::<u16>()
         .min(screen.width().saturating_sub(width));
     let y = 1;
@@ -374,8 +391,10 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
                 let text = if shortcut.is_empty() {
                     checked_label
                 } else {
-                    let gap = usize::from(width.saturating_sub(4))
-                        .saturating_sub(checked_label.len() + shortcut.len());
+                    let gap = usize::from(width.saturating_sub(4)).saturating_sub(
+                        jc_text::grapheme::width(&checked_label)
+                            + jc_text::grapheme::width(&shortcut),
+                    );
                     format!("{}{}{}", checked_label, " ".repeat(gap), shortcut)
                 };
                 let style = if index == selected {
@@ -395,12 +414,16 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
 
 fn draw_close(screen: &mut Screen) {
     let (x, y, width, height) = centered(screen, 58, 7);
-    panel(screen, x, y, width, height, "Unsaved changes");
-    screen.text(x + 2, y + 2, "The active document has unsaved changes.");
+    panel(screen, x, y, width, height, "Cambios sin guardar");
+    screen.text(
+        x + 2,
+        y + 2,
+        "El documento activo tiene cambios sin guardar.",
+    );
     screen.text_styled(
         x + 2,
         y + 4,
-        "S Save    D Don't Save    Esc Cancel",
+        "G Guardar    N No guardar    Esc Cancelar",
         CellStyle::Dim,
     );
     screen.hide_cursor();
@@ -408,8 +431,15 @@ fn draw_close(screen: &mut Screen) {
 
 fn draw_encoding(screen: &mut Screen) {
     let (x, y, width, height) = centered(screen, 62, 9);
-    panel(screen, x, y, width, height, "Select source encoding");
-    screen.text(x + 2, y + 2, "CIDE will not guess this legacy source.");
+    panel(
+        screen,
+        x,
+        y,
+        width,
+        height,
+        "Elegir codificación del documento",
+    );
+    screen.text(x + 2, y + 2, "CIDE no adivina la codificación heredada.");
     screen.text(x + 2, y + 4, "1  Windows-1252");
     screen.text(x + 2, y + 5, "2  ISO-8859-1");
     screen.text(x + 30, y + 4, "3  IBM850");
@@ -417,7 +447,7 @@ fn draw_encoding(screen: &mut Screen) {
     screen.text_styled(
         x + 2,
         y + 7,
-        "Esc leaves the file byte-preserved but not text-editable.",
+        "Esc conserva los bytes y deja sin habilitar la edición de texto.",
         CellStyle::Dim,
     );
     screen.hide_cursor();
@@ -426,12 +456,12 @@ fn draw_encoding(screen: &mut Screen) {
 fn panel(screen: &mut Screen, x: u16, y: u16, width: u16, height: u16, title: &str) {
     clear_area(screen, x, y, width, height);
     screen.box_outline(x, y, width, height);
-    screen.text_styled(x + 2, y, &format!(" {title} "), CellStyle::Reverse);
+    screen.text_styled(x + 2, y, &format!(" {title} "), CellStyle::PanelTitle);
 }
 
 fn clear_area(screen: &mut Screen, x: u16, y: u16, width: u16, height: u16) {
     for row in y..y.saturating_add(height) {
-        screen.hline(x, row, width, ' ');
+        screen.hline_styled(x, row, width, ' ', CellStyle::Panel);
     }
 }
 

@@ -79,7 +79,7 @@ impl State {
         self.explorer_focused = region(self).is_some();
         self.explorer_hits = None;
         if self.project_root.is_none() {
-            self.status = "Open a project folder to browse".into();
+            self.status = "Abre una carpeta de proyecto para explorar".into();
         }
     }
     pub(super) fn poll_explorer(&mut self) -> bool {
@@ -88,7 +88,7 @@ impl State {
             changed |= self.explorer.poll(root, 2);
         }
         if self.explorer.take_recovery() {
-            self.status = "Explorer worker recovered from failure; refresh directory".into();
+            self.status = "El explorador se recuperó de un fallo; actualiza el directorio".into();
             changed = true;
         }
         if self.explorer.ready() {
@@ -186,7 +186,8 @@ impl State {
         ) {
             Ok(_) => {
                 self.explorer_focused = false;
-                self.status = "Explorer file opened; shared document retained".into();
+                self.status =
+                    "Archivo abierto desde el explorador; documento compartido conservado".into();
                 self.ensure_encoding_selector();
             }
             Err(error) => self.error(error),

@@ -1,4 +1,11 @@
 <!-- Generated from reviewed source by work/build_gui_inventory.py; each CommandId appears once. -->
+
+> Actualización 2026-11-03: [GUI/TUI en español](M2B_GUI_WORKFLOWS_ES.md)
+> incorpora comparación, fuente opcional y plantillas en GUI; color/menús Alt,
+> ayuda lateral y Markdown en TUI, Markdown también en GUI. F10 abre menús,
+> F6 cambia panel y Ctrl+Alt+M alterna Markdown. Las matrices, cifras o pendientes
+> anteriores de este documento se conservan como evidencia histórica.
+
 | CommandId | Tecla compartida (scope:stroke) | Menú GUI / paleta | Predicado central | Estado, ruta / evidencia |
 |---|---|---|---|---|
 | `FileNew` | Global:ctrl('n') | File / habilitable | `always` | Conectado: State.new_document → Workbench.new_file. **NATIVE** |

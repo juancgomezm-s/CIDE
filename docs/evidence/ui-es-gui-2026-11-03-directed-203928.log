@@ -1,0 +1,13 @@
+
+running 5 tests
+test markdown_preview::tests::markdown_preview_formats_and_wraps_without_executing_links_or_mutating_bytes ... ok
+test markdown_preview::tests::markdown_indented_fenced_code_keeps_markup_literal_and_source_bytes_exact ... ok
+test markdown_preview::tests::markdown_tables_keep_unicode_cells_visible_and_mark_clipping_without_source_edits ... ok
+test markdown_preview::tests::markdown_preview_scroll_keeps_wrapped_clusters_and_returns_to_previous_page ... ok
+test markdown_preview::tests::markdown_end_and_up_reach_last_wrapped_rows_without_prior_history ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 105 filtered out; finished in 0.00s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.63s
+     Running unittests src\lib.rs (target\ui-es\debug\deps\jc_app-7715ebcb52ea1d10.exe)

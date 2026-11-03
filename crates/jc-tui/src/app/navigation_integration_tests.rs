@@ -101,7 +101,7 @@ fn goto_entrypoints_use_source_scalars_with_bom_crlf_and_invisible_display() {
         match entry {
             0 => key(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL),
             1 => menu_goto(&mut app),
-            _ => palette(&mut app, "Go to Line / Column"),
+            _ => palette(&mut app, "Ir a línea/columna"),
         }
         assert!(matches!(
             app.overlay,

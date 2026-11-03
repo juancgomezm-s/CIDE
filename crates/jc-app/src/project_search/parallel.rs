@@ -375,7 +375,7 @@ impl Executor {
                             }
                             collector.row(scan::issue(
                                 &path,
-                                "File exceeds the search byte budget".into(),
+                                "El archivo excede la cuota de bytes de búsqueda".into(),
                             ));
                             continue;
                         }
@@ -386,7 +386,7 @@ impl Executor {
                             }
                             collector.row(scan::issue(
                                 &path,
-                                "File exceeds the search byte budget".into(),
+                                "El archivo excede la cuota de bytes de búsqueda".into(),
                             ));
                             continue;
                         }
@@ -437,12 +437,12 @@ impl Executor {
                 collector.stopped = true;
             }
             if wave.stop.panicked.load(Ordering::Acquire) {
-                panic!("project file helper panicked");
+                panic!("Falló la tarea auxiliar del archivo");
             }
             for receiver in &wave.receivers {
                 while !collector.done() {
                     if wave.stop.panicked.load(Ordering::Acquire) {
-                        panic!("project file helper panicked");
+                        panic!("Falló la tarea auxiliar del archivo");
                     }
                     match receiver.recv_timeout(Duration::from_millis(10)) {
                         Ok(FileEvent::Rows(rows)) => {
@@ -460,10 +460,10 @@ impl Executor {
                             }
                             break;
                         }
-                        Ok(FileEvent::Panicked) => panic!("project file helper panicked"),
+                        Ok(FileEvent::Panicked) => panic!("Falló la tarea auxiliar del archivo"),
                         Err(RecvTimeoutError::Timeout) => {}
                         Err(RecvTimeoutError::Disconnected) => {
-                            panic!("project file helper lost completion")
+                            panic!("La tarea auxiliar del archivo no entregó resultado")
                         }
                     }
                 }
@@ -471,7 +471,7 @@ impl Executor {
             let panic_signal = wave.stop.clone();
             drop(wave);
             if panic_signal.panicked.load(Ordering::Acquire) {
-                panic!("project file helper panicked");
+                panic!("Falló la tarea auxiliar del archivo");
             }
             // Match the prior first-batch behavior: flush at each file/wave end.
             if !collector.batch.flush(&mut collector.publish) {

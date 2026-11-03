@@ -110,10 +110,10 @@ impl ReplaceView {
             })
             .collect();
         ReplacePresentation {
-            title: escaped("Project Replace Preview", max_cols),
+            title: escaped("Vista previa del reemplazo de proyecto", max_cols),
             message: escaped(
                 &format!(
-                    "{matches} matches | {files} files pending | explicit confirmation required"
+                    "{matches} coincidencias | {files} archivos pendientes | requiere confirmación explícita"
                 ),
                 max_cols,
             ),
@@ -191,17 +191,19 @@ mod tests {
         let empty = view.prepare_lines(&[], 0, 0, 32, 140);
         assert!(empty.rows.is_empty());
         assert_eq!((empty.selected, empty.total), (0, 0));
-        assert!(empty.message.contains("0 files pending"));
+        assert!(empty.message.contains("0 archivos pendientes"));
         let lines = vec![
-            "file.txt (1 matches)".into(),
+            "file.txt (1 coincidencias)".into(),
             "- old\r\nline".into(),
             "+ niño".into(),
         ];
         let original = lines.clone();
         let first = view.prepare_lines(&lines, 1, 1, 32, 140);
         let second = view.prepare_lines(&lines, 1, 1, 32, 140);
-        assert_eq!(first.title, "Project Replace Preview");
-        assert!(first.message.contains("1 matches | 1 files pending"));
+        assert_eq!(first.title, "Vista previa del reemplazo de proyecto");
+        assert!(first
+            .message
+            .contains("1 coincidencias | 1 archivos pendientes"));
         assert_eq!(first.message, second.message);
         assert_eq!(
             first.rows.iter().map(|row| &row.label).collect::<Vec<_>>(),

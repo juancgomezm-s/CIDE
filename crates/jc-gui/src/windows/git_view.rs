@@ -124,9 +124,7 @@ impl Label {
     }
 }
 fn bounded(text: &str, cols: usize) -> String {
-    let mut l = Label::new(cols);
-    l.plain(text);
-    l.text
+    jc_app::source_services::display_ui_label(text, cols.min(COLS))
 }
 fn shift(current: usize, delta: isize, max: usize) -> usize {
     if delta < 0 {
@@ -198,7 +196,7 @@ fn source_row(
         (DiffSide::Right, line)
     });
     let Some(range) = model.line_byte_range(side, DiffLine(line)) else {
-        return bounded("Source row unavailable", cols);
+        return bounded("Fila de fuente no disponible", cols);
     };
     let (content, eol) = ending(&model.source_bytes(side)[range.clone()]);
     let columns = cols.min(COLS);
@@ -263,8 +261,8 @@ impl GitView {
         let mut p = self.status_rows(entries, max_rows, max_cols);
         p.message = bounded(
             &format!(
-                "{:?}: {} | read-only; no renames/submodules",
-                controller.state(),
+                "{}: {} | solo lectura; sin renombrados/submódulos",
+                controller.state().label(),
                 controller.message()
             ),
             max_cols,
@@ -310,7 +308,7 @@ impl GitView {
             })
             .collect();
         GitPresentation {
-            title: bounded("Git repository status (read-only)", max_cols),
+            title: bounded("Estado del repositorio Git (solo lectura)", max_cols),
             message: String::new(),
             rows,
             selected: self.status_selected,
@@ -329,9 +327,9 @@ impl GitView {
             self.diff_total = 0;
             self.diff_page = 0;
             return GitPresentation {
-                title: bounded("Git diff (read-only)", max_cols),
+                title: bounded("Diferencias Git (solo lectura)", max_cols),
                 message: bounded(
-                    &format!("{:?}: {}", controller.state(), controller.message()),
+                    &format!("{}: {}", controller.state().label(), controller.message()),
                     max_cols,
                 ),
                 rows: Vec::new(),
@@ -342,7 +340,7 @@ impl GitView {
         let identity = &result.identity;
         let source = match identity.source {
             GitBlobSource::Head => "HEAD",
-            GitBlobSource::Index => "index",
+            GitBlobSource::Index => "índice",
         };
         let total = result.model.hunks().count();
         let selected = controller.selected().min(total.saturating_sub(1));
@@ -353,8 +351,8 @@ impl GitView {
             message.plain(" | ");
         }
         message.plain(&format!(
-            "{:?} | hunk {}/{} | ",
-            controller.state(),
+            "{} | bloque {}/{} | ",
+            controller.state().label(),
             if total == 0 { 0 } else { selected + 1 },
             total
         ));
@@ -371,7 +369,7 @@ impl GitView {
                 vec![GitRow {
                     index: selected,
                     label: bounded(
-                        "Choose explicit encoding to display source prefixes",
+                        "Elige codificación explícita para mostrar prefijos de fuente",
                         max_cols,
                     ),
                     selected: false,
@@ -380,7 +378,7 @@ impl GitView {
         };
         GitPresentation {
             title: bounded(
-                &format!("Git {source} blob {}", identity.blob.as_str()),
+                &format!("Blob Git {source} {}", identity.blob.as_str()),
                 max_cols,
             ),
             message: message.text,
@@ -407,7 +405,10 @@ impl GitView {
             } else {
                 vec![GitRow {
                     index: 0,
-                    label: bounded("No byte differences in accepted snapshots", max_cols),
+                    label: bounded(
+                        "No hay diferencias de bytes en las capturas aceptadas",
+                        max_cols,
+                    ),
                     selected: false,
                 }]
             };

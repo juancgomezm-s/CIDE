@@ -20,13 +20,13 @@ impl TuiApp {
     pub(crate) fn request_git_repository_status(&mut self) {
         let Some(root) = self.project_root.as_deref() else {
             self.git_status.clear();
-            self.status = "Open the repository root folder first".into();
+            self.status = "Abre primero la carpeta raíz del repositorio".into();
             return;
         };
         let Some(executable) = self.git_executable.as_deref() else {
             self.git_status.clear();
             self.git_configuration_target = Some(GitConfigurationTarget::Status);
-            self.status = "Choose an absolute Git executable path".into();
+            self.status = "Elige una ruta absoluta al ejecutable Git".into();
             self.open_prompt(PromptKind::GitExecutable);
             return;
         };

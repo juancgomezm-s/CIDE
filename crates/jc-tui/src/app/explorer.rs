@@ -10,7 +10,7 @@ impl TuiApp {
     pub(crate) fn set_explorer_root(&mut self, path: PathBuf) -> Result<(), String> {
         let root = path.canonicalize().map_err(|e| e.to_string())?;
         if !root.is_dir() {
-            return Err("Project root must be a directory".into());
+            return Err("La raíz del proyecto debe ser un directorio".into());
         }
         self.explorer.set_root(root.clone())?;
         self.tasks.cancel_all();
@@ -77,7 +77,8 @@ impl TuiApp {
                 if matches!(self.overlay, crate::state::UiOverlay::None) {
                     let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
                 }
-                self.status = "Explorer file opened; shared document retained".into();
+                self.status =
+                    "Archivo abierto desde el explorador; documento compartido conservado".into();
             }
             Err(error) => self.status = error,
         }
@@ -100,7 +101,7 @@ impl TuiApp {
         }
     }
     pub(crate) fn refresh_explorer(&mut self) {
-        self.status = "Explorer refresh requested".into();
+        self.status = "Actualización del explorador solicitada".into();
         self.explorer_view.prepare(&self.explorer, 0, 0);
         if let Some(id) = self.explorer_directory().or(self.explorer.root_id()) {
             if let Err(error) = self.explorer.refresh(id) {
@@ -109,7 +110,7 @@ impl TuiApp {
         }
     }
     pub(crate) fn cancel_explorer(&mut self) {
-        self.status = "Explorer: editor focus".into();
+        self.status = "Explorador: foco en el editor".into();
         self.explorer_view.prepare(&self.explorer, 0, 0);
         if let Some(id) = self.explorer_directory().or(self.explorer.root_id()) {
             if self.explorer.node(id).is_some_and(|n| {

@@ -1,5 +1,12 @@
 # Capacidades locales de fuente — TUI implementada, 2026-11-03
 
+> Actualización 2026-11-03: [GUI/TUI en español](M2B_GUI_WORKFLOWS_ES.md)
+> incorpora comparación, fuente opcional y plantillas en GUI; color/menús Alt,
+> ayuda lateral y Markdown en TUI, Markdown también en GUI. F10 abre menús,
+> F6 cambia panel y Ctrl+Alt+M alterna Markdown. Las matrices, cifras o pendientes
+> anteriores de este documento se conservan como evidencia histórica.
+
+
 Construido sobre bd83fa0, conservando resaltado, regex, comparación dual y F1/F2/F3.
 El contrato se escribió antes de implementar; la evidencia de cierre se registra
 abajo. Es un módulo interno opcional operativo de fuente, no loader externo.

@@ -49,7 +49,7 @@ fn failed_git_task_is_delivered_without_input_and_frame_composition_preserves_do
         std::thread::yield_now();
     }
     assert_eq!(app.git_diff.state(), GitDiffState::Failed);
-    assert!(app.status.contains("Git executable"));
+    assert!(app.status.contains("Lectura Git"));
     let revision = app
         .workbench
         .active_document()

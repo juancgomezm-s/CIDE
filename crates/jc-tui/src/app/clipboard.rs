@@ -64,8 +64,10 @@ impl TuiApp {
                         // Same precedence and atomic field quotas as Event::Paste.
                         self.handle_event(crossterm::event::Event::Paste(text));
                     }
-                    Ok(Some(_)) => self.status = "Clipboard exceeds the field byte budget".into(),
-                    Ok(None) => self.status = "Clipboard has no Unicode text".into(),
+                    Ok(Some(_)) => {
+                        self.status = "El portapapeles supera el límite de bytes del campo".into()
+                    }
+                    Ok(None) => self.status = "El portapapeles no contiene texto Unicode".into(),
                     Err(error) => self.status = error,
                 }
                 return true;
@@ -118,7 +120,9 @@ impl TuiApp {
             Ok::<_, String>(())
         })();
         self.status = result
-            .map(|()| "Windows Unicode clipboard · rectangle clipboard internal".into())
+            .map(|()| {
+                "Portapapeles Unicode de Windows · rectángulos en portapapeles interno".into()
+            })
             .unwrap_or_else(|e| e);
         true
     }

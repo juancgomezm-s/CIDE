@@ -1,0 +1,21 @@
+
+running 1 test
+test render::git_diff::tests::unified_signs_line_numbers_and_eol_remain_visible_at_45_and_140_columns ... FAILED
+
+failures:
+
+---- render::git_diff::tests::unified_signs_line_numbers_and_eol_remain_visible_at_45_and_140_columns stdout ----
+
+thread 'render::git_diff::tests::unified_signs_line_numbers_and_eol_remain_visible_at_45_and_140_columns' panicked at crates\jc-tui\src\render\git_diff.rs:316:13:
+assertion failed: screen.row_text(1).contains("Listo")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    render::git_diff::tests::unified_signs_line_numbers_and_eol_remain_visible_at_45_and_140_columns
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 134 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running unittests src\lib.rs (target\ui-es\debug\deps\jc_tui-c24792ef3ef15fde.exe)
+error: test failed, to rerun pass `-p jc-tui --lib`

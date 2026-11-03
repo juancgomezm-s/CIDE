@@ -233,7 +233,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         cycle(hwnd, &indented, &original, rev)?;
         key(hwnd, 0x41, Modifiers::CTRL)?;
         let rev = revision(hwnd);
-        palette(hwnd, "Outdent")?;
+        palette(
+            hwnd,
+            jc_app::default_registry()
+                .get(CommandId::EditOutdent)
+                .unwrap()
+                .label,
+        )?;
         cycle(hwnd, &indented, &original, rev)?;
         key(hwnd, 0x5a, Modifiers::CTRL)?;
         expected(hwnd, &original)?;
@@ -256,7 +262,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     if snapshot(hwnd)? != before || owner(hwnd).unwrap().state.borrow().search_panel.is_none() {
         return Err("Parity menu edited or closed a non-editor field".into());
     }
-    palette_open(hwnd, "Indent")?;
+    palette_open(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditIndent)
+            .unwrap()
+            .label,
+    )?;
     key(hwnd, 0x0d, Modifiers::NONE)?;
     if snapshot(hwnd)? != before || owner(hwnd).unwrap().state.borrow().selector.is_none() {
         return Err("Palette from Replace edited hidden source".into());
@@ -273,7 +285,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     }
     command(hwnd, CommandId::ViewExplorer)?;
     position(hwnd, 0, 0)?;
-    palette_open(hwnd, "Indent")?;
+    palette_open(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditIndent)
+            .unwrap()
+            .label,
+    )?;
     position(hwnd, 0, 1)?;
     let before = snapshot(hwnd)?;
     key(hwnd, 0x0d, Modifiers::NONE)?;
@@ -327,7 +345,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     cycle(hwnd, b"one\r\n two\nlast", b"one\r\n\r\n two\nlast", rev)?;
     position(hwnd, 0, 3)?;
     let rev = revision(hwnd);
-    palette(hwnd, "Split Line")?;
+    palette(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditSplitLine)
+            .unwrap()
+            .label,
+    )?;
     cycle(hwnd, b"one\r\n two\nlast", b"one\r\n\r\n two\nlast", rev)?;
     discard(hwnd)?;
     checks.push("parity_join_split_focus_and_rectangle");
@@ -359,7 +383,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     if unlinked.0 <= first.0 || unlinked.1 != first.1 {
         return Err("Unlinked viewport still moved the inactive group".into());
     }
-    palette(hwnd, "Link / Unlink Scroll")?;
+    palette(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditorToggleScrollLink)
+            .unwrap()
+            .label,
+    )?;
     if !linked(hwnd) {
         return Err("Palette did not restore shared scroll linkage".into());
     }

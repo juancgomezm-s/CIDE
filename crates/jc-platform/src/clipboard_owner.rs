@@ -93,7 +93,7 @@ impl Window {
         };
         if handle.is_null() {
             return Err(format!(
-                "Clipboard owner creation: {}",
+                "Creación del propietario del portapapeles: {}",
                 std::io::Error::last_os_error()
             ));
         }
@@ -183,10 +183,10 @@ impl Worker {
                 // A failed message loop must drop a pending reply sender too, so a
                 // requester cannot remain blocked on an exited owner's mailbox.
             })
-            .map_err(|e| format!("Clipboard thread creation: {e}"))?;
+            .map_err(|e| format!("Creación del hilo del portapapeles: {e}"))?;
         let initialized = initialized
             .recv()
-            .map_err(|_| "Clipboard owner initialization failed".to_owned())
+            .map_err(|_| "No se pudo iniciar el propietario del portapapeles".to_owned())
             .and_then(|r| r);
         match initialized {
             Ok((thread, window)) => {
@@ -208,15 +208,15 @@ impl Worker {
     }
     fn submit(&mut self, request: Request) -> Result<(), String> {
         if self.handle.as_ref().is_none_or(|h| h.is_finished()) {
-            return Err("Clipboard owner stopped".into());
+            return Err("El propietario del portapapeles se detuvo".into());
         }
         {
             let mut slot = self.inbox.lock().unwrap_or_else(|p| p.into_inner());
             if slot.closed {
-                return Err("Clipboard owner stopped".into());
+                return Err("El propietario del portapapeles se detuvo".into());
             }
             if slot.request.is_some() {
-                return Err("Clipboard request already in flight".into());
+                return Err("Ya hay una solicitud de portapapeles en curso".into());
             }
             slot.request = Some(request);
         }
@@ -227,7 +227,7 @@ impl Worker {
                 .request
                 .take();
             return Err(format!(
-                "Clipboard request delivery: {}",
+                "Entrega de la solicitud del portapapeles: {}",
                 std::io::Error::last_os_error()
             ));
         }
@@ -272,19 +272,19 @@ impl WindowsClipboard {
     fn transfer(&mut self, make: impl FnOnce(Reply) -> Request) -> Result<Option<String>, String> {
         let (reply, result) = mpsc::sync_channel(1);
         self.worker()?.submit(make(reply))?;
-        result
-            .recv()
-            .map_err(|_| "Clipboard owner closed during transfer".to_owned())?
+        result.recv().map_err(|_| {
+            "El propietario del portapapeles se cerró durante la transferencia".to_owned()
+        })?
     }
     pub fn read(&mut self, limit: usize) -> Result<Option<String>, String> {
         if limit == 0 || limit > LIMIT {
-            return Err("Invalid clipboard destination budget".into());
+            return Err("El límite de bytes del destino del portapapeles no es válido".into());
         }
         self.transfer(|reply| Request::Read { limit, reply })
     }
     pub fn write(&mut self, text: &str) -> Result<(), String> {
         if text.len() > LIMIT || text.as_bytes().contains(&0) {
-            return Err("Clipboard text exceeds 2 MiB or contains NUL".into());
+            return Err("El texto del portapapeles supera 2 MiB o contiene NUL".into());
         }
         self.transfer(|reply| Request::Write {
             text: text.to_owned(),

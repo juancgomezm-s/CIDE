@@ -123,7 +123,7 @@ pub(super) fn run(shared: Arc<Shared>) {
                 if listing_charge(&listing) > budget
                     || listing.entries.len() > request.limits.max_directory_entries
                 {
-                    Err("Directory completion exceeded metadata budget")
+                    Err("La entrega del directorio excedió la cuota de metadatos")
                 } else {
                     listing.entries.sort_unstable_by(|a, b| {
                         b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name))
@@ -132,18 +132,18 @@ pub(super) fn run(shared: Arc<Shared>) {
                 }
             }
             Ok(_) => Err(if cancelled {
-                "Directory load cancelled or timed out"
+                "Carga del directorio cancelada o sin tiempo"
             } else {
-                "Directory enumeration failed"
+                "Falló la enumeración del directorio"
             }),
             Err(_) => {
                 shared.recovery.store(true, Ordering::Release);
-                Err("Directory worker recovered from a panic")
+                Err("La tarea del directorio se recuperó de un fallo")
             }
         };
         let cancelled = request.cancel.is_cancelled();
         if cancelled {
-            result = Err("Directory load cancelled or timed out");
+            result = Err("Carga del directorio cancelada o sin tiempo");
         }
         let completion = Completion {
             generation: request.generation,

@@ -1,5 +1,6 @@
 mod git_diff;
 mod git_status;
+mod markdown;
 mod open_diff;
 mod overlays;
 mod snippets;
@@ -22,7 +23,7 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
     let height = frame.layout.height;
     let mut screen = Screen::new(width, height);
     if width < 40 || height < 10 {
-        screen.text(0, 0, "CIDE: terminal too small (minimum 40x10)");
+        screen.text(0, 0, "CIDE: terminal pequeño (mínimo 40x10)");
         return screen;
     }
 
@@ -93,12 +94,13 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
     draw_status(frame, &mut screen, status_y);
     source_services::popup(frame, &mut screen);
     snippets::draw(frame, &mut screen);
+    markdown::draw(frame, &mut screen);
     overlays::draw(app, &mut screen);
     screen
 }
 
 fn draw_menu_bar(app: &TuiApp, screen: &mut Screen) {
-    screen.fill_row_styled(0, ' ', CellStyle::Dim);
+    screen.fill_row_styled(0, ' ', CellStyle::Menu);
     let active_menu = match app.overlay {
         UiOverlay::Menu { menu, .. } => Some(menu),
         _ => None,
@@ -106,18 +108,35 @@ fn draw_menu_bar(app: &TuiApp, screen: &mut Screen) {
     let mut x = 1u16;
     for menu in app.menus.menus() {
         let label = format!(" {} ", menu.title);
-        let style = if active_menu == Some(menu.id) {
-            CellStyle::Reverse
+        let selected = active_menu == Some(menu.id);
+        let style = if selected {
+            CellStyle::MenuActive
         } else {
-            CellStyle::Dim
+            CellStyle::Menu
         };
         screen.text_styled(x, 0, &label, style);
+        if let Some((column, ch)) = label
+            .chars()
+            .enumerate()
+            .find(|(_, ch)| ch.eq_ignore_ascii_case(&menu.mnemonic))
+        {
+            screen.put_styled(
+                x.saturating_add(column as u16),
+                0,
+                ch,
+                if selected {
+                    CellStyle::MenuMnemonicActive
+                } else {
+                    CellStyle::MenuMnemonic
+                },
+            );
+        }
         x = x.saturating_add(label.chars().count() as u16);
     }
 }
 
 fn draw_tabs(app: &TuiApp, screen: &mut Screen) {
-    screen.fill_row(1, ' ');
+    screen.fill_row_styled(1, ' ', CellStyle::Menu);
     let active = app.workbench.tabs().active_id();
     let mut x = 0u16;
     for (index, tab) in app.workbench.tabs().tabs().iter().enumerate() {
@@ -144,6 +163,9 @@ fn draw_sidebar(
     width: u16,
     height: u16,
 ) {
+    for row in y..y.saturating_add(height) {
+        screen.hline_styled(x, row, width, ' ', CellStyle::Panel);
+    }
     let app = frame.app;
     if app.panels.sidebar() == SidebarView::Symbols {
         source_services::sidebar(frame, screen, x, y, width, height);
@@ -167,22 +189,13 @@ fn draw_sidebar(
     }
     let focused = app.focus.primary() == PrimaryFocus::Sidebar;
     let title = match app.panels.sidebar() {
-        SidebarView::Explorer => " Explorer ",
-        SidebarView::Database => " Database ",
+        SidebarView::Explorer => " Explorador ",
+        SidebarView::Database => " Base de datos ",
         SidebarView::Git => " Git ",
-        SidebarView::GitStatus => " Git Status ",
-        SidebarView::Symbols => " Symbols ",
+        SidebarView::GitStatus => " Estado Git ",
+        SidebarView::Symbols => " Símbolos ",
     };
-    screen.text_styled(
-        x,
-        y,
-        title,
-        if focused {
-            CellStyle::Reverse
-        } else {
-            CellStyle::Dim
-        },
-    );
+    screen.text_styled(x, y, title, CellStyle::PanelTitle);
     if height <= 1 {
         return;
     }
@@ -191,20 +204,20 @@ fn draw_sidebar(
             screen.text_styled(
                 x + 1,
                 y + 1,
-                &clip(&frame.explorer.message, width.saturating_sub(2)),
+                &clip("F6: cambiar panel", width.saturating_sub(2)),
                 CellStyle::Dim,
             );
             for (offset, entry) in frame
                 .explorer
                 .rows
                 .iter()
-                .take(usize::from(height.saturating_sub(2)))
+                .take(usize::from(height.saturating_sub(4)))
                 .enumerate()
             {
                 let style = if focused && entry.selected {
                     CellStyle::Reverse
                 } else {
-                    CellStyle::Normal
+                    CellStyle::Panel
                 };
                 screen.text_styled(
                     x + 1,
@@ -213,17 +226,31 @@ fn draw_sidebar(
                     style,
                 );
             }
+            if height >= 5 {
+                screen.text_styled(
+                    x + 1,
+                    y + height - 2,
+                    &clip("↑↓ mover  → desplegar", width.saturating_sub(2)),
+                    CellStyle::Accent,
+                );
+                screen.text_styled(
+                    x + 1,
+                    y + height - 1,
+                    &clip("Intro abrir · Esc editor", width.saturating_sub(2)),
+                    CellStyle::Accent,
+                );
+            }
         }
         SidebarView::Database => {
-            screen.text(x + 1, y + 1, "Schema provider");
-            screen.text_styled(x + 1, y + 2, "available in M3/M4", CellStyle::Dim);
+            screen.text(x + 1, y + 1, "Proveedor de esquema");
+            screen.text_styled(x + 1, y + 2, "disponible en M3/M4", CellStyle::Dim);
         }
         SidebarView::Git | SidebarView::GitStatus => {
             unreachable!("Git presentation is rendered above");
         }
         SidebarView::Symbols => {
-            screen.text(x + 1, y + 1, "Symbols follow language");
-            screen.text_styled(x + 1, y + 2, "providers", CellStyle::Dim);
+            screen.text(x + 1, y + 1, "Símbolos del proveedor");
+            screen.text_styled(x + 1, y + 2, "del lenguaje", CellStyle::Dim);
         }
     }
 }
@@ -248,15 +275,15 @@ fn draw_editor(
         .and_then(|location| app.workbench.document_by_tab(location.tab));
     let title = document
         .and_then(|doc| doc.session.path().file_name())
-        .map_or("Empty", |name| name.to_str().unwrap_or("<file>"));
+        .map_or("Vacío", |name| name.to_str().unwrap_or("<archivo>"));
     let header = format!(
-        "{} Group {}: {}{}{}",
+        "{} Grupo {}: {}{}{}",
         if active { ">" } else { " " },
         if pane == PaneId::Primary { 1 } else { 2 },
         title,
-        if view.is_pinned() { " [PIN]" } else { "" },
+        if view.is_pinned() { " [FIJO]" } else { "" },
         if app.workbench.panes().scroll_linked() {
-            " [LINK]"
+            " [ENLACE]"
         } else {
             ""
         }
@@ -266,9 +293,9 @@ fn draw_editor(
         y,
         &clip(&header, width),
         if active {
-            CellStyle::Reverse
+            CellStyle::PanelTitle
         } else {
-            CellStyle::Dim
+            CellStyle::Menu
         },
     );
     let y = y + 1;
@@ -279,7 +306,7 @@ fn draw_editor(
             x + 2,
             y + 4,
             &clip(
-                "Ctrl+O Open   Ctrl+N New   Ctrl+Shift+P Commands",
+                "Ctrl+O abrir · Ctrl+N nuevo · Ctrl+Shift+P comandos",
                 width.saturating_sub(2),
             ),
             CellStyle::Dim,
@@ -291,7 +318,7 @@ fn draw_editor(
             x + 2,
             y + 2,
             &clip(
-                "Select source encoding via command dialog",
+                "Elige la codificación del documento",
                 width.saturating_sub(2),
             ),
         );
@@ -445,25 +472,14 @@ fn draw_bottom(
     }
     let focused = app.focus.primary() == PrimaryFocus::BottomPanel;
     let title = match app.panels.bottom() {
-        BottomPanel::Problems => " Problems ",
-        BottomPanel::Output => " Output ",
-        BottomPanel::SearchResults if app.project_results => {
-            " Project Search: literal / case sensitive "
-        }
-        BottomPanel::SearchResults => " Search Results ",
+        BottomPanel::Problems => " Problemas ",
+        BottomPanel::Output => " Salida ",
+        BottomPanel::SearchResults if app.project_results => " Búsqueda de proyecto ",
+        BottomPanel::SearchResults => " Resultados de búsqueda ",
         BottomPanel::Terminal => " Terminal ",
         BottomPanel::Diff => unreachable!(),
     };
-    screen.text_styled(
-        x,
-        y,
-        title,
-        if focused {
-            CellStyle::Reverse
-        } else {
-            CellStyle::Dim
-        },
-    );
+    screen.text_styled(x, y, title, CellStyle::PanelTitle);
     let count = match app.panels.bottom() {
         BottomPanel::Problems => app.workbench.problems().len(),
         BottomPanel::Output => app.workbench.output().len(),
@@ -555,7 +571,7 @@ fn draw_bottom(
             .collect(),
         BottomPanel::Terminal => {
             if available > 0 && start == 0 {
-                vec!["Embedded shell is not active in this milestone.".to_owned()]
+                vec!["La consola integrada no está activa en este hito.".to_owned()]
             } else {
                 Vec::new()
             }
@@ -580,18 +596,18 @@ fn draw_bottom(
 
 fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
     let app = frame.app;
-    screen.fill_row_styled(y, ' ', CellStyle::Reverse);
+    screen.fill_row_styled(y, ' ', CellStyle::Status);
     let left = if let Some(path) = app.workbench.active_path() {
         let language = detect(&path.to_string_lossy()).id;
         let encoding = app
             .workbench
             .active_encoding()
-            .map_or("encoding?", |e| e.name());
+            .map_or("¿codificación?", |e| e.name());
         let position = frame
             .status_position
             .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
         format!(
-            " {} | {} | {} | Ln {} Col {} ",
+            " {} | {} | {} | Lín {} Col {} ",
             path.display(),
             language,
             encoding,
@@ -601,11 +617,11 @@ fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
     } else {
         " CIDE ".to_owned()
     };
-    screen.text_styled(0, y, &clip(&left, screen.width()), CellStyle::Reverse);
+    screen.text_styled(0, y, &clip(&left, screen.width()), CellStyle::Status);
     let status = if app.syntax_pending {
-        format!("Syntax preparing | {}", app.status)
+        format!("Preparando resaltado | {}", app.status)
     } else if frame.primary.syntax.limited || frame.secondary.syntax.limited {
-        format!("Syntax plain: budget | {}", app.status)
+        format!("Texto sin resaltado: límite | {}", app.status)
     } else if frame.editor(app.workbench.panes().active()).syntax.profile
         == jc_app::SyntaxProfile::Plain
         && frame
@@ -614,7 +630,7 @@ fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
             .encoding
             .is_some()
     {
-        format!("Syntax: plain | {}", app.status)
+        format!("Resaltado: texto plano | {}", app.status)
     } else {
         app.status.clone()
     };
@@ -624,7 +640,7 @@ fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
             screen.width() - status_width,
             y,
             &format!(" {} ", status),
-            CellStyle::Reverse,
+            CellStyle::Status,
         );
     }
 }

@@ -464,7 +464,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     memory(hwnd, options)?;
     for mutation in 0..9 {
         open(hwnd, SelectorKind::Palette)?;
-        let query = if mutation == 8 { "Tab" } else { "seed" };
+        let query = if mutation == 8 { "Pestaña" } else { "seed" };
         paste(hwnd, query)?;
         key(hwnd, 0x41, Modifiers::CTRL)?;
         let target = owner(hwnd)
@@ -581,7 +581,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     key(hwnd, 0x09, Modifiers::NONE)?;
     paste(hwnd, "replacement")?;
     open(hwnd, SelectorKind::Palette)?;
-    paste(hwnd, "Duplicate Selection/Line")?;
+    paste(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditDuplicate)
+            .unwrap()
+            .label,
+    )?;
     let before = snapshot(hwnd)?;
     key(hwnd, 0x0d, Modifiers::NONE)?;
     if snapshot(hwnd)? != before || owner(hwnd).unwrap().state.borrow().selector.is_none() {
@@ -607,7 +613,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     ] {
         open(hwnd, kind)?;
         if kind == SelectorKind::Palette {
-            paste(hwnd, "Indent")?;
+            paste(
+                hwnd,
+                jc_app::default_registry()
+                    .get(CommandId::EditIndent)
+                    .unwrap()
+                    .label,
+            )?;
             key(hwnd, 0x0d, Modifiers::NONE)?;
             expected(hwnd, b"abc")?;
         }
@@ -619,7 +631,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     command(hwnd, CommandId::ViewExplorer)?;
     command(hwnd, CommandId::ViewOutput)?;
     open(hwnd, SelectorKind::Palette)?;
-    paste(hwnd, "Indent")?;
+    paste(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditIndent)
+            .unwrap()
+            .label,
+    )?;
     let before = snapshot(hwnd)?;
     key(hwnd, 0x0d, Modifiers::NONE)?;
     if snapshot(hwnd)? != before || owner(hwnd).unwrap().state.borrow().selector.is_none() {

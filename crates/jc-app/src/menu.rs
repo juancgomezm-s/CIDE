@@ -148,8 +148,8 @@ pub fn default_menu_model() -> MenuModel {
     MenuModel::new(vec![
         menu(
             File,
-            "File",
-            'f',
+            "Archivo",
+            'a',
             &[
                 command(FileNew),
                 command(FileOpen),
@@ -169,7 +169,7 @@ pub fn default_menu_model() -> MenuModel {
         ),
         menu(
             Edit,
-            "Edit",
+            "Editar",
             'e',
             &[
                 command(EditUndo),
@@ -205,8 +205,8 @@ pub fn default_menu_model() -> MenuModel {
         ),
         menu(
             Search,
-            "Search",
-            's',
+            "Buscar",
+            'b',
             &[
                 command(SearchFind),
                 command(SearchReplace),
@@ -227,7 +227,7 @@ pub fn default_menu_model() -> MenuModel {
         ),
         menu(
             Project,
-            "Project",
+            "Proyecto",
             'p',
             &[
                 command(ViewExplorer),
@@ -244,8 +244,8 @@ pub fn default_menu_model() -> MenuModel {
         ),
         menu(
             Build,
-            "Build",
-            'b',
+            "Compilar",
+            'c',
             &[
                 command(ProgressCheck),
                 command(ProgressCompile),
@@ -257,16 +257,17 @@ pub fn default_menu_model() -> MenuModel {
         ),
         menu(
             Tools,
-            "Tools",
-            't',
+            "Herramientas",
+            'h',
             &[command(PaletteOpen), command(ViewTerminal)],
         ),
         menu(
             View,
-            "View",
+            "Ver",
             'v',
             &[
                 command(ViewToggleInvisibles),
+                command(ViewMarkdownPreview),
                 command(ViewExplorer),
                 command(ViewDatabase),
                 command(ViewGit),
@@ -308,6 +309,6 @@ pub fn default_menu_model() -> MenuModel {
                 command(DiffOpenNavigateRight),
             ],
         ),
-        menu(Help, "Help", 'h', &[]),
+        menu(Help, "Ayuda", 'y', &[]),
     ])
 }

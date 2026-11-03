@@ -46,7 +46,8 @@ impl TuiApp {
                         self.open_diff_visible = false;
                         self.close_overlay();
                         let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-                        self.status = "Comparison hunk selected; source unchanged".into();
+                        self.status =
+                            "Bloque de diferencias seleccionado; fuente sin cambios".into();
                     }
                     Err(e) => self.status = e,
                 }

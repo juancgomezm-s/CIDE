@@ -342,7 +342,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     command(hwnd, CommandId::ViewExplorer)?;
     position(hwnd, 0, 1)?;
     command(hwnd, CommandId::EditRectangleStart)?;
-    palette_open(hwnd, "Rectangle: Extend Right")?;
+    palette_open(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditRectangleRight)
+            .unwrap()
+            .label,
+    )?;
     let old_cursor = owner(hwnd)
         .unwrap()
         .state

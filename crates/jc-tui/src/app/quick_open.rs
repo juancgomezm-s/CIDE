@@ -15,7 +15,7 @@ fn valid_query(text: &str) -> bool {
 impl TuiApp {
     pub(crate) fn open_quick_open(&mut self) {
         let Some(root) = self.project_root.clone() else {
-            self.status = "Open a project folder before Quick Open".into();
+            self.status = "Abre una carpeta de proyecto antes de la apertura rápida".into();
             return;
         };
         self.open_focus_overlay(Overlay::CommandPalette);
@@ -25,7 +25,9 @@ impl TuiApp {
             selected: 0,
         };
         self.status = match self.quick_open.request(root, String::new()) {
-            Ok(()) => "Quick Open: scanning project paths; no file contents read".into(),
+            Ok(()) => {
+                "Apertura rápida: examinando rutas; no se lee el contenido de los archivos".into()
+            }
             Err(error) => error.to_string(),
         };
     }
@@ -37,7 +39,7 @@ impl TuiApp {
         {
             self.quick_open.clear();
             self.quick_open_root = None;
-            self.status = "Project changed; reopen Quick Open".into();
+            self.status = "El proyecto cambió; vuelve a abrir la apertura rápida".into();
             return true;
         }
         false
@@ -51,7 +53,7 @@ impl TuiApp {
                 if changed {
                     *selected = (*selected).min(self.quick_open.results().len().saturating_sub(1));
                     self.status = format!(
-                        "Quick Open: {} ({} paths)",
+                        "Apertura rápida: {} ({} rutas)",
                         self.quick_open.message(),
                         self.quick_open.results().len()
                     );
@@ -64,7 +66,8 @@ impl TuiApp {
     fn request_quick_query(&mut self, input: String) {
         if !valid_query(&input) {
             self.status =
-                "Quick Open query: max 256 UTF-8 bytes, no controls/bidi formatting".into();
+                "Apertura rápida: máximo 256 bytes UTF-8, sin controles/formato bidireccional"
+                    .into();
             return;
         }
         self.validate_quick_open_context();
@@ -72,7 +75,7 @@ impl TuiApp {
             return;
         };
         self.status = match self.quick_open.request(root, input.clone()) {
-            Ok(()) => "Quick Open: scanning project paths".into(),
+            Ok(()) => "Apertura rápida: examinando rutas del proyecto".into(),
             Err(error) => error.to_string(),
         };
         self.overlay = UiOverlay::QuickOpen { input, selected: 0 };
@@ -80,7 +83,7 @@ impl TuiApp {
 
     pub(crate) fn append_quick_open_text(&mut self, mut input: String, text: &str) {
         if input.len().saturating_add(text.len()) > QUERY_BYTES {
-            self.status = "Quick Open query exceeds 256 UTF-8 bytes".into();
+            self.status = "La consulta de apertura rápida supera 256 bytes UTF-8".into();
             return;
         }
         if text.is_empty() {
@@ -160,7 +163,7 @@ impl TuiApp {
                 self.close_overlay();
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
                 self.ensure_encoding_choice();
-                self.status = "Quick Open: file opened (16 MiB admission limit)".into();
+                self.status = "Apertura rápida: archivo abierto (límite de admisión 16 MiB)".into();
             }
             Err(error) => self.status = error.to_string(),
         }

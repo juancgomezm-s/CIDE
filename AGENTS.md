@@ -1,5 +1,20 @@
 # Working on JC-IDE
 
+## Current GUI / Spanish presentation closure — 2026-11-03
+
+Read docs/M2B_GUI_WORKFLOWS_ES.md before extending these workflows. GUI open
+comparison, optional source services and snippet review are connected using F1/F3.
+Own UI strings are Spanish in both frontends; keep original source, technical IDs
+and external diagnostics unchanged. TUI theme follows OmniCore, GUI follows Sublime.
+Shared bounded Markdown preview is inert/read-only, not full CommonMark.
+549 distinct test names passed by suites/directed closure,19 new; two child helpers
+run through parents. Four ConPTY flows and15 HWND checks passed. Fmt/Clippy/release
+offline passed; physical/global acceptance remains open. Current executables live
+under target/ui-es/release to preserve the user's previous target/release process.
+Historical statements below do not override this closure. Do not repeat all passing
+suites for documentation-only edits; keep CI dormant through M2–M4.
+
+
 ## Current Unicode/TUI closure — 2026-11-03
 
 Read docs/M2_UNICODE_LAYOUT.md and docs/M2_TUI_FINISH.md before extending editing.

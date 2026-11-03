@@ -57,7 +57,7 @@ impl TuiApp {
                 {
                     self.status = match self.workbench.toggle_search_regex() {
                         Ok(()) => format!(
-                            "Project regex: {} · replacement is literal",
+                            "Regex del proyecto: {} · reemplazo literal",
                             self.workbench.search().regex
                         ),
                         Err(error) => error.to_string(),
@@ -109,7 +109,7 @@ impl TuiApp {
                             self.close_overlay();
                             self.dispatch(command);
                         } else {
-                            self.status = "Selected command is disabled".to_owned();
+                            self.status = "El comando seleccionado está deshabilitado".to_owned();
                         }
                     }
                 }
@@ -177,21 +177,25 @@ impl TuiApp {
             }
             UiOverlay::CloseDialog { tab } => match key.code {
                 KeyCode::Esc => self.close_overlay(),
-                KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'s') => {
+                KeyCode::Char(ch)
+                    if ch.eq_ignore_ascii_case(&'g') || ch.eq_ignore_ascii_case(&'s') =>
+                {
                     match self.workbench.save_active() {
                         Ok(()) => {
                             let _ = self.workbench.close_active(true);
-                            self.status = "Saved and closed".to_owned();
+                            self.status = "Guardado y cerrado".to_owned();
                             self.close_overlay();
                         }
                         Err(error) => self.status = error.to_string(),
                     }
                 }
-                KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&'d') => {
+                KeyCode::Char(ch)
+                    if ch.eq_ignore_ascii_case(&'n') || ch.eq_ignore_ascii_case(&'d') =>
+                {
                     if self.workbench.tabs().active_id() == Some(tab) {
                         let _ = self.workbench.close_active(true);
                     }
-                    self.status = "Closed without saving".to_owned();
+                    self.status = "Cerrado sin guardar".to_owned();
                     self.close_overlay();
                 }
                 _ => {}
@@ -239,7 +243,7 @@ impl TuiApp {
         };
         if let Some((len, limit)) = bounded {
             if text.len() > limit.saturating_sub(len) {
-                self.status = format!("Input exceeds {limit} UTF-8 bytes");
+                self.status = format!("La entrada supera {limit} bytes UTF-8");
                 return;
             }
         }

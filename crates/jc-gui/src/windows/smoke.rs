@@ -239,8 +239,11 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             || options.interaction_only
             || options.menu_invoker_only
             || options.syntax_only
+            || options.workflow_only
         {
-            if options.syntax_only {
+            if options.workflow_only {
+                checks.extend(super::workflow_smoke::run(hwnd, options)?);
+            } else if options.syntax_only {
                 checks.extend(super::syntax_smoke::run(hwnd, options)?);
             } else if options.menu_invoker_only {
                 checks.extend(super::menu_invoker_smoke::run(hwnd, options)?);
@@ -483,7 +486,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         checks.push("quick_open_dirty_side_shared_undo");
         position(hwnd, 0, 5)?;
         key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
-        type_query(hwnd, "Split Line");
+        type_query(
+            hwnd,
+            jc_app::default_registry()
+                .get(CommandId::EditSplitLine)
+                .unwrap()
+                .label,
+        );
         expected(hwnd, SOURCE)?;
         key(hwnd, 0x0d, Modifiers::NONE)?;
         expected(hwnd, b"alpha\r\n\r\nbeta\r\n")?;
@@ -491,7 +500,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         expected(hwnd, SOURCE)?;
         checks.push("palette_shared_command_one_undo");
         key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
-        type_query(hwnd, "Go to Line / Column");
+        type_query(
+            hwnd,
+            jc_app::default_registry()
+                .get(CommandId::SearchGoToPosition)
+                .unwrap()
+                .label,
+        );
         key(hwnd, 0x0d, Modifiers::NONE)?;
         if owner(hwnd).unwrap().state.borrow().selector.is_none() {
             return Err("Palette executed an unsupported native flow".into());
@@ -705,7 +720,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
                 .state
                 .borrow()
                 .status
-                .contains("exceeds")
+                .contains("excede")
             {
                 return Err(
                     "A successful field edit retained the earlier rejected-paste status".into(),

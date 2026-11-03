@@ -831,7 +831,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             }
         }
     }
-    for code in [0x46, 0x45, 0x53, 0x50, 0x54, 0x56, 0x4e, 0x47] {
+    for code in [0x41, 0x45, 0x42, 0x50, 0x48, 0x56, 0x4e, 0x47] {
         owner(hwnd)
             .unwrap()
             .state
@@ -917,7 +917,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         .borrow_mut()
         .smoke_menu_choices
         .push_back(Some(command_id(CommandId::PaletteOpen)));
-    key(hwnd, 0x54, Modifiers::ALT)?;
+    key(hwnd, 0x48, Modifiers::ALT)?;
     if owner(hwnd)
         .unwrap()
         .state

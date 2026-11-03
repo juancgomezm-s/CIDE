@@ -5,6 +5,7 @@ impl Workbench {
     pub fn execute(&mut self, command: CommandId) -> Result<CommandOutcome, WorkbenchError> {
         use CommandId::*;
         match command {
+            ViewMarkdownPreview => Ok(CommandOutcome::View(ViewMarkdownPreview)),
             ViewToggleInvisibles => {
                 self.toggle_invisibles();
                 Ok(CommandOutcome::View(ViewToggleInvisibles))

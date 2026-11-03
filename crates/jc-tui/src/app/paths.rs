@@ -16,13 +16,13 @@ impl TuiApp {
     pub(crate) fn submit_prompt(&mut self, kind: PromptKind, input: String) {
         let limit = super::overlays::prompt_limit(kind);
         if input.len() > limit {
-            self.status = format!("Input exceeds {limit} UTF-8 bytes");
+            self.status = format!("La entrada supera {limit} bytes UTF-8");
             return;
         }
         if kind == PromptKind::GitExecutable {
             let path = PathBuf::from(input.trim());
             if input.len() > 4096 || !path.is_absolute() {
-                self.status = "Use an absolute Git executable path (maximum 4096 bytes)".into();
+                self.status = "Usa una ruta absoluta al ejecutable Git (máximo 4096 bytes)".into();
                 return;
             }
             self.git_diff.clear(&mut self.tasks);
@@ -37,7 +37,7 @@ impl TuiApp {
                 Some(super::git_repository::GitConfigurationTarget::Status) => {
                     self.request_git_repository_status()
                 }
-                None => self.status = "Git executable configured".into(),
+                None => self.status = "Ejecutable Git configurado".into(),
             }
             return;
         }
@@ -47,12 +47,12 @@ impl TuiApp {
                     Ok(()) => {
                         self.close_overlay();
                         let _ = self.focus.focus(jc_app::PrimaryFocus::Editor, &self.panels);
-                        self.status = "Position selected".into();
+                        self.status = "Posición seleccionada".into();
                     }
                     Err(error) => self.status = error.to_string(),
                 }
             } else {
-                self.status = "Use line[:column], one-based scalar coordinates".into();
+                self.status = "Usa línea[:columna], coordenadas escalares desde uno".into();
             }
             return;
         }
@@ -68,7 +68,7 @@ impl TuiApp {
         }
         let value = input.trim();
         if value.is_empty() {
-            self.status = "Path cannot be empty".to_owned();
+            self.status = "La ruta no puede estar vacía".to_owned();
             return;
         }
         let path = PathBuf::from(value);
@@ -76,7 +76,7 @@ impl TuiApp {
             match self.workbench.open_file(path, self.default_encoding) {
                 Ok(_) => {
                     self.close_overlay();
-                    self.status = "Ready".to_owned();
+                    self.status = "Listo".to_owned();
                     self.ensure_encoding_choice();
                 }
                 Err(error) => self.status = error.to_string(),
@@ -106,7 +106,7 @@ impl TuiApp {
         match result {
             Ok(()) => {
                 self.close_overlay();
-                self.status = "Ready".to_owned();
+                self.status = "Listo".to_owned();
             }
             Err(error) => self.status = error,
         }
@@ -125,14 +125,14 @@ impl TuiApp {
         {
             self.open_focus_overlay(Overlay::Dialog);
             self.overlay = UiOverlay::EncodingChoice;
-            self.status = "Legacy encoding must be selected explicitly".to_owned();
+            self.status = "Debes elegir explícitamente la codificación heredada".to_owned();
         }
     }
 
     pub(crate) fn choose_encoding(&mut self, encoding: TextEncoding) {
         match self.workbench.set_encoding(encoding) {
             Ok(()) => {
-                self.status = format!("Encoding: {}", encoding.name());
+                self.status = format!("Codificación: {}", encoding.name());
                 self.close_overlay();
             }
             Err(error) => self.status = error.to_string(),

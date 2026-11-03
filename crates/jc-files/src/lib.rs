@@ -82,19 +82,25 @@ impl fmt::Display for FileError {
         match self {
             Self::Io(error) => write!(f, "{error}"),
             Self::ExternalModification(ExternalState::Changed) => {
-                write!(f, "file changed on disk since it was opened or saved")
+                write!(f, "El archivo cambió en disco desde que se abrió o guardó")
             }
             Self::ExternalModification(ExternalState::Missing) => {
-                write!(f, "file was removed from disk since it was opened or saved")
+                write!(
+                    f,
+                    "El archivo se eliminó del disco desde que se abrió o guardó"
+                )
             }
             Self::ExternalModification(ExternalState::Unchanged) => {
-                write!(f, "unexpected unchanged external state")
+                write!(f, "Estado externo sin cambios inesperado")
             }
             Self::EncodingRequired => {
-                write!(f, "an explicit encoding is required for text insertion")
+                write!(
+                    f,
+                    "Debes elegir una codificación explícita para insertar texto"
+                )
             }
             Self::TargetExists(path) => {
-                write!(f, "target already exists: {}", path.display())
+                write!(f, "El destino ya existe: {}", path.display())
             }
             Self::Encode(error) => write!(f, "{error}"),
             Self::Edit(error) => write!(f, "{error}"),
@@ -104,7 +110,7 @@ impl fmt::Display for FileError {
                 error,
             } => write!(
                 f,
-                "save could not finish for {}; recovery bytes retained at {}: {error}",
+                "No se pudo guardar {}; los bytes de recuperación se conservan en {}: {error}",
                 target.display(),
                 temporary.display()
             ),
@@ -171,7 +177,7 @@ impl FileSession {
     ) -> Result<Self, FileError> {
         let root = root.canonicalize()?;
         if !root.is_dir() {
-            return Err(io::Error::other("Project root is not a directory").into());
+            return Err(io::Error::other("La raíz del proyecto no es un directorio").into());
         }
         let (path, bytes) = read_in_root(&root, &path.into(), max_bytes)?;
         Ok(Self::from_open_bytes(path, bytes, explicit))
@@ -188,7 +194,7 @@ impl FileSession {
         let session = Self::open_in_root(root, path, explicit, max_bytes)?;
         if session.disk_fingerprint != Some(expected) {
             return Err(io::Error::other(
-                "File content differs from the expected version; refresh the result",
+                "El contenido difiere de la versión esperada; actualiza el resultado",
             )
             .into());
         }
@@ -357,9 +363,12 @@ fn atomic_replace_with_commit(
         .parent()
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let file_name = target
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "target has no file name"))?;
+    let file_name = target.file_name().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "El destino no tiene nombre de archivo",
+        )
+    })?;
 
     let mut temporary = None;
     for _ in 0..100 {
@@ -383,7 +392,10 @@ fn atomic_replace_with_commit(
         }
     }
     let (temporary_path, mut temporary_file) = temporary.ok_or_else(|| {
-        io::Error::new(io::ErrorKind::AlreadyExists, "unable to allocate save file")
+        io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "No se pudo reservar un archivo para guardar",
+        )
     })?;
 
     let operation: Result<(), FileError> = (|| {

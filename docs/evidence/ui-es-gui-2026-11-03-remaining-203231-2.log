@@ -1,0 +1,173 @@
+
+running 1 test
+test entry::tests::hexadecimal_input_never_performs_lossy_text_conversion ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test actual_cli_roundtrip_preserves_all_byte_values ... ok
+test invalid_range_does_not_create_output ... ok
+test plan_only_prepares_files_without_launching_an_executable ... ok
+test actual_cli_edits_a_copy_and_refuses_existing_output ... ok
+test progress_result_exit_status_reflects_the_complete_response ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 4 tests
+test region::tests::cursor_boundaries_are_inclusive_but_byte_range_is_half_open ... ok
+test region::tests::upstream_intersection_cases ... ok
+test region::tests::upstream_cover_preserves_orientation ... ok
+test region::tests::every_small_oriented_intersection_matches_a_set_of_selected_bytes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 13 tests
+test editing_legacy_bytes_keeps_crlf_and_undo_restores_exact_content ... ok
+test empty_documents_end_insertions_and_full_deletions_work ... ok
+test replacement_crosses_original_and_added_pieces ... ok
+test compaction_reclaims_added_storage_and_preserves_dirty_state ... ok
+test invalid_edits_preserve_content_revision_and_redo_branch ... ok
+test no_op_does_not_dirty_document_or_discard_redo ... ok
+test consecutive_appends_coalesce_adjacent_added_bytes ... ok
+test output_error_is_reported_without_marking_document_saved ... ok
+test saved_revision_survives_undo_redo_and_new_branches ... ok
+test zero_history_limit_disables_undo_without_affecting_edits ... ok
+test preserves_all_byte_values_without_guessing_an_encoding ... ok
+test history_limit_bounds_undo_and_redo_steps ... ok
+test deterministic_edits_match_an_independent_flat_buffer_history ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 1 test
+test undo_redo_report_inverse_edit_geometry_across_a_branched_history ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test collecting_unreachable_sources_preserves_all_retained_undo_redo_and_saved_revision ... ok
+test collecting_a_discarded_branch_keeps_the_other_arena_and_saved_history_valid ... ok
+test a_large_discarded_transition_does_not_charge_new_small_undo_steps ... ok
+test byte_budget_bounds_history_and_reclaims_dead_bytes_without_erasing_surviving_steps ... ok
+test disabling_history_keeps_append_storage_bounded_during_repeated_large_replacement ... ok
+test segment_reads_match_every_flat_slice_after_fragmentation_and_undo ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+
+running 3 tests
+test batch_is_one_revision_and_one_undo_with_complete_inverse_mapping ... ok
+test rejected_batches_preserve_bytes_revision_history_storage_and_redo ... ok
+test batch_history_matches_flat_bytes_through_undo_redo_and_branching ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test tests::create_only_commit_never_overwrites_an_existing_target ... ok
+test tests::failed_writer_never_replaces_the_original ... ok
+test windows::tests::external_change_or_deletion_during_retry_is_a_conflict ... ok
+test windows::tests::transient_1175_retries_same_commit_and_persistent_lock_is_bounded ... ok
+test windows::tests::partial_replacement_keeps_recovery_bytes_and_reports_their_path ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 3 tests
+test enumerated_directory_identity_is_pinned_during_the_os_read ... ok
+test ordinary_native_names_are_exact_and_listing_limits_are_explicit ... ok
+test reparse_entries_and_root_escapes_never_become_directory_targets ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 2 tests
+test outside_paths_and_actual_outside_handles_are_rejected ... ok
+test confined_open_reads_exact_bytes_and_budget_guards_without_modifying_disk ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 9 tests
+test deletion_is_reported_as_an_external_conflict ... ok
+test unknown_legacy_encoding_requires_explicit_selection_before_text_insertion ... ok
+test unsupported_characters_do_not_modify_the_document ... ok
+test new_session_creates_file_only_when_name_is_still_free ... ok
+test new_session_refuses_to_overwrite_a_file_that_appeared_after_creation ... ok
+test external_content_change_blocks_normal_save_and_preserves_external_version ... ok
+test opening_and_saving_without_edits_preserves_every_byte ... ok
+test save_replaces_existing_file_and_marks_revision_saved ... ok
+test temporary_reader_contention_recovers_and_persistent_contention_preserves_dirty_bytes ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 33 tests
+test windows::open_diff_panel::tests::comparison_geometry_fits_client_and_switches_to_unified_without_overflow ... ok
+test windows::native_menu::tests::native_macros_and_mnemonics_are_explicit_without_unsupported_menu_providers ... ok
+test windows::project_paint::tests::geometry_stays_inside_client_for_tiny_and_extreme_metrics ... ok
+test windows::project_results::tests::selection_and_viewport_keep_end_then_up_visible_under_resizing_and_reset ... ok
+test windows::save_plan::tests::acknowledgements_preserve_order_and_reject_stale_or_repeated_results ... ok
+test windows::project_results::tests::labels_escape_invalid_controls_bidi_unicode_and_paths_without_partial_tokens ... ok
+test windows::replace_view::tests::empty_and_repeated_borrowed_preparation_leave_preview_lines_unchanged ... ok
+test windows::save_plan::tests::cancellation_keeps_unsaved_count_and_cannot_acknowledge_pending_candidate ... ok
+test windows::git_view::tests::typed_status_flags_raw_paths_and_selection_are_bounded_and_read_only ... ok
+test windows::project_results::tests::idle_and_state_presentation_are_bounded_without_starting_a_worker ... ok
+test windows::replace_view::tests::end_then_up_remains_visible_through_resizing_and_preview_replacement ... FAILED
+test windows::git_view::tests::diff_preserves_bom_invalid_legacy_and_exact_ending_markers ... ok
+test windows::git_view::tests::context_is_three_lines_and_idle_controllers_do_not_start_work ... ok
+test windows::replace_view::tests::escaped_labels_bound_unicode_controls_and_never_cut_escape_tokens ... ok
+test windows::project_paint::tests::field_and_result_budgets_match_normal_layout_and_output_is_control_free ... ok
+test windows::selector::tests::input_paste_is_atomic_utf8_bounded_and_backspace_removes_one_scalar ... ok
+test windows::selector::tests::empty_file_presentation_is_read_only_and_tiny_viewport_allocates_no_rows ... ok
+test windows::selector_paint::tests::popup_and_every_row_stay_in_the_client_for_tiny_and_extreme_geometry ... ok
+test windows::selector::tests::english_filter_shortcut_and_disabled_target_agree_with_registry ... ok
+test windows::native_menu::tests::definitions_cover_each_implemented_command_once_and_have_clean_separators ... ok
+test windows::selector::tests::selection_stays_visible_and_empty_filtered_results_have_no_target ... ok
+test windows::selector_paint::tests::shrinking_an_owned_presentation_keeps_selected_row_without_mutation ... ok
+test windows::selector_paint::tests::query_cursor_and_selected_escape_share_bounded_field_projection ... ok
+test windows::snippet_panel::tests::gui_snippet_fields_remove_graphemes_and_reject_oversize_paste_atomically ... ok
+test windows::snippet_panel::tests::gui_snippet_stale_caret_rejects_review_acceptance_without_editing ... ok
+test windows::snippet_panel::tests::gui_snippet_wizard_review_cancel_and_apply_preserve_source_until_one_undo ... ok
+test windows::snippet_panel::tests::gui_snippet_surround_review_preserves_selected_mixed_eol_and_shared_undo ... ok
+test windows::source_panel::tests::source_gui_registry_keeps_lexical_capability_optional_and_missing_provider_explicit ... ok
+test windows::source_panel::tests::source_gui_stale_completion_and_cancel_cannot_edit_new_caret_intention ... ok
+test windows::source_panel::tests::source_gui_completion_blocks_typing_and_accepts_exactly_one_undo ... ok
+test windows::source_panel::tests::source_gui_symbols_deliver_without_input_and_navigation_preserves_bytes ... ok
+test windows::save_plan::tests::construction_accepts_empty_and_limit_but_rejects_duplicate_ids_and_overflow ... ok
+test windows::git_view::tests::huge_hunk_end_then_up_resize_and_prefix_clipping_are_bounded ... ok
+
+failures:
+
+---- windows::replace_view::tests::end_then_up_remains_visible_through_resizing_and_preview_replacement stdout ----
+
+thread 'windows::replace_view::tests::end_then_up_remains_visible_through_resizing_and_preview_replacement' panicked at crates\jc-gui\src\windows\replace_view.rs:146:17:
+assertion `left == right` failed
+  left: "l\\u{ED}nea 98"
+ right: "línea 98"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    windows::replace_view::tests::end_then_up_remains_visible_through_resizing_and_preview_replacement
+
+test result: FAILED. 32 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src\main.rs (target\ui-es\debug\deps\cide-a149cb3ba4c993b1.exe)
+     Running tests\cli.rs (target\ui-es\debug\deps\cli-716fe38f7e12493a.exe)
+     Running unittests src\lib.rs (target\ui-es\debug\deps\jc_core-e795dc8e25db2aef.exe)
+     Running tests\document.rs (target\ui-es\debug\deps\document-a4e78ed2166b23ef.exe)
+     Running tests\edit_geometry.rs (target\ui-es\debug\deps\edit_geometry-282d63feb4d7db93.exe)
+     Running tests\ranges_memory.rs (target\ui-es\debug\deps\ranges_memory-c27d9d781acfca57.exe)
+     Running tests\transactions.rs (target\ui-es\debug\deps\transactions-a98f9e9c5d11f931.exe)
+     Running unittests src\lib.rs (target\ui-es\debug\deps\jc_files-2c264c6c3e3b64d9.exe)
+     Running tests\scoped_directory.rs (target\ui-es\debug\deps\scoped_directory-b086e245ca6ef447.exe)
+     Running tests\scoped_open.rs (target\ui-es\debug\deps\scoped_open-7b98fa83db572052.exe)
+     Running tests\session.rs (target\ui-es\debug\deps\session-b53d3708d37ec809.exe)
+     Running unittests src\lib.rs (target\ui-es\debug\deps\jc_gui-2a854f9863a4fc54.exe)
+error: test failed, to rerun pass `-p jc-gui --lib`

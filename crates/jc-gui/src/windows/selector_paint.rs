@@ -276,7 +276,7 @@ pub(super) unsafe fn draw(
         let message = if layout.message.is_none() {
             presentation.message.as_str()
         } else {
-            "No visible items"
+            "No hay elementos visibles"
         };
         paint::text(
             dc,
@@ -295,7 +295,7 @@ pub(super) unsafe fn draw(
         };
         paint::fill(dc, layout.row(line), background)?;
         let marker = if row.selected { "> " } else { "  " };
-        let disabled = if row.enabled { "" } else { "[disabled] " };
+        let disabled = if row.enabled { "" } else { "[deshabilitado] " };
         let label = units(
             marker
                 .chars()
@@ -396,7 +396,7 @@ mod tests {
                 cursor: 2,
                 anchor: None,
             },
-            message: "Ready".into(),
+            message: "Listo".into(),
             footer: "Enter open | Esc",
             rows: (0..20)
                 .map(|ordinal| SelectorRow {

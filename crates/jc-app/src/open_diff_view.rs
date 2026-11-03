@@ -11,6 +11,16 @@ const PREFIX: usize = 2048;
 pub struct OpenDiffRow {
     pub label: String,
     pub selected: bool,
+    pub kind: OpenDiffRowKind,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenDiffRowKind {
+    Context,
+    Removed,
+    Added,
+    Changed,
+    Header,
+    Notice,
 }
 #[derive(Debug)]
 pub struct OpenDiffPresentation {
@@ -130,9 +140,12 @@ impl OpenDiffView {
         let cols = max_cols.min(COLS);
         let rows = max_rows.min(ROWS);
         let mut p = OpenDiffPresentation {
-            title: escaped("Open documents comparison (read-only)", cols),
-            message: escaped(
-                &format!("{:?}: {}", controller.state(), controller.message()),
+            title: crate::source_services::display_ui_label(
+                "Comparación de documentos abiertos (solo lectura)",
+                cols,
+            ),
+            message: crate::source_services::display_ui_label(
+                &format!("{}: {}", controller.state().label(), controller.message()),
                 cols,
             ),
             rows: Vec::new(),
@@ -148,7 +161,7 @@ impl OpenDiffView {
         p.total = result.model.hunks().count();
         p.message = escaped(
             &format!(
-                "L:{} [{}{}] | R:{} [{}{}] | hunk {}/{}",
+                "I:{} [{}{}] | D:{} [{}{}] | bloque {}/{}",
                 result.left.path.display(),
                 result.left.stamp.encoding.name(),
                 if result.left.modified { " *" } else { "" },
@@ -166,8 +179,12 @@ impl OpenDiffView {
             self.scroll = 0;
             if rows > 0 && cols > 0 {
                 p.rows.push(OpenDiffRow {
-                    label: escaped("No byte differences in accepted snapshots", cols),
+                    label: escaped(
+                        "No hay diferencias de bytes en las capturas aceptadas",
+                        cols,
+                    ),
                     selected: false,
+                    kind: OpenDiffRowKind::Notice,
                 });
             }
             return p;
@@ -208,11 +225,12 @@ impl OpenDiffView {
                         left,
                         hunk.right.start.0 + usize::from(right > 0),
                         right,
-                        if dual { "L | R" } else { "unified" }
+                        if dual { "I | D" } else { "unificado" }
                     ),
                     cols,
                 ),
                 selected: true,
+                kind: OpenDiffRowKind::Header,
             });
         }
         for logical in self.scroll..(self.scroll + self.page).min(self.total) {
@@ -275,6 +293,12 @@ impl OpenDiffView {
             p.rows.push(OpenDiffRow {
                 label,
                 selected: false,
+                kind: match sign {
+                    '-' => OpenDiffRowKind::Removed,
+                    '+' => OpenDiffRowKind::Added,
+                    '!' => OpenDiffRowKind::Changed,
+                    _ => OpenDiffRowKind::Context,
+                },
             });
         }
         p

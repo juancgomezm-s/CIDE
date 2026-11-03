@@ -1,5 +1,12 @@
 # Snippets y Surround With — TUI implementada, 2026-11-03
 
+> Actualización 2026-11-03: [GUI/TUI en español](M2B_GUI_WORKFLOWS_ES.md)
+> incorpora comparación, fuente opcional y plantillas en GUI; color/menús Alt,
+> ayuda lateral y Markdown en TUI, Markdown también en GUI. F10 abre menús,
+> F6 cambia panel y Ctrl+Alt+M alterna Markdown. Las matrices, cifras o pendientes
+> anteriores de este documento se conservan como evidencia histórica.
+
+
 Construido sobre31649b5: motor, catálogo opcional, TUI y recorridos validados
 localmente al cerrar el bloque. Sin dependencias externas nuevas.
 

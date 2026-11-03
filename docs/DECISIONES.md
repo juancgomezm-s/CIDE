@@ -610,3 +610,14 @@ cola, cierre explícito/RAII y errores sin fallback. GUI sigue con su HWND/loop.
 La prueba propia responde WM_NULL desde otro hilo inactivo, sin abrir clipboard
 personal. Delayed rendering externo no tiene deadline duro garantizado.
 [Contrato](M2_TUI_CLIPBOARD.md).
+
+## D59 — Flujos GUI compartidos y presentación española (2026-11-03)
+
+Conectar comparación de abiertos, fuente opcional y plantillas a los controladores
+existentes, con un único poll F3 y aceptación versionada. Presentaciones propias
+de solo lectura y edición explícita en una transacción; ningún buffer paralelo.
+Traducir UI propia de ambos frontends, conservando bytes, IDs y diagnósticos externos.
+Tema TUI basado en la referencia OmniCore consultada; GUI conserva Sublime Text.
+Markdown comparte lexer incremental y vista acotada/inerte, sin dependencias nuevas
+ni motor HTML. Subconjunto documentado y aceptación física/global pendiente.
+Véanse [contrato y validación](M2B_GUI_WORKFLOWS_ES.md).

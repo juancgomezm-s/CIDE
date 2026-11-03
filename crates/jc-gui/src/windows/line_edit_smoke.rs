@@ -192,7 +192,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     position(hwnd, 0, 1)?;
     key(hwnd, 0x28, Modifiers::SHIFT)?;
     let before = revision(hwnd);
-    palette(hwnd, "Move Line Down")?;
+    palette(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditMoveLineDown)
+            .unwrap()
+            .label,
+    )?;
     if owner(hwnd)
         .unwrap()
         .state
@@ -308,7 +314,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     )?;
     key(hwnd, 0x41, Modifiers::CTRL)?;
     let before = revision(hwnd);
-    palette(hwnd, "Toggle Comment")?;
+    palette(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditToggleLineComment)
+            .unwrap()
+            .label,
+    )?;
     cycle(hwnd, b"one\r\n  two\n", b"// one\r\n  // two\n", before)?;
     discard(hwnd)?;
     for (name, commands) in [
@@ -437,7 +449,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             return Err("Edit menu modified a hidden source or closed Find".into());
         }
     }
-    palette_open(hwnd, "Duplicate Selection/Line")?;
+    palette_open(
+        hwnd,
+        jc_app::default_registry()
+            .get(CommandId::EditDuplicate)
+            .unwrap()
+            .label,
+    )?;
     key(hwnd, 0x0d, Modifiers::NONE)?;
     if snapshot(hwnd)? != before {
         return Err("Palette invoked from Find edited hidden source".into());
@@ -484,7 +502,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     }
     for mutation in 0..4 {
         position(hwnd, 0, 0)?;
-        palette_open(hwnd, "Toggle Comment")?;
+        palette_open(
+            hwnd,
+            jc_app::default_registry()
+                .get(CommandId::EditToggleLineComment)
+                .unwrap()
+                .label,
+        )?;
         {
             let mut s = owner(hwnd).unwrap().state.borrow_mut();
             match mutation {
