@@ -48,7 +48,8 @@ fn draw_prompt(app: &TuiApp, screen: &mut Screen, kind: PromptKind, input: &str)
     panel(screen, x, y, width, height, title);
     screen.text(x + 2, y + 2, &clip(input, width.saturating_sub(4)));
     screen.set_cursor(
-        (x + 2 + input.chars().count() as u16).min(x + width.saturating_sub(2)),
+        (x + 2 + jc_text::grapheme::width(input).min(usize::from(u16::MAX)) as u16)
+            .min(x + width.saturating_sub(2)),
         y + 2,
     );
 }
@@ -102,7 +103,8 @@ fn draw_quick_open(app: &TuiApp, screen: &mut Screen, input: &str, selected: usi
         CellStyle::Dim,
     );
     screen.set_cursor(
-        (x + 4 + input.chars().count().min(usize::from(width - 6)) as u16).min(x + width - 2),
+        (x + 4 + jc_text::grapheme::width(input).min(usize::from(width - 6)) as u16)
+            .min(x + width - 2),
         y + 1,
     );
 }
@@ -303,7 +305,8 @@ fn draw_palette(app: &TuiApp, screen: &mut Screen, input: &str, selected: usize)
         screen.text_styled(x + 2, y + 3 + row as u16, &clip(&label, width - 4), style);
     }
     screen.set_cursor(
-        (x + 4 + input.chars().count() as u16).min(x + width.saturating_sub(2)),
+        (x + 4 + jc_text::grapheme::width(input).min(usize::from(u16::MAX)) as u16)
+            .min(x + width.saturating_sub(2)),
         y + 1,
     );
 }

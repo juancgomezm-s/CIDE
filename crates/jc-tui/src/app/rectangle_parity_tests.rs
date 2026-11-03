@@ -185,7 +185,7 @@ fn rectangle_invisible_grid_is_readonly_through_resize_split_and_cancel() {
 
 #[test]
 fn rectangle_rejections_and_shared_edit_invalidation_keep_source_and_single_history() {
-    for text in ["e\u{301}", "中", "😀", "a\u{1b}b"] {
+    for text in ["\u{301}", "\u{200d}", "\u{ad}", "a\u{1b}b"] {
         let mut app = editor(text, TextEncoding::Utf8);
         let rev = revision(&app);
         app.dispatch(CommandId::EditRectangleStart);

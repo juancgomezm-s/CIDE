@@ -34,7 +34,7 @@ impl Area {
         self,
         screen: &mut Screen,
         row: u16,
-        mut column: u16,
+        column: u16,
         end: u16,
         text: &str,
         style: CellStyle,
@@ -42,13 +42,8 @@ impl Area {
         if row >= self.height {
             return;
         }
-        for ch in text.chars() {
-            if column >= end.min(self.width) {
-                break;
-            }
-            screen.put_styled(self.x + column, self.y + row, ch, style);
-            column += 1;
-        }
+        let width = end.min(self.width).saturating_sub(column);
+        screen.text_styled_in(self.x + column, self.y + row, width, text, style);
     }
 }
 

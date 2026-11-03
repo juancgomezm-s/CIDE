@@ -1,0 +1,4 @@
+shape,source_bytes,scalar_reference_ns,scalar_reference_allocs,cold_ns,cold_alloc_calls,cold_alloc_bytes,cold_peak_heap,cold_live_heap,private_bytes,working_bytes,peak_commit,warm_p50_ns,warm_p95_ns,warm_source_read,layout_cache_bytes,suffix_edit_row_ns
+ascii-long,2097152,14500,47,23300,12,15888,6714764,6707340,7495680,11079680,11517952,4900,5300,26260,744,363700
+unicode-long,1474560,10200,50,62400,57,12136,3954063,3948684,5033984,8347648,11763712,7600,8100,78780,744,247500
+ascii-lines,900000,1200,20,3900,10,1472,2026602,2026140,4784128,7544832,11763712,700,700,707,744,102900

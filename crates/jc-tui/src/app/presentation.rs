@@ -49,7 +49,7 @@ pub(crate) struct FrameLayout {
 impl FrameLayout {
     fn new(app: &TuiApp, mut width: u16, mut height: u16) -> Self {
         // Bound a presentation even if an input backend reports absurd dimensions.
-        if usize::from(width) * usize::from(height) > 1_048_576 {
+        if usize::from(width) * usize::from(height) > 131_072 {
             width = 80;
             height = 10;
         }
@@ -95,7 +95,7 @@ pub(crate) struct EditorText {
     pub syntax: jc_app::SyntaxRows,
     pub position: Option<TextPosition>,
     pub rectangle: Option<jc_app::RectangleBounds>,
-    pub rows: Vec<Vec<(char, usize)>>,
+    pub rows: Vec<Vec<jc_app::VisualAtom>>,
     pub display_rows: Option<Vec<Vec<jc_app::DisplayCell>>>,
     pub cursor_column: Option<usize>,
 }
@@ -144,6 +144,7 @@ impl TuiApp {
         self.syntax_targets = [None, None];
         let layout = FrameLayout::new(self, width, height);
         self.last_frame_height = layout.height;
+        let mut glyph_budget = jc_app::MAX_PRESENTATION_TEXT_BYTES;
         let mut primary = EditorText::default();
         let mut secondary = EditorText::default();
         let mut search_positions = Vec::new();
@@ -192,7 +193,7 @@ impl TuiApp {
                 let cursor_column = if all {
                     self.workbench.display_column_for_pane(pane)
                 } else {
-                    None
+                    self.workbench.visual_column_for_pane(pane)
                 };
                 let display_rows = all.then(|| {
                     visible
@@ -214,32 +215,50 @@ impl TuiApp {
                 } else {
                     visible
                         .map(|line| {
-                            if let Some(rect) = rectangle {
+                            let row = if glyph_budget == 0 {
+                                None
+                            } else if let Some(rect) = rectangle {
                                 self.workbench
-                                    .rectangle_grid_line(
+                                    .rectangle_glyph_line(
                                         location.tab,
                                         line,
                                         rect.scroll_column,
                                         text_width,
                                         self.workbench.invisibles_visible(),
                                     )
-                                    .unwrap_or_else(|_| {
-                                        "[rectangle layout unavailable]"
-                                            .chars()
-                                            .take(text_width)
-                                            .map(|ch| (ch, usize::MAX))
-                                            .collect()
-                                    })
+                                    .ok()
                             } else {
-                                self.workbench
-                                    .visible_line(
-                                        location.tab,
-                                        line,
-                                        view.scroll_column(),
-                                        text_width,
-                                    )
-                                    .unwrap_or_default()
-                            }
+                                self.workbench.visual_row(
+                                    location.tab,
+                                    line,
+                                    view.scroll_column(),
+                                    text_width,
+                                )
+                            };
+                            let row = row.filter(|row| {
+                                let bytes = row.iter().map(|a| a.glyph.byte_len()).sum::<usize>();
+                                if bytes > glyph_budget {
+                                    glyph_budget = 0;
+                                    false
+                                } else {
+                                    glyph_budget -= bytes;
+                                    true
+                                }
+                            });
+                            row.unwrap_or_else(|| {
+                                "[Unicode layout unavailable/budget]"
+                                    .chars()
+                                    .take(text_width)
+                                    .enumerate()
+                                    .map(|(column, ch)| jc_app::VisualAtom {
+                                        source: 0..0,
+                                        column,
+                                        width: 1,
+                                        glyph: jc_app::Glyph::Scalar(ch),
+                                        marker: true,
+                                    })
+                                    .collect()
+                            })
                         })
                         .collect()
                 };

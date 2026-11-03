@@ -5,6 +5,7 @@
 //! and conversion between source byte offsets and logical text positions.
 
 mod encoding;
+pub mod grapheme;
 mod index;
 mod profile;
 mod unicode_search;

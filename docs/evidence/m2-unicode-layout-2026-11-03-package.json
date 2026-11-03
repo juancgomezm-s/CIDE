@@ -1,0 +1,17 @@
+{
+  "archive": "work/packages/CIDE-windows-dev-tui-unicode-2026-11-03.zip",
+  "bytes": 5741194,
+  "sha256": "82143e4020744f76f10aec2aec7d6f2c028443f69e087b0f3e20eeefdf9b6510",
+  "members": 82,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ],
+  "crc_and_manifest_hashes_verified": true
+}

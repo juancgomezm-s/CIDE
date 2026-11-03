@@ -1,0 +1,20 @@
+
+running 13 tests
+test render::git_status::tests::clipping_tiny_and_outside_rectangles_never_write_neighbor_cells ... ok
+test render::git_diff::tests::both_components_clip_to_their_rectangle_even_when_it_exceeds_the_screen ... ok
+test app::clipboard_tests::clipboard_tui_rectangle_keeps_internal_rows_and_never_calls_unicode_transport ... ok
+test app::rectangle_parity_tests::rectangle_internal_copy_height_and_eof_failures_do_not_publish_partial_edits ... ok
+test app::invisibles_tests::rectangle_invisibles_share_visual_grid_and_highlight_partial_tab_and_virtual_cells ... ok
+test app::rectangle_tests::zero_width_after_a_tab_has_visual_cursor_and_keyboard_extension_can_be_cancelled ... ok
+test app::rectangle_parity_tests::rectangle_rejections_and_shared_edit_invalidation_keep_source_and_single_history ... ok
+test app::rectangle_tests::resizing_keeps_virtual_cursor_visible_without_reinterpreting_visual_bounds ... ok
+test app::line_command_tests::rectangles_disable_line_actions_in_keys_menu_palette_and_direct_model ... ok
+test app::rectangle_tests::split_views_keep_independent_rectangles_through_narrow_fallback ... ok
+test app::rectangle_parity_tests::rectangle_invisible_grid_is_readonly_through_resize_split_and_cancel ... ok
+test app::rectangle_parity_tests::rectangle_commands_broadcast_partial_tab_and_virtual_preserve_four_encodings ... ok
+test app::rectangle_tests::partial_tab_latin1_punctuation_and_virtual_cells_use_visual_selection ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 118 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-c24792ef3ef15fde.exe)

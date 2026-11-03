@@ -429,7 +429,36 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     discard(hwnd)?;
     checks.push("rectangle_split_pin_revision_encoding");
 
-    for text in ["e\u{301}", "中", "😀", "a\u{1b}b"] {
+    for text in ["e\u{301}Z", "界Z", "👨‍👩‍👧‍👦Z"] {
+        memory(hwnd, options, text, TextEncoding::Utf8)?;
+        set(hwnd, (0, 0), (0, 1))?;
+        let frame = {
+            let model = owner(hwnd).unwrap();
+            let mut state = model.state.borrow_mut();
+            super::paint::prepare(&mut state)
+        };
+        // The owned read model retains complete clusters before GDI composition.
+        if !frame.contains_source_row(text) {
+            return Err("Unicode cluster lost during native preparation".into());
+        }
+        command(hwnd, CommandId::EditRectangleCancel)?;
+        discard(hwnd)?;
+    }
+    checks.push("rectangle_unicode_native_complete_clusters");
+    memory(hwnd, options, "界e\u{301}Z\r\n😀aQ", TextEncoding::Utf8)?;
+    set(hwnd, (0, 0), (1, 1))?;
+    let before = snapshot(hwnd)?;
+    command(hwnd, CommandId::EditCut)?;
+    expected(hwnd, " e\u{301}Z\r\n aQ".as_bytes())?;
+    key(hwnd, 0x5a, Modifiers::CTRL)?;
+    expected(hwnd, "界e\u{301}Z\r\n😀aQ".as_bytes())?;
+    if snapshot(hwnd)?.0 != before.0 {
+        return Err("Unicode rectangle undo changed document identity".into());
+    }
+    discard(hwnd)?;
+    checks.push("rectangle_unicode_partial_atom_cut_one_undo");
+
+    for text in ["\u{301}", "\u{200d}", "\u{ad}", "a\u{1b}b"] {
         memory(hwnd, options, text, TextEncoding::Utf8)?;
         let before = snapshot(hwnd)?;
         command(hwnd, CommandId::EditRectangleStart)?;

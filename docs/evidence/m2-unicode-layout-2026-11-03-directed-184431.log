@@ -1,0 +1,15 @@
+
+running 6 tests
+test entry::tests::files_and_encodings_are_explicit_without_starting_a_window ... ok
+test entry::interaction_options_tests::interaction_section_requires_owned_paths_and_is_exclusive ... ok
+test entry::tests::project_root_is_explicit_and_preserves_native_path ... ok
+test entry::tests::git_executable_is_explicit_absolute_metadata_and_duplicate_or_missing_reject ... ok
+test entry::tests::project_workers_are_bounded_and_explicit ... ok
+test entry::tests::smoke_requires_distinct_absolute_owned_paths ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.04s
+     Running unittests src\main.rs (target\debug\deps\cide_gui-40dfca6706751e4f.exe)

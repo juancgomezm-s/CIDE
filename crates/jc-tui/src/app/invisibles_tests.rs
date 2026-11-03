@@ -200,7 +200,11 @@ fn rectangle_invisibles_share_visual_grid_and_highlight_partial_tab_and_virtual_
     );
     assert!(text.display_rows.is_none());
     assert_eq!(
-        text.rows[0].iter().take(5).map(|c| c.0).collect::<String>(),
+        text.rows[0]
+            .iter()
+            .take(5)
+            .map(|c| c.glyph.first())
+            .collect::<String>(),
         "A>..B"
     );
     let screen = render::render(&p);

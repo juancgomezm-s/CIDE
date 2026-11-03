@@ -29,6 +29,8 @@ mod source_services;
 mod source_services_tests;
 #[cfg(test)]
 mod syntax_integration_tests;
+#[cfg(test)]
+mod unicode_tests;
 use git_repository::GitConfigurationTarget;
 #[cfg(test)]
 pub(crate) use git_status::GitStatusRow;

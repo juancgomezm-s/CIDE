@@ -306,6 +306,37 @@ impl Workbench {
     ) -> Result<Vec<(char, usize)>, WorkbenchError> {
         self.rectangle_grid_line(tab, line, column, width, false)
     }
+    pub fn rectangle_glyph_line(
+        &self,
+        tab: TabId,
+        line: usize,
+        column: usize,
+        width: usize,
+        markers: bool,
+    ) -> Result<Vec<crate::VisualAtom>, WorkbenchError> {
+        let doc = self
+            .document_by_tab(tab)
+            .ok_or(WorkbenchError::NoDocument)?;
+        let (content, _) = self
+            .line_range_for_tab(tab, line)
+            .ok_or_else(|| rejected("Rectangle visible line unavailable"))?;
+        // Admission/editing use strict LineLayout. Presentation reuses the
+        // document's sparse Unicode cache; never rebuild/decode a full line on
+        // every frame. Source outside selected rows may be escaped diagnostically.
+        doc.unicode
+            .borrow_mut()
+            .row(
+                doc.session.document(),
+                doc.session
+                    .encoding()
+                    .ok_or(jc_files::FileError::EncodingRequired)?,
+                content,
+                column,
+                width,
+                crate::unicode_layout::RowMode::Rectangle { markers },
+            )
+            .map_err(WorkbenchError::UnicodeLayout)
+    }
     pub fn rectangle_grid_line(
         &self,
         tab: TabId,

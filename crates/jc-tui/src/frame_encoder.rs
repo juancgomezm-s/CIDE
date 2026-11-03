@@ -49,47 +49,59 @@ impl FrameEncoder {
         let mut active = CellStyle::Normal;
         for y in 0..screen.height() {
             let mut x = 0;
+            let mut in_run = false;
             while x < screen.width() {
-                if !full && self.previous.as_ref().unwrap().cell(x, y) == screen.cell(x, y) {
+                let width = screen.atom_width(x, y);
+                if width == 0 {
                     x += 1;
+                    continue;
+                }
+                let changed = full
+                    || (0..width).any(|n| {
+                        !self
+                            .previous
+                            .as_ref()
+                            .unwrap()
+                            .same_cell(screen, x + n as u16, y)
+                    });
+                if !changed {
+                    in_run = false;
+                    x += width as u16;
                     continue;
                 }
                 if out.is_empty() {
                     command(&mut out, Hide);
                 }
-                command(&mut out, MoveTo(x, y));
-                stats.runs += 1;
-                while x < screen.width()
-                    && (full || self.previous.as_ref().unwrap().cell(x, y) != screen.cell(x, y))
-                {
-                    let cell = screen.cell(x, y);
-                    if active != cell.style {
-                        command(&mut out, ResetColor);
-                        command(&mut out, SetAttribute(Attribute::Reset));
-                        match cell.style {
-                            CellStyle::Normal => {}
-                            CellStyle::Reverse => {
-                                command(&mut out, SetAttribute(Attribute::Reverse))
-                            }
-                            CellStyle::Dim => command(&mut out, SetAttribute(Attribute::Dim)),
-                            CellStyle::Syntax(kind) => {
-                                let rgb = jc_app::syntax_theme::foreground(kind);
-                                command(
-                                    &mut out,
-                                    SetForegroundColor(Color::Rgb {
-                                        r: rgb.r,
-                                        g: rgb.g,
-                                        b: rgb.b,
-                                    }),
-                                );
-                            }
-                        }
-                        active = cell.style;
-                    }
-                    out.push(cell.ch);
-                    stats.cells += 1;
-                    x += 1;
+                if !in_run {
+                    command(&mut out, MoveTo(x, y));
+                    stats.runs += 1;
+                    in_run = true;
                 }
+                let cell = screen.cell(x, y);
+                if active != cell.style {
+                    command(&mut out, ResetColor);
+                    command(&mut out, SetAttribute(Attribute::Reset));
+                    match cell.style {
+                        CellStyle::Normal => {}
+                        CellStyle::Reverse => command(&mut out, SetAttribute(Attribute::Reverse)),
+                        CellStyle::Dim => command(&mut out, SetAttribute(Attribute::Dim)),
+                        CellStyle::Syntax(kind) => {
+                            let rgb = jc_app::syntax_theme::foreground(kind);
+                            command(
+                                &mut out,
+                                SetForegroundColor(Color::Rgb {
+                                    r: rgb.r,
+                                    g: rgb.g,
+                                    b: rgb.b,
+                                }),
+                            );
+                        }
+                    }
+                    active = cell.style;
+                }
+                screen.append_atom(x, y, &mut out);
+                stats.cells += width;
+                x += width as u16;
             }
         }
         if full || stats.cells > 0 || cursor_changed {
@@ -124,6 +136,30 @@ impl FrameEncoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cluster_payload_changes_and_wide_to_narrow_erase_old_coverage_incrementally() {
+        let mut encoder = FrameEncoder::default();
+        let mut first = Screen::new(10, 1);
+        first.text(0, 0, "e\u{301}界Z");
+        encoder.draw_to(&mut Vec::new(), &first).unwrap();
+        let mut second = Screen::new(10, 1);
+        second.text(0, 0, "e\u{302}x Z");
+        let mut out = Vec::new();
+        let stats = encoder.draw_to(&mut out, &second).unwrap();
+        assert!(!stats.full);
+        let output = std::str::from_utf8(&out).unwrap();
+        assert!(output.contains("e\u{302}x "));
+        assert!(!output.contains("[2J"));
+        assert_eq!(
+            encoder.draw_to(&mut Vec::new(), &second).unwrap(),
+            DrawStats::default()
+        );
+        let mut emoji = Screen::new(10, 1);
+        emoji.text(0, 0, "👨‍👩‍👧‍👦");
+        let mut out = Vec::new();
+        encoder.draw_to(&mut out, &emoji).unwrap();
+        assert!(std::str::from_utf8(&out).unwrap().contains("👨‍👩‍👧‍👦"));
+    }
     #[test]
     fn unchanged_frames_emit_nothing_and_cursor_only_change_does_not_repaint() {
         let mut encoder = FrameEncoder::default();

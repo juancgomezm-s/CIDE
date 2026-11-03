@@ -11,6 +11,13 @@ pub mod diff_model;
 pub mod open_diff;
 pub mod open_diff_view;
 pub mod snippets;
+mod source_graphemes;
+mod unicode_layout;
+#[cfg(test)]
+mod unicode_layout_tests;
+pub use unicode_layout::{
+    Glyph, VisualAtom, MAX_PRESENTATION_TEXT_BYTES, MAX_VISUAL_ROW_TEXT_BYTES,
+};
 pub mod source_services;
 pub mod syntax_theme;
 pub use jc_languages::syntax::{SyntaxKind, SyntaxProfile};

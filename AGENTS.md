@@ -1,5 +1,26 @@
 # Working on JC-IDE
 
+## Current Unicode/TUI closure — 2026-11-03
+
+Read docs/M2_UNICODE_LAYOUT.md and docs/M2_TUI_FINISH.md before extending editing.
+The authorized unicode-segmentation=1.13.3 and unicode-width=0.2.2 are pinned;
+Rust metadata minimum1.85, existing toolchain1.85.1. Do not ask permission again.
+Keyboard navigation/deletion uses grapheme boundaries; scalar/byte APIs remain
+explicit. Both frontends consume VisualAtom/Glyph with narrow per-grapheme width,
+TAB4, atomic clipping and strict encoding. No whole-line rectangular layout in
+steady-state rendering; admission/edits retain bounded LineLayout validation.
+Cache partition: scalar512KiB + Unicode256KiB + invisibles128KiB + syntax128KiB.
+Source glyph payload64KiB/row,2MiB across panes;131072 screen cells;16MiB cursor
+read work. Preserve visible quota errors and raw source bytes, including invalid UTF8.
+Clipboard TUI owner is lazy on a dedicated event-driven Win32 thread with one
+bounded request and no model access; GUI supplies its existing HWND directly.
+No personal clipboard access in tests. The local scope's functional TUI blocks
+are implemented; physical/global acceptance and real M3–M5 providers remain open.
+530 distinct test names observed passing by suites/directed closure, two helper
+children invoked by parents,18 new cases; no single full runtime workspace pass.
+Historical next-block statements below do not override this current closure.
+
+
 Read `README.md`, `docs/DECISIONES.md`, and the relevant milestone in `docs/PLAN.md`.
 
 F1 is implemented; read `docs/F1_DOCUMENT_VIEWS_TRANSACTIONS.md` for actual ownership, transaction APIs, selection mapping and validation. F2 is also implemented: read `docs/F2_RANGES_INDEX_MEMORY.md` and its raw measurements. F3 is implemented with local evidence: read `docs/F3_PRESENTATION_TASKS.md`. Preserve read-only composition, incremental terminal output, bounded owned snapshots, cooperative cancellation and versioned delivery. Project Search Plus literal scanning and versioned replacement previews are implemented: read `docs/S1_PROJECT_SEARCH.md`. S0 literal is implemented with cooperative range scanning and default full Unicode 17 case folding: read `docs/S0_DOCUMENT_SEARCH.md`. The shared decoder is optimized with a borrowed scalar iterator and reusable scan buffers: read `docs/S0_DECODER_OPTIMIZATION.md`. Expanded corpus/process evidence and the bounded cold-line layout correction are recorded in `docs/M2_ACCEPTANCE_EVIDENCE.md`. Read `docs/DIFF_MODEL_READ_ONLY.md` and `docs/GIT_READ_ONLY_PROVIDER.md` before connecting diff: the pure bounded model and Windows HEAD/index blob reader are implemented/tested. Versioned Git delivery and the read-only active-file TUI are now connected: read `docs/GIT_DIFF_DELIVERY.md` and `docs/GIT_DIFF_PRESENTATION.md`. Preserve one in-flight comparison, pending metadata only, artifact reservation through poll, explicit executable configuration and stale rejection before presentation/navigation. Keep Git optional, bounded, read-only and off the input/render path; do not weaken its process cleanup. `docs/M2B_SCENE_STUDY.md` and `prototypes/m2b/` are a static study, not a GUI backend. Dense line metadata now uses one blocked index with native bases and packed relative offsets/EOL, replacing the flat width-promoting route. Read `docs/M2_BLOCK_LINE_INDEX.md` and `docs/M2_UNDO_PIPELINE_PROBE.md`; the experimental comparator is historical at `191bd82`. Full reachable source arenas are reused during collection. Dense edited native peak is 43.73/43.82 MiB in two local captures; global RAM/physical-display gates stay open. Keyboard/menu dispatch availability is centrally checked in TUI; read `docs/M2_KEYBOARD_MATRIX_AUDIT.md` before changing routing. Suffix/cold/native/Git auxiliary comparisons are recorded; full M2A and global physical-display latency/RAM acceptance remain open. Read `docs/SAVE_WINDOWS_CONTENTION.md` before changing save behavior; preserve bounded retry/conflict checks and recovery temporaries. Preserve range-based reads, revision/encoding-aware projection, sparse checkpoints and configured memory budgets. Current priority is M2-F, defined by `docs/AUDITORIA_ECODE_ARQUITECTURA.md` and `docs/ARQUITECTURA.md`. Read both before extending editor behavior. ecode/eepp is an implementation reference; Sublime Text remains the visual reference. The existing split checkpoint is functional evidence, not architectural/performance acceptance.
@@ -534,8 +555,8 @@ Preserve one revision/encoding/path/profile-aware SyntaxCache per document,
 shared across views. Lexer metadata belongs in jc-languages; bounded cache and
 palette in jc-app; rendering consumes prepared rows only. Continue deep pending
 work in owner events via continue_syntax, independently of exposure paints.
-64KiB is per-call work,128KiB is logical syntax cache/document; text layout768KiB
-plus invisibles128KiB preserves the1MiB total cache budget. Honor NO_COLOR.
+64KiB is per-call work,128KiB is logical syntax cache/document; text layout512KiB
+plus Unicode256KiB and invisibles128KiB preserves the1MiB total cache budget. Honor NO_COLOR.
 
 ## Regex implementado — continuación TUI, 2026-11-03
 

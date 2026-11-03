@@ -1,5 +1,12 @@
 # M2A — Selección rectangular de una acción
 
+**Actualización vigente:** [M2_UNICODE_LAYOUT](M2_UNICODE_LAYOUT.md) reemplaza la
+whitelist de una celda por grafemas narrow/TAB4, define cortes parciales de glifos
+anchos y conserva transacciones/cuotas. El cuerpo siguiente es el checkpoint
+histórico de admisión, uso y evidencia de la primera versión; sus exclusiones de
+CJK/emoji/combinantes ya no describen el comportamiento actual.
+
+
 **Seguimiento GUI/presentación:** [M2B_RECTANGLE_GUI](M2B_RECTANGLE_GUI.md) completa
 las rutas nativas y reemplaza la presentación rectangular con invisibles por una
 cuadrícula TAB4 compartida. El alcance Unicode acotado de este contrato se conserva;

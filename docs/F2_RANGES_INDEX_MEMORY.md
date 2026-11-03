@@ -1,5 +1,13 @@
 # F2 — Acceso por rangos, proyección textual y memoria
 
+**Layout actual:** [M2_UNICODE_LAYOUT](M2_UNICODE_LAYOUT.md) añade geometría de
+grafemas/columnas por rangos, lazy y revision/encoding-aware. La API escalar F2 se
+conserva en su frontera explícita. Presupuesto1MiB/documento repartido en512KiB
+escalar +256KiB Unicode +128KiB invisibles +128KiB sintaxis; metadata aparte.
+El cuerpo F2 siguiente conserva medidas históricas, no representa la ruta vigente
+del teclado ni de presentación de los frontends.
+
+
 **Seguimiento:** F3 ya implementa presentación de solo lectura, terminal incremental y tareas acotadas; [evidencia y límites actuales](F3_PRESENTATION_TASKS.md). El resto conserva el checkpoint histórico de F2.
 
 Checkpoint implementado sobre `ddc9d41`, rama `m2a/dual-pane-tui`. Mantiene la propiedad de vistas y las transacciones de F1. La base de F2 queda validada localmente; las metas de RAM del proceso, arranque y latencia tecla-a-pantalla siguen abiertas.

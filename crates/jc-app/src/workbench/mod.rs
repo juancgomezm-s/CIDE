@@ -32,6 +32,7 @@ pub enum WorkbenchError {
     File(FileError),
     Position(PositionError),
     SearchPattern(String),
+    UnicodeLayout(String),
     ClipboardEncoding,
     ClipboardLimit,
     ClipboardStale,
@@ -45,7 +46,7 @@ pub enum WorkbenchError {
 impl fmt::Display for WorkbenchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Save(message) => f.write_str(message),
+            Self::Save(message) | Self::UnicodeLayout(message) => f.write_str(message),
             Self::ClipboardLimit => f.write_str("clipboard transfer exceeds its byte budget"),
             Self::ClipboardStale => f.write_str("clipboard target changed; retry the action"),
             Self::Rectangle(message) => f.write_str(message),
@@ -114,6 +115,7 @@ pub struct EditorDocument {
     notified_revision: u64,
     text: RefCell<TextProjection>,
     invisible: RefCell<invisible_layout::InvisibleLayout>,
+    unicode: RefCell<crate::unicode_layout::UnicodeLayout>,
     syntax: RefCell<syntax::SyntaxCache>,
 }
 
@@ -302,9 +304,12 @@ impl Workbench {
         let (invisible_decoded, invisible_memory) = document.invisible.borrow().statistics();
         Some((
             text.scanned_bytes,
-            text.decoded_bytes.saturating_add(invisible_decoded),
+            text.decoded_bytes
+                .saturating_add(invisible_decoded)
+                .saturating_add(document.unicode.borrow().scanned_bytes),
             text.memory_bytes()
                 .saturating_add(invisible_memory)
+                .saturating_add(document.unicode.borrow().memory_bytes())
                 .saturating_add(document.syntax.borrow().memory_bytes()),
         ))
     }
@@ -440,7 +445,8 @@ impl Workbench {
         let caret_column = if self.show_invisibles && rectangle.is_none() {
             self.display_column_for_pane(active).unwrap_or(0)
         } else {
-            position.column
+            self.visual_column_for_pane(active)
+                .unwrap_or(position.column)
         };
         let view = self.panes.view(active).expect("active view");
         let old_line = view.scroll_line();
@@ -660,6 +666,7 @@ impl Workbench {
             notified_revision: 0,
             text: RefCell::default(),
             invisible: RefCell::default(),
+            unicode: RefCell::default(),
             syntax: RefCell::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, cursor), true);
@@ -684,6 +691,7 @@ impl Workbench {
             notified_revision: 0,
             text: RefCell::default(),
             invisible: RefCell::default(),
+            unicode: RefCell::default(),
             syntax: RefCell::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, 0), true);
@@ -925,6 +933,7 @@ impl Workbench {
             notified_revision: 0,
             text: RefCell::default(),
             invisible: RefCell::default(),
+            unicode: RefCell::default(),
             syntax: RefCell::default(),
         });
         self.panes

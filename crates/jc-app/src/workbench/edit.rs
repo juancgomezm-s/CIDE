@@ -93,12 +93,19 @@ impl Workbench {
         let Some(previous) = self.previous_boundary()? else {
             return Ok(());
         };
+        let cursor = self
+            .active_editor()
+            .ok_or(WorkbenchError::NoDocument)?
+            .cursor;
+        let end = self
+            .adjacent_grapheme_at(previous, true)?
+            .unwrap_or(cursor)
+            .max(cursor);
         let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
-        let cursor = document.cursor;
         document
             .session
             .document_mut()
-            .delete(previous..cursor)
+            .delete(previous..end)
             .map_err(FileError::from)?;
         document.cursor = previous;
         self.after_edit()
@@ -114,13 +121,29 @@ impl Workbench {
         let Some(next) = self.next_boundary()? else {
             return Ok(());
         };
-        let document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
-        let cursor = document.cursor;
+        let cursor = self
+            .active_editor()
+            .ok_or(WorkbenchError::NoDocument)?
+            .cursor;
+        let from = if let Some(previous) = self.previous_boundary()? {
+            if self
+                .adjacent_grapheme_at(previous, true)?
+                .is_some_and(|end| end > cursor)
+            {
+                previous
+            } else {
+                cursor
+            }
+        } else {
+            cursor
+        };
+        let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document
             .session
             .document_mut()
-            .delete(cursor..next)
+            .delete(from..next)
             .map_err(FileError::from)?;
+        document.cursor = from;
         self.after_edit()
     }
 
@@ -155,18 +178,64 @@ impl Workbench {
     }
 
     fn previous_boundary(&self) -> Result<Option<usize>, WorkbenchError> {
-        let cursor = self
-            .active_editor()
-            .ok_or(WorkbenchError::NoDocument)?
-            .cursor;
-        Ok(self.with_active_text(|text, source| text.adjacent(source, cursor, false))??)
+        self.adjacent_grapheme_at(
+            self.active_editor()
+                .ok_or(WorkbenchError::NoDocument)?
+                .cursor,
+            false,
+        )
     }
     fn next_boundary(&self) -> Result<Option<usize>, WorkbenchError> {
-        let cursor = self
-            .active_editor()
-            .ok_or(WorkbenchError::NoDocument)?
-            .cursor;
-        Ok(self.with_active_text(|text, source| text.adjacent(source, cursor, true))??)
+        self.adjacent_grapheme_at(
+            self.active_editor()
+                .ok_or(WorkbenchError::NoDocument)?
+                .cursor,
+            true,
+        )
+    }
+    fn adjacent_grapheme_at(
+        &self,
+        cursor: usize,
+        forward: bool,
+    ) -> Result<Option<usize>, WorkbenchError> {
+        let editor = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
+        let encoding = editor
+            .session
+            .encoding()
+            .ok_or(jc_files::FileError::EncodingRequired)?;
+        let content = self.with_active_text(|text, source| {
+            let position = text.position(source, cursor)?;
+            Ok::<_, jc_text::PositionError>(text.line_range(source, position.line).unwrap().0)
+        })??;
+        if encoding == jc_text::TextEncoding::Utf8
+            && (forward && cursor < content.end || !forward && cursor > content.start)
+        {
+            let source = editor.session.document();
+            let check = if forward {
+                cursor..cursor.saturating_add(2).min(content.end)
+            } else {
+                cursor.saturating_sub(2).max(content.start)..cursor
+            };
+            let ascii = source
+                .range_chunks(check.clone())
+                .map_err(jc_files::FileError::from)?
+                .flatten()
+                .all(u8::is_ascii);
+            // Adjacent ASCII controls/scalars inside one content line are
+            // certain boundaries; CRLF is outside this range. No Unicode scan.
+            if ascii && (check.len() == 2 || forward && cursor + 1 == content.end) {
+                return Ok(Some(if forward { cursor + 1 } else { cursor - 1 }));
+            }
+            let document = self
+                .document_by_tab(editor.tab_id)
+                .ok_or(WorkbenchError::NoDocument)?;
+            return document
+                .unicode
+                .borrow_mut()
+                .adjacent(source, encoding, content, cursor, forward)
+                .map_err(WorkbenchError::UnicodeLayout);
+        }
+        Ok(self.with_active_text(|text, source| text.adjacent(source, cursor, forward))??)
     }
 
     pub fn move_left(&mut self, select: bool) -> Result<(), WorkbenchError> {
@@ -214,19 +283,23 @@ impl Workbench {
         )
     }
     pub fn move_vertical(&mut self, delta: isize, select: bool) -> Result<(), WorkbenchError> {
+        let editor = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
+        let tab = editor.tab_id;
         let current = self.active_position().ok_or(WorkbenchError::NoDocument)?;
-        let offset = self.with_active_text(|text, source| {
-            let line = if delta < 0 {
-                current.line.saturating_sub(delta.unsigned_abs())
-            } else {
-                current
-                    .line
-                    .saturating_add(delta as usize)
-                    .min(text.line_count() - 1)
-            };
-            let column = current.column.min(text.line_len(source, line).unwrap_or(0));
-            text.offset(source, TextPosition { line, column })
-        })??;
+        let column = self
+            .visual_column_for_pane(self.panes.active())
+            .ok_or_else(|| WorkbenchError::UnicodeLayout("Visual caret unavailable".into()))?;
+        let line = if delta < 0 {
+            current.line.saturating_sub(delta.unsigned_abs())
+        } else {
+            current
+                .line
+                .saturating_add(delta as usize)
+                .min(self.line_count_for_tab(tab).unwrap_or(1) - 1)
+        };
+        let offset = self.visual_byte_at(tab, line, column).ok_or_else(|| {
+            WorkbenchError::UnicodeLayout("Visual destination unavailable".into())
+        })?;
         self.move_cursor_to(offset, select)
     }
     fn move_to_position(

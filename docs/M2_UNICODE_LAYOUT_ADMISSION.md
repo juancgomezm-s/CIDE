@@ -1,9 +1,9 @@
 # Admisión autorizada — layout Unicode general de TUI
 
-2026-11-03. Es diseño revisable, no implementación ni aceptación. La TUI conserva
-movimiento escalar y Screen escalar; el modo columna solo admite el repertorio
-cerrado de una celda de M2_RECTANGULAR_SELECTION. No cerrar este pendiente llamando
-«general» al soporte UTF8 del almacenamiento ni ampliando una whitelist.
+2026-11-03. Admisión histórica, posteriormente autorizada e implementada.
+El contrato y la evidencia vigentes están en [M2_UNICODE_LAYOUT](M2_UNICODE_LAYOUT.md).
+La propuesta siguiente conserva su contexto; no describe pendientes actuales ni
+certifica aceptación física/global.
 
 ## Dependencias concretas propuestas
 
@@ -49,7 +49,7 @@ no basta sumar anchos independientes sin revisar esa regla.
    undo/redo, dos vistas y delivery obsoleto. Unit/event+ConPTY y medidas locales;
    pantalla real/terminal/fuente/IME siguen requiriendo aceptación física.
 
-No se han descargado ni añadido estos crates. La autorización anterior de Juan
-cubrió regex-automata; [CONTINUAR_EN_EQUIPO](CONTINUAR_EN_EQUIPO.md) conserva la
+En la admisión aún no se habían añadido los crates. Ahora ambos están fijados.
+La autorización anterior de Juan cubrió regex-automata; [CONTINUAR_EN_EQUIPO](CONTINUAR_EN_EQUIPO.md) conserva la
 restricción histórica «sin instalar dependencias». Juan autorizó ambas bibliotecas el2026-11-03 mediante respuesta explícita.
 No pedir de nuevo autorización para ellas. CI/AVM siguen fuera del bloque.

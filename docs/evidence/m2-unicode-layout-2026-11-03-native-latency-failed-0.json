@@ -1,0 +1,8 @@
+{
+  "ok": false,
+  "physical_display_verified": false,
+  "os_clipboard_accessed": false,
+  "latency_scope": "host IPC + input queue + app + VT parser acknowledgment; no physical terminal/font",
+  "startup_scope": "ConPTY creation + bootstrap + child + initial frame; uncontrolled filesystem cache/order",
+  "rows": []
+}

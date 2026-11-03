@@ -320,7 +320,9 @@ fn draw_editor(
     let cursor_column = if all {
         prepared.cursor_column
     } else {
-        Some(rectangle.map_or(cursor.column, |bounds| bounds.head_column))
+        rectangle
+            .map(|bounds| bounds.head_column)
+            .or(prepared.cursor_column)
     };
     let selection = app.workbench.selection_for_pane(pane);
     let highlights = app.workbench.search_matches_for_tab(_document.tab_id);
@@ -370,34 +372,39 @@ fn draw_editor(
             .get(row)
             .map(Vec::as_slice)
             .unwrap_or(&[]);
-        for (target, (ch, source_offset)) in visible
-            .iter()
-            .copied()
-            .take(usize::from(text_width))
-            .enumerate()
-        {
-            let hit = highlights.partition_point(|hit| hit.range.end <= source_offset);
-            // Prepared rows already expand tabs at absolute visual stops and
-            // include required virtual spaces. Rectangular highlighting uses
-            // cells, never a byte test that would select an entire partial tab.
+        for atom in visible {
+            let hit = highlights.partition_point(|hit| hit.range.end <= atom.source.start);
             let rectangular = rectangle.is_some_and(|bounds| {
                 line_index >= bounds.first_line
                     && line_index <= bounds.last_line
-                    && (bounds.left..bounds.right).contains(&target.saturating_add(hscroll))
+                    && bounds.left
+                        < atom
+                            .column
+                            .saturating_add(hscroll)
+                            .saturating_add(atom.width)
+                    && bounds.right > atom.column.saturating_add(hscroll)
             });
-            let style = if rectangular
-                || highlights
+            let selected = !atom.source.is_empty()
+                && (highlights
                     .get(hit)
-                    .is_some_and(|m| m.range.start <= source_offset)
-                || selection
-                    .as_ref()
-                    .is_some_and(|range| contains_byte(range, source_offset))
-            {
+                    .is_some_and(|m| m.range.start < atom.source.end)
+                    || selection
+                        .as_ref()
+                        .is_some_and(|range| intersects(range, &atom.source)));
+            let style = if rectangular || selected {
                 CellStyle::Reverse
+            } else if atom.marker {
+                CellStyle::Dim
             } else {
-                syntax_style(prepared.syntax.kind_at(source_offset))
+                syntax_style(prepared.syntax.kind_at(atom.source.start))
             };
-            screen.put_styled(text_x + target as u16, row_y, ch, style);
+            screen.put_glyph(
+                text_x + atom.column as u16,
+                row_y,
+                &atom.glyph,
+                atom.width,
+                style,
+            );
         }
     }
 
@@ -657,16 +664,12 @@ fn logical_lines(decoded: &jc_text::DecodedText) -> Vec<Vec<(char, usize)>> {
     lines
 }
 
-fn contains_byte(range: &Range<usize>, offset: usize) -> bool {
-    offset >= range.start && offset < range.end
-}
-
 fn intersects(left: &Range<usize>, right: &Range<usize>) -> bool {
     !left.is_empty() && !right.is_empty() && left.start < right.end && right.start < left.end
 }
 
 pub(crate) fn clip(text: &str, width: u16) -> String {
-    text.chars().take(usize::from(width)).collect()
+    jc_text::grapheme::clip(text, usize::from(width))
 }
 
 #[cfg(test)]

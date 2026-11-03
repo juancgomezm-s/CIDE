@@ -20,7 +20,9 @@ fn search_at(matches: &[jc_app::SearchMatch], source: std::ops::Range<usize>) ->
         .is_some_and(|hit| hit.range.start < source.end)
 }
 struct Cell {
-    ch: char,
+    glyph: jc_app::Glyph,
+    column: usize,
+    width: usize,
     selected: bool,
     search: bool,
     marker: bool,
@@ -66,7 +68,7 @@ pub(super) struct SyntaxBudget {
 impl From<&Cell> for SyntaxCell {
     fn from(cell: &Cell) -> Self {
         Self {
-            ch: cell.ch,
+            ch: cell.glyph.first(),
             kind: cell.kind,
             selected: cell.selected,
             search: cell.search,
@@ -122,7 +124,8 @@ impl Frame {
         pane.rows
             .get(line.checked_sub(pane.first_line)?)?
             .cells
-            .get(column)
+            .iter()
+            .find(|cell| column >= cell.column && column < cell.column + cell.width)
             .map(SyntaxCell::from)
     }
     pub(super) fn syntax_budget(&self, pane: PaneId) -> Option<SyntaxBudget> {
@@ -151,11 +154,11 @@ impl Frame {
     }
     pub(super) fn contains_source_row(&self, needle: &str) -> bool {
         self.panes.iter().flat_map(|p| &p.rows).any(|row| {
-            row.cells
-                .iter()
-                .map(|c| c.ch)
-                .collect::<String>()
-                .contains(needle)
+            let mut text = String::new();
+            for cell in &row.cells {
+                cell.glyph.with_str(|s| text.push_str(s));
+            }
+            text.contains(needle)
         })
     }
 }
@@ -322,20 +325,10 @@ pub(super) fn linear_hit(
                 .min(content.end)
                 .max(content.start)
         } else {
-            let end = state
-                .workbench
-                .position_for_tab(area.tab, content.end)
-                .ok_or("Source EOL boundary unavailable")?;
             state
                 .workbench
-                .byte_offset_for_tab(
-                    area.tab,
-                    TextPosition {
-                        line,
-                        column: column.min(end.column),
-                    },
-                )
-                .ok_or("Source scalar boundary unavailable")?
+                .visual_byte_at(area.tab, line, column)
+                .ok_or("Source visual boundary unavailable")?
         };
         return Ok(Some((area.pane, byte)));
     }
@@ -405,10 +398,10 @@ pub(super) fn rectangle_hit(
                     .map_err(|e| e.to_string())?
             }
         } else {
-            state
-                .workbench
-                .rectangle_position_from_scalar(area.tab, TextPosition { line, column })
-                .map_err(|e| e.to_string())?
+            VisualPosition {
+                line,
+                column: VisualColumn(column),
+            }
         };
         return Ok(Some((area.pane, point)));
     }
@@ -453,6 +446,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
     });
     state.workbench.reveal_active_pane(rows, columns);
     let mut panes = Vec::with_capacity(areas.len());
+    let mut glyph_budget = jc_app::MAX_PRESENTATION_TEXT_BYTES;
     let mut syntax_limited = false;
     let mut syntax_plain = false;
     for (id, rect) in areas {
@@ -496,8 +490,11 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                     .display_row(location.tab, line, scroll, columns)
                     .unwrap_or_default()
                     .into_iter()
-                    .map(|cell| Cell {
-                        ch: cell.ch,
+                    .enumerate()
+                    .map(|(column, cell)| Cell {
+                        glyph: jc_app::Glyph::Scalar(cell.ch),
+                        column,
+                        width: 1,
                         marker: cell.marker,
                         kind: if cell.source.is_empty() {
                             SyntaxKind::Plain
@@ -517,50 +514,65 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                 });
                 continue;
             }
-            let visible = if rectangle.is_some() {
+            let visible = if glyph_budget == 0 {
+                None
+            } else if rectangle.is_some() {
                 state
                     .workbench
-                    .rectangle_grid_line(location.tab, line, scroll, columns, invisible)
-                    .unwrap_or_else(|_| {
-                        "[unsupported rectangular layout]"
-                            .chars()
-                            .take(columns)
-                            .map(|ch| (ch, usize::MAX))
-                            .collect()
-                    })
+                    .rectangle_glyph_line(location.tab, line, scroll, columns, invisible)
+                    .ok()
             } else {
                 state
                     .workbench
-                    .visible_line(location.tab, line, scroll, columns)
-                    .unwrap_or_default()
-            };
+                    .visual_row(location.tab, line, scroll, columns)
+            }
+            .filter(|row| {
+                let bytes = row.iter().map(|a| a.glyph.byte_len()).sum::<usize>();
+                if bytes > glyph_budget {
+                    glyph_budget = 0;
+                    false
+                } else {
+                    glyph_budget -= bytes;
+                    true
+                }
+            })
+            .unwrap_or_else(|| {
+                "[Unicode layout unavailable/budget]"
+                    .chars()
+                    .take(columns)
+                    .enumerate()
+                    .map(|(column, ch)| jc_app::VisualAtom {
+                        source: 0..0,
+                        column,
+                        width: 1,
+                        glyph: jc_app::Glyph::Scalar(ch),
+                        marker: true,
+                    })
+                    .collect()
+            });
             let cells = visible
                 .into_iter()
-                .take(columns)
-                .enumerate()
-                .map(|(target, (ch, byte))| Cell {
-                    marker: rectangle.is_some() && invisible && matches!(ch, '>' | '.'),
-                    kind: if byte == usize::MAX {
+                .map(|atom| Cell {
+                    kind: if atom.source.is_empty() {
                         SyntaxKind::Plain
                     } else {
-                        syntax.kind_at(byte)
+                        syntax.kind_at(atom.source.start)
                     },
-                    search: byte != usize::MAX && search_at(matches, byte..byte.saturating_add(1)),
-                    ch: if ch == '\t' {
-                        '→'
-                    } else if ch.is_control() {
-                        '·'
-                    } else {
-                        ch
-                    },
-                    selected: selection
-                        .as_ref()
-                        .is_some_and(|range| range.contains(&byte))
+                    search: !atom.source.is_empty() && search_at(matches, atom.source.clone()),
+                    selected: !atom.source.is_empty()
+                        && selection.as_ref().is_some_and(|r| {
+                            r.start < atom.source.end && atom.source.start < r.end
+                        })
                         || rectangle.is_some_and(|rect| {
                             line >= rect.first_line
                                 && line <= rect.last_line
-                                && (rect.left..rect.right).contains(&scroll.saturating_add(target))
+                                && rect.left < scroll + atom.column + atom.width
+                                && rect.right > scroll + atom.column
                         }),
+                    glyph: atom.glyph,
+                    column: atom.column,
+                    width: atom.width,
+                    marker: atom.marker,
                 })
                 .collect();
             prepared.push(Row {
@@ -575,7 +587,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             } else if invisible {
                 state.workbench.display_column_for_pane(id)?
             } else {
-                position.column
+                state.workbench.visual_column_for_pane(id)?
             };
             (active
                 && state.focused
@@ -821,16 +833,23 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                 DIM,
                 BACKGROUND,
             )?;
-            for (column, cell) in line.cells.iter().enumerate() {
-                let x = pane.text_x + column as i32 * frame.cell_width;
+            for cell in &line.cells {
+                let x = pane.text_x + cell.column as i32 * frame.cell_width;
                 let mut units = [0u16; 2];
-                let encoded = cell.ch.encode_utf16(&mut units);
+                let cluster;
+                let encoded = match &cell.glyph {
+                    jc_app::Glyph::Scalar(ch) => ch.encode_utf16(&mut units),
+                    jc_app::Glyph::Cluster(text) => {
+                        cluster = text.encode_utf16().collect::<Vec<_>>();
+                        cluster.as_slice()
+                    }
+                };
                 text(
                     dc,
                     Rect {
                         left: x,
                         top: y,
-                        right: (x + frame.cell_width).min(pane.rect.right),
+                        right: (x + cell.width as i32 * frame.cell_width).min(pane.rect.right),
                         bottom: (y + frame.cell_height).min(pane.rect.bottom),
                     },
                     encoded,

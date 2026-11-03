@@ -1,0 +1,21 @@
+
+running 7 tests
+test app::clipboard_tests::clipboard_tui_headless_model_retains_internal_transport_by_default ... ok
+test app::clipboard_tests::clipboard_tui_transport_failure_keeps_source_and_never_falls_back_to_old_internal_text ... ok
+test app::clipboard_tests::clipboard_tui_rectangle_keeps_internal_rows_and_never_calls_unicode_transport ... ok
+test app::clipboard_tests::clipboard_tui_paste_goes_to_topmost_fields_with_destination_limits ... ok
+test app::clipboard_tests::clipboard_tui_availability_render_and_disabled_areas_do_not_access_transport ... ok
+test app::clipboard_tests::clipboard_tui_linear_copy_cut_paste_preserves_encoding_eol_and_atomic_history ... ok
+test app::clipboard_tests::clipboard_tui_bad_encoding_or_oversize_paste_is_atomic_and_bom_is_retained ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 124 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.11s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-c24792ef3ef15fde.exe)
+     Running unittests src\main.rs (target\debug\deps\cide_tui-52b635e2fdc52243.exe)

@@ -2,8 +2,11 @@
 name = "jc-text"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.85"
 publish = false
 description = "Explicit text decoding, encoding and source-position mapping for CIDE"
 
 [dependencies]
+
+unicode-segmentation = "=1.13.3"
+unicode-width = { version = "=0.2.2", default-features = false }

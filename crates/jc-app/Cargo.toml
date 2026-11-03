@@ -2,7 +2,7 @@
 name = "jc-app"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.85"
 publish = false
 description = "UI-independent command, keymap, focus, menu and tab model for CIDE"
 

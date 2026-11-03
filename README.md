@@ -1,5 +1,11 @@
 # CIDE
 
+[Cierre funcional TUI y pendientes externos](docs/M2_TUI_FINISH.md):530 nombres de
+pruebas aprobadas por suites/cierres dirigidos,18 nuevas; cuatro flujos ConPTY y17
+checks HWND propios. [Unicode y mediciones](docs/M2_UNICODE_LAYOUT.md). Ejecutable
+local `target/release/cide-tui.exe`; no aceptación física/global ni AVM certificada.
+
+
 CIDE es el nombre actual del proyecto, antes JC-IDE. Comandos canónicos: `cide`
 (CLI), `cide-tui` y `cide-gui`. Los ejecutables `jc-ide*` siguen como aliases de la
 misma entrada. La carpeta/repositorio/remoto y crates `jc-*` no se renombraron.
@@ -11,7 +17,7 @@ Editor de código ligero, con núcleo Rust, soporte de varios lenguajes e integr
 prioritaria con Progress OpenEdge/ABL. El diseño conserva los bytes y la codificación
 original de los fuentes, incluidos los que no son UTF-8.
 
-**Estado: M2 en desarrollo — F1/F2/F3 implementados con evidencia local: vistas independientes, transacciones, rangos/índices, cuotas, presentación de solo lectura, terminal incremental y tareas acotadas/versionadas. Metas globales de rendimiento abiertas. Search Plus de proyecto ya busca por lotes y ofrece reemplazo literal con preview y conflictos; S0 literal ya usa tramos cooperativos y case folding completo Unicode 17. Regex real acotado está integrado; aceptación completa de M2A sigue abierta. GUI con dirección visual de Sublime Text y símbolos pendientes.**
+**Estado: M2 en desarrollo — F1/F2/F3 implementados con evidencia local: vistas independientes, transacciones, rangos/índices, cuotas, presentación de solo lectura, terminal incremental y tareas acotadas/versionadas. Metas globales de rendimiento abiertas. Search Plus de proyecto ya busca por lotes y ofrece reemplazo literal con preview y conflictos; S0 literal ya usa tramos cooperativos y case folding completo Unicode 17. Regex, comparación de abiertos, servicios léxicos opcionales, snippets, clipboard explícito y layout por grafemas están integrados en TUI. Pendientes funcionales del alcance TUI implementados con evidencia local; aceptación física/global de M2A abierta. GUI con dirección visual de Sublime Text y servicios de fuente pendientes.**
 Este repositorio reúne la investigación, decisiones, plan y una implementación inicial
 real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 
@@ -20,7 +26,8 @@ real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 | Componente | Implementado en esta base |
 |---|---|
 | `jc-core` | Piece table de bytes, edición, revisiones, undo/redo acotado y compactación explícita |
-| `jc-text` | UTF-8/Windows-1252/ISO-8859-1/IBM850, decodificación no destructiva, line endings y byte↔línea/columna |
+| `jc-text` | UTF-8/Windows-1252/ISO-8859-1/IBM850, decodificación no destructiva, line endings, coordenadas explícitas y helpers de grafemas |
+| `jc-platform` | Transporte Windows CF_UNICODETEXT estricto compartido y propietario lazy TUI |
 | `jc-files` | Sesión de archivo, detección de cambios externos, guardado atómico y creación no-clobber |
 | Selecciones | Port parcial de `Region` de Lime Text, con procedencia y licencia conservadas |
 | `jc-languages` | 18 perfiles y detección por extensión/nombre de archivo |
@@ -109,8 +116,9 @@ Navigation y paleta también exponen pestañas1…8/última, además de Alt+1…
 El [rectángulo GUI](docs/M2B_RECTANGLE_GUI.md) ya admite Alt+Shift+flechas,
 Alt+arrastrar y menú/paleta, con grid TAB4, espacio virtual y clipboard interno.
 Una edición termina la selección con un undo compartido. Conserva el repertorio
-de una celda del modelo; Unicode de ancho múltiple y clipboard rectangular OS
-siguen pendientes.
+por grafemas del [layout Unicode compartido](docs/M2_UNICODE_LAYOUT.md),
+incluidos CJK/emoji y cortes parciales definidos. Clipboard rectangular OS sigue
+fuera del alcance; clipboard lineal Windows explícito está integrado.
 
 Edit también expone Indent/Outdent; View ofrece Link/Unlink Scroll (Ctrl+Alt+L).
 El enlace aplica el delta vertical entre grupos conservando carets y pin; la barra

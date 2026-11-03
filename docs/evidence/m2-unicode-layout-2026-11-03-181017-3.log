@@ -1,0 +1,30 @@
+
+running 9 tests
+test app::git_status::tests::paths_preserve_unicode_escape_bytes_controls_and_backslashes_without_partial_tokens ... ok
+test render::git_status::tests::unicode_and_preescaped_paths_are_composed_as_text_not_terminal_controls ... FAILED
+test app::unicode_tests::unicode_tui_palette_and_prompt_backspace_remove_one_grapheme_without_source_edit ... ok
+test app::clipboard_tests::clipboard_tui_rectangle_keeps_internal_rows_and_never_calls_unicode_transport ... ok
+test app::invisibles_tests::linear_byte_selection_marks_complete_tab_unicode_and_crlf_atoms ... ok
+test app::unicode_tests::unicode_tui_rectangular_wide_edit_and_undo_survive_split_and_tiny_viewport ... ok
+test app::tests::document_search_runs_between_events_with_unicode_markers_history_and_goto ... ok
+test app::unicode_tests::unicode_tui_cluster_caret_selection_and_readonly_composition_share_visible_geometry ... ok
+test app::multiline_tests::multiline_replace_all_is_one_undo_and_save_preserves_exact_unicode_mixed_eol_bytes ... ok
+
+failures:
+
+---- render::git_status::tests::unicode_and_preescaped_paths_are_composed_as_text_not_terminal_controls stdout ----
+
+thread 'render::git_status::tests::unicode_and_preescaped_paths_are_composed_as_text_not_terminal_controls' panicked at crates\jc-tui\src\render\git_status.rs:287:9:
+assertion failed: screen.row_text(2).contains(">!! src/niño_λ_😀_\\x1b_\\n_\\xFF.p")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    render::git_status::tests::unicode_and_preescaped_paths_are_composed_as_text_not_terminal_controls
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 120 filtered out; finished in 0.02s
+
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.63s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-c24792ef3ef15fde.exe)
+error: test failed, to rerun pass `-p jc-tui --lib`

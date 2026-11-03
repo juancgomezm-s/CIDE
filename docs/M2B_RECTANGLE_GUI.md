@@ -1,5 +1,11 @@
 # Rectángulos GUI y cuadrícula compartida — 2026-11-03
 
+**Seguimiento Unicode:** presentación/caret/hit testing ahora consumen VisualAtom
+compartido, sin ruta escalar paralela en paint.17 checks HWND propios finales
+(dos nuevos) aprobados; el resto de la evidencia fechada abajo es histórico.
+[Contrato actual](M2_UNICODE_LAYOUT.md), sin aceptación física de GDI/IME/DPI.
+
+
 Bloque posterior a `1de086a`, sobre el [contrato acotado existente](M2_RECTANGULAR_SELECTION.md).
 La GUI completa Start/Cancel/Left/Right/Up/Down, menú Edit, paleta, Alt+Shift+flechas
 y Alt+arrastrar. Edición, clipboard interno, presupuestos y undo pertenecen a
@@ -28,18 +34,18 @@ Izquierda/Derecha si no existe byte anterior/siguiente en BOF/EOF. Click normal
 convierte la cuadrícula a byte/posición escalar y sale del rectángulo; virtual
 apunta al final del contenido, sin entrar en CRLF ni antes del BOM.
 
-El repertorio no se amplía: ASCII, Latin-1 admitido y los símbolos CP1252
-enumerados en LineLayout; TAB4 y columnas virtuales. Combinantes, CJK, emoji,
-controles, bytes inválidos y demás anchos desconocidos se rechazan. Se valida la
+El [layout Unicode compartido](M2_UNICODE_LAYOUT.md) sustituyó posteriormente
+la whitelist por grafemas narrow/TAB4, incluidos combinantes con base, CJK y
+emoji. Controles, decodificación inválida, ancho cero y clusters >1024B se rechazan. Se valida la
 línea afectada completa, no solo el corte. Hasta1024 filas/4096 columnas,64KiB por
 línea,2MiB fuente/clipboard/staging por sus presupuestos existentes; no RAM privada.
 Encoding estricto, BOM, EOL y newline final se conservan fuera de los cambios pedidos.
 
 ## Presentación, foco y propiedad
 
-Con rectángulo activo, GUI y TUI priorizan una cuadrícula TAB4. Con invisibles ON,
-TAB aparece como `>` y relleno `.`, espacios/virtual como `.`; Latin-1 sigue siendo
-una celda. Las marcas virtuales son presentación, no bytes copiables fuera del
+GUI y TUI comparten cuadrícula visual por grafemas narrow/TAB4. Con invisibles
+ON, TAB aparece como `>` y relleno `.`, espacios/virtual como `.`; los clusters
+se emiten completos con su ancho, incluidos glifos de dos celdas. Las marcas virtuales son presentación, no bytes copiables fuera del
 rectángulo. Encabezado GUI `Rect TAB4`. La preferencia global de invisibles no cambia;
 al cancelar vuelve la proyección diagnóstica con escapes. Caret, scroll, selección
 y mouse usan columnas visuales de esa cuadrícula, no el ancho de un escape.

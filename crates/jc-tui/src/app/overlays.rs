@@ -57,7 +57,7 @@ impl TuiApp {
                 {
                     self.status = match self.workbench.toggle_search_regex() {
                         Ok(()) => format!(
-                            "Project regex: {} Â· replacement is literal",
+                            "Project regex: {} · replacement is literal",
                             self.workbench.search().regex
                         ),
                         Err(error) => error.to_string(),
@@ -66,7 +66,9 @@ impl TuiApp {
                 KeyCode::Esc => self.close_overlay(),
                 KeyCode::Enter => self.submit_prompt(kind, input),
                 KeyCode::Backspace => {
-                    input.pop();
+                    let from =
+                        jc_text::grapheme::previous_boundary(&input, input.len()).unwrap_or(0);
+                    input.truncate(from);
                     self.overlay = UiOverlay::Prompt { kind, input };
                 }
                 KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
@@ -112,7 +114,9 @@ impl TuiApp {
                     }
                 }
                 KeyCode::Backspace => {
-                    input.pop();
+                    let from =
+                        jc_text::grapheme::previous_boundary(&input, input.len()).unwrap_or(0);
+                    input.truncate(from);
                     self.overlay = UiOverlay::Palette { input, selected: 0 };
                 }
                 KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {

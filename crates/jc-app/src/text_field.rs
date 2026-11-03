@@ -1,6 +1,7 @@
 //! Small bounded multiline input shared by frontends; offsets are UTF-8 bytes,
 //! displayed cells are ASCII spans. CRLF is one editable boundary unit.
 use crate::workbench::invisible_layout::escape_character;
+use jc_text::grapheme;
 use std::ops::Range;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -35,32 +36,33 @@ pub enum FieldEdit<'a> {
     Clear,
 }
 
-fn boundary(text: &str, mut at: usize) -> usize {
-    at = at.min(text.len());
-    while !text.is_char_boundary(at) {
-        at -= 1;
+fn boundary(text: &str, at: usize) -> usize {
+    let at = at.min(text.len());
+    if at == text.len() {
+        return at;
     }
-    if at > 0
-        && text.as_bytes().get(at - 1) == Some(&b'\r')
-        && text.as_bytes().get(at) == Some(&b'\n')
-    {
-        at -= 1;
+    grapheme::graphemes(text)
+        .scan(0, |offset, g| {
+            let start = *offset;
+            *offset += g.len();
+            Some(start)
+        })
+        .take_while(|&start| start <= at)
+        .last()
+        .unwrap_or(0)
+}
+fn ceiling(text: &str, at: usize) -> usize {
+    if boundary(text, at) == at {
+        at
+    } else {
+        grapheme::next_boundary(text, boundary(text, at)).unwrap_or(text.len())
     }
-    at
 }
 fn previous(text: &str, at: usize) -> usize {
-    if at >= 2 && &text.as_bytes()[at - 2..at] == b"\r\n" {
-        at - 2
-    } else {
-        text[..at].char_indices().next_back().map_or(0, |(i, _)| i)
-    }
+    grapheme::previous_boundary(text, at).unwrap_or(0)
 }
 fn next(text: &str, at: usize) -> usize {
-    if text[at..].starts_with("\r\n") {
-        at + 2
-    } else {
-        at + text[at..].chars().next().map_or(0, char::len_utf8)
-    }
+    grapheme::next_boundary(text, at).unwrap_or(text.len())
 }
 fn line_start(text: &str, at: usize) -> usize {
     text[..at].rfind(['\r', '\n']).map_or(0, |i| i + 1)
@@ -109,7 +111,7 @@ pub fn edit_selected_field(
                 {
                     next_state.cursor += 1;
                 }
-                next_state.cursor = boundary(text, next_state.cursor);
+                next_state.cursor = ceiling(text, next_state.cursor);
                 changed
             } else {
                 edit_field(text, &mut next_state.cursor, edit, limit)?
@@ -200,6 +202,7 @@ pub fn edit_field(
             {
                 *cursor += 1;
             }
+            *cursor = ceiling(text, *cursor);
             Ok(true)
         }
         FieldEdit::Left => {
@@ -220,7 +223,7 @@ pub fn edit_field(
         }
         FieldEdit::Up | FieldEdit::Down => {
             let start = line_start(text, at);
-            let column = text[start..at].chars().count();
+            let column = grapheme::graphemes(&text[start..at]).count();
             let target = match edit {
                 FieldEdit::Up if start > 0 => line_start(text, previous(text, start)),
                 FieldEdit::Down if line_end(text, at) < text.len() => {
@@ -229,10 +232,14 @@ pub fn edit_field(
                 _ => return Ok(false),
             };
             let end = line_end(text, target);
-            *cursor = text[target..end]
-                .char_indices()
+            *cursor = grapheme::graphemes(&text[target..end])
+                .scan(target, |offset, g| {
+                    let start = *offset;
+                    *offset += g.len();
+                    Some(start)
+                })
                 .nth(column)
-                .map_or(end, |(i, _)| target + i);
+                .unwrap_or(end);
             Ok(false)
         }
         FieldEdit::Backspace if at > 0 => {

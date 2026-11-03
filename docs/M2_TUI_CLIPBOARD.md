@@ -3,7 +3,8 @@
 Construido sobre8a904ba y validado al cierre del bloque. Sin dependencia
 externa nueva: extraer el adaptador existente GUI a un crate de plataforma sin
 dependencia de UI o núcleo. GUI conserva su HWND; TUI crea bajo demanda un HWND
-message-only propio, invisible, en el hilo UI y sin proceso auxiliar.
+message-only propio, invisible, en un hilo Win32 dedicado bajo demanda, sin
+proceso auxiliar. GUI usa su HWND existente directamente.
 
 Solo Copy/Cut/Paste explícitos usan CF_UNICODETEXT; no sondeo, historial, lectura
 de disponibilidad ni acceso al iniciar/dibujar. Headless TuiApp mantiene transporte
@@ -47,9 +48,33 @@ fixture intacto. No lectura/escritura de clipboard personal ni certificación OS
 Un fixture usó un nombre de método inexistente y un campo tenía visibilidad más
 amplia que su trait; se corrigieron antes del cierre, logs retenidos.
 
-[Contrato y límites](M2_TUI_CLIPBOARD.md). Sigue layout Unicode general: Juan
-autorizó unicode-segmentation=1.13.3 y unicode-width=0.2.2; [admisión](M2_UNICODE_LAYOUT_ADMISSION.md).
+Layout Unicode ya implementado con las bibliotecas autorizadas;
+[contrato y evidencia](M2_UNICODE_LAYOUT.md).
 Esa autorización sustituye la restricción previa para estas dos dependencias;
 no pedirla de nuevo. Sin instalación de programas, CI ni AVM.
 
 [Metadatos/hashes/paquete](evidence/m2-tui-clipboard-2026-11-03-metadata.json). ZIP local de desarrollo `work/packages/CIDE-windows-dev-tui-clipboard-2026-11-03.zip`, SHA256 `dcb18a76d27a162cb945ae25ff032a5b4e2d12d8849af88c535267b47f227205`; CRC/manifiesto verificados. Dos avisos GNU pendientes, sin certificación de distribución.
+
+## Propietario que responde estando inactivo — cierre posterior
+
+La revisión Unicode detectó que esperar entrada TUI no bombea mensajes Win32.
+Se sustituyó el owner en el hilo principal por un actor std lazy: un hilo, HWND
+message-only creado/destruido en él, GetMessageW y un solo buzón acotado. Sólo
+texto poseído <=2MiB y respuestas cruzan el buzón; nunca Document, FileSession ni
+callbacks al editor. Preflight inválido no crea hilo/ventana. Readiness se publica
+tras crear la cola; cierre marca el buzón antes de liberar respuestas, también
+por unwind. Post fallido devuelve error; no fallback silencioso ni sondeo.
+Drop despierta y reúne el hilo; si falla PostThreadMessage lo separa para no
+bloquear esperando una cola imposible de despertar. No se fuerza terminación.
+
+La prueba del HWND propio verifica distinto hilo/mismo proceso, invisibilidad,
+cuatro WM_NULL con SendMessageTimeout mientras el llamador no bombea y destrucción
+al cerrar. Pasaron cinco pruebas de plataforma y siete TUI de clipboard tras el
+cambio; sin OpenClipboard ni datos personales en esta prueba de propietario.
+GetMessage atiende mensajes enviados mientras espera; la cola debe existir antes
+de PostThreadMessage: [GetMessageW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessagew),
+[PostThreadMessageW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postthreadmessagew),
+[MSG](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-msg).
+Delayed rendering externo aún puede bloquear una transferencia sin deadline
+duro; este hilo no certifica cancelación de llamadas OS ni interoperabilidad real.
+Evidencia posterior en `m2-unicode-layout-2026-11-03-*`.

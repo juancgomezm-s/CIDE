@@ -1,0 +1,96 @@
+    Checking unicode-segmentation v1.13.3
+    Checking unicode-width v0.2.2
+    Checking jc-text v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-text)
+    Checking jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+error: this expression creates a reference which is immediately dereferenced by the compiler
+  --> crates\jc-app\src\unicode_layout.rs:80:37
+   |
+80 |         let width = grapheme::width(&text);
+   |                                     ^^^^^ help: change this to: `text`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrow
+   = note: `-D clippy::needless-borrow` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::needless_borrow)]`
+
+error: this expression creates a reference which is immediately dereferenced by the compiler
+  --> crates\jc-app\src\unicode_layout.rs:82:33
+   |
+82 |             return (Glyph::text(&text), width, false);
+   |                                 ^^^^^ help: change this to: `text`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrow
+
+error: use of `format!` to build up a string from an iterator
+  --> crates\jc-app\src\unicode_layout.rs:84:31
+   |
+84 |           let escaped: String = text
+   |  _______________________________^
+85 | |             .chars()
+86 | |             .map(|ch| format!("\\u{{{:X}}}", ch as u32))
+87 | |             .collect();
+   | |______________________^
+   |
+help: call `fold` instead
+  --> crates\jc-app\src\unicode_layout.rs:86:14
+   |
+86 |             .map(|ch| format!("\\u{{{:X}}}", ch as u32))
+   |              ^^^
+help: ... and use the `write!` macro here
+  --> crates\jc-app\src\unicode_layout.rs:86:23
+   |
+86 |             .map(|ch| format!("\\u{{{:X}}}", ch as u32))
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this can be written more efficiently by appending to a `String` directly
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#format_collect
+   = note: `-D clippy::format-collect` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::format_collect)]`
+
+error: use of `format!` to build up a string from an iterator
+   --> crates\jc-app\src\unicode_layout.rs:101:27
+    |
+101 |     let escaped: String = bytes.iter().map(|b| format!("\\x{b:02X}")).collect();
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: call `fold` instead
+   --> crates\jc-app\src\unicode_layout.rs:101:40
+    |
+101 |     let escaped: String = bytes.iter().map(|b| format!("\\x{b:02X}")).collect();
+    |                                        ^^^
+help: ... and use the `write!` macro here
+   --> crates\jc-app\src\unicode_layout.rs:101:48
+    |
+101 |     let escaped: String = bytes.iter().map(|b| format!("\\x{b:02X}")).collect();
+    |                                                ^^^^^^^^^^^^^^^^^^^^^
+    = note: this can be written more efficiently by appending to a `String` directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#format_collect
+
+error: very complex type used. Consider factoring parts into `type` definitions
+   --> crates\jc-app\src\unicode_layout.rs:153:27
+    |
+153 |     fn next(&mut self) -> Result<Option<(Range<usize>, Glyph, usize, bool)>, String> {
+    |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#type_complexity
+    = note: `-D clippy::type-complexity` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::type_complexity)]`
+
+error: this function has too many arguments (8/7)
+   --> crates\jc-app\src\unicode_layout.rs:439:5
+    |
+439 | /     pub fn row(
+440 | |         &mut self,
+441 | |         doc: &Document,
+442 | |         encoding: TextEncoding,
+...   |
+447 | |         pad: bool,
+448 | |     ) -> Result<Vec<VisualAtom>, String> {
+    | |________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#too_many_arguments
+    = note: `-D clippy::too-many-arguments` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_arguments)]`
+
+error: could not compile `jc-app` (lib) due to 6 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-app` (lib test) due to 6 previous errors

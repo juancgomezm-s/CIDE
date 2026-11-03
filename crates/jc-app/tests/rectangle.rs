@@ -173,14 +173,14 @@ fn virtual_insert_delete_and_clipboard_do_not_add_line_endings() {
 
 #[test]
 fn rectangle_admission_caps_and_unsupported_source_are_atomic() {
-    for text in ["e\u{301}", "界", "🙂", "a\u{7f}", "a\u{ad}"] {
+    for text in ["\u{301}", "\u{200d}", "a\u{7f}", "a\u{ad}"] {
         let mut b = bench(text, TextEncoding::Utf8);
         let before = steps(&b);
         assert!(b.start_rectangle().is_err());
         assert_eq!(steps(&b), before);
         assert!(!b.context().rectangular_selection);
     }
-    let mut b = bench("ok\n界", TextEncoding::Utf8);
+    let mut b = bench("ok\n\u{301}", TextEncoding::Utf8);
     b.start_rectangle().unwrap();
     let rect = b.rectangle_for_pane(PaneId::Primary);
     assert!(b.extend_rectangle(1, 1).is_err());

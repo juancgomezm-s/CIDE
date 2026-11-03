@@ -1,0 +1,12 @@
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+error[E0609]: no field `0` on type `&VisualAtom`
+   --> crates\jc-tui\src\app\invisibles_tests.rs:203:47
+    |
+203 |         text.rows[0].iter().take(5).map(|c| c.0).collect::<String>(),
+    |                                               ^ unknown field
+    |
+    = note: available fields are: `source`, `column`, `width`, `glyph`, `marker`
+
+For more information about this error, try `rustc --explain E0609`.
+error: could not compile `jc-tui` (lib test) due to 1 previous error

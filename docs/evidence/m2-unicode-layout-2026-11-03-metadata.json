@@ -1,0 +1,197 @@
+{
+  "baseline": "6b6d790",
+  "date": "2026-11-03",
+  "toolchain": "Rust1.85.1 MSVC x64, declared minimum1.85",
+  "dependencies": {
+    "unicode-segmentation": "1.13.3",
+    "unicode-width": "0.2.2 (default-features=false)"
+  },
+  "validation": {
+    "unique_listed_test_names": 532,
+    "unique_passed_test_names": 530,
+    "ignored_standalone_helpers": [
+      "git_read::tests::fixture_descendant_child",
+      "git_read::tests::fixture_sleep_child"
+    ],
+    "missing_passed_names": [],
+    "single_all_workspace_runtime_pass": false,
+    "validation": "workspace by suites and directed closure; only --list is one final workspace invocation"
+  },
+  "new_cases": 18,
+  "new_case_names": [
+    "unicode_range_cursor_matches_uax29_through_fragments_long_clusters_and_regional_context",
+    "unicode_invalid_source_groups_and_literal_bom_remain_atomic_without_lossy_decode",
+    "unicode_visual_columns_cells_clipping_tabs_and_complete_source_ranges",
+    "unicode_cache_warm_ranges_and_suffix_edits_stay_bounded_and_match_cold_reference",
+    "unicode_visual_escape_budget_and_legacy_mapping_are_explicit",
+    "unicode_cold_prefix_is_lazy_and_large_cluster_row_has_explicit_text_quota",
+    "unicode_keyboard_movement_and_delete_use_complete_clusters_bom_crlf_and_shared_undo",
+    "unicode_vertical_movement_uses_visual_tab4_and_wide_columns_not_scalar_count",
+    "unicode_rectangle_full_and_partial_clusters_preserve_cell_width_and_one_undo",
+    "unicode_rectangle_resegments_actual_joins_and_rejects_invalid_legacy_transaction",
+    "unicode_selected_fields_move_delete_clusters_and_keep_quota_failures_atomic",
+    "unicode_tui_cluster_caret_selection_and_readonly_composition_share_visible_geometry",
+    "unicode_tui_rectangular_wide_edit_and_undo_survive_split_and_tiny_viewport",
+    "unicode_tui_palette_and_prompt_backspace_remove_one_grapheme_without_source_edit",
+    "unicode_tui_rectangular_warm_frame_reuses_range_layout_instead_of_decoding_whole_line",
+    "unicode_tui_owned_source_payload_is_bounded_across_a_tall_frame",
+    "clusters_keep_sparse_payload_and_wide_continuations_clear_as_a_unit",
+    "cluster_payload_changes_and_wide_to_narrow_erase_old_coverage_incrementally"
+  ],
+  "conpty_final_checks": 4,
+  "conpty_final_vt_bytes": 45965,
+  "conpty_final_report": "work/unicode-conpty/20261103T190036Z-e8d8ccde/report.json",
+  "gui_checks": 17,
+  "platform_owner_check": "own HWND, distinct thread, WM_NULL responsive while caller idle, no clipboard opened",
+  "private_clipboard_accessed": false,
+  "physical_display_verified": false,
+  "global_memory_latency_acceptance": false,
+  "avm_started": false,
+  "ci_runs": 0,
+  "reports": [
+    {
+      "kind": "conpty",
+      "path": "docs/evidence/m2-unicode-layout-2026-11-03-conpty-0.json",
+      "ok": false,
+      "source_report": "work/unicode-conpty/20261103T182107Z-eabeccfb/report.json"
+    },
+    {
+      "kind": "conpty",
+      "path": "docs/evidence/m2-unicode-layout-2026-11-03-conpty-1.json",
+      "ok": false,
+      "source_report": "work/unicode-conpty/20261103T182147Z-7aed3afe/report.json"
+    },
+    {
+      "kind": "conpty",
+      "path": "docs/evidence/m2-unicode-layout-2026-11-03-conpty-2.json",
+      "ok": true,
+      "source_report": "work/unicode-conpty/20261103T182240Z-e61d5f33/report.json"
+    },
+    {
+      "kind": "conpty",
+      "path": "docs/evidence/m2-unicode-layout-2026-11-03-conpty-3.json",
+      "ok": true,
+      "source_report": "work/unicode-conpty/20261103T184133Z-c642b6bf/report.json"
+    },
+    {
+      "kind": "conpty",
+      "path": "docs/evidence/m2-unicode-layout-2026-11-03-conpty-4.json",
+      "ok": true,
+      "source_report": "work/unicode-conpty/20261103T185628Z-6076ab76/report.json"
+    },
+    {
+      "kind": "conpty",
+      "path": "docs/evidence/m2-unicode-layout-2026-11-03-conpty-5.json",
+      "ok": true,
+      "source_report": "work/unicode-conpty/20261103T190036Z-e8d8ccde/report.json"
+    },
+    {
+      "kind": "native-latency-failed",
+      "path": "docs/evidence/m2-unicode-layout-2026-11-03-native-latency-failed-0.json",
+      "ok": false,
+      "source_report": "work/unicode-compare-conpty/20261103T182521Z-e5696834/report.json"
+    },
+    {
+      "kind": "native-gui",
+      "path": "docs/evidence/m2-unicode-layout-2026-11-03-native-gui.json",
+      "ok": true,
+      "source_report": "work/native-gui-smoke/20261103T190042Z-c1b47188d080/summary.json"
+    }
+  ],
+  "sources_sha256": {
+    "Cargo.lock": "e0c90414f1dd352001245d2afe058e1c98988aaa6f30c4cf7680f86063aabf5f",
+    "Cargo.toml": "1c9f03accede85506ef9ac95afe3610e6a9258774082c7ce97a04f7e7d61a1ac",
+    "crates/jc-app/Cargo.toml": "37bc07c609e952aa1ef9b32d73cf5e05b3d414121afcc77dbfaa274274341998",
+    "crates/jc-app/examples/unicode_layout.rs": "2a4b76577cacbd7b5a7099ccc93eac47205b40d4bf34bc9391c262a96d0b3629",
+    "crates/jc-app/src/command.rs": "532a94d0f05c5dbfb07a0357bbcbbbdee47119909dc0329b6d4bce3fc34c82c1",
+    "crates/jc-app/src/lib.rs": "d2d849937682438dd0d82266390b630b1f2115891f381f84699fa095ffe147ad",
+    "crates/jc-app/src/rectangle.rs": "2a5520fa2f086a68e6ea08aecb87fc74d1ba6e8d04dd0cb05fc3d3f2dabfe304",
+    "crates/jc-app/src/source_graphemes.rs": "de37635985fc4957aec219b6a1178ec1a60b84dee3fe69749754de9f8444d5a9",
+    "crates/jc-app/src/text_field.rs": "ef3e0a0a2dd8351196ecd71d56c06cb0f37d73266c21619e218eec968b00bf0c",
+    "crates/jc-app/src/unicode_layout.rs": "c7e76dfe78d0deaf57e7ea146b36b3b22eaa474d7893e731f76bea6883581c7b",
+    "crates/jc-app/src/unicode_layout_tests.rs": "8d77f853dd953547bc02f8b6b6cae33b1bf2c1089a80b7af5fae5c2e8a96f18b",
+    "crates/jc-app/src/workbench/display.rs": "bb08255e68b8bedea5a89695ec3aee240ede19355ef6111fbaacc4f5c17f5dd1",
+    "crates/jc-app/src/workbench/edit.rs": "ac5a26a42d5aa3b7f331d2a7e5187909175801d4fb9706d9cbe435a67a44bb4e",
+    "crates/jc-app/src/workbench/mod.rs": "bc7899d1d5c0528f0d9997e19c7f788c42f4bb0939ec0fd2ff010181684f522c",
+    "crates/jc-app/src/workbench/rectangular.rs": "62fe8957a98e48fd8c0b2be9b4cc8cd70b71194f88195196b9844efbb01a8898",
+    "crates/jc-app/src/workbench/text.rs": "43d2e5e600fa99379980fde2612176b280c1c9e87dcd44ca671fdb2ba2be73b8",
+    "crates/jc-app/tests/rectangle.rs": "c1a37e5782d414311c740e0208c4befb8035a1cd066b2e74b62d983ea33f7e03",
+    "crates/jc-app/tests/unicode_layout.rs": "4a68962e479eb39deb474ea4dd08e35ff7e966da8fe51789b1ff9e4bbf4f63d5",
+    "crates/jc-cli/Cargo.toml": "dfa56a43188c7b2362ed82335ae06d4432ad5008f0c53c3378d177f4b662dfd2",
+    "crates/jc-core/Cargo.toml": "b209e6f6b9267da9fed19c4f84ce9c0b80e013ba4f3058cedb10b87775215daa",
+    "crates/jc-files/Cargo.toml": "77f2b167865cde82d3711610dcc9a7c797ea22132e29f275bed7bff5cf6d04eb",
+    "crates/jc-gui/Cargo.toml": "d61b3dc77d430efe42568c6f5c443a1b2a871ac29c72afb8e171f2c3c49ecb4c",
+    "crates/jc-gui/src/windows.rs": "d58a855707d7c63869d55eb15ff67e07c441163e3f17f5bf10f6eb0ebf585392",
+    "crates/jc-gui/src/windows/paint.rs": "402ddc7d24e6dd0d60e599bf5e4fca519dfc5c815cb14e5745f4f924304c0eee",
+    "crates/jc-gui/src/windows/rectangle_smoke.rs": "acab558221dcde353c718a861c722f3d60d7590ee546fec8df768af2158768e0",
+    "crates/jc-languages/Cargo.toml": "2439231b8301916afa2ee56319d916d58b72ba7f252a9111b8320361d2a909c9",
+    "crates/jc-platform/Cargo.toml": "bd9700f43f57ea3c7b26eab21aa6e4358a7d2ea44ad385b738368ee1b42df72f",
+    "crates/jc-platform/src/clipboard_owner.rs": "a9d429715f2c14f133210a59afe91dc56bf8411582fa0bf31f8bdb7fe7c9d378",
+    "crates/jc-progress/Cargo.toml": "933fef61f3619b56713ab832bd920f030bf33b105a1bb57d9da26b48f74c7d9e",
+    "crates/jc-text/Cargo.toml": "ebed227849ecead339447e46339b65f6d149a92e3d898be44496ca6155d9838e",
+    "crates/jc-text/src/grapheme.rs": "fefd9b28df61553f1c32f8408260663b30e85730bea8142e435b47c9875a5954",
+    "crates/jc-text/src/lib.rs": "15cd68c96deca7abe1e84ccb286ff7fd17ef6401188465981125aaf5608cf181",
+    "crates/jc-tui/Cargo.toml": "744b4d117d9bc8f6e71fd56d1e1874e8019122e6e649633909794c09bc594a4b",
+    "crates/jc-tui/src/app/invisibles_tests.rs": "6a79efd412b14cdac6f458bb7486bc9e564763f062513cd0a9a0700d6ba0ddb8",
+    "crates/jc-tui/src/app/mod.rs": "c6cd180037352f709f9a8f2d612c13d4d6ef907a01b041749f12b9050b4ec3c0",
+    "crates/jc-tui/src/app/overlays.rs": "393b0bfe93f1f72bb28a6d7620f64d7408e13292c05410a001b34084bd78b7ae",
+    "crates/jc-tui/src/app/presentation.rs": "0facf2965367f114943bf7a3e085030bb5f1d8a76bd11f903e2c01641b58348f",
+    "crates/jc-tui/src/app/rectangle_parity_tests.rs": "63ee3b4f5f42acf3c19c0db27e17319de3de2fddf45ab1fc4f6bc53e19f49f7a",
+    "crates/jc-tui/src/app/unicode_tests.rs": "4d1d42ccb082da4e0edaf25071fd6c1479090b93ad6d4acf1105aa5cf47bcde1",
+    "crates/jc-tui/src/frame_encoder.rs": "23518cd5d864dda8feb7f15b12b6403f15ea2f4e1da1a011714c7539761f4f27",
+    "crates/jc-tui/src/render/git_diff.rs": "6be8f19ee7e9a6bc34e0c5e9fd87d0d38135e58ec8fac3ebc955168866a5859e",
+    "crates/jc-tui/src/render/git_status.rs": "1e651d2e53fc356f99a1dff4db200a227d6a05367dce9f4e2d7cc337d12d9108",
+    "crates/jc-tui/src/render/mod.rs": "b60c603145fa4a48aa442ba8da53737bf17ad180b2295bba3a65cff02b9a38ad",
+    "crates/jc-tui/src/render/overlays.rs": "8bb1896a376ed38f9199828d6c047ebfcff4ef3688f151ff150b21658834f2ee",
+    "crates/jc-tui/src/screen.rs": "0955be0d48d6a0fed051951b42b7d9d2f4b5e6af73d9a24af2282d31ce4dafa9",
+    "scripts/smoke-native-gui.py": "1cc094502f803ec9d83265acd0381888beae2cd678f82593d61ca13fcffa22f6",
+    "scripts/smoke-unicode-conpty.py": "8dc6292a76e986c1b35755e0cf9d86ff507dbe67396a40a45218c7357a8c425b"
+  },
+  "binaries": {
+    "cide-gui.exe": {
+      "bytes": 2885632,
+      "sha256": "8802e63ae514e5cf23844339e728c4f04ca8fc4839be714cf2581b3eeb7f8efd",
+      "delta_bytes_from_6b6d790": 89088
+    },
+    "cide-tui.exe": {
+      "bytes": 2411520,
+      "sha256": "cd0648182d033afbf20eb4c48430d62ffeca3a4d3b5d502d5000a264b88a93cb",
+      "delta_bytes_from_6b6d790": 181760
+    },
+    "cide.exe": {
+      "bytes": 387584,
+      "sha256": "cc84f392c28a512f97aa97e98360968ce6b7bbba202820d7e39c287ff17958b9"
+    },
+    "jc-ide-gui.exe": {
+      "bytes": 2885632,
+      "sha256": "c721f3b282557d7062762443a3cde9ef0338263979e47414f7cffab57b2cb883"
+    },
+    "jc-ide-tui.exe": {
+      "bytes": 2411520,
+      "sha256": "4a3d304a9ce6c0b2020f2942df11607394596c249a6de856145dd01144ffac67"
+    },
+    "jc-ide.exe": {
+      "bytes": 387584,
+      "sha256": "9dd82df3a7d908dee837f4af632c739387620cd2235203ff4902b9e5995bb411"
+    }
+  },
+  "measurement": "synthetic model: one cold view and101 warm individual samples; scalar reference is same binary F2 API, not old executable; per-process counters are not global acceptance",
+  "failed_latency_comparison_accepted": false,
+  "package": {
+    "archive": "work/packages/CIDE-windows-dev-tui-unicode-2026-11-03.zip",
+    "bytes": 5741194,
+    "sha256": "82143e4020744f76f10aec2aec7d6f2c028443f69e087b0f3e20eeefdf9b6510",
+    "members": 82,
+    "missing_notices": [
+      {
+        "package": "winapi-i686-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      },
+      {
+        "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      }
+    ],
+    "crc_and_manifest_hashes_verified": true
+  }
+}

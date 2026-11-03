@@ -1,0 +1,13 @@
+
+running 5 tests
+test unicode_selected_fields_move_delete_clusters_and_keep_quota_failures_atomic ... ok
+test unicode_vertical_movement_uses_visual_tab4_and_wide_columns_not_scalar_count ... ok
+test unicode_rectangle_resegments_actual_joins_and_rejects_invalid_legacy_transaction ... ok
+test unicode_rectangle_full_and_partial_clusters_preserve_cell_width_and_one_undo ... ok
+test unicode_keyboard_movement_and_delete_use_complete_clusters_bom_crlf_and_shared_undo ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.04s
+     Running tests\unicode_layout.rs (target\debug\deps\unicode_layout-9ddf6d554cb82b3e.exe)

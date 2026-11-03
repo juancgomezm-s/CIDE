@@ -1,0 +1,215 @@
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:1:
+ //! Bounded sparse visual checkpoints shared by document views. Source glyphs are
+ //! decoded only while preparing ranges; composition receives owned visible atoms.
+-use std::fmt::Write as _;
+ use crate::source_graphemes::SourceGraphemes;
+ use jc_core::Document;
+ use jc_text::{
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:7:
+     grapheme::{self, GraphemeCursor},
+     DecodedScalars, TextEncoding,
+ };
++use std::fmt::Write as _;
+ use std::{collections::VecDeque, ops::Range, sync::Arc};
+ pub const CACHE_BYTES: usize = 256 * 1024;
+ const MAX_LINES: usize = 64;
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:82:
+         if width > 0 && !text.chars().any(char::is_control) {
+             return (Glyph::text(text), width, false);
+         }
+-        let mut escaped=String::new();
+-        for ch in text.chars() {write!(&mut escaped,"\\u{{{:X}}}",ch as u32).expect("String formatting");}
++        let mut escaped = String::new();
++        for ch in text.chars() {
++            write!(&mut escaped, "\\u{{{:X}}}", ch as u32).expect("String formatting");
++        }
+         let width = escaped.len();
+         (Glyph::Cluster(Arc::from(escaped)), width, true)
+     }
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:97:
+     {
+         return from_text(scalar.character.encode_utf8(&mut [0; 4]));
+     }
+-    let mut escaped=String::new();for b in bytes {write!(&mut escaped,"\\x{b:02X}").expect("String formatting");}
++    let mut escaped = String::new();
++    for b in bytes {
++        write!(&mut escaped, "\\x{b:02X}").expect("String formatting");
++    }
+     let width = escaped.len();
+     (Glyph::Cluster(Arc::from(escaped)), width, true)
+ }
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:108:
+         _ => None,
+     }
+ }
+-struct DecodedAtom {source:Range<usize>,glyph:Glyph,width:usize,marker:bool}
++struct DecodedAtom {
++    source: Range<usize>,
++    glyph: Glyph,
++    width: usize,
++    marker: bool,
++}
+ struct Walker<'a> {
+     doc: &'a Document,
+     encoding: TextEncoding,
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:193:
+             .visual
+             .checked_add(width)
+             .ok_or("Display column overflow")?;
+-        Ok(Some(DecodedAtom {source:from..self.byte,glyph,width,marker}))
++        Ok(Some(DecodedAtom {
++            source: from..self.byte,
++            glyph,
++            width,
++            marker,
++        }))
+     }
+ }
+ #[derive(Clone, Copy)]
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:355:
+             .partition_point(|p| p.byte <= byte - range.start)
+             .saturating_sub(1)];
+         let mut walker = Walker::new(doc, encoding, range, point);
+-        while let Some(DecodedAtom {source,width,..}) = walker.next()? {
++        while let Some(DecodedAtom { source, width, .. }) = walker.next()? {
+             if byte < source.end {
+                 self.scanned_bytes = self.scanned_bytes.saturating_add(walker.scanned());
+                 return Ok(walker.visual - width);
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:393:
+             })
+             .saturating_sub(1)];
+         let mut walker = Walker::new(doc, encoding, range, point);
+-        while let Some(DecodedAtom {source,..}) = walker.next()? {
++        while let Some(DecodedAtom { source, .. }) = walker.next()? {
+             let result = if forward {
+                 (source.end > byte).then_some(source.end)
+             } else {
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:428:
+             .partition_point(|p| p.visual <= column)
+             .saturating_sub(1)];
+         let mut walker = Walker::new(doc, encoding, range, point);
+-        while let Some(DecodedAtom {source,..}) = walker.next()? {
++        while let Some(DecodedAtom { source, .. }) = walker.next()? {
+             if column < walker.visual {
+                 self.scanned_bytes = self.scanned_bytes.saturating_add(walker.scanned());
+                 return Ok(source.start);
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:463:
+         let end = scroll.saturating_add(width);
+         while walker.visual < end {
+             let left = walker.visual;
+-            let Some(DecodedAtom {source,glyph,width:cells,marker}) = walker.next()? else {
++            let Some(DecodedAtom {
++                source,
++                glyph,
++                width: cells,
++                marker,
++            }) = walker.next()?
++            else {
+                 break;
+             };
+             let right = walker.visual;
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:474:
+                 // Clip a wide glyph atomically: show padding at an edge, never
+                 // emit half a cluster or attach a combining suffix to a border.
+                 for column in left.max(scroll)..right.min(end) {
+-                    let ch=' ';
++                    let ch = ' ';
+                     atoms.push(VisualAtom {
+                         source: source.clone(),
+                         column: column - scroll,
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout.rs:481:
+                         width: 1,
+                         glyph: Glyph::Scalar(ch),
+-                        marker:false,
++                        marker: false,
+                     });
+                 }
+             } else {
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout_tests.rs:91:
+             .unwrap(),
+         1
+     );
+-    let clipped = layout
+-        .row(&doc, TextEncoding::Utf8, range, 3, 2)
+-        .unwrap();
++    let clipped = layout.row(&doc, TextEncoding::Utf8, range, 3, 2).unwrap();
+     assert_eq!(
+         (
+             clipped[0].column,
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout_tests.rs:109:
+     let mut doc = Document::from_bytes("a".repeat(512 * 1024).into_bytes());
+     let mut layout = UnicodeLayout::default();
+     layout
+-        .row(
+-            &doc,
+-            TextEncoding::Utf8,
+-            0..doc.len(),
+-            doc.len() - 40,
+-            40
+-        )
++        .row(&doc, TextEncoding::Utf8, 0..doc.len(), doc.len() - 40, 40)
+         .unwrap();
+     let cold = layout.scanned_bytes;
+     layout
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout_tests.rs:122:
+-        .row(
+-            &doc,
+-            TextEncoding::Utf8,
+-            0..doc.len(),
+-            doc.len() - 40,
+-            40
+-        )
++        .row(&doc, TextEncoding::Utf8, 0..doc.len(), doc.len() - 40, 40)
+         .unwrap();
+     assert!(layout.scanned_bytes - cold < 16 * 1024);
+     assert!(layout.memory_bytes() <= CACHE_BYTES);
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout_tests.rs:133:
+     doc.replace(at..at, "界e\u{301}".as_bytes()).unwrap();
+     let before = layout.scanned_bytes;
+     let warm = layout
+-        .row(
+-            &doc,
+-            TextEncoding::Utf8,
+-            0..doc.len(),
+-            at - 2,
+-            20
+-        )
++        .row(&doc, TextEncoding::Utf8, 0..doc.len(), at - 2, 20)
+         .unwrap();
+     assert!(
+         layout.scanned_bytes - before < 64 * 1024,
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout_tests.rs:146:
+         "suffix update rescanned prefix"
+     );
+     let reference = UnicodeLayout::default()
+-        .row(
+-            &doc,
+-            TextEncoding::Utf8,
+-            0..doc.len(),
+-            at - 2,
+-            20
+-        )
++        .row(&doc, TextEncoding::Utf8, 0..doc.len(), at - 2, 20)
+         .unwrap();
+     assert_eq!(
+         warm.iter()
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\unicode_layout_tests.rs:173:
+ fn unicode_visual_escape_budget_and_legacy_mapping_are_explicit() {
+     let doc = Document::from_bytes(vec![0xe1, 0x80, b'A', 0]);
+     let mut layout = UnicodeLayout::default();
+-    let row = layout
+-        .row(&doc, TextEncoding::Utf8, 0..4, 0, 100)
+-        .unwrap();
++    let row = layout.row(&doc, TextEncoding::Utf8, 0..4, 0, 100).unwrap();
+     let mut displayed = String::new();
+     for atom in row {
+         atom.glyph.with_str(|s| displayed.push_str(s));
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\workbench\display.rs:28:
+                 doc.session.encoding()?,
+                 content,
+                 scroll,
+-                width
++                width,
+             )
+             .ok()
+     }

@@ -1,0 +1,9 @@
+
+running 1 test
+test workbench::text::tests::sparse_layout_bounds_warm_reads_even_for_a_long_line_and_preserves_literal_bom ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.03s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.38s
+     Running unittests src\lib.rs (target\debug\deps\jc_app-7715ebcb52ea1d10.exe)

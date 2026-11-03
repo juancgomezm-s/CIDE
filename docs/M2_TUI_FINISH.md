@@ -1,22 +1,39 @@
-# Continuación hasta cerrar los pendientes TUI
+# Cierre funcional de los pendientes TUI — 2026-11-03
 
-Instrucción de Juan del2026-11-03: trabajar en bloques amplios, validar al cierre
-y continuar con el siguiente sin pedir otro «continúa». El cierre completo se
-evalúa por comportamiento/evidencia; las puertas externas no se declaran cumplidas.
+Instrucción de Juan: construir bloques amplios, validar al cierre y seguir sin
+otro «continúa». Los bloques del alcance admitido están implementados y validados
+localmente. La aceptación física/global de M2 permanece abierta.
 
-| Bloque | Estado y salida |
+| Bloque | Estado y contrato |
 |---|---|
-| Regex real Search Plus | Integrado y validado localmente: [contrato](M2_REGEX_SEARCH.md). Reemplazo literal, cuotas y limitaciones explícitas. |
-| Comparación de dos abiertos sin Git | Integrada TUI y validada: [contrato](M2_OPEN_DOCUMENT_DIFF.md). GUI pendiente independiente. |
-| Capacidades internas y navegación textual | Integrado/validado: registro interno, proveedor opcional y símbolos versionados, sin segundo buffer; inferencia lexical separada del compilador. [Evidencia](M2_SOURCE_SERVICES.md). |
-| Includes/RUN y completado | Includes/RUN léxicos y candidatos confinados integrados; dinámicos no resueltos. Completado textual local integrado; semántico permanece M4/servicio real. |
-| Plantillas/snippets M2A | Integrado y validado: motor universal, siete plantillas del proveedor opcional, parámetros/preview/aceptación y undo único. [Evidencia](M2_SNIPPETS.md). |
-| Auditoría final de teclado/flujo | Teclado/overlays auditados:117 casos TUI y tres flujos ConPTY, límites y foco corregidos; clipboard Windows explícito integrado y validado con transporte inyectado. |
-| Aceptación física/global | RAM/arranque/latencia real, teclado/terminales, Unicode general/IME y clipboard OS conservan evidencia y límites; no se cierran con modelo o ConPTY. |
+| Regex Search Plus | Documento/proyecto, cuotas/cancelación, reemplazo literal. [Uso](M2_REGEX_SEARCH.md). |
+| Comparar dos abiertos sin Git | Dos snapshots versionados, visor lateral/unificado y navegación. [Uso](M2_OPEN_DOCUMENT_DIFF.md). |
+| Símbolos/includes/RUN | Registro interno y proveedor opcional léxico, destinos confinados/ambiguos explícitos, sin AVM. [Uso](M2_SOURCE_SERVICES.md). |
+| Completado textual | Palabras locales anteriores al caret, aceptación/una transacción; semántica M4 pendiente. [Uso](M2_SOURCE_SERVICES.md). |
+| Snippets | Motor universal, siete plantillas opcionales ABL, parámetros/preview/undo único. [Uso](M2_SNIPPETS.md). |
+| Foco/teclado/overlays | Entrada superior, límites y navegación de controles auditados. [Contrato](TUI_INTERACTION.md). |
+| Clipboard Windows lineal | Adaptador estricto compartido, owner TUI lazy con hilo Win32 responsivo; pruebas propias/inyección, interoperabilidad real abierta. [Uso](M2_TUI_CLIPBOARD.md). |
+| Grafemas y rectángulos | Geometría narrow/TAB4, clusters completos, edición parcial de glifos anchos, clipping/VT incremental y cuotas. [Uso/evidencia](M2_UNICODE_LAYOUT.md). |
+| Aceptación física/global | Abierta: terminal/fuente/IME/accesibilidad, clipboard entre apps, RAM/arranque/latencia de pantalla. |
 
-Progress Check/Compile/Run/Schema exige perfil/herramientas/versión reales y
-permanece deshabilitado si no existe proveedor validado. Git con escritura/CI
-es M5; runtime externo de plugins post-M5. El shell embebido no se activa por
-llamar «terminada» a la TUI: el contrato actual usa la terminal anfitriona.
+Último bloque:18 casos Rust nuevos,530 nombres distintos observados aprobados
+por suites y cierres dirigidos; dos helpers Git ejecutados por sus padres,
+ningún caso listado sin cubrir. No corrida runtime global única. Fmt/Clippy/release
+offline, cuatro flujos ConPTY y17 checks HWND propios aprobados. [Evidencia](M2_UNICODE_LAYOUT.md).
 
-Layout Unicode general: siguiente bloque autorizado (dos crates fijados; sin nuevos programas). Ver M2_UNICODE_LAYOUT_ADMISSION.
+Ejecutable revisable `target/release/cide-tui.exe`; paquete de desarrollo y hashes
+en [metadatos](evidence/m2-unicode-layout-2026-11-03-metadata.json). No instalador,
+publicación ni certificación de distribución (dos avisos GNU pendientes).
+
+Siguiente puerta concreta: aceptación física con terminal/fuente/clipboard y
+fuentes legacy de codificación confirmada por el usuario. No se puede acreditar
+esa experiencia mediante HWND ocultos/VT. Se entrega la construcción local sin
+solicitar otro «continúa» ni inventar un resultado físico.
+
+Check/Compile/Run/Schema requiere proveedor/perfil/herramientas OpenEdge reales
+M3; sin ellos permanece deshabilitado. Parser/semántica/LSP/depurador M3–M4 no
+son promesas derivadas de servicios léxicos. Git escritura/conflictos y CI M5;
+runtime externo post-M5. Help/Build sin proveedor no tienen handler ficticio.
+Shell embebido, multicaret persistente y nuevas ampliaciones de ratón no están
+admitidos por esta orden; la TUI usa la terminal anfitriona. GUI de servicios de
+fuente/snippets/comparación de abiertos sigue independiente del cierre TUI.

@@ -96,6 +96,7 @@ SELECTION_REOPEN_REQUIRED = {
     "tabs_index_last_preserve_caret_selection_flags_and_document_identity",
 }
 RECTANGLE_REQUIRED = {
+    "rectangle_unicode_native_complete_clusters", "rectangle_unicode_partial_atom_cut_one_undo",
     "rectangle_commands_four_encodings_atomic", "rectangle_internal_clipboard_height_eof",
     "rectangle_delete_backspace_tab_noop", "rectangle_invisibles_readonly_resize",
     "rectangle_modal_explorer_palette_target", "rectangle_split_pin_revision_encoding",

@@ -1,0 +1,10 @@
+
+running 3 tests
+test screen::tests::clusters_keep_sparse_payload_and_wide_continuations_clear_as_a_unit ... ok
+test frame_encoder::tests::cluster_payload_changes_and_wide_to_narrow_erase_old_coverage_incrementally ... ok
+test app::unicode_tests::unicode_tui_cluster_caret_selection_and_readonly_composition_share_visible_geometry ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 126 filtered out; finished in 0.01s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-c24792ef3ef15fde.exe)

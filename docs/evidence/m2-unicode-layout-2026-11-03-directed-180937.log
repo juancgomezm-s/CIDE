@@ -1,0 +1,9 @@
+
+running 1 test
+test unicode_layout_tests::unicode_range_cursor_matches_uax29_through_fragments_long_clusters_and_regional_context ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.02s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.41s
+     Running unittests src\lib.rs (target\debug\deps\jc_app-7715ebcb52ea1d10.exe)

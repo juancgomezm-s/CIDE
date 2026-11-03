@@ -136,17 +136,17 @@ rechaza. Límites y costes pendientes: [M2_LINE_COMMANDS.md](M2_LINE_COMMANDS.md
 
 Existe selección rectangular real por columnas visuales, de una acción, con TAB
 cada cuatro celdas y espacio virtual tras EOL. Edit/Palette ofrecen extensiones,
-Cancel y `Rectangle: Select From Caret/Selection (single-cell text)` para convertir
+Cancel y `Rectangle: Select From Caret/Selection` para convertir
 extremos lineales existentes o iniciar sin ancho en el caret. Alt+Shift+flechas
 inicia/extiende cuando el terminal entrega esas combinaciones. El modo requiere
 foco Editor; ancho cero muestra cursor sin pintar selección.
 
-El repertorio admitido es ASCII imprimible, U+00A0…U+00FF excepto soft hyphen y los
-19 signos/símbolos CP1252 enumerados en el modelo. No admite Unicode general,
-grafemas, combinantes, CJK, emoji o controles. Se valida la línea completa afectada
-y se rechaza lo no admitido antes de activar/extender o editar, aunque quede fuera
-de las columnas seleccionadas. Bytes, escalares y columnas visuales siguen siendo
-coordenadas diferentes.
+El modelo admite grafemas de ancho narrow, combinantes con base, CJK y emoji/ZWJ.
+Controles, decodificación inválida, ancho cero y clusters >1024 bytes se rechazan
+antes de admitir o editar; límites de línea64KiB/4096 celdas. Bytes, escalares,
+grafemas y columnas visuales son coordenadas distintas. Un glifo ancho parcialmente
+copiado aporta espacios; editarlo consume el glifo y conserva con espacios sus
+celdas no seleccionadas. Undo restaura los bytes. [Contrato](M2_UNICODE_LAYOUT.md).
 
 Copy/Cut usan clipboard **interno** tipado por filas; TAB completos/parciales se
 copian como espacios y el espacio virtual se rellena. Texto, Tab y paste reemplazan
@@ -176,9 +176,9 @@ Cuotas y evidencia: [M2_RECTANGULAR_SELECTION.md](M2_RECTANGULAR_SELECTION.md).
 
 En la barra Find: `Enter` siguiente, `Shift+Enter` anterior, `Alt+C` case,
 `Alt+W` whole word y `Esc` cancela el scan pendiente y cierra.
-Regex permanece deshabilitado hasta incorporar un motor con presupuesto real;
-`Alt+R` está registrado en Find/Replace para un comando deshabilitado y no cambia
-flags ni resultados. No representa un toggle funcional.
+Alt+R alterna regex real acotado, compartido por documento/proyecto. Reemplazo
+literal, cuotas/cancelación y patrones no soportados explícitos:
+[contrato](M2_REGEX_SEARCH.md).
 
 S0 documental literal es cooperativo por rangos, con default full case folding
 Unicode 17 C+F cuando la búsqueda es insensible a mayúsculas; no aplica normalización
@@ -291,10 +291,9 @@ implementaciones distintas de pestañas o paneles.
 ## Productividad ABL, modo columna y búsqueda
 
 La paleta PDSOE solo es referencia funcional; ver [alcance de comandos](ABL_EDITOR_COMMAND_SCOPE.md).
-El rectángulo acotado descrito arriba ya es funcional; el modo columna Unicode
-general y el cierre completo de Search Plus/M2A siguen pendientes. El plan de
-búsqueda se conserva en [Search Plus](M2_SEARCH_PLUS.md), distinguiendo sus reservas
-históricas de la implementación literal actual.
+Rectángulos por grafemas y Search Plus literal/regex ya son funcionales con sus
+cuotas documentadas. La [matriz TUI](M2_TUI_FINISH.md) mantiene separadas las puertas
+físicas/globales y servicios semánticos posteriores de los bloques implementados.
 
 Compatibilidad terminal: Ctrl+I puede equivaler a Tab; Ctrl+Shift+/ y Alt+Shift+flechas pueden no llegar diferenciados. Cada acción debe seguir disponible mediante menú o Command Palette cuando el terminal no la reporte.
 
@@ -314,25 +313,16 @@ Estos comandos ya usan `PaneManager`, handlers y renderizado TUI. Se muestran en
 
 Con menos de 65 celdas disponibles en el área editorial se conserva un solo grupo visible. Focus Group 1/2 cambia el grupo mostrado, preservando el estado del otro. Pin evita sustitución por Open y Open to Side; seleccionar explícitamente una pestaña puede cambiar el documento anclado. Linked Scroll solo vincula desplazamientos verticales, sin sincronizar selecciones/carets.
 
-## Navegación de código y completado — reservas pendientes
+## Navegación de código y completado
 
-Estas teclas siguen como reservas; no se registran handlers ficticios:
-
-| Acción futura | Tecla propuesta |
-|---|---|
-| Go to Symbol | Ctrl+R |
-| Go to Definition / Peek | F12 / Alt+F12 |
-| Find References | Shift+F12 |
-| Manual completion | Ctrl+Space |
-
-Ctrl+G y Git read-only ya están descritos como implementados, no como reservas.
-El anclaje impide que una navegación automática sustituya la referencia en el
-grupo anclado; scroll vinculado y navegación atrás/adelante son estados
-independientes. Abrir al lado usa otro grupo sin duplicar documento. La Palette
-ofrece los comandos registrados cuando el terminal no entrega sus atajos; no
-convierte una reserva sin handler en una función real.
-
-Contrato completo: [M2_NAVIGATION_PANES_GIT.md](M2_NAVIGATION_PANES_GIT.md).
+View/Project Symbols y References in Document abren listas léxicas del proveedor
+opcional progress.abl. Enter navega, Ctrl+Enter abre referencia al lado, F5 refresca
+y Escape cancela. Complete Local Word en Edit/Palette (Ctrl+Space) propone palabras
+textuales anteriores al caret con aceptación explícita y undo único. Sin AVM,
+semántica o PROPATH simulado. [Contrato](M2_SOURCE_SERVICES.md).
+F12/Peek/Find References semánticos conservan su alcance futuro; no se habilitan
+handlers ficticios. Split/pin, historial y scroll siguen independientes, con un
+documento/undo compartido. [Contrato completo](M2_NAVIGATION_PANES_GIT.md).
 
 ## Evidencia y límites de este contrato
 
@@ -346,11 +336,11 @@ observados y el alcance de cada cierre pertenecen a [VALIDACION.md](VALIDACION.m
 y a los documentos de los bloques; esta reconciliación documental no añade una
 ejecución ConPTY ni repite pruebas.
 
-Screen usa celdas escalares, no un motor general de grafemas/anchos. Las pruebas
-45/140 y resize acreditan composición del modelo, sin certificar glyph widths,
-latencia tecla-pantalla, DPI, IME o accesibilidad física. No hay GUI aceptada ni
-integración del clipboard del sistema operativo por describir Cut/Copy/Paste
-internos. Sublime Text conserva su papel de referencia visual, sin promesa de
+Screen/FrameEncoder preservan grafemas y continuaciones de glifos anchos.
+Movimiento/borrado por teclado opera en grafemas; Go to permanece escalar.
+Clipboard Windows lineal explícito está integrado; rectangular sigue interno.
+Las pruebas de modelo/VT/HWND no certifican anchos físicos, latencia tecla-pantalla,
+IME, DPI, accesibilidad o interoperabilidad clipboard entre aplicaciones. Sublime Text conserva su papel de referencia visual, sin promesa de
 paridad gráfica o funcional derivada de este contrato.
 
 ## Quick Open implementado — checkpoint posterior
@@ -414,3 +404,9 @@ amplia que su trait; se corrigieron antes del cierre, logs retenidos.
 autorizó unicode-segmentation=1.13.3 y unicode-width=0.2.2; [admisión](M2_UNICODE_LAYOUT_ADMISSION.md).
 Esa autorización sustituye la restricción previa para estas dos dependencias;
 no pedirla de nuevo. Sin instalación de programas, CI ni AVM.
+
+## Cierre Unicode vigente
+
+[Layout y límites](M2_UNICODE_LAYOUT.md) sustituye las restricciones históricas de
+una celda anteriores. Fuente se presenta por átomos completos; campos mantienen
+escapes ASCII con movimiento/borrado por grafemas. [Matriz de cierre](M2_TUI_FINISH.md).

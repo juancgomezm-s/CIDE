@@ -1,9 +1,10 @@
-//! Deliberately limited one-cell geometry for rectangular editing in the TUI.
-//! This is not Unicode grapheme or East Asian width support. A layout owns only
+//! Extended-grapheme geometry for transactional rectangular edits.
+//! Narrow display widths and TAB4 are explicit; partial atoms become spaces. A layout owns only
 //! bounded offset/column metadata, never a source String or Document. Build once
 //! per visited line and reuse it; callers should process large rectangles row by
 //! row rather than retaining every line layout or cloning source lines on moves.
-use jc_text::{DecodedScalars, TextEncoding};
+use crate::Glyph;
+use jc_text::{grapheme, DecodedScalars, TextEncoding};
 use std::{fmt, ops::Range};
 
 pub const TAB_STOP: usize = 4;
@@ -26,13 +27,14 @@ pub struct VisualPosition {
 pub struct ColumnLocation {
     /// Absolute valid source boundary. Inside a TAB this is the TAB byte start.
     pub byte: usize,
-    pub tab_left: usize,
-    pub tab_right: usize,
+    pub left_cells: usize,
+    pub atom_end: usize,
+    pub right_cells: usize,
     pub virtual_spaces: usize,
 }
 impl ColumnLocation {
-    pub fn inside_tab(self) -> bool {
-        self.tab_left != 0 && self.tab_right != 0
+    pub fn inside_atom(self) -> bool {
+        self.left_cells != 0 && self.right_cells != 0
     }
     pub fn is_virtual(self) -> bool {
         self.virtual_spaces != 0
@@ -50,6 +52,7 @@ pub struct RowReplacement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RectangleError {
     LineTooLong(usize),
+    ClusterTooLong(usize),
     ColumnLimit(usize),
     InvalidColumns {
         start: VisualColumn,
@@ -67,6 +70,11 @@ impl fmt::Display for RectangleError {
             Self::LineTooLong(bytes) => {
                 write!(f, "Rectangle line exceeds {MAX_LINE_BYTES} bytes ({bytes})")
             }
+            Self::ClusterTooLong(bytes) => write!(
+                f,
+                "Rectangle grapheme exceeds {} UTF-8 bytes ({bytes})",
+                grapheme::MAX_CLUSTER_BYTES
+            ),
             Self::ColumnLimit(column) => {
                 write!(f, "Rectangle column exceeds {MAX_COLUMNS} ({column})")
             }
@@ -91,7 +99,7 @@ impl std::error::Error for RectangleError {}
 struct Atom {
     bytes: Range<usize>,
     columns: Range<usize>,
-    character: char,
+    glyph: Glyph,
 }
 pub struct LineLayout {
     source: Range<usize>,
@@ -124,44 +132,39 @@ fn columns(start: VisualColumn, end: VisualColumn) -> Result<(), RectangleError>
         Ok(())
     }
 }
-/// Closed explicit repertoire; do not extend by equating all scalars to cells.
-fn one_cell(ch: char) -> bool {
-    matches!(ch, ' '..='~' | '\u{a0}'..='\u{ac}' | '\u{ae}'..='\u{ff}')
-        || matches!(
-            ch,
-            '\u{20ac}'
-                | '\u{201a}'
-                | '\u{201e}'
-                | '\u{2026}'
-                | '\u{2020}'
-                | '\u{2021}'
-                | '\u{02c6}'
-                | '\u{2030}'
-                | '\u{2039}'
-                | '\u{2018}'
-                | '\u{2019}'
-                | '\u{201c}'
-                | '\u{201d}'
-                | '\u{2022}'
-                | '\u{2013}'
-                | '\u{2014}'
-                | '\u{02dc}'
-                | '\u{2122}'
-                | '\u{203a}'
-        )
-}
-fn advance(column: usize, ch: char) -> Result<usize, RectangleError> {
-    let width = match ch {
-        '\r' | '\n' => return Err(RectangleError::LineEnding),
-        '\t' => TAB_STOP - column % TAB_STOP,
-        ch if one_cell(ch) => 1,
-        ch => return Err(RectangleError::UnsupportedScalar(ch)),
+fn advance(column: usize, text: &str) -> Result<usize, RectangleError> {
+    let width = if text == "\t" {
+        TAB_STOP - column % TAB_STOP
+    } else {
+        if let Some(ch) = text.chars().find(|ch| ch.is_control()) {
+            return Err(if matches!(ch, '\r' | '\n') {
+                RectangleError::LineEnding
+            } else {
+                RectangleError::UnsupportedScalar(ch)
+            });
+        }
+        if text.len() > grapheme::MAX_CLUSTER_BYTES {
+            return Err(RectangleError::ClusterTooLong(text.len()));
+        }
+        let width = grapheme::width(text);
+        if width == 0 {
+            return Err(RectangleError::UnsupportedScalar(
+                text.chars().next().unwrap_or('\0'),
+            ));
+        }
+        width
     };
     let end = column
         .checked_add(width)
         .ok_or(RectangleError::OffsetOverflow)?;
     column_limit(end)?;
     Ok(end)
+}
+fn advance_text(mut column: usize, text: &str) -> Result<usize, RectangleError> {
+    for cluster in grapheme::graphemes(text) {
+        column = advance(column, cluster)?;
+    }
+    Ok(column)
 }
 fn spaces(text: &mut String, count: usize) {
     text.extend(std::iter::repeat_n(' ', count));
@@ -184,18 +187,34 @@ impl LineLayout {
             .ok_or(RectangleError::OffsetOverflow)?;
         let decoded = DecodedScalars::new(bytes, encoding, source_start);
         let source_start = decoded.content_start();
-        let mut atoms = Vec::new();
-        let mut width = 0;
+        let mut text = String::new();
         for scalar in decoded {
             if !scalar.valid {
                 return Err(RectangleError::InvalidDecode(scalar.source_range.start));
             }
-            let end = advance(width, scalar.character)?;
+            text.push(scalar.character);
+        }
+        let mut atoms = Vec::new();
+        let mut width = 0;
+        let mut source = source_start;
+        for cluster in grapheme::graphemes(&text) {
+            let end = advance(width, cluster)?;
+            let bytes = if encoding == TextEncoding::Utf8 {
+                cluster.len()
+            } else {
+                cluster.chars().count()
+            };
+            let glyph = if cluster.chars().count() == 1 {
+                Glyph::Scalar(cluster.chars().next().unwrap())
+            } else {
+                Glyph::Cluster(std::sync::Arc::from(cluster))
+            };
             atoms.push(Atom {
-                bytes: scalar.source_range,
+                bytes: source..source + bytes,
                 columns: width..end,
-                character: scalar.character,
+                glyph,
             });
+            source += bytes;
             width = end;
         }
         Ok(Self {
@@ -215,8 +234,9 @@ impl LineLayout {
         if column.0 >= self.width {
             return Ok(ColumnLocation {
                 byte: self.source.end,
-                tab_left: 0,
-                tab_right: 0,
+                left_cells: 0,
+                atom_end: self.source.end,
+                right_cells: 0,
                 virtual_spaces: column.0 - self.width,
             });
         }
@@ -227,12 +247,13 @@ impl LineLayout {
         let inside = column.0 > atom.columns.start;
         Ok(ColumnLocation {
             byte: atom.bytes.start,
-            tab_left: if inside {
+            atom_end: atom.bytes.end,
+            left_cells: if inside {
                 column.0 - atom.columns.start
             } else {
                 0
             },
-            tab_right: if inside {
+            right_cells: if inside {
                 atom.columns.end - column.0
             } else {
                 0
@@ -275,6 +296,12 @@ impl LineLayout {
         width: usize,
         markers: bool,
     ) -> Result<Vec<(char, usize)>, RectangleError> {
+        if let Some(atom) = self.atoms.iter().find(|a| {
+            matches!(a.glyph, Glyph::Cluster(_))
+                || a.glyph != Glyph::Scalar('\t') && a.columns.len() != 1
+        }) {
+            return Err(RectangleError::UnsupportedScalar(atom.glyph.first()));
+        }
         column_limit(start.0)?;
         column_limit(width)?;
         let end = start
@@ -291,7 +318,7 @@ impl LineLayout {
             }
             if let Some(atom) = self.atoms.get(atom_index) {
                 result.push((
-                    if atom.character == '\t' {
+                    if atom.glyph == Glyph::Scalar('\t') {
                         if markers {
                             if column == atom.columns.start {
                                 '>'
@@ -301,10 +328,10 @@ impl LineLayout {
                         } else {
                             ' '
                         }
-                    } else if markers && atom.character == ' ' {
+                    } else if markers && atom.glyph == Glyph::Scalar(' ') {
                         '.'
                     } else {
-                        atom.character
+                        atom.glyph.first()
                     },
                     atom.bytes.start,
                 ));
@@ -332,10 +359,13 @@ impl LineLayout {
         {
             let from = atom.columns.start.max(start.0);
             let to = atom.columns.end.min(end.0);
-            if atom.character == '\t' {
+            if atom.glyph == Glyph::Scalar('\t')
+                || from != atom.columns.start
+                || to != atom.columns.end
+            {
                 spaces(&mut text, to - from);
             } else {
-                text.push(atom.character);
+                atom.glyph.with_str(|s| text.push_str(s));
             }
         }
         spaces(&mut text, end.0.saturating_sub(start.0.max(self.width)));
@@ -353,10 +383,7 @@ impl LineLayout {
         if replacement.len() > MAX_LINE_BYTES {
             return Err(RectangleError::LineTooLong(replacement.len()));
         }
-        let mut replacement_end = start.0;
-        for ch in replacement.chars() {
-            replacement_end = advance(replacement_end, ch)?;
-        }
+        advance_text(start.0, replacement)?;
         let left = self.column(start)?;
         let right = self.column(end)?;
         if replacement.is_empty() && (start == end || start.0 >= self.width) {
@@ -366,33 +393,34 @@ impl LineLayout {
             });
         }
         let from = left.byte;
-        let to = if right.inside_tab() {
-            right.byte + 1
+        let to = if right.inside_atom() {
+            right.atom_end
         } else {
             right.byte
         };
         let mut text = String::new();
-        if left.inside_tab() {
-            spaces(&mut text, left.tab_left);
+        if left.inside_atom() {
+            spaces(&mut text, left.left_cells);
         } else if !replacement.is_empty() {
             spaces(&mut text, left.virtual_spaces);
         }
         text.push_str(replacement);
-        if right.inside_tab() {
-            spaces(&mut text, right.tab_right);
+        if right.inside_atom() {
+            spaces(&mut text, right.right_cells);
         }
         // Recompute resulting columns from metadata, including preserved TABs
         // whose phase can change after an insertion. No complete source copy.
-        let mut resulting = 0;
+        let mut resulting = String::new();
         for atom in self.atoms.iter().take_while(|a| a.bytes.end <= from) {
-            resulting = advance(resulting, atom.character)?;
+            atom.glyph.with_str(|s| resulting.push_str(s));
         }
-        for ch in text.chars() {
-            resulting = advance(resulting, ch)?;
-        }
+        resulting.push_str(&text);
         for atom in self.atoms.iter().filter(|a| a.bytes.start >= to) {
-            resulting = advance(resulting, atom.character)?;
+            atom.glyph.with_str(|s| resulting.push_str(s));
         }
+        // Re-segment actual joins: an inserted ZWJ/mark may change neighboring
+        // clusters. Do not sum widths of independently segmented fragments.
+        advance_text(0, &resulting)?;
         // All arithmetic/source lengths stay bounded even for a legacy caller
         // that will reject encoding the proposed Unicode replacement later.
         let result_bytes = (from - self.source.start)
@@ -432,8 +460,9 @@ mod tests {
             line.column(VisualColumn(2)).unwrap(),
             ColumnLocation {
                 byte: 101,
-                tab_left: 1,
-                tab_right: 2,
+                atom_end: 102,
+                left_cells: 1,
+                right_cells: 2,
                 virtual_spaces: 0
             }
         );
@@ -458,7 +487,7 @@ mod tests {
         assert_eq!(apply(source, edit), "a X  Z");
     }
     #[test]
-    fn zero_width_inside_tab_preserves_left_right_cells_and_empty_insert_is_noop() {
+    fn zero_width_inside_atom_preserves_left_right_cells_and_empty_insert_is_noop() {
         let line = layout("\tX");
         let edit = line
             .replace_columns(VisualColumn(2), VisualColumn(2), "q")
@@ -536,16 +565,7 @@ mod tests {
     }
     #[test]
     fn unsupported_widths_controls_and_invalid_decoding_fail_explicitly() {
-        for text in [
-            "e\u{301}",
-            "界",
-            "😀",
-            "x\u{200d}",
-            "\u{ad}",
-            "\u{7f}",
-            "\0",
-            "\u{fffd}",
-        ] {
+        for text in ["\u{301}", "\u{200d}", "\u{ad}", "\u{7f}", "\0"] {
             assert!(matches!(
                 LineLayout::new(text.as_bytes(), TextEncoding::Utf8, 0),
                 Err(RectangleError::UnsupportedScalar(_))
@@ -561,13 +581,26 @@ mod tests {
                 RectangleError::LineEnding
             );
         }
-        assert!(matches!(
-            layout("abc").replace_columns(VisualColumn(0), VisualColumn(1), "😀"),
-            Err(RectangleError::UnsupportedScalar('😀'))
-        ));
+        assert_eq!(
+            apply(
+                "abc",
+                layout("abc")
+                    .replace_columns(VisualColumn(0), VisualColumn(1), "😀")
+                    .unwrap()
+            ),
+            "😀bc"
+        );
+        for text in ["e\u{301}", "界", "😀", "x\u{200d}", "\u{fffd}"] {
+            assert!(LineLayout::new(text.as_bytes(), TextEncoding::Utf8, 0).is_ok());
+        }
     }
     #[test]
     fn line_columns_input_and_result_limits_do_not_overflow() {
+        let cluster = format!("e{}", "\u{301}".repeat(512));
+        assert_eq!(
+            LineLayout::new(cluster.as_bytes(), TextEncoding::Utf8, 0).unwrap_err(),
+            RectangleError::ClusterTooLong(cluster.len())
+        );
         assert!(matches!(
             LineLayout::new(&vec![b'a'; MAX_LINE_BYTES + 1], TextEncoding::Utf8, 0),
             Err(RectangleError::LineTooLong(_))

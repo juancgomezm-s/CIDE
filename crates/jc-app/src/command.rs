@@ -553,7 +553,7 @@ pub fn default_registry() -> CommandRegistry {
         spec!(
             EditRectangleStart,
             Edit,
-            "Rectangle: Select From Caret/Selection (single-cell text)",
+            "Rectangle: Select From Caret/Selection",
             rectangle_editor
         ),
         spec!(

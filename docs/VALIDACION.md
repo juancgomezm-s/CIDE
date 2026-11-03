@@ -1,5 +1,32 @@
 # Validación
 
+## Estado vigente — cierre funcional TUI, 2026-11-03
+
+Los bloques admitidos de TUI están implementados y validados localmente: regex,
+comparación de abiertos, símbolos/includes/RUN léxicos opcionales, completado
+textual, snippets, foco/overlays, clipboard Windows explícito y layout Unicode.
+[Matriz vigente](M2_TUI_FINISH.md), [contrato Unicode](M2_UNICODE_LAYOUT.md).
+530 nombres de pruebas aprobadas por suites/cierres dirigidos,18 casos nuevos;
+dos helpers Git se ejecutan por sus padres, no una corrida global única.
+Fmt/Clippy/release offline, cuatro flujos ConPTY y17 checks HWND propios aprobados.
+
+Se preservan bytes/encoding/BOM/EOL/undo, F1/F2/F3 y un único modelo editable.
+Unicode: grafemas/narrow/TAB4, caché512+256+128+128KiB/documento, filas64KiB,
+presentación fuente compartida2MiB, pantalla131072 celdas. Clipboard TUI tiene
+hilo Win32 lazy con buzón único y propietario que responde inactivo; pruebas sin
+abrir clipboard personal. Las dos bibliotecas autorizadas están fijadas y el
+mínimo declarado es Rust1.85; toolchain existente1.85.1, sin instalar programas.
+
+La siguiente puerta es aceptación física/global con terminal/fuente del usuario,
+clipboard real y mediciones RAM/arranque/pantalla; no se cierra con modelo/ConPTY.
+No ampliar automáticamente a AVM/semántica M3–M4, Git escritura/CI M5, plugins
+externos post-M5 ni gestos de ratón sin admisión. El paquete de desarrollo y sus
+hashes están en los metadatos Unicode. Sin CI, push o publicación.
+
+Las secciones fechadas siguientes conservan decisiones/evidencia históricas;
+sus antiguos «siguientes» y «pendientes» se subordinan a este estado vigente.
+
+
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
 339 pruebas Rust distintas aprobadas al integrar Quick Open y GUI nativo inicial
 (cierre selectivo; no una corrida única de339), más16 checks de smoke Win32/GDI,

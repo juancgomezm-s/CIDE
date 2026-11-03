@@ -7,6 +7,67 @@ use crate::{
 use std::ops::Range;
 
 impl Workbench {
+    pub fn unicode_statistics(&self, tab: TabId) -> Option<(u64, usize)> {
+        let doc = self.document_by_tab(tab)?;
+        let layout = doc.unicode.borrow();
+        Some((layout.scanned_bytes, layout.memory_bytes()))
+    }
+    pub fn visual_row(
+        &self,
+        tab: TabId,
+        line: usize,
+        scroll: usize,
+        width: usize,
+    ) -> Option<Vec<crate::VisualAtom>> {
+        let doc = self.document_by_tab(tab)?;
+        let (content, _) = self.line_range_for_tab(tab, line)?;
+        doc.unicode
+            .borrow_mut()
+            .row(
+                doc.session.document(),
+                doc.session.encoding()?,
+                content,
+                scroll,
+                width,
+                crate::unicode_layout::RowMode::Plain,
+            )
+            .ok()
+    }
+    pub fn visual_byte_at(&self, tab: TabId, line: usize, column: usize) -> Option<usize> {
+        let doc = self.document_by_tab(tab)?;
+        let (content, _) = self.line_range_for_tab(tab, line)?;
+        doc.unicode
+            .borrow_mut()
+            .byte_at(
+                doc.session.document(),
+                doc.session.encoding()?,
+                content,
+                column,
+            )
+            .ok()
+    }
+    pub fn visual_column_for_pane(&self, pane: PaneId) -> Option<usize> {
+        let view = self.panes.view(pane)?;
+        let loc = view.location()?;
+        let position = self.position_for_pane(pane)?;
+        self.visual_column_at_byte(loc.tab, position.line, loc.byte_offset)
+    }
+    pub fn visual_column_at_byte(&self, tab: TabId, line: usize, byte: usize) -> Option<usize> {
+        if self.position_for_tab(tab, byte)?.line != line {
+            return None;
+        }
+        let doc = self.document_by_tab(tab)?;
+        let (content, _) = self.line_range_for_tab(tab, line)?;
+        doc.unicode
+            .borrow_mut()
+            .column(
+                doc.session.document(),
+                doc.session.encoding()?,
+                content,
+                byte,
+            )
+            .ok()
+    }
     pub fn invisibles_visible(&self) -> bool {
         self.show_invisibles
     }
@@ -90,7 +151,7 @@ impl Workbench {
                         .saturating_add(target.virtual_spaces),
                 );
             }
-            return Some(column.saturating_add(target.tab_left));
+            return Some(column.saturating_add(target.left_cells));
         }
         Some(column)
     }
@@ -132,7 +193,11 @@ impl Workbench {
         let layout = self.rectangle_display_layout(tab, line)?;
         let left = layout.column(VisualColumn(rect.left)).ok()?;
         let right = layout.column(VisualColumn(rect.right)).ok()?;
-        let end = right.byte.saturating_add(usize::from(right.inside_tab()));
+        let end = if right.inside_atom() {
+            right.atom_end
+        } else {
+            right.byte
+        };
         Some(left.byte..end)
     }
 }

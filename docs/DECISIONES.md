@@ -590,3 +590,23 @@ jc-platform contiene el adaptador estricto existente sin segunda implementación
 GUI aporta HWND y TUI crea propietario message-only lazy. Disponibilidad no lee OS.
 Headless/inyección para pruebas; rectángulos internos y paste lineal transaccional.
 Interoperabilidad física sigue abierta. [Contrato](M2_TUI_CLIPBOARD.md).
+
+## D57 — Grafemas y columnas visuales con rangos y una geometría compartida
+
+Juan autorizó dos bibliotecas fijadas para UAX29 y ancho narrow. jc-text mantiene
+helpers; jc-app convierte rangos/bytes/grafemas/columnas explícitamente y conserva
+checkpoints/caché acotados por revisión/encoding. Teclado opera en grafemas, APIs
+escalares/bytes siguen exactas. VisualAtom/Glyph alimenta ambos frontends; TUI
+representa continuaciones y emite átomos completos. Rectángulos parciales usan
+espacios sin partir fuente y aplican una transacción. Presupuestos512+256+128+128KiB,
+filas64KiB/presentación2MiB/pantalla131072 celdas, límites visibles. No se afirma
+bidi/font shaping ni aceptación física. [Contrato/evidencia](M2_UNICODE_LAYOUT.md).
+
+## D58 — Clipboard TUI atiende mensajes durante la espera de entrada
+
+El propietario Win32 se crea/destruye en hilo dedicado lazy con GetMessageW y
+buzón único de texto poseído acotado; no modelo ni sondeo. Readiness tras crear
+cola, cierre explícito/RAII y errores sin fallback. GUI sigue con su HWND/loop.
+La prueba propia responde WM_NULL desde otro hilo inactivo, sin abrir clipboard
+personal. Delayed rendering externo no tiene deadline duro garantizado.
+[Contrato](M2_TUI_CLIPBOARD.md).

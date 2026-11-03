@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "avm_started": false,
+  "physical_display_verified": false,
+  "os_clipboard_verified": false,
+  "checks": [
+    "unicode_combining_cjk_emoji_zwj_cursor_and_atomic_crlf",
+    "unicode_family_backspace_is_one_undo_without_save",
+    "unicode_partial_wide_rectangle_replace_one_undo",
+    "unicode_narrow_resize_preserves_source_and_legal_caret"
+  ],
+  "exit_code": 0,
+  "fixture_unchanged": true,
+  "vt_bytes": 45968
+}

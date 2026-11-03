@@ -1,0 +1,11 @@
+{
+  "unique_listed_test_names": 532,
+  "unique_passed_test_names": 530,
+  "ignored_standalone_helpers": [
+    "git_read::tests::fixture_descendant_child",
+    "git_read::tests::fixture_sleep_child"
+  ],
+  "missing_passed_names": [],
+  "single_all_workspace_runtime_pass": false,
+  "validation": "workspace by suites and directed closure; only --list is one final workspace invocation"
+}

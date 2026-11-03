@@ -1,0 +1,14 @@
+{
+  "commit": "6b6d790",
+  "binaries": {
+    "cide-tui.exe": {
+      "bytes": 2229760,
+      "sha256": "50417c3d801b8c6aa99824dc0b032723ca244c9d39d2d88b17ead8e53601fbe6"
+    },
+    "cide-gui.exe": {
+      "bytes": 2796544,
+      "sha256": "63aab1fefcff4f01bd95012e94f1d62c943e8638a9ec0163c7c5504b2e5c0421"
+    }
+  },
+  "physical_display_verified": false
+}
