@@ -1,0 +1,31 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.31s
+     Running tests\git_diff.rs (target\debug\deps\git_diff-eb7b8a8dcd163ed6.exe)
+
+running 9 tests
+test byte_and_artifact_quotas_fail_before_copy_or_worker_creation ... ok
+test cancelled_or_cleared_delivery_never_resurrects_and_a_new_request_waits_for_its_ack ... ok
+test dirty_document_snapshot_compares_head_or_index_and_hunk_navigation_preserves_bytes_and_undo ... ok
+test completed_but_undelivered_artifacts_reject_revision_encoding_view_document_path_and_close_changes ... ok
+test deleted_hunk_at_eof_navigates_without_replacing_bytes ... ok
+test legacy_dirty_snapshot_stays_in_its_page_and_encoding_change_invalidates_navigation ... ok
+test temporary_shared_snapshot_pressure_keeps_git_queued_until_plain_completion_is_polled ... ok
+test supersession_keeps_one_snapshot_and_only_latest_pending_metadata_until_acknowledgement ... ok
+test root_escape_and_missing_executable_are_worker_failures_without_source_writes ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.63s
+
+     Running tests\jobs.rs (target\debug\deps\jobs-f7b691f5a6cc0453.exe)
+
+running 8 tests
+test closed_view_encoding_change_and_reopened_document_invalidate_stamps ... ok
+test admission_is_lazy_and_bounded_including_completed_work_until_delivery ... ok
+test completion_wakes_a_waiter_without_keyboard_input_or_polling_the_provider ... ok
+test replacing_a_generation_cancels_the_old_job_and_delivers_only_the_latest ... ok
+test worker_snapshot_is_owned_and_revision_staleness_prevents_delivery_after_edit ... ok
+test output_quotas_are_latched_and_reject_partial_results_and_invalid_ranges ... ok
+test panel_logs_bound_bytes_and_mark_truncated_lines_without_changing_documents ... ok
+test deadline_cancel_and_provider_panic_release_admission_and_keep_worker_usable ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+

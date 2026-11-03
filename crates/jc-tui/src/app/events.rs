@@ -133,6 +133,21 @@ impl TuiApp {
                     Err(error) => self.status = error.to_string(),
                 }
             }
+            KeyCode::Enter if self.panels.bottom() == BottomPanel::Problems => {
+                let id = self
+                    .workbench
+                    .problems()
+                    .get(self.bottom_selected)
+                    .map(|row| row.id);
+                if let Some(id) = id {
+                    match self.workbench.activate_problem(id) {
+                        Ok(()) => {
+                            let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+                        }
+                        Err(error) => self.status = error,
+                    }
+                }
+            }
             KeyCode::Enter => {
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
             }

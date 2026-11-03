@@ -1,3 +1,6 @@
+mod bottom_paint;
+mod bottom_panel;
+mod bottom_smoke;
 mod clipboard;
 mod clipboard_flow;
 mod close_flow;
@@ -63,6 +66,13 @@ fn os_error(operation: &str) -> String {
 
 const OPEN_SIDE: usize = 190;
 const COMMANDS: &[(usize, CommandId, &str)] = &[
+    (
+        210,
+        CommandId::ViewToggleBottomPanel,
+        "Toggle &Bottom Panel",
+    ),
+    (211, CommandId::ViewProblems, "&Problems"),
+    (212, CommandId::ViewOutput, "&Output"),
     (
         200,
         CommandId::EditRectangleStart,
@@ -251,6 +261,8 @@ struct State {
     explorer_visible: bool,
     explorer_focused: bool,
     explorer_hits: Option<explorer_panel::ExplorerHits>,
+    bottom: bottom_panel::BottomState,
+    bottom_hits: Option<bottom_panel::BottomHits>,
     rectangle_drag: Option<rectangle_input::RectangleDrag>,
     selector: Option<Selector>,
     selector_explorer_focus: bool,
@@ -339,6 +351,8 @@ impl State {
             explorer_visible: false,
             explorer_focused: false,
             explorer_hits: None,
+            bottom: Default::default(),
+            bottom_hits: None,
             rectangle_drag: None,
             selector: None,
             selector_explorer_focus: false,
@@ -426,6 +440,7 @@ impl State {
         Ok(state)
     }
     fn new_document(&mut self) {
+        self.bottom.focused = false;
         self.explorer_focused = false;
         self.next_untitled += 1;
         self.workbench.new_file(
@@ -444,7 +459,9 @@ impl State {
                     .selector
                     .as_ref()
                     .is_some_and(|s| s.kind() == SelectorKind::Palette));
-        context.focus = if explorer_focus {
+        context.focus = if self.bottom.focused {
+            PrimaryFocus::BottomPanel
+        } else if explorer_focus {
             PrimaryFocus::Sidebar
         } else {
             PrimaryFocus::Editor
@@ -460,6 +477,7 @@ impl State {
                 && self.selector_edit_target == self.source_edit_target()
         } else {
             !explorer_focus
+                && !self.bottom.focused
                 && self.selector.is_none()
                 && self.search_panel.is_none()
                 && self.navigation_panel.is_none()
@@ -514,6 +532,10 @@ impl State {
             return Action::None;
         }
         match command {
+            CommandId::ViewToggleBottomPanel | CommandId::ViewProblems | CommandId::ViewOutput => {
+                self.show_bottom(command);
+                return Action::None;
+            }
             command if rectangle_input::is_rectangle(command) => {
                 match self.workbench.execute(command) {
                     Ok(_) => self.rectangle_status(),
@@ -542,6 +564,7 @@ impl State {
             }
             CommandId::NavigateBack | CommandId::NavigateForward => {
                 self.close_selector();
+                self.bottom.focused = false;
                 self.workbench.cancel_search_navigation();
             }
             CommandId::ViewExplorer => {
@@ -557,8 +580,7 @@ impl State {
                 return Action::None;
             }
             CommandId::FocusNext | CommandId::FocusPrevious => {
-                self.explorer_focused =
-                    explorer_panel::region(self).is_some() && !self.explorer_focused;
+                self.cycle_regions(command == CommandId::FocusNext);
                 return Action::None;
             }
             CommandId::EditorOpenToSide if self.explorer_focused => {
@@ -641,12 +663,14 @@ impl State {
                 return Action::None;
             }
             CommandId::EditorFocusPrimary
+            | CommandId::EditorOpenToSide
             | CommandId::EditorFocusSecondary
             | CommandId::EditorSplitRight
             | CommandId::EditorOneGroup
             | CommandId::TabNext
             | CommandId::TabPrevious => {
                 self.explorer_focused = false;
+                self.bottom.focused = false;
             }
             CommandId::Tab1
             | CommandId::Tab2
@@ -658,6 +682,7 @@ impl State {
             | CommandId::Tab8
             | CommandId::Tab9 => {
                 self.explorer_focused = false;
+                self.bottom.focused = false;
             }
             CommandId::FileOpen => return Action::Open(false),
             CommandId::FileSaveAs => return Action::SaveAs,
@@ -858,6 +883,9 @@ impl State {
         if self.selector.is_some() {
             return (true, self.selector_key(code, modifiers));
         }
+        if self.bottom.focused {
+            return (true, self.bottom_key(code, key, modifiers));
+        }
         if self.explorer_focused {
             if let Some(key) = key {
                 match self.keymap.resolve(
@@ -986,6 +1014,9 @@ impl State {
         if self.explorer_focused {
             return;
         }
+        if self.bottom.focused {
+            return;
+        }
         match self.workbench.insert_text(ch.encode_utf8(&mut bytes)) {
             Ok(()) => self.status = "Ready".into(),
             Err(error) => self.error(error),
@@ -1082,6 +1113,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             state.paint_count += 1;
             let frame = paint::prepare(&mut state);
             state.explorer_hits = frame.explorer_hits();
+            state.bottom_hits = frame.bottom_hits();
             frame
         };
         let mut paint = NativePaint {
@@ -1131,12 +1163,16 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             WM_SIZE => {
                 state.rectangle_drag = None;
                 state.explorer_hits = None;
+                state.bottom_hits = None;
                 let mut rect = Rect::default();
                 if GetClientRect(hwnd, &mut rect) != 0 {
                     state.width = rect.right.max(1);
                     state.height = rect.bottom.max(1);
                     if explorer_panel::region(&state).is_none() {
                         state.explorer_focused = false;
+                    }
+                    if bottom_panel::region(&state).is_none() {
+                        state.bottom.focused = false;
                     }
                 }
             }
@@ -1203,6 +1239,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     && !state.project_visible()
                     && state.replace_panel.is_none()
                     && state.git_panel.is_none()
+                    && !state.bottom_click(x, y, message == WM_LBUTTONDBLCLK)
                     && !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK)
                     && message == WM_LBUTTONDOWN
                 {
@@ -1392,6 +1429,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                         } else {
                             state.status = "Opened".into();
                             state.explorer_focused = false;
+                            state.bottom.focused = false;
                             state.ensure_encoding_selector();
                         }
                     }
@@ -1489,6 +1527,7 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
             (*id >= start && *id < end)
                 || (start == 110 && (170..178).contains(id))
                 || (start == 120 && *id == 178)
+                || (start == 120 && (210..213).contains(id))
                 || (start == 110 && (200..206).contains(id))
                 || (start == 101 && *id == 119)
                 || (start == 130 && (194..197).contains(id))

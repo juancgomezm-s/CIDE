@@ -468,7 +468,7 @@ fn draw_bottom(
             .iter()
             .skip(start)
             .take(available)
-            .cloned()
+            .map(|row| row.text.clone())
             .collect(),
         BottomPanel::Output => app
             .workbench
@@ -476,7 +476,7 @@ fn draw_bottom(
             .iter()
             .skip(start)
             .take(available)
-            .cloned()
+            .map(|row| row.text.clone())
             .collect(),
         BottomPanel::SearchResults if app.project_results => app
             .project_search

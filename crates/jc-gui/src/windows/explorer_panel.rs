@@ -66,6 +66,7 @@ pub(super) fn region(state: &State) -> Option<Rect> {
 }
 impl State {
     pub(super) fn show_explorer(&mut self) {
+        self.bottom.focused = false;
         let collapse = self.explorer_visible && self.explorer_focused;
         self.close_selector();
         if collapse {
@@ -253,6 +254,7 @@ impl State {
         let is_dir = node.is_dir();
         let disclosure = x < region.left + 8 + (depth.min(32) * 2 + 3) as i32 * self.cell_width;
         self.explorer_focused = true;
+        self.bottom.focused = false;
         self.explorer_view.select(id);
         if (is_dir && disclosure && !double) || (double && !disclosure) || (double && !is_dir) {
             let side = self.modifiers().contains(Modifiers::CTRL);

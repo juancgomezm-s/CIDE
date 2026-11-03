@@ -24,6 +24,7 @@ mod panes;
 pub mod quick_open;
 pub mod rectangle;
 mod tabs;
+pub mod task_panels;
 mod text_field;
 pub use text_field::{edit_field, present_field, FieldEdit, FieldPresentation};
 mod workbench;

@@ -187,8 +187,7 @@ pub struct Workbench {
     search_navigation: Option<search::PendingNavigation>,
     search_history_index: Option<usize>,
     pub(crate) clipboard: Option<rectangular::Clipboard>,
-    output: Vec<String>,
-    problems: Vec<String>,
+    pub(crate) task_panels: crate::task_panels::TaskPanels,
 }
 
 impl Workbench {
@@ -508,24 +507,34 @@ impl Workbench {
         &self.search
     }
 
-    pub fn output(&self) -> &[String] {
-        &self.output
+    pub fn output(&self) -> &[crate::task_panels::PanelRow] {
+        self.task_panels.rows(crate::task_panels::PanelKind::Output)
     }
 
-    pub fn problems(&self) -> &[String] {
-        &self.problems
+    pub fn problems(&self) -> &[crate::task_panels::PanelRow] {
+        self.task_panels
+            .rows(crate::task_panels::PanelKind::Problems)
+    }
+    pub fn task_panels(&self) -> &crate::task_panels::TaskPanels {
+        &self.task_panels
+    }
+    pub fn reset_task_panels(&mut self) {
+        self.task_panels.reset();
     }
 
     pub fn push_output(&mut self, line: impl Into<String>) {
-        append_log(&mut self.output, line.into(), 2000);
+        self.task_panels
+            .push(crate::task_panels::PanelKind::Output, line.into());
     }
 
     pub fn push_problem(&mut self, line: impl Into<String>) {
-        append_log(&mut self.problems, line.into(), 1000);
+        self.task_panels
+            .push(crate::task_panels::PanelKind::Problems, line.into());
     }
 
     pub fn clear_problems(&mut self) {
-        self.problems.clear();
+        self.task_panels
+            .clear(crate::task_panels::PanelKind::Problems);
     }
 
     pub fn open_file(
@@ -1050,28 +1059,4 @@ fn title_for_path(path: &Path, fallback: &str) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or(fallback)
         .to_owned()
-}
-
-fn append_log(log: &mut Vec<String>, mut line: String, max_lines: usize) {
-    const BYTES: usize = 256 * 1024;
-    const LINE: usize = 4096;
-    const MARKER: &str = "… [truncated]";
-    if line.len() > LINE {
-        let mut end = LINE - MARKER.len();
-        while !line.is_char_boundary(end) {
-            end -= 1;
-        }
-        line.truncate(end);
-        line.push_str(MARKER);
-    }
-    line.shrink_to_fit();
-    log.push(line);
-    let mut bytes = log
-        .iter()
-        .map(|line| line.capacity() + std::mem::size_of::<String>())
-        .sum::<usize>();
-    while log.len() > max_lines || bytes > BYTES {
-        let first = log.remove(0);
-        bytes -= first.capacity() + std::mem::size_of::<String>();
-    }
 }

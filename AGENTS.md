@@ -418,3 +418,25 @@ contract first, without inferring new provider implementation. Project results a
 a specific panel, not that generic host. Preserve outstanding selector input,
 native menu, physical/global/Unicode/clipboard/symlink/notices limitations.
 No new dependencies/providers/AVM/install/security changes, CI, push or publication.
+
+## GUI F3 panel host closure
+
+Read docs/M2B_BOTTOM_PANELS.md. Workbench TaskPanels now owns typed bounded rows,
+stable IDs and stamp/path/range provenance, replacing the prior string logs/TUI
+completion formatting. GUI has one F3 jobs.poll dispatcher inside TASKS_MESSAGE:
+Git controller first, then accept_task_completion; no polling/admission in paint.
+JobRecord and CompletedTask capture path at admission; SaveAs invalidates results
+even at unchanged revision/encoding. Output provenance is not navigation authority.
+Problems activation by ID revalidates open document/stamp/path/view/both source
+boundaries before existing jump/pin/history logic. Never reopen disk/apply proposals.
+ViewToggleBottomPanel/Problems/Output, three-region F6/reverse focus and Escape
+are connected. Hiding/reading never starts or cancels providers. Root change cancels
+existing jobs/resets logs; stale completion may log only generic discard status.
+Keep quota accounting including row/catalog/string/path capacities, one text owner,
+visible128rows/512columns, painted hit IDs and compact fallback. Four new shared
+tests,23 directed cases and13 own-HWND checks passed (six new native),fmt/Clippy/
+release. Native fixture providers are synthetic only; no business/AVM validation.
+88 GUI routes now; historical inventory artifacts remain unchanged. Remaining
+universal inventory gaps include selector input, menu adaptation and general mouse.
+Preserve physical/global/Unicode/clipboard/symlink/notices gates. No new dependency,
+provider, AVM, install/security changes, CI, push or publication.

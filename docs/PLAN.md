@@ -512,3 +512,26 @@ estado antes de construir; esto no autoriza inventar proveedores. SearchResults
 tiene panel de proyecto específico, no ese host. MenúsTools/Help, entrada avanzada
 en selectores, selección lineal por drag/wheel y resto físico/global siguen
 identificados, sin afirmar paridad completa. No CI/push/dependencias/AVM nuevos.
+
+## Host GUI de paneles F3 y foco — 2026-11-03
+
+[Bloque integrado](M2B_BOTTOM_PANELS.md): Problems/Output/ToggleBottomPanel en
+View/paleta/teclado, selección por IDs, navegación validada y foco en tres regiones.
+TaskPanels reemplaza logs de strings y conversión duplicada TUI, conservando una
+sola copia de texto por fila y procedencia tipada; GUI acepta F3 en un único poll.
+JobSystem captura ruta para invalidar SaveAs aun con revisión/encoding iguales.
+Preservados límites F3, cuotas de log, fuente/vistas/undo, pin y render readonly.
+No proveedor nuevo: productores sintéticos solo en automatización; vacío explícito.
+
+23 casos dirigidos distintos (cuatro nuevos),13 checks HWND (seis nuevos),
+fmt/Clippy/release aprobados tras cableado completo. Dos corridas nativas de la
+misma sección: final incluye procedencia visible; no suites antiguas sin impacto,
+mediciones globales o CI. SaveAs de memdoc en destino propio nuevo prueba identidad;
+archivo exacto verificado/eliminado, fuente13B y metadata Git sintética intactos.
+
+Ahora88 de104 comandos tienen ruta GUI; no aceptación de todos sus caminos.
+Pendientes universales concretos del inventario: entrada avanzada/pegado de
+selectores, adaptación incompleta de menús y selección lineal por drag/wheel.
+Proveedores internos/terminal/regex requieren sus propios contratos/puertas; no
+inferir implementaciones de negocio del host. Manual/global/Unicode/clipboard OS,
+symlink y notices GNU siguen abiertos. Sin dependencias/proveedores/AVM/CI/push nuevos.

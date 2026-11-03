@@ -1195,3 +1195,32 @@ PNG GDI1384×741 y984×641 revisados visualmente, conversión sin pérdida. No c
 global de pruebas ni perfiles/RAM nuevos, pantalla física/IME/DPI/accesibilidad/
 clipboard externo/Linux certificados. Host genérico de paneles GUI y gates previos
 siguen abiertos. Sin CI/push/dependencias/proveedores/AVM/instalaciones nuevos.
+
+## Host Problems/Output GUI y entrega F3 — 2026-11-03
+
+Bloque completo antes de checks: almacén/targets/IDs compartidos, JobRecord.path,
+aceptación F3 única, TUI, GUI/controladores, menú/paleta/teclado/foco/layout/hits/GDI.
+**23 casos Rust distintos aprobados**: cuatro nuevos TaskPanels, ocho jobs y nueve
+Git diff afectados por path/dispatcher, uno TUI F3 ampliado con navegación/stale y
+uno parser CLI GUI afectado. Sin suite global ni regresiones cerradas sin impacto.
+Clippy workspace/all-targets -D warnings, release bins/examples y formato aprobados.
+
+**13 checks HWND aprobados**, seis nuevos y siete startup/pintura. Productores
+sintéticos de prueba usan JobSystem/Wakeup/TaskOutput reales y TASKS_MESSAGE propio;
+no prueban servicio de negocio. Vacío y focos, edición protegida, typed delivery y
+navegación dirty/split/pin, stale revisión/encoding/ruta/raíz/cancel, fallo/cuota/
+reinicio, propuesta inerte, recorte/selección/hits/resize/composición y limpieza.
+SaveAs usa solo memdoc y path nuevo propio, verifica bytes y elimina ese archivo;
+fuente original13B y metadata Git sintética no cambian. Dos WM_PAINT/cero errores.
+
+Corrida inicial aprobada retenida; final añade procedencia visible y bitmap
+Problems, con fixture que compara workers existentes para no asumir inicio vacío
+al ejecutarse tras otras secciones. Solo sección nativa afectada revalidada y
+Clippy/release reconstruidos; Rust aprobados no repetidos. Sin fallos funcionales
+en esta ventana. PNG1000×650/1384×741/984×641 GDI→PNG sin pérdida revisados.
+[Contrato](M2B_BOTTOM_PANELS.md), [hashes/logs](evidence/m2b-bottom-2026-11-03-metadata.json),
+[reporte final](evidence/m2b-bottom-2026-11-03-native-report.json),
+[inicial](evidence/m2b-bottom-2026-11-03-native-initial-report.json).
+No AVM/proveedor nuevo, OS clipboard/IME/DPI/accesibilidad/pantalla física/Linux,
+RAM global o Unicode general certificados; gates previos/notices/symlink siguen
+abiertos. Sin dependencias/instalaciones/CI/push/publicación ni perfiles nuevos.

@@ -151,16 +151,21 @@ impl State {
         self.git_diff
             .validate_context(&self.workbench, &mut self.jobs)
     }
+    /// The sole F3 poll: dispatch Git-owned completions first, other typed rows
+    /// to Workbench. Called only from TASKS_MESSAGE, never prepare/draw.
     pub(super) fn poll_git(&mut self) -> bool {
         let mut changed = self.validate_git_context();
         let mut diff_changed = false;
-        for mut completion in self.jobs.poll(&self.workbench, 2) {
+        for mut completion in self.jobs.poll(&self.workbench, 4) {
             if completion.status == TaskStatus::Panicked {
-                self.status =
-                    "Background Git worker recovered from failure; refresh explicitly".into();
+                self.status = "Background worker recovered from failure; refresh explicitly".into();
                 changed = true;
             }
-            diff_changed |= self.git_diff.accept(&self.workbench, &mut completion);
+            if self.git_diff.accept(&self.workbench, &mut completion) {
+                diff_changed = true;
+            } else {
+                changed |= self.workbench.accept_task_completion(&completion);
+            }
         }
         diff_changed |= self.git_diff.tick(&self.workbench, &mut self.jobs);
         changed |= diff_changed;
@@ -247,6 +252,7 @@ impl State {
                         match self.git_diff.select_hunk(selected, &mut self.workbench) {
                             Ok(()) => {
                                 self.git_panel = None;
+                                self.bottom.focused = false;
                                 self.status = "Git hunk selected; source unchanged".into();
                             }
                             Err(error) => self.error(error),

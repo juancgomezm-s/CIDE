@@ -181,6 +181,7 @@ impl State {
                     let index = self.project_panel.as_ref().map_or(0, |p| p.view.selected());
                     match self.project_search.select(index, &mut self.workbench) {
                         Ok(()) => {
+                            self.bottom.focused = false;
                             if let Some(panel) = self.project_panel.as_mut() {
                                 panel.visible = false;
                             }

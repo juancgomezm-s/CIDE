@@ -208,41 +208,7 @@ impl TuiApp {
                 update.changed = true;
                 continue;
             }
-            if !completion.applicable {
-                if completion.current {
-                    self.status = match completion.status {
-                        jc_app::TaskStatus::TimedOut => "Background task timed out",
-                        jc_app::TaskStatus::LimitExceeded => "Task result exceeded its size limit",
-                        jc_app::TaskStatus::InvalidRange => {
-                            "Background task returned an invalid result"
-                        }
-                        _ => "Background task failed",
-                    }
-                    .to_owned();
-                    update.changed = true;
-                }
-                continue;
-            }
-            for item in completion.output.items() {
-                match item {
-                    jc_app::TaskItem::Diagnostic { range, message } => {
-                        self.workbench.push_problem(format!(
-                            "document {} bytes {}..{}: {}",
-                            completion.stamp.document.0, range.start, range.end, message
-                        ))
-                    }
-                    jc_app::TaskItem::Message(message) => {
-                        self.workbench.push_output(message.clone())
-                    }
-                    jc_app::TaskItem::ProposedEdit { range, text } => {
-                        self.workbench.push_output(format!(
-                            "Suggested replacement for bytes {}..{}: {}",
-                            range.start, range.end, text
-                        ))
-                    }
-                }
-                update.changed = true;
-            }
+            update.changed |= self.workbench.accept_task_completion(&completion);
         }
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
         let status_changed = self

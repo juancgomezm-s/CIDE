@@ -363,6 +363,24 @@ fn background_completion_wakes_and_updates_panels_without_input_or_applying_edit
     assert!(app.workbench.problems()[0].contains("background diagnostic"));
     assert!(app.workbench.output()[0].contains("proposed"));
     assert_eq!(app.workbench.active_bytes().unwrap(), b"abc");
+    let target = app.workbench.problems()[0].target.as_ref().unwrap();
+    assert_eq!(target.stamp.document, id);
+    app.dispatch(jc_app::CommandId::ViewProblems);
+    let p = app.prepare_frame(100, 24);
+    let first = crate::render::render(&p);
+    assert_eq!(first, crate::render::render(&p));
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(
+        app.workbench.active_position(),
+        Some(jc_text::TextPosition { line: 0, column: 0 })
+    );
+    assert_eq!(app.focus.primary(), jc_app::PrimaryFocus::Editor);
+    app.workbench.insert_text("X").unwrap();
+    app.dispatch(jc_app::CommandId::ViewProblems);
+    let before = format!("{:?}", app.workbench.panes());
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(before, format!("{:?}", app.workbench.panes()));
+    assert_eq!(app.focus.primary(), jc_app::PrimaryFocus::BottomPanel);
 }
 
 #[test]

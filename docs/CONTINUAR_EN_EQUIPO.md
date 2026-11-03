@@ -509,3 +509,29 @@ cancelación; no implementar proveedores por inferencia. SearchResults ofrece pa
 de proyecto, no el host genérico. Selectores aún no tienen Ctrl+V; Menu* usa adaptación
 Win32 parcial, no OpenMenu TUI. Conservar todos los límites físicos/globales,
 Unicode general/clipboard OS, symlink y notices GNU; sin CI/push/dependencias/AVM.
+
+## Último cierre: host GUI Problems/Output — 2026-11-03
+
+Leer [contrato y evidencia](M2B_BOTTOM_PANELS.md). TaskPanels posee filas/IDs/origen
+únicos, reemplazando los logs y stringificación TUI. Ambos frontends aceptan F3
+mediante API compartida; GUI separa Git y otros resultados en su único poll de
+TASKS_MESSAGE. Preparación/dibujo solo leen resultados y preparan viewport visible.
+JobRecord/CompletedTask llevan ruta capturada, cancel_stale y activación revalidan
+stamp/ruta/fronteras. SaveAs puede invalidar aunque revisión y encoding no cambien.
+
+Ctrl+J/View/paleta muestran host, Alt+1/2 cambia panel, F6/Shift+F6 recorre las tres
+regiones visibles, Escape vuelve a Editor sin cancelar servicios. Problems navega
+solo documentos abiertos vigentes por row ID; Output conserva origen pero nunca
+navega/ejecuta/aplica propuestas. Raíz nueva cancela jobs/resetea logs; descarte
+antiguo solo informa estado sin revivir payload. Quotas256KiB/log incluyendo
+metadata/capacidades, texto4096B,1000/2000 filas; no RAM privada. Mouse IDs publicados
+en WM_PAINT, geometría/retención verificadas, compact conserva selección del host.
+
+23 casos Rust dirigidos (cuatro nuevos),13 HWND (seis nuevos), fmt/Clippy/release,
+sin fallos funcionales. Native inicial retenido y final con origen visible/canvas;
+Rust aprobados no repetidos por esos cambios GUI. Proveedores de prueba sintéticos
+ejercitan JobSystem real, no AVM/negocio; sin productor el host queda vacío.
+Matriz previa queda histórica;88 rutas GUI actuales. Otros pendientes del inventario
+son entrada avanzada de selectores, menús y mouse general. No iniciar proveedores,
+regex/dependencias/AVM/CI/push por inferencia ni repetir perfiles cerrados. Gates
+físicos/globales/clipboard/Unicode, symlink y notices GNU permanecen abiertos.

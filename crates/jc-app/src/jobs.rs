@@ -4,6 +4,7 @@ use jc_text::TextEncoding;
 use std::{
     collections::{HashMap, VecDeque},
     ops::Range,
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Condvar, Mutex,
@@ -289,6 +290,8 @@ pub struct CompletedTask {
     pub id: JobId,
     pub key: JobKey,
     pub stamp: TaskStamp,
+    /// Source path captured at admission, never inferred from delivery-time UI.
+    pub path: PathBuf,
     pub status: TaskStatus,
     pub applicable: bool,
     pub current: bool,
@@ -334,6 +337,7 @@ struct Shared {
 struct Record {
     key: JobKey,
     stamp: TaskStamp,
+    path: PathBuf,
     cancel: Cancellation,
     bytes: usize,
     artifact_limit: usize,
@@ -521,6 +525,10 @@ impl JobSystem {
             encoding: doc.session.encoding().ok_or(SubmitError::NoEncoding)?,
             view,
         };
+        if doc.session.path().as_os_str().len() > 4096 {
+            return Err(SubmitError::SnapshotLimit);
+        }
+        let path = doc.session.path().to_owned();
         if !app.task_stamp_is_current(stamp) {
             return Err(SubmitError::InvalidView);
         }
@@ -561,6 +569,7 @@ impl JobSystem {
             Record {
                 key,
                 stamp,
+                path,
                 cancel: cancel.clone(),
                 bytes: source.len(),
                 artifact_limit,
@@ -592,9 +601,19 @@ impl JobSystem {
     }
     pub fn cancel_stale(&mut self, app: &Workbench) {
         for record in self.records.values() {
-            if !app.task_stamp_is_current(record.stamp) {
+            if !app.task_stamp_is_current(record.stamp)
+                || app
+                    .document_by_id(record.stamp.document)
+                    .is_none_or(|doc| doc.session.path() != record.path)
+            {
                 record.cancel.flag.store(true, Ordering::Release);
             }
+        }
+    }
+    /// Context invalidation cancels existing jobs without admitting or polling.
+    pub fn cancel_all(&mut self) {
+        for record in self.records.values() {
+            record.cancel.flag.store(true, Ordering::Release);
         }
     }
     /// Completion count is capped; pending and completed work share admission quotas.
@@ -640,6 +659,7 @@ impl JobSystem {
                 id: event.id,
                 key: record.key,
                 stamp: record.stamp,
+                path: record.path,
                 status: event.status,
                 applicable,
                 current,

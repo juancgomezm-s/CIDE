@@ -106,6 +106,11 @@ PARITY_REQUIRED = {
     "parity_join_split_focus_and_rectangle", "parity_scroll_link_keyboard_menu_palette_pin",
     "parity_scroll_link_resize_readonly_cleanup",
 }
+BOTTOM_REQUIRED = {
+    "bottom_empty_menu_palette_three_region_focus", "bottom_f3_delivery_navigation_dirty_split_pin",
+    "bottom_stale_revision_encoding_path_root_cancel", "bottom_failure_quota_restart_proposals_inert",
+    "bottom_visible_rows_resize_hits_readonly", "bottom_original_source_cleanup",
+}
 
 def ordinary_directory(path):
     info = path.lstat()
@@ -165,7 +170,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity"), default="all")
+    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity", "bottom"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -193,7 +198,8 @@ def main():
                    ["--smoke-line-edit-only"] if args.section == "line-edit" else
                    ["--smoke-selection-reopen-only"] if args.section == "selection-reopen" else
                    ["--smoke-rectangle-only"] if args.section == "rectangle" else
-                   ["--smoke-parity-only"] if args.section == "parity" else []),
+                   ["--smoke-parity-only"] if args.section == "parity" else
+                   ["--smoke-bottom-only"] if args.section == "bottom" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -209,7 +215,8 @@ def main():
                 SELECTION_REOPEN_REQUIRED if args.section == "selection-reopen" else
                 RECTANGLE_REQUIRED if args.section == "rectangle" else
                 PARITY_REQUIRED if args.section == "parity" else
-                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED | PARITY_REQUIRED)
+                BOTTOM_REQUIRED if args.section == "bottom" else
+                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED | PARITY_REQUIRED | BOTTOM_REQUIRED)
     if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
     if payload.get("backend") != "Win32/GDI" or payload.get("window") != "own_hidden_hwnd" or payload.get("native_paints", 0) < 1:

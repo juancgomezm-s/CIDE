@@ -14,6 +14,9 @@ impl State {
             return Err("Project root must be a directory".into());
         }
         self.explorer.set_root(root.clone())?;
+        self.jobs.cancel_all();
+        self.workbench.reset_task_panels();
+        self.bottom_hits = None;
         self.explorer_view = Default::default();
         self.explorer_hits = None;
         self.close_selector();
@@ -280,6 +283,7 @@ impl State {
                     ) {
                         Ok(_) => {
                             self.close_selector();
+                            self.bottom.focused = false;
                             self.status = "Opened project file · shared document/undo".into();
                             self.ensure_encoding_selector();
                         }

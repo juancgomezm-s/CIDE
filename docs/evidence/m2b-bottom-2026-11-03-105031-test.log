@@ -1,0 +1,12 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.49s
+     Running unittests src\lib.rs (target\debug\deps\jc_app-d8378abed1e8cd0f.exe)
+
+running 4 tests
+test task_panels::tests::failure_stale_cancel_and_empty_completion_publish_only_explicit_status ... ok
+test task_panels::tests::completed_items_have_typed_targets_and_proposals_never_apply ... ok
+test task_panels::tests::problem_activation_respects_pin_and_rejects_changed_revision_and_closed_view ... ok
+test task_panels::tests::retained_capacity_unicode_truncation_and_ids_survive_clear_and_eviction ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 86 filtered out; finished in 0.00s
+

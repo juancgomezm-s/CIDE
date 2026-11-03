@@ -1,0 +1,57 @@
+{
+  "ok": true,
+  "executable": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\target\\release\\cide-gui.exe",
+  "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\native-gui-smoke\\20261103T105153Z-ef435c51d1e4",
+  "section": "bottom",
+  "fixture_bytes": 13,
+  "fixture_unchanged": true,
+  "native_report": {
+    "ok": true,
+    "backend": "Win32/GDI",
+    "window": "own_hidden_hwnd",
+    "native_paints": 2,
+    "native_paint_errors": 0,
+    "wall_ms": 30,
+    "checks": [
+      "startup_shared_open_bytes",
+      "cide_native_window_title",
+      "cide_native_gui_icon_resource",
+      "no_child_edit_control",
+      "bottom_empty_menu_palette_three_region_focus",
+      "bottom_f3_delivery_navigation_dirty_split_pin",
+      "bottom_stale_revision_encoding_path_root_cancel",
+      "bottom_failure_quota_restart_proposals_inert",
+      "bottom_visible_rows_resize_hits_readonly",
+      "bottom_original_source_cleanup",
+      "actual_gdi_offscreen_bitmap",
+      "native_paint_handler",
+      "native_paint_no_errors"
+    ],
+    "error": "",
+    "physical_display_verified": false,
+    "os_clipboard_verified": false
+  },
+  "bitmap_width": 984,
+  "bitmap_height": 641,
+  "bitmap_colors": 95,
+  "physical_display_verified": false,
+  "git_fixture": {
+    "head_blob": "6566db2cd49b38ce2f68af6cafabf9f98e6b58d1",
+    "index_blob": "17f2fc0a7500e6b218190262d5a329086ba965ff",
+    "commit": "46676b82738620e039c9dd45fe7fe0bd9cc6c65a"
+  },
+  "git_metadata_unchanged": true,
+  "git_metadata_sha256": {
+    "config": "05becdb83bb897f6103c8d91439e2e9092144edf5b3955a746fce4975c12bfdc",
+    "HEAD": "28d25bf82af4c0e2b72f50959b2beb859e3e60b9630a5e8c603dad4ddb2b6e80",
+    "index": "7fd3f290e9fe9237d31d3940f89e72323ba96f283b7cf86e3969bd55363bda4e",
+    "logs/HEAD": "b6f89f239db6f3b779c3c89ef405158d5f7b6736bcdc1eb6359c15d08a7dcbcb",
+    "logs/refs/heads/main": "b6f89f239db6f3b779c3c89ef405158d5f7b6736bcdc1eb6359c15d08a7dcbcb",
+    "objects/17/f2fc0a7500e6b218190262d5a329086ba965ff": "6afd82397d32d65874bb24df4a3599bb2233f148563c82f67ac9cb0d8cbf74de",
+    "objects/46/676b82738620e039c9dd45fe7fe0bd9cc6c65a": "c87af196338c16cfbfd81429f61b99f8f79080a2850d6c59a4a1571812c3bca1",
+    "objects/65/66db2cd49b38ce2f68af6cafabf9f98e6b58d1": "452960bb518b4100510ae0734228ad93e5af740ed2b8b573c64c6c10ec5238be",
+    "objects/c7/e37371fef2933678c0bb186773c90b9da41ed0": "4aa8688619742bffff80353a45f3f0a25cabc1b165cea16e0c3e5ca5a2f9272d",
+    "refs/heads/main": "5649c4e03bb0d11d03727aeb38b966dd86365a2f41bfae16b076c3f0b5d9452b"
+  },
+  "git_executable": "C:\\Program Files\\Git\\cmd\\git.exe"
+}

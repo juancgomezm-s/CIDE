@@ -44,6 +44,7 @@ impl State {
             }
         };
         self.explorer_focused = false;
+        self.bottom.focused = false;
         if !self.workbench.focus_editor_pane(pane) {
             return false;
         }

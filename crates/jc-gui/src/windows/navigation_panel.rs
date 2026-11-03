@@ -102,6 +102,7 @@ impl State {
         match self.workbench.go_to_position(position) {
             Ok(()) => {
                 self.close_selector();
+                self.bottom.focused = false;
                 self.status = "Position selected · source scalar coordinates".into();
             }
             Err(error) => self.error(error),

@@ -14,6 +14,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut selection_reopen_only = false;
     let mut rectangle_only = false;
     let mut parity_only = false;
+    let mut bottom_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -53,6 +54,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("duplicate --smoke-parity-only".into());
                 }
                 parity_only = true;
+            }
+            Some("--smoke-bottom-only") => {
+                if bottom_only {
+                    return Err("duplicate --smoke-bottom-only".into());
+                }
+                bottom_only = true;
             }
             Some("--smoke-selection-reopen-only") => {
                 if selection_reopen_only {
@@ -116,6 +123,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(selection_reopen_only)
         + usize::from(rectangle_only)
         + usize::from(parity_only)
+        + usize::from(bottom_only)
         > 1
     {
         return Err("choose only one smoke section".into());
@@ -128,6 +136,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || selection_reopen_only
         || rectangle_only
         || parity_only
+        || bottom_only
     {
         if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("smoke uses only its explicit fixture".into());
@@ -150,6 +159,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             selection_reopen_only,
             rectangle_only,
             parity_only,
+            bottom_only,
         });
     }
     Ok(Some(options))
@@ -324,6 +334,19 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(parity.smoke.unwrap().parity_only);
+        let bottom = args(&[
+            "--smoke-bottom-only",
+            "--smoke-fixture",
+            &fixture,
+            "--smoke-report",
+            &report,
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(bottom.smoke.unwrap().bottom_only);
+        assert!(args(&["--smoke-bottom-only"]).is_err());
+        assert!(args(&["--smoke-bottom-only", "--smoke-bottom-only"]).is_err());
+        assert!(args(&["--smoke-bottom-only", "--smoke-parity-only"]).is_err());
         assert!(args(&["--smoke-parity-only"]).is_err());
         assert!(args(&["--smoke-parity-only", "--smoke-parity-only"]).is_err());
         assert!(args(&["--smoke-parity-only", "--smoke-rectangle-only"]).is_err());

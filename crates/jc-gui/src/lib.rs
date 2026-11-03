@@ -25,6 +25,7 @@ pub struct SmokeOptions {
     pub selection_reopen_only: bool,
     pub rectangle_only: bool,
     pub parity_only: bool,
+    pub bottom_only: bool,
 }
 
 #[cfg(windows)]

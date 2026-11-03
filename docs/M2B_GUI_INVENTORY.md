@@ -1,5 +1,11 @@
 # Inventario de paridad universal GUI — 2026-11-03
 
+**Actualización posterior:** el [host Problems/Output y foco de tres regiones](M2B_BOTTOM_PANELS.md)
+ya está integrado. Cierra las tres rutas ViewToggleBottomPanel/ViewProblems/ViewOutput
+y amplía FocusNext/Previous; ahora88 comandos tienen ruta GUI. La matriz/JSON de
+esta auditoría se conservan como evidencia histórica de `8fbd879`, sin regenerarlos
+ni atribuirles pruebas posteriores. Las otras limitaciones siguen vigentes.
+
 Revisión de la base `78769e9`, registro, Workbench, keymap, menús/paleta y handlers
 reales; no una lista de funciones futuras. La [matriz completa](M2B_GUI_COMMAND_MATRIX.md)
 incluye una fila por cada uno de los **104 CommandId**, predicado, binding con scope,

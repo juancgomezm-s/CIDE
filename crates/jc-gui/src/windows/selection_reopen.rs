@@ -15,6 +15,7 @@ impl State {
         match self.workbench.try_reopen_closed() {
             Ok(true) => {
                 self.close_selector();
+                self.bottom.focused = false;
                 self.ensure_encoding_selector();
                 self.status = "Tab reopened · discarded changes are not restored".into();
                 self.schedule_search();

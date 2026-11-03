@@ -13,6 +13,8 @@ impl TuiApp {
             return Err("Project root must be a directory".into());
         }
         self.explorer.set_root(root.clone())?;
+        self.tasks.cancel_all();
+        self.workbench.reset_task_panels();
         self.explorer_view = Default::default();
         self.project_search.clear();
         self.cancel_project_replace();

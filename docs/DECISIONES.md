@@ -497,3 +497,13 @@ Problems/Output. El cierre de edición/grupos solo conecta operaciones existente
 Indent/Outdent/Join/Split comparten gate de intención real de fuente y enlace de
 scroll usa el delta Workbench, independiente de pin/caret. No nuevos motores ni
 proveedores. Los pendientes se concretan antes de ampliar la implementación.
+
+## D47 — Paneles F3 comparten filas tipadas y origen capturado
+
+TaskPanels reemplaza los strings TUI con IDs estables, texto único y origen por
+stamp/ruta/rango; Output no gana permisos por tener metadata. JobSystem conserva
+la ruta desde admisión para rechazar SaveAs. Un único poll GUI despacha Git antes
+de otros resultados; presentación nunca acepta/admite. Navegación Problems solo
+sobre documento abierto y contexto actual, preservando política de pin/grupos,
+sin abrir disco ni aplicar propuestas. Estado vacío/error/stale/recorte es explícito;
+el host no crea productores para poblarse. [Contrato/evidencia](M2B_BOTTOM_PANELS.md).

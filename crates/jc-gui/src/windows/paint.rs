@@ -44,8 +44,14 @@ pub(super) struct Frame {
     replacement: Option<super::replace_panel::ReplaceFrame>,
     git: Option<super::git_panel::GitFrame>,
     explorer: Option<super::explorer_panel::ExplorerFrame>,
+    bottom: Option<super::bottom_panel::BottomFrame>,
 }
 impl Frame {
+    pub(super) fn bottom_hits(&self) -> Option<super::bottom_panel::BottomHits> {
+        self.bottom
+            .as_ref()
+            .map(|frame| frame.hits(self.cell_height))
+    }
     pub(super) fn contains_status(&self, needle: &str) -> bool {
         let end = self
             .status
@@ -73,7 +79,8 @@ impl Frame {
 fn areas(state: &State) -> Vec<(PaneId, Rect)> {
     let width = state.width.clamp(1, 8192);
     let height = state.height.clamp(1, 8192);
-    let bottom = (height - state.cell_height - 8).max(0);
+    let bottom = super::bottom_panel::region(state)
+        .map_or((height - state.cell_height - 8).max(0), |r| r.top);
     let top = (state.cell_height + 8).min(bottom);
     let left = super::explorer_panel::region(state).map_or(0, |r| r.right + 1);
     let available = width - left;
@@ -455,6 +462,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         replacement: state.replace_presentation(),
         git: state.git_presentation(),
         explorer: state.explorer_presentation(),
+        bottom: state.bottom_presentation(),
         selector: state.selector_presentation(super::selector_paint::list_capacity(
             state.width,
             state.height,
@@ -622,6 +630,9 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
     if let Some(explorer) = &frame.explorer {
         super::explorer_paint::draw(dc, explorer, frame.cell_height)?;
     }
+    if let Some(bottom) = &frame.bottom {
+        super::bottom_paint::draw(dc, bottom, frame.cell_height)?;
+    }
     let top = (frame.height - frame.cell_height - 6).max(0);
     text(
         dc,
@@ -717,6 +728,7 @@ pub(super) fn click(state: &mut State, x: i32, y: i32) {
         return;
     };
     state.workbench.focus_editor_pane(pane);
+    state.bottom.focused = false;
     let Some(view) = state.workbench.panes().view(pane) else {
         return;
     };
