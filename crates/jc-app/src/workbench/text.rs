@@ -291,6 +291,16 @@ impl TextProjection {
         self.lines.len()
     }
 
+    /// Raw byte classification only; this does not validate scalar/CRLF boundaries.
+    /// The BOM, when present, belongs to line zero but is never a text caret.
+    pub fn line_ordinal_for_byte(&self, offset: usize) -> Option<usize> {
+        (offset <= self.len).then(|| {
+            self.lines
+                .upper_bound(offset.max(self.content_start()))
+                .saturating_sub(1)
+        })
+    }
+
     pub fn line_range(
         &self,
         _document: &Document,

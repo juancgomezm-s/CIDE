@@ -149,3 +149,18 @@ is read-only and never treats VIRTUAL_BYTE as an edit/source-match position.
 310 distinct local tests passed in selective closure, not a single310 run;
 fmt/Clippy/release passed. Next active M2A block: generic join/split lines, using
 bounded range proposals and existing newline insertion, no second edit engine.
+
+## Join/Split checkpoint and active admission
+
+Read docs/M2_LINE_COMMANDS.md. Join proposes only separator/ASCII-indent cuts,
+bounded to1024 boundaries/2MiB affected source before plan allocation, then one
+apply_text_edits batch. Do not claim that preflight as total F2 work/RAM bound.
+Raw byte-to-line ordinal metadata does not validate scalar/CRLF caret positions.
+Split delegates to insert_newline; Editor Enter is centrally registered and
+Ctrl+Shift+J joins while Ctrl+J retains bottom-panel semantics. Preserve final
+newline/BOM, explicit encoding, shared views/one undo and rectangle rejection.
+319 distinct tests in selective/targeted closure; fmt/Clippy/release approved.
+Next active block is read-only regex admission for shared Search Plus, not an
+enabled regex or an extension/AVM implementation. Do not install dependencies,
+enable a decorative switch or repeat completed profiles. Design captures and
+replacement semantics before enabling a regex editing path.

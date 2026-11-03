@@ -255,6 +255,8 @@ pub fn default_keymap() -> KeyMap {
         bind(Editor, KeyStroke::ctrl(c('c')), EditCopy),
         bind(Editor, KeyStroke::ctrl(c('v')), EditPaste),
         bind(Editor, KeyStroke::ctrl(c('a')), EditSelectAll),
+        bind(Editor, KeyStroke::ctrl_shift(c('j')), EditJoinLines),
+        bind(Editor, KeyStroke::plain(Enter), EditSplitLine),
         bind(Editor, KeyStroke::alt_shift(Left), EditRectangleLeft),
         bind(Editor, KeyStroke::alt_shift(Right), EditRectangleRight),
         bind(Editor, KeyStroke::alt_shift(Up), EditRectangleUp),

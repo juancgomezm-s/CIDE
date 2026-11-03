@@ -22,6 +22,8 @@ mod git_status_integration_tests;
 #[cfg(test)]
 mod keyboard_matrix_tests;
 #[cfg(test)]
+mod line_command_tests;
+#[cfg(test)]
 mod rectangle_tests;
 #[cfg(test)]
 mod tests;

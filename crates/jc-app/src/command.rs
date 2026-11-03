@@ -41,6 +41,8 @@ pub enum CommandId {
     EditToggleBlockComment,
     EditIndent,
     EditOutdent,
+    EditJoinLines,
+    EditSplitLine,
     EditRectangleStart,
     EditRectangleLeft,
     EditRectangleRight,
@@ -406,6 +408,8 @@ pub fn default_registry() -> CommandRegistry {
         ),
         spec!(EditIndent, Edit, "Indent", has_document),
         spec!(EditOutdent, Edit, "Outdent", linear_document),
+        spec!(EditJoinLines, Edit, "Join Lines", linear_document),
+        spec!(EditSplitLine, Edit, "Split Line", linear_document),
         spec!(
             EditRectangleStart,
             Edit,

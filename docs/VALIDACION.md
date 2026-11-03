@@ -1,8 +1,8 @@
 # Validación
 
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
-310 pruebas distintas aprobadas al integrar selección rectangular acotada
-(cierre selectivo tras corregir una regresión; no una corrida única de 310),
+319 pruebas distintas aprobadas al integrar Join/Split sobre el rectángulo previo
+(cierre dirigido; no una corrida única de 319),
 fmt/Clippy/release, tres pares fríos equivalentes y catorce procesos nativos
 retenidos de edición/undo en ocho documentos. Máximo histórico actual 52,461 MiB;
 Memoria/teclado global y
@@ -825,3 +825,23 @@ el rectángulo. Pasaron las diez pruebas de rectangle, Clippy dirigido de app y
 release actualizado. Ese caso adicional completa las **310 distintas**; la fase
 anterior de 142 + cierre dirigido + otros crates había reunido 309. No se repitió
 la suite global por esta corrección localizada.
+
+## Unir/dividir líneas por la transacción existente — 2026-11-02
+
+[Join/Split](M2_LINE_COMMANDS.md) integrados en modelo, comandos, menú, Palette y
+teclado. Enter en Editor se resuelve centralmente a Split; Ctrl+Shift+J une líneas,
+conservando Ctrl+J del panel. Join solo propone cortes EOL/indentación ASCII y
+espacios, sin reconstruir contenidos. Clasificación raw byte→línea por metadata,
+1024 fronteras/2MiB de tramo afectado admitidos antes del plan; se conservan los
+límites reales de validación/layout frío/normalización F2, no cota global de trabajo.
+Split reutiliza insert_newline. Encoding/BOM/newline final, undo único y mapas de
+vistas conservados; no escritura de archivo ni habilitación rectangular accidental.
+
+Nueve nuevas: cinco Workbench y cuatro TUI. 74 dirigidas de app aprobaron; TUI
+aprobó 63 antes de fallar un fixture nuevo que usaba Symbols deshabilitado. Solo
+ese montaje cambió a Explorer vacío/F6; las cuatro nuevas aprobaron dirigidas.
+Total de cierre **319 distintas**, sumando nueve al checkpoint310, sin proclamar
+una corrida completa319. Formato, Clippy workspace/all-targets -D warnings y
+release workspace bins/examples aprobaron. No se repitieron suites aprobadas ni
+perfiles por prosa; sin CI/push/ConPTY nuevo. Screen45/140 readonly no acredita
+display físico/RAM global/GUI. AVM/proveedores M3 no intervienen.

@@ -139,3 +139,9 @@ explícitamente el repertorio de una celda/TAB4 a rangos; no generaliza escalar 
 grafema/display. Las propuestas por fila se codifican antes de apply_text_edits,
 con revisión esperada y undo único. Presentación visible expandida y render
 readonly; cambios invalidan la geometría. [Contrato y límites pendientes](M2_RECTANGULAR_SELECTION.md).
+
+Join/Split también usan la ruta de edición compartida: Join consulta ordinales
+raw de línea y prepara solo rangos de separadores/prefijos con presupuesto previo;
+Split reutiliza insert_newline. No se duplica el algoritmo en TUI, que ahora resuelve
+Enter por CommandId. [Contrato/costes reales](M2_LINE_COMMANDS.md), sin confundir
+clasificación byte→línea con validación de coordenadas escalares/visuales.

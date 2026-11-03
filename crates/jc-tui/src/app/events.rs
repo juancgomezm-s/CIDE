@@ -64,7 +64,6 @@ impl TuiApp {
             KeyCode::End => self.workbench.move_end(select),
             KeyCode::Backspace if key.modifiers.is_empty() => self.workbench.backspace(),
             KeyCode::Delete if key.modifiers.is_empty() => self.workbench.delete_forward(),
-            KeyCode::Enter if key.modifiers.is_empty() => self.workbench.insert_newline(),
             KeyCode::Tab if key.modifiers.is_empty() => self.workbench.insert_tab(),
             KeyCode::Char(ch) if is_plain_text(key) => self.workbench.insert_text(&ch.to_string()),
             _ => return,

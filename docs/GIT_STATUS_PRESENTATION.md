@@ -7,7 +7,7 @@ No acredita pantalla física ni aceptación global de memoria/latencia.
 
 ## Uso
 
-Abra la raíz del repositorio con Open Folder y seleccione Tools / Git: Repository
+Abra la raíz del repositorio con Open Folder y seleccione View / Git: Repository
 Status, también disponible en la palette. No requiere documento abierto ni
 encoding de fuente. Si falta Git, solicita una ruta absoluta de ejecutable para
 la sesión y continúa la consulta de status al aceptarla. La configuración manual

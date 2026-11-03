@@ -233,3 +233,22 @@ M2A está activo: revisión/contrato de unir y dividir líneas genéricos del an
 ABL_EDITOR_COMMAND_SCOPE. Join usará rangos de separadores/indentación y un batch
 F1; Split reutilizará insert_newline/preferred EOL. No ampliar a AVM/GUI, Unicode
 general ni otra optimización CPU sin una necesidad concreta.
+
+## Join/Split cerrados y siguiente admisión activa — 2026-11-02
+
+Completado [unir/dividir líneas](M2_LINE_COMMANDS.md): modelo universal,
+transacción única, lectura de prefijos/EOL por rangos y clasificación byte→línea
+sin layout escalar. Split reutiliza la inserción de newline existente; Enter se
+centraliza y Ctrl+Shift+J no interfiere con Ctrl+J. Preservados BOM/EOL final,
+encoding/bytes fuera de cortes, vistas y undo. No normalización sintáctica.
+
+Validación: 74 dirigidas de app y cobertura TUI completada tras corregir solo un
+fixture de foco; nueve nuevas, 319 distintas al cierre, fmt/Clippy/release.
+No una suite única319 ni una repetición de perfiles. Contrato TUI se reconcilia
+con las funciones implementadas y límites actuales, sin inferir recorrido físico.
+
+**Siguiente bloque activo:** auditoría/admisión de regex real acotado de Search
+Plus, prioridad universal pendiente de M2A. Revisar engine compartido y contrato
+de bytes/Unicode, presupuesto/cancelación, capturas/reemplazo y costo sin instalar
+dependencias. No habilitar el switch hasta que haya un motor operativo y validado;
+no adelantar proveedores de extensión/AVM M3 ni GUI sin ventana autorizada.

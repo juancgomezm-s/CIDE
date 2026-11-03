@@ -187,6 +187,8 @@ pub fn default_menu_model() -> MenuModel {
                 SEP,
                 command(EditIndent),
                 command(EditOutdent),
+                command(EditJoinLines),
+                command(EditSplitLine),
                 SEP,
                 command(EditRectangleStart),
                 command(EditRectangleLeft),

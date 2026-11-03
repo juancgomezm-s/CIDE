@@ -60,6 +60,14 @@ impl Workbench {
                 }
                 Ok(CommandOutcome::None)
             }
+            EditJoinLines => {
+                self.join_lines()?;
+                Ok(CommandOutcome::None)
+            }
+            EditSplitLine => {
+                self.split_line()?;
+                Ok(CommandOutcome::None)
+            }
             EditSelectAll => {
                 self.select_all()?;
                 Ok(CommandOutcome::None)

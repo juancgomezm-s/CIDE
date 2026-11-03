@@ -326,3 +326,18 @@ Una edición efectiva termina esa selección; clipboard tipado conserva filas y
 ancho con tabs normalizados solo al copiar. No crear líneas tras EOF ni escribir
 disco. [Contrato/validación](M2_RECTANGULAR_SELECTION.md): 310 distintas en cierre
 selectivo, fmt/Clippy/release; GUI/Unicode general/pantalla física/RAM global abiertos.
+
+## D33 — Join por cortes pequeños y Split por el comando existente
+
+Preparar Join desde metadatos de líneas y rangos EOL/prefijo, sin reconstruir todo
+el tramo seleccionado ni añadir mutación directa al core. Un solo batch por
+revisión conserva undo/mapas; presupuesto previo1024 fronteras/2MiB del tramo,
+sin atribuirle el coste total de layout/normalización F2. Preservar final EOL y
+BOM, eliminar solo indentación ASCII de líneas siguientes y separar palabras
+cuando procede. Selección de una sola línea y EOF sintético son no-op.
+
+Split delega en insert_newline y Enter Editor resuelve el mismo CommandId; no hay
+segunda regla de EOL/encoding. Ctrl+Shift+J evita quitar Ctrl+J al panel inferior.
+Ambos rechazan rectángulos. [Uso y evidencia](M2_LINE_COMMANDS.md): nueve nuevas,
+319 distintas acumuladas en cierre dirigido, fmt/Clippy/release; sin validación
+física/RAM global ni escritura de archivos.

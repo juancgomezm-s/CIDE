@@ -1,5 +1,6 @@
 mod commands;
 mod edit;
+mod line_commands;
 mod line_index;
 pub(crate) mod rectangular;
 mod search;
@@ -25,12 +26,14 @@ pub enum WorkbenchError {
     SearchInput,
     SearchIncomplete,
     Rectangle(String),
+    LineCommand(String),
 }
 
 impl fmt::Display for WorkbenchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Rectangle(message) => f.write_str(message),
+            Self::LineCommand(message) => f.write_str(message),
             Self::NoDocument => f.write_str("no active document"),
             Self::File(error) => write!(f, "{error}"),
             Self::Position(error) => write!(f, "{error}"),
@@ -249,6 +252,11 @@ impl Workbench {
     }
     pub fn line_count_for_tab(&self, tab: TabId) -> Option<usize> {
         self.with_text(tab, |text, _| text.line_count())
+    }
+    /// Classify a raw byte offset using line metadata, without scalar layout.
+    /// This is not a conversion to a valid caret or a visual/scalar column.
+    pub fn line_ordinal_for_byte(&self, tab: TabId, offset: usize) -> Option<usize> {
+        self.with_text(tab, |text, _| text.line_ordinal_for_byte(offset))?
     }
     pub fn line_range_for_tab(
         &self,

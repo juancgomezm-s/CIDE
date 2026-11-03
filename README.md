@@ -147,7 +147,7 @@ El [estado Git por repositorio](docs/GIT_STATUS_READ_ONLY.md) y su
 [entrega versionada](docs/GIT_STATUS_DELIVERY.md) ya están integrados/validados:
 261 pruebas completas, fmt/Clippy/release locales. No identidad Document ficticia,
 sin escrituras, rutas byte opacas y configuración/filtros explícitos. Presentación
-TUI de status integrada: Open Folder con la raíz del repositorio y Tools /
+TUI de status integrada: Open Folder con la raíz del repositorio y View /
 Git: Repository Status (también en palette). Solicita ruta absoluta de Git para
 la sesión si falta; admite refresh/cancel y selección Up/Down/Home/End sin abrir
 archivos. No requiere documento ni encoding. Muestra disco/índice con rutas byte
@@ -169,3 +169,8 @@ Copy/Cut/Paste usan filas en el clipboard interno y una transacción por edició
 Escape cancela. La edición efectiva termina la selección. Unicode general,
 ancho doble, grafemas y clipboard del sistema siguen pendientes; caracteres no
 admitidos se rechazan. [Uso y límites](docs/M2_RECTANGULAR_SELECTION.md).
+
+Edit/Palette ya ofrecen Join Lines y Split Line: Ctrl+Shift+J une líneas en
+Editor; Enter divide con el EOL preferido mediante el comando compartido. Ctrl+J
+conserva el panel inferior. Join elimina separadores internos/indentación ASCII,
+conserva el salto final y produce un undo. [Semántica, cuotas y validación](docs/M2_LINE_COMMANDS.md).

@@ -97,3 +97,11 @@ Su repertorio de una celda es explícito; grafemas/ancho doble y Unicode general
 se rechazan y siguen pendientes. No declarar cerrado el requisito general de
 modo columna ni clipboard OS. 310 pruebas distintas en cierre selectivo,
 fmt/Clippy/release locales. Próximo bloque activo: unir/dividir líneas genéricos.
+
+## Checkpoint posterior — unir/dividir líneas
+
+[Join/Split](M2_LINE_COMMANDS.md) universales ya implementados y validados
+localmente: comandos centrales, menú/Palette y Ctrl+Shift+J/Enter en Editor,
+una transacción por acción y preservación de encoding/BOM/EOL final. No formateo
+de sintaxis ABL. Nueve regresiones nuevas; 319 distintas en cierre dirigido,
+fmt/Clippy/release. Las etiquetas anteriores pendientes de esta fila son históricas.
