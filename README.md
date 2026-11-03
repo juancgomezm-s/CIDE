@@ -27,6 +27,7 @@ real. No es aún un reemplazo de PIEW, Sublime Text, Notepad++ o VS Code.
 | `jc-progress` | Construcción de argumentos sin shell, solicitudes ASCII y parser acotado de diagnósticos/esquema |
 | `jc-app` | Comandos, keymap, foco, paneles, tareas y Search Plus de proyecto con preview/reemplazo versionado; compartido por TUI/GUI |
 | `jc-tui` | Frontend terminal en M2A: edición, tabs, overlays, Explorer, resultados, menús y command palette |
+| `jc-gui` | Frontend Windows Win32/GDI: edición compartida, split, selectores, Search Plus, Git de solo lectura y Explorer lazy |
 | Auxiliares ABL | Código experimental para comprobar/compilar y exportar esquema; requiere pruebas con Progress real |
 | `jc-cli` | Inspección de archivos, copia exacta, edición de bytes a copia nueva, demo de undo/redo, preparación de solicitudes y validación de respuestas Progress |
 | Documentación | Resumen, investigación, arquitectura, decisiones, hitos, lenguajes y evidencia de validación |
@@ -82,6 +83,12 @@ La [medición de sufijos](docs/M2_SUFFIX_COST_REVIEW.md) detectó y corrigió cr
 La especificación de doble panel, Outline, navegación de includes/RUN, autocompletado y Git está en [M2_NAVIGATION_PANES_GIT.md](docs/M2_NAVIGATION_PANES_GIT.md). Para retomar desde una PC Windows usa el [prompt de continuación](docs/CONTINUAR_EN_EQUIPO.md).
 
 ## Search Plus de proyecto
+
+El [Explorer compartido TUI/GUI](docs/M2B_SHARED_EXPLORER.md) ya enumera hijos bajo
+demanda mediante un catálogo acotado/cancelable. File / Open Folder y View /
+Explorer; flechas recorren, Enter abre, Ctrl+Enter abre al lado, F5 refresca y Escape
+vuelve al editor. En GUI también admite click/dobleclick y F6 para alternar foco.
+Conserva documentos con cambios, pin, split y undo; no mantiene un indexador permanente.
 
 Abre una carpeta y usa Ctrl+Shift+F para consulta literal sensible a mayúsculas, inclusión/exclusión por globs y resultados progresivos. Enter navega; Esc en el panel inferior cancela. Tras una consulta completa sin avisos, Search / Replace in Project permite revisar sustituciones y confirmar con F9/Ctrl+Enter. Abiertos: edición con undo sin guardar; cerrados: guardado por archivo y conflictos explícitos. Véanse [uso, cuotas y límites](docs/S1_PROJECT_SEARCH.md) y [guardado Windows](docs/SAVE_WINDOWS_CONTENTION.md). En documento activo, Ctrl+F/Ctrl+H ya ofrecen búsqueda acotada, case folding completo Unicode 17, selección/historial y Ctrl+G escalar: [S0](docs/S0_DOCUMENT_SEARCH.md). No se certifican regex, normalización Unicode, GUI ni objetivos globales de rendimiento.
 

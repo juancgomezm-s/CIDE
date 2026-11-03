@@ -1034,3 +1034,40 @@ las fuentes/binarios de ese cierre, sin sumar ambos recorridos como casos nuevos
 no acredita pantalla física, clipboard OS, IME/DPI/accesibilidad o RAM global.
 Esas pruebas de Juan se conservan al final; no instalaciones, dependencias nuevas,
 Git con escritura productiva, CI remoto ni push. Próximo contrato Explorer M2B activo.
+
+## Explorer compartido TUI/GUI — 2026-11-03
+
+Construcción integral antes de probar: catálogo/proveedor/vista de jc-app,
+enumeración por handle jc-files, retirada de ruta TUI previa, sidebar/foco/mouse/
+teclado GUI y arneses. **352 casos aprobados**, cero fallos y dos helpers ignorados,
+34 suites de jc-app/jc-files/jc-tui/jc-gui; no corrida de todo el workspace. Trece
+casos nuevos y retiro de un test de la ruta eliminada. Incluye cuotas, Busy,
+cancel/panic/root obsoleto, nombre UTF-16 no escalar, junction real y rename real
+de ancestro impedido durante enumeración; dirty reuse con hoja cambiada rechazada,
+split/pin/undo y frames repetidos sin admisión. No se suman corridas solapadas.
+
+fmt, Clippy workspace/all-targets con -D warnings y release bins/examples aprobaron.
+Clippy inicial señaló import obsoleto, if colapsable y alias de tipo del fixture;
+corregidos sin repetir las suites aprobadas. Logs iniciales y finales conservados.
+
+**70 checks nativos aprobados**:58 anteriores y doce nuevos Explorer. HWND oculto
+propio, seis WM_PAINT, cero errores; metadatos Git sintéticos y fuente13B intactos.
+Entrega sin entrada, expansión/disclosure, Tab/texto/paste sin editar, menú/palette
+desde contexto Explorer, apertura normal/lateral con dirty/pin/undo, GDI de solo
+lectura, cliente compacto y rechazo de targets obsoletos/cancelados/otra raíz.
+Primer intento se detuvo por privilegio1314 del symlink opcional: ahora se omite
+explícitamente; no se cuenta. El test separado de junction real sí se ejecutó.
+
+**Seis flujos de terminal aprobados**, salida cero,37 736 bytes VT y fuentes exactos:
+ConPTY propia, entrega sin otra tecla, árbol lazy, apertura, refresh/cancel, dirty
+reuse con un undo y resize80×24→120×32. Dos primeros intentos fallaron por esperas
+del arnés que confundían título/pestaña con menú/fila. Las esperas finales identifican
+bordes de menú y filas del árbol. Se conservan reportes fallidos y final; no son
+muestras de rendimiento ni se cuentan como nuevos casos. Sin .NET ni dependencias.
+
+Seis ayudas/aliases y siete frames de icono por cada PE aprobados. PNG Explorer GDI
+1584×841 convertido sin pérdida y revisado: sidebar reserva área, árbol expandido,
+dirty activo y segundo grupo visibles. [Contrato/evidencia](M2B_SHARED_EXPLORER.md),
+[hashes](evidence/m2b-explorer-2026-11-03-metadata.json). No acredita Linux/fallback,
+pantalla física, clipboard OS, IME/DPI/accesibilidad ni RAM global; M2A/M2B abiertos.
+No CI/push/instalaciones, perfiles cerrados repetidos ni pruebas manuales solicitadas.

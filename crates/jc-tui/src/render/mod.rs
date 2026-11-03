@@ -178,41 +178,30 @@ fn draw_sidebar(
     }
     match app.panels.sidebar() {
         SidebarView::Explorer => {
-            let mut row = y + 1;
-            if let (Some(root), Some(directory)) = (app.explorer.root(), app.explorer.directory()) {
-                let relative = directory.strip_prefix(root).unwrap_or(directory);
-                let location = if relative.as_os_str().is_empty() {
-                    ".".to_owned()
-                } else {
-                    relative.display().to_string()
-                };
-                screen.text_styled(x + 1, row, &clip(&location, width - 2), CellStyle::Dim);
-                row += 1;
-            } else {
-                screen.text_styled(x + 1, row, "Open Folder to browse", CellStyle::Dim);
-                return;
-            }
-
-            let available = usize::from((y + height).saturating_sub(row));
-            let selected = app.explorer.selected();
-            let start = selected.saturating_sub(available.saturating_sub(1));
-            for (index, entry) in app
+            screen.text_styled(
+                x + 1,
+                y + 1,
+                &clip(&frame.explorer.message, width.saturating_sub(2)),
+                CellStyle::Dim,
+            );
+            for (offset, entry) in frame
                 .explorer
-                .entries()
+                .rows
                 .iter()
+                .take(usize::from(height.saturating_sub(2)))
                 .enumerate()
-                .skip(start)
-                .take(available)
             {
-                let marker = if entry.is_dir { "▸ " } else { "  " };
-                let text = format!("{marker}{}", entry.name);
-                let style = if focused && index == selected {
+                let style = if focused && entry.selected {
                     CellStyle::Reverse
                 } else {
                     CellStyle::Normal
                 };
-                screen.text_styled(x + 1, row, &clip(&text, width - 2), style);
-                row += 1;
+                screen.text_styled(
+                    x + 1,
+                    y + 2 + offset as u16,
+                    &clip(&entry.label, width.saturating_sub(2)),
+                    style,
+                );
             }
         }
         SidebarView::Database => {

@@ -1,4 +1,3 @@
-use super::explorer::ExplorerAction;
 use super::TuiApp;
 use crate::input::{is_action_event, is_plain_text, to_stroke};
 use crate::state::UiOverlay;
@@ -81,77 +80,22 @@ impl TuiApp {
             return;
         }
         if self.panels.sidebar() != SidebarView::Explorer {
-            if key.code == KeyCode::Enter {
-                let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-            }
             return;
         }
-
         match key.code {
-            KeyCode::Up => self.explorer.move_selection(-1),
-            KeyCode::Down => self.explorer.move_selection(1),
-            KeyCode::Home => self.explorer.select_first(),
-            KeyCode::End => self.explorer.select_last(),
-            KeyCode::Left | KeyCode::Backspace => match self.explorer.parent() {
-                Ok(true) => self.status = "Explorer: parent folder".to_owned(),
-                Ok(false) => {}
-                Err(error) => self.status = error,
-            },
-            KeyCode::Right => match self.explorer.enter_directory() {
-                Ok(ExplorerAction::DirectoryChanged) => {
-                    self.status = "Explorer: folder opened".to_owned()
-                }
-                Ok(_) => {}
-                Err(error) => self.status = error,
-            },
-            KeyCode::Enter => self.activate_explorer_entry(),
-            KeyCode::Char('r') if key.modifiers.is_empty() => match self.explorer.refresh() {
-                Ok(()) => self.status = "Explorer refreshed".to_owned(),
-                Err(error) => self.status = error,
-            },
+            KeyCode::Up => self.explorer_view.move_selection(&self.explorer, -1),
+            KeyCode::Down => self.explorer_view.move_selection(&self.explorer, 1),
+            KeyCode::PageUp => self.explorer_view.move_selection(&self.explorer, -10),
+            KeyCode::PageDown => self.explorer_view.move_selection(&self.explorer, 10),
+            KeyCode::Home => self.explorer_view.first(&self.explorer),
+            KeyCode::End => self.explorer_view.last(&self.explorer),
+            KeyCode::Left | KeyCode::Backspace => self.explorer_parent(),
+            KeyCode::Right => self.activate_explorer(false, true),
+            KeyCode::Enter => {
+                self.activate_explorer(key.modifiers.contains(KeyModifiers::CONTROL), false)
+            }
+            KeyCode::Char('r') if key.modifiers.is_empty() => self.refresh_explorer(),
             _ => {}
-        }
-    }
-
-    fn activate_explorer_entry(&mut self) {
-        match self.explorer.activate() {
-            Ok(ExplorerAction::OpenFile(path)) => match self.open_path(path) {
-                Ok(()) => {
-                    if matches!(self.overlay, UiOverlay::None) {
-                        let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-                    }
-                    self.status = "File opened".to_owned();
-                }
-                Err(error) => self.status = error,
-            },
-            Ok(ExplorerAction::DirectoryChanged) => {
-                self.status = "Explorer: folder opened".to_owned()
-            }
-            Ok(ExplorerAction::None) => {}
-            Err(error) => self.status = error,
-        }
-    }
-
-    pub(crate) fn activate_explorer_entry_to_side(&mut self) {
-        if self.panels.sidebar() != SidebarView::Explorer {
-            return;
-        }
-        match self.explorer.activate() {
-            Ok(ExplorerAction::OpenFile(path)) => {
-                match self
-                    .workbench
-                    .open_file_to_side(path, self.default_encoding)
-                {
-                    Ok(_) => {
-                        let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-                        self.ensure_encoding_choice();
-                        self.status = "File opened to side".to_owned();
-                    }
-                    Err(error) => self.status = error.to_string(),
-                }
-            }
-            Ok(_) => {}
-            Err(error) => self.status = error,
         }
     }
 

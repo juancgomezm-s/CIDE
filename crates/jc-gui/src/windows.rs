@@ -1,5 +1,8 @@
 mod clipboard;
 mod clipboard_flow;
+mod explorer_paint;
+mod explorer_panel;
+mod explorer_smoke;
 mod ffi;
 mod folder;
 mod git_panel;
@@ -84,6 +87,17 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "Show &Invisible Characters",
     ),
     (130, CommandId::SearchFind, "&Find Multiline..."),
+    (128, CommandId::ViewExplorer, "Project E&xplorer"),
+    (129, CommandId::EditorTogglePin, "&Pin / Unpin Reference"),
+    (150, CommandId::ExplorerRefresh, "&Refresh Directory"),
+    (
+        151,
+        CommandId::ExplorerCancel,
+        "Cancel Loading / Return to &Editor",
+    ),
+    (152, CommandId::EditorOpenToSide, "Open to &Side"),
+    (153, CommandId::FocusNext, "&Next Focus"),
+    (154, CommandId::FocusPrevious, "&Previous Focus"),
     (131, CommandId::SearchReplace, "&Replace Multiline..."),
     (132, CommandId::SearchFindNext, "Find &Next"),
     (133, CommandId::SearchFindPrevious, "Find &Previous"),
@@ -152,7 +166,13 @@ struct State {
     keymap: KeyMap,
     encoding: Option<TextEncoding>,
     project_root: Option<PathBuf>,
+    explorer: jc_app::explorer::ProjectExplorer,
+    explorer_view: jc_app::explorer::ExplorerView,
+    explorer_visible: bool,
+    explorer_focused: bool,
+    explorer_hits: Option<explorer_panel::ExplorerHits>,
     selector: Option<Selector>,
+    selector_explorer_focus: bool,
     search_panel: Option<search_panel::SearchPanel>,
     project_panel: Option<project_panel::ProjectPanel>,
     project_search: jc_app::ProjectSearch,
@@ -226,7 +246,14 @@ impl State {
             keymap: default_keymap(),
             encoding: options.encoding,
             project_root: None,
+            explorer: jc_app::explorer::ProjectExplorer::new(wakeup.clone(), Default::default())
+                .map_err(|e| e.to_string())?,
+            explorer_view: Default::default(),
+            explorer_visible: false,
+            explorer_focused: false,
+            explorer_hits: None,
             selector: None,
+            selector_explorer_focus: false,
             search_panel: None,
             project_panel: None,
             project_search: jc_app::ProjectSearch::new(wakeup.clone()),
@@ -299,9 +326,13 @@ impl State {
             }
         }
         state.ensure_encoding_selector();
+        if options.project_root.is_some() {
+            state.explorer_visible = true;
+        }
         Ok(state)
     }
     fn new_document(&mut self) {
+        self.explorer_focused = false;
         self.next_untitled += 1;
         self.workbench.new_file(
             format!("untitled-{}.txt", self.next_untitled),
@@ -313,7 +344,25 @@ impl State {
     }
     fn context(&self) -> jc_app::CommandContext {
         let mut context = self.workbench.context();
-        context.focus = PrimaryFocus::Editor;
+        let explorer_focus = self.explorer_focused
+            || (self.selector_explorer_focus
+                && self
+                    .selector
+                    .as_ref()
+                    .is_some_and(|s| s.kind() == SelectorKind::Palette));
+        context.focus = if explorer_focus {
+            PrimaryFocus::Sidebar
+        } else {
+            PrimaryFocus::Editor
+        };
+        context.explorer_focused = explorer_focus;
+        if explorer_focus {
+            context.can_open_to_side = self
+                .explorer_view
+                .selected()
+                .and_then(|id| self.explorer.node(id))
+                .is_some_and(|n| !n.is_dir());
+        }
         context.has_project = self.project_root.is_some();
         context.project_search_running =
             self.project_search.state == jc_app::ProjectSearchState::Running;
@@ -341,6 +390,10 @@ impl State {
         if !context.rectangular_selection {
             context.clipboard_has_text = context.has_document;
         }
+        if explorer_focus {
+            context.clipboard_has_text = false;
+            context.has_selection = false;
+        }
         context
     }
     fn execute(&mut self, command: CommandId) -> Action {
@@ -349,6 +402,27 @@ impl State {
             return Action::None;
         }
         match command {
+            CommandId::ViewExplorer => {
+                self.show_explorer();
+                return Action::None;
+            }
+            CommandId::ExplorerRefresh => {
+                self.refresh_explorer();
+                return Action::None;
+            }
+            CommandId::ExplorerCancel => {
+                self.cancel_explorer();
+                return Action::None;
+            }
+            CommandId::FocusNext | CommandId::FocusPrevious => {
+                self.explorer_focused =
+                    explorer_panel::region(self).is_some() && !self.explorer_focused;
+                return Action::None;
+            }
+            CommandId::EditorOpenToSide if self.explorer_focused => {
+                self.activate_explorer(true, false);
+                return Action::None;
+            }
             CommandId::GitRepositoryStatus | CommandId::GitStatusRefresh => {
                 return self.request_git(git_panel::GitIntent::Status)
             }
@@ -423,6 +497,14 @@ impl State {
             CommandId::FileNew => {
                 self.new_document();
                 return Action::None;
+            }
+            CommandId::EditorFocusPrimary
+            | CommandId::EditorFocusSecondary
+            | CommandId::EditorSplitRight
+            | CommandId::EditorOneGroup
+            | CommandId::TabNext
+            | CommandId::TabPrevious => {
+                self.explorer_focused = false;
             }
             CommandId::FileOpen => return Action::Open(false),
             CommandId::FileSaveAs => return Action::SaveAs,
@@ -552,6 +634,27 @@ impl State {
         if self.selector.is_some() {
             return (true, self.selector_key(code, modifiers));
         }
+        if self.explorer_focused {
+            if let Some(key) = key {
+                match self.keymap.resolve(
+                    KeyScope::Sidebar,
+                    KeyStroke::new(modifiers, key),
+                    &self.registry,
+                    &self.context(),
+                ) {
+                    Resolution::Enabled(command) if supported(command) => {
+                        return (true, self.execute(command))
+                    }
+                    Resolution::Disabled(command) if supported(command) => {
+                        self.status = "Command unavailable in Explorer".into();
+                        return (true, Action::None);
+                    }
+                    _ => {}
+                }
+            }
+            self.explorer_key(code, modifiers);
+            return (true, Action::None);
+        }
         if let Some(key) = key {
             let resolution = self.keymap.resolve(
                 KeyScope::Editor,
@@ -651,6 +754,9 @@ impl State {
             }
             return;
         }
+        if self.explorer_focused {
+            return;
+        }
         match self.workbench.insert_text(ch.encode_utf8(&mut bytes)) {
             Ok(()) => self.status = "Ready".into(),
             Err(error) => self.error(error),
@@ -745,7 +851,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 return DefWindowProcW(hwnd, message, wparam, lparam);
             };
             state.paint_count += 1;
-            paint::prepare(&mut state)
+            let frame = paint::prepare(&mut state);
+            state.explorer_hits = frame.explorer_hits();
+            frame
         };
         let mut paint = NativePaint {
             hwnd,
@@ -792,10 +900,14 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 redraw = state.poll_tasks();
             }
             WM_SIZE => {
+                state.explorer_hits = None;
                 let mut rect = Rect::default();
                 if GetClientRect(hwnd, &mut rect) != 0 {
                     state.width = rect.right.max(1);
                     state.height = rect.bottom.max(1);
+                    if explorer_panel::region(&state).is_none() {
+                        state.explorer_focused = false;
+                    }
                 }
             }
             WM_SETFOCUS => state.focused = true,
@@ -825,8 +937,21 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 } else if let Some((_, command, _)) =
                     COMMANDS.iter().find(|(id, _, _)| *id == wparam & 0xffff)
                 {
+                    let explorer_focus = state.explorer_focused;
                     if *command != CommandId::ViewToggleInvisibles {
                         state.close_selector();
+                    }
+                    if matches!(
+                        command,
+                        CommandId::ViewExplorer
+                            | CommandId::ExplorerRefresh
+                            | CommandId::ExplorerCancel
+                            | CommandId::EditorOpenToSide
+                            | CommandId::FocusNext
+                            | CommandId::FocusPrevious
+                            | CommandId::PaletteOpen
+                    ) {
+                        state.explorer_focused = explorer_focus;
                     }
                     action = state.execute(*command);
                 }
@@ -854,7 +979,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     );
                 }
             }
-            WM_LBUTTONDOWN => {
+            WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
                 let x = (lparam as u16) as i16 as i32;
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
                 if state.selector.is_none()
@@ -862,7 +987,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     && !state.project_visible()
                     && state.replace_panel.is_none()
                     && state.git_panel.is_none()
+                    && !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK)
+                    && message == WM_LBUTTONDOWN
                 {
+                    state.explorer_focused = false;
                     paint::click(&mut state, x, y);
                 }
             }
@@ -975,6 +1103,8 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                     Ok(Some(path)) => {
                         if let Err(error) = state.set_project_root(path) {
                             state.error(error);
+                        } else {
+                            state.show_explorer();
                         }
                     }
                     Ok(None) => {}
@@ -998,6 +1128,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                             state.error(error);
                         } else {
                             state.status = "Opened".into();
+                            state.explorer_focused = false;
                             state.ensure_encoding_selector();
                         }
                     }
@@ -1117,7 +1248,8 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
     for (label, start, end) in [
         ("&File", 101, 110),
         ("&Edit", 110, 118),
-        ("&View", 120, 128),
+        ("&View", 120, 130),
+        ("&Project", 150, 155),
         ("&Search", 130, 138),
         ("&Git", 140, 149),
     ] {
@@ -1199,7 +1331,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
     unsafe {
         let instance = GetModuleHandleW(std::ptr::null());
         let descriptor = WndClass {
-            style: 3,
+            style: 3 | 8,
             proc: Some(window_proc),
             class_extra: 0,
             window_extra: 0,

@@ -42,8 +42,14 @@ pub(super) struct Frame {
     project: Option<super::project_panel::ProjectPresentation>,
     replacement: Option<super::replace_panel::ReplaceFrame>,
     git: Option<super::git_panel::GitFrame>,
+    explorer: Option<super::explorer_panel::ExplorerFrame>,
 }
 impl Frame {
+    pub(super) fn explorer_hits(&self) -> Option<super::explorer_panel::ExplorerHits> {
+        self.explorer
+            .as_ref()
+            .map(|frame| frame.hits(self.cell_height))
+    }
     pub(super) fn contains_source_row(&self, needle: &str) -> bool {
         self.panes.iter().flat_map(|p| &p.rows).any(|row| {
             row.cells
@@ -60,13 +66,15 @@ fn areas(state: &State) -> Vec<(PaneId, Rect)> {
     let height = state.height.clamp(1, 8192);
     let bottom = (height - state.cell_height - 8).max(0);
     let top = (state.cell_height + 8).min(bottom);
-    if state.workbench.panes().is_split() && width / state.cell_width >= 90 {
-        let middle = width / 2;
+    let left = super::explorer_panel::region(state).map_or(0, |r| r.right + 1);
+    let available = width - left;
+    if state.workbench.panes().is_split() && available / state.cell_width.clamp(1, 8192) >= 90 {
+        let middle = left + available / 2;
         vec![
             (
                 PaneId::Primary,
                 Rect {
-                    left: 0,
+                    left,
                     top,
                     right: middle - 1,
                     bottom,
@@ -86,7 +94,7 @@ fn areas(state: &State) -> Vec<(PaneId, Rect)> {
         vec![(
             state.workbench.panes().active(),
             Rect {
-                left: 0,
+                left,
                 top,
                 right: width,
                 bottom,
@@ -293,6 +301,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         project: state.project_presentation(),
         replacement: state.replace_presentation(),
         git: state.git_presentation(),
+        explorer: state.explorer_presentation(),
         selector: state.selector_presentation(super::selector_paint::list_capacity(
             state.width,
             state.height,
@@ -456,6 +465,9 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                 ACCENT,
             )?;
         }
+    }
+    if let Some(explorer) = &frame.explorer {
+        super::explorer_paint::draw(dc, explorer, frame.cell_height)?;
     }
     let top = (frame.height - frame.cell_height - 6).max(0);
     text(

@@ -13,6 +13,9 @@ impl State {
         if !root.is_dir() {
             return Err("Project root must be a directory".into());
         }
+        self.explorer.set_root(root.clone())?;
+        self.explorer_view = Default::default();
+        self.explorer_hits = None;
         self.close_selector();
         self.clear_git();
         self.project_search.clear();
@@ -23,6 +26,8 @@ impl State {
         Ok(())
     }
     pub(super) fn close_selector(&mut self) {
+        self.selector_explorer_focus = false;
+        self.explorer_focused = false;
         self.git_panel = None;
         self.cancel_project_replace();
         self.selector = None;
@@ -35,12 +40,14 @@ impl State {
         self.quick_open.clear();
     }
     pub(super) fn open_selector(&mut self, kind: SelectorKind) {
+        let explorer_focus = self.explorer_focused;
         self.close_selector();
         if kind == SelectorKind::Files && self.project_root.is_none() {
             self.status = "Open a project folder first".into();
             return;
         }
         self.selector = Some(Selector::new(kind));
+        self.selector_explorer_focus = kind == SelectorKind::Palette && explorer_focus;
         self.request_files();
     }
     pub(super) fn ensure_encoding_selector(&mut self) {
@@ -110,6 +117,7 @@ impl State {
         changed |= self.project_search.poll(&self.workbench, 2);
         changed |= self.apply_project_replace_step();
         changed |= self.poll_git();
+        changed |= self.poll_explorer();
         if self.project_search.take_recovery() {
             self.status = "Project search worker failed; refresh to retry".into();
             changed = true;
@@ -217,7 +225,9 @@ impl State {
                     self.status = "Command unavailable in this frontend/context".into();
                     return Action::None;
                 }
+                let explorer_focus = self.selector_explorer_focus;
                 self.close_selector();
+                self.explorer_focused = explorer_focus;
                 self.execute(command)
             }
             SelectorKind::Files => {

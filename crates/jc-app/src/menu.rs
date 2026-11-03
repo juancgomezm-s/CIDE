@@ -228,6 +228,8 @@ pub fn default_menu_model() -> MenuModel {
             'p',
             &[
                 command(ViewExplorer),
+                command(ExplorerRefresh),
+                command(ExplorerCancel),
                 command(ViewDatabase),
                 command(ViewSymbols),
             ],

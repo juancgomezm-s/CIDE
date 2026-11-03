@@ -395,5 +395,22 @@ servicios/procesos ajenos; ningún componente .NET8 apareció en la revisión pr
 El siguiente contrato ya está preparado en M2B_EXPLORER_CONTRACT.md: hoy TUI enumera
 síncronamente y nombres usan to_string_lossy; Quick Open no es un árbol. Implementar
 un catálogo común con IDs y worker lazy, retirar la ruta TUI anterior al integrarlo,
-y conectar sidebar GUI/teclado/mouse antes de probar. No anunciarlo implementado
-por existir ese contrato; resolver límites/identidad de enumeración en jc-files.
+y conectar sidebar GUI/teclado/mouse antes de probar. Ese contrato histórico ya
+tiene el cierre de implementación siguiente.
+
+## Último cierre: Explorer compartido — 2026-11-03
+
+Leer M2B_SHARED_EXPLORER.md. ProjectExplorer/ExplorerView de jc-app reemplazan el
+proveedor/aperturas anteriores de TUI y alimentan sidebar GUI. No restaurar read_dir
+en el owner, labels lossy, copias de documentos ni aceptación durante prepare/draw.
+Conservar IDs/generaciones, rechazo de cancelados, cuotas globales y apertura
+revalidada aun para dirty reuse. Windows mantiene cadena ordinaria sin share-delete
+y enumera por handle; no presentar fallback no Windows como confinamiento atómico.
+
+352 pruebas relacionadas aprobaron,13 nuevas/una obsoleta retirada;70 checks de
+HWND propio y seis flujos ConPTY propios, fmt/Clippy/release aprobados. Evidencia
+m2b-explorer-2026-11-03-* conserva fallos iniciales de los arneses y fuentes/binarios.
+No repetir suites/perfiles aprobados para documentación. No solicitar pruebas
+manuales ahora: clipboard OS/IME/DPI/accesibilidad/RAM/pantalla siguen al final.
+Sigue M2B: paridad GUI pendiente y API de proveedores opcionales conforme al plan;
+no afirmar compilación OpenEdge, parser/LSP ni loader de extensiones inexistentes.

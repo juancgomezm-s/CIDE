@@ -313,6 +313,8 @@ pub fn default_keymap() -> KeyMap {
         bind(Global, KeyStroke::ctrl_alt(c('l')), EditorToggleScrollLink),
         bind(Editor, KeyStroke::ctrl(Enter), EditorOpenToSide),
         bind(Sidebar, KeyStroke::ctrl(Enter), EditorOpenToSide),
+        bind(Sidebar, KeyStroke::plain(f(5)), ExplorerRefresh),
+        bind(Sidebar, KeyStroke::plain(Escape), ExplorerCancel),
         bind(Global, KeyStroke::alt(Left), NavigateBack),
         bind(Global, KeyStroke::alt(Right), NavigateForward),
         bind(Global, KeyStroke::ctrl(Tab), TabNext),

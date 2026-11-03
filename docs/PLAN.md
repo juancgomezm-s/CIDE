@@ -406,4 +406,21 @@ manuales al propietario ni ampliar a servicios/regex/dependencias no autorizados
 
 El [contrato Explorer](M2B_EXPLORER_CONTRACT.md) ya inventaría la ruta TUI síncrona
 y define catálogo único, identidades, cuotas y migración de ambos frontends. Es
-diseño del siguiente bloque activo, sin afirmar árbol GUI ni pruebas de ese bloque.
+diseño previo; el cierre de implementación se registra a continuación.
+
+## Explorer TUI/GUI compartido — 2026-11-03
+
+[Implementado](M2B_SHARED_EXPLORER.md): catálogo único por sesión con IDs opacos,
+worker lazy, cuotas globales, cancelación/generaciones; vista compartida y apertura
+confinada con dirty/pin/side/undo. Se retiró la enumeración y apertura alternativa
+TUI. GUI tiene sidebar persistente, mouse/teclado, menú/palette, foco y modo compacto
+que conserva split. Windows enumera por handle con ancestros fijados; fallback no
+Windows mantiene ventana de namespace explícita, sin aceptación local.
+
+Bloque completo construido antes de pruebas:352 casos Rust relacionados aprobados
+(13 nuevos; un test del proveedor eliminado retirado),70 checks GUI y seis flujos
+ConPTY reales. fmt/Clippy/release aprobados; fuentes y metadataGit propias intactas.
+Evidencia cruda y hashes en M2B_SHARED_EXPLORER. Sin dependencias nuevas/CI/push.
+M2A/M2B y gates globales/manuales permanecen abiertos. Continuación: completar la
+paridad funcional GUI pendiente y preparar el API opcional de proveedores de
+lenguaje según EXTENSION_ARCHITECTURE, sin asumir parser/LSP/ABL ya disponibles.

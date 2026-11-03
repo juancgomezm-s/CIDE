@@ -1,6 +1,8 @@
 mod commands;
 mod events;
 mod explorer;
+#[cfg(test)]
+mod explorer_integration_tests;
 mod git_diff;
 mod git_repository;
 mod git_status;
@@ -58,7 +60,8 @@ pub struct TuiApp {
     pub(crate) overlay: UiOverlay,
     pub(crate) status: String,
     pub(crate) project_root: Option<PathBuf>,
-    pub(crate) explorer: explorer::ExplorerState,
+    pub(crate) explorer: jc_app::explorer::ProjectExplorer,
+    pub(crate) explorer_view: jc_app::explorer::ExplorerView,
     pub(crate) bottom_selected: usize,
     pub(crate) tasks: jc_app::JobSystem,
     pub(crate) git_diff: jc_app::git_diff::GitDiffController,
@@ -117,7 +120,9 @@ impl TuiApp {
             replacement_cursor: usize::MAX,
             status: "Ready".to_owned(),
             project_root: None,
-            explorer: explorer::ExplorerState::default(),
+            explorer: jc_app::explorer::ProjectExplorer::new(wakeup.clone(), Default::default())
+                .expect("valid Explorer quotas"),
+            explorer_view: Default::default(),
             bottom_selected: 0,
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_status: git_status::GitStatusView::new(wakeup.clone()),
@@ -156,8 +161,12 @@ impl TuiApp {
 
     pub(crate) fn poll_tasks(&mut self) -> TaskUpdate {
         let mut update = TaskUpdate::default();
-        update.recover = self.project_search.take_recovery();
-        update.changed = update.recover;
+        if let Some(root) = &self.project_root {
+            update.changed |= self.explorer.poll(root, 2);
+        }
+        update.recover |= self.explorer.take_recovery();
+        update.recover |= self.project_search.take_recovery();
+        update.changed |= update.recover;
         if self.workbench.poll_document_search() {
             update.changed = true;
             if !self.project_results {
@@ -253,6 +262,12 @@ impl TuiApp {
         let mut context = self.workbench.context();
         context.focus = self.focus.primary();
         context.has_project = self.project_root.is_some();
+        context.explorer_focused = self.focus.primary() == jc_app::PrimaryFocus::Sidebar
+            && self.panels.sidebar() == jc_app::SidebarView::Explorer;
+        if context.explorer_focused {
+            context.clipboard_has_text = false;
+            context.has_selection = false;
+        }
         context.git_diff_available = cfg!(windows)
             && context.has_project
             && context.has_document
@@ -276,10 +291,10 @@ impl TuiApp {
         if context.focus == jc_app::PrimaryFocus::Sidebar {
             context.can_open_to_side = self.panels.sidebar() == jc_app::SidebarView::Explorer
                 && self
-                    .explorer
-                    .entries()
-                    .get(self.explorer.selected())
-                    .is_some_and(|entry| !entry.is_dir);
+                    .explorer_view
+                    .selected()
+                    .and_then(|id| self.explorer.node(id))
+                    .is_some_and(|entry| !entry.is_dir());
         }
         context
     }

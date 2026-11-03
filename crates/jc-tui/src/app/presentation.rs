@@ -109,6 +109,7 @@ pub(crate) struct Presentation<'a> {
     pub search_positions: Vec<(usize, Option<TextPosition>)>,
     pub git: GitPresentation,
     pub git_status: super::GitStatusPresentation,
+    pub explorer: jc_app::explorer::ExplorerPresentation,
 }
 impl Presentation<'_> {
     pub fn editor(&self, pane: PaneId) -> &EditorText {
@@ -127,6 +128,9 @@ impl Presentation<'_> {
 
 impl TuiApp {
     pub(crate) fn prepare_frame(&mut self, width: u16, height: u16) -> Presentation<'_> {
+        if self.explorer.root() != self.project_root.as_deref() {
+            self.explorer.clear();
+        }
         self.git_diff.tick(&self.workbench, &mut self.tasks);
         self.git_status
             .validate_context(self.project_root.as_deref(), self.git_executable.as_deref());
@@ -300,6 +304,17 @@ impl TuiApp {
         } else {
             super::GitStatusPresentation::default()
         };
+        let explorer = self.explorer_view.prepare(
+            &self.explorer,
+            if self.panels.sidebar_visible()
+                && self.panels.sidebar() == jc_app::SidebarView::Explorer
+            {
+                usize::from(layout.content_height.saturating_sub(2))
+            } else {
+                0
+            },
+            usize::from(layout.sidebar_width.saturating_sub(2)),
+        );
         Presentation {
             app: self,
             layout,
@@ -309,6 +324,7 @@ impl TuiApp {
             search_positions,
             git,
             git_status,
+            explorer,
         }
     }
 }

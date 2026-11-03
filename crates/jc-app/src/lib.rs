@@ -8,6 +8,7 @@
 mod command;
 mod dialog;
 pub mod diff_model;
+pub mod explorer;
 mod focus;
 pub mod git_diff;
 pub mod git_read;

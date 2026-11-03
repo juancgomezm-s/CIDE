@@ -1,6 +1,6 @@
 use super::TuiApp;
 use crate::state::{PromptKind, UiOverlay};
-use jc_app::{Overlay, SidebarView};
+use jc_app::Overlay;
 use jc_text::TextEncoding;
 use std::path::PathBuf;
 
@@ -104,24 +104,7 @@ impl TuiApp {
                 .workbench
                 .save_active_as(path)
                 .map_err(|e| e.to_string()),
-            PromptKind::OpenFolder => {
-                if path.is_dir() {
-                    self.explorer.set_root(path).map(|()| {
-                        self.project_search.clear();
-                        self.cancel_project_replace();
-                        self.project_results = false;
-                        self.git_diff.clear(&mut self.tasks);
-                        self.git_status.clear();
-                        self.quick_open.clear();
-                        self.quick_open_root = None;
-                        self.git_configuration_target = None;
-                        self.project_root = self.explorer.root().map(PathBuf::from);
-                        self.panels.show_sidebar(SidebarView::Explorer);
-                    })
-                } else {
-                    Err("Folder does not exist".to_owned())
-                }
-            }
+            PromptKind::OpenFolder => self.set_explorer_root(path),
             PromptKind::ProjectQuery
             | PromptKind::ProjectInclude
             | PromptKind::ProjectExclude

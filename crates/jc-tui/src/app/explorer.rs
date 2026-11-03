@@ -1,207 +1,130 @@
-use std::fs;
-use std::path::{Path, PathBuf};
+//! TUI intentions over the shared catalog. No enumeration or alternative opener.
+use super::TuiApp;
+use jc_app::{
+    explorer::{ExplorerLoadState, NodeId},
+    PrimaryFocus, SidebarView,
+};
+use std::path::PathBuf;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ExplorerEntry {
-    pub(crate) path: PathBuf,
-    pub(crate) name: String,
-    pub(crate) is_dir: bool,
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct ExplorerState {
-    root: Option<PathBuf>,
-    directory: Option<PathBuf>,
-    entries: Vec<ExplorerEntry>,
-    selected: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ExplorerAction {
-    None,
-    OpenFile(PathBuf),
-    DirectoryChanged,
-}
-
-impl ExplorerState {
-    pub(crate) fn root(&self) -> Option<&Path> {
-        self.root.as_deref()
-    }
-
-    pub(crate) fn directory(&self) -> Option<&Path> {
-        self.directory.as_deref()
-    }
-
-    pub(crate) fn entries(&self) -> &[ExplorerEntry] {
-        &self.entries
-    }
-
-    pub(crate) fn selected(&self) -> usize {
-        self.selected.min(self.entries.len().saturating_sub(1))
-    }
-
-    pub(crate) fn set_root(&mut self, root: PathBuf) -> Result<(), String> {
-        let canonical = root
-            .canonicalize()
-            .map_err(|error| format!("Cannot open folder {}: {error}", root.display()))?;
-        if !canonical.is_dir() {
-            return Err(format!("Not a folder: {}", canonical.display()));
+impl TuiApp {
+    pub(crate) fn set_explorer_root(&mut self, path: PathBuf) -> Result<(), String> {
+        let root = path.canonicalize().map_err(|e| e.to_string())?;
+        if !root.is_dir() {
+            return Err("Project root must be a directory".into());
         }
-        self.root = Some(canonical.clone());
-        self.directory = Some(canonical);
-        self.selected = 0;
-        self.refresh()
-    }
-
-    pub(crate) fn move_selection(&mut self, delta: isize) {
-        if self.entries.is_empty() {
-            self.selected = 0;
-            return;
-        }
-        if delta < 0 {
-            self.selected = self.selected.saturating_sub(delta.unsigned_abs());
-        } else {
-            self.selected = (self.selected + delta as usize).min(self.entries.len() - 1);
-        }
-    }
-
-    pub(crate) fn select_first(&mut self) {
-        self.selected = 0;
-    }
-
-    pub(crate) fn select_last(&mut self) {
-        self.selected = self.entries.len().saturating_sub(1);
-    }
-
-    pub(crate) fn activate(&mut self) -> Result<ExplorerAction, String> {
-        let Some(entry) = self.entries.get(self.selected()).cloned() else {
-            return Ok(ExplorerAction::None);
-        };
-        let path = self.checked_path(&entry.path)?;
-        if entry.is_dir {
-            self.directory = Some(path);
-            self.selected = 0;
-            self.refresh()?;
-            Ok(ExplorerAction::DirectoryChanged)
-        } else {
-            Ok(ExplorerAction::OpenFile(path))
-        }
-    }
-
-    pub(crate) fn enter_directory(&mut self) -> Result<ExplorerAction, String> {
-        let Some(entry) = self.entries.get(self.selected()).cloned() else {
-            return Ok(ExplorerAction::None);
-        };
-        if !entry.is_dir {
-            return Ok(ExplorerAction::None);
-        }
-        self.activate()
-    }
-
-    pub(crate) fn parent(&mut self) -> Result<bool, String> {
-        let (Some(root), Some(directory)) = (&self.root, &self.directory) else {
-            return Ok(false);
-        };
-        if directory == root {
-            return Ok(false);
-        }
-        let Some(parent) = directory.parent() else {
-            return Ok(false);
-        };
-        let parent = parent.to_path_buf();
-        let parent = self.checked_path(&parent)?;
-        self.directory = Some(parent);
-        self.selected = 0;
-        self.refresh()?;
-        Ok(true)
-    }
-
-    pub(crate) fn refresh(&mut self) -> Result<(), String> {
-        let Some(directory) = self.directory.clone() else {
-            self.entries.clear();
-            self.selected = 0;
-            return Ok(());
-        };
-        let mut entries = Vec::new();
-        let read_dir = fs::read_dir(&directory)
-            .map_err(|error| format!("Cannot read {}: {error}", directory.display()))?;
-        for entry in read_dir {
-            let entry = entry.map_err(|error| format!("Cannot read directory entry: {error}"))?;
-            let file_type = entry
-                .file_type()
-                .map_err(|error| format!("Cannot inspect {}: {error}", entry.path().display()))?;
-            let name = entry.file_name().to_string_lossy().into_owned();
-            entries.push(ExplorerEntry {
-                path: entry.path(),
-                name,
-                is_dir: file_type.is_dir(),
-            });
-        }
-        entries.sort_by(|left, right| {
-            right
-                .is_dir
-                .cmp(&left.is_dir)
-                .then_with(|| {
-                    left.name
-                        .to_ascii_lowercase()
-                        .cmp(&right.name.to_ascii_lowercase())
-                })
-                .then_with(|| left.name.cmp(&right.name))
-        });
-        self.entries = entries;
-        self.selected = self.selected.min(self.entries.len().saturating_sub(1));
+        self.explorer.set_root(root.clone())?;
+        self.explorer_view = Default::default();
+        self.project_search.clear();
+        self.cancel_project_replace();
+        self.project_results = false;
+        self.git_diff.clear(&mut self.tasks);
+        self.git_status.clear();
+        self.quick_open.clear();
+        self.quick_open_root = None;
+        self.git_configuration_target = None;
+        self.project_root = Some(root);
+        self.panels.show_sidebar(SidebarView::Explorer);
         Ok(())
     }
-
-    fn checked_path(&self, path: &Path) -> Result<PathBuf, String> {
-        let Some(root) = &self.root else {
-            return Err("Explorer has no project root".to_owned());
-        };
-        let canonical = path
-            .canonicalize()
-            .map_err(|error| format!("Cannot resolve {}: {error}", path.display()))?;
-        if !canonical.starts_with(root) {
-            return Err("Explorer navigation cannot leave the project root".to_owned());
+    pub(crate) fn explorer_directory(&self) -> Option<NodeId> {
+        let node = self.explorer.node(self.explorer_view.selected()?)?;
+        if node.is_dir() {
+            Some(node.id())
+        } else {
+            node.parent()
         }
-        Ok(canonical)
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-
-    fn workspace() -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "jc-ide-explorer-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir_all(path.join("folder")).unwrap();
-        fs::write(path.join("z.p"), b"").unwrap();
-        fs::write(path.join("a.p"), b"").unwrap();
-        fs::write(path.join("folder").join("nested.p"), b"").unwrap();
-        path
+    pub(crate) fn activate_explorer(&mut self, side: bool, expand_only: bool) {
+        self.explorer_view.prepare(&self.explorer, 0, 0);
+        let Some(id) = self.explorer_view.selected().or(self.explorer.root_id()) else {
+            return;
+        };
+        let Some(node) = self.explorer.node(id) else {
+            return;
+        };
+        if node.is_dir() {
+            let expanded = node.expanded();
+            let first = node.children().first().copied();
+            let result = if expanded && expand_only {
+                if let Some(child) = first {
+                    self.explorer_view.select(child);
+                }
+                Ok(())
+            } else if expanded {
+                self.explorer.collapse(id)
+            } else {
+                self.explorer.expand(id)
+            };
+            if let Err(error) = result {
+                self.status = error;
+            }
+            return;
+        }
+        if expand_only {
+            return;
+        }
+        match self.explorer.open_file(
+            id,
+            &mut self.workbench,
+            self.default_encoding,
+            side,
+            16 * 1024 * 1024,
+        ) {
+            Ok(_) => {
+                self.ensure_encoding_choice();
+                if matches!(self.overlay, crate::state::UiOverlay::None) {
+                    let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+                }
+                self.status = "Explorer file opened; shared document retained".into();
+            }
+            Err(error) => self.status = error,
+        }
     }
-
-    #[test]
-    fn directories_sort_before_files_and_navigation_stays_rooted() {
-        let root = workspace();
-        let mut explorer = ExplorerState::default();
-        explorer.set_root(root.clone()).unwrap();
-        assert!(explorer.entries()[0].is_dir);
-        assert_eq!(explorer.entries()[1].name, "a.p");
-        assert_eq!(explorer.entries()[2].name, "z.p");
-        assert_eq!(
-            explorer.enter_directory().unwrap(),
-            ExplorerAction::DirectoryChanged
-        );
-        assert_eq!(explorer.entries()[0].name, "nested.p");
-        assert!(explorer.parent().unwrap());
-        assert!(!explorer.parent().unwrap());
-        fs::remove_dir_all(root).unwrap();
+    pub(crate) fn explorer_parent(&mut self) {
+        self.explorer_view.prepare(&self.explorer, 0, 0);
+        let Some(id) = self.explorer_view.selected() else {
+            return;
+        };
+        if self
+            .explorer
+            .node(id)
+            .is_some_and(|n| n.is_dir() && n.expanded())
+        {
+            if let Err(error) = self.explorer.collapse(id) {
+                self.status = error;
+            }
+        } else {
+            self.explorer_view.parent(&self.explorer);
+        }
+    }
+    pub(crate) fn refresh_explorer(&mut self) {
+        self.status = "Explorer refresh requested".into();
+        self.explorer_view.prepare(&self.explorer, 0, 0);
+        if let Some(id) = self.explorer_directory().or(self.explorer.root_id()) {
+            if let Err(error) = self.explorer.refresh(id) {
+                self.status = error;
+            }
+        }
+    }
+    pub(crate) fn cancel_explorer(&mut self) {
+        self.status = "Explorer: editor focus".into();
+        self.explorer_view.prepare(&self.explorer, 0, 0);
+        if let Some(id) = self.explorer_directory().or(self.explorer.root_id()) {
+            if self.explorer.node(id).is_some_and(|n| {
+                matches!(
+                    n.state(),
+                    ExplorerLoadState::Queued | ExplorerLoadState::Loading
+                )
+            }) {
+                if let Err(error) = self.explorer.cancel(id) {
+                    self.status = error;
+                }
+            }
+        }
+    }
+    pub(crate) fn activate_explorer_entry_to_side(&mut self) {
+        if self.panels.sidebar() == SidebarView::Explorer {
+            self.activate_explorer(true, false);
+        }
     }
 }

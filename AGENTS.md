@@ -310,7 +310,21 @@ pin/view reuse. Manual OS clipboard/IME/DPI/accessibility/global display remains
 for the end; do not request it now or touch Qwen/GPU/RAG/other processes.
 
 The next front has a concrete source-based contract: docs/M2B_EXPLORER_CONTRACT.md.
-Existing TUI Explorer still synchronously enumerates/sorts with lossy display names;
-Quick Open is a recursive metadata finder, not a tree catalog. Implement the shared
-bounded typed catalog and migrate both frontends before tests; retire the replaced
-TUI route. Contract presence is not an implemented GUI tree or measured acceptance.
+That inventory is historical; the implementation closure is below.
+
+## Shared Explorer closure
+
+Read docs/M2B_SHARED_EXPLORER.md. ProjectExplorer and ExplorerView in jc-app now
+drive both frontends; the old synchronous TUI enumeration/opener was removed.
+Keep native opaque paths, generation/revision NodeIds, bounded lazy worker and
+global quotas, cancelled-state rejection, dirty/session/pin/view reuse and confined
+opening. Windows enumerates by directory handle with ordinary ancestors held
+without share-delete; non-Windows metadata fallback retains a namespace window.
+Presentation does not poll/admit; GUI mouse targets publish only on WM_PAINT and
+validate generation/revision. Compact layout preserves inactive split ownership.
+352 related Rust cases,70 own-HWND checks and six own-ConPTY flows passed;
+13 new Rust cases,one obsolete old-provider test retired,not a full workspace run.
+fmt/Clippy/release passed; raw failures and source/binary hashes are retained.
+No new dependency, CI or push. Keep broad construction before integral checks;
+manual/global gates remain for the end. Continue pending GUI parity/provider API
+per PLAN/EXTENSION_ARCHITECTURE without claiming ABL/LSP/physical acceptance.

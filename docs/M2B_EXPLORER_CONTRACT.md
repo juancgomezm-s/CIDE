@@ -1,4 +1,8 @@
-# Explorer compartido TUI/GUI: siguiente bloque
+# Explorer compartido TUI/GUI: contrato previo
+
+**Seguimiento:** implementado y validado localmente en
+[M2B_SHARED_EXPLORER](M2B_SHARED_EXPLORER.md). Lo siguiente conserva el inventario
+y propuesta anteriores a esa migración; sus hallazgos de código viejo son históricos.
 
 **Contrato propuesto; no implementación ni aceptación ya obtenidas.** Solo lectura
 estática, sin checks/runtime. Aplican [arquitectura](ARQUITECTURA.md),

@@ -252,7 +252,9 @@ impl Workbench {
                 Ok(CommandOutcome::Progress(command))
             }
             FileChooseEncoding | FileQuickOpen | FileOpenFolder | SearchProject
-            | SearchCancelProject | SearchReplaceProject => Ok(CommandOutcome::View(command)),
+            | SearchCancelProject | SearchReplaceProject | ExplorerRefresh | ExplorerCancel => {
+                Ok(CommandOutcome::View(command))
+            }
         }
     }
 }

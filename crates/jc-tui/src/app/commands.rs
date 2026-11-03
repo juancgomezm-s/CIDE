@@ -142,6 +142,11 @@ impl TuiApp {
             }
             FileOpenFolder => self.open_prompt(PromptKind::OpenFolder),
             ViewExplorer => self.show_sidebar(SidebarView::Explorer),
+            ExplorerRefresh => self.refresh_explorer(),
+            ExplorerCancel => {
+                self.cancel_explorer();
+                let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+            }
             ViewDatabase => self.show_sidebar(SidebarView::Database),
             ViewGit => self.open_git_diff(),
             GitDiffHead => {

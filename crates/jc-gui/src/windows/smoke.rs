@@ -380,6 +380,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         checks.extend(super::project_smoke::run(hwnd, options)?);
         checks.extend(super::replace_smoke::run(hwnd, options)?);
         checks.extend(super::git_smoke::run(hwnd, options)?);
+        checks.extend(super::explorer_smoke::run(hwnd, options)?);
         // A complete native selector flow: modal query input, real PostMessage
         // delivery, authoritative target, dirty session reuse and shared undo.
         position(hwnd, 0, 0)?;

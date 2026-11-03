@@ -84,6 +84,8 @@ pub enum CommandId {
     Tab9,
 
     ViewExplorer,
+    ExplorerRefresh,
+    ExplorerCancel,
     ViewToggleInvisibles,
     ViewDatabase,
     ViewGit,
@@ -141,6 +143,7 @@ pub struct CommandContext {
     pub rectangular_selection: bool,
     pub clipboard_has_text: bool,
     pub has_project: bool,
+    pub explorer_focused: bool,
     pub project_search_running: bool,
     pub project_replace_ready: bool,
     pub document_search_running: bool,
@@ -175,6 +178,7 @@ impl Default for CommandContext {
             rectangular_selection: false,
             clipboard_has_text: false,
             has_project: false,
+            explorer_focused: false,
             project_search_running: false,
             project_replace_ready: false,
             document_search_running: false,
@@ -333,6 +337,12 @@ fn line_comment(ctx: &CommandContext) -> bool {
 }
 fn project(ctx: &CommandContext) -> bool {
     ctx.has_project
+}
+fn explorer(ctx: &CommandContext) -> bool {
+    ctx.has_project && ctx.explorer_focused
+}
+fn explorer_focus(ctx: &CommandContext) -> bool {
+    ctx.explorer_focused
 }
 fn git_diff(ctx: &CommandContext) -> bool {
     ctx.git_diff_available
@@ -525,6 +535,18 @@ pub fn default_registry() -> CommandRegistry {
         spec!(Tab8, Navigation, "Tab 8", has_document),
         spec!(Tab9, Navigation, "Last Tab", has_document),
         spec!(ViewExplorer, View, "Explorer", always),
+        spec!(
+            ExplorerRefresh,
+            View,
+            "Explorer: Refresh Directory",
+            explorer
+        ),
+        spec!(
+            ExplorerCancel,
+            View,
+            "Explorer: Cancel Loading / Return to Editor",
+            explorer_focus
+        ),
         spec!(
             ViewToggleInvisibles,
             View,

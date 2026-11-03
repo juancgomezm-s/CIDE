@@ -445,7 +445,25 @@ fn explorer_open_to_side_works_without_an_existing_document() {
     let path = root.join("from-explorer.txt");
     std::fs::write(&path, b"explorer").unwrap();
     let mut app = TuiApp::new(LaunchOptions::default());
-    app.explorer.set_root(root.clone()).unwrap();
+    app.set_explorer_root(root.clone()).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        app.poll_tasks();
+        let ready = app
+            .explorer
+            .root_id()
+            .and_then(|id| app.explorer.node(id))
+            .is_some_and(|n| n.state() == jc_app::explorer::ExplorerLoadState::Ready);
+        if ready {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "Explorer notification deadline"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    app.explorer_view.last(&app.explorer);
     app.dispatch(CommandId::ViewExplorer);
     assert!(app
         .registry
@@ -456,6 +474,7 @@ fn explorer_open_to_side_works_without_an_existing_document() {
     assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
     // Opening an empty secondary must still make that group the active target.
     assert_eq!(app.workbench.panes().active(), PaneId::Secondary);
+    drop(app);
     std::fs::remove_file(path).unwrap();
     std::fs::remove_dir(root).unwrap();
 }

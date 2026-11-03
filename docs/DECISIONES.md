@@ -427,3 +427,16 @@ Separar validate_context de tick evita admitir/copiar al preparar una escena.
 Solo mensajes aceptan completions; Git ejecutable se elige para la sesión y el
 selector suelta préstamos/revalida contexto. El editor no escribe Git ni navega
 paths status. [Contrato y evidencia](M2B_PROJECT_REPLACE_GIT.md).
+
+## D41 — Catálogo Explorer único y enumeración Windows por handle
+
+ProjectExplorer mantiene identidades nativas y un proveedor lazy acotado; ambos
+frontends usan ExplorerView de solo lectura. Retirar la enumeración y aperturas
+TUI anteriores evita dos modelos de árbol. Collapse expulsa descendientes; refresh
+y raíz nueva invalidan IDs. Un cancelado rechaza incluso una completion ya emitida.
+Windows fija ancestros ordinarios sin share-delete y enumera el handle final;
+apertura revalida la cadena antes de reutilizar un documento dirty. No prometer
+snapshot de FS ni confinamiento atómico del fallback no Windows. Labels escapados
+solo presentan nombres; nunca son autoridad de paths. Pintura no acepta ni admite
+tareas; GUI publica objetivos de mouse versionados solo en WM_PAINT.
+[Implementación, cuotas y evidencia](M2B_SHARED_EXPLORER.md).

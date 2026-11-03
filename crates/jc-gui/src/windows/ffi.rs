@@ -153,6 +153,7 @@ pub const WM_UNICHAR: u32 = 0x109;
 pub const WM_COMMAND: u32 = 0x111;
 pub const WM_INITMENU: u32 = 0x116;
 pub const WM_LBUTTONDOWN: u32 = 0x201;
+pub const WM_LBUTTONDBLCLK: u32 = 0x203;
 pub const GWLP_USERDATA: i32 = -21;
 pub const SMOKE_MESSAGE: u32 = 0x8001;
 pub const TASKS_MESSAGE: u32 = 0x8002;

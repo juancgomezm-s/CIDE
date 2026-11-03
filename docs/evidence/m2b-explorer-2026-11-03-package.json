@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "archive": "work/packages/CIDE-windows-dev-explorer-2026-11-03.zip",
+  "bytes": 3836852,
+  "sha256": "45544fd4ba9cc50784caedd6f8d688498f057d557640e4b7f6c64ded3d9b94f3",
+  "members": 69,
+  "crc_all_passed": true,
+  "manifest_hashes_all_passed": true,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ],
+  "channel": "local development; no installer or release certification"
+}

@@ -1,0 +1,53 @@
+    Checking jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+error: unused import: `SidebarView`
+ --> crates\jc-tui\src\app\paths.rs:3:23
+  |
+3 | use jc_app::{Overlay, SidebarView};
+  |                       ^^^^^^^^^^^
+  |
+  = note: `-D unused-imports` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: this `if` statement can be collapsed
+   --> crates\jc-gui\src\windows.rs:985:17
+    |
+985 | /                 if state.selector.is_none()
+986 | |                     && state.search_panel.is_none()
+987 | |                     && !state.project_visible()
+988 | |                     && state.replace_panel.is_none()
+...   |
+997 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+985 ~                 if state.selector.is_none()
+986 +                     && state.search_panel.is_none()
+987 +                     && !state.project_visible()
+988 +                     && state.replace_panel.is_none() && state.git_panel.is_none() && !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK) && message == WM_LBUTTONDOWN {
+989 +                     state.explorer_focused = false;
+990 +                     paint::click(&mut state, x, y);
+991 +                 }
+    |
+
+error: could not compile `jc-tui` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: very complex type used. Consider factoring parts into `type` definitions
+   --> crates\jc-gui\src\windows\explorer_smoke.rs:293:34
+    |
+293 | unsafe fn metrics(hwnd: Hwnd) -> Result<(u64, u64, usize, usize, usize, usize, String), String> {
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#type_complexity
+    = note: `-D clippy::type-complexity` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::type_complexity)]`
+
+error: could not compile `jc-gui` (lib) due to 2 previous errors
+error: could not compile `jc-tui` (lib test) due to 1 previous error
+error: could not compile `jc-gui` (lib test) due to 2 previous errors
