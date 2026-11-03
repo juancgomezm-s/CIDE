@@ -486,3 +486,14 @@ incluyen intención visual porque el bytecaret puede no cambiar dentro de TAB o
 virtual. Captura/release fuera de préstamos, última selección válida al interrumpir,
 stale sin reactivación; F1 posee transacciones, clipboard interno y vistas.
 [Contrato/evidencia y límites](M2B_RECTANGLE_GUI.md).
+
+## D46 — Paridad se inventaría por ruta, no por enum
+
+El [inventario GUI](M2B_GUI_INVENTORY.md) registra los 104 comandos, bindings con
+scope, menú/paleta, predicado, handler real y evidencia histórica limitada. Un
+CommandOutcome::View sin consumidor gráfico no es funcionalidad. Menús Win32
+adaptan Menu* sin simular OpenMenu TUI; un panel de proyecto no es un host genérico
+Problems/Output. El cierre de edición/grupos solo conecta operaciones existentes:
+Indent/Outdent/Join/Split comparten gate de intención real de fuente y enlace de
+scroll usa el delta Workbench, independiente de pin/caret. No nuevos motores ni
+proveedores. Los pendientes se concretan antes de ampliar la implementación.

@@ -233,8 +233,11 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             || options.line_edit_only
             || options.selection_reopen_only
             || options.rectangle_only
+            || options.parity_only
         {
-            if options.rectangle_only {
+            if options.parity_only {
+                checks.extend(super::parity_smoke::run(hwnd, options)?);
+            } else if options.rectangle_only {
                 checks.extend(super::rectangle_smoke::run(hwnd, options)?);
             } else if options.selection_reopen_only {
                 checks.extend(super::selection_reopen_smoke::run(hwnd, options)?);
@@ -416,6 +419,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         checks.extend(super::line_edit_smoke::run(hwnd, options)?);
         checks.extend(super::selection_reopen_smoke::run(hwnd, options)?);
         checks.extend(super::rectangle_smoke::run(hwnd, options)?);
+        checks.extend(super::parity_smoke::run(hwnd, options)?);
         // A complete native selector flow: modal query input, real PostMessage
         // delivery, authoritative target, dirty session reuse and shared undo.
         position(hwnd, 0, 0)?;

@@ -20,6 +20,8 @@ pub(crate) use git_status::{git_status_list_height, GitStatusPresentation};
 pub(crate) use presentation::Presentation;
 pub(crate) use presentation::{GitDiffRow, GitHunkRow, GitPresentation, GitRowKind};
 #[cfg(test)]
+mod edit_focus_parity_tests;
+#[cfg(test)]
 mod git_integration_tests;
 #[cfg(test)]
 mod git_status_integration_tests;

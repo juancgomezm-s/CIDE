@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "archive": "work/packages/CIDE-windows-dev-gui-parity-2026-11-03.zip",
+  "bytes": 3995333,
+  "sha256": "8e24537ebd50add819233f04ebf6cd349f7231585b11e66be6058d1e6a59eaf6",
+  "members": 69,
+  "crc_all_passed": true,
+  "manifest_hashes_all_passed": true,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ],
+  "channel": "local development; no installer or release certification"
+}

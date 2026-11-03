@@ -112,6 +112,12 @@ Una edición termina la selección con un undo compartido. Conserva el repertori
 de una celda del modelo; Unicode de ancho múltiple y clipboard rectangular OS
 siguen pendientes.
 
+Edit también expone Indent/Outdent; View ofrece Link/Unlink Scroll (Ctrl+Alt+L).
+El enlace aplica el delta vertical entre grupos conservando carets y pin; la barra
+de estado indica `Scroll linked`. La [matriz de los 104 comandos GUI](docs/M2B_GUI_INVENTORY.md)
+separa rutas reales, evidencia y pendientes; Problems/Output y el host genérico
+de panel inferior todavía no tienen paridad GUI.
+
 Abre una carpeta y usa Ctrl+Shift+F para consulta literal sensible a mayúsculas, inclusión/exclusión por globs y resultados progresivos. Enter navega; Esc en el panel inferior cancela. Tras una consulta completa sin avisos, Search / Replace in Project permite revisar sustituciones y confirmar con F9/Ctrl+Enter. Abiertos: edición con undo sin guardar; cerrados: guardado por archivo y conflictos explícitos. Véanse [uso, cuotas y límites](docs/S1_PROJECT_SEARCH.md) y [guardado Windows](docs/SAVE_WINDOWS_CONTENTION.md). En documento activo, Ctrl+F/Ctrl+H ya ofrecen búsqueda acotada, case folding completo Unicode 17, selección/historial y Ctrl+G escalar: [S0](docs/S0_DOCUMENT_SEARCH.md). No se certifican regex, normalización Unicode, GUI ni objetivos globales de rendimiento.
 
 En Windows, abre la raíz del repositorio y usa View / Git: Active File Diff; la primera vez solicita la ruta absoluta de Git para esa sesión. HEAD/index, refresh, cancelación y configuración están en View y palette. La comparación incluye cambios sin guardar (hasta 2 MiB por fuente), muestra identidad/OID y permite navegar hunks sin editar snapshots. Cambiar documento, vista, revisión o encoding exige refresh. [Entrega y límites](docs/GIT_DIFF_DELIVERY.md), [presentación TUI](docs/GIT_DIFF_PRESENTATION.md) y [proveedor Git](docs/GIT_READ_ONLY_PROVIDER.md). El estado de repositorio de solo lectura se describe abajo; no hay watcher; operaciones Git con escritura siguen en M5. La [escena de estudio GUI](docs/M2B_SCENE_STUDY.md) sigue como estudio histórico; el [frontend nativo actual](docs/M2B_NATIVE_WINDOWS.md) es un ejecutable Win32/GDI independiente de ese HTML.

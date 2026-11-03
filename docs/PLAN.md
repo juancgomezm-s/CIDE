@@ -491,3 +491,24 @@ rectángulo en BOF/EOF sin byte adyacente. Fallos y hashes retenidos, Source13B 
 No suites cerradas/perfiles/CI repetidos. Queda inventario final de paridad universal
 GUI y puertas M2 físicas/globales; proveedores opcionales según arquitectura después.
 Sin nuevas dependencias/instalación/AVM/push ni claim de columna Unicode general.
+
+## Inventario universal GUI y edición/grupos — 2026-11-03
+
+[Inventario completo](M2B_GUI_INVENTORY.md) y matriz con104 CommandId, entrada,
+predicado/foco, ruta real y evidencia histórica acotada.85 con rutaGUI,19 sin
+supported por dependencia/capacidad pendiente o adaptación Menu* de Win32.
+No equivalen a104 funciones aceptadas ni a todos sus caminos probados.
+
+Huecos independientes encontrados y cerrados juntos: Indent/Outdent ahora en
+menúEdit; Link/UnlinkScroll en View/tecla/paleta e indicador persistente. Cuatro
+ediciones (Indent/Outdent/Join/Split) exigen editor_input, también enTUI. Modelo
+Workbench de bytes/vistas/undo/delta scroll conservado, sin proveedor nuevo.
+Dos casosRust dirigidos (uno nuevo),12 checksHWND (cinco nuevos),fmt/Clippy/release
+aprobados tras integrar todo; fallo inicialClippy conservado, sin suites cerradas.
+
+Próximo bloque universal concreto: hostGUI de panel inferior, Problems/Output
+F3 y foco de tres regiones. Concretar contrato de filas/destinos/cancelación y
+estado antes de construir; esto no autoriza inventar proveedores. SearchResults
+tiene panel de proyecto específico, no ese host. MenúsTools/Help, entrada avanzada
+en selectores, selección lineal por drag/wheel y resto físico/global siguen
+identificados, sin afirmar paridad completa. No CI/push/dependencias/AVM nuevos.

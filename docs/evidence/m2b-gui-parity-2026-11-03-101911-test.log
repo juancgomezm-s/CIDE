@@ -1,0 +1,10 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.70s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 1 test
+test app::edit_focus_parity_tests::edit_focus_parity_preserves_modal_source_then_editor_undo_in_four_encodings ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 94 filtered out; finished in 0.00s
+

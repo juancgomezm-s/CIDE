@@ -1170,3 +1170,28 @@ sin pérdida revisados, ayudas/aliases e iconos PE aprobados.
 [hashes](evidence/m2b-rectangle-2026-11-03-metadata.json). No mouse físico/clipboard OS,
 IME/DPI/accesibilidad/Linux/RAM global certificados. M2A/M2B, symlink y notices GNU
 abiertos. Sin dependencias/proveedores/AVM/instalaciones/CI/push/publicación nuevos.
+
+## Inventario GUI y edición/grupos — 2026-11-03
+
+Inspección estática completa de 104 CommandId y rutas reales, con matriz de binding,
+menú/paleta, disponibilidad, handler y evidencia histórica. 85 supported/entradas
+COMMANDS tras cerrar los huecos de edición/grupos; 19 sin soporte directo por motivo.
+No se declara paridad completa ni recorrido físico de los 104 comandos.
+
+Bloque completo antes de pruebas. **Dos casos Rust dirigidos aprobados**: un nuevo
+flujo TUI con cuatro encodings/foco/undo y el parser CLI GUI afectado. **12 checks
+HWND aprobados**, cinco nuevos: Indent/Outdent por teclado/menú/paleta y undo exacto,
+gates modal/Explorer/stale, Join/Split/rectángulo, scroll delta/pin y resize/composición
+readonly/limpieza. Un WM_PAINT, cero errores; fixture13B y metadata Git sintética
+intactos. No Save/OS clipboard ni suites cerradas. fmt, Clippy workspace/all-targets
+-D warnings y release workspace bins/examples aprobados. Primer Clippy falló por
+format_collect del fixture; corregido a repeat antes de release y retenido en logs.
+
+[Inventario/contrato](M2B_GUI_INVENTORY.md),
+[datos estáticos](evidence/m2b-gui-inventory-2026-11-03.json),
+[hashes/logs](evidence/m2b-gui-parity-2026-11-03-metadata.json),
+[reporte nativo](evidence/m2b-gui-parity-2026-11-03-native-report.json).
+PNG GDI1384×741 y984×641 revisados visualmente, conversión sin pérdida. No corrida
+global de pruebas ni perfiles/RAM nuevos, pantalla física/IME/DPI/accesibilidad/
+clipboard externo/Linux certificados. Host genérico de paneles GUI y gates previos
+siguen abiertos. Sin CI/push/dependencias/proveedores/AVM/instalaciones nuevos.

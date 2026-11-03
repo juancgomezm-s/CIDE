@@ -433,10 +433,10 @@ pub fn default_registry() -> CommandRegistry {
             "Toggle Block Comment",
             block_comment
         ),
-        spec!(EditIndent, Edit, "Indent", has_document),
-        spec!(EditOutdent, Edit, "Outdent", linear_document),
-        spec!(EditJoinLines, Edit, "Join Lines", linear_document),
-        spec!(EditSplitLine, Edit, "Split Line", linear_document),
+        spec!(EditIndent, Edit, "Indent", rectangle_editor),
+        spec!(EditOutdent, Edit, "Outdent", linear_editor),
+        spec!(EditJoinLines, Edit, "Join Lines", linear_editor),
+        spec!(EditSplitLine, Edit, "Split Line", linear_editor),
         spec!(
             EditRectangleStart,
             Edit,

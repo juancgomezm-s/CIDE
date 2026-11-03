@@ -487,3 +487,25 @@ m2b-rectangle-2026-11-03-* retiene bugs/lint/compile iniciales y hashes. No repe
 suites/perfiles cerrados por docs. Sigue inventario universal GUI y gates M2;
 manual/global al final. Sin dependencias/proveedores/AVM/CI/push nuevos, symlink
 y notices GNU pendientes, no inferir certificación del ZIP o Unicode general.
+
+## Último cierre: inventario GUI y edición/grupos — 2026-11-03
+
+Leer [inventario y evidencias](M2B_GUI_INVENTORY.md) y matriz completa: 104 comandos,
+85 con ruta real en GUI y 19 sin soporte directo, con motivo. Registro/predicados,
+menús nativos y scope del binding no equivalen a todas las entradas validadas.
+Paleta lista también deshabilitados. No volver a ejecutar suites históricas para
+llenar filas; sus cierres y fechas están separados de la evidencia nueva.
+
+Indent/Outdent están en Edit; Ctrl+Alt+L/View/paleta gobiernan el enlace de scroll
+Workbench, con indicador persistente. Solo delta vertical, sin sincronizar caret o
+pin. Indent/Outdent/Join/Split usan editor_input también en TUI; modal/Explorer y
+targets de paleta cambiados no editan fuente oculta. Dos casos Rust dirigidos y
+12 checks HWND aprobados (uno/cinco nuevos), fmt/Clippy/release. Fallo inicial de
+Clippy en fixture conservado; funcionales pasaron a la primera, sin perfiles repetidos.
+
+Próxima integración universal pendiente: host de panel inferior GUI, Problems/Output
+F3 y foco de tres regiones. Primero concretar contrato de filas/destinos/estado y
+cancelación; no implementar proveedores por inferencia. SearchResults ofrece panel
+de proyecto, no el host genérico. Selectores aún no tienen Ctrl+V; Menu* usa adaptación
+Win32 parcial, no OpenMenu TUI. Conservar todos los límites físicos/globales,
+Unicode general/clipboard OS, symlink y notices GNU; sin CI/push/dependencias/AVM.

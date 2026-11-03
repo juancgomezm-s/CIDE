@@ -1,0 +1,1680 @@
+{
+  "date": "2026-11-03",
+  "baseline": "78769e9",
+  "method": "static source inventory; historical evidence references are not new executions",
+  "commands": 104,
+  "supported": 85,
+  "native_menu_entries": 85,
+  "sources_sha256": {
+    "crates/jc-app/src/command.rs": "c4d081091bf7764085744ee59914bfb26ce41ffe488a4fde95bc458ddf04f165",
+    "crates/jc-app/src/keymap.rs": "e9e4ff05bba3d7499d4773421014c984c6883ec07be957380344370c551569ad",
+    "crates/jc-app/src/workbench/commands.rs": "08d48a835fac7f05218f42ebcb2598cecef14f773369ce85135e4f010597e494",
+    "crates/jc-app/src/workbench/mod.rs": "4cd510af391c92de3c53a5dbe8d921f83411d1bcd804c6a8e75aad7801961306",
+    "crates/jc-gui/src/windows.rs": "c747750ff47258d91ffae88537913a0daf601818e085035a6c4718680015c0a4",
+    "crates/jc-gui/src/windows/selector.rs": "6c4be1418f5a908937371676b9f18bd425f59cb2fc2dff24b6570d920ce1b9ba",
+    "crates/jc-gui/src/windows/selector_flow.rs": "7b10675ae546ffb5f42325ced4ecde1d6792fc556c148b9316e443eabdc00ccc",
+    "crates/jc-gui/src/windows/paint.rs": "a8f36885c8d8175d66f7ac6745b078949f67a2d706de08a50a6f457aea37ad49",
+    "crates/jc-tui/src/app/commands.rs": "950770a79b7f1b84ee7ab1d46a86c2fb400a472287429ba1b42508d114046e68"
+  },
+  "rows": [
+    {
+      "command": "FileNew",
+      "category": "File",
+      "label": "New",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:ctrl('n')"
+      ],
+      "native_menu": "File",
+      "native_id": 101,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.new_document → Workbench.new_file",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "FileOpen",
+      "category": "File",
+      "label": "Open…",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:ctrl('o')"
+      ],
+      "native_menu": "File",
+      "native_id": 102,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.Open → native dialog → Workbench.open_file",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "FileQuickOpen",
+      "category": "File",
+      "label": "Quick Open Project File",
+      "predicate": "project",
+      "shared_bindings": [
+        "Global:ctrl('p')"
+      ],
+      "native_menu": "File",
+      "native_id": 108,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "open_selector(Files) → QuickOpenController → open_project_file",
+      "evidence": "SELECTOR"
+    },
+    {
+      "command": "FileOpenFolder",
+      "category": "File",
+      "label": "Open Folder…",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:ctrl_shift('o')"
+      ],
+      "native_menu": "File",
+      "native_id": 107,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.ChooseFolder → set_project_root",
+      "evidence": "SELECTOR"
+    },
+    {
+      "command": "FileChooseEncoding",
+      "category": "File",
+      "label": "Choose Source Encoding…",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Editor:ctrl_alt('e')"
+      ],
+      "native_menu": "File",
+      "native_id": 109,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "open_encoding_selector → Workbench.set_encoding",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "FileSave",
+      "category": "File",
+      "label": "Save",
+      "predicate": "dirty_document",
+      "shared_bindings": [
+        "Global:ctrl('s')"
+      ],
+      "native_menu": "File",
+      "native_id": 103,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Workbench.save_active / Action.SaveAs para nuevos",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "FileSaveAs",
+      "category": "File",
+      "label": "Save As…",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:ctrl_shift('s')"
+      ],
+      "native_menu": "File",
+      "native_id": 104,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.SaveAs → save_flow",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "FileSaveAll",
+      "category": "File",
+      "label": "Save All",
+      "predicate": "dirty_documents",
+      "shared_bindings": [
+        "Global:ctrl_alt('s')"
+      ],
+      "native_menu": "File",
+      "native_id": 118,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.SaveAll → save_flow/save_plan",
+      "evidence": "SAVE"
+    },
+    {
+      "command": "FileClose",
+      "category": "File",
+      "label": "Close",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:ctrl('w')"
+      ],
+      "native_menu": "File",
+      "native_id": 105,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.CloseTab → close_flow",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "FileReopenClosed",
+      "category": "File",
+      "label": "Reopen Closed Tab",
+      "predicate": "reopen",
+      "shared_bindings": [
+        "Global:ctrl_shift('t')"
+      ],
+      "native_menu": "File",
+      "native_id": 119,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "reopen_tab → try_reopen_closed",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "FileExit",
+      "category": "File",
+      "label": "Exit",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:alt(f(4))"
+      ],
+      "native_menu": "File",
+      "native_id": 106,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.Exit → confirmación dirty → DestroyWindow",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "EditUndo",
+      "category": "Edit",
+      "label": "Undo",
+      "predicate": "can_undo",
+      "shared_bindings": [
+        "Editor:ctrl('z')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 110,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditUndo",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "EditRedo",
+      "category": "Edit",
+      "label": "Redo",
+      "predicate": "can_redo",
+      "shared_bindings": [
+        "Editor:ctrl('y')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 111,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditRedo",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "EditCut",
+      "category": "Edit",
+      "label": "Cut",
+      "predicate": "source_clipboard_selection",
+      "shared_bindings": [
+        "Editor:ctrl('x')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 112,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.Clipboard / Workbench.cut_selection rectangular",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "EditCopy",
+      "category": "Edit",
+      "label": "Copy",
+      "predicate": "source_clipboard_selection",
+      "shared_bindings": [
+        "Editor:ctrl('c')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 113,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.Clipboard / Workbench.copy_selection rectangular",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "EditPaste",
+      "category": "Edit",
+      "label": "Paste",
+      "predicate": "paste",
+      "shared_bindings": [
+        "Editor:ctrl('v')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 114,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.Clipboard / Workbench.paste rectangular",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "EditSelectAll",
+      "category": "Edit",
+      "label": "Select All",
+      "predicate": "rectangle_editor",
+      "shared_bindings": [
+        "Editor:ctrl('a')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 115,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditSelectAll",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "EditDuplicate",
+      "category": "Edit",
+      "label": "Duplicate Selection/Line",
+      "predicate": "linear_editor",
+      "shared_bindings": [
+        "Editor:ctrl('d')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 170,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditDuplicate",
+      "evidence": "LINE"
+    },
+    {
+      "command": "EditDeleteLine",
+      "category": "Edit",
+      "label": "Delete Line",
+      "predicate": "linear_editor",
+      "shared_bindings": [
+        "Editor:ctrl_shift('d')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 171,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditDeleteLine",
+      "evidence": "LINE"
+    },
+    {
+      "command": "EditMoveLineUp",
+      "category": "Edit",
+      "label": "Move Line Up",
+      "predicate": "linear_editor",
+      "shared_bindings": [
+        "Editor:alt(Up)"
+      ],
+      "native_menu": "Edit",
+      "native_id": 172,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditMoveLineUp",
+      "evidence": "LINE"
+    },
+    {
+      "command": "EditMoveLineDown",
+      "category": "Edit",
+      "label": "Move Line Down",
+      "predicate": "linear_editor",
+      "shared_bindings": [
+        "Editor:alt(Down)"
+      ],
+      "native_menu": "Edit",
+      "native_id": 173,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditMoveLineDown",
+      "evidence": "LINE"
+    },
+    {
+      "command": "EditToggleLineComment",
+      "category": "Edit",
+      "label": "Toggle Comment",
+      "predicate": "line_comment",
+      "shared_bindings": [
+        "Editor:ctrl('/')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 174,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditToggleLineComment",
+      "evidence": "LINE"
+    },
+    {
+      "command": "EditToggleBlockComment",
+      "category": "Edit",
+      "label": "Toggle Block Comment",
+      "predicate": "block_comment",
+      "shared_bindings": [
+        "Editor:ctrl_shift('/')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 175,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditToggleBlockComment",
+      "evidence": "LINE"
+    },
+    {
+      "command": "EditIndent",
+      "category": "Edit",
+      "label": "Indent",
+      "predicate": "rectangle_editor",
+      "shared_bindings": [
+        "Editor:plain(Tab)"
+      ],
+      "native_menu": "Edit",
+      "native_id": 176,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditIndent",
+      "evidence": "ACTUAL"
+    },
+    {
+      "command": "EditOutdent",
+      "category": "Edit",
+      "label": "Outdent",
+      "predicate": "linear_editor",
+      "shared_bindings": [
+        "Editor:shift(Tab)"
+      ],
+      "native_menu": "Edit",
+      "native_id": 177,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditOutdent",
+      "evidence": "ACTUAL"
+    },
+    {
+      "command": "EditJoinLines",
+      "category": "Edit",
+      "label": "Join Lines",
+      "predicate": "linear_editor",
+      "shared_bindings": [
+        "Editor:ctrl_shift('j')"
+      ],
+      "native_menu": "Edit",
+      "native_id": 116,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditJoinLines",
+      "evidence": "ACTUAL"
+    },
+    {
+      "command": "EditSplitLine",
+      "category": "Edit",
+      "label": "Split Line",
+      "predicate": "linear_editor",
+      "shared_bindings": [
+        "Editor:plain(Enter)"
+      ],
+      "native_menu": "Edit",
+      "native_id": 117,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditSplitLine",
+      "evidence": "ACTUAL"
+    },
+    {
+      "command": "EditRectangleStart",
+      "category": "Edit",
+      "label": "Rectangle: Select From Caret/Selection (single-cell text)",
+      "predicate": "rectangle_editor",
+      "shared_bindings": [],
+      "native_menu": "Edit",
+      "native_id": 200,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditRectangleStart",
+      "evidence": "RECT"
+    },
+    {
+      "command": "EditRectangleLeft",
+      "category": "Edit",
+      "label": "Rectangle: Extend Left",
+      "predicate": "rectangle_editor",
+      "shared_bindings": [
+        "Editor:alt_shift(Left)"
+      ],
+      "native_menu": "Edit",
+      "native_id": 202,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditRectangleLeft",
+      "evidence": "RECT"
+    },
+    {
+      "command": "EditRectangleRight",
+      "category": "Edit",
+      "label": "Rectangle: Extend Right",
+      "predicate": "rectangle_editor",
+      "shared_bindings": [
+        "Editor:alt_shift(Right)"
+      ],
+      "native_menu": "Edit",
+      "native_id": 203,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditRectangleRight",
+      "evidence": "RECT"
+    },
+    {
+      "command": "EditRectangleUp",
+      "category": "Edit",
+      "label": "Rectangle: Extend Up",
+      "predicate": "rectangle_editor",
+      "shared_bindings": [
+        "Editor:alt_shift(Up)"
+      ],
+      "native_menu": "Edit",
+      "native_id": 204,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditRectangleUp",
+      "evidence": "RECT"
+    },
+    {
+      "command": "EditRectangleDown",
+      "category": "Edit",
+      "label": "Rectangle: Extend Down",
+      "predicate": "rectangle_editor",
+      "shared_bindings": [
+        "Editor:alt_shift(Down)"
+      ],
+      "native_menu": "Edit",
+      "native_id": 205,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditRectangleDown",
+      "evidence": "RECT"
+    },
+    {
+      "command": "EditRectangleCancel",
+      "category": "Edit",
+      "label": "Rectangle: Cancel",
+      "predicate": "rectangle_active",
+      "shared_bindings": [],
+      "native_menu": "Edit",
+      "native_id": 201,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditRectangleCancel",
+      "evidence": "RECT"
+    },
+    {
+      "command": "SearchFind",
+      "category": "Search",
+      "label": "Find",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Editor:ctrl('f')"
+      ],
+      "native_menu": "Search",
+      "native_id": 130,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "open_search_panel(false)",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "SearchReplace",
+      "category": "Search",
+      "label": "Replace",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Editor:ctrl('h')"
+      ],
+      "native_menu": "Search",
+      "native_id": 131,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "open_search_panel(true)",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "SearchFindNext",
+      "category": "Search",
+      "label": "Find Next",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Editor:plain(f(3))",
+        "Find:plain(f(3))",
+        "Replace:plain(f(3))",
+        "Find:plain(Enter)",
+        "Replace:plain(Enter)"
+      ],
+      "native_menu": "Search",
+      "native_id": 132,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::SearchFindNext",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "SearchFindPrevious",
+      "category": "Search",
+      "label": "Find Previous",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Editor:shift(f(3))",
+        "Find:shift(f(3))",
+        "Replace:shift(f(3))",
+        "Find:shift(Enter)",
+        "Replace:shift(Enter)"
+      ],
+      "native_menu": "Search",
+      "native_id": 133,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::SearchFindPrevious",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "SearchSelectionNext",
+      "category": "Search",
+      "label": "Find Selection Next",
+      "predicate": "source_selection",
+      "shared_bindings": [
+        "Editor:ctrl(f(3))"
+      ],
+      "native_menu": "Search",
+      "native_id": 194,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "search_selection → find_selection(true)",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "SearchSelectionPrevious",
+      "category": "Search",
+      "label": "Find Selection Previous",
+      "predicate": "source_selection",
+      "shared_bindings": [
+        "Editor:ctrl_shift(f(3))"
+      ],
+      "native_menu": "Search",
+      "native_id": 195,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "search_selection → find_selection(false)",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "SearchGoToPosition",
+      "category": "Search",
+      "label": "Go to Line / Column",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:ctrl('g')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 160,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "open_navigation_panel → go_to_position",
+      "evidence": "NAV"
+    },
+    {
+      "command": "SearchCancel",
+      "category": "Search",
+      "label": "Cancel Document Search / Rectangle",
+      "predicate": "document_search_running",
+      "shared_bindings": [
+        "Editor:plain(Escape)"
+      ],
+      "native_menu": "Search",
+      "native_id": 196,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::SearchCancel",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "SearchHistoryPrevious",
+      "category": "Search",
+      "label": "Previous Search Query",
+      "predicate": "search_history",
+      "shared_bindings": [
+        "Find:alt(Up)",
+        "Replace:alt(Up)"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 163,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "execute_search_option → historial/opciones Workbench",
+      "evidence": "NAV"
+    },
+    {
+      "command": "SearchHistoryNext",
+      "category": "Search",
+      "label": "Next Search Query",
+      "predicate": "search_history",
+      "shared_bindings": [
+        "Find:alt(Down)",
+        "Replace:alt(Down)"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 164,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "execute_search_option → historial/opciones Workbench",
+      "evidence": "NAV"
+    },
+    {
+      "command": "SearchProject",
+      "category": "Search",
+      "label": "Find in Project",
+      "predicate": "project",
+      "shared_bindings": [
+        "Global:ctrl_shift('f')"
+      ],
+      "native_menu": "Search",
+      "native_id": 134,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "open_project_search(false)",
+      "evidence": "PROJECT"
+    },
+    {
+      "command": "SearchCancelProject",
+      "category": "Search",
+      "label": "Cancel Project Search",
+      "predicate": "project_search_running",
+      "shared_bindings": [
+        "BottomPanel:plain(Escape)"
+      ],
+      "native_menu": "Search",
+      "native_id": 135,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "ProjectSearch.cancel",
+      "evidence": "PROJECT"
+    },
+    {
+      "command": "SearchReplaceProject",
+      "category": "Search",
+      "label": "Replace in Project",
+      "predicate": "project_replace_ready",
+      "shared_bindings": [
+        "Global:ctrl_shift('h')"
+      ],
+      "native_menu": "Search",
+      "native_id": 137,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "open_project_replace → preview/apply step",
+      "evidence": "GIT"
+    },
+    {
+      "command": "SearchToggleCase",
+      "category": "Search",
+      "label": "Match Case",
+      "predicate": "always",
+      "shared_bindings": [
+        "Find:alt('c')",
+        "Replace:alt('c')"
+      ],
+      "native_menu": "Search",
+      "native_id": 138,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "execute_search_option → historial/opciones Workbench",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "SearchToggleWholeWord",
+      "category": "Search",
+      "label": "Whole Word",
+      "predicate": "always",
+      "shared_bindings": [
+        "Find:alt('w')",
+        "Replace:alt('w')"
+      ],
+      "native_menu": "Search",
+      "native_id": 139,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "execute_search_option → historial/opciones Workbench",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "SearchToggleRegex",
+      "category": "Search",
+      "label": "Regular Expression",
+      "predicate": "never",
+      "shared_bindings": [
+        "Find:alt('r')",
+        "Replace:alt('r')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Pendiente",
+      "route_or_gap": "never; motor/dependencia pendiente de autorización, no construir parser propio.",
+      "evidence": "Sin recorrido GUI"
+    },
+    {
+      "command": "PaletteOpen",
+      "category": "Tools",
+      "label": "Command Palette…",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:ctrl_shift('p')"
+      ],
+      "native_menu": "View",
+      "native_id": 126,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "open_selector(Palette) → accept_selector → execute",
+      "evidence": "SELECTOR"
+    },
+    {
+      "command": "TabNext",
+      "category": "Navigation",
+      "label": "Next Tab",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:ctrl(Tab)",
+        "Global:ctrl(PageDown)"
+      ],
+      "native_menu": "View",
+      "native_id": 124,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::TabNext",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "TabPrevious",
+      "category": "Navigation",
+      "label": "Previous Tab",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:ctrl_shift(Tab)",
+        "Global:ctrl(PageUp)"
+      ],
+      "native_menu": "View",
+      "native_id": 125,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::TabPrevious",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "Tab1",
+      "category": "Navigation",
+      "label": "Tab 1",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt('1')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 180,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::Tab1",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "Tab2",
+      "category": "Navigation",
+      "label": "Tab 2",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt('2')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 181,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::Tab2",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "Tab3",
+      "category": "Navigation",
+      "label": "Tab 3",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt('3')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 182,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::Tab3",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "Tab4",
+      "category": "Navigation",
+      "label": "Tab 4",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt('4')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 183,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::Tab4",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "Tab5",
+      "category": "Navigation",
+      "label": "Tab 5",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt('5')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 184,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::Tab5",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "Tab6",
+      "category": "Navigation",
+      "label": "Tab 6",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt('6')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 185,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::Tab6",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "Tab7",
+      "category": "Navigation",
+      "label": "Tab 7",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt('7')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 186,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::Tab7",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "Tab8",
+      "category": "Navigation",
+      "label": "Tab 8",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt('8')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 187,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::Tab8",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "Tab9",
+      "category": "Navigation",
+      "label": "Last Tab",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt('9')"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 188,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::Tab9",
+      "evidence": "REOPEN"
+    },
+    {
+      "command": "ViewExplorer",
+      "category": "View",
+      "label": "Explorer",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:ctrl_shift('e')"
+      ],
+      "native_menu": "View",
+      "native_id": 128,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "show_explorer",
+      "evidence": "EXP"
+    },
+    {
+      "command": "ExplorerRefresh",
+      "category": "View",
+      "label": "Explorer: Refresh Directory",
+      "predicate": "explorer",
+      "shared_bindings": [
+        "Sidebar:plain(f(5))"
+      ],
+      "native_menu": "Project",
+      "native_id": 150,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "refresh_explorer",
+      "evidence": "EXP"
+    },
+    {
+      "command": "ExplorerCancel",
+      "category": "View",
+      "label": "Explorer: Cancel Loading / Return to Editor",
+      "predicate": "explorer_focus",
+      "shared_bindings": [
+        "Sidebar:plain(Escape)"
+      ],
+      "native_menu": "Project",
+      "native_id": 151,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "cancel_explorer",
+      "evidence": "EXP"
+    },
+    {
+      "command": "ViewToggleInvisibles",
+      "category": "View",
+      "label": "Show Invisible Characters",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:ctrl_alt('i')"
+      ],
+      "native_menu": "View",
+      "native_id": 127,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::ViewToggleInvisibles",
+      "evidence": "VISIBLE"
+    },
+    {
+      "command": "ViewDatabase",
+      "category": "View",
+      "label": "Database / Schema",
+      "predicate": "never",
+      "shared_bindings": [
+        "Global:ctrl_alt('d')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Pendiente",
+      "route_or_gap": "never; capacidad de esquema/proveedor ausente.",
+      "evidence": "Sin recorrido GUI"
+    },
+    {
+      "command": "ViewGit",
+      "category": "View",
+      "label": "Git: Active File Diff",
+      "predicate": "git_diff",
+      "shared_bindings": [
+        "Global:ctrl_shift('g')"
+      ],
+      "native_menu": "Git",
+      "native_id": 141,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "request_git → controller compartido → TASKS_MESSAGE",
+      "evidence": "GIT"
+    },
+    {
+      "command": "GitDiffHead",
+      "category": "View",
+      "label": "Git: Compare HEAD Snapshot",
+      "predicate": "git_diff",
+      "shared_bindings": [],
+      "native_menu": "Git",
+      "native_id": 142,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "request_git → controller compartido → TASKS_MESSAGE",
+      "evidence": "GIT"
+    },
+    {
+      "command": "GitDiffIndex",
+      "category": "View",
+      "label": "Git: Compare Index Snapshot",
+      "predicate": "git_diff",
+      "shared_bindings": [],
+      "native_menu": "Git",
+      "native_id": 143,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "request_git → controller compartido → TASKS_MESSAGE",
+      "evidence": "GIT"
+    },
+    {
+      "command": "GitDiffRefresh",
+      "category": "View",
+      "label": "Git: Refresh Snapshot",
+      "predicate": "git_diff",
+      "shared_bindings": [],
+      "native_menu": "Git",
+      "native_id": 144,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "request_git → controller compartido → TASKS_MESSAGE",
+      "evidence": "GIT"
+    },
+    {
+      "command": "GitDiffCancel",
+      "category": "View",
+      "label": "Git: Cancel Diff",
+      "predicate": "git_diff_running",
+      "shared_bindings": [],
+      "native_menu": "Git",
+      "native_id": 145,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "cancel_git → controller compartido",
+      "evidence": "GIT"
+    },
+    {
+      "command": "GitConfigureExecutable",
+      "category": "View",
+      "label": "Git: Configure Executable…",
+      "predicate": "git_repository",
+      "shared_bindings": [],
+      "native_menu": "Git",
+      "native_id": 148,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "Action.ConfigureGit → selector nativo → revalidación",
+      "evidence": "GIT"
+    },
+    {
+      "command": "GitRepositoryStatus",
+      "category": "View",
+      "label": "Git: Repository Status (Read-Only)",
+      "predicate": "git_repository",
+      "shared_bindings": [],
+      "native_menu": "Git",
+      "native_id": 140,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "request_git → controller compartido → TASKS_MESSAGE",
+      "evidence": "GIT"
+    },
+    {
+      "command": "GitStatusRefresh",
+      "category": "View",
+      "label": "Git: Refresh Repository Status",
+      "predicate": "git_repository",
+      "shared_bindings": [],
+      "native_menu": "Git",
+      "native_id": 146,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "request_git → controller compartido → TASKS_MESSAGE",
+      "evidence": "GIT"
+    },
+    {
+      "command": "GitStatusCancel",
+      "category": "View",
+      "label": "Git: Cancel Repository Status",
+      "predicate": "git_status_running",
+      "shared_bindings": [],
+      "native_menu": "Git",
+      "native_id": 147,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "cancel_git → controller compartido",
+      "evidence": "GIT"
+    },
+    {
+      "command": "ViewSymbols",
+      "category": "View",
+      "label": "Symbols",
+      "predicate": "never",
+      "shared_bindings": [],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Pendiente",
+      "route_or_gap": "never; capacidad de símbolos/proveedor ausente.",
+      "evidence": "Sin recorrido GUI"
+    },
+    {
+      "command": "ViewToggleBottomPanel",
+      "category": "View",
+      "label": "Toggle Bottom Panel",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:ctrl('j')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Pendiente",
+      "route_or_gap": "Sin host GUI del panel inferior genérico; Ctrl+J no ejecuta Toggle.",
+      "evidence": "Sin recorrido GUI"
+    },
+    {
+      "command": "ViewTerminal",
+      "category": "View",
+      "label": "Terminal",
+      "predicate": "terminal",
+      "shared_bindings": [
+        "Global:ctrl('`')",
+        "BottomPanel:alt('4')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Pendiente",
+      "route_or_gap": "Terminal embebido no disponible; no abrir proceso por inferencia.",
+      "evidence": "Sin recorrido GUI"
+    },
+    {
+      "command": "ViewProblems",
+      "category": "View",
+      "label": "Problems",
+      "predicate": "always",
+      "shared_bindings": [
+        "BottomPanel:alt('1')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Pendiente",
+      "route_or_gap": "Sin presentación GUI de diagnósticos F3 (no proveedor nuevo necesario).",
+      "evidence": "Sin recorrido GUI"
+    },
+    {
+      "command": "ViewOutput",
+      "category": "View",
+      "label": "Output",
+      "predicate": "always",
+      "shared_bindings": [
+        "BottomPanel:alt('2')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Pendiente",
+      "route_or_gap": "Sin presentación GUI del log F3 acotado.",
+      "evidence": "Sin recorrido GUI"
+    },
+    {
+      "command": "ViewSearchResults",
+      "category": "View",
+      "label": "Search Results",
+      "predicate": "always",
+      "shared_bindings": [
+        "BottomPanel:alt('3')"
+      ],
+      "native_menu": "Search",
+      "native_id": 136,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "open_project_search(true)",
+      "evidence": "PROJECT"
+    },
+    {
+      "command": "EditorSplitRight",
+      "category": "View",
+      "label": "Split Right",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:alt_shift('2')"
+      ],
+      "native_menu": "View",
+      "native_id": 120,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditorSplitRight",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "EditorOneGroup",
+      "category": "View",
+      "label": "One Group",
+      "predicate": "split",
+      "shared_bindings": [
+        "Global:alt_shift('1')"
+      ],
+      "native_menu": "View",
+      "native_id": 121,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditorOneGroup",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "EditorFocusPrimary",
+      "category": "Navigation",
+      "label": "Focus Group 1",
+      "predicate": "has_document",
+      "shared_bindings": [
+        "Global:ctrl('1')"
+      ],
+      "native_menu": "View",
+      "native_id": 122,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditorFocusPrimary",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "EditorFocusSecondary",
+      "category": "Navigation",
+      "label": "Focus Group 2",
+      "predicate": "split",
+      "shared_bindings": [
+        "Global:ctrl('2')"
+      ],
+      "native_menu": "View",
+      "native_id": 123,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditorFocusSecondary",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "EditorTogglePin",
+      "category": "View",
+      "label": "Pin / Unpin Reference",
+      "predicate": "split",
+      "shared_bindings": [
+        "Global:ctrl_alt('p')"
+      ],
+      "native_menu": "View",
+      "native_id": 129,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditorTogglePin",
+      "evidence": "NATIVE"
+    },
+    {
+      "command": "EditorToggleScrollLink",
+      "category": "View",
+      "label": "Link / Unlink Scroll",
+      "predicate": "split",
+      "shared_bindings": [
+        "Global:ctrl_alt('l')"
+      ],
+      "native_menu": "View",
+      "native_id": 178,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::EditorToggleScrollLink",
+      "evidence": "ACTUAL"
+    },
+    {
+      "command": "EditorOpenToSide",
+      "category": "Navigation",
+      "label": "Open to Side",
+      "predicate": "open_to_side",
+      "shared_bindings": [
+        "Editor:ctrl(Enter)",
+        "Sidebar:ctrl(Enter)"
+      ],
+      "native_menu": "Project",
+      "native_id": 152,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "activate_explorer(true) / Workbench.open_active_to_side",
+      "evidence": "EXP"
+    },
+    {
+      "command": "NavigateBack",
+      "category": "Navigation",
+      "label": "Navigate Back",
+      "predicate": "nav_back",
+      "shared_bindings": [
+        "Global:alt(Left)"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 161,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::NavigateBack",
+      "evidence": "NAV"
+    },
+    {
+      "command": "NavigateForward",
+      "category": "Navigation",
+      "label": "Navigate Forward",
+      "predicate": "nav_forward",
+      "shared_bindings": [
+        "Global:alt(Right)"
+      ],
+      "native_menu": "Navigation",
+      "native_id": 162,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "State.execute → Workbench.execute::NavigateForward",
+      "evidence": "NAV"
+    },
+    {
+      "command": "FocusNext",
+      "category": "Navigation",
+      "label": "Focus Next Area",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:plain(f(6))"
+      ],
+      "native_menu": "Project",
+      "native_id": 153,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "alternar explorer_focused si región visible",
+      "evidence": "EXP"
+    },
+    {
+      "command": "FocusPrevious",
+      "category": "Navigation",
+      "label": "Focus Previous Area",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:shift(f(6))"
+      ],
+      "native_menu": "Project",
+      "native_id": 154,
+      "supported": true,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Conectado",
+      "route_or_gap": "alternar explorer_focused si región visible",
+      "evidence": "EXP"
+    },
+    {
+      "command": "ProgressCheck",
+      "category": "Build",
+      "label": "Check Syntax",
+      "predicate": "abl",
+      "shared_bindings": [
+        "Global:plain(f(7))"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Fuera del bloque",
+      "route_or_gap": "Sin proveedor validado ni perfil GUI; no supported. Deuda del enum, M3.",
+      "evidence": "No ejecutado"
+    },
+    {
+      "command": "ProgressCompile",
+      "category": "Build",
+      "label": "Compile",
+      "predicate": "abl",
+      "shared_bindings": [
+        "Global:ctrl(f(7))"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Fuera del bloque",
+      "route_or_gap": "Sin proveedor validado ni perfil GUI; no supported. Deuda del enum, M3.",
+      "evidence": "No ejecutado"
+    },
+    {
+      "command": "ProgressRun",
+      "category": "Build",
+      "label": "Run",
+      "predicate": "abl",
+      "shared_bindings": [
+        "Global:plain(f(5))"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Fuera del bloque",
+      "route_or_gap": "Sin proveedor validado ni perfil GUI; no supported. Deuda del enum, M3.",
+      "evidence": "No ejecutado"
+    },
+    {
+      "command": "ProgressRefreshSchema",
+      "category": "Build",
+      "label": "Refresh Database Schema",
+      "predicate": "abl_project",
+      "shared_bindings": [
+        "Global:shift(f(7))"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Fuera del bloque",
+      "route_or_gap": "Sin proveedor validado ni perfil GUI; no supported. Deuda del enum, M3.",
+      "evidence": "No ejecutado"
+    },
+    {
+      "command": "MenuFile",
+      "category": "Menu",
+      "label": "File Menu",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:alt('f')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Adaptación nativa parcial",
+      "route_or_gap": "Menú Win32 equivalente por Alt; no ejecuta OpenMenu del registro.",
+      "evidence": "Solo inspección estática; aceleradores físicos pendientes"
+    },
+    {
+      "command": "MenuEdit",
+      "category": "Menu",
+      "label": "Edit Menu",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:alt('e')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Adaptación nativa parcial",
+      "route_or_gap": "Menú Win32 equivalente por Alt; no ejecuta OpenMenu del registro.",
+      "evidence": "Solo inspección estática; aceleradores físicos pendientes"
+    },
+    {
+      "command": "MenuSearch",
+      "category": "Menu",
+      "label": "Search Menu",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:alt('s')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Adaptación nativa parcial",
+      "route_or_gap": "Menú Win32 equivalente por Alt; no ejecuta OpenMenu del registro.",
+      "evidence": "Solo inspección estática; aceleradores físicos pendientes"
+    },
+    {
+      "command": "MenuProject",
+      "category": "Menu",
+      "label": "Project Menu",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:alt('p')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Adaptación nativa parcial",
+      "route_or_gap": "Menú Win32 equivalente por Alt; no ejecuta OpenMenu del registro.",
+      "evidence": "Solo inspección estática; aceleradores físicos pendientes"
+    },
+    {
+      "command": "MenuBuild",
+      "category": "Menu",
+      "label": "Build Menu",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:alt('b')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Adaptación nativa parcial",
+      "route_or_gap": "Sin menú nativo equivalente; Tools agrupa Palette en View, Build espera proveedor, Help sin contenido definido.",
+      "evidence": "Solo inspección estática; aceleradores físicos pendientes"
+    },
+    {
+      "command": "MenuTools",
+      "category": "Menu",
+      "label": "Tools Menu",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:alt('t')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Adaptación nativa parcial",
+      "route_or_gap": "Sin menú nativo equivalente; Tools agrupa Palette en View, Build espera proveedor, Help sin contenido definido.",
+      "evidence": "Solo inspección estática; aceleradores físicos pendientes"
+    },
+    {
+      "command": "MenuView",
+      "category": "Menu",
+      "label": "View Menu",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:alt('v')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Adaptación nativa parcial",
+      "route_or_gap": "Menú Win32 equivalente por Alt; no ejecuta OpenMenu del registro.",
+      "evidence": "Solo inspección estática; aceleradores físicos pendientes"
+    },
+    {
+      "command": "MenuHelp",
+      "category": "Menu",
+      "label": "Help Menu",
+      "predicate": "always",
+      "shared_bindings": [
+        "Global:alt('h')"
+      ],
+      "native_menu": null,
+      "native_id": null,
+      "supported": false,
+      "palette": "listado; enabled=supported AND predicate",
+      "state": "Adaptación nativa parcial",
+      "route_or_gap": "Sin menú nativo equivalente; Tools agrupa Palette en View, Build espera proveedor, Help sin contenido definido.",
+      "evidence": "Solo inspección estática; aceleradores físicos pendientes"
+    }
+  ]
+}

@@ -101,6 +101,11 @@ RECTANGLE_REQUIRED = {
     "rectangle_modal_explorer_palette_target", "rectangle_split_pin_revision_encoding",
     "rectangle_repertoire_budget_atomic", "rectangle_mouse_capture_versioned",
 }
+PARITY_REQUIRED = {
+    "parity_indent_outdent_four_encodings_undo", "parity_edit_modal_explorer_stale_palette",
+    "parity_join_split_focus_and_rectangle", "parity_scroll_link_keyboard_menu_palette_pin",
+    "parity_scroll_link_resize_readonly_cleanup",
+}
 
 def ordinary_directory(path):
     info = path.lstat()
@@ -160,7 +165,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle"), default="all")
+    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -187,7 +192,8 @@ def main():
                 + (["--smoke-navigation-only"] if args.section == "navigation" else
                    ["--smoke-line-edit-only"] if args.section == "line-edit" else
                    ["--smoke-selection-reopen-only"] if args.section == "selection-reopen" else
-                   ["--smoke-rectangle-only"] if args.section == "rectangle" else []),
+                   ["--smoke-rectangle-only"] if args.section == "rectangle" else
+                   ["--smoke-parity-only"] if args.section == "parity" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -202,7 +208,8 @@ def main():
                 LINE_EDIT_REQUIRED if args.section == "line-edit" else
                 SELECTION_REOPEN_REQUIRED if args.section == "selection-reopen" else
                 RECTANGLE_REQUIRED if args.section == "rectangle" else
-                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED)
+                PARITY_REQUIRED if args.section == "parity" else
+                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED | PARITY_REQUIRED)
     if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
     if payload.get("backend") != "Win32/GDI" or payload.get("window") != "own_hidden_hwnd" or payload.get("native_paints", 0) < 1:

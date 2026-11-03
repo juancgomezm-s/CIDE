@@ -399,3 +399,22 @@ Raw focus/edge/compile/lint failures and hashes retained, no closed profiles rer
 Finish the remaining universal GUI inventory before optional provider APIs; global/
 physical gates, general Unicode columns, OS clipboard, symlink and GNU notices stay
 open. No new dependency/provider/AVM/install/security changes, CI, push or publication.
+
+## GUI command inventory and edit/group closure
+
+Read docs/M2B_GUI_INVENTORY.md, its 104-row command matrix and static source hashes.
+85 commands have actual GUI routes; 19 lack direct support for documented reasons.
+Palette lists unsupported commands disabled; shared bindings are not proof of modal
+dispatch or physical keyboard acceptance. Native Menu* adaptation is partial.
+Indent/Outdent now have Edit entries; ScrollLink has View/keyboard/palette and a
+persistent indicator. Indent/Outdent/Join/Split require actual editor_input in both
+frontends. Preserve Workbench delta-only linked scrolling, independent pin/carets,
+strict encoding, one undo and no source edits behind modals/Explorer/stale palette.
+Two directed Rust cases and 12 own-HWND checks passed (one/five new), fmt/Clippy/
+release; initial fixture lint retained. No closed suites/profiles repeated.
+Next concrete universal integration is GUI generic bottom-panel host, existing F3
+Problems/Output and three-region focus. Define row/destination/state/cancellation
+contract first, without inferring new provider implementation. Project results are
+a specific panel, not that generic host. Preserve outstanding selector input,
+native menu, physical/global/Unicode/clipboard/symlink/notices limitations.
+No new dependencies/providers/AVM/install/security changes, CI, push or publication.

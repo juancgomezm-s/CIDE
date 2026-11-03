@@ -16,6 +16,7 @@ mod navigation_panel;
 mod navigation_smoke;
 mod notify;
 mod paint;
+mod parity_smoke;
 mod project_paint;
 mod project_panel;
 mod project_results;
@@ -121,6 +122,13 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         175,
         CommandId::EditToggleBlockComment,
         "Toggle &Block Comment",
+    ),
+    (176, CommandId::EditIndent, "&Indent"),
+    (177, CommandId::EditOutdent, "&Outdent"),
+    (
+        178,
+        CommandId::EditorToggleScrollLink,
+        "Link / Unlink &Scroll",
     ),
     (118, CommandId::FileSaveAll, "Save A&ll..."),
     (119, CommandId::FileReopenClosed, "Reopen Closed &Tab"),
@@ -1479,7 +1487,8 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
         }
         for (id, command, label) in COMMANDS.iter().filter(|(id, _, _)| {
             (*id >= start && *id < end)
-                || (start == 110 && (170..176).contains(id))
+                || (start == 110 && (170..178).contains(id))
+                || (start == 120 && *id == 178)
                 || (start == 110 && (200..206).contains(id))
                 || (start == 101 && *id == 119)
                 || (start == 130 && (194..197).contains(id))

@@ -46,6 +46,14 @@ pub(super) struct Frame {
     explorer: Option<super::explorer_panel::ExplorerFrame>,
 }
 impl Frame {
+    pub(super) fn contains_status(&self, needle: &str) -> bool {
+        let end = self
+            .status
+            .iter()
+            .position(|unit| *unit == 0)
+            .unwrap_or(self.status.len());
+        String::from_utf16(&self.status[..end]).is_ok_and(|text| text.contains(needle))
+    }
     pub(super) fn explorer_hits(&self) -> Option<super::explorer_panel::ExplorerHits> {
         self.explorer
             .as_ref()
@@ -422,9 +430,14 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         .active_encoding()
         .map_or("choose encoding", |encoding| encoding.name());
     let status = wide(&format!(
-        "Ln {} Col {} (scalar) · {encoding} · {}",
+        "Ln {} Col {} (scalar) · {encoding}{} · {}",
         position.line + 1,
         position.column + 1,
+        if state.workbench.panes().scroll_linked() {
+            " · Scroll linked"
+        } else {
+            ""
+        },
         state.status
     ));
     Frame {
