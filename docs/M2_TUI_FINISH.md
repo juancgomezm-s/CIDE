@@ -11,7 +11,7 @@ evalúa por comportamiento/evidencia; las puertas externas no se declaran cumpli
 | Capacidades internas y navegación textual | Integrado/validado: registro interno, proveedor opcional y símbolos versionados, sin segundo buffer; inferencia lexical separada del compilador. [Evidencia](M2_SOURCE_SERVICES.md). |
 | Includes/RUN y completado | Includes/RUN léxicos y candidatos confinados integrados; dinámicos no resueltos. Completado textual local integrado; semántico permanece M4/servicio real. |
 | Plantillas/snippets M2A | Integrado y validado: motor universal, siete plantillas del proveedor opcional, parámetros/preview/aceptación y undo único. [Evidencia](M2_SNIPPETS.md). |
-| Auditoría final de teclado/flujo | Revisar comandos habilitados, foco, guardar/cerrar y resultados; construir huecos reales antes de la ventana final de pruebas. |
+| Auditoría final de teclado/flujo | Teclado/overlays auditados:117 casos TUI y tres flujos ConPTY, límites y foco corregidos; sigue clipboard Windows explícito. |
 | Aceptación física/global | RAM/arranque/latencia real, teclado/terminales, Unicode general/IME y clipboard OS conservan evidencia y límites; no se cierran con modelo o ConPTY. |
 
 Progress Check/Compile/Run/Schema exige perfil/herramientas/versión reales y

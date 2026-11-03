@@ -142,9 +142,11 @@ fn document_search_escape_and_input_limits_leave_no_hidden_work_or_edits() {
     let before = app.workbench.search().query.clone();
     app.handle_event(Event::Paste("q".repeat(5000)));
     assert_eq!(app.workbench.search().query, before);
-    assert!(!app
+    assert!(app
         .registry
         .is_enabled(CommandId::SearchToggleRegex, &app.command_context()));
+    app.dispatch(CommandId::SearchToggleRegex);
+    assert!(app.workbench.search().regex);
 }
 
 #[test]
@@ -507,7 +509,7 @@ fn view_menu_scrolls_to_the_selected_command_in_a_short_terminal() {
     app.dispatch(CommandId::MenuView);
     key(&mut app, KeyCode::Up, KeyModifiers::NONE); // wrap to the final registered command
     let screen = app.frame(45, 10);
-    assert!((1..9).any(|row| screen.row_text(row).contains("Configure Executable")));
+    assert!((1..9).any(|row| screen.row_text(row).contains("Open Comparison Hunk")));
     // Menu interiors must be opaque even when shorter labels leave spare cells.
     for row in 2..8 {
         assert!(!screen

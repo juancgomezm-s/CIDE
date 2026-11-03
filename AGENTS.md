@@ -612,3 +612,9 @@ recorridos ConPTY, fmt/Clippy/release aprobados. Sin AVM ni aceptación física/
 Sigue auditoría final de teclado, foco y flujos TUI; CI permanece en M5.
 
 Snippet definitions belong to provider metadata; generic SnippetSession owns a bounded proposal, validates the exact origin and applies one expected-revision transaction. Never interpolate recursively or run generated ABL during editing.
+
+## TUI overlay closure, 2026-11-03
+Topmost overlay owns both keys and Event::Paste, even above snippet/source/diff.
+Prompt/path4096 UTF8, position64, palette256; input limits must be atomic.
+117 distinct TUI cases plus three ConPTY flows passed; physical clipboard/global
+acceptance remains open. Next active block: explicit Windows clipboard in TUI.

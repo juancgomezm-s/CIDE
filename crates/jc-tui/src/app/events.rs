@@ -222,6 +222,12 @@ impl TuiApp {
     }
 
     fn handle_paste(&mut self, text: &str) {
+        // Keyboard and paste share the topmost overlay. A palette/menu may be
+        // opened above a source selector, snippet or read-only comparison.
+        if !matches!(self.overlay, UiOverlay::None) {
+            self.append_overlay_text(text);
+            return;
+        }
         if self.showing_snippet() {
             self.edit_snippet(jc_app::FieldEdit::Insert(text));
             return;

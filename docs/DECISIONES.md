@@ -578,3 +578,9 @@ El registro interno aporta metadata por perfil; jc-app valida parámetros y expa
 variables una sola vez. Selección16KiB/propuesta64KiB, encoding estricto y captura
 de revisión/vista/caret/ruta antes de aceptar. TUI suspende entrada fuente durante
 el wizard; preview inmutable y apply_text_edits único. [Evidencia](M2_SNIPPETS.md).
+
+## D55 — Una ruta de entrada por overlay y cuotas de formulario
+La precedencia de Event::Paste coincide con teclas: primero overlay superior,
+después modal de función y por último área primaria. Límites se aplican antes de
+retener entrada y también al submit. Paginación conserva selección visible y no
+ejecuta comandos. Evidencia `m2-tui-closure-2026-11-03-*`.

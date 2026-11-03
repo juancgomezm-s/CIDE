@@ -143,6 +143,7 @@ impl TuiApp {
         self.syntax_pending = false;
         self.syntax_targets = [None, None];
         let layout = FrameLayout::new(self, width, height);
+        self.last_frame_height = layout.height;
         let mut primary = EditorText::default();
         let mut secondary = EditorText::default();
         let mut search_positions = Vec::new();

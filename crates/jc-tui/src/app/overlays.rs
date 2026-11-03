@@ -1,4 +1,4 @@
-use super::menus::{next_selectable, previous_selectable};
+use super::menus::{next_selectable, page_selectable, previous_selectable};
 use super::TuiApp;
 use crate::input::{is_plain_text, to_stroke};
 use crate::state::UiOverlay;
@@ -15,18 +15,7 @@ impl TuiApp {
             self.handle_search_input(key);
             return;
         }
-        if let UiOverlay::Prompt {
-            kind: crate::state::PromptKind::GoToPosition,
-            input,
-        } = &self.overlay
-        {
-            if let KeyCode::Char(ch) = key.code {
-                if is_plain_text(key) && input.len() + ch.len_utf8() > 64 {
-                    self.status = "Position input exceeds 64 bytes".into();
-                    return;
-                }
-            }
-        }
+        let page_rows = self.overlay_page_rows();
         match self.overlay.clone() {
             UiOverlay::QuickOpen { input, selected } => {
                 self.handle_quick_open_key(key, input, selected)
@@ -49,6 +38,12 @@ impl TuiApp {
                     }
                     KeyCode::Up => selected = selected.saturating_sub(1),
                     KeyCode::Down => selected = (selected + 1).min(count.saturating_sub(1)),
+                    KeyCode::PageUp => selected = selected.saturating_sub(page_rows),
+                    KeyCode::PageDown => {
+                        selected = selected
+                            .saturating_add(page_rows)
+                            .min(count.saturating_sub(1))
+                    }
                     KeyCode::Home => selected = 0,
                     KeyCode::End => selected = count.saturating_sub(1),
                     _ => {}
@@ -62,7 +57,7 @@ impl TuiApp {
                 {
                     self.status = match self.workbench.toggle_search_regex() {
                         Ok(()) => format!(
-                            "Project regex: {} · replacement is literal",
+                            "Project regex: {} Â· replacement is literal",
                             self.workbench.search().regex
                         ),
                         Err(error) => error.to_string(),
@@ -74,21 +69,14 @@ impl TuiApp {
                     input.pop();
                     self.overlay = UiOverlay::Prompt { kind, input };
                 }
-                KeyCode::Char(ch) if is_plain_text(key) => {
-                    if matches!(
+                KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
+                    self.overlay = UiOverlay::Prompt {
                         kind,
-                        crate::state::PromptKind::ProjectQuery
-                            | crate::state::PromptKind::GitExecutable
-                            | crate::state::PromptKind::ProjectInclude
-                            | crate::state::PromptKind::ProjectExclude
-                            | crate::state::PromptKind::ProjectReplacement
-                    ) && input.len() + ch.len_utf8() > 4096
-                    {
-                        self.status = "Project query/filter exceeds 4096 bytes".into();
-                        return;
-                    }
-                    input.push(ch);
-                    self.overlay = UiOverlay::Prompt { kind, input };
+                        input: String::new(),
+                    };
+                }
+                KeyCode::Char(ch) if is_plain_text(key) => {
+                    self.append_overlay_text(&ch.to_string())
                 }
                 _ => {}
             },
@@ -127,9 +115,24 @@ impl TuiApp {
                     input.pop();
                     self.overlay = UiOverlay::Palette { input, selected: 0 };
                 }
+                KeyCode::Char('u') if key.modifiers == KeyModifiers::CONTROL => {
+                    self.overlay = UiOverlay::Palette {
+                        input: String::new(),
+                        selected: 0,
+                    };
+                }
+                KeyCode::Home | KeyCode::End | KeyCode::PageUp | KeyCode::PageDown => {
+                    let last = self.palette_commands(&input).len().saturating_sub(1);
+                    selected = match key.code {
+                        KeyCode::Home => 0,
+                        KeyCode::End => last,
+                        KeyCode::PageUp => selected.saturating_sub(page_rows),
+                        _ => selected.saturating_add(page_rows).min(last),
+                    };
+                    self.overlay = UiOverlay::Palette { input, selected };
+                }
                 KeyCode::Char(ch) if is_plain_text(key) => {
-                    input.push(ch);
-                    self.overlay = UiOverlay::Palette { input, selected: 0 };
+                    self.append_overlay_text(&ch.to_string())
                 }
                 _ => {}
             },
@@ -143,6 +146,17 @@ impl TuiApp {
                     }
                     KeyCode::Down => {
                         selected = next_selectable(&entries, selected);
+                        self.overlay = UiOverlay::Menu { menu, selected };
+                    }
+                    KeyCode::Home | KeyCode::End | KeyCode::PageUp | KeyCode::PageDown => {
+                        selected = match key.code {
+                            KeyCode::Home => next_selectable(&entries, usize::MAX),
+                            KeyCode::End => page_selectable(&entries, 0, entries.len(), true),
+                            KeyCode::PageUp => {
+                                page_selectable(&entries, selected, page_rows, false)
+                            }
+                            _ => page_selectable(&entries, selected, page_rows, true),
+                        };
                         self.overlay = UiOverlay::Menu { menu, selected };
                     }
                     KeyCode::Left => self.switch_menu(menu, -1),
@@ -214,31 +228,20 @@ impl TuiApp {
             self.edit_search_field(jc_app::FieldEdit::Insert(text));
             return;
         }
-        if let UiOverlay::Prompt {
-            kind: crate::state::PromptKind::GoToPosition,
-            input,
-        } = &self.overlay
-        {
-            if input.len() + text.len() > 64 {
-                self.status = "Position input exceeds 64 bytes".into();
+        let bounded = match &self.overlay {
+            UiOverlay::Prompt { kind, input } => Some((input.len(), prompt_limit(*kind))),
+            UiOverlay::Palette { input, .. } => Some((input.len(), 256)),
+            _ => None,
+        };
+        if let Some((len, limit)) = bounded {
+            if text.len() > limit.saturating_sub(len) {
+                self.status = format!("Input exceeds {limit} UTF-8 bytes");
                 return;
             }
         }
         match self.overlay.clone() {
             UiOverlay::QuickOpen { input, .. } => self.append_quick_open_text(input, text),
             UiOverlay::Prompt { kind, mut input } => {
-                if matches!(
-                    kind,
-                    crate::state::PromptKind::ProjectQuery
-                        | crate::state::PromptKind::GitExecutable
-                        | crate::state::PromptKind::ProjectInclude
-                        | crate::state::PromptKind::ProjectExclude
-                        | crate::state::PromptKind::ProjectReplacement
-                ) && input.len() + text.len() > 4096
-                {
-                    self.status = "Project query/filter exceeds 4096 bytes".into();
-                    return;
-                }
                 input.push_str(text);
                 self.overlay = UiOverlay::Prompt { kind, input };
             }
@@ -251,5 +254,25 @@ impl TuiApp {
             }
             _ => {}
         }
+    }
+    fn overlay_page_rows(&self) -> usize {
+        let height = self.last_frame_height.saturating_sub(2);
+        usize::from(
+            match self.overlay {
+                UiOverlay::Menu { .. } => height.saturating_sub(2),
+                UiOverlay::Palette { .. } => height.min(16).saturating_sub(4),
+                UiOverlay::ProjectReplacePreview { .. } => height.min(22).saturating_sub(6),
+                _ => 10,
+            }
+            .max(1),
+        )
+    }
+}
+
+pub(super) fn prompt_limit(kind: crate::state::PromptKind) -> usize {
+    if kind == crate::state::PromptKind::GoToPosition {
+        64
+    } else {
+        4096
     }
 }

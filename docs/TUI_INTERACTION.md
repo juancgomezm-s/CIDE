@@ -372,3 +372,22 @@ Enter/F6 reemplaza uno; CtrlEnter/F9 todos; F3/ShiftF3 siguiente/anterior.
 Se comparan EOL exactos y no se interpretan escapes escritos como regex.
 View/Palette/Global CtrlAltI alterna la representación ASCII de invisibles sin
 cambiar drafts, bytes, undo ni guardado. [Contrato y pruebas](M2_INVISIBLES_MULTILINE.md).
+
+## Auditoría de overlays/teclado TUI — 2026-11-03
+
+Pegado y teclas respetan el overlay superior sobre snippets/completado/diff.
+Rutas/prompts4096 UTF8, posición64 y paleta256; rechazo atómico al exceder cuota.
+CtrlU vacía campos; Home/End/Page navegan menú/paleta sin perder selección visible,
+Page en preview de reemplazo usa filas de la última presentación. Sin segundo buffer.
+
+117 casos TUI distintos aprobados (cinco nuevos), entre corrida y cierre dirigido.
+Dos expectativas históricas se actualizaron a regex habilitado y al nuevo final
+del menú View; fixture de menú Help vacío corregido. Fmt/Clippy/release aprobaron.
+Tres flujos ConPTY finales aprobaron,27557 bytes VT/salida0/fixture intacto.
+Tres intentos iniciales quedaron esperando el título de la paleta, confundido con
+una entrada del menú por el borde del snippet; se corrigió ese oráculo. El primer
+intento nunca llegó a enviar bracketed paste: no acredita ni refuta ese transporte.
+Event::Paste y sus cuotas sí están cubiertos por casos Rust; no clipboard OS real.
+
+Siguiente bloque activo: adaptar clipboard Windows estricto a la TUI, solo por
+acción explícita; separar validación inyectada de interoperabilidad física.

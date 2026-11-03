@@ -10,6 +10,8 @@ mod menus;
 mod open_diff;
 #[cfg(test)]
 mod open_diff_tests;
+#[cfg(test)]
+mod overlay_closure_tests;
 mod overlays;
 mod paths;
 mod presentation;
@@ -79,6 +81,7 @@ pub struct TuiApp {
     pub(crate) focus: FocusManager,
     pub(crate) panels: PanelManager,
     pub(crate) overlay: UiOverlay,
+    pub(crate) last_frame_height: u16,
     pub(crate) status: String,
     pub(crate) project_root: Option<PathBuf>,
     pub(crate) explorer: jc_app::explorer::ProjectExplorer,
@@ -152,6 +155,7 @@ impl TuiApp {
             focus: FocusManager::default(),
             panels: PanelManager::default(),
             overlay: UiOverlay::None,
+            last_frame_height: 24,
             find_cursor: usize::MAX,
             replacement_cursor: usize::MAX,
             status: "Ready".to_owned(),

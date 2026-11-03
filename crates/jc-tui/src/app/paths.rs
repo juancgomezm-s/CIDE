@@ -14,6 +14,11 @@ impl TuiApp {
     }
 
     pub(crate) fn submit_prompt(&mut self, kind: PromptKind, input: String) {
+        let limit = super::overlays::prompt_limit(kind);
+        if input.len() > limit {
+            self.status = format!("Input exceeds {limit} UTF-8 bytes");
+            return;
+        }
         if kind == PromptKind::GitExecutable {
             let path = PathBuf::from(input.trim());
             if input.len() > 4096 || !path.is_absolute() {

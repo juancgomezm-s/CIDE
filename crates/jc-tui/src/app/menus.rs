@@ -127,3 +127,33 @@ pub(crate) fn previous_selectable(entries: &[Option<CommandId>], current: usize)
     }
     0
 }
+
+/// Page movement clamps to the list and skips separators without wrapping.
+pub(crate) fn page_selectable(
+    entries: &[Option<CommandId>],
+    current: usize,
+    rows: usize,
+    forward: bool,
+) -> usize {
+    if entries.is_empty() {
+        return 0;
+    }
+    let last = entries.len() - 1;
+    let target = if forward {
+        current.saturating_add(rows).min(last)
+    } else {
+        current.saturating_sub(rows).min(last)
+    };
+    if forward {
+        (target..entries.len())
+            .find(|&i| entries[i].is_some())
+            .or_else(|| (0..=target).rev().find(|&i| entries[i].is_some()))
+            .unwrap_or(0)
+    } else {
+        (0..=target)
+            .rev()
+            .find(|&i| entries[i].is_some())
+            .or_else(|| (target..entries.len()).find(|&i| entries[i].is_some()))
+            .unwrap_or(0)
+    }
+}
