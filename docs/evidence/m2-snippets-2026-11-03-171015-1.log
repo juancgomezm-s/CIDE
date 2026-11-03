@@ -1,0 +1,24 @@
+cargo test -p jc-app --test snippets --test source_services --locked --offline
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+error[E0063]: missing field `snippets` in initializer of `SourceProviderDescriptor`
+  --> crates\jc-app\tests\source_services.rs:73:19
+   |
+73 |         .register(SourceProviderDescriptor {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^ missing `snippets`
+
+error[E0624]: method `view_count` is private
+   --> crates\jc-app\tests\snippets.rs:123:30
+    |
+123 |         assert_eq!(a.panes().view_count(tab), 2);
+    |                              ^^^^^^^^^^ private method
+    |
+   ::: C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app\src\panes.rs:369:5
+    |
+369 |     pub(crate) fn view_count(&self, tab: TabId) -> usize {
+    |     ---------------------------------------------------- private method defined here
+
+For more information about this error, try `rustc --explain E0624`.
+error: could not compile `jc-app` (test "snippets") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+For more information about this error, try `rustc --explain E0063`.
+error: could not compile `jc-app` (test "source_services") due to 1 previous error

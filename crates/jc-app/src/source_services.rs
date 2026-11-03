@@ -62,6 +62,7 @@ pub struct SourceProviderDescriptor {
     pub symbols: Option<TaskProvider>,
     pub references: Option<TaskProvider>,
     pub completion: Option<TaskProvider>,
+    pub snippets: &'static [crate::snippets::SnippetTemplate],
 }
 impl SourceProviderDescriptor {
     fn provider(self, mode: SourceMode) -> Option<TaskProvider> {
@@ -84,6 +85,7 @@ impl Default for SourceRegistry {
                 symbols: None,
                 references: None,
                 completion: Some(local_words),
+                snippets: &[],
             }],
         }
     }
@@ -110,6 +112,7 @@ impl SourceRegistry {
             ]
             .iter()
             .all(Option::is_none)
+                && descriptor.snippets.is_empty()
             || self
                 .providers
                 .iter()
@@ -117,8 +120,38 @@ impl SourceRegistry {
         {
             return Err("Duplicate/invalid source provider or registry budget");
         }
+        if descriptor.snippets.len() > 16 {
+            return Err("Snippet catalog exceeds16 entries");
+        }
+        for (index, template) in descriptor.snippets.iter().enumerate() {
+            template
+                .validate(descriptor.id)
+                .map_err(|_| "Invalid snippet metadata")?;
+            if descriptor.snippets[..index]
+                .iter()
+                .any(|other| other.id == template.id)
+                || self
+                    .providers
+                    .iter()
+                    .flat_map(|p| p.snippets)
+                    .any(|other| other.id == template.id)
+            {
+                return Err("Duplicate snippet ID");
+            }
+        }
         self.providers.push(descriptor);
         Ok(())
+    }
+    pub fn snippets(&self, language: &str) -> Vec<&'static crate::snippets::SnippetTemplate> {
+        self.providers
+            .iter()
+            .find(|p| p.language == language && !p.snippets.is_empty())
+            .or_else(|| {
+                self.providers
+                    .iter()
+                    .find(|p| p.language == "*" && !p.snippets.is_empty())
+            })
+            .map_or_else(Vec::new, |p| p.snippets.iter().collect())
     }
     pub fn resolve(&self, language: &str, mode: SourceMode) -> Option<SourceProviderDescriptor> {
         self.providers

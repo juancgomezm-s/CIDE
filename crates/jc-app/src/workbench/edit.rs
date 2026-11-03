@@ -39,7 +39,7 @@ impl Workbench {
             bytes,
         })
     }
-    fn preferred_ending(&self) -> Result<&'static [u8], WorkbenchError> {
+    pub(crate) fn preferred_ending(&self) -> Result<&'static [u8], WorkbenchError> {
         self.with_active_text(|text, _| text.preferred_ending())
     }
 

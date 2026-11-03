@@ -16,6 +16,9 @@ mod presentation;
 mod project_search;
 mod quick_open;
 mod search_input;
+mod snippets;
+#[cfg(test)]
+mod snippets_tests;
 mod source_services;
 #[cfg(test)]
 mod source_services_tests;
@@ -92,6 +95,7 @@ pub struct TuiApp {
     pub(crate) source_registry: jc_app::source_services::SourceRegistry,
     pub(crate) source: jc_app::source_services::SourceController,
     pub(crate) source_popup: bool,
+    pub(crate) snippet_ui: Option<snippets::SnippetUi>,
     pub(crate) source_candidates: Option<(Vec<PathBuf>, usize)>,
     pub(crate) git_status: git_status::GitStatusView,
     pub(crate) quick_open: jc_app::quick_open::QuickOpenController,
@@ -166,6 +170,7 @@ impl TuiApp {
             source_registry,
             source: Default::default(),
             source_popup: false,
+            snippet_ui: None,
             source_candidates: None,
             git_status: git_status::GitStatusView::new(wakeup.clone()),
             quick_open: jc_app::quick_open::QuickOpenController::new(wakeup.clone()),
@@ -353,6 +358,7 @@ impl TuiApp {
         }
         self.open_diff_context(&mut context);
         self.source_context(&mut context);
+        self.snippet_context(&mut context);
         context
     }
 

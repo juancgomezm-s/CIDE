@@ -1,0 +1,29 @@
+cargo test -p jc-app --test snippets --test source_services --locked --offline
+
+running 7 tests
+test snippet_metadata_and_nonrecursive_variables_are_explicit_and_bounded ... ok
+test snippet_cursor_crlf_or_new_bom_and_unrepresentable_body_fail_before_mutation ... ok
+test snippet_parameter_editing_preview_is_readonly_and_apply_is_one_undo ... ok
+test snippet_stale_caret_selection_revision_encoding_or_view_cannot_apply ... ok
+test snippet_surround_preserves_bom_mixed_eol_terminal_newline_and_shared_views_in_all_encodings ... ok
+test snippet_selection_and_rendered_expansion_quotas_reject_without_partial_edits ... ok
+test snippet_preview_rows_are_bounded_and_save_as_invalidates_even_without_revision_change ... FAILED
+
+failures:
+
+---- snippet_preview_rows_are_bounded_and_save_as_invalidates_even_without_revision_change stdout ----
+
+thread 'snippet_preview_rows_are_bounded_and_save_as_invalidates_even_without_revision_change' panicked at crates\jc-app\tests\snippets.rs:242:29:
+called `Result::unwrap()` on an `Err` value: File(Io(Os { code: 5, kind: PermissionDenied, message: "Acceso denegado." }))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    snippet_preview_rows_are_bounded_and_save_as_invalidates_even_without_revision_change
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.06s
+     Running tests\snippets.rs (target\debug\deps\snippets-96a063c28441024a.exe)
+error: test failed, to rerun pass `-p jc-app --test snippets`

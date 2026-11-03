@@ -1,0 +1,14 @@
+cargo test -p jc-tui --lib snippets_tests --locked --offline
+
+running 4 tests
+test app::snippets_tests::snippet_tui_surround_keeps_bom_mixed_eol_terminal_newline_and_cancel ... ok
+test app::snippets_tests::snippet_tui_stale_preview_never_overwrites_new_source_intent ... ok
+test app::snippets_tests::snippet_tui_insert_parameters_preview_confirmation_and_shared_undo ... ok
+test app::snippets_tests::snippet_tui_tiny_picker_multi_parameter_back_edit_validation_and_preview_scroll ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 108 filtered out; finished in 0.00s
+
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.14s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-f769d24a4d9b5e8a.exe)

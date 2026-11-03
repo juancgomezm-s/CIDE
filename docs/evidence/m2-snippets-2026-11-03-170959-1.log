@@ -1,0 +1,18 @@
+cargo test -p jc-app --test snippets --test source_services --locked --offline
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+error: no rules expected `EditSurroundWith`
+   --> crates\jc-app\src\command.rs:778:13
+    |
+495 | macro_rules! spec {
+    | ----------------- when calling this macro
+...
+778 |             EditSurroundWith,
+    |             ^^^^^^^^^^^^^^^^ no rules expected this token in macro call
+    |
+note: while trying to match meta-variable `$label:literal`
+   --> crates\jc-app\src\command.rs:496:29
+    |
+496 |     ($id:ident, $cat:ident, $label:literal, $enabled:ident) => {
+    |                             ^^^^^^^^^^^^^^
+
+error: could not compile `jc-app` (lib) due to 1 previous error

@@ -109,6 +109,12 @@ pub enum CommandId {
     SourceCancel,
     SourceAccept,
     SourceOpenToSide,
+    EditInsertSnippet,
+    EditSurroundWith,
+    SnippetNext,
+    SnippetPrevious,
+    SnippetAccept,
+    SnippetCancel,
     ViewToggleBottomPanel,
     ViewTerminal,
     ViewProblems,
@@ -182,6 +188,12 @@ pub struct CommandContext {
     pub source_active: bool,
     pub source_ready: bool,
     pub source_side_ready: bool,
+    pub snippet_insert_available: bool,
+    pub snippet_surround_available: bool,
+    pub snippet_active: bool,
+    pub snippet_next: bool,
+    pub snippet_previous: bool,
+    pub snippet_ready: bool,
     // Shared pane navigation state; keymap handlers are connected by the frontend.
     pub split_editor: bool,
     pub reference_pinned: bool,
@@ -228,6 +240,12 @@ impl Default for CommandContext {
             source_active: false,
             source_ready: false,
             source_side_ready: false,
+            snippet_insert_available: false,
+            snippet_surround_available: false,
+            snippet_active: false,
+            snippet_next: false,
+            snippet_previous: false,
+            snippet_ready: false,
             split_editor: false,
             reference_pinned: false,
             nav_back_available: false,
@@ -397,6 +415,32 @@ fn git_repository(ctx: &CommandContext) -> bool {
 }
 fn git_status_running(ctx: &CommandContext) -> bool {
     ctx.git_status_running
+}
+fn snippet_insert(ctx: &CommandContext) -> bool {
+    ctx.editor_input
+        && ctx.focus == PrimaryFocus::Editor
+        && !ctx.has_selection
+        && !ctx.rectangular_selection
+        && ctx.snippet_insert_available
+}
+fn snippet_surround(ctx: &CommandContext) -> bool {
+    ctx.editor_input
+        && ctx.focus == PrimaryFocus::Editor
+        && ctx.has_selection
+        && !ctx.rectangular_selection
+        && ctx.snippet_surround_available
+}
+fn snippet_active(ctx: &CommandContext) -> bool {
+    ctx.snippet_active
+}
+fn snippet_next(ctx: &CommandContext) -> bool {
+    ctx.snippet_next
+}
+fn snippet_previous(ctx: &CommandContext) -> bool {
+    ctx.snippet_previous
+}
+fn snippet_ready(ctx: &CommandContext) -> bool {
+    ctx.snippet_ready
 }
 fn source_symbols(ctx: &CommandContext) -> bool {
     ctx.source_symbols_available
@@ -686,6 +730,22 @@ pub fn default_registry() -> CommandRegistry {
             "Open Comparison Hunk in Right Group",
             open_diff_ready
         ),
+        spec!(EditInsertSnippet, Edit, "Insert Snippet", snippet_insert),
+        spec!(EditSurroundWith, Edit, "Surround With", snippet_surround),
+        spec!(SnippetNext, Edit, "Snippet: Next Stage", snippet_next),
+        spec!(
+            SnippetPrevious,
+            Edit,
+            "Snippet: Previous Stage",
+            snippet_previous
+        ),
+        spec!(
+            SnippetAccept,
+            Edit,
+            "Snippet: Apply Reviewed Proposal",
+            snippet_ready
+        ),
+        spec!(SnippetCancel, Edit, "Snippet: Cancel", snippet_active),
         spec!(ViewSymbols, View, "Symbols", source_symbols),
         spec!(
             SourceReferences,

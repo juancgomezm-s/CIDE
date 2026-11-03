@@ -109,6 +109,7 @@ pub(crate) struct Presentation<'a> {
     pub git: GitPresentation,
     pub open_diff: Option<jc_app::open_diff_view::OpenDiffPresentation>,
     pub source: jc_app::source_services::SourcePresentation,
+    pub snippet: Option<super::snippets::SnippetPresentation>,
     pub git_status: super::GitStatusPresentation,
     pub explorer: jc_app::explorer::ExplorerPresentation,
 }
@@ -340,7 +341,12 @@ impl TuiApp {
                 usize::from(layout.sidebar_width.saturating_sub(2))
             },
         );
+        let snippet = self.prepare_snippet(
+            usize::from(layout.height.saturating_sub(8)),
+            usize::from(layout.width.saturating_sub(8)),
+        );
         Presentation {
+            snippet,
             source,
             open_diff,
             app: self,

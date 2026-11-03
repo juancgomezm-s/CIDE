@@ -571,3 +571,10 @@ relativa/no resuelta y reemplazo. Host valida modo, coordenadas, identidad y
 revisión/caret antes de activar. Rutas ambiguas exigen elección y apertura por
 handle; destino conserva/sugiere su propio encoding. Completado es texto local
 anterior al caret y una transacción, no promesa semántica. [Evidencia](M2_SOURCE_SERVICES.md).
+
+## D54 — Snippets declarativos, preview acotado y transacción única
+
+El registro interno aporta metadata por perfil; jc-app valida parámetros y expande
+variables una sola vez. Selección16KiB/propuesta64KiB, encoding estricto y captura
+de revisión/vista/caret/ruta antes de aceptar. TUI suspende entrada fuente durante
+el wizard; preview inmutable y apply_text_edits único. [Evidencia](M2_SNIPPETS.md).

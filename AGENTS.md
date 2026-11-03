@@ -601,3 +601,14 @@ bounded snapshots/results; only explicit activation opens paths/applies edits.
 Never inherit the origin encoding into a different target document. Preserve
 dirty/pin/document identity and candidate ambiguity. Completion is textual words
 before the caret, not semantic completion. No new provider processes at startup.
+
+## Snippets TUI — cierre local 2026-11-03
+
+Motor universal acotado con parámetros, preview y aceptación por revisión/una
+transacción. progress.abl aporta siete plantillas declarativas de Insert/Surround;
+sin reglas ABL en jc-app. Preserva encoding/BOM/EOL/undo; propuestas obsoletas se
+rechazan. `docs/M2_SNIPPETS.md`:38 casos distintos (11 nuevos), cuatro
+recorridos ConPTY, fmt/Clippy/release aprobados. Sin AVM ni aceptación física/global.
+Sigue auditoría final de teclado, foco y flujos TUI; CI permanece en M5.
+
+Snippet definitions belong to provider metadata; generic SnippetSession owns a bounded proposal, validates the exact origin and applies one expected-revision transaction. Never interpolate recursively or run generated ABL during editing.

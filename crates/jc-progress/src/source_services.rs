@@ -14,6 +14,7 @@ pub fn descriptor() -> SourceProviderDescriptor {
         symbols: Some(symbols),
         references: Some(references),
         completion: None,
+        snippets: super::snippets::TEMPLATES,
     }
 }
 struct Symbol {

@@ -252,6 +252,12 @@ impl Workbench {
             | SourceCancel
             | SourceAccept
             | SourceOpenToSide
+            | EditInsertSnippet
+            | EditSurroundWith
+            | SnippetNext
+            | SnippetPrevious
+            | SnippetAccept
+            | SnippetCancel
             | ViewToggleBottomPanel
             | ViewTerminal
             | ViewProblems

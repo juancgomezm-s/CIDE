@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 
 #[cfg(feature = "source-services")]
+pub mod snippets;
+#[cfg(feature = "source-services")]
 pub mod source_services;
 
 use std::ffi::OsString;

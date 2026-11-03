@@ -19,6 +19,22 @@ impl TuiApp {
             self.handle_overlay_key(key);
             return;
         }
+        if self.showing_snippet() {
+            if let Some(stroke) = to_stroke(key) {
+                let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
+                if let Resolution::Enabled(command) =
+                    self.keymap
+                        .resolve(scope, stroke, &self.registry, &self.command_context())
+                {
+                    if Self::keep_snippet_for(command) {
+                        self.dispatch(command);
+                        return;
+                    }
+                }
+            }
+            self.snippet_key(key);
+            return;
+        }
         if self.showing_source_popup() {
             if let Some(stroke) = to_stroke(key) {
                 let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
@@ -206,6 +222,10 @@ impl TuiApp {
     }
 
     fn handle_paste(&mut self, text: &str) {
+        if self.showing_snippet() {
+            self.edit_snippet(jc_app::FieldEdit::Insert(text));
+            return;
+        }
         if self.showing_open_diff() || self.showing_source_popup() {
             return;
         }

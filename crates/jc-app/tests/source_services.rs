@@ -44,6 +44,7 @@ fn registry() -> SourceRegistry {
         symbols: Some(symbols),
         references: None,
         completion: None,
+        snippets: &[],
     })
     .unwrap();
     r
@@ -64,7 +65,8 @@ fn source_registry_capabilities_are_optional_namespaced_and_default_completion_n
             language: "rust",
             symbols: Some(symbols),
             references: None,
-            completion: None
+            completion: None,
+            snippets: &[],
         })
         .is_err());
     assert!(r
@@ -73,7 +75,8 @@ fn source_registry_capabilities_are_optional_namespaced_and_default_completion_n
             language: "rust",
             symbols: Some(symbols),
             references: None,
-            completion: None
+            completion: None,
+            snippets: &[],
         })
         .is_err());
     let a = Workbench::default();
@@ -199,6 +202,7 @@ fn source_provider_wrong_action_and_result_quota_cannot_publish_or_edit() {
             symbols: Some(provider),
             references: None,
             completion: None,
+            snippets: &[],
         })
         .unwrap();
         let a = app("abc");

@@ -14,6 +14,13 @@ impl TuiApp {
                 .unwrap_or_else(|| "Command unavailable".to_owned());
             return;
         }
+        if super::snippets::is_command(command) {
+            self.snippet_command(command);
+            return;
+        }
+        if !Self::keep_snippet_for(command) {
+            self.snippet_ui = None;
+        }
         if super::source_services::is_command(command) {
             self.open_diff_visible = false;
             self.source_command(command);

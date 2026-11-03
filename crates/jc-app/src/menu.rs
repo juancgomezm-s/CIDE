@@ -180,6 +180,8 @@ pub fn default_menu_model() -> MenuModel {
                 command(EditPaste),
                 command(EditSelectAll),
                 command(SourceComplete),
+                command(EditInsertSnippet),
+                command(EditSurroundWith),
                 SEP,
                 command(EditDuplicate),
                 command(EditDeleteLine),

@@ -282,3 +282,5 @@ por menú/paleta. `progress.abl` aporta símbolos y referencias ABL inferidos;
 `core.words` completa palabras anteriores al caret en cualquier lenguaje. Includes/
 RUN estáticos abren candidatos confinados, con elección si son ambiguos; no ejecutan
 código. El completado se acepta explícitamente y usa un undo. [Uso, cuotas y evidencia](docs/M2_SOURCE_SERVICES.md).
+
+La TUI ofrece Insert Snippet y Surround With en Edit/Palette: parámetros, vista previa y aceptación explícita con un undo. Siete plantillas ABL opcionales; [uso y límites](docs/M2_SNIPPETS.md). No compiladas en AVM.

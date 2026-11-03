@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "avm_started": false,
+  "physical_display_verified": false,
+  "os_clipboard_verified": false,
+  "checks": [
+    "snippet_preview_cancel_and_typing_do_not_edit_source",
+    "snippet_review_resize_preserves_unapplied_proposal",
+    "snippet_explicit_apply_is_one_undo_and_redo_without_save",
+    "snippet_surround_selection_preview_apply_and_atomic_undo"
+  ],
+  "exit_code": 0,
+  "fixture_unchanged": true,
+  "vt_bytes": 47306
+}

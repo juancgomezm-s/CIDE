@@ -15,7 +15,7 @@
 
 Los comandos de duplicar/borrar/mover líneas, sangría, búsqueda, selección columna y el motor de Toggle Comment son **universales**. El perfil ABL aporta los delimitadores `/* ... */`, no un handler de edición especial. Los snippets se resuelven con un motor genérico y plantillas aportadas por la extensión.
 
-Las funciones `Correct Case`, `Expand Keywords`, `Correct Indentation`, `Organize USING`, `Update Function Prototypes`, generadores OO y servicios de AVM/XREF/esquema son responsabilidad de la extensión interna opcional `progress.abl`, nunca de `jc-app`. Todavía **no existe** un cargador genérico ni un paquete operativo con ese ID: se define la separación y se implementará por etapas.
+Las funciones `Correct Case`, `Expand Keywords`, `Correct Indentation`, `Organize USING`, `Update Function Prototypes`, generadores OO y servicios de AVM/XREF/esquema son responsabilidad de la extensión interna opcional `progress.abl`, nunca de `jc-app`. Existe el proveedor interno opcional progress.abl para inferencias léxicas y plantillas declarativas. No existe loader externo ni semántica certificada.
 
 Contrato: [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
 
@@ -28,8 +28,8 @@ Contrato: [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
 | Indentar/desindentar | Tab y Shift+Tab, selección múltiple | Código incorporado, compilación pendiente |
 | Duplicar/borrar línea | Ctrl+D y Ctrl+Shift+D | Código base y atajo ajustado |
 | Move line | Subir/bajar conservando EOL | Código inicial |
-| Add Procedure / Function / Trigger | Snippets parametrizados | Pendiente |
-| Surround With | Plantillas IF/DO/REPEAT/FOR EACH sin inferir lógica de negocio | Pendiente |
+| Add Procedure / Function / Trigger | Snippets parametrizados | TUI validada; [evidencia](M2_SNIPPETS.md) |
+| Surround With | Plantillas IF/DO/REPEAT/FOR EACH sin inferir lógica de negocio | TUI validada; no AVM |
 | Unir/dividir líneas | Transformación textual segura | Pendiente |
 | Eliminar líneas vacías o duplicadas | Selección explícita y vista previa | Opcional |
 

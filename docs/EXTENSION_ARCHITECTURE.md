@@ -129,3 +129,12 @@ aprobados. No AVM, semántica, loader externo, GUI ni aceptación física/global
 Siguiente bloque activo: plantillas/snippets universales y catálogo ABL del
 proveedor opcional, parámetros/preview/aceptación y undo único. Continuar sin
 esperar otro «continúa»; construir el conjunto antes de su ventana de validación.
+
+## Snippets TUI — cierre local 2026-11-03
+
+Motor universal acotado con parámetros, preview y aceptación por revisión/una
+transacción. progress.abl aporta siete plantillas declarativas de Insert/Surround;
+sin reglas ABL en jc-app. Preserva encoding/BOM/EOL/undo; propuestas obsoletas se
+rechazan. [Uso y evidencia](M2_SNIPPETS.md):38 casos distintos (11 nuevos), cuatro
+recorridos ConPTY, fmt/Clippy/release aprobados. Sin AVM ni aceptación física/global.
+Sigue auditoría final de teclado, foco y flujos TUI; CI permanece en M5.

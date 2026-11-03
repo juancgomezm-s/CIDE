@@ -1,0 +1,10 @@
+
+running 1 test
+test app::snippets_tests::snippet_tui_insert_parameters_preview_confirmation_and_shared_undo ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 111 filtered out; finished in 0.00s
+
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.25s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-f769d24a4d9b5e8a.exe)
