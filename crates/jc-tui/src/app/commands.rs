@@ -72,11 +72,14 @@ impl TuiApp {
             CommandOutcome::ShowGoToPosition => self.open_prompt(PromptKind::GoToPosition),
             CommandOutcome::ShowFind => {
                 let input = self.workbench.search().query.clone();
+                self.find_cursor = input.len();
                 self.open_focus_overlay(Overlay::Find);
                 self.overlay = UiOverlay::Find { input };
             }
             CommandOutcome::ShowReplace => {
                 let find = self.workbench.search().query.clone();
+                self.find_cursor = find.len();
+                self.replacement_cursor = 0;
                 self.open_focus_overlay(Overlay::Replace);
                 self.overlay = UiOverlay::Replace {
                     find,
@@ -113,6 +116,18 @@ impl TuiApp {
     fn handle_view(&mut self, command: CommandId) {
         use CommandId::*;
         match command {
+            ViewToggleInvisibles => {
+                self.status = if self.workbench.invisibles_visible() {
+                    "Invisible characters: ASCII spans on"
+                } else {
+                    "Invisible characters hidden"
+                }
+                .into();
+            }
+            FileChooseEncoding => {
+                self.open_focus_overlay(Overlay::Dialog);
+                self.overlay = UiOverlay::EncodingChoice;
+            }
             FileQuickOpen => self.open_quick_open(),
             EditorSplitRight
             | EditorOneGroup

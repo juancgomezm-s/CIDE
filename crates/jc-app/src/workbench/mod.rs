@@ -1,4 +1,9 @@
 mod commands;
+mod display;
+pub(crate) mod invisible_layout;
+pub use invisible_layout::DisplayCell;
+mod clipboard_transfer;
+pub use clipboard_transfer::{ClipboardExport, ClipboardTarget};
 mod edit;
 mod line_commands;
 mod line_index;
@@ -23,6 +28,8 @@ pub enum WorkbenchError {
     Position(PositionError),
     RegexUnavailable,
     ClipboardEncoding,
+    ClipboardLimit,
+    ClipboardStale,
     SearchInput,
     SearchIncomplete,
     Rectangle(String),
@@ -32,6 +39,8 @@ pub enum WorkbenchError {
 impl fmt::Display for WorkbenchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ClipboardLimit => f.write_str("clipboard transfer exceeds its byte budget"),
+            Self::ClipboardStale => f.write_str("clipboard target changed; retry the action"),
             Self::Rectangle(message) => f.write_str(message),
             Self::LineCommand(message) => f.write_str(message),
             Self::NoDocument => f.write_str("no active document"),
@@ -97,6 +106,7 @@ pub struct EditorDocument {
     pub session: FileSession,
     notified_revision: u64,
     text: RefCell<TextProjection>,
+    invisible: RefCell<invisible_layout::InvisibleLayout>,
 }
 
 #[derive(Debug)]
@@ -161,6 +171,7 @@ pub enum CommandOutcome {
 
 #[derive(Debug, Default)]
 pub struct Workbench {
+    show_invisibles: bool,
     pub(crate) tabs: TabManager,
     panes: PaneManager,
     documents: Vec<EditorDocument>,
@@ -280,7 +291,12 @@ impl Workbench {
     pub fn text_statistics(&self, tab: TabId) -> Option<(u64, u64, usize)> {
         let document = self.document_by_tab(tab)?;
         let text = document.text.borrow();
-        Some((text.scanned_bytes, text.decoded_bytes, text.memory_bytes()))
+        let (invisible_decoded, invisible_memory) = document.invisible.borrow().statistics();
+        Some((
+            text.scanned_bytes,
+            text.decoded_bytes.saturating_add(invisible_decoded),
+            text.memory_bytes().saturating_add(invisible_memory),
+        ))
     }
 
     fn activate_location_document(&mut self, location: NavLocation) -> bool {
@@ -402,6 +418,11 @@ impl Workbench {
         };
         let active = self.panes.active();
         let rectangle = self.rectangle_for_pane(active);
+        let caret_column = if self.show_invisibles {
+            self.display_column_for_pane(active).unwrap_or(0)
+        } else {
+            position.column
+        };
         let view = self.panes.view(active).expect("active view");
         let old_line = view.scroll_line();
         let mut line = old_line;
@@ -411,13 +432,15 @@ impl Workbench {
         } else if position.line >= line.saturating_add(rows.max(1)) {
             line = position.line + 1 - rows.max(1);
         }
-        if rectangle.is_none() && position.column < column {
-            column = position.column;
-        } else if rectangle.is_none() && position.column >= column.saturating_add(columns.max(1)) {
-            column = position.column + 1 - columns.max(1);
+        if (rectangle.is_none() || self.show_invisibles) && caret_column < column {
+            column = caret_column;
+        } else if (rectangle.is_none() || self.show_invisibles)
+            && caret_column >= column.saturating_add(columns.max(1))
+        {
+            column = caret_column + 1 - columns.max(1);
         }
         self.panes.set_scroll(active, line, column);
-        if let Some(rect) = rectangle {
+        if let Some(rect) = rectangle.filter(|_| !self.show_invisibles) {
             let mut scroll = rect.scroll_column;
             if rect.head_column < scroll {
                 scroll = rect.head_column;
@@ -580,6 +603,7 @@ impl Workbench {
             id: DocumentId(self.next_document),
             notified_revision: 0,
             text: RefCell::default(),
+            invisible: RefCell::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, cursor), true);
         let _ = self.rebuild_search();
@@ -602,6 +626,7 @@ impl Workbench {
             id: DocumentId(self.next_document),
             notified_revision: 0,
             text: RefCell::default(),
+            invisible: RefCell::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, 0), true);
         let _ = self.rebuild_search();
@@ -829,6 +854,7 @@ impl Workbench {
             session,
             notified_revision: 0,
             text: RefCell::default(),
+            invisible: RefCell::default(),
         });
         self.panes
             .navigate(NavLocation::new(expected, cursor), false);

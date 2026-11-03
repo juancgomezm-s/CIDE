@@ -155,6 +155,7 @@ pub fn default_menu_model() -> MenuModel {
                 command(FileOpen),
                 command(FileQuickOpen),
                 command(FileOpenFolder),
+                command(FileChooseEncoding),
                 SEP,
                 command(FileSave),
                 command(FileSaveAs),
@@ -255,6 +256,7 @@ pub fn default_menu_model() -> MenuModel {
             "View",
             'v',
             &[
+                command(ViewToggleInvisibles),
                 command(ViewExplorer),
                 command(ViewDatabase),
                 command(ViewGit),

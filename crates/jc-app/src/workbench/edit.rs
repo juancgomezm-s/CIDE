@@ -124,7 +124,7 @@ impl Workbench {
         self.after_edit()
     }
 
-    fn delete_selection(&mut self) -> Result<bool, WorkbenchError> {
+    pub(super) fn delete_selection(&mut self) -> Result<bool, WorkbenchError> {
         let selection = self.active_editor().and_then(|editor| editor.selection());
         let Some(selection) = selection else {
             return Ok(false);
@@ -753,24 +753,9 @@ impl Workbench {
         if self.active_rectangle().is_some() {
             return self.copy_rectangle();
         }
-        let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
-        let Some(range) = document.selection() else {
-            return Ok(());
-        };
-        let encoding = document
-            .session
-            .encoding()
-            .ok_or(FileError::EncodingRequired)?;
-        let bytes = document
-            .session
-            .document()
-            .read_range(range.clone())
-            .map_err(FileError::from)?;
-        let decoded = jc_text::decode_fragment(&bytes, encoding, range.start);
-        if !decoded.issues.is_empty() {
-            return Err(WorkbenchError::ClipboardEncoding);
+        if let Some(text) = self.selection_text_bounded(usize::MAX)? {
+            self.clipboard = Some(super::rectangular::Clipboard::Text(text));
         }
-        self.clipboard = Some(super::rectangular::Clipboard::Text(decoded.text));
         Ok(())
     }
 

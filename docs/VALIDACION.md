@@ -916,3 +916,38 @@ No acredita interacción con el folder picker modal, pantalla física, OS clipbo
 IME, DPI, accesibilidad, RAM global ni otra plataforma. Fallo PostMessage exige
 refresh manual si no llega otra señal; no hay transporte OS alternativo. wall_ms
 del smoke no es tecla-a-pantalla. Las pruebas manuales de Juan siguen para el final.
+
+
+## Tres funciones M2: invisibles y buscar/reemplazar bloques — 2026-11-02
+
+Implementadas TUI y GUI, preservando el trabajo de clipboard/encoding. Cierre:
+**376 casos Rust distintos aprobados**, por suites119+86+171; no una corrida única.
+Dos helpers de procesos ignorados directamente se invocan por sus padres. Formato,
+Clippy workspace all-targets -D warnings y release workspace bins/examples pasaron.
+Errores de integración corregidos: visibilidad interna de delete_selection y
+nombre owner sombreado; fixture EOF corregido para colocar su caret. No se
+repitieron las suites119 ya aprobadas al completar las pendientes.
+
+TUI tiene4 nuevas E2E multilínea y4 de invisibles; jc-app suma mapas sparse/ASCII,
+campos compartidos,5 handoffs clipboard y3 roundtrips integrados; GUI suma3 pruebas
+puras UTF16. Incluyen encoding estricto, BOM/EOL/control/Unicode/EOF/nohit, fuente
+intacta al toggle, scroll/caret/selección por spans y un undo de replace-all/save.
+Detalles y [logs completos](evidence/m2-visible-blocks-validation-2026-11-02.log)
+en [contrato](M2_INVISIBLES_MULTILINE.md).
+
+Release GUI real: **29 checks nativos pasaron**, cero errores de pintura, fixture
+final13 bytes intacto. Incluye paste/find cruzando CRLF/replace-all de distinto
+número de líneas/undo/save exacto, encoding/cancel sin editar y toggle con draft
+intacto. Se revisaron canvas GDI de invisibles y campos; un feedback obsoleto tras
+rechazo de cuota se corrigió y validó solo con Clippy/build frontend y smoke29.
+Último run: work/native-gui-smoke/20261103T023754Z-ffe68ae83162. Reporte/hash/PNG
+retenidos como m2-visible-blocks*, m2-invisibles-native* y m2-multiline-native*.
+
+Clipboard en memoria en el smoke, pasando handlers/modelo de producción; no se
+leyó/escribió el OS clipboard. Sus3 pruebas son puras de wire UTF16, no prueba
+de interoperabilidad entre aplicaciones. Tampoco se certifican pantalla física,
+IME/DPI/accesibilidad, RAM global o plataforma distinta. wall_ms no es latencia.
+El diagnóstico escapa todo noASCII para anchura cierta y no acepta un motor de
+graphemes/shaping normal. Cache diagnóstico128KiB + textual896KiB=1MiB lógico;
+una revisión invalida el cache diagnóstico y la línea fría puede escanearse entera
+con buffers acotados. No hubo dependencias nuevas, Actions/push ni nuevos perfiles.

@@ -7,7 +7,7 @@ use jc_text::{
 use std::collections::VecDeque;
 use std::ops::Range;
 
-const CACHE_LIMIT: usize = 1024 * 1024;
+const CACHE_LIMIT: usize = 896 * 1024; // +128 KiB invisible spans/checkpoints =1 MiB/document.
 
 #[derive(Debug)]
 struct Layout {

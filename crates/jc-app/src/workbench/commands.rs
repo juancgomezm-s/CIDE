@@ -5,6 +5,10 @@ impl Workbench {
     pub fn execute(&mut self, command: CommandId) -> Result<CommandOutcome, WorkbenchError> {
         use CommandId::*;
         match command {
+            ViewToggleInvisibles => {
+                self.toggle_invisibles();
+                Ok(CommandOutcome::View(ViewToggleInvisibles))
+            }
             FileNew => Ok(CommandOutcome::PromptNew),
             FileOpen => Ok(CommandOutcome::PromptOpen),
             FileSave => {
@@ -247,8 +251,8 @@ impl Workbench {
             ProgressCheck | ProgressCompile | ProgressRun | ProgressRefreshSchema => {
                 Ok(CommandOutcome::Progress(command))
             }
-            FileQuickOpen | FileOpenFolder | SearchProject | SearchCancelProject
-            | SearchReplaceProject => Ok(CommandOutcome::View(command)),
+            FileChooseEncoding | FileQuickOpen | FileOpenFolder | SearchProject
+            | SearchCancelProject | SearchReplaceProject => Ok(CommandOutcome::View(command)),
         }
     }
 }

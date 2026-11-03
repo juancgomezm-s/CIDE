@@ -21,6 +21,8 @@ mod panes;
 pub mod quick_open;
 pub mod rectangle;
 mod tabs;
+mod text_field;
+pub use text_field::{edit_field, present_field, FieldEdit, FieldPresentation};
 mod workbench;
 pub use jobs::{
     Cancellation, CompletedTask, JobId, JobKey, JobLimits, JobSystem, SubmitError, TaskFailure,
@@ -44,8 +46,8 @@ pub use tabs::{CloseRequest, Tab, TabId, TabManager};
 
 pub use workbench::rectangular::RectangleBounds;
 pub use workbench::{
-    CommandOutcome, DocumentId, EditorDocument, EditorRead, SearchHistoryEntry, SearchState,
-    TextReplacement, Workbench, WorkbenchError,
+    ClipboardExport, ClipboardTarget, CommandOutcome, DisplayCell, DocumentId, EditorDocument,
+    EditorRead, SearchHistoryEntry, SearchState, TextReplacement, Workbench, WorkbenchError,
 };
 mod project_search;
 pub use project_search::{

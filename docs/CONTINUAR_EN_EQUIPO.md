@@ -316,3 +316,26 @@ sistema y selector explícito de encoding. No activar regex/dependencias/CI ni p
 prueba manual ahora. Preservar notifier opcional corto fuera del ticket mutex,
 detach serializado con PostMessage, aceptación solo en TASKS_MESSAGE y composición
 de selector visible/solo lectura. Clipboard OS todavía no certificado por smoke.
+
+
+## Último cierre: las tres funciones pedidas, TUI y GUI
+
+Leer docs/M2_INVISIBLES_MULTILINE.md y sus evidencias. Invisibles, buscar y
+reemplazar bloques multilínea están integrados; clipboard lineal/encoding GUI
+del bloque previo también.376 pruebas distintas por suites, Clippy/release y29
+checks nativos pasaron. No repetirlos como construcción nueva ni correr perfiles
+cerrados. Logs retienen los fallos de integración/fixture corregidos.
+
+Mantener bool común de invisibles; ASCII/Range bytes por celda, CRLF atómico,
+byte↔display explícito, sin marcas en copy/save/undo. No comparar scalar ni
+rectángulo lógico contra columnas de escape. Cache896+128KiB/documento; diagnóstico
+frío invalida por revisión. Campos compartidos4096 UTF8, EOL exactos, F2 LF/F4CRLF/
+F8CR/F7TAB, CtrlU clear, F3/ShiftF3, Enter/F6 uno, CtrlEnter/F9 todos. GUI acepta
+slots solo en TASKS_MESSAGE; drena input/paint antes de más trabajo y no repinta
+un slot sin cambios. OSclipboard solo por acción explícita, fuera de préstamos,
+con handoff que revalida doc/view/rev/encoding/caret/anchor. Smoke usa transporte
+en memoria, no el clipboard del usuario. No inferir interoperabilidad OS.
+
+Siguiente pendiente M2B: Save All con Save As/cancelación explícita; seguir
+construcción amplia y una ventana serial de validación al cierre. No instalar,
+activar regex, correr CI/push ni pedir prueba manual ahora.

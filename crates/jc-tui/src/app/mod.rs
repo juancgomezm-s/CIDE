@@ -10,6 +10,7 @@ mod paths;
 mod presentation;
 mod project_search;
 mod quick_open;
+mod search_input;
 use git_repository::GitConfigurationTarget;
 #[cfg(test)]
 pub(crate) use git_status::GitStatusRow;
@@ -21,9 +22,13 @@ mod git_integration_tests;
 #[cfg(test)]
 mod git_status_integration_tests;
 #[cfg(test)]
+mod invisibles_tests;
+#[cfg(test)]
 mod keyboard_matrix_tests;
 #[cfg(test)]
 mod line_command_tests;
+#[cfg(test)]
+mod multiline_tests;
 #[cfg(test)]
 mod quick_open_tests;
 #[cfg(test)]
@@ -42,6 +47,8 @@ use jc_text::TextEncoding;
 use std::path::PathBuf;
 
 pub struct TuiApp {
+    pub(crate) find_cursor: usize,
+    pub(crate) replacement_cursor: usize,
     pub(crate) workbench: Workbench,
     pub(crate) registry: CommandRegistry,
     pub(crate) keymap: KeyMap,
@@ -106,6 +113,8 @@ impl TuiApp {
             focus: FocusManager::default(),
             panels: PanelManager::default(),
             overlay: UiOverlay::None,
+            find_cursor: usize::MAX,
+            replacement_cursor: usize::MAX,
             status: "Ready".to_owned(),
             project_root: None,
             explorer: explorer::ExplorerState::default(),

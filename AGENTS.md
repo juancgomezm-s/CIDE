@@ -226,3 +226,32 @@ and painting only prepares bounded rows. Do not repeat passing suites for docs.
 Next broad M2B block: OS clipboard plus explicit GUI encoding selection, sharing
 Workbench operations and strict encoding. No new dependency/regex/CI, manual user
 tests remain deferred. No OS clipboard mutation from the existing native smoke.
+
+
+## Current three-feature closure and continuation
+
+Read docs/M2_INVISIBLES_MULTILINE.md. Human priority invisible characters + literal
+multiline Find/Replace is implemented in BOTH TUI and GUI, preserving clipboard/
+encoding work.376 distinct Rust cases in selective closure, fmt/Clippy/release and
+29 actual own-HWND checks passed. Do not repeat completed suites/profiles for docs.
+ViewToggleInvisibles is one Workbench bool, shared menu/palette/global CtrlAltI.
+ASCII diagnostic spans have source byte ranges; never equate scalar/rectangle
+columns with display columns, copy indicators or allow CRLF-interior carets.
+Text cache896KiB + diagnostic128KiB retains1MiB logical quota; diagnostic caches
+invalidate on revision, cold per-line cost remains documented. Display is read-only.
+
+Fields share bounded UTF8 editing/presentation,4096 bytes, exact LF/CRLF/CR and
+explicit insert gestures distinct from executing. Literal engine + versioned
+apply_text_edits remain the only replace engine/undo. GUI self-posted slots must
+give bounded input/paint priority and invalidate only on visible result changes.
+Native clipboard calls occur only on explicit actions and outside model borrows;
+cut/paste revalidate target document/view/revision/encoding/caret/selection.
+Smoke never opens the user's OS clipboard: it uses in-memory transport and pure
+UTF16 tests. Rectangular clipboard remains internal, with documented priority.
+Encoding selection interprets existing bytes, never silently converts or saves.
+
+The next independent M2B pending flow is native Save All with per-document Save As,
+explicit cancellation and no generated untitled writes. Keep one integrator,
+exclusive worker files and broad construction before serial validation. Manual
+OS clipboard/IME/DPI/accessibility/display remain for the end, no request now.
+No new dependency/regex/CI/push or global CPU/RAM profiling.

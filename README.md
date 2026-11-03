@@ -193,3 +193,12 @@ también admite --project-root DIR. Reutiliza el finder/registro y recibe result
 sin otra tecla, con consulta modal separada del documento. [Uso y evidencia](docs/M2B_NATIVE_SELECTORS.md):
 350 pruebas completas locales y23 checks del ejecutable nativo. Continúa clipboard
 del sistema y elección gráfica explícita de encoding; manual/IME/DPI siguen abiertos.
+
+
+Mostrar invisibles y buscar/reemplazar bloques multilínea ya funcionan en TUI y
+GUI: View/Palette/Ctrl+Alt+I, Ctrl+F/Ctrl+H, campos editables con pegado exacto,
+F2 LF/F4 CRLF y F9 Replace All en un undo. Las marcas de vista no se copian ni
+guardan. La GUI también ofrece elección explícita de encoding y clipboard lineal
+Windows (interoperabilidad OS aún sin certificar; smoke usa memoria).
+[Uso, mapas, cuotas y evidencia](docs/M2_INVISIBLES_MULTILINE.md):376 pruebas
+distintas por suites, Clippy/release y29 checks nativos; sin CI ni dependencias nuevas.

@@ -156,3 +156,11 @@ certifica <50 MiB ni p95 físico <16 ms, GUI, parser, LSP o AVM. La referencia v
 continúa siendo Sublime Text; Progress real M3, CI/Git con escritura M5 y plugins
 externos post-M5. Las siguientes validaciones se agrupan por bloques amplios,
 con comprobaciones intermedias solo para bloqueantes concretos.
+
+
+## Superficies multilínea actuales
+
+Los campos de Find/Replace ya admiten edición/pegado de saltos y navegación en
+TUI y GUI, con gestos independientes de ejecutar y política EOL literal exacta.
+El motor, cuotas/generaciones y transacción de reemplazo siguen siendo estos.
+[Uso y evidencia conjunta](M2_INVISIBLES_MULTILINE.md); no nuevo motor regex.

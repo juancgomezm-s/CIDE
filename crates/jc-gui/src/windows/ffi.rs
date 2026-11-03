@@ -207,6 +207,7 @@ extern "system" {
     pub fn AppendMenuW(menu: Handle, flags: u32, item: usize, text: *const u16) -> i32;
     pub fn DestroyMenu(menu: Handle) -> i32;
     pub fn EnableMenuItem(menu: Handle, item: u32, flags: u32) -> u32;
+    pub fn CheckMenuItem(menu: Handle, item: u32, flags: u32) -> u32;
     pub fn GetMenu(hwnd: Hwnd) -> Handle;
     pub fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, kind: u32) -> i32;
     pub fn GetWindow(hwnd: Hwnd, relation: u32) -> Hwnd;

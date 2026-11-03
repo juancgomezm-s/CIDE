@@ -1,0 +1,161 @@
+{
+  "run_id": "20261103T023754Z-ffe68ae83162",
+  "platform": "Windows MSVC x64 local",
+  "binary": "target/release/jc-ide-gui.exe",
+  "binary_sha256": "c33cb3443e96b925a7a79131efdb4e9b72ece88f8db7474a17c140b9227ca955",
+  "source_sha256": {
+    "crates/jc-app/src/command.rs": "d3e65d0f8c8581e11c3558a6c1e6d780a1296e2df2f23790e74bf5c5e82e2a1a",
+    "crates/jc-app/src/dialog.rs": "30b6b5688e210299c3f903846f4cb0f3060eb1bc6427ef8d9bb16603e9734dce",
+    "crates/jc-app/src/diff_model.rs": "d541ed4cf9ee72b347f39a4541a5f543c0ac0523193886f2bb301168b33fd91c",
+    "crates/jc-app/src/focus.rs": "1e1575e598b14fffe7ac80d8ce4767e5497aef716c04760189218f3b13457c6d",
+    "crates/jc-app/src/git_diff.rs": "cabf327c6370737ddf4e0636ef6f1a8359b34f0574dc1dc1f2b8866718ccc96a",
+    "crates/jc-app/src/git_read.rs": "de52fa1f61127efe272733a418b69137647cdfcfd383f5169383e40908c0b95b",
+    "crates/jc-app/src/git_status.rs": "3f96d121393b0528ba8921f3ff5724856e9a666c8b20c011ee0d94da8a42de29",
+    "crates/jc-app/src/git_status_tasks.rs": "b36941ba795b380e8a9960695439856f35de059e341d8643b5a4bd14e0a4ce34",
+    "crates/jc-app/src/jobs.rs": "46aac7d20ef8a38659b92046c966e562027229ede14be308ce67355da7e20693",
+    "crates/jc-app/src/keymap.rs": "778e96ab86a0af027d200943bcc07f571ac8bb53353d3bd815124a2e2365d736",
+    "crates/jc-app/src/lib.rs": "5a3e0d2ba9b9a7bb7656956daae03afb59748e7da94ec7015465213f4aa9d04f",
+    "crates/jc-app/src/menu.rs": "4cc777644ca1df13f5ed0140cf72765b5e13571fade2c1a20ca61aa481acc2e1",
+    "crates/jc-app/src/panels.rs": "d989a417f00d823bf0e0b3c44f88d9ad4fdfd2e6ff7ce68e84ea4daabb229c61",
+    "crates/jc-app/src/panes.rs": "46783986b2c71701e6f4690f57c754c5c09d7fe146ad07f64b3acc4456c71526",
+    "crates/jc-app/src/project_search/parallel.rs": "48d411cd1f853d786e2339d69001be46c358b08ad4b8329b693e820b92ee96a7",
+    "crates/jc-app/src/project_search/replace.rs": "0d8d5d1433b449d677d2681829c2310e1421a7a2da81b3c4d07597c41973cd9b",
+    "crates/jc-app/src/project_search/scan.rs": "ccd04906e670cff2a71ec0331d3fc0d8b8b9ac9edb88b00c07cdcd5287d29862",
+    "crates/jc-app/src/project_search.rs": "d9607699998111d5f4084cc7ebac2f5f3cf36cfb0739ac7556873129c4d978d8",
+    "crates/jc-app/src/quick_open.rs": "f07963e047b47d3eab52bdb4ef868f4bb7356c0ca8f64244d10bbfbd0940c6b2",
+    "crates/jc-app/src/rectangle.rs": "c3e77c4d315379b1946d2ef56d04735c3ad784b7baaa1add7364d3f43c399590",
+    "crates/jc-app/src/tabs.rs": "ed039a65fd08e8e0e57144304877159cd5106295732c51bf1a3d68a90b8f1714",
+    "crates/jc-app/src/text_field.rs": "cb0e21256f2f9bbfcf7e3bc292b478a11ebda521e7687a22b42d8bae13895049",
+    "crates/jc-app/src/text_search.rs": "d12054be4fec7797c3a890231805e8c1408e836c69394f637ebf5016f96195c7",
+    "crates/jc-app/src/workbench/clipboard_transfer.rs": "328e88887c32e38b260d88764b7f8acc3320b76dbd201da537ce17f166ee2cda",
+    "crates/jc-app/src/workbench/commands.rs": "afb894aa0b56a0e7b4f6a9f70a40f17d6f0486a1df222300747cdb402f16f5b5",
+    "crates/jc-app/src/workbench/display.rs": "8169bc99866d1103c0d6d3fc81f5ea0a11d6df285477b6d14055180df51e8c07",
+    "crates/jc-app/src/workbench/edit.rs": "0a5b9941667fd484c3bf15a48cf2a9b688559c190b01b87e90d94c4351866d3b",
+    "crates/jc-app/src/workbench/invisible_layout.rs": "d588ff0dc670be43f9dac910443e2d15da9dc873fb2d3f602fd7d453604ff60f",
+    "crates/jc-app/src/workbench/line_commands.rs": "6b8e93c416ee9f11c7bb8aba98e1b07ee29b9f17efccab918e763e5d8e402561",
+    "crates/jc-app/src/workbench/line_index.rs": "4d17a66439478ecf4d496e23a2a4d62a6fc3d08d39ea111f74fa9eceec6318d1",
+    "crates/jc-app/src/workbench/mod.rs": "5149e59c0eb70a34fcffce6eaf50b3ebef8b11e4ff125699a67562879213d68e",
+    "crates/jc-app/src/workbench/rectangular.rs": "7d99d45445e4ef238784823fc7f0bf900946fcd89d884f030d9e4ad3addb53e4",
+    "crates/jc-app/src/workbench/search.rs": "b074728d594a18160fa65207c259903c8059f035abb477baa0089aea3f8d8707",
+    "crates/jc-app/src/workbench/text.rs": "e240e2c15cf18603d44f508483991fbc83ad3ba342a14da2c4c322cb2df59b20",
+    "crates/jc-gui/src/lib.rs": "41a24b1a67cd555db5789a98a6a260bf47644ead086ecc7d75b1ccaa6a71c156",
+    "crates/jc-gui/src/main.rs": "eb74630fee88456680d2be53344577fcf65772e89345ac6682e5605d4a240d3a",
+    "crates/jc-gui/src/windows/clipboard.rs": "12357b1e91446eb26f9dae62ee50104b3383d5a24f7406405f0e24b6e3a6f0e3",
+    "crates/jc-gui/src/windows/clipboard_flow.rs": "2b0c6a0acbf76fecc75d9d8ac9bbfab7e7fc685a9e00e42ac2db1191fa16586d",
+    "crates/jc-gui/src/windows/ffi.rs": "9148eb98faf5df4e4637117f269e59773cfe79228a1f98a75a62bf2ed318ba66",
+    "crates/jc-gui/src/windows/folder.rs": "5d879f315a63941c4bdd274e661cc1d793d505d974c5bf5d5b69b38ea7a0261a",
+    "crates/jc-gui/src/windows/notify.rs": "4c63cd1df08e39b3ecbf3076e72cb505b1315fce230fc792a303f18e9a22e6d0",
+    "crates/jc-gui/src/windows/paint.rs": "e446add31312777694e1fe22e932986f31ed863862799f76c08ac4cb41a3729b",
+    "crates/jc-gui/src/windows/search_paint.rs": "00bb9bfd923d5dcc94fc032f5587e062a6d8bea8446fa340f7f87dc9eb9455e7",
+    "crates/jc-gui/src/windows/search_panel.rs": "2a7ee2b71b07b160f192bf83573f07c0e9c599f69bc2a2cc384c2668415647b3",
+    "crates/jc-gui/src/windows/selector.rs": "6c4be1418f5a908937371676b9f18bd425f59cb2fc2dff24b6570d920ce1b9ba",
+    "crates/jc-gui/src/windows/selector_flow.rs": "f6a0192716bb39637b714cd1c29b5b8874c360ed77d39e09a76689fe29e6c548",
+    "crates/jc-gui/src/windows/selector_paint.rs": "c916e2c20451cf3dc4dc429e4caffc3537e00daf7eb995df17161fe81095f220",
+    "crates/jc-gui/src/windows/smoke.rs": "f4a58ffebd25b219b6535f2853b15c0e50059e6827c437c66aa30b969a65f9de",
+    "crates/jc-gui/src/windows.rs": "57a5ab9e48e0a5a7b9ba0d65d2dbb8f793bc547f62f3887b66f9d955b0e41cd3",
+    "crates/jc-tui/src/app/commands.rs": "4905d9f76be2d91de40b54afc16bdc840cf928b6d3b0bc4106315b9e65e4f4a5",
+    "crates/jc-tui/src/app/events.rs": "97413fd4f842d5fe089a529faffa6079b1088a1d8a893416fe285c6e8262b371",
+    "crates/jc-tui/src/app/explorer.rs": "69aa47c9749a5dfe44d589c2fac1a7ccaa0a080bc3e0b66dcb81976cf59ba2ef",
+    "crates/jc-tui/src/app/git_diff.rs": "e38852a91c83b00ee47fa7d133cf170287c1eb24fb228a9d0429d413eaca62bf",
+    "crates/jc-tui/src/app/git_integration_tests.rs": "bd6f29d0ba0316542c254324cbb31178eab278fd48d2b29c3436b767b6518568",
+    "crates/jc-tui/src/app/git_repository.rs": "dce452786f4569f9fa71f53ed8cd26e1dd52e0ca39edf68125948c4ec8511339",
+    "crates/jc-tui/src/app/git_status.rs": "d680539421958b1a218882fd0ea79fed678c5a060a32098bd466a4739ad4fd03",
+    "crates/jc-tui/src/app/git_status_integration_tests.rs": "356681f74090396545b442536c707744e0351b9299d68164f7f350d19cd4542d",
+    "crates/jc-tui/src/app/invisibles_tests.rs": "2faca715f8d3d71639c657779eb22da13226092a74be96f02481f802ff8d10c5",
+    "crates/jc-tui/src/app/keyboard_matrix_tests.rs": "56934768e90f857aed11c70e5d607176016cf9adb619769f39b2c6ae06187ce6",
+    "crates/jc-tui/src/app/line_command_tests.rs": "157a3b1d9a8b96fd8de794f96b47bd1dda8ac9d393785b4417c05b57f3925bd1",
+    "crates/jc-tui/src/app/menus.rs": "8fb4d1b416fae233fec30b04aaf1df9623417d6bcc8b012a5bd6ca1396553b59",
+    "crates/jc-tui/src/app/mod.rs": "29d0798689487ce6cee6bd741f834bb3dd0564a20a167a19f5186085db33d70f",
+    "crates/jc-tui/src/app/multiline_tests.rs": "34e6eb7e420b82b57df4c07a6876787582e60413aaebf4a30a514b8a35d74a2c",
+    "crates/jc-tui/src/app/overlays.rs": "5e565c79cafcdfb2d1818477a18538b2a9d486867ea8fb3176576319a14e24e2",
+    "crates/jc-tui/src/app/paths.rs": "f288c2cc000e1e7cbf67029be1ae52247cda1b24d5e6104fd2f7fe51d52cafb3",
+    "crates/jc-tui/src/app/presentation.rs": "89cdb4e26315e5540e123cd3ce00580085aae567d9666cdd529ae67daa7db73a",
+    "crates/jc-tui/src/app/project_search.rs": "a8fb06eb6b05957877d83f2205d86d6bd20a46f5695c783188e037bed8ab7d69",
+    "crates/jc-tui/src/app/quick_open.rs": "78388302c5956d029ed43d33be2e21b01e47856c816885e02c5d368007b9ad60",
+    "crates/jc-tui/src/app/quick_open_tests.rs": "f52334b5f3b642b8495547b8b79774189a3f5ed42d97eb03569492442542a668",
+    "crates/jc-tui/src/app/rectangle_tests.rs": "40037de15d7c29bcfcd6096952bbdf46fa5d5139ab7daef3f6dacf1f489782cd",
+    "crates/jc-tui/src/app/search_input.rs": "56d1608b5ce8ae3465c593b1cfe69f951206304403523a8de3f1997c1493e72d",
+    "crates/jc-tui/src/app/tests.rs": "c536f5ef9533691b2308cc7a7bd07006eeeaa9ddc6a18b200f1f4d6e7a34fc99",
+    "crates/jc-tui/src/event_loop.rs": "27cfbc95183c9ef83787f32a70abfb399b6578b11c315aeb7592bf858850b6ad",
+    "crates/jc-tui/src/frame_encoder.rs": "ebfb8fdeb8a69e4b01a2f06a7ca0617d76282931a1f06d9c1460cc0b7dfdbc00",
+    "crates/jc-tui/src/input.rs": "ce41f07211ffd248aff87226087e412fb416e550044778055b42cff9f149b844",
+    "crates/jc-tui/src/lib.rs": "6777ece8286a295318644f1299277e63c01fa3af373c9d1f65e3fec33e167a25",
+    "crates/jc-tui/src/main.rs": "a45110583d2a1154ceaeb1b41a1823c930bb60915593c743a117e92098409139",
+    "crates/jc-tui/src/render/git_diff.rs": "a076e930865fb04570464de389151afbb485447753b6770cd3f3ea82f21ee3a5",
+    "crates/jc-tui/src/render/git_status.rs": "9a6c29dd233a52eaa21941ecbe82a73dd33ec5a858e37506a2619b0c515bf027",
+    "crates/jc-tui/src/render/mod.rs": "d1b34f2939773c6b81ad11530501c0071a4ec0dffcfcd556108aad11502ef094",
+    "crates/jc-tui/src/render/overlays.rs": "899d7cd2d99ff99f29e10cb36ac30851bcaf28c5a832b73bcdeee5681280cc35",
+    "crates/jc-tui/src/screen.rs": "ec7081a0c79a3c41a047e2d6efff2943b563b3e03093f20ea1c1cec7cb75335e",
+    "crates/jc-tui/src/state.rs": "3e56737175a95a790dbac61a4daaced654c7bd7f58e6c1cc0c7870d6cae5c95c",
+    "crates/jc-tui/src/terminal.rs": "2c57cf1f31a00ad4a9393be05486fb493174bc08d37bced4a26d629bd1a82351"
+  },
+  "tests_distinct_passed": 376,
+  "tests_one_full_workspace_run": false,
+  "completed_portions": [
+    119,
+    86,
+    171
+  ],
+  "native_checks": 29,
+  "native_report_sha256": "ebbe034749fcf4418d9ef6eb5148fa45dba9ea461f727a64a57e3dc15847739a",
+  "native_paint_errors": 0,
+  "fixture_bytes": 13,
+  "fixture_sha256": "98ab4d3aeab1e120560e942e2df6a0db1147bf94bafcf1590000ffb3c2b6fc80",
+  "fixture_unchanged": true,
+  "png_conversion": "Lossless actual GDI BGRX BMP to RGB PNG via Python stdlib, no redraw/generation",
+  "artifacts": {
+    "m2-invisibles-native-2026-11-02.png": {
+      "sha256": "adf32b43d589bc3a1e72732d21e59f1aafc229040816d87f8a979e4bd2d75c0a",
+      "bmp_sha256": "b515558aa9908c6c6b840bd1ce47ec2c8c9def32d96c6b211b8f13cb43fd25e2",
+      "bmp": "work/native-gui-smoke/20261103T023754Z-ffe68ae83162/native-frame.bmp"
+    },
+    "m2-multiline-native-2026-11-02.png": {
+      "sha256": "f21ed47f1d61c9e64e8946f58b61a49e7fb07322a0763bc21c2dbd5f2225ce48",
+      "bmp_sha256": "445f6fed1bba1d33941b52a66c25657f9525fdc4885eb83a5accdfb14901223f",
+      "bmp": "work/native-gui-smoke/20261103T023754Z-ffe68ae83162/native-multiline.bmp"
+    }
+  },
+  "validation_raw_logs": [
+    {
+      "path": "work/m2-visible-blocks-20261103T022947-test.log",
+      "sha256": "2c3cd6327bd7bc246f4cef4ac03b23423956aad5fc60f0064c6cc9157a54ab6a"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T023000-test.log",
+      "sha256": "3fff629543f6381b8dbf90832e11847724245fe8652aa10a64e483023c9fbd53"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T023025-test.log",
+      "sha256": "1fccfb993992eb0a580a0581627a84ffcbfb6326e02ca5a7eab921521ccae03a"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T023222-test.log",
+      "sha256": "d6efef4eb86d2a5dac61cd0f4a40c3eb49872f975fa795056f18eb26f3dfc92c"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T023237-test.log",
+      "sha256": "cac22e2f71c3676b594ab42ecfff88132ce2452c0ffa3fa1d8d6b465fa971f69"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T023308-clippy.log",
+      "sha256": "7a8e4fd3971dc59f203bd7354befc0b6941d38b27a06e29cfaef158f5b610262"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T023407-build.log",
+      "sha256": "c1d274cc37094a6eb717472331f8227f2109e879638eaada360b448d989c279b"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T023640-clippy.log",
+      "sha256": "06dbe1f6ca79bbee59223d3d152fc5daa9e3e447cba0d1fc8f80ec41aae64c81"
+    },
+    {
+      "path": "work/m2-visible-blocks-20261103T023651-build.log",
+      "sha256": "6f200bb609adfafd929cc501dd40b18db73521f47fdcd54cc0803f1776bb151b"
+    }
+  ],
+  "clipboard_transport_in_smoke": "bounded in-memory text through production handlers/model handoffs; no OS clipboard access",
+  "os_clipboard_verified": false,
+  "physical_display_verified": false,
+  "new_dependencies": false,
+  "remote_ci": false
+}

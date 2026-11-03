@@ -152,3 +152,20 @@ dueño único, sin child EDIT ni otro source buffer. New/Save deriva FileSession
 mouse usa colocación escalar sin salto de historial. El [finder Quick Open](M2_QUICK_OPEN.md)
 trabaja solo sobre metadatos y abre mediante el lector por handle compartido en
 jc-files, también usado por Search Plus; no otro editor ni otra historia.
+
+
+## Display de invisibles y campos de bloques
+
+El [bloque funcional](M2_INVISIBLES_MULTILINE.md) añade un bool Workbench y un
+cache diagnóstico por documento, con spans de bytes y checkpoints byte/escalar/
+display. TUI/GUI comparten notación ASCII y conversiones; GDI/Screen solo consumen
+filas visibles preparadas. Cache textual896KiB + diagnóstico128KiB conserva la
+cuota lógica1MiB; metadatos de línea y frames se contabilizan aparte. El cache
+diagnóstico invalida al editar; es coste frío de línea, sin rebuild de documento.
+
+Los campos de Find/Replace comparten edición UTF8/CRLF atómico y presentación
+navegable, sin poseer otro documento. Slots S0 GUI se entregan vía mensaje con
+prioridad acotada de input/paint; un slot sin resultado no invalida el canvas.
+Clipboard externo es un handoff: snapshot acotado + target exacto, llamada OS
+fuera del modelo y revalidación antes de cut/paste mediante la edición compartida.
+Elegir encoding cambia interpretación, no fuente. No nuevo host/proveedor ABL.

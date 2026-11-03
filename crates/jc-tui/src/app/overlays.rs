@@ -1,13 +1,20 @@
 use super::menus::{next_selectable, previous_selectable};
 use super::TuiApp;
 use crate::input::{is_plain_text, to_stroke};
-use crate::state::{ReplaceField, UiOverlay};
+use crate::state::UiOverlay;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{KeyScope, Resolution};
 use jc_text::TextEncoding;
 
 impl TuiApp {
     pub(crate) fn handle_overlay_key(&mut self, key: KeyEvent) {
+        if matches!(
+            self.overlay,
+            UiOverlay::Find { .. } | UiOverlay::Replace { .. }
+        ) {
+            self.handle_search_input(key);
+            return;
+        }
         if let UiOverlay::Prompt {
             kind: crate::state::PromptKind::GoToPosition,
             input,
@@ -73,109 +80,8 @@ impl TuiApp {
                 }
                 _ => {}
             },
-            UiOverlay::Find { mut input } => {
-                if let KeyCode::Char(ch) = key.code {
-                    if is_plain_text(key) && input.len() + ch.len_utf8() > 4096 {
-                        self.status = "Search query exceeds 4096 bytes".into();
-                        return;
-                    }
-                }
-                if key.code == KeyCode::Esc {
-                    self.workbench.cancel_search();
-                    self.close_overlay();
-                    return;
-                }
-                if self.try_overlay_command(key) {
-                    return;
-                }
-                match key.code {
-                    KeyCode::Backspace => {
-                        input.pop();
-                        self.update_find(input);
-                    }
-                    KeyCode::Char(ch) if is_plain_text(key) => {
-                        input.push(ch);
-                        self.update_find(input);
-                    }
-                    _ => {}
-                }
-            }
-            UiOverlay::Replace {
-                mut find,
-                mut replacement,
-                mut field,
-            } => {
-                if let KeyCode::Char(ch) = key.code {
-                    let len = match field {
-                        ReplaceField::Find => find.len(),
-                        ReplaceField::Replacement => replacement.len(),
-                    };
-                    if is_plain_text(key) && len + ch.len_utf8() > 4096 {
-                        self.status = "Search input exceeds 4096 bytes".into();
-                        return;
-                    }
-                }
-                if key.code == KeyCode::Esc {
-                    self.workbench.cancel_search();
-                    self.close_overlay();
-                    return;
-                }
-                if key.code == KeyCode::Tab || key.code == KeyCode::BackTab {
-                    field = match field {
-                        ReplaceField::Find => ReplaceField::Replacement,
-                        ReplaceField::Replacement => ReplaceField::Find,
-                    };
-                    self.overlay = UiOverlay::Replace {
-                        find,
-                        replacement,
-                        field,
-                    };
-                    return;
-                }
-                if key.code == KeyCode::Enter {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        match self.workbench.replace_all(&replacement) {
-                            Ok(count) => self.status = format!("Replaced {count} matches"),
-                            Err(error) => self.status = error.to_string(),
-                        }
-                    } else {
-                        match self.workbench.replace_current(&replacement) {
-                            Ok(true) => self.status = "Replaced current match".to_owned(),
-                            Ok(false) => self.status = "No match to replace".to_owned(),
-                            Err(error) => self.status = error.to_string(),
-                        }
-                    }
-                    self.overlay = UiOverlay::Replace {
-                        find,
-                        replacement,
-                        field,
-                    };
-                    return;
-                }
-                match key.code {
-                    KeyCode::Backspace => match field {
-                        ReplaceField::Find => {
-                            find.pop();
-                            self.update_replace_query(&find);
-                        }
-                        ReplaceField::Replacement => {
-                            replacement.pop();
-                        }
-                    },
-                    KeyCode::Char(ch) if is_plain_text(key) => match field {
-                        ReplaceField::Find => {
-                            find.push(ch);
-                            self.update_replace_query(&find);
-                        }
-                        ReplaceField::Replacement => replacement.push(ch),
-                    },
-                    _ => {}
-                }
-                self.overlay = UiOverlay::Replace {
-                    find,
-                    replacement,
-                    field,
-                };
+            UiOverlay::Find { .. } | UiOverlay::Replace { .. } => {
+                unreachable!("search fields handled above")
             }
             UiOverlay::Palette {
                 mut input,
@@ -272,7 +178,7 @@ impl TuiApp {
         }
     }
 
-    fn try_overlay_command(&mut self, key: KeyEvent) -> bool {
+    pub(super) fn try_overlay_command(&mut self, key: KeyEvent) -> bool {
         let Some(stroke) = to_stroke(key) else {
             return false;
         };
@@ -288,37 +194,14 @@ impl TuiApp {
         }
     }
 
-    fn update_find(&mut self, input: String) {
-        match self.workbench.set_search_query(input.clone()) {
-            Ok(()) => {
-                self.overlay = UiOverlay::Find { input };
-                self.status = format!(
-                    "Document search {:?}: {} matches",
-                    self.workbench.search().status,
-                    self.workbench.search().matches.len()
-                );
-            }
-            Err(error) => {
-                self.overlay = UiOverlay::Find { input };
-                self.status = error.to_string();
-            }
-        }
-    }
-
-    fn update_replace_query(&mut self, query: &str) {
-        match self.workbench.set_search_query(query.to_owned()) {
-            Ok(()) => {
-                self.status = format!(
-                    "Document search {:?}: {} matches",
-                    self.workbench.search().status,
-                    self.workbench.search().matches.len()
-                )
-            }
-            Err(error) => self.status = error.to_string(),
-        }
-    }
-
     pub(crate) fn append_overlay_text(&mut self, text: &str) {
+        if matches!(
+            self.overlay,
+            UiOverlay::Find { .. } | UiOverlay::Replace { .. }
+        ) {
+            self.edit_search_field(jc_app::FieldEdit::Insert(text));
+            return;
+        }
         if let UiOverlay::Prompt {
             kind: crate::state::PromptKind::GoToPosition,
             input,
@@ -347,39 +230,8 @@ impl TuiApp {
                 input.push_str(text);
                 self.overlay = UiOverlay::Prompt { kind, input };
             }
-            UiOverlay::Find { mut input } => {
-                if input.len() + text.len() > 4096 {
-                    self.status = "Search query exceeds 4096 bytes".into();
-                    return;
-                }
-                input.push_str(text);
-                self.update_find(input);
-            }
-            UiOverlay::Replace {
-                mut find,
-                mut replacement,
-                field,
-            } => {
-                let len = match field {
-                    ReplaceField::Find => find.len(),
-                    ReplaceField::Replacement => replacement.len(),
-                };
-                if len + text.len() > 4096 {
-                    self.status = "Search input exceeds 4096 bytes".into();
-                    return;
-                }
-                match field {
-                    ReplaceField::Find => {
-                        find.push_str(text);
-                        self.update_replace_query(&find);
-                    }
-                    ReplaceField::Replacement => replacement.push_str(text),
-                }
-                self.overlay = UiOverlay::Replace {
-                    find,
-                    replacement,
-                    field,
-                };
+            UiOverlay::Find { .. } | UiOverlay::Replace { .. } => {
+                unreachable!("search fields handled above")
             }
             UiOverlay::Palette { mut input, .. } => {
                 input.push_str(text);

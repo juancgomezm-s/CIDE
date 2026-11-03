@@ -2,6 +2,7 @@
 use super::TuiApp;
 use jc_app::{BottomPanel, PaneId, PrimaryFocus};
 use jc_text::TextPosition;
+use std::ops::Range;
 
 #[derive(Debug, Default)]
 pub(crate) struct GitPresentation {
@@ -95,6 +96,9 @@ pub(crate) struct EditorText {
     pub position: Option<TextPosition>,
     pub rectangle: Option<jc_app::RectangleBounds>,
     pub rows: Vec<Vec<(char, usize)>>,
+    pub display_rows: Option<Vec<Vec<jc_app::DisplayCell>>>,
+    pub cursor_column: Option<usize>,
+    pub rectangle_source_ranges: Vec<Option<Range<usize>>>,
 }
 pub(crate) struct Presentation<'a> {
     pub app: &'a TuiApp,
@@ -140,7 +144,12 @@ impl TuiApp {
                 .map_or(3, |n| (n.max(1).to_string().len() as u16).clamp(3, 7));
             self.workbench.reveal_active_pane(
                 usize::from(layout.content_height.saturating_sub(1)),
-                usize::from(layout.pane_width.saturating_sub(number_width + 2)),
+                if self.workbench.invisibles_visible() {
+                    usize::from(layout.pane_width.saturating_sub(number_width + 2))
+                        .min(crate::render::MAX_DISPLAY_COLUMNS)
+                } else {
+                    usize::from(layout.pane_width.saturating_sub(number_width + 2))
+                },
             );
             for pane in [PaneId::Primary, PaneId::Secondary] {
                 if !layout.two_columns && pane != self.workbench.panes().active() {
@@ -163,38 +172,85 @@ impl TuiApp {
                 };
                 let text_width = usize::from(width.saturating_sub(number + 2));
                 let first = view.scroll_line().min(count.unwrap_or(0).saturating_sub(1));
-                let rows = (first
+                let visible = first
                     ..count
                         .unwrap_or(0)
-                        .min(first + usize::from(layout.content_height.saturating_sub(1))))
-                    .map(|line| {
-                        if let Some(rect) = rectangle {
+                        .min(first + usize::from(layout.content_height.saturating_sub(1)));
+                let all = self.workbench.invisibles_visible();
+                let cursor_column = if all {
+                    self.workbench.display_column_for_pane(pane)
+                } else {
+                    None
+                };
+                let display_rows = all.then(|| {
+                    visible
+                        .clone()
+                        .map(|line| {
                             self.workbench
-                                .rectangle_visible_line(
+                                .display_row(
                                     location.tab,
                                     line,
-                                    rect.scroll_column,
-                                    text_width,
+                                    view.scroll_column(),
+                                    text_width.min(crate::render::MAX_DISPLAY_COLUMNS),
                                 )
-                                .unwrap_or_else(|_| {
-                                    "[rectangle layout unavailable]"
-                                        .chars()
-                                        .take(text_width)
-                                        .map(|ch| (ch, usize::MAX))
-                                        .collect()
-                                })
-                        } else {
-                            self.workbench
-                                .visible_line(location.tab, line, view.scroll_column(), text_width)
                                 .unwrap_or_default()
-                        }
-                    })
-                    .collect();
+                        })
+                        .collect()
+                });
+                let rectangle_source_ranges = if all {
+                    visible
+                        .clone()
+                        .map(|line| {
+                            rectangle.and_then(|rect| {
+                                self.workbench
+                                    .rectangle_source_selection(location.tab, line, rect)
+                            })
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                let rows = if all {
+                    Vec::new()
+                } else {
+                    visible
+                        .map(|line| {
+                            if let Some(rect) = rectangle {
+                                self.workbench
+                                    .rectangle_visible_line(
+                                        location.tab,
+                                        line,
+                                        rect.scroll_column,
+                                        text_width,
+                                    )
+                                    .unwrap_or_else(|_| {
+                                        "[rectangle layout unavailable]"
+                                            .chars()
+                                            .take(text_width)
+                                            .map(|ch| (ch, usize::MAX))
+                                            .collect()
+                                    })
+                            } else {
+                                self.workbench
+                                    .visible_line(
+                                        location.tab,
+                                        line,
+                                        view.scroll_column(),
+                                        text_width,
+                                    )
+                                    .unwrap_or_default()
+                            }
+                        })
+                        .collect()
+                };
                 let text = EditorText {
                     line_count: count,
                     position,
                     rectangle,
                     rows,
+                    display_rows,
+                    cursor_column,
+                    rectangle_source_ranges,
                 };
                 match pane {
                     PaneId::Primary => primary = text,

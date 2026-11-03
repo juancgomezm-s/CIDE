@@ -14,6 +14,7 @@ const ACCENT: u32 = 0x00a6d9e6;
 struct Cell {
     ch: char,
     selected: bool,
+    marker: bool,
 }
 struct Row {
     number: Vec<u16>,
@@ -37,6 +38,18 @@ pub(super) struct Frame {
     status: Vec<u16>,
     panes: Vec<Pane>,
     selector: Option<super::selector::SelectorPresentation>,
+    search: Option<super::search_panel::SearchPresentation>,
+}
+impl Frame {
+    pub(super) fn contains_source_row(&self, needle: &str) -> bool {
+        self.panes.iter().flat_map(|p| &p.rows).any(|row| {
+            row.cells
+                .iter()
+                .map(|c| c.ch)
+                .collect::<String>()
+                .contains(needle)
+        })
+    }
 }
 
 fn areas(state: &State) -> Vec<(PaneId, Rect)> {
@@ -102,7 +115,12 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         };
         let rectangle = state.workbench.rectangle_for_pane(id);
         let first = view.scroll_line();
-        let scroll = rectangle.map_or(view.scroll_column(), |rect| rect.scroll_column);
+        let invisible = state.workbench.invisibles_visible();
+        let scroll = if invisible {
+            view.scroll_column()
+        } else {
+            rectangle.map_or(view.scroll_column(), |rect| rect.scroll_column)
+        };
         let position = state.workbench.position_for_pane(id);
         let count = state
             .workbench
@@ -116,6 +134,34 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         let selection = state.workbench.selection_for_pane(id);
         let mut prepared = Vec::with_capacity(rows);
         for line in first..count.min(first.saturating_add(rows)) {
+            if invisible {
+                let rectangle_source = rectangle.and_then(|rect| {
+                    state
+                        .workbench
+                        .rectangle_source_selection(location.tab, line, rect)
+                });
+                let cells = state
+                    .workbench
+                    .display_row(location.tab, line, scroll, columns)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|cell| Cell {
+                        ch: cell.ch,
+                        marker: cell.marker,
+                        selected: selection
+                            .as_ref()
+                            .or(rectangle_source.as_ref())
+                            .is_some_and(|range| {
+                                range.start < cell.source.end && cell.source.start < range.end
+                            }),
+                    })
+                    .collect();
+                prepared.push(Row {
+                    number: wide(&format!("{:>digits$}", line + 1)),
+                    cells,
+                });
+                continue;
+            }
             let visible = if rectangle.is_some() {
                 state
                     .workbench
@@ -138,6 +184,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                 .take(columns)
                 .enumerate()
                 .map(|(target, (ch, byte))| Cell {
+                    marker: false,
                     ch: if ch == '\t' {
                         '→'
                     } else if ch.is_control() {
@@ -162,7 +209,11 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         }
         let active = id == state.workbench.panes().active();
         let caret = position.and_then(|position| {
-            let column = rectangle.map_or(position.column, |rect| rect.head_column);
+            let column = if invisible {
+                state.workbench.display_column_for_pane(id)?
+            } else {
+                rectangle.map_or(position.column, |rect| rect.head_column)
+            };
             (active
                 && state.focused
                 && position.line >= first
@@ -234,6 +285,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         top: wide(&top),
         status,
         panes,
+        search: state.search_presentation(),
         selector: state.selector_presentation(super::selector_paint::list_capacity(
             state.width,
             state.height,
@@ -380,7 +432,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                         bottom: (y + frame.cell_height).min(pane.rect.bottom),
                     },
                     encoded,
-                    FOREGROUND,
+                    if cell.marker { DIM } else { FOREGROUND },
                     if cell.selected { SELECTED } else { BACKGROUND },
                 )?;
             }
@@ -413,6 +465,16 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
     )?;
     if let Some(presentation) = &frame.selector {
         super::selector_paint::draw(
+            dc,
+            presentation,
+            frame.width,
+            frame.height,
+            frame.cell_width,
+            frame.cell_height,
+        )?;
+    }
+    if let Some(presentation) = &frame.search {
+        super::search_paint::draw(
             dc,
             presentation,
             frame.width,
@@ -455,6 +517,19 @@ pub(super) fn click(state: &mut State, x: i32, y: i32) {
     let line =
         (view.scroll_line() + (y - text_y) as usize / state.cell_height as usize).min(count - 1);
     let column = view.scroll_column() + (x - text_x) as usize / state.cell_width as usize;
+    if state.workbench.invisibles_visible() {
+        let target = state
+            .workbench
+            .display_byte_at(location.tab, line, column)
+            .and_then(|byte| state.workbench.position_for_tab(location.tab, byte));
+        if let Some(position) = target {
+            let select = state.modifiers().contains(jc_app::Modifiers::SHIFT);
+            if let Err(error) = state.workbench.set_caret_position(position, select) {
+                state.error(error);
+            }
+        }
+        return;
+    }
     let end = state
         .workbench
         .line_range_for_tab(location.tab, line)

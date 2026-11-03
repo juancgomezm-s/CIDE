@@ -244,6 +244,8 @@ pub fn default_keymap() -> KeyMap {
         bind(Global, KeyStroke::ctrl(c('o')), FileOpen),
         bind(Global, KeyStroke::ctrl(c('p')), FileQuickOpen),
         bind(Global, KeyStroke::ctrl_shift(c('o')), FileOpenFolder),
+        bind(Editor, KeyStroke::ctrl_alt(c('e')), FileChooseEncoding),
+        bind(Global, KeyStroke::ctrl_alt(c('i')), ViewToggleInvisibles),
         bind(Global, KeyStroke::ctrl(c('s')), FileSave),
         bind(Global, KeyStroke::ctrl_shift(c('s')), FileSaveAs),
         bind(Global, KeyStroke::ctrl_alt(c('s')), FileSaveAll),

@@ -361,3 +361,14 @@ con full fold, cuotas/cancelación/entrega vigente; Up/Down/Page/Home/End, Enter
 Ctrl+Enter lateral, F5 refresh y Esc cancel. La preparación no consume completions;
 dibujar sigue readonly. [Contrato, fuente de autoridad y límites](M2_QUICK_OPEN.md).
 GUI lo adapta en el siguiente bloque; no inferir paridad por compartir comando.
+
+
+## Campos multilínea e invisibles
+
+Find/Replace ahora son campos navegables/pegables de4096 bytes UTF8 cada uno.
+F2/ShiftEnter/AltEnter insertan LF; F4CRLF, F8CR y F7TAB. Flechas/HomeEnd/
+BackspaceDelete editan el campo; CtrlU lo vacía; Tab cambia Find/Replace.
+Enter/F6 reemplaza uno; CtrlEnter/F9 todos; F3/ShiftF3 siguiente/anterior.
+Se comparan EOL exactos y no se interpretan escapes escritos como regex.
+View/Palette/Global CtrlAltI alterna la representación ASCII de invisibles sin
+cambiar drafts, bytes, undo ni guardado. [Contrato y pruebas](M2_INVISIBLES_MULTILINE.md).

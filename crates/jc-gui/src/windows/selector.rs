@@ -1,6 +1,13 @@
 //! Input and bounded owned presentation only. No filesystem calls, worker,
 //! command execution, document ownership or Win32 dispatch lives here.
 use jc_app::{quick_open::QuickOpenController, CommandContext, CommandId, CommandRegistry, KeyMap};
+use jc_text::TextEncoding;
+const ENCODINGS: [TextEncoding; 4] = [
+    TextEncoding::Utf8,
+    TextEncoding::Windows1252,
+    TextEncoding::Iso8859_1,
+    TextEncoding::Ibm850,
+];
 
 const QUERY_BYTES: usize = 256;
 const MAX_ROWS: usize = 32;
@@ -10,6 +17,7 @@ const MAX_COMMANDS: usize = 200;
 pub(super) enum SelectorKind {
     Palette,
     Files,
+    Encoding,
 }
 
 pub(super) struct Selector {
@@ -56,6 +64,43 @@ fn visible(selected: usize, count: usize, max_rows: usize) -> std::ops::Range<us
     first..first + rows
 }
 impl Selector {
+    pub fn encoding_target(&self) -> Option<TextEncoding> {
+        ENCODINGS
+            .iter()
+            .copied()
+            .filter(|e| matches(e.name(), &self.input))
+            .nth(self.selected)
+    }
+    pub fn prepare_encoding(&mut self, rows: usize) -> SelectorPresentation {
+        let total = ENCODINGS
+            .iter()
+            .filter(|e| matches(e.name(), &self.input))
+            .count();
+        self.normalize(total);
+        let window = visible(self.selected, total, rows);
+        let rows = ENCODINGS
+            .iter()
+            .filter(|e| matches(e.name(), &self.input))
+            .enumerate()
+            .skip(window.start)
+            .take(window.len())
+            .map(|(ordinal, e)| SelectorRow {
+                label: e.name().to_owned(),
+                enabled: true,
+                selected: ordinal == self.selected,
+                ordinal,
+            })
+            .collect();
+        SelectorPresentation {
+            title: "Choose Source Encoding",
+            query: self.input.clone(),
+            message: "Interpret existing bytes; no conversion or save".into(),
+            footer: "Enter choose | Esc cancel; bytes stay intact",
+            rows,
+            total,
+            selected: self.selected,
+        }
+    }
     pub fn new(kind: SelectorKind) -> Self {
         Self {
             kind,

@@ -25,6 +25,10 @@ REQUIRED = {
     "quick_open_dirty_side_shared_undo", "palette_shared_command_one_undo",
     "palette_unavailable_command_rejected", "project_change_cancels_selector",
     "selector_gdi_paint_read_only",
+    "encoding_choice_and_cancel_preserve_source_history", "invisibles_native_spans_without_source_edit",
+    "multiline_native_paste_find_replace_all_one_undo_save", "multiline_native_no_hit_eol_gestures_and_atomic_quota",
+    "multiline_fields_gdi_and_invisibles_read_only",
+    "invisibles_toggle_preserves_search_draft",
 }
 
 def ordinary_directory(path):

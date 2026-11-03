@@ -342,3 +342,20 @@ Se conserva el único Workbench/undo y no hay hilo puente/indexador ni dependenc
 nueva. M2B permanece abierto. Próximo bloque amplio: clipboard OS + elección de
 encoding en GUI; pruebas locales al cerrar ambas rutas. Manual/IME/DPI/accesibilidad
 y aceptación física/global siguen pendientes, sin posponer construcción funcional.
+
+
+## Prioridad de las tres funciones — cierre funcional
+
+Juan pidió construir juntas Mostrar invisibles, buscar bloques multilínea y
+reemplazarlos, antes de nuevas superficies. Las tres están integradas en TUI/GUI:
+[contrato, uso y evidencia](M2_INVISIBLES_MULTILINE.md). Mapa ASCII por spans fuente,
+caret/selección/scroll propios de display, EOL exactos y campos navegables/pegables
+con gestos distintos de ejecutar. Replace-all documental conserva una transacción.
+También se integraron clipboard lineal nativo y elección gráfica de interpretación.
+
+376 Rust distintos en cierre selectivo; Clippy/release y29 checks nativos pasaron.
+No se infiere aceptación OS clipboard/IME/DPI/accesibilidad/pantalla física ni RAM
+global. Regex/dependencias siguen aplazadas. Próximo pendiente funcional M2B:
+flujo Save All explícito por documento, incluyendo Save As para nuevos y cancelación;
+nunca guardar nombres untitled generados por un shortcut. Validar al cerrar ese
+bloque, sin repetir las pruebas de este cierre por documentación.

@@ -1,7 +1,11 @@
+mod clipboard;
+mod clipboard_flow;
 mod ffi;
 mod folder;
 mod notify;
 mod paint;
+mod search_paint;
+mod search_panel;
 mod selector;
 mod selector_flow;
 mod selector_paint;
@@ -40,11 +44,16 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (106, CommandId::FileExit, "E&xit"),
     (107, CommandId::FileOpenFolder, "Open &Folder..."),
     (108, CommandId::FileQuickOpen, "&Quick Open..."),
+    (
+        109,
+        CommandId::FileChooseEncoding,
+        "Choose Source &Encoding...",
+    ),
     (110, CommandId::EditUndo, "&Undo"),
     (111, CommandId::EditRedo, "&Redo"),
-    (112, CommandId::EditCut, "Cu&t (internal)"),
-    (113, CommandId::EditCopy, "&Copy (internal)"),
-    (114, CommandId::EditPaste, "&Paste (internal)"),
+    (112, CommandId::EditCut, "Cu&t"),
+    (113, CommandId::EditCopy, "&Copy"),
+    (114, CommandId::EditPaste, "&Paste"),
     (115, CommandId::EditSelectAll, "Select &All"),
     (116, CommandId::EditJoinLines, "&Join Lines"),
     (117, CommandId::EditSplitLine, "&Split Line"),
@@ -55,6 +64,15 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (124, CommandId::TabNext, "&Next Tab"),
     (125, CommandId::TabPrevious, "&Previous Tab"),
     (126, CommandId::PaletteOpen, "Command &Palette..."),
+    (
+        127,
+        CommandId::ViewToggleInvisibles,
+        "Show &Invisible Characters",
+    ),
+    (130, CommandId::SearchFind, "&Find Multiline..."),
+    (131, CommandId::SearchReplace, "&Replace Multiline..."),
+    (132, CommandId::SearchFindNext, "Find &Next"),
+    (133, CommandId::SearchFindPrevious, "Find &Previous"),
 ];
 pub(super) fn command_id(command: CommandId) -> usize {
     COMMANDS
@@ -65,6 +83,8 @@ pub(super) fn command_id(command: CommandId) -> usize {
 
 enum Action {
     None,
+    Clipboard(CommandId),
+    PasteSearch(u64),
     ChooseFolder,
     Open(bool),
     SaveAs,
@@ -78,6 +98,9 @@ struct State {
     encoding: Option<TextEncoding>,
     project_root: Option<PathBuf>,
     selector: Option<Selector>,
+    search_panel: Option<search_panel::SearchPanel>,
+    encoding_target: Option<(jc_app::DocumentId, u64, Option<TextEncoding>)>,
+    smoke_clipboard: Option<String>,
     quick_open: QuickOpenController,
     wakeup: Wakeup,
     bridge: Arc<notify::Bridge>,
@@ -130,11 +153,14 @@ impl State {
             encoding: options.encoding,
             project_root: None,
             selector: None,
+            search_panel: None,
+            encoding_target: None,
+            smoke_clipboard: None,
             quick_open: QuickOpenController::new(wakeup.clone()),
             wakeup,
             bridge,
             deliveries: 0,
-            status: "Native Win32/GDI · scalar cells · internal clipboard".into(),
+            status: "Native Win32/GDI · scalar cells · Windows text clipboard".into(),
             width: 1000,
             height: 650,
             cell_width: 9,
@@ -174,6 +200,7 @@ impl State {
                 state.new_document();
             }
         }
+        state.ensure_encoding_selector();
         Ok(state)
     }
     fn new_document(&mut self) {
@@ -190,6 +217,11 @@ impl State {
         let mut context = self.workbench.context();
         context.focus = PrimaryFocus::Editor;
         context.has_project = self.project_root.is_some();
+        // Availability is an intention gate, never a read of another owner's
+        // clipboard. Content is requested only by explicit Paste.
+        if !context.rectangular_selection {
+            context.clipboard_has_text = context.has_document;
+        }
         context
     }
     fn execute(&mut self, command: CommandId) -> Action {
@@ -198,6 +230,21 @@ impl State {
             return Action::None;
         }
         match command {
+            CommandId::SearchFind | CommandId::SearchReplace => {
+                self.open_search_panel(command == CommandId::SearchReplace);
+                return Action::None;
+            }
+            CommandId::FileChooseEncoding => {
+                self.open_encoding_selector();
+                return Action::None;
+            }
+            CommandId::EditCopy | CommandId::EditCut | CommandId::EditPaste
+                if !self.context().rectangular_selection
+                    && (command != CommandId::EditPaste
+                        || !self.workbench.clipboard_is_rectangular()) =>
+            {
+                return Action::Clipboard(command)
+            }
             CommandId::FileOpenFolder => {
                 self.close_selector();
                 return Action::ChooseFolder;
@@ -234,11 +281,24 @@ impl State {
             _ => {}
         }
         match self.workbench.execute(command) {
+            Ok(CommandOutcome::View(CommandId::ViewToggleInvisibles)) => {
+                self.status = if self.workbench.invisibles_visible() {
+                    "Invisible characters: ASCII spans on"
+                } else {
+                    "Invisible characters hidden"
+                }
+                .into()
+            }
             Ok(CommandOutcome::None) => {
                 if command == CommandId::FileSave {
                     self.save_count += 1;
                 }
-                self.status = "Ready · internal clipboard · scalar-cell preview".into();
+                self.status = if self.context().rectangular_selection {
+                    "Ready · rectangular clipboard stays internal"
+                } else {
+                    "Ready · Windows text clipboard · scalar-cell preview"
+                }
+                .into();
             }
             Ok(CommandOutcome::View(
                 CommandId::EditorSplitRight
@@ -278,9 +338,6 @@ impl State {
     fn key(&mut self, code: usize) -> (bool, Action) {
         self.pending_surrogate = None;
         let modifiers = self.modifiers();
-        if self.selector.is_some() {
-            return (true, self.selector_key(code, modifiers));
-        }
         let key = match code {
             0x09 => Some(Key::Tab),
             0x0d => Some(Key::Enter),
@@ -294,8 +351,29 @@ impl State {
             0x27 => Some(Key::Right),
             0x28 => Some(Key::Down),
             0x30..=0x5a => char::from_u32(code as u32).map(|ch| Key::Char(ch.to_ascii_lowercase())),
+            0x70..=0x87 => Some(Key::Function((code - 0x70 + 1) as u8)),
             _ => None,
         };
+        if let Some(key) = key {
+            let global = self.keymap.resolve(
+                KeyScope::Global,
+                KeyStroke::new(modifiers, key),
+                &self.registry,
+                &self.context(),
+            );
+            if let Resolution::Enabled(
+                command @ (CommandId::ViewToggleInvisibles | CommandId::FileExit),
+            ) = global
+            {
+                return (true, self.execute(command));
+            }
+        }
+        if self.search_panel.is_some() {
+            return (true, self.search_key(code, modifiers));
+        }
+        if self.selector.is_some() {
+            return (true, self.selector_key(code, modifiers));
+        }
         if let Some(key) = key {
             let resolution = self.keymap.resolve(
                 KeyScope::Editor,
@@ -372,6 +450,10 @@ impl State {
             return;
         }
         let mut bytes = [0u8; 4];
+        if self.search_panel.is_some() {
+            self.edit_search_input(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)));
+            return;
+        }
         if let Some(selector) = self.selector.as_mut() {
             if selector.append(ch.encode_utf8(&mut bytes)) {
                 self.request_files();
@@ -496,6 +578,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     // Win32 calls may reenter this callback and prepare another read-only frame.
     let mut action = Action::None;
     let mut handled = true;
+    let mut redraw = true;
     {
         let Ok(mut state) = owner.state.try_borrow_mut() else {
             return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -515,7 +598,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             TASKS_MESSAGE => {
-                state.poll_tasks();
+                redraw = state.poll_tasks();
             }
             WM_SIZE => {
                 let mut rect = Rect::default();
@@ -545,17 +628,29 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             WM_COMMAND if lparam == 0 => {
-                state.close_selector();
                 if wparam & 0xffff == OPEN_SIDE {
+                    state.close_selector();
                     action = Action::Open(true);
                 } else if let Some((_, command, _)) =
                     COMMANDS.iter().find(|(id, _, _)| *id == wparam & 0xffff)
                 {
+                    if *command != CommandId::ViewToggleInvisibles {
+                        state.close_selector();
+                    }
                     action = state.execute(*command);
                 }
             }
             WM_INITMENU => {
                 let menu = GetMenu(hwnd);
+                CheckMenuItem(
+                    menu,
+                    command_id(CommandId::ViewToggleInvisibles) as u32,
+                    if state.workbench.invisibles_visible() {
+                        8
+                    } else {
+                        0
+                    },
+                );
                 for (id, command, _) in COMMANDS {
                     EnableMenuItem(
                         menu,
@@ -571,19 +666,23 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             WM_LBUTTONDOWN => {
                 let x = (lparam as u16) as i16 as i32;
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
-                if state.selector.is_none() {
+                if state.selector.is_none() && state.search_panel.is_none() {
                     paint::click(&mut state, x, y);
                 }
             }
             WM_CLOSE => action = Action::Exit,
             _ => handled = false,
         }
+        state.schedule_search();
     }
     if !handled {
         return DefWindowProcW(hwnd, message, wparam, lparam);
     }
     perform(hwnd, action);
-    if IsWindow(hwnd) != 0 {
+    if let Some(current) = self::owner(hwnd) {
+        current.state.borrow().schedule_search();
+    }
+    if redraw && IsWindow(hwnd) != 0 {
         InvalidateRect(hwnd, std::ptr::null(), 0);
     }
     if message == WM_UNICHAR {
@@ -657,6 +756,8 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
     }
     match action {
         Action::None => {}
+        Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
+        Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
         Action::ChooseFolder => {
             let selected = folder::choose(hwnd);
             if let Some(owner) = owner(hwnd) {
@@ -688,6 +789,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                             state.error(error);
                         } else {
                             state.status = "Opened".into();
+                            state.ensure_encoding_selector();
                         }
                     }
                     Ok(None) => {}
@@ -782,9 +884,10 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
         return Err(os_error("CreateMenu"));
     }
     for (label, start, end) in [
-        ("&File", 101, 109),
+        ("&File", 101, 110),
         ("&Edit", 110, 118),
-        ("&View", 120, 127),
+        ("&View", 120, 128),
+        ("&Search", 130, 134),
     ] {
         let popup = CreatePopupMenu();
         if popup.is_null() {
@@ -889,6 +992,25 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
         let mut smoke_result = None;
         let mut message: Msg = std::mem::zeroed();
         let result = loop {
+            // A cooperative search may post its next slot continuously. Give
+            // hardware input and an invalidated paint bounded priority before
+            // consuming that work, rather than starving them behind posted jobs.
+            for _ in 0..32 {
+                let mut input: Msg = std::mem::zeroed();
+                if IsWindow(hwnd) == 0
+                    || (PeekMessageW(&mut input, hwnd, WM_KEYDOWN, WM_UNICHAR, 1) == 0
+                        && PeekMessageW(&mut input, hwnd, 0x200, 0x20e, 1) == 0)
+                {
+                    break;
+                }
+                TranslateMessage(&input);
+                DispatchMessageW(&input);
+            }
+            let mut painting: Msg = std::mem::zeroed();
+            if IsWindow(hwnd) != 0 && PeekMessageW(&mut painting, hwnd, WM_PAINT, WM_PAINT, 1) != 0
+            {
+                DispatchMessageW(&painting);
+            }
             let received = GetMessageW(&mut message, null_mut(), 0, 0);
             if received < 0 {
                 break Err(os_error("GetMessageW"));

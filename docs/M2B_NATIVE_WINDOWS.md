@@ -134,3 +134,16 @@ modal, búsqueda metadata-only compartida, apertura lateral/sesión sucia, menú
 derivado del KeyMap y PostMessage sin hilo puente. Una corrida completa350 Rust,
 Clippy/release workspace y23 checks nativos aprobaron. Clipboard OS/encoding UI
 son el siguiente bloque; IME/DPI/accesibilidad y prueba física siguen pendientes.
+
+
+## Invisibles, búsqueda/reemplazo de bloques y encoding
+
+Las tres funciones prioritarias están implementadas también en esta GUI, con
+campos reales editables/pegables y EOL exactos, menú/Palette/shortcuts, spans ASCII
+y slots S0 cooperativos. Clipboard lineal CF_UNICODETEXT y selector gráfico de
+interpretación están conectados; rectángulos conservan clipboard interno.
+[Uso, límites y evidencia](M2_INVISIBLES_MULTILINE.md):376 pruebas distintas en
+cierre selectivo y29 checks del release. El smoke usa clipboard en memoria;
+no certifica OSclipboard entre apps, IME/DPI/accesibilidad/pantalla física ni RAM.
+Los párrafos del primer bloque describen ese checkpoint histórico, no limitan
+los nuevos flujos. Save All conserva su bloqueo hasta implementar su propio flujo.

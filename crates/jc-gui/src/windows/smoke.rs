@@ -154,6 +154,39 @@ unsafe fn wait_for_paths(hwnd: Hwnd) -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
+unsafe fn wait_for_search(hwnd: Hwnd) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let mut message: Msg = std::mem::zeroed();
+        while PeekMessageW(&mut message, hwnd, TASKS_MESSAGE, TASKS_MESSAGE, 1) != 0 {
+            DispatchMessageW(&message);
+        }
+        let state = owner(hwnd).ok_or("Search smoke lost HWND")?.state.borrow();
+        if !state.workbench.search_running() {
+            return if state.workbench.search().status == jc_app::SearchStatus::Complete {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Search did not complete: {:?}",
+                    state.workbench.search().status
+                ))
+            };
+        }
+        drop(state);
+        if Instant::now() >= deadline {
+            return Err("Search message delivery deadline exceeded".into());
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+unsafe fn paste(hwnd: Hwnd, text: &str) -> Result<(), String> {
+    owner(hwnd)
+        .ok_or("Paste fixture lost HWND")?
+        .state
+        .borrow_mut()
+        .smoke_clipboard = Some(text.into());
+    key(hwnd, 0x56, Modifiers::CTRL)
+}
 fn escaped(value: &str) -> String {
     value
         .chars()
@@ -398,6 +431,214 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             }
         }
         checks.push("project_change_cancels_selector");
+        let (revision, undo, dirty) = {
+            let state = owner(hwnd).unwrap().state.borrow();
+            let d = state
+                .workbench
+                .active_document()
+                .unwrap()
+                .session
+                .document();
+            (d.revision(), d.undo_steps(), d.is_modified())
+        };
+        command(hwnd, CommandId::FileChooseEncoding)?;
+        key(hwnd, 0x1b, Modifiers::NONE)?;
+        command(hwnd, CommandId::FileChooseEncoding)?;
+        type_query(hwnd, "Windows-1252");
+        key(hwnd, 0x0d, Modifiers::NONE)?;
+        if owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .workbench
+            .active_encoding()
+            != Some(TextEncoding::Windows1252)
+        {
+            return Err("Native encoding choice did not reinterpret the document".into());
+        }
+        command(hwnd, CommandId::FileChooseEncoding)?;
+        type_query(hwnd, "UTF-8");
+        key(hwnd, 0x0d, Modifiers::NONE)?;
+        expected(hwnd, SOURCE)?;
+        {
+            let state = owner(hwnd).unwrap().state.borrow();
+            let d = state
+                .workbench
+                .active_document()
+                .unwrap()
+                .session
+                .document();
+            if (d.revision(), d.undo_steps(), d.is_modified()) != (revision, undo, dirty) {
+                return Err("Encoding interpretation edited source/history/dirty state".into());
+            }
+        }
+        checks.push("encoding_choice_and_cancel_preserve_source_history");
+        key(hwnd, 0x49, Modifiers::CTRL.union(Modifiers::ALT))?;
+        {
+            let mut state = owner(hwnd).unwrap().state.borrow_mut();
+            let frame = paint::prepare(&mut state);
+            if !state.workbench.invisibles_visible() || !frame.contains_source_row("alpha\\r\\n") {
+                return Err("Native invisible mode did not show atomic CRLF spans".into());
+            }
+        }
+        expected(hwnd, SOURCE)?;
+        checks.push("invisibles_native_spans_without_source_edit");
+        command(hwnd, CommandId::SearchReplace)?;
+        key(hwnd, 0x55, Modifiers::CTRL)?;
+        paste(hwnd, "alpha\r\nbeta")?;
+        wait_for_search(hwnd)?;
+        key(hwnd, 0x49, Modifiers::CTRL.union(Modifiers::ALT))?;
+        key(hwnd, 0x49, Modifiers::CTRL.union(Modifiers::ALT))?;
+        if owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .search_panel
+            .as_ref()
+            .map(|p| p.query.as_str())
+            != Some("alpha\r\nbeta")
+        {
+            return Err("View toggle discarded the native multiline draft".into());
+        }
+        checks.push("invisibles_toggle_preserves_search_draft");
+        if owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .workbench
+            .search()
+            .matches
+            .len()
+            != 1
+        {
+            return Err("Native multiline query did not cross CRLF".into());
+        }
+        key(hwnd, 0x72, Modifiers::NONE)?;
+        key(hwnd, 0x09, Modifiers::NONE)?;
+        paste(hwnd, "é\nQ\r\nR")?;
+        let before = owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .undo_steps();
+        key(hwnd, 0x78, Modifiers::NONE)?;
+        let replaced = "é\nQ\r\nR\r\n".as_bytes();
+        expected(hwnd, replaced)?;
+        if owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .undo_steps()
+            != before + 1
+        {
+            return Err("Native multiline replace-all did not publish one undo".into());
+        }
+        key(hwnd, 0x1b, Modifiers::NONE)?;
+        command(hwnd, CommandId::FileSave)?;
+        if fs::read(&options.fixture).map_err(|e| e.to_string())? != replaced {
+            return Err("Native multiline save lost exact UTF8/EOL bytes".into());
+        }
+        key(hwnd, 0x5a, Modifiers::CTRL)?;
+        expected(hwnd, SOURCE)?;
+        command(hwnd, CommandId::FileSave)?;
+        if fs::read(&options.fixture).map_err(|e| e.to_string())? != SOURCE {
+            return Err("Native multiline undo/save did not restore original bytes".into());
+        }
+        checks.push("multiline_native_paste_find_replace_all_one_undo_save");
+        command(hwnd, CommandId::SearchFind)?;
+        key(hwnd, 0x55, Modifiers::CTRL)?;
+        paste(hwnd, "missing\r\n")?;
+        wait_for_search(hwnd)?;
+        if !owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .workbench
+            .search()
+            .matches
+            .is_empty()
+        {
+            return Err("Native no-hit query returned a match".into());
+        }
+        key(hwnd, 0x72, Modifiers::SHIFT)?;
+        expected(hwnd, SOURCE)?;
+        key(hwnd, 0x55, Modifiers::CTRL)?;
+        for code in [0x71, 0x73, 0x77, 0x76] {
+            key(hwnd, code, Modifiers::NONE)?;
+        }
+        if owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .search_panel
+            .as_ref()
+            .unwrap()
+            .query
+            != "\n\r\n\r\t"
+        {
+            return Err("Native field newline gestures did not retain exact separators".into());
+        }
+        let before = owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .search_panel
+            .as_ref()
+            .unwrap()
+            .query
+            .clone();
+        paste(hwnd, &"x".repeat(4097))?;
+        if owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .search_panel
+            .as_ref()
+            .unwrap()
+            .query
+            != before
+        {
+            return Err("Oversized native field paste was truncated instead of rejected".into());
+        }
+        expected(hwnd, SOURCE)?;
+        checks.push("multiline_native_no_hit_eol_gestures_and_atomic_quota");
+        key(hwnd, 0x1b, Modifiers::NONE)?;
+        command(hwnd, CommandId::SearchReplace)?;
+        key(hwnd, 0x55, Modifiers::CTRL)?;
+        paste(hwnd, "alpha\r\nbeta")?;
+        wait_for_search(hwnd)?;
+        key(hwnd, 0x09, Modifiers::NONE)?;
+        paste(hwnd, "é\nQ\r\nR")?;
+        if let Some(bitmap) = &options.bitmap {
+            if owner(hwnd)
+                .unwrap()
+                .state
+                .borrow()
+                .status
+                .contains("exceeds")
+            {
+                return Err(
+                    "A successful field edit retained the earlier rejected-paste status".into(),
+                );
+            }
+            let frame = {
+                let mut state = owner(hwnd).unwrap().state.borrow_mut();
+                paint::prepare(&mut state)
+            };
+            paint::bitmap(hwnd, &frame, &bitmap.with_file_name("native-multiline.bmp"))?;
+        }
+        key(hwnd, 0x1b, Modifiers::NONE)?;
+        checks.push("multiline_fields_gdi_and_invisibles_read_only");
         // Capture the real popup renderer as part of the final native canvas.
         key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
         type_query(hwnd, "Split");

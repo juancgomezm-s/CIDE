@@ -155,30 +155,8 @@ fn draw_project_preview(app: &TuiApp, screen: &mut Screen, selected: usize) {
 }
 
 fn draw_find(app: &TuiApp, screen: &mut Screen, input: &str) {
-    let width = screen.width().saturating_sub(2).min(90);
-    let x = screen.width().saturating_sub(width) / 2;
-    let y = screen.height().saturating_sub(4);
-    panel(screen, x, y, width, 3, "Find");
-    let flags = format!(
-        " [{}]Case [{}]Word literal {}/{}",
-        yes(app.workbench.search().case_sensitive),
-        yes(app.workbench.search().whole_word),
-        app.workbench.search().current.map_or(0, |value| value + 1),
-        app.workbench.search().matches.len()
-    );
-    screen.text(
-        x + 2,
-        y + 1,
-        &clip(input, width.saturating_sub(flags.len() as u16 + 5)),
-    );
-    let fx = x + width.saturating_sub(flags.chars().count() as u16 + 2);
-    screen.text_styled(fx, y + 1, &flags, CellStyle::Dim);
-    screen.set_cursor(
-        (x + 2 + input.chars().count() as u16).min(fx.saturating_sub(1)),
-        y + 1,
-    );
+    draw_search_fields(app, screen, input, None);
 }
-
 fn draw_replace(
     app: &TuiApp,
     screen: &mut Screen,
@@ -186,29 +164,105 @@ fn draw_replace(
     replacement: &str,
     field: ReplaceField,
 ) {
-    let (x, y, width, height) = centered(screen, 76, 7);
-    panel(screen, x, y, width, height, "Replace");
-    screen.text(x + 2, y + 2, "Find:");
-    screen.text(x + 11, y + 2, &clip(find, width.saturating_sub(14)));
-    screen.text(x + 2, y + 3, "Replace:");
-    screen.text(x + 11, y + 3, &clip(replacement, width.saturating_sub(14)));
+    draw_search_fields(app, screen, find, Some((replacement, field)));
+}
+fn draw_search_fields(
+    app: &TuiApp,
+    screen: &mut Screen,
+    find: &str,
+    replacement: Option<(&str, ReplaceField)>,
+) {
+    let (x, y, width, height) = centered(screen, 96, if replacement.is_some() { 22 } else { 16 });
+    panel(
+        screen,
+        x,
+        y,
+        width,
+        height,
+        "Document literal blocks — exact EOL",
+    );
+    let columns = usize::from(width.saturating_sub(4)).max(1);
+    let count = if replacement.is_some() { 2 } else { 1 };
+    let rows = usize::from(height.saturating_sub(8))
+        .checked_div(count)
+        .unwrap_or(1)
+        .clamp(1, 6);
+    let field = jc_app::present_field(find, app.find_cursor, columns, rows);
+    let replacement_active = replacement.is_some_and(|(_, f)| f == ReplaceField::Replacement);
     screen.text_styled(
         x + 2,
-        y + 5,
-        &format!(
-            "Enter replace current | Ctrl+Enter replace all | Tab field | {} matches",
-            app.workbench.search().matches.len()
+        y + 1,
+        &clip(
+            &format!(
+                "Find C:{} W:{} {}/{} {:?}, {} hits",
+                u8::from(app.workbench.search().case_sensitive),
+                u8::from(app.workbench.search().whole_word),
+                field.first_row + 1,
+                field.total_rows,
+                app.workbench.search().status,
+                app.workbench.search().matches.len()
+            ),
+            width.saturating_sub(4),
         ),
-        CellStyle::Dim,
+        if replacement_active {
+            CellStyle::Dim
+        } else {
+            CellStyle::Reverse
+        },
     );
-    let (row, value) = match field {
-        ReplaceField::Find => (y + 2, find),
-        ReplaceField::Replacement => (y + 3, replacement),
-    };
-    screen.set_cursor(
-        (x + 11 + value.chars().count() as u16).min(x + width.saturating_sub(2)),
-        row,
+    for (row, text) in field.rows.iter().enumerate() {
+        screen.text(x + 2, y + 2 + row as u16, text);
+    }
+    let mut caret = (
+        x + 2 + field.cursor_column as u16,
+        y + 2 + field.cursor_row as u16,
     );
+    if let Some((text, _)) = replacement {
+        let field = jc_app::present_field(text, app.replacement_cursor, columns, rows);
+        let top = y + rows as u16 + 3;
+        screen.text_styled(
+            x + 2,
+            top,
+            &clip(
+                &format!("Replace {}/{}", field.first_row + 1, field.total_rows),
+                width.saturating_sub(4),
+            ),
+            if replacement_active {
+                CellStyle::Reverse
+            } else {
+                CellStyle::Dim
+            },
+        );
+        for (row, text) in field.rows.iter().enumerate() {
+            screen.text(x + 2, top + 1 + row as u16, text);
+        }
+        if replacement_active {
+            caret = (
+                x + 2 + field.cursor_column as u16,
+                top + 1 + field.cursor_row as u16,
+            );
+        }
+    }
+    for (row, text) in [
+        "F2 LF | F4 CRLF | F8 CR | F7 TAB | arrows edit",
+        "Enter/F6 one | Ctrl+Enter/F9 all | F3/Shift+F3 next/prev",
+        "Tab field | Shift/Alt+Enter LF | Esc | 4096 bytes/field",
+    ]
+    .iter()
+    .enumerate()
+    {
+        screen.text_styled(
+            x + 2,
+            y + height.saturating_sub(4) + row as u16,
+            &clip(text, width.saturating_sub(4)),
+            CellStyle::Dim,
+        );
+    }
+    if caret.0 < x + width.saturating_sub(1) && caret.1 < y + height.saturating_sub(4) {
+        screen.set_cursor(caret.0, caret.1);
+    } else {
+        screen.hide_cursor();
+    }
 }
 
 fn draw_palette(app: &TuiApp, screen: &mut Screen, input: &str, selected: usize) {
@@ -258,7 +312,12 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
     let width = entries
         .iter()
         .flatten()
-        .map(|entry| entry.label.len() + entry.shortcut.map_or(0, |s| s.to_string().len()) + 5)
+        .map(|entry| {
+            entry.label.len()
+                + usize::from(entry.command == jc_app::CommandId::ViewToggleInvisibles) * 4
+                + entry.shortcut.map_or(0, |s| s.to_string().len())
+                + 5
+        })
         .max()
         .unwrap_or(12)
         .clamp(18, 52) as u16;
@@ -289,12 +348,25 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
             None => screen.hline(x + 1, row, width - 2, '─'),
             Some(entry) => {
                 let shortcut = entry.shortcut.map(|s| s.to_string()).unwrap_or_default();
-                let text = if shortcut.is_empty() {
+                let checked_label = if entry.command == jc_app::CommandId::ViewToggleInvisibles {
+                    format!(
+                        "[{}] {}",
+                        if app.workbench.invisibles_visible() {
+                            "x"
+                        } else {
+                            " "
+                        },
+                        entry.label
+                    )
+                } else {
                     entry.label.to_owned()
+                };
+                let text = if shortcut.is_empty() {
+                    checked_label
                 } else {
                     let gap = usize::from(width.saturating_sub(4))
-                        .saturating_sub(entry.label.len() + shortcut.len());
-                    format!("{}{}{}", entry.label, " ".repeat(gap), shortcut)
+                        .saturating_sub(checked_label.len() + shortcut.len());
+                    format!("{}{}{}", checked_label, " ".repeat(gap), shortcut)
                 };
                 let style = if index == selected {
                     CellStyle::Reverse
@@ -364,12 +436,4 @@ fn centered(screen: &Screen, preferred_width: u16, preferred_height: u16) -> (u1
         width,
         height,
     )
-}
-
-fn yes(value: bool) -> &'static str {
-    if value {
-        "x"
-    } else {
-        " "
-    }
 }

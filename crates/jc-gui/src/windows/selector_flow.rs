@@ -20,6 +20,8 @@ impl State {
     }
     pub(super) fn close_selector(&mut self) {
         self.selector = None;
+        self.search_panel = None;
+        self.encoding_target = None;
         self.pending_surrogate = None;
         self.quick_open.clear();
     }
@@ -31,6 +33,24 @@ impl State {
         }
         self.selector = Some(Selector::new(kind));
         self.request_files();
+    }
+    pub(super) fn ensure_encoding_selector(&mut self) {
+        if self.workbench.active_document().is_some() && self.workbench.active_encoding().is_none()
+        {
+            self.open_encoding_selector();
+        }
+    }
+    pub(super) fn open_encoding_selector(&mut self) {
+        self.close_selector();
+        let Some(document) = self.workbench.active_document() else {
+            return;
+        };
+        self.encoding_target = Some((
+            document.id,
+            document.session.document().revision(),
+            document.session.encoding(),
+        ));
+        self.selector = Some(Selector::new(SelectorKind::Encoding));
     }
     pub(super) fn request_files(&mut self) {
         let Some(selector) = self
@@ -51,8 +71,9 @@ impl State {
             self.status = format!("Quick Open request rejected: {error:?}");
         }
     }
-    pub(super) fn poll_tasks(&mut self) {
+    pub(super) fn poll_tasks(&mut self) -> bool {
         let failed = self.bridge.acknowledge() | self.wakeup.take_notifier_failure();
+        let mut changed = failed;
         self.deliveries = self.deliveries.saturating_add(1);
         if let (Some(root), Some(selector)) = (
             &self.project_root,
@@ -60,11 +81,12 @@ impl State {
                 .as_ref()
                 .filter(|s| s.kind() == SelectorKind::Files),
         ) {
-            self.quick_open.poll(root, selector.input());
+            changed |= self.quick_open.poll(root, selector.input());
         } else {
             self.quick_open.clear();
         }
         if self.quick_open.take_recovery() {
+            changed = true;
             self.status = "Quick Open worker recovered from a failure; refresh to retry".into();
         }
         if failed {
@@ -75,6 +97,9 @@ impl State {
         if self.quick_open.ready() {
             self.bridge.signal();
         }
+        changed |= self.workbench.poll_document_search();
+        self.schedule_search();
+        changed
     }
     pub(super) fn selector_presentation(&mut self, rows: usize) -> Option<SelectorPresentation> {
         let context = self.context();
@@ -84,6 +109,7 @@ impl State {
                 selector.prepare_palette(&self.registry, &self.keymap, &context, supported, rows)
             }
             SelectorKind::Files => selector.prepare_files(&self.quick_open, rows),
+            SelectorKind::Encoding => selector.prepare_encoding(rows),
         })
     }
     pub(super) fn selector_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
@@ -134,6 +160,31 @@ impl State {
             return Action::None;
         };
         match selector.kind() {
+            SelectorKind::Encoding => {
+                let Some(encoding) = selector.encoding_target() else {
+                    return Action::None;
+                };
+                let current = self
+                    .workbench
+                    .active_document()
+                    .map(|d| (d.id, d.session.document().revision(), d.session.encoding()));
+                if self.encoding_target.is_none() || current != self.encoding_target {
+                    self.close_selector();
+                    self.status = "Encoding target changed; reopen the selector".into();
+                    return Action::None;
+                }
+                match self.workbench.set_encoding(encoding) {
+                    Ok(()) => {
+                        self.close_selector();
+                        self.status = format!(
+                            "Interpretation: {} · bytes unchanged; no conversion/save",
+                            encoding.name()
+                        );
+                    }
+                    Err(error) => self.error(error),
+                }
+                Action::None
+            }
             SelectorKind::Palette => {
                 let Some(command) = selector.palette_target(
                     &self.registry,
@@ -169,6 +220,7 @@ impl State {
                         Ok(_) => {
                             self.close_selector();
                             self.status = "Opened project file · shared document/undo".into();
+                            self.ensure_encoding_selector();
                         }
                         Err(error) => self.error(error),
                     },

@@ -21,6 +21,7 @@ pub enum CommandId {
     FileOpen,
     FileQuickOpen,
     FileOpenFolder,
+    FileChooseEncoding,
     FileSave,
     FileSaveAs,
     FileSaveAll,
@@ -83,6 +84,7 @@ pub enum CommandId {
     Tab9,
 
     ViewExplorer,
+    ViewToggleInvisibles,
     ViewDatabase,
     ViewGit,
     GitDiffHead,
@@ -380,6 +382,12 @@ pub fn default_registry() -> CommandRegistry {
         spec!(FileOpen, File, "Open…", always),
         spec!(FileQuickOpen, File, "Quick Open Project File", project),
         spec!(FileOpenFolder, File, "Open Folder…", always),
+        spec!(
+            FileChooseEncoding,
+            File,
+            "Choose Source Encoding…",
+            has_document
+        ),
         spec!(FileSave, File, "Save", dirty_document),
         spec!(FileSaveAs, File, "Save As…", has_document),
         spec!(FileSaveAll, File, "Save All", dirty_documents),
@@ -517,6 +525,12 @@ pub fn default_registry() -> CommandRegistry {
         spec!(Tab8, Navigation, "Tab 8", has_document),
         spec!(Tab9, Navigation, "Last Tab", has_document),
         spec!(ViewExplorer, View, "Explorer", always),
+        spec!(
+            ViewToggleInvisibles,
+            View,
+            "Show Invisible Characters",
+            always
+        ),
         spec!(ViewDatabase, View, "Database / Schema", never),
         spec!(ViewGit, View, "Git: Active File Diff", git_diff),
         spec!(GitDiffHead, View, "Git: Compare HEAD Snapshot", git_diff),

@@ -2,6 +2,10 @@ mod git_diff;
 mod git_status;
 mod overlays;
 
+// Same visible-row bound as the shared escaped-display API. Preparation uses
+// this when revealing a caret, so a huge terminal never requests an invalid row.
+pub(crate) const MAX_DISPLAY_COLUMNS: usize = 4096;
+
 use crate::app::{Presentation, TuiApp};
 use crate::screen::{CellStyle, Screen};
 use crate::state::UiOverlay;
@@ -306,9 +310,19 @@ fn draw_editor(
     }
     let visible_height = usize::from(height);
     let first_line = view.scroll_line().min(line_count.saturating_sub(1));
-    let rectangle = frame.editor(pane).rectangle;
-    let hscroll = rectangle.map_or_else(|| view.scroll_column(), |bounds| bounds.scroll_column);
-    let cursor_column = rectangle.map_or(cursor.column, |bounds| bounds.head_column);
+    let prepared = frame.editor(pane);
+    let rectangle = prepared.rectangle;
+    let all = prepared.display_rows.is_some();
+    let hscroll = if all {
+        view.scroll_column()
+    } else {
+        rectangle.map_or_else(|| view.scroll_column(), |bounds| bounds.scroll_column)
+    };
+    let cursor_column = if all {
+        prepared.cursor_column
+    } else {
+        Some(rectangle.map_or(cursor.column, |bounds| bounds.head_column))
+    };
     let selection = app.workbench.selection_for_pane(pane);
     let highlights = app.workbench.search_matches_for_tab(_document.tab_id);
 
@@ -320,6 +334,42 @@ fn draw_editor(
         let row_y = y + row as u16;
         let number = format!("{:>width$} ", line_index + 1, width = number_width as usize);
         screen.text_styled(x, row_y, &number, CellStyle::Dim);
+        if let Some(display) = &prepared.display_rows {
+            let rectangle_source = prepared
+                .rectangle_source_ranges
+                .get(row)
+                .and_then(Option::as_ref);
+            for (target, cell) in display
+                .get(row)
+                .map(Vec::as_slice)
+                .unwrap_or(&[])
+                .iter()
+                .take(usize::from(text_width))
+                .enumerate()
+            {
+                // Display columns have a different scale than source/rectangle
+                // columns. Select the complete atomic escape by byte overlap;
+                // empty source ranges never turn padding into source text.
+                let hit = highlights.partition_point(|hit| hit.range.end <= cell.source.start);
+                let selected = !cell.source.is_empty()
+                    && (highlights
+                        .get(hit)
+                        .is_some_and(|hit| hit.range.start < cell.source.end)
+                        || selection
+                            .as_ref()
+                            .is_some_and(|range| intersects(range, &cell.source))
+                        || rectangle_source.is_some_and(|range| intersects(range, &cell.source)));
+                let style = if selected {
+                    CellStyle::Reverse
+                } else if cell.marker {
+                    CellStyle::Dim
+                } else {
+                    CellStyle::Normal
+                };
+                screen.put_styled(text_x + target as u16, row_y, cell.ch, style);
+            }
+            continue;
+        }
         let visible = frame
             .editor(pane)
             .rows
@@ -361,11 +411,17 @@ fn draw_editor(
         && active
         && cursor.line >= first_line
         && cursor.line < first_line + visible_height
-        && cursor_column >= hscroll
     {
-        let cx = cursor_column - hscroll;
-        if cx < usize::from(text_width) {
-            screen.set_cursor(text_x + cx as u16, y + (cursor.line - first_line) as u16);
+        if let Some(column) = cursor_column.filter(|column| *column >= hscroll) {
+            let cx = column - hscroll;
+            let cursor_width = if all {
+                usize::from(text_width).min(MAX_DISPLAY_COLUMNS)
+            } else {
+                usize::from(text_width)
+            };
+            if cx < cursor_width {
+                screen.set_cursor(text_x + cx as u16, y + (cursor.line - first_line) as u16);
+            }
         }
     }
 }
@@ -585,6 +641,10 @@ fn logical_lines(decoded: &jc_text::DecodedText) -> Vec<Vec<(char, usize)>> {
 
 fn contains_byte(range: &Range<usize>, offset: usize) -> bool {
     offset >= range.start && offset < range.end
+}
+
+fn intersects(left: &Range<usize>, right: &Range<usize>) -> bool {
+    !left.is_empty() && !right.is_empty() && left.start < right.end && right.start < left.end
 }
 
 pub(crate) fn clip(text: &str, width: u16) -> String {

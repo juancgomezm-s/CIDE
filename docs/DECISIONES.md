@@ -372,3 +372,19 @@ mensaje coalescido a su HWND, sin hilo puente ni polling. Mutex breve protege
 detach/PostMessage; callback no posee punteros al modelo. Fallo de PostMessage
 se registra con recuperación manual documentada. [Contrato](M2B_NATIVE_SELECTORS.md).
 350 Rust/23 checks reales nativos pasaron; no inferir aceptación física/clipboard.
+
+
+## D36 — Invisibles ASCII, coordenadas de display y campos multilínea compartidos
+
+Mostrar invisibles escapa todo noASCII y controles con spans fuente, en vez de
+atribuir un ancho a glifos invisibles/ausentes. CRLF es un span; caret/selección/
+scroll convierten bytes explícitamente. Una cuota compartida lógica de layouts
+se divide896/128KiB; no se hace otro buffer editable ni nueva afirmación de RAM.
+
+Find/Replace de documento usan campos UTF8 acotados editables/navegables en ambos
+frontends, EOL exactos y gestos F2/F4/F8 independientes de ejecutar. Se conserva
+motor literal/S0 y una transacción en Replace All; no regex ni ámbito de proyecto
+nuevo. Clipboard y encoding ya en curso se integran con handoffs validados, sin
+llamadas OS manteniendo préstamos ni transcodificación implícita. Smoke no toca
+el clipboard del usuario. [Contrato/evidencia](M2_INVISIBLES_MULTILINE.md):376 casos
+Rust distintos por suites y29 checks nativos. Manual/global continúa abierto.
