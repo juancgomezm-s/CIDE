@@ -57,3 +57,7 @@ El proveedor ABL reutilizará Progress y su esquema; otros proveedores podrán u
 comandos de compilación. Un registro no debe ejecutar programas por abrir una extensión.
 La codificación permanece en el documento: puede haber un `.p` legacy y un JSON UTF-8
 abiertos al mismo tiempo, con conversiones explícitas en los límites de cada servicio.
+
+Capacidades TUI posteriores: completado textual core.words para cualquier perfil
+y símbolos/referencias inferidos ABL mediante progress.abl opcional. No completado
+semántico ni parser certificado; [uso y límites](M2_SOURCE_SERVICES.md).

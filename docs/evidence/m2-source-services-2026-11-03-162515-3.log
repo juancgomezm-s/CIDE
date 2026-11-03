@@ -1,0 +1,13 @@
+cargo test -p jc-progress --features source-services --test source_services --locked --offline
+
+running 4 tests
+test abl_references_distinguish_static_local_and_dynamic_remote_context_without_executing ... ok
+test abl_source_chunk_boundaries_nested_comments_and_result_limits_are_explicit ... ok
+test abl_symbols_ignore_comments_strings_preprocessor_and_end_statements_in_all_encodings ... ok
+test static_reference_candidates_are_confined_ambiguous_and_not_a_propath_emulator ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.18s
+     Running tests\source_services.rs (target\debug\deps\source_services-9fb52878619da5d0.exe)

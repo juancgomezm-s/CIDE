@@ -115,6 +115,7 @@ impl Cancellation {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskItem {
+    Source(crate::source_services::SourceItem),
     Diagnostic {
         range: Range<usize>,
         message: String,
@@ -129,12 +130,14 @@ impl TaskItem {
     fn allocation(&self) -> usize {
         std::mem::size_of::<Self>()
             + match self {
+                Self::Source(item) => item.allocation(),
                 Self::Diagnostic { message, .. } | Self::Message(message) => message.capacity(),
                 Self::ProposedEdit { text, .. } => text.capacity(),
             }
     }
     fn range(&self) -> Option<&Range<usize>> {
         match self {
+            Self::Source(item) => Some(&item.range),
             Self::Diagnostic { range, .. } | Self::ProposedEdit { range, .. } => Some(range),
             Self::Message(_) => None,
         }
@@ -185,6 +188,9 @@ impl TaskOutput {
     }
     pub fn items(&self) -> &[TaskItem] {
         &self.items
+    }
+    pub(crate) fn take_items(&mut self) -> Vec<TaskItem> {
+        std::mem::take(&mut self.items)
     }
     pub fn set_git_diff(
         &mut self,
@@ -751,6 +757,41 @@ impl JobSystem {
         if let Some(record) = self.latest.get(&key).and_then(|id| self.records.get(id)) {
             record.cancel.flag.store(true, Ordering::Release);
         }
+    }
+    /// Source capabilities retain metadata under temporary shared pressure and
+    /// require the exact revision/view observed before admission.
+    pub(crate) fn submit_source(
+        &mut self,
+        app: &Workbench,
+        key: JobKey,
+        stamp: TaskStamp,
+        len: usize,
+        provider: TaskProvider,
+    ) -> Result<JobId, SubmitError> {
+        let limits = self.shared.limits;
+        if len > limits.snapshot_bytes || len > limits.total_snapshot_bytes {
+            return Err(SubmitError::SnapshotLimit);
+        }
+        if !app.task_stamp_is_current(stamp) {
+            return Err(SubmitError::InvalidView);
+        }
+        if len > limits.total_snapshot_bytes.saturating_sub(self.bytes) {
+            return Err(SubmitError::Busy);
+        }
+        self.submit_internal(
+            app,
+            key,
+            Capture {
+                document: stamp.document,
+                view: stamp.view,
+                range: 0..len,
+                provider: Provider::Plain(provider),
+                artifact_limit: 0,
+                timeout: limits.timeout,
+                expected: Some(stamp),
+                second: None,
+            },
+        )
     }
     pub fn cancel_stale(&mut self, app: &Workbench) {
         for record in self.records.values() {

@@ -1,0 +1,9 @@
+
+running 1 test
+test source_temporary_shared_pressure_keeps_only_metadata_until_capacity_is_released ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.35s
+     Running tests\source_services.rs (target\debug\deps\source_services-27b5568a9eede62d.exe)

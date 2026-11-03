@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "avm_started": false,
+  "physical_display_verified": false,
+  "os_clipboard_verified": false,
+  "checks": [
+    "source_symbols_deliver_and_navigate_without_input_or_avm",
+    "source_local_completion_explicit_accept_one_undo_without_save",
+    "source_static_include_opens_confined_target",
+    "source_static_run_opens_to_side_without_running_code"
+  ],
+  "exit_code": 0,
+  "fixtures_unchanged": true,
+  "vt_bytes": 34169
+}

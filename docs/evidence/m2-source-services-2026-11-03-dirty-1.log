@@ -1,0 +1,9 @@
+
+running 1 test
+test app::source_services_tests::source_tui_reference_reuses_dirty_pinned_document_and_its_own_legacy_encoding ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 107 filtered out; finished in 0.01s
+
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.97s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-f769d24a4d9b5e8a.exe)

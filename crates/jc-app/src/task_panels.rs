@@ -321,6 +321,7 @@ impl Workbench {
         let mut changed = false;
         for item in items {
             match item {
+                TaskItem::Source(_) => continue, // Typed source controller owns this delivery.
                 TaskItem::Diagnostic { range, message } => {
                     let valid = self.document_by_id(stamp.document).is_some_and(|doc| {
                         range.start <= range.end

@@ -1,0 +1,13 @@
+cargo test -p jc-tui --lib source_services_tests --locked --offline
+
+running 4 tests
+test app::source_services_tests::source_tui_completion_selector_blocks_source_input_accepts_one_transaction_and_keeps_encoding ... ok
+test app::source_services_tests::source_tui_stale_completion_and_cancel_never_overwrite_new_caret_intent ... ok
+test app::source_services_tests::source_tui_symbols_keyboard_navigation_readonly_render_and_explicit_refresh ... ok
+test app::source_services_tests::source_tui_static_reference_ambiguity_requires_choice_before_confined_open ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 103 filtered out; finished in 0.01s
+
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.53s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-f769d24a4d9b5e8a.exe)

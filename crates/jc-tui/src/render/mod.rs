@@ -2,6 +2,7 @@ mod git_diff;
 mod git_status;
 mod open_diff;
 mod overlays;
+mod source_services;
 
 // Same visible-row bound as the shared escaped-display API. Preparation uses
 // this when revealing a caret, so a huge terminal never requests an invalid row.
@@ -89,6 +90,7 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
     }
     open_diff::draw(frame, &mut screen);
     draw_status(frame, &mut screen, status_y);
+    source_services::popup(frame, &mut screen);
     overlays::draw(app, &mut screen);
     screen
 }
@@ -141,6 +143,10 @@ fn draw_sidebar(
     height: u16,
 ) {
     let app = frame.app;
+    if app.panels.sidebar() == SidebarView::Symbols {
+        source_services::sidebar(frame, screen, x, y, width, height);
+        return;
+    }
     if app.panels.sidebar() == SidebarView::GitStatus {
         git_status::draw_git_status(
             screen,

@@ -16,6 +16,9 @@ mod presentation;
 mod project_search;
 mod quick_open;
 mod search_input;
+mod source_services;
+#[cfg(test)]
+mod source_services_tests;
 #[cfg(test)]
 mod syntax_integration_tests;
 use git_repository::GitConfigurationTarget;
@@ -86,6 +89,10 @@ pub struct TuiApp {
     pub(crate) open_diff: jc_app::open_diff::OpenDiffController,
     pub(crate) open_diff_view: jc_app::open_diff_view::OpenDiffView,
     pub(crate) open_diff_visible: bool,
+    pub(crate) source_registry: jc_app::source_services::SourceRegistry,
+    pub(crate) source: jc_app::source_services::SourceController,
+    pub(crate) source_popup: bool,
+    pub(crate) source_candidates: Option<(Vec<PathBuf>, usize)>,
     pub(crate) git_status: git_status::GitStatusView,
     pub(crate) quick_open: jc_app::quick_open::QuickOpenController,
     quick_open_root: Option<PathBuf>,
@@ -129,6 +136,10 @@ impl TuiApp {
         debug_assert!(keymap.validate(&registry).is_empty());
         debug_assert!(menus.validate(&registry).is_empty());
 
+        let mut source_registry = jc_app::source_services::SourceRegistry::default();
+        source_registry
+            .register(jc_progress::source_services::descriptor())
+            .expect("valid built-in provider");
         let mut app = Self {
             workbench: Workbench::default(),
             registry,
@@ -152,6 +163,10 @@ impl TuiApp {
             open_diff: Default::default(),
             open_diff_view: Default::default(),
             open_diff_visible: false,
+            source_registry,
+            source: Default::default(),
+            source_popup: false,
+            source_candidates: None,
             git_status: git_status::GitStatusView::new(wakeup.clone()),
             quick_open: jc_app::quick_open::QuickOpenController::new(wakeup.clone()),
             quick_open_root: None,
@@ -243,6 +258,15 @@ impl TuiApp {
             if completion.status == jc_app::TaskStatus::Panicked {
                 update.recover = true;
             }
+            if self.source.accept(
+                &self.workbench,
+                self.project_root.as_deref(),
+                &mut completion,
+            ) {
+                self.status = self.source.message().into();
+                update.changed = true;
+                continue;
+            }
             if self.open_diff.accept(&self.workbench, &mut completion) {
                 self.status = self.open_diff.message().into();
                 update.changed = true;
@@ -255,6 +279,11 @@ impl TuiApp {
             }
             update.changed |= self.workbench.accept_task_completion(&completion);
         }
+        update.changed |= self.source.tick(
+            &self.workbench,
+            self.project_root.as_deref(),
+            &mut self.tasks,
+        );
         update.changed |= self.open_diff.tick(&self.workbench, &mut self.tasks);
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
         let status_changed = self
@@ -323,6 +352,7 @@ impl TuiApp {
                     .is_some_and(|entry| !entry.is_dir());
         }
         self.open_diff_context(&mut context);
+        self.source_context(&mut context);
         context
     }
 

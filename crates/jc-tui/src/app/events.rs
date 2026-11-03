@@ -19,6 +19,40 @@ impl TuiApp {
             self.handle_overlay_key(key);
             return;
         }
+        if self.showing_source_popup() {
+            if let Some(stroke) = to_stroke(key) {
+                let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
+                if let Resolution::Enabled(command) =
+                    self.keymap
+                        .resolve(scope, stroke, &self.registry, &self.command_context())
+                {
+                    if Self::keep_source_for(command) {
+                        self.dispatch(command);
+                        return;
+                    }
+                }
+            }
+            self.source_key(key);
+            return;
+        }
+        if self.focus.primary() == PrimaryFocus::Sidebar
+            && self.panels.sidebar() == SidebarView::Symbols
+            && matches!(
+                key.code,
+                KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+                    | KeyCode::Home
+                    | KeyCode::End
+                    | KeyCode::Enter
+                    | KeyCode::F(5)
+                    | KeyCode::Esc
+            )
+        {
+            self.source_key(key);
+            return;
+        }
         if self.showing_open_diff() {
             if let Some(stroke) = to_stroke(key) {
                 let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
@@ -172,7 +206,7 @@ impl TuiApp {
     }
 
     fn handle_paste(&mut self, text: &str) {
-        if self.showing_open_diff() {
+        if self.showing_open_diff() || self.showing_source_popup() {
             return;
         }
         if matches!(self.overlay, UiOverlay::None) && self.focus.primary() == PrimaryFocus::Editor {

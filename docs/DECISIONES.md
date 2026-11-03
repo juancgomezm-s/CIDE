@@ -561,3 +561,13 @@ acotados y comparte Arc con OwnedDiffModel. La presentación no admite snapshots
 ni acepta resultados, retiene solo filas/prefijos visibles y usa encoding por
 lado. TUI bloquea edits del visor y navega al grupo de origen. No nuevo buffer,
 undo, Git o ruta de escritura. [Evidencia y límites](M2_OPEN_DOCUMENT_DIFF.md).
+
+## D53 — Capacidades internas opcionales, resultados tipados y activación explícita
+
+SourceRegistry resuelve capacidades por perfil/ID namespaced, sin reglas ABL en
+jc-app. Feature opcional de jc-progress aporta inferencia léxica; F3 conserva una
+captura en vuelo y metadata pendiente. SourceItem separa navegar, referencia
+relativa/no resuelta y reemplazo. Host valida modo, coordenadas, identidad y
+revisión/caret antes de activar. Rutas ambiguas exigen elección y apertura por
+handle; destino conserva/sugiere su propio encoding. Completado es texto local
+anterior al caret y una transacción, no promesa semántica. [Evidencia](M2_SOURCE_SERVICES.md).

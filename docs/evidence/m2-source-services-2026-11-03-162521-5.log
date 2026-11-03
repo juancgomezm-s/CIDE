@@ -1,0 +1,38 @@
+cargo test -p jc-app --test jobs --test interaction --locked --offline
+
+running 15 tests
+test abl_comment_and_duplicate_delete_shortcuts_resolve_consistently ... ok
+test dirty_tabs_cannot_close_without_an_explicit_choice ... ok
+test contextual_bottom_panel_shortcuts_override_global_tab_shortcuts ... ok
+test ctrl_tab_and_ctrl_page_down_share_one_semantic_command ... ok
+test display_strings_are_stable_and_human_readable ... ok
+test default_registry_keymap_and_menus_are_internally_consistent ... ok
+test save_is_the_same_command_from_menu_and_keyboard ... ok
+test repository_status_commands_need_repository_context_but_no_document ... ok
+test save_binding_remains_visible_but_disabled_when_document_is_clean ... ok
+test tab_and_shift_tab_are_editor_indentation_not_global_focus ... ok
+test f6_focus_cycle_only_visits_visible_primary_areas ... ok
+test unsaved_dialog_has_stable_unique_keyboard_choices ... ok
+test escape_closes_transient_layers_before_returning_to_editor ... ok
+test tab_navigation_wraps_and_alt_9_semantics_can_select_last ... ok
+test progress_shortcuts_require_abl_and_a_progress_profile ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 8 tests
+test closed_view_encoding_change_and_reopened_document_invalidate_stamps ... ok
+test completion_wakes_a_waiter_without_keyboard_input_or_polling_the_provider ... ok
+test admission_is_lazy_and_bounded_including_completed_work_until_delivery ... ok
+test output_quotas_are_latched_and_reject_partial_results_and_invalid_ranges ... ok
+test worker_snapshot_is_owned_and_revision_staleness_prevents_delivery_after_edit ... ok
+test panel_logs_bound_bytes_and_mark_truncated_lines_without_changing_documents ... ok
+test replacing_a_generation_cancels_the_old_job_and_delivers_only_the_latest ... ok
+test deadline_cancel_and_provider_panic_release_admission_and_keep_worker_usable ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+     Running tests\interaction.rs (target\debug\deps\interaction-2a03c4de2bc2c9c4.exe)
+     Running tests\jobs.rs (target\debug\deps\jobs-209cce1c518ce688.exe)

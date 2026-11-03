@@ -1,6 +1,10 @@
-//! Small, dependency-free boundary between an editor and an installed Progress AVM.
+//! Small default-dependency-free AVM boundary; optional source-services feature
+//! links the internal lexical provider to the headless application API.
 
 #![forbid(unsafe_code)]
+
+#[cfg(feature = "source-services")]
+pub mod source_services;
 
 use std::ffi::OsString;
 use std::fmt;

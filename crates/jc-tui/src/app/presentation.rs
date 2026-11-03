@@ -108,6 +108,7 @@ pub(crate) struct Presentation<'a> {
     pub search_positions: Vec<(usize, Option<TextPosition>)>,
     pub git: GitPresentation,
     pub open_diff: Option<jc_app::open_diff_view::OpenDiffPresentation>,
+    pub source: jc_app::source_services::SourcePresentation,
     pub git_status: super::GitStatusPresentation,
     pub explorer: jc_app::explorer::ExplorerPresentation,
 }
@@ -128,6 +129,7 @@ impl Presentation<'_> {
 
 impl TuiApp {
     pub(crate) fn prepare_frame(&mut self, width: u16, height: u16) -> Presentation<'_> {
+        self.validate_source();
         if self.explorer.root() != self.project_root.as_deref() {
             self.explorer.clear();
         }
@@ -326,7 +328,20 @@ impl TuiApp {
                 layout.width >= 92,
             )
         });
+        let source = self.source_presentation(
+            if self.source_popup {
+                usize::from(layout.height.saturating_sub(10)).min(16)
+            } else {
+                usize::from(layout.content_height.saturating_sub(2))
+            },
+            if self.source_popup {
+                usize::from(layout.width.saturating_sub(8)).min(96)
+            } else {
+                usize::from(layout.sidebar_width.saturating_sub(2))
+            },
+        );
         Presentation {
+            source,
             open_diff,
             app: self,
             layout,

@@ -103,6 +103,12 @@ pub enum CommandId {
     DiffOpenNavigateLeft,
     DiffOpenNavigateRight,
     ViewSymbols,
+    SourceReferences,
+    SourceComplete,
+    SourceRefresh,
+    SourceCancel,
+    SourceAccept,
+    SourceOpenToSide,
     ViewToggleBottomPanel,
     ViewTerminal,
     ViewProblems,
@@ -170,6 +176,12 @@ pub struct CommandContext {
     pub open_diff_available: bool,
     pub open_diff_active: bool,
     pub open_diff_ready: bool,
+    pub source_symbols_available: bool,
+    pub source_references_available: bool,
+    pub source_completion_available: bool,
+    pub source_active: bool,
+    pub source_ready: bool,
+    pub source_side_ready: bool,
     // Shared pane navigation state; keymap handlers are connected by the frontend.
     pub split_editor: bool,
     pub reference_pinned: bool,
@@ -210,6 +222,12 @@ impl Default for CommandContext {
             open_diff_available: false,
             open_diff_active: false,
             open_diff_ready: false,
+            source_symbols_available: false,
+            source_references_available: false,
+            source_completion_available: false,
+            source_active: false,
+            source_ready: false,
+            source_side_ready: false,
             split_editor: false,
             reference_pinned: false,
             nav_back_available: false,
@@ -379,6 +397,28 @@ fn git_repository(ctx: &CommandContext) -> bool {
 }
 fn git_status_running(ctx: &CommandContext) -> bool {
     ctx.git_status_running
+}
+fn source_symbols(ctx: &CommandContext) -> bool {
+    ctx.source_symbols_available
+}
+fn source_references(ctx: &CommandContext) -> bool {
+    ctx.source_references_available
+}
+fn source_completion(ctx: &CommandContext) -> bool {
+    ctx.editor_input
+        && ctx.focus == PrimaryFocus::Editor
+        && !ctx.rectangular_selection
+        && !ctx.has_selection
+        && ctx.source_completion_available
+}
+fn source_active(ctx: &CommandContext) -> bool {
+    ctx.source_active
+}
+fn source_ready(ctx: &CommandContext) -> bool {
+    ctx.source_ready
+}
+fn source_side_ready(ctx: &CommandContext) -> bool {
+    ctx.source_side_ready
 }
 fn open_diff_available(ctx: &CommandContext) -> bool {
     ctx.open_diff_available
@@ -646,7 +686,38 @@ pub fn default_registry() -> CommandRegistry {
             "Open Comparison Hunk in Right Group",
             open_diff_ready
         ),
-        spec!(ViewSymbols, View, "Symbols", never),
+        spec!(ViewSymbols, View, "Symbols", source_symbols),
+        spec!(
+            SourceReferences,
+            Navigation,
+            "References in Document",
+            source_references
+        ),
+        spec!(
+            SourceComplete,
+            Edit,
+            "Complete Local Word",
+            source_completion
+        ),
+        spec!(
+            SourceRefresh,
+            Navigation,
+            "Refresh Source Capability",
+            source_active
+        ),
+        spec!(
+            SourceCancel,
+            Navigation,
+            "Cancel Source Capability",
+            source_active
+        ),
+        spec!(SourceAccept, Navigation, "Accept Source Item", source_ready),
+        spec!(
+            SourceOpenToSide,
+            Navigation,
+            "Open Source Item to Side",
+            source_side_ready
+        ),
         spec!(ViewToggleBottomPanel, View, "Toggle Bottom Panel", always),
         spec!(ViewTerminal, View, "Terminal", terminal),
         spec!(ViewProblems, View, "Problems", always),

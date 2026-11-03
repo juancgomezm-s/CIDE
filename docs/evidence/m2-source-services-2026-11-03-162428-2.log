@@ -1,0 +1,15 @@
+cargo test -p jc-app --test source_services --locked --offline
+
+running 6 tests
+test source_registry_capabilities_are_optional_namespaced_and_default_completion_needs_no_provider_process ... ok
+test source_refresh_storm_cancel_and_bounded_presentation_do_not_retain_extra_snapshots ... ok
+test source_provider_wrong_action_and_result_quota_cannot_publish_or_edit ... ok
+test source_completion_rejects_changed_caret_selection_revision_and_root ... ok
+test source_local_word_completion_is_revision_checked_strict_and_one_undo ... ok
+test source_snapshot_limit_is_checked_before_worker_start_and_completion_uses_only_prefix ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.50s
+     Running tests\source_services.rs (target\debug\deps\source_services-27b5568a9eede62d.exe)

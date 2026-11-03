@@ -1,0 +1,2 @@
+cargo generate-lockfile --offline
+     Locking 31 packages to latest compatible versions

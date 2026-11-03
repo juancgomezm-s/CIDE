@@ -1,0 +1,26 @@
+
+running 5 tests
+test abl_references_distinguish_static_local_and_dynamic_remote_context_without_executing ... ok
+test abl_source_chunk_boundaries_nested_comments_and_result_limits_are_explicit ... ok
+test qualified_names_and_oversized_names_do_not_turn_return_types_into_symbols ... FAILED
+test abl_symbols_ignore_comments_strings_preprocessor_and_end_statements_in_all_encodings ... ok
+test static_reference_candidates_are_confined_ambiguous_and_not_a_propath_emulator ... ok
+
+failures:
+
+---- qualified_names_and_oversized_names_do_not_turn_return_types_into_symbols stdout ----
+
+thread 'qualified_names_and_oversized_names_do_not_turn_return_types_into_symbols' panicked at crates\jc-progress\tests\source_services.rs:153:5:
+assertion failed: controller.items().is_empty()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    qualified_names_and_oversized_names_do_not_turn_return_types_into_symbols
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.67s
+     Running tests\source_services.rs (target\debug\deps\source_services-9fb52878619da5d0.exe)
+error: test failed, to rerun pass `-p jc-progress --test source_services`

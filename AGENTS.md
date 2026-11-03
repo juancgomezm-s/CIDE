@@ -581,3 +581,23 @@ combined snapshot/artifact reservations, read-only bounded OpenDiffView and no
 admission/poll from preparation/draw. Controller owns accepted immutable result.
 Escape routes through DiffCancelOpen; original-group hunk navigation respects
 ViewId and byte boundaries. GUI capability remains disabled until wired.
+
+## Capacidades locales de fuente TUI — 2026-11-03
+
+Primer registro interno namespaced y proveedor opcional progress.abl operativo
+para símbolos y referencias léxicas; core.words completa palabras textuales de
+cualquier documento. Listas/selector TUI, entrega F3, stale, candidatos confinados
+y propuestas de completado por revisión/una transacción. `docs/M2_SOURCE_SERVICES.md`.
+40 casos distintos (17 nuevos), cuatro flujos ConPTY, fmt/Clippy/release locales
+aprobados. No AVM, semántica, loader externo, GUI ni aceptación física/global.
+
+Siguiente bloque activo: plantillas/snippets universales y catálogo ABL del
+proveedor opcional, parámetros/preview/aceptación y undo único. Continuar sin
+esperar otro «continúa»; construir el conjunto antes de su ventana de validación.
+
+SourceRegistry/SourceController and SourceItem are generic jc-app contracts.
+ABL lexical services live only in optional jc-progress/source-services. F3 owns
+bounded snapshots/results; only explicit activation opens paths/applies edits.
+Never inherit the origin encoding into a different target document. Preserve
+dirty/pin/document identity and candidate ambiguity. Completion is textual words
+before the caret, not semantic completion. No new provider processes at startup.

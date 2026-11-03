@@ -1,0 +1,17 @@
+{
+  "archive": "work\\packages\\CIDE-windows-dev-source-services-2026-11-03-final.zip",
+  "bytes": 5450923,
+  "sha256": "f71f5a082ee88ed1e0389776d366fc6da54a938aece2d6d5b48c2254b6a4bb44",
+  "members": 76,
+  "crc_and_manifest_hashes_verified": true,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ]
+}

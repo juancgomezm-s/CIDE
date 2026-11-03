@@ -1,0 +1,32 @@
+cargo clippy --workspace --all-targets --locked --offline -- -D warnings
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+error: use of `format!` to build up a string from an iterator
+  --> crates\jc-progress\tests\source_services.rs:96:16
+   |
+96 |       let many = (0..65)
+   |  ________________^
+97 | |         .map(|i| format!("PROCEDURE p{i}:\nEND PROCEDURE.\n"))
+98 | |         .collect::<String>();
+   | |____________________________^
+   |
+help: call `fold` instead
+  --> crates\jc-progress\tests\source_services.rs:97:10
+   |
+97 |         .map(|i| format!("PROCEDURE p{i}:\nEND PROCEDURE.\n"))
+   |          ^^^
+help: ... and use the `write!` macro here
+  --> crates\jc-progress\tests\source_services.rs:97:18
+   |
+97 |         .map(|i| format!("PROCEDURE p{i}:\nEND PROCEDURE.\n"))
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this can be written more efficiently by appending to a `String` directly
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#format_collect
+   = note: `-D clippy::format-collect` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::format_collect)]`
+
+error: could not compile `jc-progress` (test "source_services") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

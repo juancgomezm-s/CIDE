@@ -62,7 +62,7 @@ Los offsets del núcleo son bytes, no caracteres ni columnas visuales. `jc-text`
 
 ## Checkpoint de navegación en M2A
 
-La TUI dibuja dos grupos Primary/Secondary con cursor, selección y viewport independientes. Comparten `TabId`, `FileSession` y undo; los offsets se ajustan al editar y deshacer. Pin/unpin, scroll vertical vinculado, apertura lateral y back/forward se ejecutan desde el registro central, menús y palette. En terminales estrechas se muestra el grupo activo conservando el otro. El diff del archivo activo frente a HEAD/index ya está conectado en modo de solo lectura; símbolos e includes/RUN siguen pendientes y M2A permanece abierto.
+La TUI dibuja dos grupos Primary/Secondary con cursor, selección y viewport independientes. Comparten `TabId`, `FileSession` y undo; los offsets se ajustan al editar y deshacer. Pin/unpin, scroll vertical vinculado, apertura lateral y back/forward se ejecutan desde el registro central, menús y palette. En terminales estrechas se muestra el grupo activo conservando el otro. El diff del archivo activo frente a HEAD/index ya está conectado en modo de solo lectura; símbolos e includes/RUN léxicos ya están integrados en TUI mediante el proveedor opcional local, sin AVM. M2A conserva abiertas sus puertas globales.
 
 F1 retiró los campos espejo de cursor/selección/scroll del documento. Los grupos poseen vistas persistentes con ViewId y comparten el documento/undo. Replace-all publica una sola transacción; cerrar una vista preserva otras referencias. F2 ya sustituyó la decodificación completa de navegación/render por proyección compartida y rangos visibles; F3 separa preparación/render, emite diferencias y entrega trabajos internos sin otra tecla. Véanse [avance F3](docs/F3_PRESENTATION_TASKS.md), [avance F1](docs/F1_DOCUMENT_VIEWS_TRANSACTIONS.md), [arquitectura](docs/ARQUITECTURA.md) y [plan](docs/PLAN.md).
 
@@ -276,3 +276,9 @@ La TUI ya compara los **dos documentos abiertos sin Git**, incluidos cambios sin
 guardar: View/Palette Compare Open Groups, hunks, F5, Escape y navegación a cada
 grupo. Visor lateral/unificado acotado y de solo lectura; [uso y evidencia](docs/M2_OPEN_DOCUMENT_DIFF.md).
 Ese visor todavía no está integrado en GUI. [Seguimiento hasta cerrar TUI](docs/M2_TUI_FINISH.md).
+
+La TUI ofrece **Symbols**, **References in Document** y **Complete Local Word**
+por menú/paleta. `progress.abl` aporta símbolos y referencias ABL inferidos;
+`core.words` completa palabras anteriores al caret en cualquier lenguaje. Includes/
+RUN estáticos abren candidatos confinados, con elección si son ambiguos; no ejecutan
+código. El completado se acepta explícitamente y usa un undo. [Uso, cuotas y evidencia](docs/M2_SOURCE_SERVICES.md).

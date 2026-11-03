@@ -246,6 +246,12 @@ impl Workbench {
             | DiffOpenNavigateLeft
             | DiffOpenNavigateRight
             | ViewSymbols
+            | SourceReferences
+            | SourceComplete
+            | SourceRefresh
+            | SourceCancel
+            | SourceAccept
+            | SourceOpenToSide
             | ViewToggleBottomPanel
             | ViewTerminal
             | ViewProblems
