@@ -1,0 +1,36 @@
+
+running 4 tests
+test document::recovery::tests::recovery_writes_sources_in_bounded_fragments_and_writer_failure_preserves_live_document ... ok
+test document::recovery::tests::recovery_roundtrip_keeps_binary_arenas_saved_revision_undo_redo_and_position_maps ... ok
+test document::recovery::tests::recovery_restores_compacted_and_budget_trimmed_histories_without_inventing_a_dirty_edit ... ok
+test document::recovery::tests::recovery_rejects_truncation_extreme_counts_and_invalid_piece_or_map_geometry_without_panics ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+   Compiling jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.08s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_core-e795dc8e25db2aef.exe)
+     Running tests\document.rs (target\gui-next\debug\deps\document-a4e78ed2166b23ef.exe)
+     Running tests\edit_geometry.rs (target\gui-next\debug\deps\edit_geometry-282d63feb4d7db93.exe)
+     Running tests\ranges_memory.rs (target\gui-next\debug\deps\ranges_memory-c27d9d781acfca57.exe)
+     Running tests\transactions.rs (target\gui-next\debug\deps\transactions-a98f9e9c5d11f931.exe)

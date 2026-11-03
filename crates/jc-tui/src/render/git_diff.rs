@@ -107,13 +107,11 @@ pub(super) fn sidebar(
         area.line(screen, row, "No hay bloques visibles", CellStyle::Dim);
         return;
     }
-    let available = usize::from(area.height - row);
-    let start = prepared
-        .hunks
-        .iter()
-        .position(|hunk| hunk.selected)
-        .map_or(0, |selected| selected.saturating_sub(available - 1));
-    for hunk in prepared.hunks.iter().skip(start).take(available) {
+    for (target_row, index) in git_sidebar_targets(prepared, area.height) {
+        row = target_row;
+        let Some(hunk) = prepared.hunks.iter().find(|hunk| hunk.index == index) else {
+            continue;
+        };
         let style = if hunk.selected {
             CellStyle::Reverse
         } else {
@@ -124,8 +122,33 @@ pub(super) fn sidebar(
         let label = format!("{marker} {} ", hunk.index.saturating_add(1));
         let column = area.write(screen, row, 0, area.width, &label, style);
         area.write(screen, row, column, area.width, &hunk.label, style);
-        row += 1;
     }
+}
+
+pub(crate) fn git_sidebar_targets(prepared: &GitPresentation, height: u16) -> Vec<(u16, usize)> {
+    let reserve = if prepared.hunks.is_empty() { 1 } else { 2 };
+    let first = 2usize
+        + prepared.details.len().min(usize::from(
+            height.saturating_sub(2).saturating_sub(reserve),
+        ))
+        + 1;
+    let available = usize::from(height).saturating_sub(first);
+    if available == 0 {
+        return Vec::new();
+    }
+    let start = prepared
+        .hunks
+        .iter()
+        .position(|hunk| hunk.selected)
+        .map_or(0, |selected| selected.saturating_sub(available - 1));
+    prepared
+        .hunks
+        .iter()
+        .skip(start)
+        .take(available)
+        .enumerate()
+        .map(|(row, hunk)| ((first + row) as u16, hunk.index))
+        .collect()
 }
 
 pub(super) fn unified(

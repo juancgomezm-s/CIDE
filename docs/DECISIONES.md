@@ -621,3 +621,25 @@ Tema TUI basado en la referencia OmniCore consultada; GUI conserva Sublime Text.
 Markdown comparte lexer incremental y vista acotada/inerte, sin dependencias nuevas
 ni motor HTML. Subconjunto documentado y aceptación física/global pendiente.
 Véanse [contrato y validación](M2B_GUI_WORKFLOWS_ES.md).
+
+## D60 — Marco gráfico independiente y tema compartido (2026-11-03)
+
+GUI consume el core común, pero usa geometría de píxeles, fuente proporcional para
+interfaz, árbol gráfico y pestañas redondeadas con desbordamiento/selector. El fondo
+elegido es #2E3440. La barra nativa no aceptó el color de título en este entorno;
+se integra en el cliente con hit-test Win32 para arrastre y resize. Menús nativos
+owner-draw comparten paleta. Una DIB persistente publica composiciones completas;
+exponer no reconstruye la presentación. Raster equivalente y tiempos offscreen son
+evidencia local, no aceptación física ni certificación de recursos GDI/RAM globales.
+
+## D61 — Recuperación durable en Rust y política de archivos grandes (2026-11-03)
+
+La sesión conserva bytes/undo y vistas, sin guardar implícitamente el original.
+Se escriben generaciones exclusivas, se vacían/sincronizan y releen antes de
+publicar HEAD; BACKUP conserva el commit anterior. Restauración validada fuera del
+modelo activo; falla la salida si no puede confirmar la recuperación. Checkpoint
+al cierre normal primero; periodicidad y recolección segura quedan pendientes.
+Hay cuotas previas coherentes con la restauración y depots por instancia/frontend.
+El usuario eligió instantánea privada para archivos GB. La fuente paginada y el
+guardado streaming son bases verificadas; Document e índices GB siguen pendientes.
+No se añade un segundo modelo editable ni se afirma resistencia a fallos eléctricos.

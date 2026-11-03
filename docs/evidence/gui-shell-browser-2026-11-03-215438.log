@@ -1,0 +1,10 @@
+
+running 1 test
+{"probe":"paged_source_prior_writable_mapping","mapping_rejected":true,"immutable_source_admitted":false}
+test windows::persistent_writable_mapping_cannot_mutate_a_source_admitted_as_immutable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.74s
+     Running tests\paged_source.rs (target\gui-next\debug\deps\paged_source-584219445ff1ecb0.exe)

@@ -1,0 +1,18 @@
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Checking jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+error: the variable `changed` is used as a loop counter
+   --> crates\jc-gui\src\windows\menu_theme.rs:288:9
+    |
+288 |         for (menu, bar) in &menus {
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using: `for (changed, (menu, bar)) in menus.iter().enumerate()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#explicit_counter_loop
+    = note: `-D clippy::explicit-counter-loop` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::explicit_counter_loop)]`
+
+error: could not compile `jc-gui` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-gui` (lib test) due to 1 previous error

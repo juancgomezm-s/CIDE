@@ -1,0 +1,40 @@
+    Checking jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+    Checking jc-languages v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-languages)
+    Checking jc-platform v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-platform)
+    Checking jc-text v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-text)
+   Compiling jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+    Checking jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+error[E0433]: failed to resolve: use of undeclared crate or module `jc_files`
+  --> crates\jc-tui\src\app\recovery.rs:12:54
+   |
+12 | ...   let root=match flags[1] {0=>None,1=>Some(jc_files::read_recovery_path(&mut reader,32768).map_err(|e|e.to_string())?),_=>return Err(...
+   |                                                ^^^^^^^^ use of undeclared crate or module `jc_files`
+
+error[E0433]: failed to resolve: use of undeclared crate or module `jc_files`
+  --> crates\jc-tui\src\app\recovery.rs:32:47
+   |
+32 |         if let Some(root)=&self.project_root {jc_files::write_recovery_path(root,&mut metadata).map_err(|e|e.to_string())?;}
+   |                                               ^^^^^^^^ use of undeclared crate or module `jc_files`
+
+error[E0433]: failed to resolve: use of undeclared crate or module `jc_files`
+  --> crates\jc-gui\src\windows\recovery.rs:16:44
+   |
+16 |             let root=if header[1]==1 {Some(jc_files::read_recovery_path(&mut reader,32768).map_err(|e|e.to_string())?)}else{None};
+   |                                            ^^^^^^^^ use of undeclared crate or module `jc_files`
+
+error[E0433]: failed to resolve: use of undeclared crate or module `jc_files`
+  --> crates\jc-gui\src\windows\recovery.rs:35:47
+   |
+35 |         if let Some(root)=&self.project_root {jc_files::write_recovery_path(root,&mut metadata).map_err(|e|e.to_string())?;}
+   |                                               ^^^^^^^^ use of undeclared crate or module `jc_files`
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `jc-tui` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-tui` (lib test) due to 2 previous errors
+error: could not compile `jc-gui` (lib) due to 2 previous errors
+error: could not compile `jc-gui` (lib test) due to 2 previous errors

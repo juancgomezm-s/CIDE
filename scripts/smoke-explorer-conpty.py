@@ -68,7 +68,9 @@ class Session:
             self.check(self.api.UpdateProcThreadAttribute(self.attributes,0,0x0002000D,jobs,c.sizeof(jobs),None,None))
             startup=StartupEx();startup.startup.cb=c.sizeof(StartupEx);startup.attributes=c.cast(self.attributes,c.c_void_p)
             command=c.create_unicode_buffer(subprocess.list2cmdline([str(host),str(exe),'--encoding','utf8',str(source)]))
-            environment_buffer=None if environment is None else c.create_unicode_buffer('\0'.join(key+'='+value for key,value in sorted(environment.items()))+'\0\0')
+            environment=dict(os.environ) if environment is None else dict(environment)
+            environment.setdefault('CIDE_NO_SESSION','1')
+            environment_buffer=c.create_unicode_buffer('\0'.join(key+'='+value for key,value in sorted(environment.items()))+'\0\0')
             flags=0x80000|(0x400 if environment_buffer is not None else 0)
             self.check(self.api.CreateProcessW(str(host),command,None,None,False,flags,environment_buffer,str(root),c.byref(startup),c.byref(self.process)))
             for handle in (iread,owrite):self.api.CloseHandle(handle);self.handles.remove(handle)
@@ -115,11 +117,11 @@ class Session:
                 mode=int(body) if body.isdigit() else 0
                 for x in range(self.width):
                     if mode==2 or mode==0 and x>=self.x or mode==1 and x<=self.x:
-                        self.cells[self.y][x]=' ';self.styles[self.y][x]=self.reverse or self.background==(61,80,104)
+                        self.cells[self.y][x]=' ';self.styles[self.y][x]=self.reverse or self.background in ((61,80,104),(67,76,94))
                         self.inks[self.y][x]=(self.foreground,self.background,self.bold,self.underline)
             elif ch=='X':
                 for x in range(self.x,min(self.width,self.x+number)):
-                    self.cells[self.y][x]=' ';self.styles[self.y][x]=self.reverse or self.background==(61,80,104)
+                    self.cells[self.y][x]=' ';self.styles[self.y][x]=self.reverse or self.background in ((61,80,104),(67,76,94))
                     self.inks[self.y][x]=(self.foreground,self.background,self.bold,self.underline)
             elif ch=='m':
                 index=0
@@ -150,7 +152,7 @@ class Session:
         if ch=='\n':self.y=min(self.height-1,self.y+1);return
         if ch<' ':return
         if self.x>=self.width:self.x=0;self.y=min(self.height-1,self.y+1)
-        self.cells[self.y][self.x]=ch;self.styles[self.y][self.x]=self.reverse or self.background==(61,80,104)
+        self.cells[self.y][self.x]=ch;self.styles[self.y][self.x]=self.reverse or self.background in ((61,80,104),(67,76,94))
         fg,bg=(self.background,self.foreground) if self.reverse else (self.foreground,self.background)
         self.inks[self.y][self.x]=(fg,bg,self.bold,self.underline);self.x+=1
     def read(self):

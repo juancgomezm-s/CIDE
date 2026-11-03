@@ -1,0 +1,17 @@
+{
+  "listed_tui_lib": 139,
+  "initial_reported": 134,
+  "initial_not_reported": [
+    "app::git_status_integration_tests::cancel_refresh_and_context_changes_invalidate_before_prepare_without_consuming_completion",
+    "app::git_status_integration_tests::configured_filter_is_a_static_ui_failure_and_never_a_partial_ready_list",
+    "app::git_status_integration_tests::executable_prompt_resumes_only_its_status_or_diff_intent_and_escape_removes_it",
+    "app::git_status_integration_tests::repository_status_without_document_or_encoding_delivers_mm_and_untracked_via_wakeup",
+    "app::git_status_integration_tests::status_selection_enter_and_repeated_composition_preserve_shared_editor_and_disk"
+  ],
+  "passed_tui_names_by_suites_and_directed_closure": 139,
+  "missing_passed": [],
+  "single_global_runtime_pass": false,
+  "initial_abort_cause": "sandbox access denied in Git fixture Drop remove_dir_all, double panic during unwinding; five directed cases pass with escalated owned-fixture verification",
+  "junction_initial_failure": "mklink /J returned Acceso denegado in sandbox; isolated escalated case passes",
+  "new_browser_tests_passed": 4
+}

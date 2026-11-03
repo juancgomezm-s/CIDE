@@ -5,12 +5,12 @@ use jc_app::{PaneId, SyntaxKind, SyntaxProfile};
 use jc_text::TextPosition;
 use std::ptr::{null, null_mut};
 
-const BACKGROUND: u32 = 0x00272828;
-const HEADER: u32 = 0x00202122;
-const FOREGROUND: u32 = 0x00d5d7d8;
-const DIM: u32 = 0x008d8b87;
-const SELECTED: u32 = 0x00534b45;
-const ACCENT: u32 = 0x00a6d9e6;
+const BACKGROUND: u32 = super::shell::BACKGROUND;
+const HEADER: u32 = super::shell::SURFACE;
+const FOREGROUND: u32 = super::shell::TEXT;
+const DIM: u32 = super::shell::MUTED;
+const SELECTED: u32 = super::shell::SELECTED;
+const ACCENT: u32 = super::shell::ACCENT;
 fn search_at(matches: &[jc_app::SearchMatch], source: std::ops::Range<usize>) -> bool {
     // S0 delivers source-ordered ranges. One binary lookup per visible cell;
     // diagnostic escape fragments retain their original scalar's byte start.
@@ -82,12 +82,32 @@ struct Row {
     number: Vec<u16>,
     cells: Vec<Cell>,
 }
+fn run_length(cells: &[Cell], start: usize, safe: &[bool; 128]) -> usize {
+    let first = &cells[start];
+    if first.width != 1
+        || !matches!(first.glyph,jc_app::Glyph::Scalar(c) if c.is_ascii() && safe[c as usize])
+    {
+        return 1;
+    }
+    cells[start..]
+        .iter()
+        .take(256)
+        .enumerate()
+        .take_while(|(n, cell)| {
+            cell.width == 1
+                && cell.column == first.column + n
+                && cell.foreground() == first.foreground()
+                && cell.background() == first.background()
+                && matches!(cell.glyph,jc_app::Glyph::Scalar(c) if c.is_ascii() && safe[c as usize])
+        })
+        .count()
+        .max(1)
+}
 struct Pane {
     id: PaneId,
     first_line: usize,
     syntax: SyntaxBudget,
     rect: Rect,
-    header: Vec<u16>,
     rows: Vec<Row>,
     text_x: i32,
     text_y: i32,
@@ -97,9 +117,12 @@ pub(super) struct Frame {
     pub width: i32,
     pub height: i32,
     font: Handle,
+    ui_font: Handle,
+    ascii_runs: [bool; 128],
     cell_width: i32,
     cell_height: i32,
-    top: Vec<u16>,
+    tabs: super::tab_bar::Bars,
+    chrome: super::chrome::Frame,
     status: Vec<u16>,
     panes: Vec<Pane>,
     selector: Option<super::selector::SelectorPresentation>,
@@ -116,6 +139,22 @@ pub(super) struct Frame {
     bottom: Option<super::bottom_panel::BottomFrame>,
 }
 impl Frame {
+    pub(super) fn source_draw_counts(&self) -> (usize, usize) {
+        let mut cells = 0;
+        let mut runs = 0;
+        for row in self.panes.iter().flat_map(|p| &p.rows) {
+            cells += row.cells.len();
+            let mut at = 0;
+            while at < row.cells.len() {
+                at += run_length(&row.cells, at, &self.ascii_runs);
+                runs += 1;
+            }
+        }
+        (cells, runs)
+    }
+    pub(super) fn tab_hits(&self) -> super::tab_bar::Bars {
+        self.tabs.clone()
+    }
     /// Inspection of already-owned visible presentation only. These helpers do
     /// not consult Workbench, lexical caches or source data during rasterization.
     pub(super) fn syntax_cell_at(
@@ -167,12 +206,12 @@ impl Frame {
     }
 }
 
-fn areas(state: &State) -> Vec<(PaneId, Rect)> {
+pub(super) fn areas(state: &State) -> Vec<(PaneId, Rect)> {
     let width = state.width.clamp(1, 8192);
     let height = state.height.clamp(1, 8192);
     let bottom = super::bottom_panel::region(state)
         .map_or((height - state.cell_height - 8).max(0), |r| r.top);
-    let top = (state.cell_height + 8).min(bottom);
+    let top = super::shell::TABS.min(bottom);
     let left = super::explorer_panel::region(state).map_or(0, |r| r.right + 1);
     let available = width - left;
     if state.workbench.panes().is_split() && available / state.cell_width.clamp(1, 8192) >= 90 {
@@ -234,7 +273,7 @@ fn text_areas(state: &State) -> Vec<TextArea> {
             let count = state.workbench.line_count_for_tab(tab)?;
             let digits = count.max(1).to_string().len().clamp(3, 7);
             let x = rect.left + (digits as i32 + 2) * cw + 8;
-            let y = (rect.top + ch + 6).min(rect.bottom);
+            let y = (rect.top + super::shell::HEADER).min(rect.bottom);
             let columns = ((rect.right - x - 8) / cw).clamp(0, 256) as usize;
             let rows = ((rect.bottom - y) / ch).clamp(0, 128) as usize;
             let first = view.scroll_line();
@@ -258,7 +297,7 @@ fn text_areas(state: &State) -> Vec<TextArea> {
 
 pub(super) fn source_pane_at(state: &State, x: i32, y: i32) -> Option<(PaneId, usize)> {
     for (pane, rect) in areas(state) {
-        let top = rect.top + state.cell_height + 6;
+        let top = rect.top + super::shell::HEADER;
         let rows = ((rect.bottom - top) / state.cell_height.clamp(1, 8192)).clamp(0, 128) as usize;
         if rows > 0
             && x >= rect.left
@@ -446,8 +485,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         ((rect.right - rect.left) / state.cell_width - 7).clamp(1, 256) as usize
     });
     let rows = areas.first().map_or(1, |(_, rect)| {
-        ((rect.bottom - rect.top - state.cell_height - 6) / state.cell_height).clamp(1, 128)
-            as usize
+        ((rect.bottom - rect.top - super::shell::HEADER) / state.cell_height).clamp(1, 128) as usize
     });
     if !covered {
         state.workbench.reveal_active_pane(rows, columns);
@@ -463,9 +501,9 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         let Some(location) = view.location() else {
             continue;
         };
-        let Some(document) = state.workbench.document_by_tab(location.tab) else {
+        if state.workbench.document_by_tab(location.tab).is_none() {
             continue;
-        };
+        }
         let rectangle = state.workbench.rectangle_for_pane(id);
         let first = view.scroll_line();
         let invisible = state.workbench.invisibles_visible();
@@ -477,7 +515,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             .unwrap_or(0);
         let digits = count.max(1).to_string().len().clamp(3, 7);
         let text_x = rect.left + (digits as i32 + 2) * state.cell_width + 8;
-        let text_y = (rect.top + state.cell_height + 6).min(rect.bottom);
+        let text_y = (rect.top + super::shell::HEADER).min(rect.bottom);
         let columns = ((rect.right - text_x - 8) / state.cell_width).clamp(0, 256) as usize;
         let rows = ((rect.bottom - text_y) / state.cell_height).clamp(0, 128) as usize;
         let selection = state.workbench.selection_for_pane(id);
@@ -611,28 +649,6 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                     )
                 })
         });
-        let name = document
-            .session
-            .path()
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("<non-scalar path>");
-        let header = wide(&format!(
-            "{} Group {} · {}{}{}",
-            if active { ">" } else { " " },
-            if id == PaneId::Primary { 1 } else { 2 },
-            name.chars().take(80).collect::<String>(),
-            if document.session.document().is_modified() {
-                " *"
-            } else {
-                ""
-            },
-            if rectangle.is_some() {
-                " · Rect TAB4"
-            } else {
-                ""
-            }
-        ));
         panes.push(Pane {
             id,
             first_line: first,
@@ -644,22 +660,13 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                 limited: syntax.limited,
             },
             rect,
-            header,
             rows: prepared,
             text_x,
             text_y,
             caret,
         });
     }
-    let mut top = String::from("CIDE  ");
-    for tab in state.workbench.tabs().tabs().iter().take(12) {
-        let title: String = tab.title.chars().take(24).collect();
-        if Some(tab.id) == state.workbench.tabs().active_id() {
-            top.push_str(&format!(" [{title}{}] ", if tab.dirty { "*" } else { "" }));
-        } else {
-            top.push_str(&format!(" {title} "));
-        }
-    }
+    let tabs = super::tab_bar::prepare(state);
     let position = state
         .workbench
         .active_position()
@@ -669,7 +676,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         .active_encoding()
         .map_or("elige codificación", |encoding| encoding.name());
     let status = wide(&format!(
-        "Lín {} Col {} (escalar) · {encoding}{}{} · {}",
+        "Lín {} Col {} (escalar) · {encoding}{}{}{} · {}",
         position.line + 1,
         position.column + 1,
         if state.workbench.panes().scroll_linked() {
@@ -686,6 +693,16 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         } else {
             ""
         },
+        if state
+            .workbench
+            .panes()
+            .view(state.workbench.panes().active())
+            .is_some_and(|v| v.is_pinned())
+        {
+            " · Referencia anclada"
+        } else {
+            ""
+        },
         state.status
     ));
     if state.syntax_pending {
@@ -695,9 +712,36 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         width: state.width.clamp(1, 8192),
         height: state.height.clamp(1, 8192),
         font: state.font,
+        ui_font: state.ui_font,
+        ascii_runs: state.ascii_runs,
         cell_width: state.cell_width,
         cell_height: state.cell_height,
-        top: wide(&top),
+        tabs,
+        chrome: super::chrome::Frame::new(
+            super::chrome::Layout::new(state.width, state.height, state.maximized),
+            state.ui_font,
+            state.icon,
+            &state.workbench.active_document().map_or_else(
+                || "CIDE".to_owned(),
+                |doc| {
+                    format!(
+                        "CIDE · {}{}",
+                        doc.session
+                            .path()
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("<ruta no escalar>"),
+                        if doc.session.document().is_modified() {
+                            " ●"
+                        } else {
+                            ""
+                        }
+                    )
+                },
+            ),
+            state.focused,
+            state.chrome_hover,
+        ),
         status,
         panes,
         search: state.search_presentation(),
@@ -783,6 +827,13 @@ impl Drop for FontSelection {
     }
 }
 pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
+    draw_internal(dc, frame, false)
+}
+/// Synthetic comparison for the owned-HWND smoke only; not an application path.
+pub(super) unsafe fn draw_reference_cells(dc: Hdc, frame: &Frame) -> Result<(), String> {
+    draw_internal(dc, frame, true)
+}
+unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), String> {
     // BeginPaint clips to the update/visible region. Hidden windows and empty
     // invalidations may legitimately have no drawable pixels (NULLREGION=1).
     let mut clip = Rect::default();
@@ -795,6 +846,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         dc,
         old: SelectObject(dc, frame.font),
     };
+    SelectObject(dc, frame.ui_font);
     fill(
         dc,
         Rect {
@@ -805,31 +857,9 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         },
         BACKGROUND,
     )?;
-    text(
-        dc,
-        Rect {
-            left: 8,
-            top: 4,
-            right: frame.width,
-            bottom: (frame.cell_height + 8).min(frame.height),
-        },
-        &frame.top,
-        FOREGROUND,
-        HEADER,
-    )?;
+    super::tab_bar::draw(dc, &frame.tabs)?;
     for pane in &frame.panes {
-        text(
-            dc,
-            Rect {
-                left: pane.rect.left + 8,
-                top: pane.rect.top + 2,
-                right: pane.rect.right,
-                bottom: pane.text_y,
-            },
-            &pane.header,
-            FOREGROUND,
-            HEADER,
-        )?;
+        SelectObject(dc, frame.font);
         for (row, line) in pane.rows.iter().enumerate() {
             let y = pane.text_y + row as i32 * frame.cell_height;
             text(
@@ -844,8 +874,48 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                 DIM,
                 BACKGROUND,
             )?;
-            for cell in &line.cells {
+            let mut cell_index = 0;
+            while cell_index < line.cells.len() {
+                let cell = &line.cells[cell_index];
                 let x = pane.text_x + cell.column as i32 * frame.cell_width;
+                let count = if reference {
+                    1
+                } else {
+                    run_length(&line.cells, cell_index, &frame.ascii_runs)
+                };
+                if count > 1 {
+                    let mut units = [0u16; 256];
+                    let advances = [frame.cell_width; 256];
+                    for (n, item) in line.cells[cell_index..cell_index + count]
+                        .iter()
+                        .enumerate()
+                    {
+                        units[n] = item.glyph.first() as u16;
+                    }
+                    let rect = Rect {
+                        left: x,
+                        top: y,
+                        right: (x + count as i32 * frame.cell_width).min(pane.rect.right),
+                        bottom: (y + frame.cell_height).min(pane.rect.bottom),
+                    };
+                    SetTextColor(dc, cell.foreground());
+                    SetBkColor(dc, cell.background());
+                    if ExtTextOutW(
+                        dc,
+                        x,
+                        y,
+                        6,
+                        &rect,
+                        units.as_ptr(),
+                        count as u32,
+                        advances.as_ptr(),
+                    ) == 0
+                    {
+                        return Err(super::os_error("Dibujar tramo de código"));
+                    }
+                    cell_index += count;
+                    continue;
+                }
                 let mut units = [0u16; 2];
                 let cluster;
                 let encoded = match &cell.glyph {
@@ -867,6 +937,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                     cell.foreground(),
                     cell.background(),
                 )?;
+                cell_index += 1;
             }
         }
         if let Some((x, y)) = pane.caret {
@@ -882,6 +953,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
             )?;
         }
     }
+    SelectObject(dc, frame.ui_font);
     if let Some(explorer) = &frame.explorer {
         super::explorer_paint::draw(dc, explorer, frame.cell_height)?;
     }
@@ -912,6 +984,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         )?;
     }
     if let Some(presentation) = &frame.search {
+        SelectObject(dc, frame.font);
         super::search_paint::draw(
             dc,
             presentation,
@@ -972,9 +1045,11 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         )?;
     }
     if let Some(p) = &frame.comparison {
+        SelectObject(dc, frame.font);
         super::open_diff_panel::draw(dc, p)?;
     }
     if let Some(p) = &frame.markdown {
+        SelectObject(dc, frame.font);
         super::markdown_panel::draw(dc, p)?;
     }
     for p in [&frame.source, &frame.snippet].into_iter().flatten() {
@@ -1002,6 +1077,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
             frame.cell_height,
         )?;
     }
+    super::chrome::draw(dc, &frame.chrome)?;
     drop(selected);
     Ok(())
 }

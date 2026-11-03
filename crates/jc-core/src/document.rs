@@ -1,6 +1,8 @@
 use std::fmt;
 use std::io::{self, Write};
 use std::ops::Range;
+mod recovery;
+pub use recovery::{RecoveryError, RecoveryLimits};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditError {

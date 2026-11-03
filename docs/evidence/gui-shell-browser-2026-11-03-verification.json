@@ -1,0 +1,69 @@
+{
+  "base_commit": "bf2de2811238842543d303744b7a12a94ae5ac6d",
+  "target": "target/gui-next/release",
+  "rust": "1.85.1",
+  "network_ci_runs": false,
+  "validation": {
+    "all_targets_check": true,
+    "fmt_check": true,
+    "workspace_clippy_all_targets_deny_warnings": true,
+    "workspace_release_bins_examples": true,
+    "new_inspector_release_clippy": true,
+    "full_workspace_runtime_pass": false
+  },
+  "recovery_tests": {
+    "core_codec_preflight": 7,
+    "store": 5,
+    "store_hostile_manifest": 1,
+    "file_session_bridge": 5,
+    "persistent_views": 3,
+    "workbench": 4,
+    "frontends": 4,
+    "abrupt_process_exit_parent": 1,
+    "child_helper_runs": 2
+  },
+  "native": {
+    "gui_shell_checks": 15,
+    "gui_interaction_checks": 13,
+    "tui_browser_checks": 5,
+    "tui_mouse_checks": 7,
+    "tui_recovery_checks": 4,
+    "tui_recovery_processes": 3,
+    "gui_recovery_checks": 4,
+    "gui_recovery_processes": 3,
+    "physical_display_verified": false
+  },
+  "package": {
+    "path": "work\\packages\\CIDE-windows-dev-gui-recovery-20261103-v2.zip",
+    "members": 82,
+    "payload_sha256_verified": 81,
+    "crc_verified": true,
+    "sha256": "196167aada1f9a4baf44f47e6c141b8c6a9c8988e3ddec695cd9b60230e83093",
+    "missing_notices": [
+      {
+        "package": "winapi-i686-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      },
+      {
+        "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+        "reason": "no matching notices in offline source"
+      }
+    ],
+    "channel": "development"
+  },
+  "binaries": {
+    "cide.exe": "0d915946ced6013875279d1915247cd920fdc5cb41b015f240b345e12955328c",
+    "cide-tui.exe": "8b34f852ea448fdf0383b025fa8d7ef5ac41e71014b56df6528a6e9c4d0f01aa",
+    "cide-gui.exe": "691831afd891c5d51adea072cb902e21e26d43962ffff69f8302d1f06b515a15",
+    "jc-ide.exe": "63c05a8318677cc005bd95817fc4e9a6e6e3b4fd9f4e472a4d1f7245e91f9ed4",
+    "jc-ide-tui.exe": "996ad572bf940d2c7604a5303313827c05f77e3f93255185b302567d45a102cc",
+    "jc-ide-gui.exe": "80d36bb803ba8863827904bf51ee0a14706bd57214be65045838b4c644349618"
+  },
+  "material_limits": [
+    "periodic recovery checkpoints pending",
+    "safe recovery generation GC pending",
+    "full-editor GB integration pending; private snapshot policy selected",
+    "physical/global latency/RAM, IME/DPI/a11y and real clipboard acceptance open",
+    "GDI cold resource delta19to24 is diagnostic, not leak acceptance"
+  ]
+}

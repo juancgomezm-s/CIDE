@@ -1,0 +1,68 @@
+
+running 40 tests
+test windows::back_buffer::tests::update_rectangle_is_clamped_and_empty_regions_do_not_publish ... ok
+test windows::native_menu::tests::native_macros_and_mnemonics_are_explicit_without_unsupported_menu_providers ... ok
+test windows::back_buffer::tests::surface_budget_rejects_invalid_and_excessive_sizes_before_allocation ... ok
+test windows::open_diff_panel::tests::comparison_geometry_fits_client_and_switches_to_unified_without_overflow ... ok
+test windows::project_paint::tests::geometry_stays_inside_client_for_tiny_and_extreme_metrics ... ok
+test windows::back_buffer::tests::retained_surface_publishes_only_valid_update_and_reuses_allocation ... ok
+test windows::project_results::tests::selection_and_viewport_keep_end_then_up_visible_under_resizing_and_reset ... ok
+test windows::render_probe::tests::timing_percentiles_use_interleaved_sample_population ... ok
+test windows::project_results::tests::labels_escape_invalid_controls_bidi_unicode_and_paths_without_partial_tokens ... ok
+test windows::replace_view::tests::empty_and_repeated_borrowed_preparation_leave_preview_lines_unchanged ... ok
+test windows::git_view::tests::typed_status_flags_raw_paths_and_selection_are_bounded_and_read_only ... ok
+test windows::git_view::tests::diff_preserves_bom_invalid_legacy_and_exact_ending_markers ... ok
+test windows::project_results::tests::idle_and_state_presentation_are_bounded_without_starting_a_worker ... ok
+test windows::save_plan::tests::acknowledgements_preserve_order_and_reject_stale_or_repeated_results ... ok
+test windows::save_plan::tests::cancellation_keeps_unsaved_count_and_cannot_acknowledge_pending_candidate ... ok
+test windows::git_view::tests::context_is_three_lines_and_idle_controllers_do_not_start_work ... ok
+test windows::replace_view::tests::end_then_up_remains_visible_through_resizing_and_preview_replacement ... ok
+test windows::project_paint::tests::field_and_result_budgets_match_normal_layout_and_output_is_control_free ... ok
+test windows::replace_view::tests::escaped_labels_bound_unicode_controls_and_never_cut_escape_tokens ... ok
+test windows::selector::tests::empty_file_presentation_is_read_only_and_tiny_viewport_allocates_no_rows ... ok
+test windows::selector::tests::input_paste_is_atomic_utf8_bounded_and_backspace_removes_one_scalar ... ok
+test windows::selector_paint::tests::popup_and_every_row_stay_in_the_client_for_tiny_and_extreme_geometry ... ok
+test windows::selector::tests::english_filter_shortcut_and_disabled_target_agree_with_registry ... ok
+test windows::native_menu::tests::definitions_cover_each_implemented_command_once_and_have_clean_separators ... ok
+test windows::selector::tests::selection_stays_visible_and_empty_filtered_results_have_no_target ... ok
+test windows::selector_paint::tests::shrinking_an_owned_presentation_keeps_selected_row_without_mutation ... ok
+test windows::selector_paint::tests::query_cursor_and_selected_escape_share_bounded_field_projection ... ok
+test windows::snippet_panel::tests::gui_snippet_fields_remove_graphemes_and_reject_oversize_paste_atomically ... ok
+test windows::snippet_panel::tests::gui_snippet_stale_caret_rejects_review_acceptance_without_editing ... ok
+test windows::snippet_panel::tests::gui_snippet_surround_review_preserves_selected_mixed_eol_and_shared_undo ... ok
+test windows::snippet_panel::tests::gui_snippet_wizard_review_cancel_and_apply_preserve_source_until_one_undo ... ok
+test windows::source_panel::tests::source_gui_registry_keeps_lexical_capability_optional_and_missing_provider_explicit ... ok
+test windows::tab_bar::tests::tab_strip_rejects_stale_revision_resize_and_modal_without_touching_source ... ok
+test windows::source_panel::tests::source_gui_completion_blocks_typing_and_accepts_exactly_one_undo ... ok
+test windows::source_panel::tests::source_gui_stale_completion_and_cancel_cannot_edit_new_caret_intention ... ok
+test windows::source_panel::tests::source_gui_symbols_deliver_without_input_and_navigation_preserves_bytes ... ok
+test windows::tab_bar::tests::tab_strip_split_click_preserves_independent_views_pin_bytes_and_undo ... FAILED
+test windows::tab_bar::tests::tab_strip_overflow_reaches_hidden_tabs_and_keyboard_selection_reveals_active ... FAILED
+test windows::save_plan::tests::construction_accepts_empty_and_limit_but_rejects_duplicate_ids_and_overflow ... ok
+test windows::git_view::tests::huge_hunk_end_then_up_resize_and_prefix_clipping_are_bounded ... ok
+
+failures:
+
+---- windows::tab_bar::tests::tab_strip_split_click_preserves_independent_views_pin_bytes_and_undo stdout ----
+
+thread 'windows::tab_bar::tests::tab_strip_split_click_preserves_independent_views_pin_bytes_and_undo' panicked at crates\jc-gui\src\windows\tab_bar.rs:468:9:
+assertion failed: s.workbench.panes().view(PaneId::Secondary).unwrap().is_pinned()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- windows::tab_bar::tests::tab_strip_overflow_reaches_hidden_tabs_and_keyboard_selection_reveals_active stdout ----
+
+thread 'windows::tab_bar::tests::tab_strip_overflow_reaches_hidden_tabs_and_keyboard_selection_reveals_active' panicked at crates\jc-gui\src\windows\tab_bar.rs:414:9:
+assertion failed: bars.strips[0].buttons.iter().any(|b|
+        matches!(b.target,Target::Select(id,..) if id==selected))
+
+
+failures:
+    windows::tab_bar::tests::tab_strip_overflow_reaches_hidden_tabs_and_keyboard_selection_reveals_active
+    windows::tab_bar::tests::tab_strip_split_click_preserves_independent_views_pin_bytes_and_undo
+
+test result: FAILED. 38 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.61s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_gui-2a854f9863a4fc54.exe)
+error: test failed, to rerun pass `-p jc-gui --lib`

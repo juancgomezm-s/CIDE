@@ -34,19 +34,19 @@ extern "system" {
     fn GetMenuState(menu: Handle, item: u32, flags: u32) -> u32;
     fn GetMenuStringW(menu: Handle, item: u32, text: *mut u16, count: i32, flags: u32) -> i32;
 }
-struct Resize {
+pub(super) struct Resize {
     hwnd: Hwnd,
     rect: Rect,
 }
 impl Resize {
-    unsafe fn new(hwnd: Hwnd) -> Result<Self, String> {
+    pub(super) unsafe fn new(hwnd: Hwnd) -> Result<Self, String> {
         let mut rect = Rect::default();
         if GetWindowRect(hwnd, &mut rect) == 0 {
             return Err("Interaction own-window geometry unavailable".into());
         }
         Ok(Self { hwnd, rect })
     }
-    unsafe fn set(&self, width: i32, height: i32) -> Result<(), String> {
+    pub(super) unsafe fn set(&self, width: i32, height: i32) -> Result<(), String> {
         if SetWindowPos(self.hwnd, std::ptr::null_mut(), 0, 0, width, height, 0x16) == 0 {
             return Err("Interaction own-window resize failed".into());
         }
@@ -277,11 +277,12 @@ unsafe fn palette(hwnd: Hwnd, label: &str) -> Result<(), String> {
     paste(hwnd, label)?;
     key(hwnd, 0x0d, Modifiers::NONE)
 }
-unsafe fn native_label(menu: Handle, id: usize) -> Result<String, String> {
+unsafe fn native_label(hwnd: Hwnd, menu: Handle, id: usize) -> Result<String, String> {
     let mut text = [0u16; 512];
     let count = GetMenuStringW(menu, id as u32, text.as_mut_ptr(), text.len() as i32, 0);
     if count <= 0 {
-        return Err("Native interaction menu label missing".into());
+        return native_menu::display_label(hwnd, menu, id)
+            .ok_or("Falta la etiqueta nativa y propia del menú".into());
     }
     String::from_utf16(&text[..count as usize]).map_err(|e| e.to_string())
 }
@@ -300,7 +301,7 @@ unsafe fn menu_cancel_check(
             if flags == u32::MAX || (flags & 3 == 0) != enabled {
                 return Err("Native menu enabled state differs from focused control".into());
             }
-            let label = native_label(popup, id)?;
+            let label = native_label(hwnd, popup, id)?;
             if let Some(shortcut) = shortcut {
                 if !label.contains(shortcut) {
                     return Err("Native menu shortcut label is not contextual".into());

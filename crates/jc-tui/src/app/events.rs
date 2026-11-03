@@ -6,10 +6,16 @@ use jc_app::{BottomPanel, KeyScope, PrimaryFocus, Resolution, SidebarView};
 
 impl TuiApp {
     pub fn handle_event(&mut self, event: Event) {
+        if !matches!(event, Event::Mouse(_)) {
+            self.invalidate_mouse();
+        }
         match event {
             Event::Key(key) if is_action_event(key) => self.handle_key(key),
             Event::Paste(text) => self.handle_paste(&text),
-            Event::Resize(_, _) | Event::FocusGained | Event::FocusLost | Event::Mouse(_) => {}
+            Event::Mouse(event) => {
+                self.handle_mouse(event);
+            }
+            Event::Resize(_, _) | Event::FocusGained | Event::FocusLost => {}
             _ => {}
         }
     }
@@ -202,7 +208,7 @@ impl TuiApp {
         }
     }
 
-    fn handle_bottom_key(&mut self, key: KeyEvent) {
+    pub(super) fn handle_bottom_key(&mut self, key: KeyEvent) {
         if self.panels.bottom() == BottomPanel::Diff {
             self.handle_git_diff_key(key);
             return;

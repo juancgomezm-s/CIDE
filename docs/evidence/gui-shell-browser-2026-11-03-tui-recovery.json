@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\recovery-conpty\\20261103T230912Z-eb49269c",
+  "original_unchanged": true,
+  "physical_display_verified": false,
+  "checks": [
+    "dirty_edit_visible_before_exit",
+    "new_process_restores_dirty_bytes_and_original_undo",
+    "restored_redo_retains_the_same_change",
+    "second_close_and_reopen_keeps_recovered_modification"
+  ],
+  "processes": 3
+}

@@ -10,7 +10,7 @@ pub(super) unsafe fn draw(
 ) -> Result<(), String> {
     let left = 20.min(width.max(0));
     let right = (width - 20).max(left);
-    let top = 60.min(height.max(0));
+    let top = (super::chrome::TOP + 20).min(height.max(0));
     let bottom = (top + ch * 7).min((height - 30).max(top));
     let rect = Rect {
         left,
@@ -18,7 +18,7 @@ pub(super) unsafe fn draw(
         right,
         bottom,
     };
-    paint::fill(dc, rect, 0x00202122)?;
+    paint::fill(dc, rect, super::shell::SURFACE)?;
     let lines = [
         "Ir a línea[:columna] · escalares del fuente desde1",
         p.field.rows.first().map_or("", String::as_str),
@@ -39,7 +39,7 @@ pub(super) unsafe fn draw(
                 },
                 &wide(line),
                 0x00d5d7d8,
-                0x00202122,
+                super::shell::SURFACE,
             )?;
         }
     }

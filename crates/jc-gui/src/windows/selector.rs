@@ -16,11 +16,52 @@ const QUERY_BYTES: usize = 256;
 const MAX_ROWS: usize = 32;
 const MAX_COMMANDS: usize = 200;
 
+struct TabFilter {
+    query: Vec<char>,
+    prefix: Vec<usize>,
+}
+impl TabFilter {
+    fn new(query: &str) -> Self {
+        let query: Vec<char> = query.chars().flat_map(char::to_lowercase).collect();
+        let mut prefix = vec![0; query.len()];
+        let mut matched = 0;
+        for at in 1..query.len() {
+            while matched > 0 && query[at] != query[matched] {
+                matched = prefix[matched - 1];
+            }
+            if query[at] == query[matched] {
+                matched += 1;
+            }
+            prefix[at] = matched;
+        }
+        Self { query, prefix }
+    }
+    fn matches(&self, label: &str) -> bool {
+        if self.query.is_empty() {
+            return true;
+        }
+        let mut matched = 0;
+        for ch in label.chars().flat_map(char::to_lowercase) {
+            while matched > 0 && ch != self.query[matched] {
+                matched = self.prefix[matched - 1];
+            }
+            if ch == self.query[matched] {
+                matched += 1;
+            }
+            if matched == self.query.len() {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SelectorKind {
     Palette,
     Files,
     Encoding,
+    OpenTabs,
 }
 
 pub(super) struct Selector {
@@ -29,6 +70,7 @@ pub(super) struct Selector {
     input_selection: FieldSelection,
     input_revision: u64,
     selected: usize,
+    tab_targets: Vec<(usize, jc_app::TabId)>,
 }
 pub(super) struct SelectorPresentation {
     pub title: &'static str,
@@ -70,6 +112,60 @@ fn visible(selected: usize, count: usize, max_rows: usize) -> std::ops::Range<us
     first..first + rows
 }
 impl Selector {
+    pub(super) fn prepare_tabs(
+        &mut self,
+        tabs: &jc_app::TabManager,
+        rows: usize,
+    ) -> SelectorPresentation {
+        let query = TabFilter::new(&self.input);
+        let matches = |tab: &&jc_app::Tab| query.matches(&tab.title);
+        let total = tabs.tabs().iter().filter(matches).count();
+        self.normalize(total);
+        let range = visible(self.selected, total, rows);
+        self.tab_targets.clear();
+        if rows == 0 {
+            if let Some(tab) = tabs.tabs().iter().filter(matches).nth(self.selected) {
+                self.tab_targets.push((self.selected, tab.id));
+            }
+        }
+        let rows = tabs
+            .tabs()
+            .iter()
+            .filter(matches)
+            .enumerate()
+            .skip(range.start)
+            .take(range.len())
+            .map(|(ordinal, tab)| {
+                self.tab_targets.push((ordinal, tab.id));
+                SelectorRow {
+                    label: format!(
+                        "{}{}",
+                        jc_app::source_services::display_ui_label(&tab.title, 80),
+                        if tab.dirty { "  ●" } else { "" }
+                    ),
+                    selected: ordinal == self.selected,
+                    enabled: true,
+                    ordinal,
+                }
+            })
+            .collect();
+        SelectorPresentation {
+            title: "Documentos abiertos",
+            query: self.input.clone(),
+            input_selection: self.input_selection,
+            message: format!("{total} documentos · escribe para filtrar"),
+            footer: "↑↓ elegir · Intro abrir en este grupo · Esc volver",
+            rows,
+            total,
+            selected: self.selected,
+        }
+    }
+    pub(super) fn tab_target(&self) -> Option<jc_app::TabId> {
+        self.tab_targets
+            .iter()
+            .find(|(ordinal, _)| *ordinal == self.selected)
+            .map(|(_, id)| *id)
+    }
     pub fn encoding_target(&self) -> Option<TextEncoding> {
         ENCODINGS
             .iter()
@@ -115,6 +211,7 @@ impl Selector {
             input_selection: FieldSelection::default(),
             input_revision: 0,
             selected: 0,
+            tab_targets: Vec::new(),
         }
     }
     pub fn kind(&self) -> SelectorKind {
@@ -303,6 +400,37 @@ impl Selector {
             total,
             selected: self.selected,
         }
+    }
+}
+
+#[cfg(test)]
+mod open_tabs_tests {
+    use super::*;
+    #[test]
+    fn thousands_of_open_tabs_keep_only_visible_rows_and_accept_by_identity() {
+        let mut tabs = jc_app::TabManager::default();
+        let mut last = None;
+        for n in 0..5000 {
+            last = Some(tabs.open(format!("módulo-{n:05}.rs")));
+        }
+        let mut selector = Selector::new(SelectorKind::OpenTabs);
+        let p = selector.prepare_tabs(&tabs, usize::MAX);
+        assert_eq!(p.total, 5000);
+        assert_eq!(p.rows.len(), MAX_ROWS);
+        selector.last();
+        selector.prepare_tabs(&tabs, 12);
+        assert_eq!(selector.tab_target(), last);
+        selector
+            .edit_input(FieldEdit::Insert("MÓDULO-04999"), false)
+            .unwrap();
+        let p = selector.prepare_tabs(&tabs, 0);
+        assert_eq!(p.total, 1);
+        assert!(p.rows.is_empty());
+        assert_eq!(selector.tab_target(), last);
+        tabs.discard_and_close(last.unwrap());
+        let p = selector.prepare_tabs(&tabs, 12);
+        assert_eq!(p.total, 0);
+        assert!(selector.tab_target().is_none());
     }
 }
 

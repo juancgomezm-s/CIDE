@@ -1,5 +1,29 @@
 # Working on JC-IDE
 
+## Current GUI shell / Rust recovery closure — 2026-11-03
+
+Read docs/M2B_GUI_TABS_BROWSER.md, docs/M2_TUI_MOUSE.md, docs/SESSION_RECOVERY.md
+and docs/CORE_GIGABYTES_ADMISSION.md before extending these routes. Current binaries
+are target/gui-next/release; preserve prior target/release and target/ui-es/release.
+GUI client caption/menu share #2E3440; independent pixel chrome/tree/tabs and retained
+frame/DIB remain read-only consumers of the shared core. TUI mouse hits are bounded,
+versioned and use grapheme/TAB/CRLF-aware coordinates; browser uses the shared catalog.
+Recovery is Rust-only, immutable generations with flush/sync/readback, atomic HEAD,
+previous BACKUP and exclusive per-instance leases. Keep original file bytes untouched
+until explicit Save. Startup restores off-side; exit failure must keep the editor open.
+Preserve original encoding provenance, disk fingerprint, undo/redo and all persistent
+views. Core preflight and restore limits must agree before any generation publication.
+Recovery currently checkpoints normal exit only; periodic checkpoints and safe GC are
+pending. Default Windows depots live under LOCALAPPDATA/CIDE/recuperacion/{gui,tui}.
+Never use the personal depot in tests: inject EditorRecovery::open_in fixtures, smoke
+mode, or CIDE_STATE_DIR plus explicit CIDE_NO_SESSION=0. ConPTY defaults to disabled.
+No full-editor GB claim: only isolated 5GiB sparse paged-source evidence. User chose
+private snapshots; protected-source prototype is not the selected frontend policy.
+All-target check, fmt, Clippy and release offline passed. Directed recovery tests,
+process-exit fault test, three-process TUI and GUI restarts, 15 shell/13 interaction HWND checks
+passed. Existing browser5/mouse7 ConPTY evidence remains valid; no global runtime pass.
+Do not rerun closed suites for docs-only edits. CI remains dormant through M2–M4.
+
 ## Current GUI / Spanish presentation closure — 2026-11-03
 
 Read docs/M2B_GUI_WORKFLOWS_ES.md before extending these workflows. GUI open

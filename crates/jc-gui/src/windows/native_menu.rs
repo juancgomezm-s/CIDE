@@ -6,7 +6,7 @@ use jc_app::{
     default_menu_model, default_registry, CommandCategory, CommandId, KeyMap, KeyStroke, MenuId,
     MenuItem, Modifiers,
 };
-use std::{collections::BTreeSet, ptr::null};
+use std::{collections::BTreeSet, ptr::null, rc::Rc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum NativeMenuGroup {
@@ -209,8 +209,6 @@ extern "system" {
     fn GetSubMenu(menu: Handle, position: i32) -> Handle;
     fn IsMenu(menu: Handle) -> i32;
     fn GetMenuState(menu: Handle, item: u32, flags: u32) -> u32;
-    fn ModifyMenuW(menu: Handle, item: u32, flags: u32, new_item: usize, label: *const u16) -> i32;
-    fn GetMenuItemRect(hwnd: Hwnd, menu: Handle, item: u32, rect: *mut Rect) -> i32;
     fn ClientToScreen(hwnd: Hwnd, point: *mut Point) -> i32;
     fn TrackPopupMenuEx(
         menu: Handle,
@@ -241,13 +239,17 @@ fn label(id: usize, shortcut: Option<KeyStroke>) -> Result<Vec<u16>, String> {
 }
 /// On success the HWND caller adopts the returned native menu. DestroyMenu on
 /// the root releases attached popups on every partial-construction failure.
-pub(super) unsafe fn create(keymap: &KeyMap) -> Result<Handle, String> {
+pub(super) unsafe fn create(
+    keymap: &KeyMap,
+) -> Result<(Handle, Rc<super::menu_theme::Theme>), String> {
+    let theme = Rc::new(super::menu_theme::Theme::new()?);
     let bar = CreateMenu();
     if bar.is_null() {
         return Err(super::os_error("CreateMenu"));
     }
     let result = (|| -> Result<(), String> {
-        for spec in definitions() {
+        theme.register_menu(bar, true)?;
+        for (group_position, spec) in definitions().into_iter().enumerate() {
             let popup = CreatePopupMenu();
             if popup.is_null() {
                 return Err(super::os_error("CreatePopupMenu"));
@@ -257,19 +259,45 @@ pub(super) unsafe fn create(keymap: &KeyMap) -> Result<Handle, String> {
                 DestroyMenu(popup);
                 return Err(error);
             }
-            for item in spec.items {
+            theme.register_menu(popup, false)?;
+            let group = theme.register(
+                bar,
+                popup as usize,
+                group_position as u32,
+                super::menu_theme::Kind::Bar,
+                &wide(spec.title),
+            )?;
+            theme.style_item(group, 0)?;
+            for (position, item) in spec.items.into_iter().enumerate() {
                 match item {
                     None => {
                         if AppendMenuW(popup, 0x800, 0, null()) == 0 {
                             return Err(super::os_error("AppendMenu separator"));
                         }
+                        let token = theme.register(
+                            popup,
+                            0,
+                            position as u32,
+                            super::menu_theme::Kind::Separator,
+                            &wide(""),
+                        )?;
+                        theme.style_item(token, 0)?;
                     }
                     Some(id) => {
                         let shortcut =
                             command_for_id(id).and_then(|command| keymap.primary_shortcut(command));
-                        if AppendMenuW(popup, 0, id, label(id, shortcut)?.as_ptr()) == 0 {
+                        let text = label(id, shortcut)?;
+                        if AppendMenuW(popup, 0, id, text.as_ptr()) == 0 {
                             return Err(super::os_error("AppendMenu item"));
                         }
+                        let token = theme.register(
+                            popup,
+                            id,
+                            position as u32,
+                            super::menu_theme::Kind::Item,
+                            &text,
+                        )?;
+                        theme.style_item(token, 0)?;
                     }
                 }
             }
@@ -280,7 +308,7 @@ pub(super) unsafe fn create(keymap: &KeyMap) -> Result<Handle, String> {
         DestroyMenu(bar);
         return Err(error);
     }
-    Ok(bar)
+    Ok((bar, theme))
 }
 fn checked(command: CommandId, state: &State) -> bool {
     match command {
@@ -306,6 +334,10 @@ fn checked(command: CommandId, state: &State) -> bool {
     }
 }
 pub(super) unsafe fn refresh(hwnd: Hwnd, state: &State) -> Result<(), String> {
+    let theme = owner(hwnd)
+        .and_then(|model| model.menu_theme.borrow().clone())
+        .ok_or("No está disponible el tema del menú propio")?;
+    theme.apply_palette(super::menu_theme::Palette::current())?;
     let bar = GetMenu(hwnd);
     if bar.is_null() || IsMenu(bar) == 0 {
         return Err("El menú nativo propio no está disponible".into());
@@ -330,12 +362,15 @@ pub(super) unsafe fn refresh(hwnd: Hwnd, state: &State) -> Result<(), String> {
             let checked = command.is_some_and(|command| checked(command, state));
             let shortcut = command.and_then(|command| state.native_shortcut(command));
             let flags = if enabled { 0 } else { 1 } | if checked { 8 } else { 0 };
-            if ModifyMenuW(popup, id as u32, flags, id, label(id, shortcut)?.as_ptr()) == 0 {
-                return Err(super::os_error("Modify native menu item"));
-            }
+            let token = theme.update_label(popup, id, &label(id, shortcut)?)?;
+            theme.style_item(token, flags)?;
         }
     }
     Ok(())
+}
+pub(super) unsafe fn display_label(hwnd: Hwnd, menu: Handle, id: usize) -> Option<String> {
+    let theme = owner(hwnd)?.menu_theme.borrow().clone()?;
+    theme.label_for(menu, id)
 }
 unsafe fn clear_stamp(hwnd: Hwnd) {
     if IsWindow(hwnd) != 0 {
@@ -381,22 +416,20 @@ pub(super) unsafe fn open_with(
         if !current_menu(hwnd, bar, popup, index as i32) {
             return Err("El menú nativo cambió durante su inicialización".into());
         }
-        let mut rect = Rect::default();
-        let (x, y) = if GetMenuItemRect(hwnd, bar, index as u32, &mut rect) != 0 {
-            (rect.left, rect.bottom)
-        } else {
-            if GetClientRect(hwnd, &mut rect) == 0 {
-                return Err(super::os_error("Menu client rectangle"));
-            }
-            let mut point = Point {
-                x: rect.left,
-                y: rect.top,
-            };
-            if ClientToScreen(hwnd, &mut point) == 0 {
-                return Err(super::os_error("Menu client origin"));
-            }
-            (point.x, point.y)
+        let width = owner(hwnd)
+            .ok_or("La ventana del menú está cerrada")?
+            .state
+            .borrow()
+            .width;
+        let rect = super::chrome::menu_rect(width, group);
+        let mut point = Point {
+            x: rect.left,
+            y: rect.bottom,
         };
+        if ClientToScreen(hwnd, &mut point) == 0 {
+            return Err(super::os_error("Origen del menú gráfico"));
+        }
+        let (x, y) = (point.x, point.y);
         let selected = transport(popup, x, y);
         if !current_menu(hwnd, bar, popup, index as i32) {
             return Err("El menú nativo cambió durante la selección".into());

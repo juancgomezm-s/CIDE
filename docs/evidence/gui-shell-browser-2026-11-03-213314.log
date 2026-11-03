@@ -1,0 +1,11 @@
+   Compiling jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+    Checking jc-text v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-text)
+    Checking jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+    Checking jc-languages v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-languages)
+    Checking jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Checking jc-platform v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-platform)
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.08s

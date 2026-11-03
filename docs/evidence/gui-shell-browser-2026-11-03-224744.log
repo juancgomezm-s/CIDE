@@ -1,0 +1,14 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+warning: unused variable: `document`
+   --> crates\jc-gui\src\windows\paint.rs:504:18
+    |
+504 |         let Some(document) = state.workbench.document_by_tab(location.tab) else {
+    |                  ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_document`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: `jc-gui` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.19s
+  Executable unittests src\lib.rs (target\gui-next\debug\deps\jc_gui-2a854f9863a4fc54.exe)

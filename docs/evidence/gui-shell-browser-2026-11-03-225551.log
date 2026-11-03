@@ -1,0 +1,20 @@
+
+running 5 tests
+test panes::recovery::tests::panes_recovery_empty_and_history_only_groups_remain_bounded_without_consuming_following_metadata ... ok
+test panes::recovery::tests::panes_recovery_preserves_all_inactive_views_split_link_pin_rectangles_and_group_history ... ok
+test git_status_tasks::tests::stale_provider_panic_still_requests_one_terminal_recovery ... ok
+test quick_open::tests::stale_panic_recovery_survives_invalidation_and_provider_metadata_is_not_retained ... ok
+test panes::recovery::tests::panes_recovery_rejects_truncation_counts_duplicate_views_unknown_refs_and_stale_rectangles ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 108 filtered out; finished in 0.00s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.80s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_app-7715ebcb52ea1d10.exe)
+
+thread 'jc-git-status' panicked at crates\jc-app\src\git_status_tasks.rs:717:21:
+obsolete provider panic
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'jc-quick-open' panicked at crates\jc-app\src\quick_open.rs:956:13:
+injected stale quick-open provider panic

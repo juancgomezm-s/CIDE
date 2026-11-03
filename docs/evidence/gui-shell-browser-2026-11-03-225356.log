@@ -1,0 +1,9 @@
+
+running 1 test
+test recovery::tests::recovery_manifest_hostile_count_and_lengths_with_valid_checksums_fail_before_allocation ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.07s
+
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.91s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_files-2c264c6c3e3b64d9.exe)

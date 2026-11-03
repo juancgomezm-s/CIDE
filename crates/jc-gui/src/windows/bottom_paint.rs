@@ -6,7 +6,7 @@ use super::{
 pub(super) unsafe fn draw(dc: Hdc, frame: &BottomFrame, ch: i32) -> Result<(), String> {
     let rect = frame.rect;
     let ch = ch.clamp(1, 8192);
-    paint::fill(dc, rect, 0x00222222)?;
+    paint::fill(dc, rect, super::shell::SIDEBAR)?;
     let line = |i: usize| {
         let top = (rect.top + (i.min(131) as i32) * ch).min(rect.bottom);
         Rect {
@@ -22,12 +22,18 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &BottomFrame, ch: i32) -> Result<(), S
         &wide(&frame.title),
         0x00d5d7d8,
         if frame.focused {
-            0x00534b45
+            super::shell::SELECTED
         } else {
-            0x00222222
+            super::shell::SIDEBAR
         },
     )?;
-    paint::text(dc, line(1), &wide(&frame.message), 0x008d8b87, 0x00222222)?;
+    paint::text(
+        dc,
+        line(1),
+        &wide(&frame.message),
+        0x008d8b87,
+        super::shell::SIDEBAR,
+    )?;
     for (i, row) in frame.rows.iter().enumerate() {
         paint::text(
             dc,
@@ -35,9 +41,9 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &BottomFrame, ch: i32) -> Result<(), S
             &wide(&row.label),
             0x00d5d7d8,
             if row.selected && frame.focused {
-                0x00534b45
+                super::shell::SELECTED
             } else {
-                0x00222222
+                super::shell::SIDEBAR
             },
         )?;
     }
@@ -54,6 +60,6 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &BottomFrame, ch: i32) -> Result<(), S
             "F6 cambia área | Alt+1 Problemas/Alt+2 Salida | Intro navega | Esc editor | Ctrl+J oculta",
         ),
         0x008d8b87,
-        0x00222222,
+        super::shell::SIDEBAR,
     )
 }

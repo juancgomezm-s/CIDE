@@ -8,6 +8,12 @@ use jc_text::TextEncoding;
 
 impl TuiApp {
     pub(crate) fn handle_overlay_key(&mut self, key: KeyEvent) {
+        if self.file_browser.active() {
+            if let UiOverlay::Prompt { kind, input } = self.overlay.clone() {
+                self.handle_browser_key(key, kind, input);
+                return;
+            }
+        }
         if matches!(
             self.overlay,
             UiOverlay::Find { .. } | UiOverlay::Replace { .. }
@@ -229,6 +235,10 @@ impl TuiApp {
     }
 
     pub(crate) fn append_overlay_text(&mut self, text: &str) {
+        if self.file_browser.active() && matches!(self.overlay, UiOverlay::Prompt { .. }) {
+            self.edit_browser_field(jc_app::FieldEdit::Insert(text), false);
+            return;
+        }
         if matches!(
             self.overlay,
             UiOverlay::Find { .. } | UiOverlay::Replace { .. }

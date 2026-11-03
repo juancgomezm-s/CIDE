@@ -10,7 +10,7 @@ pub(super) unsafe fn draw(
 ) -> Result<(), String> {
     let left = 20.min(width.max(0));
     let right = (width - 20).max(left);
-    let top = 60.min(height.max(0));
+    let top = (super::chrome::TOP + 20).min(height.max(0));
     let bottom = (top + ch * 20).min((height - 30).max(top));
     let rect = Rect {
         left,
@@ -18,7 +18,7 @@ pub(super) unsafe fn draw(
         right,
         bottom,
     };
-    paint::fill(dc, rect, 0x00202122)?;
+    paint::fill(dc, rect, super::shell::SURFACE)?;
     let mut row = top + ch;
     let mut line = |value: &str, selected: bool| -> Result<(), String> {
         if row + ch <= bottom {
@@ -32,7 +32,11 @@ pub(super) unsafe fn draw(
                 },
                 &wide(value),
                 0x00d5d7d8,
-                if selected { 0x00534b45 } else { 0x00202122 },
+                if selected {
+                    super::shell::SELECTED
+                } else {
+                    super::shell::SURFACE
+                },
             )?;
         }
         row += ch;

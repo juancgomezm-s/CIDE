@@ -18,7 +18,7 @@ pub(super) struct ExplorerHits {
     pub rows: Vec<(NodeId, usize, Rect)>,
 }
 impl ExplorerFrame {
-    pub(super) fn hits(&self, ch: i32) -> ExplorerHits {
+    pub(super) fn hits(&self, _ch: i32) -> ExplorerHits {
         ExplorerHits {
             generation: self.presentation.generation,
             revision: self.presentation.revision,
@@ -30,7 +30,8 @@ impl ExplorerFrame {
                 .take(128)
                 .enumerate()
                 .map(|(i, row)| {
-                    let top = self.rect.top + (i as i32 + 2) * ch;
+                    let top =
+                        self.rect.top + super::shell::TREE_HEAD + i as i32 * super::shell::TREE_ROW;
                     (
                         row.id,
                         row.indent / 2,
@@ -38,7 +39,7 @@ impl ExplorerFrame {
                             left: self.rect.left,
                             top,
                             right: self.rect.right,
-                            bottom: (top + ch).min(self.rect.bottom),
+                            bottom: (top + super::shell::TREE_ROW).min(self.rect.bottom),
                         },
                     )
                 })
@@ -59,8 +60,8 @@ pub(super) fn region(state: &State) -> Option<Rect> {
     }
     Some(Rect {
         left: 0,
-        top: ch + 8,
-        right: (cw * 28).clamp(160, 320).min(width / 3),
+        top: super::chrome::TOP,
+        right: 250.min(width / 3),
         bottom: (height - ch - 8).max(ch + 8),
     })
 }
@@ -102,13 +103,28 @@ impl State {
             self.explorer_hits = None;
         }
         let rect = region(self)?;
-        let rows =
-            ((rect.bottom - rect.top) / self.cell_height.clamp(1, 8192) - 2).clamp(0, 128) as usize;
+        let rows = ((rect.bottom - rect.top - super::shell::TREE_HEAD) / super::shell::TREE_ROW)
+            .clamp(0, 128) as usize;
         let columns =
             ((rect.right - rect.left - 12) / self.cell_width.clamp(1, 8192)).clamp(0, 256) as usize;
+        let mut presentation = self.explorer_view.prepare(&self.explorer, rows, columns);
+        for row in &mut presentation.rows {
+            if let Some(path) = self.explorer.path(row.id) {
+                if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                    row.label = jc_app::source_services::display_ui_label(name, 64);
+                } else {
+                    row.label = row
+                        .label
+                        .trim_start()
+                        .trim_start_matches("[-] ")
+                        .trim_start_matches("[+] ")
+                        .to_owned();
+                }
+            }
+        }
         Some(ExplorerFrame {
             rect,
-            presentation: self.explorer_view.prepare(&self.explorer, rows, columns),
+            presentation,
             focused: self.explorer_focused,
         })
     }
@@ -253,7 +269,7 @@ impl State {
             return true;
         };
         let is_dir = node.is_dir();
-        let disclosure = x < region.left + 8 + (depth.min(32) * 2 + 3) as i32 * self.cell_width;
+        let disclosure = x < region.left + 24 + depth.min(12) as i32 * 14;
         self.explorer_focused = true;
         self.bottom.focused = false;
         self.explorer_view.select(id);

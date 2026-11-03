@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "physical_display_verified": false,
+  "os_clipboard_verified": false,
+  "avm_started": false,
+  "raster_scope": "decoded VT cells and emitted RGB/attributes, not a physical terminal screenshot",
+  "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\browser-conpty\\20261103T223215Z-2f3223e9",
+  "checks": [
+    "tui_folder_browser_visible_rows_spanish_help_and_theme",
+    "tui_folder_browser_enter_child_alt_up_parent",
+    "tui_folder_browser_control_enter_accepts_current_project_folder",
+    "tui_file_browser_opens_unicode_native_path_with_exact_source_bytes",
+    "tui_browser_compact_resize_escape_restores_editor_focus_and_undo"
+  ],
+  "exit_code": 0,
+  "fixtures_unchanged": true,
+  "vt_bytes": 62871
+}

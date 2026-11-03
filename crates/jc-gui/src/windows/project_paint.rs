@@ -6,9 +6,9 @@ use super::{
     wide,
 };
 
-const PANEL: u32 = 0x00202122;
+const PANEL: u32 = super::shell::SURFACE;
 const FIELD: u32 = 0x00333130;
-const SELECTED: u32 = 0x00534b45;
+const SELECTED: u32 = super::shell::SELECTED;
 const TEXT: u32 = 0x00d5d7d8;
 const DIM: u32 = 0x008d8b87;
 const ACCENT: u32 = 0x00a6d9e6;
@@ -27,7 +27,7 @@ struct Layout {
 }
 impl Layout {
     fn new(width: i32, height: i32, cw: i32, ch: i32) -> Option<Self> {
-        if width <= 0 || height <= 0 {
+        if width <= 0 || height <= super::chrome::TOP {
             return None;
         }
         let width = width.clamp(1, 8192);
@@ -35,7 +35,7 @@ impl Layout {
         let cw = cw.clamp(1, 8192);
         let ch = ch.clamp(1, 8192);
         let left = 20.min(width / 8);
-        let top = 50.min(height / 8);
+        let top = super::chrome::TOP + 50.min((height - super::chrome::TOP) / 8);
         let right = (width - left).min(left + 100 * cw + 16);
         let bottom = height.min(top + 24 * ch);
         let padding = 8.min((right - left) / 4);
@@ -328,7 +328,10 @@ mod tests {
             (i32::MAX, i32::MAX),
         ] {
             for (cw, ch) in [(0, 0), (8, 16), (i32::MAX, i32::MAX)] {
-                let l = Layout::new(width, height, cw, ch).unwrap();
+                let Some(l) = Layout::new(width, height, cw, ch) else {
+                    assert!(height <= super::super::chrome::TOP);
+                    continue;
+                };
                 assert!(l.rect.left >= 0 && l.rect.top >= 0);
                 assert!(l.rect.right <= width.min(8192) && l.rect.bottom <= height.min(8192));
                 assert!(l.columns <= 100 && l.body.len() <= 24);

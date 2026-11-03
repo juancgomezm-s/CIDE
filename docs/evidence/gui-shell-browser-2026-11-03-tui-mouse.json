@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "physical_display_verified": false,
+  "physical_mouse_verified": false,
+  "os_clipboard_verified": false,
+  "avm_started": false,
+  "raster_scope": "decoded VT cells and emitted RGB/attributes, not a physical terminal screenshot",
+  "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\mouse-conpty\\20261103T223205Z-72168d85",
+  "checks": [
+    "tui_mouse_click_places_source_caret_and_one_undo_restores_owned_buffer",
+    "tui_mouse_drag_selects_source_bytes_without_a_parallel_edit_buffer",
+    "tui_mouse_shift_click_extends_the_existing_source_anchor",
+    "tui_mouse_wheel_moves_viewport_and_preserves_the_source_caret",
+    "tui_mouse_menu_and_folder_browser_rows_buttons_accept_owned_project",
+    "tui_mouse_sidebar_tabs_and_browser_cancel_restore_the_existing_document",
+    "tui_mouse_after_resize_uses_the_new_prepared_cell_geometry"
+  ],
+  "exit_code": 0,
+  "fixtures_unchanged": true,
+  "vt_bytes": 77075
+}

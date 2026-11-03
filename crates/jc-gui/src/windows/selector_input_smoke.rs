@@ -66,6 +66,9 @@ unsafe fn open(hwnd: Hwnd, kind: SelectorKind) -> Result<(), String> {
             SelectorKind::Palette => CommandId::PaletteOpen,
             SelectorKind::Files => CommandId::FileQuickOpen,
             SelectorKind::Encoding => CommandId::FileChooseEncoding,
+            SelectorKind::OpenTabs => {
+                return Err("La lista de documentos se abre desde su botón gráfico".into())
+            }
         },
     )?;
     let state = input(hwnd)?;

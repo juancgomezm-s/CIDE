@@ -1,0 +1,38 @@
+    Checking jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+    Checking jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+error: clamp-like pattern without using clamp function
+   --> crates\jc-tui\src\app\mouse.rs:284:18
+    |
+284 |     let width2 = width.saturating_sub(2).min(112).max(4);
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with clamp: `width.saturating_sub(2).clamp(4, 112)`
+    |
+    = note: clamp will panic if max < min
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#manual_clamp
+    = note: `-D clippy::manual-clamp` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::manual_clamp)]`
+
+error: clamp-like pattern without using clamp function
+   --> crates\jc-tui\src\app\mouse.rs:285:19
+    |
+285 |     let height2 = height.saturating_sub(2).min(26).max(3);
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: replace with clamp: `height.saturating_sub(2).clamp(3, 26)`
+    |
+    = note: clamp will panic if max < min
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#manual_clamp
+
+error: using `clone` on type `Action` which implements the `Copy` trait
+   --> crates\jc-tui\src\app\mouse.rs:766:24
+    |
+766 |             .map(|hit| hit.action.clone());
+    |                        ^^^^^^^^^^^^^^^^^^ help: try removing the `clone` call: `hit.action`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#clone_on_copy
+    = note: `-D clippy::clone-on-copy` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::clone_on_copy)]`
+
+error: could not compile `jc-tui` (lib) due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-tui` (lib test) due to 3 previous errors

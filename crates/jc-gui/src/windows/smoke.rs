@@ -240,8 +240,11 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             || options.menu_invoker_only
             || options.syntax_only
             || options.workflow_only
+            || options.shell_only
         {
-            if options.workflow_only {
+            if options.shell_only {
+                checks.extend(super::shell_smoke::run(hwnd, options)?);
+            } else if options.workflow_only {
                 checks.extend(super::workflow_smoke::run(hwnd, options)?);
             } else if options.syntax_only {
                 checks.extend(super::syntax_smoke::run(hwnd, options)?);
@@ -283,10 +286,8 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         }
         let (x, y) = {
             let state = owner(hwnd).unwrap().state.borrow();
-            (
-                8 + 6 * state.cell_width + 1,
-                2 * state.cell_height + 14 + state.cell_height / 2,
-            )
+            paint::rectangle_pixel(&state, PaneId::Primary, 0, 1)
+                .ok_or("No hay geometría de fuente para el click de prueba")?
         };
         SendMessageW(hwnd, WM_LBUTTONDOWN, 1, ((y as isize) << 16) | x as isize);
         {

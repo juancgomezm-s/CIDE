@@ -95,7 +95,8 @@ impl State {
             ui.view.prepare(
                 &self.workbench,
                 tab,
-                ((height / ch).saturating_sub(6)).clamp(0, 96) as usize,
+                (((height - super::shell::TABS).max(0) / ch).saturating_sub(5)).clamp(0, 96)
+                    as usize,
                 ((width - 32).max(0) / cw).clamp(12, 256) as usize,
             )
         } else {
@@ -119,11 +120,11 @@ impl State {
     }
 }
 pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> {
-    let bg = 0x00272828;
-    let panel = 0x00202122;
+    let bg = super::shell::BACKGROUND;
+    let panel = super::shell::SURFACE;
     let fg = 0x00d5d7d8;
     let accent = 0x00d0d467;
-    let top = (frame.ch + 8).min(frame.height);
+    let top = super::shell::TABS.min(frame.height);
     let bottom = (frame.height - frame.ch - 6).max(top);
     paint::fill(
         dc,

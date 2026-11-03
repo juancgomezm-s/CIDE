@@ -1,0 +1,98 @@
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Checking jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+    Checking jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Checking jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Checking jc-cli v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-cli)
+error[E0425]: cannot find value `layout` in this scope
+   --> crates\jc-gui\src\windows\chrome.rs:273:13
+    |
+251 |     pub layout: Layout,
+    |         ------ a field by that name exists in `Self`
+...
+273 |             layout,
+    |             ^^^^^^
+
+error[E0425]: cannot find value `layout` in this scope
+   --> crates\jc-gui\src\windows\chrome.rs:282:37
+    |
+251 |     pub layout: Layout,
+    |         ------ a field by that name exists in `Self`
+...
+282 |                     rect: menu_rect(layout.width, *group),
+    |                                     ^^^^^^
+
+error[E0061]: this function takes 6 arguments but 7 arguments were supplied
+   --> crates\jc-gui\src\windows\chrome.rs:199:8
+    |
+199 |     if SetWindowPos(hwnd, null_mut(), 0, 0, 0, 0, 0x1 | 0x2 | 0x4 | 0x10 | 0x20) == 0 {
+    |        ^^^^^^^^^^^^                         -     ----------------------------- unexpected argument #7 of type `{integer}`
+    |                                             |
+    |                                             expected `Layout`, found integer
+    |
+note: function defined here
+   --> crates\jc-gui\src\windows\chrome.rs:143:8
+    |
+143 |     fn SetWindowPos(hwnd: Hwnd, after: Hwnd, x: i32, y: i32, layout: Layout, flags: u32) -> i32;
+    |        ^^^^^^^^^^^^
+help: remove the extra argument
+    |
+199 -     if SetWindowPos(hwnd, null_mut(), 0, 0, 0, 0, 0x1 | 0x2 | 0x4 | 0x10 | 0x20) == 0 {
+199 +     if SetWindowPos(hwnd, null_mut(), 0, 0, /* windows::chrome::Layout */, 0) == 0 {
+    |
+
+error[E0061]: this function takes 7 arguments but 6 arguments were supplied
+   --> crates\jc-gui\src\windows\paint.rs:720:17
+    |
+720 |         chrome: super::chrome::Frame::new(
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+721 |             super::chrome::Layout::new(state.width, state.height, state.maximized),
+    |             ---------------------------------------------------------------------- expected `i32`, found `Layout`
+722 |             state.ui_font,
+    |             ------------- argument #2 of type `i32` is missing
+    |
+note: associated function defined here
+   --> crates\jc-gui\src\windows\chrome.rs:262:19
+    |
+262 |     pub(super) fn new(
+    |                   ^^^
+263 |         width: i32,
+    |         ----------
+264 |         height: i32,
+    |         -----------
+265 |         font: Handle,
+    |         ------------
+266 |         icon: Handle,
+    |         ------------
+267 |         title: &str,
+    |         -----------
+268 |         focused: bool,
+    |         -------------
+269 |         hover: Option<Action>,
+    |         ---------------------
+help: provide the argument
+    |
+720 ~         chrome: super::chrome::Frame::new(/* i32 */, /* i32 */, state.icon, state.ui_font, &state.workbench.active_document().map_or_else(
+721 +                 || "CIDE".to_owned(),
+722 +                 |doc| {
+723 +                     format!(
+724 ~                         "CIDE · {}{}",
+725 +                         doc.session
+726 +                             .path()
+727 +                             .file_name()
+728 +                             .and_then(|s| s.to_str())
+729 +                             .unwrap_or("<ruta no escalar>"),
+730 +                         if doc.session.document().is_modified() {
+731 ~                             " ●"
+732 +                         } else {
+733 +                             ""
+734 +                         }
+735 +                     )
+736 +                 },
+737 ~             ), state.focused, state.chrome_hover),
+    |
+
+Some errors have detailed explanations: E0061, E0425.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `jc-gui` (lib) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-gui` (lib test) due to 4 previous errors

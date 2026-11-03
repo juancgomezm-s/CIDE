@@ -2,7 +2,8 @@ use crate::screen::Screen;
 use crate::FrameEncoder;
 use crossterm::cursor::{Hide, Show};
 use crossterm::event::{
-    DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
+    DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+    EnableFocusChange, EnableMouseCapture,
 };
 use crossterm::execute;
 use crossterm::style::{Attribute, ResetColor, SetAttribute};
@@ -24,12 +25,14 @@ impl TerminalSession {
             EnterAlternateScreen,
             EnableBracketedPaste,
             EnableFocusChange,
+            EnableMouseCapture,
             Hide
         ) {
             let _ = execute!(
                 stdout,
                 DisableBracketedPaste,
                 DisableFocusChange,
+                DisableMouseCapture,
                 Show,
                 LeaveAlternateScreen
             );
@@ -66,6 +69,7 @@ impl TerminalSession {
             Show,
             DisableBracketedPaste,
             DisableFocusChange,
+            DisableMouseCapture,
             LeaveAlternateScreen
         );
         let raw_result = terminal::disable_raw_mode();

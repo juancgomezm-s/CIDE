@@ -1,0 +1,15 @@
+
+running 4 tests
+test app::file_browser_tests::browser_file_acceptance_reuses_dirty_document_and_rejects_deleted_selection ... ok
+test app::file_browser_tests::browser_path_field_is_grapheme_editable_bounded_and_paste_never_edits_source ... ok
+test app::file_browser_tests::browser_cancel_and_reopen_clear_old_metadata_and_do_not_mutate_project ... ok
+test app::file_browser_tests::browser_folder_frame_navigates_selects_current_folder_and_cancel_restores_focus ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 135 filtered out; finished in 0.03s
+
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.03s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_tui-c24792ef3ef15fde.exe)

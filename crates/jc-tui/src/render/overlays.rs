@@ -26,6 +26,10 @@ pub fn draw(app: &TuiApp, screen: &mut Screen) {
 }
 
 fn draw_prompt(app: &TuiApp, screen: &mut Screen, kind: PromptKind, input: &str) {
+    if app.file_browser.active() {
+        super::file_browser::draw(app, screen, kind, input);
+        return;
+    }
     let title = match kind {
         PromptKind::Open => "Abrir archivo",
         PromptKind::New => "Ruta del archivo nuevo",
@@ -328,10 +332,12 @@ fn draw_palette(app: &TuiApp, screen: &mut Screen, input: &str, selected: usize)
     );
 }
 
-fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
-    let Some(model) = app.menus.get(menu) else {
-        return;
-    };
+pub(crate) fn menu_bounds(
+    app: &TuiApp,
+    screen_width: u16,
+    screen_height: u16,
+    menu: MenuId,
+) -> (u16, u16, u16, u16) {
     let context = app.command_context();
     let entries = app
         .menus
@@ -348,8 +354,8 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         .max()
         .unwrap_or(12)
         .clamp(18, 52) as u16;
-    let width = width.min(screen.width().saturating_sub(2));
-    let height = (entries.len() as u16 + 2).min(screen.height().saturating_sub(2));
+    let width = width.min(screen_width.saturating_sub(2));
+    let height = (entries.len() as u16 + 2).min(screen_height.saturating_sub(2));
     let menu_index = app
         .menus
         .menus()
@@ -363,8 +369,20 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         .take(menu_index)
         .map(|m| jc_text::grapheme::width(m.title) as u16 + 2)
         .sum::<u16>()
-        .min(screen.width().saturating_sub(width));
+        .min(screen_width.saturating_sub(width));
     let y = 1;
+    (x, y, width, height)
+}
+
+fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
+    if app.menus.get(menu).is_none() {
+        return;
+    }
+    let context = app.command_context();
+    let entries = app
+        .menus
+        .entries(menu, &app.registry, &app.keymap, &context);
+    let (x, y, width, height) = menu_bounds(app, screen.width(), screen.height(), menu);
     clear_area(screen, x, y, width, height);
     screen.box_outline(x, y, width, height);
     let available = usize::from(height.saturating_sub(2));
@@ -409,7 +427,6 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         }
     }
     screen.hide_cursor();
-    let _ = model;
 }
 
 fn draw_close(screen: &mut Screen) {
@@ -453,7 +470,7 @@ fn draw_encoding(screen: &mut Screen) {
     screen.hide_cursor();
 }
 
-fn panel(screen: &mut Screen, x: u16, y: u16, width: u16, height: u16, title: &str) {
+pub(super) fn panel(screen: &mut Screen, x: u16, y: u16, width: u16, height: u16, title: &str) {
     clear_area(screen, x, y, width, height);
     screen.box_outline(x, y, width, height);
     screen.text_styled(x + 2, y, &format!(" {title} "), CellStyle::PanelTitle);
@@ -465,7 +482,11 @@ fn clear_area(screen: &mut Screen, x: u16, y: u16, width: u16, height: u16) {
     }
 }
 
-fn centered(screen: &Screen, preferred_width: u16, preferred_height: u16) -> (u16, u16, u16, u16) {
+pub(super) fn centered(
+    screen: &Screen,
+    preferred_width: u16,
+    preferred_height: u16,
+) -> (u16, u16, u16, u16) {
     let width = preferred_width.min(screen.width().saturating_sub(2)).max(4);
     let height = preferred_height
         .min(screen.height().saturating_sub(2))

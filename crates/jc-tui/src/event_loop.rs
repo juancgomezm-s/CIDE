@@ -138,10 +138,17 @@ impl Drop for InputPump {
     }
 }
 
-pub(crate) fn run(options: LaunchOptions, search_workers: usize) -> io::Result<()> {
+pub(crate) fn run(mut options: LaunchOptions, search_workers: usize) -> io::Result<()> {
     let mut terminal = TerminalSession::enter()?;
     let wakeup = Wakeup::default();
+    let files = std::mem::take(&mut options.files);
     let mut app = TuiApp::with_wakeup_and_search_workers(options, wakeup.clone(), search_workers)?;
+    app.enable_recovery().map_err(io::Error::other)?;
+    for path in files {
+        if let Err(error) = app.open_path(path) {
+            app.status = error;
+        }
+    }
     #[cfg(windows)]
     app.connect_windows_clipboard();
     let input = InputPump::start(wakeup.clone())?;
@@ -163,14 +170,16 @@ pub(crate) fn run(options: LaunchOptions, search_workers: usize) -> io::Result<(
                     if matches!(event, Event::FocusGained) {
                         terminal.invalidate();
                     }
-                    if !matches!(event, Event::Mouse(_)) {
+                    if let Event::Mouse(event) = event {
+                        dirty |= app.handle_mouse(event);
+                    } else {
                         app.handle_event(event);
                         dirty = true;
                     }
                 }
                 Input::Error(error) => return Err(error),
                 Input::RejectedPaste => {
-                    app.status = "Paste exceeds the 8 MiB input budget".to_owned();
+                    app.status = "El pegado supera el presupuesto de entrada de 8 MiB".to_owned();
                     dirty = true;
                 }
             }

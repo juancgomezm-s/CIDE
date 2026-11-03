@@ -1,0 +1,39 @@
+    Checking jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+error[E0599]: no method named `validate_recovery_limits` found for reference `&Document` in the current scope
+  --> crates\jc-app\src\workbench\recovery.rs:45:20
+   |
+45 |             source.validate_recovery_limits(jc_core::RecoveryLimits::default()).map_err(|e|e.to_string())?;
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: there is a method `write_recovery` with a similar name
+   |
+45 |             source.write_recovery(jc_core::RecoveryLimits::default()).map_err(|e|e.to_string())?;
+   |                    ~~~~~~~~~~~~~~
+
+error[E0599]: no method named `recovery_encoded_len` found for reference `&Document` in the current scope
+  --> crates\jc-app\src\workbench\recovery.rs:46:44
+   |
+46 |             total=total.checked_add(source.recovery_encoded_len().map_err(|e|e.to_string())?).ok_or_else(||invalid().to_string())?;
+   |                                            ^^^^^^^^^^^^^^^^^^^^ method not found in `&Document`
+
+error[E0599]: no method named `validate_recovery_limits` found for reference `&jc_core::Document` in the current scope
+  --> crates\jc-app\src\workbench\recovery.rs:45:20
+   |
+45 |             source.validate_recovery_limits(jc_core::RecoveryLimits::default()).map_err(|e|e.to_string())?;
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: there is a method `write_recovery` with a similar name
+   |
+45 |             source.write_recovery(jc_core::RecoveryLimits::default()).map_err(|e|e.to_string())?;
+   |                    ~~~~~~~~~~~~~~
+
+error[E0599]: no method named `recovery_encoded_len` found for reference `&jc_core::Document` in the current scope
+  --> crates\jc-app\src\workbench\recovery.rs:46:44
+   |
+46 |             total=total.checked_add(source.recovery_encoded_len().map_err(|e|e.to_string())?).ok_or_else(||invalid().to_string())?;
+   |                                            ^^^^^^^^^^^^^^^^^^^^ method not found in `&Document`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `jc-app` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `jc-app` (lib test) due to 2 previous errors

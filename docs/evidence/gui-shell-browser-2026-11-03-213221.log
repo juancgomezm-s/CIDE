@@ -1,0 +1,37 @@
+
+running 7 tests
+test fingerprint::tests::streaming_writer_hashes_only_accepted_bytes_across_short_writes ... ok
+test tests::failed_writer_never_replaces_the_original ... ok
+test fingerprint::tests::streaming_fingerprint_handles_short_reads_interruption_and_failure_without_changing_signature ... ok
+test tests::create_only_commit_never_overwrites_an_existing_target ... ok
+test windows::tests::external_change_or_deletion_during_retry_is_a_conflict ... ok
+test windows::tests::transient_1175_retries_same_commit_and_persistent_lock_is_bounded ... ok
+test windows::tests::partial_replacement_keeps_recovery_bytes_and_reports_their_path ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 3 tests
+test enumerated_directory_identity_is_pinned_during_the_os_read ... ok
+test ordinary_native_names_are_exact_and_listing_limits_are_explicit ... ok
+test reparse_entries_and_root_escapes_never_become_directory_targets ... FAILED
+
+failures:
+
+---- reparse_entries_and_root_escapes_never_become_directory_targets stdout ----
+
+thread 'reparse_entries_and_root_escapes_never_become_directory_targets' panicked at crates\jc-files\tests\scoped_directory.rs:147:9:
+fixture junction setup failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    reparse_entries_and_root_escapes_never_become_directory_targets
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.04s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_files-2c264c6c3e3b64d9.exe)
+     Running tests\scoped_directory.rs (target\gui-next\debug\deps\scoped_directory-b086e245ca6ef447.exe)
+error: test failed, to rerun pass `-p jc-files --test scoped_directory`

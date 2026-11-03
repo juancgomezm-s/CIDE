@@ -399,15 +399,20 @@ fn deleted_or_link_replaced_target_keeps_overlay_and_opens_no_document() {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        assert!(std::process::Command::new("cmd.exe")
+        let output = std::process::Command::new("cmd.exe")
             .raw_arg("/D /V:OFF /C mklink /J \"%JC_TEST_LINK%\" \"%JC_TEST_TARGET%\"")
             .env("JC_TEST_LINK", &target)
             .env("JC_TEST_TARGET", &outside.root)
             .creation_flags(0x0800_0000)
             .output()
-            .unwrap()
-            .status
-            .success());
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction fixture creation failed: {:?}; stdout={:?}; stderr={:?}",
+            output.status,
+            output.stdout,
+            output.stderr
+        );
         key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
         assert!(matches!(app.overlay, UiOverlay::QuickOpen { .. }));
         assert!(app.workbench.active_document().is_none());

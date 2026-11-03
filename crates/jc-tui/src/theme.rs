@@ -1,6 +1,7 @@
 //! Semantic terminal roles inspired by the owner's OmniCore palette.
 use crate::screen::CellStyle;
 use crossterm::style::Color;
+use jc_app::ui_theme;
 pub(crate) struct Style {
     pub foreground: Color,
     pub background: Color,
@@ -11,10 +12,17 @@ pub(crate) struct Style {
 const fn rgb(r: u8, g: u8, b: u8) -> Color {
     Color::Rgb { r, g, b }
 }
+const fn palette(rgb: jc_app::syntax_theme::Rgb) -> Color {
+    Color::Rgb {
+        r: rgb.r,
+        g: rgb.g,
+        b: rgb.b,
+    }
+}
 pub(crate) fn style(role: CellStyle) -> Style {
     let mut s = Style {
         foreground: rgb(244, 247, 251),
-        background: rgb(6, 24, 34),
+        background: palette(ui_theme::BACKGROUND),
         bold: false,
         underline: false,
         reverse: false,
@@ -23,34 +31,34 @@ pub(crate) fn style(role: CellStyle) -> Style {
         CellStyle::Normal => {}
         CellStyle::Dim => s.foreground = rgb(150, 172, 192),
         CellStyle::Reverse => {
-            s.background = rgb(61, 80, 104);
+            s.background = palette(ui_theme::SELECTED);
             s.bold = true;
             s.reverse = true;
         }
         CellStyle::Menu | CellStyle::MenuMnemonic => {
-            s.background = rgb(24, 42, 56);
+            s.background = palette(ui_theme::CHROME);
             s.foreground = rgb(185, 203, 223);
         }
         CellStyle::MenuActive | CellStyle::MenuMnemonicActive => {
-            s.background = rgb(61, 80, 104);
+            s.background = palette(ui_theme::SELECTED);
             s.foreground = rgb(244, 247, 251);
             s.bold = true;
         }
-        CellStyle::Panel => s.background = rgb(19, 34, 46),
+        CellStyle::Panel => s.background = palette(ui_theme::PANEL),
         CellStyle::PanelTitle => {
-            s.background = rgb(32, 44, 59);
+            s.background = palette(ui_theme::RAISED);
             s.foreground = rgb(103, 212, 208);
             s.bold = true;
         }
         CellStyle::Status => {
-            s.background = rgb(24, 42, 56);
+            s.background = palette(ui_theme::CHROME);
             s.foreground = rgb(185, 203, 223);
         }
         CellStyle::Accent => {
             s.foreground = rgb(103, 212, 208);
             s.bold = true;
         }
-        CellStyle::Border => s.foreground = rgb(64, 86, 102),
+        CellStyle::Border => s.foreground = palette(ui_theme::BORDER),
         CellStyle::Syntax(kind) => {
             let c = jc_app::syntax_theme::foreground(kind);
             s.foreground = rgb(c.r, c.g, c.b);
@@ -60,7 +68,7 @@ pub(crate) fn style(role: CellStyle) -> Style {
             );
             s.underline = kind == jc_app::SyntaxKind::Link;
             if kind == jc_app::SyntaxKind::Code {
-                s.background = rgb(19, 34, 46);
+                s.background = palette(ui_theme::PANEL);
             }
         }
     }

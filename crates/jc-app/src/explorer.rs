@@ -169,6 +169,11 @@ impl ProjectExplorer {
         }
         self.nodes.iter().find(|n| n.id == id)
     }
+    /// Native path for a live catalog identity. Display labels are never parsed
+    /// back into paths; generation rejection also covers a changed browser root.
+    pub fn path(&self, id: NodeId) -> Option<PathBuf> {
+        Some(self.root.as_ref()?.join(&self.node(id)?.relative))
+    }
     pub fn nodes(&self) -> &[ExplorerNode] {
         &self.nodes
     }

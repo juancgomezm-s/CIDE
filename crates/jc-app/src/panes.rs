@@ -1,4 +1,5 @@
 //! Groups own persistent views; documents and their history live in Workbench.
+mod recovery;
 use crate::TabId;
 use jc_core::ChangeSet;
 

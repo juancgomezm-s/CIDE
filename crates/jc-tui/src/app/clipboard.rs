@@ -35,6 +35,9 @@ impl TuiApp {
                 };
                 Some(4096usize.saturating_sub(value.len()).max(1))
             }
+            UiOverlay::Prompt { input, .. } if self.file_browser.active() => {
+                Some(self.browser_field_budget(input))
+            }
             UiOverlay::Prompt { kind, input } => Some(
                 super::overlays::prompt_limit(*kind)
                     .saturating_sub(input.len())

@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\recovery-gui\\20261103T231319Z-4af129c0",
+  "processes": 3,
+  "checks": [
+    "production_gui_hidden_window_own_pid_only",
+    "three_processes_restore_unsaved_bytes_original_undo_and_caret",
+    "explicit_cli_open_reuses_recovered_document",
+    "original_never_written_by_close_or_restore"
+  ],
+  "physical_display_verified": false,
+  "original_unchanged": true
+}

@@ -1,0 +1,23 @@
+
+running 2 tests
+test crash_writer_child ... ignored, Only invoked by its parent with an owned fixture directory
+
+running 1 test
+
+running 1 test
+test abrupt_process_exit_during_write_keeps_previous_commit_and_after_commit_keeps_new_data ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+warning: unused import: `Write`
+ --> crates\jc-files\tests\recovery_crash.rs:3:25
+  |
+3 | use std::{fs, io::{Read,Write}, process::Command};
+  |                         ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: `jc-files` (test "recovery_crash") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.61s
+     Running tests\recovery_crash.rs (target\gui-next\debug\deps\recovery_crash-a7015e8a4d1437b4.exe)

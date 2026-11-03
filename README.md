@@ -1,11 +1,13 @@
 # CIDE
 
-[GUI/TUI en español y evidencia local](docs/M2B_GUI_WORKFLOWS_ES.md):549 nombres
-de pruebas aprobadas por suites/cierres dirigidos,19 nuevas; cuatro recorridos
-ConPTY y15 checks HWND propios. Ejecutables nuevos en `target/ui-es/release/`.
-Tema TUI inspirado en OmniCore, menús Alt subrayados, ayuda lateral y Markdown;
-GUI incorpora comparación de abiertos, servicios opcionales y plantillas.
-Aceptación física/global y proveedores AVM/semánticos reales siguen abiertos.
+[Marco GUI y pestañas](docs/M2B_GUI_TABS_BROWSER.md),
+[ratón y explorador TUI](docs/M2_TUI_MOUSE.md) y
+[recuperación de sesiones en Rust](docs/SESSION_RECOVERY.md) integrados con evidencia
+local. Fondo elegido `#2E3440`; título y menús GUI comparten el tema. Ambas interfaces
+conservan cambios sin guardar, historial y vistas al salir y reabrir.
+Ejecutables actuales en `target/gui-next/release/`; anteriores conservados.
+Archivos de varios GB: fuente paginada aislada probada, integración al editor pendiente.
+Aceptación física/global y proveedores AVM/semánticos siguen abiertos.
 
 CIDE es el nombre actual del proyecto, antes JC-IDE. Comandos canónicos: `cide`
 (CLI), `cide-tui` y `cide-gui`. Los ejecutables `jc-ide*` siguen como aliases de la

@@ -1,0 +1,12 @@
+
+running 4 tests
+test recovery_absolutizes_relative_drafts_and_restores_missing_originals_without_disk_io_or_implicit_save ... ok
+test full_workbench_recovery_keeps_binary_documents_histories_split_and_inactive_view_geometry ... ok
+test rejected_recovery_limits_preserve_previous_generation_and_never_replace_the_live_workbench ... ok
+test valid_store_checksum_with_hostile_application_metadata_falls_back_to_complete_previous_generation ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.80s
+     Running tests\recovery.rs (target\gui-next\debug\deps\recovery-b740b9de7d74f273.exe)

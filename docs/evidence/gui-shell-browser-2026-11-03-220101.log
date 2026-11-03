@@ -1,0 +1,25 @@
+
+running 6 tests
+test app::mouse_tests::mouse_unicode_click_shift_drag_use_graphemes_tabs_crlf_and_preserve_one_undo ... ok
+test app::mouse_tests::mouse_wheel_preserves_independent_carets_focus_pin_and_linked_vertical_scroll ... ok
+test app::mouse_tests::mouse_menus_tabs_and_search_panel_use_visible_targets_without_source_edits ... ok
+test app::mouse_tests::mouse_drag_cancels_on_resize_focus_overlay_revision_root_and_view_changes ... ok
+test app::mouse_tests::mouse_invisible_markers_snap_combining_bom_and_crlf_to_legal_source_boundaries ... ok
+test app::mouse_tests::mouse_browser_buttons_path_and_explorer_click_preserve_native_paths_and_bytes ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 139 filtered out; finished in 0.04s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+warning: unused imports: `KeyCode` and `KeyEvent`
+ --> crates\jc-tui\src\app\mouse_tests.rs:7:12
+  |
+7 |     Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+  |            ^^^^^^^  ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: `jc-tui` (lib test) generated 1 warning (run `cargo fix --lib -p jc-tui --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.22s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_tui-c24792ef3ef15fde.exe)

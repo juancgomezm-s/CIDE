@@ -145,6 +145,7 @@ impl TuiApp {
         self.syntax_targets = [None, None];
         let layout = FrameLayout::new(self, width, height);
         self.last_frame_height = layout.height;
+        self.file_browser.prepare(layout.height, layout.width);
         let mut glyph_budget = jc_app::MAX_PRESENTATION_TEXT_BYTES;
         let mut primary = EditorText::default();
         let mut secondary = EditorText::default();
@@ -370,11 +371,19 @@ impl TuiApp {
             usize::from(layout.height.saturating_sub(8)),
             usize::from(layout.width.saturating_sub(8)),
         );
+        let markdown = self.prepare_markdown(
+            usize::from(layout.height.saturating_sub(7)),
+            usize::from(layout.width.saturating_sub(6)),
+        );
+        self.prepare_mouse(
+            layout,
+            &primary,
+            &secondary,
+            &explorer,
+            (&source, &git_status, &git),
+        );
         Presentation {
-            markdown: self.prepare_markdown(
-                usize::from(layout.height.saturating_sub(7)),
-                usize::from(layout.width.saturating_sub(6)),
-            ),
+            markdown,
             snippet,
             source,
             open_diff,

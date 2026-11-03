@@ -1,0 +1,20 @@
+
+running 1 test
+test app::quick_open_tests::deleted_or_link_replaced_target_keeps_overlay_and_opens_no_document ... FAILED
+
+failures:
+
+failures:
+    app::quick_open_tests::deleted_or_link_replaced_target_keeps_overlay_and_opens_no_document
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 138 filtered out; finished in 0.05s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_tui-c24792ef3ef15fde.exe)
+
+thread 'app::quick_open_tests::deleted_or_link_replaced_target_keeps_overlay_and_opens_no_document' panicked at crates\jc-tui\src\app\quick_open_tests.rs:402:9:
+assertion failed: std::process::Command::new("cmd.exe").raw_arg("/D /V:OFF /C mklink /J \"%JC_TEST_LINK%\" \"%JC_TEST_TARGET%\"").env("JC_TEST_LINK",
+                            &target).env("JC_TEST_TARGET",
+                        &outside.root).creation_flags(0x0800_0000).output().unwrap().status.success()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `-p jc-tui --lib`

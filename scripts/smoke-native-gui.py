@@ -194,7 +194,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity", "bottom", "selector-input", "interaction", "menu-invoker", "syntax", "workflow"), default="all")
+    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity", "bottom", "selector-input", "interaction", "menu-invoker", "syntax", "workflow", "shell"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -228,7 +228,8 @@ def main():
                    ["--smoke-interaction-only"] if args.section == "interaction" else
                    ["--smoke-menu-invoker-only"] if args.section == "menu-invoker" else
                    ["--smoke-syntax-only"] if args.section == "syntax" else
-                   ["--smoke-workflow-only"] if args.section == "workflow" else []),
+                   ["--smoke-workflow-only"] if args.section == "workflow" else
+                   ["--smoke-shell-only"] if args.section == "shell" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -239,7 +240,7 @@ def main():
     if git_metadata(output) != git_before:
         raise RuntimeError("native GUI changed owned Git metadata/index/config/objects/refs")
     payload = json.loads(report.read_text(encoding="utf-8"))
-    required = ({"workflow_open_diff_notified_readonly_without_git", "workflow_open_diff_pin_origins_stale_refresh_cancel", "workflow_source_symbols_notification_selection_readonly", "workflow_source_completion_one_undo_and_stale_rejection", "workflow_source_include_confined_side_without_avm", "workflow_snippet_review_before_one_transaction_and_undo", "workflow_snippet_stale_revision_rejects_acceptance", "workflow_markdown_readonly_typed_render_palette_and_focus"} if args.section == "workflow" else NAVIGATION_REQUIRED if args.section == "navigation" else
+    required = ({"shell_exposure_reuses_owned_frame_without_source_work", "shell_proportional_chrome_pixel_tree_and_rounded_tabs", "shell_grouped_runs_exact_raster_and_retained_surface_probe", "shell_many_open_documents_filtered_identity_selection", "shell_group_tab_pointer_keeps_pin_and_shared_document", "shell_close_shared_view_and_cancel_dirty_final_view", "shell_compact_geometry_keeps_active_document_reachable"} if args.section == "shell" else {"workflow_open_diff_notified_readonly_without_git", "workflow_open_diff_pin_origins_stale_refresh_cancel", "workflow_source_symbols_notification_selection_readonly", "workflow_source_completion_one_undo_and_stale_rejection", "workflow_source_include_confined_side_without_avm", "workflow_snippet_review_before_one_transaction_and_undo", "workflow_snippet_stale_revision_rejects_acceptance", "workflow_markdown_readonly_typed_render_palette_and_focus"} if args.section == "workflow" else NAVIGATION_REQUIRED if args.section == "navigation" else
                 LINE_EDIT_REQUIRED if args.section == "line-edit" else
                 SELECTION_REOPEN_REQUIRED if args.section == "selection-reopen" else
                 RECTANGLE_REQUIRED if args.section == "rectangle" else

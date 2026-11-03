@@ -20,6 +20,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut menu_invoker_only = false;
     let mut syntax_only = false;
     let mut workflow_only = false;
+    let mut shell_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -66,6 +67,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("Opción --smoke-bottom-only duplicada".into());
                 }
                 bottom_only = true;
+            }
+            Some("--smoke-shell-only") => {
+                if shell_only {
+                    return Err("Opción --smoke-shell-only duplicada".into());
+                }
+                shell_only = true;
             }
             Some("--smoke-workflow-only") => {
                 if workflow_only {
@@ -168,6 +175,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(menu_invoker_only)
         + usize::from(syntax_only)
         + usize::from(workflow_only)
+        + usize::from(shell_only)
         > 1
     {
         return Err("Elige una sola sección de prueba".into());
@@ -186,6 +194,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || menu_invoker_only
         || syntax_only
         || workflow_only
+        || shell_only
     {
         if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("La prueba usa únicamente su archivo de muestra explícito".into());
@@ -214,6 +223,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             menu_invoker_only,
             syntax_only,
             workflow_only,
+            shell_only,
         });
     }
     Ok(Some(options))

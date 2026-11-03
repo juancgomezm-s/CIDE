@@ -1,0 +1,12 @@
+
+running 4 tests
+test app::visual_spanish_tests::markdown_stale_refresh_and_palette_return_never_apply_old_reading_as_source ... ok
+test app::visual_spanish_tests::sidebar_keeps_spanish_key_guidance_visible_across_focus_and_compact_resize ... ok
+test app::visual_spanish_tests::markdown_reading_formats_source_blocks_input_and_leaves_the_original_undo_step_available ... ok
+test app::visual_spanish_tests::spanish_menu_accelerators_open_the_underlined_visible_choice_and_f10_keeps_keyboard_access ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 141 filtered out; finished in 0.02s
+
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.45s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_tui-c24792ef3ef15fde.exe)

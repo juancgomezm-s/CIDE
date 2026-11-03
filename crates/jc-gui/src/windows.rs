@@ -1,6 +1,8 @@
+mod back_buffer;
 mod bottom_paint;
 mod bottom_panel;
 mod bottom_smoke;
+mod chrome;
 mod clipboard;
 mod clipboard_flow;
 mod close_flow;
@@ -18,6 +20,7 @@ mod line_edit_smoke;
 mod markdown_panel;
 mod menu_input;
 mod menu_invoker_smoke;
+mod menu_theme;
 mod native_menu;
 mod navigation_paint;
 mod navigation_panel;
@@ -31,8 +34,10 @@ mod project_paint;
 mod project_panel;
 mod project_results;
 mod project_smoke;
+mod recovery;
 mod rectangle_input;
 mod rectangle_smoke;
+mod render_probe;
 mod replace_panel;
 mod replace_smoke;
 mod replace_view;
@@ -48,10 +53,13 @@ mod selector_flow;
 mod selector_input;
 mod selector_input_smoke;
 mod selector_paint;
+mod shell;
+mod shell_smoke;
 mod smoke;
 mod snippet_panel;
 mod source_panel;
 mod syntax_smoke;
+mod tab_bar;
 mod workflow_smoke;
 use crate::GuiOptions;
 use ffi::*;
@@ -361,8 +369,12 @@ enum Action {
     SaveAll,
     CloseTab,
     Exit,
+    Minimize,
+    MaxRestore,
 }
 struct State {
+    recovery: Option<jc_app::session::EditorRecovery>,
+    restore_window: Option<(i32, i32, bool)>,
     open_diff: jc_app::open_diff::OpenDiffController,
     open_diff_view: jc_app::open_diff_view::OpenDiffView,
     open_diff_visible: bool,
@@ -386,6 +398,8 @@ struct State {
     wheel: Option<pointer_input::WheelState>,
     menu_stamp: Option<Box<menu_input::MenuStamp>>,
     interaction_epoch: u64,
+    tab_scroll: [tab_bar::Scroll; 2],
+    tab_hits: Option<tab_bar::Bars>,
     smoke_wheel_lines: Option<u32>,
     smoke_menu_choices: std::collections::VecDeque<Option<usize>>,
     selector: Option<Selector>,
@@ -425,8 +439,14 @@ struct State {
     pub cell_width: i32,
     pub cell_height: i32,
     pub font: Handle,
+    pub ui_font: Handle,
+    ascii_runs: [bool; 128],
+    owned_ui_font: bool,
     owned_font: bool,
     pub focused: bool,
+    chrome_hover: Option<chrome::Action>,
+    maximized: bool,
+    icon: Handle,
     pending_surrogate: Option<u16>,
     next_untitled: usize,
     pub paint_count: usize,
@@ -448,6 +468,11 @@ impl Drop for State {
                 DeleteObject(self.font);
             }
         }
+        if self.owned_ui_font {
+            unsafe {
+                DeleteObject(self.ui_font);
+            }
+        }
     }
 }
 impl State {
@@ -466,6 +491,14 @@ impl State {
         if font.is_null() {
             return Err(os_error("Crear fuente monoespaciada nativa"));
         }
+        let ui_face = wide("Segoe UI");
+        let ui_created =
+            unsafe { CreateFontW(-14, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, ui_face.as_ptr()) };
+        let ui_font = if ui_created.is_null() {
+            unsafe { GetStockObject(17) }
+        } else {
+            ui_created
+        };
         let mut state = Self {
             open_diff: Default::default(),
             open_diff_view: Default::default(),
@@ -474,6 +507,8 @@ impl State {
             snippet_gui: None,
             markdown_gui: None,
             workbench: Workbench::default(),
+            recovery: None,
+            restore_window: None,
             registry: default_registry(),
             keymap: default_keymap(),
             encoding: options.encoding,
@@ -525,19 +560,27 @@ impl State {
             wakeup,
             bridge,
             deliveries: 0,
-            status: "Win32/GDI nativo · grafemas · portapapeles de texto de Windows".into(),
+            status: "Listo".into(),
             width: 1000,
             height: 650,
             cell_width: 9,
             cell_height: 20,
             font,
+            ui_font,
+            ascii_runs: [false; 128],
+            owned_ui_font: !ui_created.is_null(),
             owned_font: !created.is_null(),
             focused: false,
+            chrome_hover: None,
+            maximized: false,
+            icon: null_mut(),
             pending_surrogate: None,
             next_untitled: 0,
             paint_count: 0,
             paint_errors: 0,
             syntax_pending: false,
+            tab_scroll: Default::default(),
+            tab_hits: None,
             syntax_targets: [None, None],
             save_count: 0,
             smoke: options.smoke.is_some(),
@@ -565,13 +608,16 @@ impl State {
                 .open_file(&smoke.fixture, Some(TextEncoding::Utf8))
                 .map_err(|e| e.to_string())?;
         } else {
+            if !cfg!(test) {
+                state.enable_recovery()?;
+            }
             for path in &options.paths {
                 state
                     .workbench
                     .open_file(path, options.encoding)
                     .map_err(|e| e.to_string())?;
             }
-            if options.paths.is_empty() {
+            if state.workbench.tabs().tabs().is_empty() {
                 state.new_document();
             }
         }
@@ -586,7 +632,7 @@ impl State {
         self.explorer_focused = false;
         self.next_untitled += 1;
         self.workbench.new_file(
-            format!("untitled-{}.txt", self.next_untitled),
+            format!("Sin título {}.txt", self.next_untitled),
             self.encoding.unwrap_or(TextEncoding::Utf8),
         );
     }
@@ -1289,6 +1335,11 @@ fn supported(command: CommandId) -> bool {
 /// HWND acquire ownership; failed creation cannot double-free an NCCREATE pointer.
 struct Owner {
     state: RefCell<State>,
+    buffer: RefCell<back_buffer::Buffer>,
+    frame: RefCell<Option<std::rc::Rc<paint::Frame>>>,
+    frame_dirty: Cell<bool>,
+    frame_preparations: Cell<usize>,
+    menu_theme: RefCell<Option<std::rc::Rc<menu_theme::Theme>>>,
     hwnd_owned: Cell<bool>,
 }
 // Caller bounds the returned reference to a live HWND; never retain it across
@@ -1315,6 +1366,9 @@ unsafe extern "system" fn window_proc(
     }
 }
 unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> isize {
+    if message == 0x83 && chrome::calc_client(hwnd, wparam, lparam) {
+        return 0;
+    }
     if message == WM_NCCREATE {
         let create = &*(lparam as *const CreateStruct);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.parameter as isize);
@@ -1343,16 +1397,67 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     let Some(owner) = owner(hwnd) else {
         return DefWindowProcW(hwnd, message, wparam, lparam);
     };
+    if message == 0x84 {
+        let layout = {
+            let state = owner.state.borrow();
+            chrome::Layout::new(state.width, state.height, state.maximized)
+        };
+        return chrome::hit_test(hwnd, lparam, layout);
+    }
+    if matches!(message, 0x2b | 0x2c | 0x120) {
+        let theme = owner.menu_theme.borrow().clone();
+        if let Some(theme) = theme {
+            if message == 0x120 {
+                if let Some(result) = theme.menu_char(wparam, lparam) {
+                    return result;
+                }
+            } else {
+                let result = if message == 0x2b {
+                    theme.draw(lparam)
+                } else {
+                    theme.measure(lparam)
+                };
+                match result {
+                    Ok(true) => return 1,
+                    Ok(false) => {}
+                    Err(error) => {
+                        if let Ok(mut state) = owner.state.try_borrow_mut() {
+                            state.paint_errors += 1;
+                            state.error(error);
+                        }
+                        return 0;
+                    }
+                }
+            }
+        }
+        return DefWindowProcW(hwnd, message, wparam, lparam);
+    }
     if message == WM_PAINT {
         let frame = {
             let Ok(mut state) = owner.state.try_borrow_mut() else {
                 return DefWindowProcW(hwnd, message, wparam, lparam);
             };
             state.paint_count += 1;
-            let frame = paint::prepare(&mut state);
-            state.explorer_hits = frame.explorer_hits();
-            state.bottom_hits = frame.bottom_hits();
-            frame
+            let cached = if !owner.frame_dirty.get() {
+                owner.frame.borrow().clone()
+            } else {
+                None
+            };
+            if let Some(frame) = cached {
+                frame
+            } else {
+                owner.frame.borrow_mut().take();
+                let frame = std::rc::Rc::new(paint::prepare(&mut state));
+                state.explorer_hits = frame.explorer_hits();
+                state.bottom_hits = frame.bottom_hits();
+                state.tab_hits = Some(frame.tab_hits());
+                *owner.frame.borrow_mut() = Some(frame.clone());
+                owner.frame_dirty.set(false);
+                owner
+                    .frame_preparations
+                    .set(owner.frame_preparations.get().saturating_add(1));
+                frame
+            }
         };
         let mut paint = NativePaint {
             hwnd,
@@ -1360,7 +1465,16 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         };
         let dc = BeginPaint(hwnd, &mut paint.paint);
         if !dc.is_null() {
-            if let Err(error) = paint::draw(dc, &frame) {
+            let result = owner
+                .buffer
+                .try_borrow_mut()
+                .map_err(|_| "La superficie GUI ya está en uso".to_owned())
+                .and_then(|mut buffer| {
+                    buffer.paint(dc, frame.width, frame.height, |memory| {
+                        paint::draw(memory, &frame)
+                    })
+                });
+            if let Err(error) = result {
                 if let Ok(mut state) = owner.state.try_borrow_mut() {
                     state.paint_errors += 1;
                     state.error(error);
@@ -1395,14 +1509,24 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         };
         match message {
             WM_CREATE => {
+                shell::dark_caption(hwnd);
+                state.icon = GetClassLongPtrW(hwnd, -14) as Handle;
+                if let Some(theme) = owner.menu_theme.borrow().clone() {
+                    if let Err(error) = theme.apply_palette(menu_theme::Palette::current()) {
+                        state.error(error);
+                    }
+                }
                 let dc = GetDC(hwnd);
                 if !dc.is_null() {
                     let old = SelectObject(dc, state.font);
                     let mut metrics: TextMetric = std::mem::zeroed();
                     if GetTextMetricsW(dc, &mut metrics) != 0 {
-                        state.cell_width = metrics.average.max(6);
+                        // Reserve one pixel for glyph edge filtering. The code
+                        // grid and hit testing use this same advance everywhere.
+                        state.cell_width = metrics.average.saturating_add(1).max(6);
                         state.cell_height = (metrics.height + metrics.external).max(12);
                     }
+                    state.ascii_runs = shell::safe_ascii_runs(dc, state.cell_width);
                     SelectObject(dc, old);
                     ReleaseDC(hwnd, dc);
                 }
@@ -1415,6 +1539,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 state.interaction_epoch = state.interaction_epoch.saturating_add(1);
                 state.explorer_hits = None;
                 state.bottom_hits = None;
+                state.tab_hits = None;
+                state.maximized = wparam == 2;
                 let mut rect = Rect::default();
                 if GetClientRect(hwnd, &mut rect) != 0 {
                     state.width = rect.right.max(1);
@@ -1502,7 +1628,26 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 let x = (lparam as u16) as i16 as i32;
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
                 state.cancel_pointer();
-                if state.pointer_source_available()
+                let chrome_action = chrome::action_at(
+                    chrome::Layout::new(state.width, state.height, state.maximized),
+                    x,
+                    y,
+                );
+                let tab_action = if message == WM_LBUTTONDOWN && chrome_action.is_none() {
+                    state.tab_click(x, y)
+                } else {
+                    None
+                };
+                if let Some(chrome_action) = chrome_action {
+                    action = match chrome_action {
+                        chrome::Action::Minimize => Action::Minimize,
+                        chrome::Action::MaxRestore => Action::MaxRestore,
+                        chrome::Action::Exit => Action::Exit,
+                        chrome::Action::Menu(group) => Action::NativeMenu(group),
+                    };
+                } else if let Some(tab_action) = tab_action {
+                    action = tab_action;
+                } else if state.pointer_source_available()
                     && !state.bottom_click(x, y, message == WM_LBUTTONDBLCLK)
                     && !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK)
                     && message == WM_LBUTTONDOWN
@@ -1522,6 +1667,19 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_MOUSEMOVE | WM_LBUTTONUP => {
                 redraw = state.rectangle_drag.is_some() || state.linear_drag.is_some();
+                let point = (
+                    (lparam as u16) as i16 as i32,
+                    ((lparam as usize >> 16) as u16) as i16 as i32,
+                );
+                let hover = chrome::action_at(
+                    chrome::Layout::new(state.width, state.height, state.maximized),
+                    point.0,
+                    point.1,
+                );
+                if state.chrome_hover != hover {
+                    state.chrome_hover = hover;
+                    redraw = true;
+                }
                 if wparam & 1 != 0 || message == WM_LBUTTONUP {
                     let x = (lparam as u16) as i16 as i32;
                     let y = ((lparam as usize >> 16) as u16) as i16 as i32;
@@ -1559,6 +1717,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     }
     release_idle_capture(hwnd);
     if redraw && IsWindow(hwnd) != 0 {
+        if let Some(owner) = self::owner(hwnd) {
+            owner.frame_dirty.set(true);
+        }
         InvalidateRect(hwnd, std::ptr::null(), 0);
     }
     if message == WM_UNICHAR {
@@ -1762,7 +1923,31 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             }
         }
         Action::CloseTab => close_flow::perform(hwnd),
+        Action::Minimize => {
+            ShowWindow(hwnd, 6);
+        }
+        Action::MaxRestore => {
+            let maximized = owner(hwnd).is_some_and(|o| o.state.borrow().maximized);
+            ShowWindow(hwnd, if maximized { 9 } else { 3 });
+        }
         Action::Exit => {
+            if let Some(owner) = owner(hwnd) {
+                let result = owner.state.borrow_mut().checkpoint_session();
+                match result {
+                    Ok(true) => {
+                        DestroyWindow(hwnd);
+                        return;
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        owner
+                            .state
+                            .borrow_mut()
+                            .error(format!("No se cerró el editor: {error}"));
+                        return;
+                    }
+                }
+            }
             let dirty = owner(hwnd)
                 .is_some_and(|owner| owner.state.borrow().workbench.context().dirty_documents > 0);
             if dirty
@@ -1807,6 +1992,11 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
     }
     let mut owner = Box::new(Owner {
         state: RefCell::new(State::new(&options)?),
+        buffer: RefCell::new(back_buffer::Buffer::default()),
+        frame: RefCell::new(None),
+        frame_dirty: Cell::new(true),
+        frame_preparations: Cell::new(0),
+        menu_theme: RefCell::new(None),
         hwnd_owned: Cell::new(false),
     });
     let class = wide(&format!("JCIDE.Native.{}", std::process::id()));
@@ -1827,22 +2017,25 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
         if RegisterClassW(&descriptor) == 0 {
             return Err(os_error("RegisterClassW"));
         }
-        let menu = match native_menu::create(&owner.state.borrow().keymap) {
+        let (menu, menu_theme) = match native_menu::create(&owner.state.borrow().keymap) {
             Ok(menu) => menu,
             Err(error) => {
                 UnregisterClassW(class.as_ptr(), instance);
                 return Err(error);
             }
         };
+        // Retain this outer Rc until the HWND and its native menus are gone.
+        owner.menu_theme.replace(Some(menu_theme.clone()));
+        let restored_size = owner.state.borrow().restore_window;
         let hwnd = CreateWindowExW(
             0,
             class.as_ptr(),
-            wide("CIDE — interfaz nativa Win32/GDI de desarrollo").as_ptr(),
+            wide("CIDE").as_ptr(),
             0x00cf0000,
             0x80000000u32 as i32,
             0x80000000u32 as i32,
-            1000,
-            700,
+            restored_size.map_or(1000, |v| v.0),
+            restored_size.map_or(700, |v| v.1),
             null_mut(),
             menu,
             instance,
@@ -1855,8 +2048,14 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
         }
         owner.hwnd_owned.set(true);
         let _ = Box::into_raw(owner);
+        if let Err(error) = chrome::apply_frame(hwnd) {
+            DestroyWindow(hwnd);
+            UnregisterClassW(class.as_ptr(), instance);
+            return Err(error);
+        }
         if options.smoke.is_none() {
-            ShowWindow(hwnd, 5);
+            let maximized = restored_size.is_some_and(|v| v.2);
+            ShowWindow(hwnd, if maximized { 3 } else { 5 });
             SetFocus(hwnd);
             UpdateWindow(hwnd);
         } else if PostMessageW(hwnd, SMOKE_MESSAGE, 0, 0) == 0 {

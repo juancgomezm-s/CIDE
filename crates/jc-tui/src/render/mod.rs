@@ -1,3 +1,4 @@
+mod file_browser;
 mod git_diff;
 mod git_status;
 mod markdown;
@@ -5,6 +6,8 @@ mod open_diff;
 mod overlays;
 mod snippets;
 mod source_services;
+pub(crate) use git_diff::git_sidebar_targets;
+pub(crate) use overlays::menu_bounds;
 
 // Same visible-row bound as the shared escaped-display API. Preparation uses
 // this when revealing a caret, so a huge terminal never requests an invalid row.
@@ -138,20 +141,13 @@ fn draw_menu_bar(app: &TuiApp, screen: &mut Screen) {
 fn draw_tabs(app: &TuiApp, screen: &mut Screen) {
     screen.fill_row_styled(1, ' ', CellStyle::Menu);
     let active = app.workbench.tabs().active_id();
-    let mut x = 0u16;
-    for (index, tab) in app.workbench.tabs().tabs().iter().enumerate() {
-        let dirty = if tab.dirty { "*" } else { "" };
-        let label = format!(" {}:{}{} ", index + 1, tab.title, dirty);
-        let style = if Some(tab.id) == active {
+    for label in crate::app::mouse::tab_labels(app, screen.width()) {
+        let style = if Some(label.tab) == active {
             CellStyle::Reverse
         } else {
             CellStyle::Normal
         };
-        screen.text_styled(x, 1, &label, style);
-        x = x.saturating_add(label.chars().count() as u16);
-        if x >= screen.width() {
-            break;
-        }
+        screen.text_styled(label.x, 1, &label.text, style);
     }
 }
 
@@ -230,7 +226,7 @@ fn draw_sidebar(
                 screen.text_styled(
                     x + 1,
                     y + height - 2,
-                    &clip("↑↓ mover  → desplegar", width.saturating_sub(2)),
+                    &clip("↑↓ · → desplegar · rueda", width.saturating_sub(2)),
                     CellStyle::Accent,
                 );
                 screen.text_styled(

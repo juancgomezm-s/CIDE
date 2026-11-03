@@ -1,0 +1,124 @@
+
+running 5 tests
+test app::git_status_integration_tests::cancel_refresh_and_context_changes_invalidate_before_prepare_without_consuming_completion ...     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_tui-c24792ef3ef15fde.exe)
+
+thread 'app::git_status_integration_tests::cancel_refresh_and_context_changes_invalidate_before_prepare_without_consuming_completion' panicked at crates\jc-tui\src\app\git_status_integration_tests.rs:227:36:
+called `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: "Acceso denegado." }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'app::git_status_integration_tests::cancel_refresh_and_context_changes_invalidate_before_prepare_without_consuming_completion' panicked at crates\jc-tui\src\app\git_status_integration_tests.rs:227:36:
+called `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: "Acceso denegado." }
+stack backtrace:
+   0:     0x7ff7f73f0341 - std::backtrace_rs::backtrace::dbghelp64::trace
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\..\..\backtrace\src\backtrace\dbghelp64.rs:91
+   1:     0x7ff7f73f0341 - std::backtrace_rs::backtrace::trace_unsynchronized
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\..\..\backtrace\src\backtrace\mod.rs:66
+   2:     0x7ff7f73f0341 - std::sys::backtrace::_print_fmt
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\sys\backtrace.rs:66
+   3:     0x7ff7f73f0341 - std::sys::backtrace::impl$0::print::impl$0::fmt
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\sys\backtrace.rs:39
+   4:     0x7ff7f7412f3a - core::fmt::rt::Argument::fmt
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\core\src\fmt\rt.rs:177
+   5:     0x7ff7f7412f3a - core::fmt::write
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\core\src\fmt\mod.rs:1440
+   6:     0x7ff7f73eb597 - std::io::Write::write_fmt<std::sys::pal::windows::stdio::Stderr>
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\io\mod.rs:1887
+   7:     0x7ff7f73f0185 - std::sys::backtrace::BacktraceLock::print
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\sys\backtrace.rs:42
+   8:     0x7ff7f73f282d - std::panicking::default_hook::closure$1
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\panicking.rs:295
+   9:     0x7ff7f73f2590 - std::panicking::default_hook
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\panicking.rs:322
+  10:     0x7ff7f73f306f - std::panicking::rust_panic_with_hook
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\panicking.rs:828
+  11:     0x7ff7f73f2e09 - std::panicking::begin_panic_handler::closure$0
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\panicking.rs:701
+  12:     0x7ff7f73f0e1f - std::sys::backtrace::__rust_end_short_backtrace<std::panicking::begin_panic_handler::closure_env$0,never$>
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\sys\backtrace.rs:168
+  13:     0x7ff7f73f2a0e - std::panicking::begin_panic_handler
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\panicking.rs:692
+  14:     0x7ff7f741d6b1 - core::panicking::panic_fmt
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\core\src\panicking.rs:75
+  15:     0x7ff7f741db20 - core::result::unwrap_failed
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\core\src\result.rs:1704
+  16:     0x7ff7f6fc6558 - enum2$<core::result::Result<tuple$<>,std::io::error::Error> >::unwrap
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181\library\core\src\result.rs:1109
+  17:     0x7ff7f6fc6558 - jc_tui::app::git_status_integration_tests::impl$1::drop
+                               at C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui\src\app\git_status_integration_tests.rs:227
+  18:     0x7ff7f6f53bef - core::ptr::drop_in_place<jc_tui::app::git_status_integration_tests::Fixture>
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181\library\core\src\ptr\mod.rs:523
+  19:     0x7ff7f6fd628a - jc_tui::app::git_status_integration_tests::cancel_refresh_and_context_changes_invalidate_before_prepare_without_consuming_completion
+                               at C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui\src\app\git_status_integration_tests.rs:528
+  20:     0x7ffd02eebb00 - _CxxFrameHandler3
+  21:     0x7ffd02ed3a9d - is_exception_typeof
+  22:     0x7ffd02eeae8d - _C_specific_handler
+  23:     0x7ffd02ed2ce2 - is_exception_typeof
+  24:     0x7ffd02eeb8f8 - _CxxFrameHandler3
+  25:     0x7ffd15a2652f - _chkstk
+  26:     0x7ffd158ddd30 - RtlUnwindEx
+  27:     0x7ffd02eeb3d6 - _C_specific_handler
+  28:     0x7ffd02ed1c20 - is_exception_typeof
+  29:     0x7ffd02ed2dd8 - is_exception_typeof
+  30:     0x7ffd02eeb8f8 - _CxxFrameHandler3
+  31:     0x7ffd15a264af - _chkstk
+  32:     0x7ffd15984065 - RtlWow64GetCurrentMachine
+  33:     0x7ffd158d9f3d - RtlRaiseException
+  34:     0x7ffd12b7408a - RaiseException
+  35:     0x7ffd02ed55a9 - CxxThrowException
+  36:     0x7ff7f7405470 - panic_unwind::imp::panic
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\panic_unwind\src\seh.rs:350
+  37:     0x7ff7f7405470 - panic_unwind::__rust_start_panic
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\panic_unwind\src\lib.rs:97
+  38:     0x7ff7f73f3285 - std::panicking::rust_panic
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\panicking.rs:889
+  39:     0x7ff7f73f30e7 - std::panicking::rust_panic_with_hook
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\panicking.rs:853
+  40:     0x7ff7f73f2e09 - std::panicking::begin_panic_handler::closure$0
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\panicking.rs:701
+  41:     0x7ff7f73f0e1f - std::sys::backtrace::__rust_end_short_backtrace<std::panicking::begin_panic_handler::closure_env$0,never$>
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\sys\backtrace.rs:168
+  42:     0x7ff7f73f2a0e - std::panicking::begin_panic_handler
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\panicking.rs:692
+  43:     0x7ff7f741d6b1 - core::panicking::panic_fmt
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\core\src\panicking.rs:75
+  44:     0x7ff7f741db20 - core::result::unwrap_failed
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\core\src\result.rs:1704
+  45:     0x7ff7f6fc6558 - enum2$<core::result::Result<tuple$<>,std::io::error::Error> >::unwrap
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181\library\core\src\result.rs:1109
+  46:     0x7ff7f6fc6558 - jc_tui::app::git_status_integration_tests::impl$1::drop
+                               at C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui\src\app\git_status_integration_tests.rs:227
+  47:     0x7ff7f6f53bef - core::ptr::drop_in_place<jc_tui::app::git_status_integration_tests::Fixture>
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181\library\core\src\ptr\mod.rs:523
+  48:     0x7ff7f6fd6218 - jc_tui::app::git_status_integration_tests::cancel_refresh_and_context_changes_invalidate_before_prepare_without_consuming_completion
+                               at C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui\src\app\git_status_integration_tests.rs:528
+  49:     0x7ff7f6fd55c8 - jc_tui::app::git_status_integration_tests::cancel_refresh_and_context_changes_invalidate_before_prepare_without_consuming_completion::closure$0
+                               at C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui\src\app\git_status_integration_tests.rs:482
+  50:     0x7ff7f6f4bcb2 - core::ops::function::FnOnce::call_once<jc_tui::app::git_status_integration_tests::cancel_refresh_and_context_changes_invalidate_before_prepare_without_consuming_completion::closure_env$0,tuple$<> >
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181\library\core\src\ops\function.rs:250
+  51:     0x7ff7f7066300 - core::ops::function::FnOnce::call_once
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\core\src\ops\function.rs:250
+  52:     0x7ff7f7066300 - test::__rust_begin_short_backtrace<enum2$<core::result::Result<tuple$<>,alloc::string::String> >,enum2$<core::result::Result<tuple$<>,alloc::string::String> > (*)()>
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\test\src\lib.rs:632
+  53:     0x7ff7f7064aa0 - test::run_test_in_process
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\test\src\lib.rs:655
+  54:     0x7ff7f7064aa0 - test::run_test::closure$0
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\test\src\lib.rs:576
+  55:     0x7ff7f701e8e2 - test::run_test::closure$1
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\test\src\lib.rs:606
+  56:     0x7ff7f701e8e2 - std::sys::backtrace::__rust_begin_short_backtrace<test::run_test::closure_env$1,tuple$<> >
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\sys\backtrace.rs:152
+  57:     0x7ff7f7022f6a - core::ops::function::FnOnce::call_once<std::thread::impl$0::spawn_unchecked_::closure_env$1<test::run_test::closure_env$1,tuple$<> >,tuple$<> >
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\core\src\ops\function.rs:250
+  58:     0x7ff7f740184d - alloc::boxed::impl$28::call_once
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\alloc\src\boxed.rs:1993
+  59:     0x7ff7f740184d - alloc::boxed::impl$28::call_once
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\alloc\src\boxed.rs:1993
+  60:     0x7ff7f740184d - std::sys::pal::windows::thread::impl$0::new::thread_start
+                               at /rustc/4eb161250e340c8f48f66e2b929ef4a5bed7c181/library\std\src\sys\pal\windows\thread.rs:56
+  61:     0x7ffd1480dda7 - BaseThreadInitThunk
+  62:     0x7ffd1593ee4c - RtlUserThreadStart
+error: test failed, to rerun pass `-p jc-tui --lib`
+
+Caused by:
+  process didn't exit successfully: `C:\Users\juanc\OneDrive\Documentos\JC-IDE\target\gui-next\debug\deps\jc_tui-c24792ef3ef15fde.exe git_status_integration_tests --nocapture --test-threads=1` (exit code: 0xc0000409, STATUS_STACK_BUFFER_OVERRUN)

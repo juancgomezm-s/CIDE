@@ -1,24 +1,37 @@
 # Validación
 
-## Estado vigente — GUI y TUI en español, 2026-11-03
+## Estado vigente — marco GUI, ratón TUI y recuperación Rust, 2026-11-03
 
-Comparación de documentos abiertos, servicios de fuente opcionales y plantillas
-están conectados en GUI. Ambas interfaces incorporan español y Markdown de
-lectura; TUI añade tema inspirado en OmniCore, letras Alt subrayadas y ayuda lateral.
-[Contrato, uso y evidencia](M2B_GUI_WORKFLOWS_ES.md).
-549 nombres de pruebas aprobados por suites/cierres dirigidos,19 nuevos; dos
-helpers se ejecutan por sus padres. Fmt/Clippy/release offline, cuatro recorridos
-ConPTY y15 checks HWND propios aprobados. No corrida runtime global única.
+GUI ahora tiene marco de título integrado, barra de menús con el mismo fondo
+`#2E3440`, pestañas redondeadas por grupo, selector de documentos abiertos y árbol
+en píxeles con fuente de interfaz separada del código. Reutiliza una superficie
+gráfica y el frame preparado en exposiciones. [Construcción](M2B_GUI_TABS_BROWSER.md).
+TUI incorpora ratón y explorador modal de archivos/carpetas, con ayuda en español:
+[uso y alcance](M2_TUI_MOUSE.md).
 
-Ejecutables actuales: `target/ui-es/release/cide-tui.exe` y `cide-gui.exe` en esa
-misma carpeta; el antiguo `target/release` se conserva. F10/Alt abre menús, F6
-cambia panel y Ctrl+Alt+M alterna Markdown. Se preservan F1/F2/F3, bytes y undo.
-Sin nuevas dependencias externas; GUI usa el proveedor opcional existente.
+Ambas interfaces recuperan documentos sin guardar, bytes originales, undo/redo,
+pestañas y vistas al salir y volver a abrir. El almacén Rust usa generaciones
+inmutables, sincronización, verificación por relectura y HEAD/BACKUP atómicos;
+si falla la confirmación, el editor permanece abierto. [Contrato y límites](SESSION_RECOVERY.md).
+No hay todavía checkpoint periódico ni recolección de generaciones antiguas.
 
-Quedan abiertas aceptación física/global de RAM/arranque/pantalla, IME/DPI y
-accesibilidad/clipboard real. AVM M3, semántica M4, Git escritura/CI M5 y runtime
-externo post-M5 conservan su alcance. Sin CI, push ni publicación.
-Los siguientes estados y pendientes históricos se subordinan a este cierre.
+Check de todos los targets, fmt, Clippy sin advertencias y release offline aprobados.
+Pruebas dirigidas de recuperación de core/archivos/aplicación/GUI/TUI, terminación
+abrupta de procesos y reapertura ConPTY aprobadas; no corrida runtime global única.
+GUI:15 checks de shell y13 de interacción, cero errores de pintura; TUI: navegador5,
+ratón7 y recuperación4 comprobaciones en tres procesos; GUI también restauró cambios,
+caret e historial en tres procesos reales ocultos. Fuentes fixture intactas.
+Evidencia: `docs/evidence/gui-shell-browser-2026-11-03-*`.
+
+Ejecutables actuales: `target/gui-next/release/cide-gui.exe` y `cide-tui.exe`.
+Los anteriores `target/release` y `target/ui-es/release` se conservan.
+La fuente paginada aislada leyó un fixture disperso de5GiB; el editor completo aún
+no admite GB. Se eligió instantánea privada y falta integrarla con Document y los
+índices progresivos: [auditoría](CORE_GIGABYTES_ADMISSION.md).
+Aceptación física/global, IME/DPI/a11y/clipboard real y proveedores M3–M5 abiertos.
+Sin nuevas dependencias externas, CI, push ni publicación.
+
+Los estados siguientes son históricos y no sustituyen este avance.
 
 ## Estado vigente — cierre funcional TUI, 2026-11-03
 

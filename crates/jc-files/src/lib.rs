@@ -18,42 +18,24 @@ mod scoped_read;
 pub use scoped_read::{read_in_root, verify_file_in_root};
 mod directory;
 pub use directory::{list_directory_in_root, DirectoryEntry, DirectoryListing};
+mod fingerprint;
+pub use fingerprint::ContentFingerprint;
+use fingerprint::{fingerprint_file, FingerprintingWriter};
 
 static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
 #[cfg(windows)]
 mod windows;
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 use windows::replace_path;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ContentFingerprint {
-    len: u64,
-    first: u64,
-    second: u64,
-}
+pub mod paged_source;
+pub mod recovery;
+mod session_recovery;
+pub use session_recovery::{
+    read_recovery_path, write_recovery_path, SessionRecoveryError, SessionRecoveryInfo,
+    SessionRecoveryLimits,
+};
 
 type Fingerprint = ContentFingerprint;
-impl ContentFingerprint {
-    pub fn of(bytes: &[u8]) -> Self {
-        Self::of_chunks([bytes])
-    }
-    /// The same fingerprint over borrowed pieces, with no flattening allocation.
-    pub fn of_chunks<'a>(chunks: impl IntoIterator<Item = &'a [u8]>) -> Self {
-        let mut first = 0xcbf29ce484222325u64;
-        let mut second = 0x9e3779b97f4a7c15u64;
-        let mut len = 0u64;
-        for bytes in chunks {
-            len = len.saturating_add(bytes.len() as u64);
-            for byte in bytes {
-                first ^= u64::from(*byte);
-                first = first.wrapping_mul(0x100000001b3);
-                second ^= u64::from(*byte).wrapping_add(0x9e3779b97f4a7c15);
-                second = second.rotate_left(13).wrapping_mul(0xbf58476d1ce4e5b9);
-            }
-        }
-        Self { len, first, second }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExternalState {
@@ -278,20 +260,21 @@ impl FileSession {
     }
 
     pub fn external_state(&self) -> Result<ExternalState, FileError> {
-        match (self.disk_fingerprint, fs::read(&self.path)) {
-            (Some(expected), Ok(bytes)) => Ok(if Fingerprint::of(&bytes) == expected {
+        match (self.disk_fingerprint, fingerprint_file(&self.path)) {
+            (Some(expected), Ok(actual)) => Ok(if actual == expected {
                 ExternalState::Unchanged
             } else {
                 ExternalState::Changed
             }),
-            (Some(_), Err(error)) if error.kind() == io::ErrorKind::NotFound => {
+            (Some(_), Err(FileError::Io(error))) if error.kind() == io::ErrorKind::NotFound => {
                 Ok(ExternalState::Missing)
             }
-            (None, Err(error)) if error.kind() == io::ErrorKind::NotFound => {
+            (None, Err(FileError::Io(error))) if error.kind() == io::ErrorKind::NotFound => {
                 Ok(ExternalState::Unchanged)
             }
             (None, Ok(_)) => Ok(ExternalState::Changed),
-            (_, Err(error)) => Err(FileError::Io(error)),
+            (_, Err(FileError::ExternalModification(_))) => Ok(ExternalState::Changed),
+            (_, Err(error)) => Err(error),
         }
     }
 
@@ -301,11 +284,11 @@ impl FileSession {
             return Err(FileError::ExternalModification(state));
         }
         let create_only = self.disk_fingerprint.is_none();
-        self.write_current(create_only)
+        self.write_current(create_only, self.disk_fingerprint)
     }
 
     pub fn force_save(&mut self) -> Result<(), FileError> {
-        self.write_current(false)
+        self.write_current(false, None)
     }
 
     pub fn save_as(&mut self, path: impl Into<PathBuf>) -> Result<(), FileError> {
@@ -316,7 +299,7 @@ impl FileSession {
         if path.exists() {
             return Err(FileError::TargetExists(path));
         }
-        self.write_to_path(&path, true)?;
+        self.write_to_path(&path, true, None)?;
         self.path = path;
         Ok(())
     }
@@ -326,25 +309,70 @@ impl FileSession {
         if path == self.path {
             return self.force_save();
         }
-        self.write_to_path(&path, false)?;
+        self.write_to_path(&path, false, None)?;
         self.path = path;
         Ok(())
     }
 
-    fn write_current(&mut self, create_only: bool) -> Result<(), FileError> {
+    fn write_current(
+        &mut self,
+        create_only: bool,
+        expected: Option<Fingerprint>,
+    ) -> Result<(), FileError> {
         let path = self.path.clone();
-        self.write_to_path(&path, create_only)
+        self.write_to_path(&path, create_only, expected)
     }
 
-    fn write_to_path(&mut self, path: &Path, create_only: bool) -> Result<(), FileError> {
-        let bytes = self.document.to_bytes();
-        atomic_replace_with(path, create_only, |file| file.write_all(&bytes))?;
-        self.disk_fingerprint = Some(Fingerprint::of(&bytes));
+    fn write_to_path(
+        &mut self,
+        path: &Path,
+        create_only: bool,
+        expected: Option<Fingerprint>,
+    ) -> Result<(), FileError> {
+        let mut saved_fingerprint = None;
+        atomic_replace_with_commit(
+            path,
+            create_only,
+            |file| {
+                let mut writer = FingerprintingWriter::new(file);
+                self.document.write_to(&mut writer)?;
+                saved_fingerprint = Some(writer.fingerprint());
+                Ok(())
+            },
+            |temporary, target| replace_expected(temporary, target, expected),
+        )?;
+        self.disk_fingerprint = saved_fingerprint;
         self.document.mark_saved();
         Ok(())
     }
 }
 
+fn replace_expected(
+    temporary: &Path,
+    target: &Path,
+    expected: Option<Fingerprint>,
+) -> Result<(), FileError> {
+    #[cfg(windows)]
+    {
+        windows::replace_expected(temporary, target, expected)
+    }
+    #[cfg(not(windows))]
+    {
+        if let Some(expected) = expected {
+            match fingerprint_file(target) {
+                Ok(actual) if actual == expected => {}
+                Ok(_) => return Err(FileError::ExternalModification(ExternalState::Changed)),
+                Err(FileError::Io(e)) if e.kind() == io::ErrorKind::NotFound => {
+                    return Err(FileError::ExternalModification(ExternalState::Missing))
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        replace_path(temporary, target)
+    }
+}
+
+#[cfg(test)]
 fn atomic_replace_with(
     target: &Path,
     create_only: bool,
@@ -496,5 +524,31 @@ mod tests {
             .collect();
         assert!(leftovers.is_empty());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn external_change_while_streaming_temporary_is_not_adopted_as_the_expected_version() {
+        let dir = test_dir();
+        let target = dir.join("source.p");
+        fs::write(&target, b"original\r\n").unwrap();
+        let expected = Fingerprint::of(b"original\r\n");
+        let result = atomic_replace_with_commit(
+            &target,
+            false,
+            |file| {
+                file.write_all(b"mine\r\n")?;
+                fs::write(&target, b"external\r\n")?;
+                Ok(())
+            },
+            |temp, path| replace_expected(temp, path, Some(expected)),
+        );
+        assert!(matches!(
+            result,
+            Err(FileError::ExternalModification(ExternalState::Changed))
+        ));
+        assert_eq!(fs::read(&target).unwrap(), b"external\r\n");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_file(&target).unwrap();
+        fs::remove_dir(&dir).unwrap();
     }
 }

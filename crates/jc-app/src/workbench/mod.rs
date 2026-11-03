@@ -1,6 +1,7 @@
 mod commands;
 mod display;
 pub(crate) mod invisible_layout;
+mod recovery;
 pub use invisible_layout::DisplayCell;
 mod clipboard_transfer;
 pub use clipboard_transfer::{ClipboardExport, ClipboardTarget};
@@ -656,7 +657,7 @@ impl Workbench {
             self.prepare_side_target();
         }
         let cursor = session_content_start(&session);
-        let title = title_for_path(&path, "<file>");
+        let title = title_for_path(&path, "<archivo>");
         let tab_id = self.tabs.open(title);
         self.next_document += 1;
         self.documents.push(EditorDocument {
@@ -681,7 +682,7 @@ impl Workbench {
     pub fn new_file(&mut self, path: impl Into<PathBuf>, encoding: TextEncoding) -> TabId {
         let path = path.into();
         let session = FileSession::new(&path, encoding);
-        let title = title_for_path(&path, "untitled");
+        let title = title_for_path(&path, "Sin título");
         let tab_id = self.tabs.open(title);
         self.next_document += 1;
         self.documents.push(EditorDocument {

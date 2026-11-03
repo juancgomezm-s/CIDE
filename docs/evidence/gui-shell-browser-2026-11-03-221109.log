@@ -1,0 +1,15 @@
+
+running 3 tests
+test windows::menu_theme::tests::owner_menu_mnemonics_keep_escaped_ampersands_and_shortcuts_distinct ... ok
+test windows::menu_theme::tests::own_menu_metadata_preserves_native_checks_labels_and_rejects_alien_item_data ... ok
+test windows::menu_theme::tests::repeated_menu_refresh_reuses_widths_and_native_style_until_label_or_flags_change ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.01s
+
+   Compiling jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-progress v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-progress)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.19s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_gui-2a854f9863a4fc54.exe)

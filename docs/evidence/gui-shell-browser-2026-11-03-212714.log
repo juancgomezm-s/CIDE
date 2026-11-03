@@ -1,0 +1,11 @@
+
+running 3 tests
+test windows::tab_bar::tests::tab_strip_split_click_preserves_independent_views_pin_bytes_and_undo ... ok
+test windows::tab_bar::tests::tab_strip_rejects_stale_revision_resize_and_modal_without_touching_source ... ok
+test windows::tab_bar::tests::tab_strip_overflow_reaches_hidden_tabs_and_keyboard_selection_reveals_active ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; finished in 0.00s
+
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.48s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_gui-2a854f9863a4fc54.exe)

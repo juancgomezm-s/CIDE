@@ -6,11 +6,11 @@ use super::{
     selector::SelectorPresentation,
 };
 
-const PANEL: u32 = 0x00272828;
+const PANEL: u32 = super::shell::BACKGROUND;
 const EDGE: u32 = 0x00625b53;
-const HEADER: u32 = 0x00202122;
+const HEADER: u32 = super::shell::SURFACE;
 const QUERY: u32 = 0x00333130;
-const SELECTED: u32 = 0x00534b45;
+const SELECTED: u32 = super::shell::SELECTED;
 const TEXT: u32 = 0x00d5d7d8;
 const DIM: u32 = 0x008d8b87;
 const ACCENT: u32 = 0x00a6d9e6;
@@ -31,7 +31,7 @@ struct Layout {
 }
 impl Layout {
     fn new(width: i32, height: i32, cell_width: i32, cell_height: i32) -> Option<Self> {
-        if width <= 0 || height <= 0 {
+        if width <= 0 || height <= super::chrome::TOP {
             return None;
         }
         // Compute in i64 before narrowing: even bogus i32::MAX font metrics and
@@ -39,12 +39,12 @@ impl Layout {
         let cw = i64::from(cell_width.max(1));
         let ch = i64::from(cell_height.max(1));
         let width = i64::from(width);
-        let height = i64::from(height);
+        let height = i64::from(height - super::chrome::TOP);
         let rows = (height / ch).clamp(1, 20) as usize;
         let popup_width = width.min(cw * 96);
         let popup_height = height.min(ch * rows as i64);
         let left = (width - popup_width) / 2;
-        let top = (height - popup_height) / 2;
+        let top = i64::from(super::chrome::TOP) + (height - popup_height) / 2;
         let popup = Rect {
             left: left as i32,
             top: top as i32,
@@ -340,7 +340,7 @@ mod tests {
             (i32::MAX, i32::MAX, 0, -1),
         ] {
             let Some(layout) = Layout::new(width, height, cw, ch) else {
-                assert!(width <= 0 || height <= 0);
+                assert!(width <= 0 || height <= super::super::chrome::TOP);
                 continue;
             };
             assert!(layout.popup.left >= 0 && layout.popup.top >= 0);

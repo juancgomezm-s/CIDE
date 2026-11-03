@@ -19,8 +19,10 @@ mod unicode_layout_tests;
 pub use unicode_layout::{
     Glyph, VisualAtom, MAX_PRESENTATION_TEXT_BYTES, MAX_VISUAL_ROW_TEXT_BYTES,
 };
+pub mod session;
 pub mod source_services;
 pub mod syntax_theme;
+pub mod ui_theme;
 pub use jc_languages::syntax::{SyntaxKind, SyntaxProfile};
 pub mod explorer;
 mod navigation_input;

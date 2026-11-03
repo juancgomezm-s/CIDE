@@ -7,10 +7,8 @@ use std::path::PathBuf;
 impl TuiApp {
     pub(crate) fn open_prompt(&mut self, kind: PromptKind) {
         self.open_focus_overlay(Overlay::Dialog);
-        self.overlay = UiOverlay::Prompt {
-            kind,
-            input: String::new(),
-        };
+        let input = self.start_file_browser(kind).unwrap_or_default();
+        self.overlay = UiOverlay::Prompt { kind, input };
     }
 
     pub(crate) fn submit_prompt(&mut self, kind: PromptKind, input: String) {

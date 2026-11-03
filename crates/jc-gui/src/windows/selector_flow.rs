@@ -193,6 +193,7 @@ impl State {
             }
             SelectorKind::Files => selector.prepare_files(&self.quick_open, rows),
             SelectorKind::Encoding => selector.prepare_encoding(rows),
+            SelectorKind::OpenTabs => selector.prepare_tabs(self.workbench.tabs(), rows),
         })
     }
     pub(super) fn selector_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
@@ -285,6 +286,28 @@ impl State {
             return Action::None;
         };
         match selector.kind() {
+            SelectorKind::OpenTabs => {
+                let Some(tab) = selector.tab_target() else {
+                    return Action::None;
+                };
+                let Some(index) = self
+                    .workbench
+                    .tabs()
+                    .tabs()
+                    .iter()
+                    .position(|t| t.id == tab)
+                else {
+                    self.close_selector();
+                    self.status = "El documento elegido ya no está abierto".into();
+                    return Action::None;
+                };
+                self.close_selector();
+                self.bottom.focused = false;
+                self.workbench.select_tab(index + 1);
+                self.ensure_encoding_selector();
+                self.status = "Documento abierto seleccionado".into();
+                Action::None
+            }
             SelectorKind::Encoding => {
                 let Some(encoding) = selector.encoding_target() else {
                     return Action::None;

@@ -1,0 +1,74 @@
+
+running 8 tests
+test fingerprint::tests::streaming_writer_hashes_only_accepted_bytes_across_short_writes ... ok
+test tests::failed_writer_never_replaces_the_original ... ok
+test fingerprint::tests::streaming_fingerprint_handles_short_reads_interruption_and_failure_without_changing_signature ... ok
+test windows::tests::partial_replacement_keeps_recovery_bytes_and_reports_their_path ... ok
+test tests::create_only_commit_never_overwrites_an_existing_target ... ok
+test windows::tests::transient_1175_retries_same_commit_and_persistent_lock_is_bounded ... ok
+test tests::external_change_while_streaming_temporary_is_not_adopted_as_the_expected_version ... ok
+test windows::tests::external_change_or_deletion_during_retry_is_a_conflict ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 4 tests
+test windows::pinned_leases_enforce_page_budget_until_released_and_cache_hits_do_not_reread ... ok
+{"probe":"paged_source_sparse_gb","gb_fixture_executed":true,"logical_bytes":5368709120,"allocated_file_bytes":196608,"fixture_bytes_written":24,"bytes_read":262144,"read_calls":4,"cache_pages":4,"retained_page_bytes":262144,"cache_budget_bytes":1048576,"document_gb_supported":false}
+{"probe":"paged_source_identity","writer_rejected":true,"original_backing_survived_path_replacement":true}
+test windows::sparse_five_gib_source_reads_offsets_beyond_four_gib_without_materializing_the_file ... ok
+test windows::immutable_handle_denies_writers_and_keeps_original_bytes_after_path_replacement ... ok
+test windows::concurrent_reads_share_one_cached_page_and_empty_source_allocates_none ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 3 tests
+test enumerated_directory_identity_is_pinned_during_the_os_read ... ok
+test ordinary_native_names_are_exact_and_listing_limits_are_explicit ... ok
+test reparse_entries_and_root_escapes_never_become_directory_targets ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 2 tests
+test outside_paths_and_actual_outside_handles_are_rejected ... ok
+test confined_open_reads_exact_bytes_and_budget_guards_without_modifying_disk ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 9 tests
+test deletion_is_reported_as_an_external_conflict ... ok
+test unknown_legacy_encoding_requires_explicit_selection_before_text_insertion ... ok
+test new_session_refuses_to_overwrite_a_file_that_appeared_after_creation ... ok
+test new_session_creates_file_only_when_name_is_still_free ... ok
+test unsupported_characters_do_not_modify_the_document ... ok
+test opening_and_saving_without_edits_preserves_every_byte ... ok
+test external_content_change_blocks_normal_save_and_preserves_external_version ... ok
+test save_replaces_existing_file_and_marks_revision_saved ... ok
+test temporary_reader_contention_recovers_and_persistent_contention_preserves_dirty_bytes ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 1 test
+test binary_fragmented_save_and_conflict_checks_do_not_allocate_a_source_sized_copy ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling jc-core v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-core)
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.26s
+     Running unittests src\lib.rs (target\gui-next\debug\deps\jc_files-2c264c6c3e3b64d9.exe)
+     Running tests\paged_source.rs (target\gui-next\debug\deps\paged_source-584219445ff1ecb0.exe)
+     Running tests\scoped_directory.rs (target\gui-next\debug\deps\scoped_directory-b086e245ca6ef447.exe)
+     Running tests\scoped_open.rs (target\gui-next\debug\deps\scoped_open-7b98fa83db572052.exe)
+     Running tests\session.rs (target\gui-next\debug\deps\session-b53d3708d37ec809.exe)
+     Running tests\streaming.rs (target\gui-next\debug\deps\streaming-3df69fa4b74e7218.exe)
+   Doc-tests jc_files

@@ -1,0 +1,13 @@
+
+running 5 tests
+test recovery_truncated_metadata_hostile_counts_and_quotas_are_rejected_before_publication ... ok
+test recovery_corrupt_latest_document_and_head_fall_back_without_overwriting_prior_files ... ok
+test recovery_concurrent_slots_are_exclusive_and_reopen_chooses_latest_free_confirmed_slot ... ok
+test recovery_read_handles_are_immutable_and_retained_generation_quota_never_deletes_good_data ... ok
+test recovery_partial_writer_and_head_failure_keep_confirmed_generation_and_originals ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+   Compiling jc-files v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-files)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.67s
+     Running tests\recovery.rs (target\gui-next\debug\deps\recovery-918de4003fd33186.exe)

@@ -1,0 +1,6 @@
+error: no test target named `scoped_read`.
+Available test targets:
+    scoped_directory
+    scoped_open
+    session
+    streaming

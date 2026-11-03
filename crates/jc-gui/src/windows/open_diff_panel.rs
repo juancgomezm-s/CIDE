@@ -40,9 +40,9 @@ impl Geometry {
         let ch = ch.clamp(1, 8192);
         let rect = Rect {
             left: 0,
-            top: (ch + 8).min(height),
+            top: super::shell::TABS.min(height),
             right: width,
-            bottom: (height - ch - 6).max(0),
+            bottom: (height - ch - 6).max(super::shell::TABS.min(height)),
         };
         let columns = ((width - 16).max(0) / cw).clamp(0, 256) as usize;
         let rows = ((rect.bottom - rect.top).max(0) / ch).clamp(0, 100) as usize;
@@ -210,8 +210,8 @@ impl State {
 pub(super) unsafe fn draw(dc: Hdc, frame: &ComparisonFrame) -> Result<(), String> {
     let g = frame.geometry;
     let p = &frame.presentation;
-    const BG: u32 = 0x00272828;
-    const HEADER: u32 = 0x00202122;
+    const BG: u32 = super::shell::BACKGROUND;
+    const HEADER: u32 = super::shell::SURFACE;
     const FG: u32 = 0x00d5d7d8;
     const DIM: u32 = 0x008d8b87;
     paint::fill(dc, g.rect, BG)?;

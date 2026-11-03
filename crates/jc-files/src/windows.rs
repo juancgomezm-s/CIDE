@@ -1,6 +1,6 @@
 //! ReplaceFileW preserves metadata. Never fall back to delete + rename.
 //! https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew
-use super::{ExternalState, FileError, Fingerprint};
+use super::{fingerprint_file, ExternalState, FileError, Fingerprint};
 use std::{ffi::c_void, fs, io, os::windows::ffi::OsStrExt, path::Path, ptr, time::Duration};
 
 #[link(name = "kernel32")]
@@ -33,31 +33,61 @@ fn native_replace(temporary: &Path, target: &Path) -> io::Result<()> {
         Ok(())
     }
 }
+#[cfg(test)]
 pub(super) fn replace_path(temporary: &Path, target: &Path) -> Result<(), FileError> {
+    replace_expected(temporary, target, None)
+}
+pub(super) fn replace_expected(
+    temporary: &Path,
+    target: &Path,
+    expected: Option<Fingerprint>,
+) -> Result<(), FileError> {
     if !target.try_exists()? {
+        if expected.is_some() {
+            return Err(FileError::ExternalModification(ExternalState::Missing));
+        }
         return fs::rename(temporary, target).map_err(Into::into);
     }
-    guarded_replace(temporary, target, native_replace, std::thread::sleep)
+    guarded_expected(
+        temporary,
+        target,
+        expected,
+        native_replace,
+        std::thread::sleep,
+    )
 }
 
+#[cfg(test)]
 fn guarded_replace(
     temporary: &Path,
     target: &Path,
+    replace: impl FnMut(&Path, &Path) -> io::Result<()>,
+    wait: impl FnMut(Duration),
+) -> Result<(), FileError> {
+    guarded_expected(temporary, target, None, replace, wait)
+}
+fn guarded_expected(
+    temporary: &Path,
+    target: &Path,
+    expected: Option<Fingerprint>,
     mut replace: impl FnMut(&Path, &Path) -> io::Result<()>,
     mut wait: impl FnMut(Duration),
 ) -> Result<(), FileError> {
     // A retry must not overwrite a new version created while waiting for a lock.
-    let original = Fingerprint::of(&fs::read(target)?);
+    let original = fingerprint_file(target)?;
+    if expected.is_some_and(|expected| original != expected) {
+        return Err(FileError::ExternalModification(ExternalState::Changed));
+    }
     let delays = [5, 10, 20, 40];
     for attempt in 0..=delays.len() {
         if attempt > 0 {
-            match fs::read(target) {
-                Ok(bytes) if Fingerprint::of(&bytes) == original => {}
+            match fingerprint_file(target) {
+                Ok(actual) if actual == original => {}
                 Ok(_) => return Err(FileError::ExternalModification(ExternalState::Changed)),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                Err(FileError::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
                     return Err(FileError::ExternalModification(ExternalState::Missing))
                 }
-                Err(error) => return Err(error.into()),
+                Err(error) => return Err(error),
             }
         }
         match replace(temporary, target) {

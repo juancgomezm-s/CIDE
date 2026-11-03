@@ -6,11 +6,17 @@ mod events;
 mod explorer;
 #[cfg(test)]
 mod explorer_integration_tests;
+pub(crate) mod file_browser;
+#[cfg(test)]
+mod file_browser_tests;
 mod git_diff;
 mod git_repository;
 mod git_status;
 mod markdown;
 mod menus;
+pub(crate) mod mouse;
+#[cfg(test)]
+mod mouse_tests;
 mod open_diff;
 #[cfg(test)]
 mod open_diff_tests;
@@ -21,6 +27,7 @@ mod paths;
 mod presentation;
 mod project_search;
 mod quick_open;
+mod recovery;
 mod search_input;
 mod snippets;
 #[cfg(test)]
@@ -80,6 +87,8 @@ use jc_text::TextEncoding;
 use std::path::PathBuf;
 
 pub struct TuiApp {
+    pub(crate) mouse: mouse::MouseState,
+    pub(crate) file_browser: file_browser::FileBrowser,
     pub(crate) markdown_ui: Option<markdown::MarkdownUi>,
     pub(crate) find_cursor: usize,
     pub(crate) replacement_cursor: usize,
@@ -127,6 +136,7 @@ pub struct TuiApp {
     replace_files: usize,
     replace_conflicts: usize,
     should_exit: bool,
+    recovery: Option<jc_app::session::EditorRecovery>,
     default_encoding: Option<TextEncoding>,
 }
 
@@ -158,6 +168,8 @@ impl TuiApp {
             .register(jc_progress::source_services::descriptor())
             .expect("valid built-in provider");
         let mut app = Self {
+            mouse: Default::default(),
+            file_browser: file_browser::FileBrowser::new(wakeup.clone()),
             markdown_ui: None,
             workbench: Workbench::default(),
             registry,
@@ -170,7 +182,7 @@ impl TuiApp {
             clipboard_transport: None,
             find_cursor: usize::MAX,
             replacement_cursor: usize::MAX,
-            status: "Listo · F10 menús · F6 cambiar panel".to_owned(),
+            status: "Listo · F10 menús · F6 panel · Mayús+clic/arrastre · rueda".to_owned(),
             project_root: None,
             explorer: jc_app::explorer::ProjectExplorer::new(wakeup.clone(), Default::default())
                 .expect("valid Explorer quotas"),
@@ -207,6 +219,7 @@ impl TuiApp {
             tasks: jc_app::JobSystem::new(jc_app::JobLimits::default(), wakeup)
                 .expect("valid default task quotas"),
             should_exit: false,
+            recovery: None,
             default_encoding: options.encoding,
         };
         for path in options.files {
@@ -250,6 +263,9 @@ impl TuiApp {
         if let Some(root) = &self.project_root {
             update.changed |= self.explorer.poll(root, 2);
         }
+        let (browser_changed, browser_recover) = self.file_browser.poll();
+        update.changed |= browser_changed;
+        update.recover |= browser_recover;
         update.recover |= self.explorer.take_recovery();
         update.recover |= self.project_search.take_recovery();
         update.changed |= update.recover;
@@ -257,8 +273,8 @@ impl TuiApp {
             update.changed = true;
             if !self.project_results {
                 self.status = format!(
-                    "Document search {:?}: {} matches",
-                    self.workbench.search().status,
+                    "Búsqueda del documento {}: {} coincidencias",
+                    self.workbench.search().status.label(),
                     self.workbench.search().matches.len()
                 );
             }
@@ -268,8 +284,8 @@ impl TuiApp {
             update.changed = true;
             if self.project_results {
                 self.status = format!(
-                    "Project search {:?}: {} rows",
-                    self.project_search.state,
+                    "Búsqueda del proyecto {}: {} filas",
+                    self.project_search.state.label(),
                     self.project_search.rows().len()
                 );
             }
@@ -323,6 +339,9 @@ impl TuiApp {
         update.changed |= self.poll_quick_open();
         update.recover |= self.quick_open.take_recovery();
         update.changed |= update.recover;
+        if update.changed {
+            self.mouse.frame_changed();
+        }
         update
     }
 
@@ -390,7 +409,10 @@ impl TuiApp {
     }
 
     pub(crate) fn request_exit(&mut self) {
-        self.should_exit = true;
+        match self.checkpoint_session() {
+            Ok(()) => self.should_exit = true,
+            Err(error) => self.status = format!("No se cerró el editor: {error}"),
+        }
     }
 }
 

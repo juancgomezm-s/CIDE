@@ -1,0 +1,12 @@
+
+running 5 tests
+test session_metadata_rejects_truncation_hostile_lengths_and_incompatible_tags_before_large_allocation ... ok
+test session_recovery_preserves_native_non_scalar_paths_without_lossy_conversion ... ok
+test restoring_missing_original_or_new_untitled_session_never_opens_or_creates_its_path ... ok
+test recovered_legacy_session_keeps_binary_bytes_history_and_original_disk_conflict_baseline ... ok
+test clean_utf8_sessions_keep_their_original_probe_provenance_without_reopening_missing_files ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running tests\session_recovery.rs (target\gui-next\debug\deps\session_recovery-e4bf46187669386d.exe)
