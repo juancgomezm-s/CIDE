@@ -27,7 +27,7 @@ unsafe fn pump(hwnd: Hwnd) -> Result<(), String> {
     }
     Ok(())
 }
-unsafe fn complete(hwnd: Hwnd) -> Result<(), String> {
+pub(super) unsafe fn complete(hwnd: Hwnd) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         pump(hwnd)?;
@@ -44,7 +44,7 @@ unsafe fn complete(hwnd: Hwnd) -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(1));
     }
 }
-unsafe fn start(hwnd: Hwnd, query: &str, include: &str) -> Result<(), String> {
+pub(super) unsafe fn start(hwnd: Hwnd, query: &str, include: &str) -> Result<(), String> {
     command(hwnd, CommandId::SearchProject)?;
     // Draft focus persists between invocations. Reach Query through the same
     // field-navigation handler instead of silently writing panel metadata.
@@ -71,7 +71,9 @@ unsafe fn start(hwnd: Hwnd, query: &str, include: &str) -> Result<(), String> {
     key(hwnd, 0x55, Modifiers::CTRL)?;
     key(hwnd, 0x0d, Modifiers::NONE)
 }
-unsafe fn snapshot(hwnd: Hwnd) -> Result<(jc_app::DocumentId, u64, String, usize), String> {
+pub(super) unsafe fn snapshot(
+    hwnd: Hwnd,
+) -> Result<(jc_app::DocumentId, u64, String, usize), String> {
     let state = owner(hwnd).ok_or("Project smoke lost HWND")?.state.borrow();
     let document = state
         .workbench

@@ -1,0 +1,18 @@
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.11s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 4 tests
+test app::project_search::worker_settings_tests::invalid_cpu_budget_is_rejected_before_entering_a_terminal ... ok
+test app::project_search::worker_settings_tests::launch_budget_reaches_every_new_project_query_without_starting_work ... ok
+test app::tests::project_search_prompts_cancel_and_deliver_navigable_rows_without_more_input ... ok
+test app::tests::project_replace_preview_cancel_confirmation_and_file_scheduling_are_explicit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.02s
+
+     Running unittests src\main.rs (target\debug\deps\cide_tui-276d3eb826bfa013.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

@@ -288,3 +288,29 @@ checks. Raw logs/failures/hashes retained; no new dependency, CI or push. Do not
 repeat passing suites or closed profiles for documentation. Project replacement
 and diff/status GUI remain pending; manual OS clipboard/IME/DPI/accessibility and
 global RAM/display acceptance remain for the end. No user manual request now.
+
+## Native project replacement and read-only Git closure
+
+Read docs/M2B_PROJECT_REPLACE_GIT.md. GUI replacement consumes the S1 preview once:
+Enter builds preview, F9/CtrlEnter confirms, one file per TASKS_MESSAGE, Esc drops
+remaining plans; open buffers one undo/not saved, closed files confined versioned
+FileSession/save. No-op preserves undo/redo/disk; stale encoding/root drops preview.
+GUI Git status uses GitStatusController, diff uses existing GitDiffController and
+one lazy F3 JobSystem. Explicit session executable/native selector/--git-executable;
+only poll_git on task messages accepts completions. validate_context invalidates
+metadata without tick/snapshot admission; prepare/draw must not accept or admit.
+Status paths never open; hunk navigation revalidates. Preserve provider containment.
+53 distinct directed Rust cases and58 native checks passed;8 new/historical399,
+not a full399 run. Raw logs and first failed revision-ID oracle are retained.
+No new dependency, CI, push or closed profiles repeated. Build broad connected
+blocks before integral validation per Juan's nighttime instruction. Next active
+M2B front: bounded shared project catalog and native Explorer sidebar contract;
+keep typed paths, lazy cancellation/generation, root confinement, dirty/session/
+pin/view reuse. Manual OS clipboard/IME/DPI/accessibility/global display remains
+for the end; do not request it now or touch Qwen/GPU/RAG/other processes.
+
+The next front has a concrete source-based contract: docs/M2B_EXPLORER_CONTRACT.md.
+Existing TUI Explorer still synchronously enumerates/sorts with lossy display names;
+Quick Open is a recursive metadata finder, not a tree catalog. Implement the shared
+bounded typed catalog and migrate both frontends before tests; retire the replaced
+TUI route. Contract presence is not an implemented GUI tree or measured acceptance.

@@ -255,9 +255,9 @@ impl GitDiffController {
             Ok(())
         }
     }
-    /// No I/O or source copy here beyond the snapshot owned/admitted by JobSystem.
-    /// Returns visible change; it never drains another provider's completions.
-    pub fn tick(&mut self, app: &Workbench, jobs: &mut JobSystem) -> bool {
+    /// Metadata-only invalidation; no snapshot admission or completion acceptance.
+    /// Safe before preparing a read-only frame.
+    pub fn validate_context(&mut self, app: &Workbench, jobs: &mut JobSystem) -> bool {
         let mut changed = false;
         if self
             .accepted
@@ -289,6 +289,12 @@ impl GitDiffController {
             self.pending = None;
             changed |= self.status(GitDiffState::Stale, "Queued comparison became stale");
         }
+        changed
+    }
+    /// May admit one bounded snapshot; never drains provider completions.
+    /// Call on the application event path, never while preparing/drawing a frame.
+    pub fn tick(&mut self, app: &Workbench, jobs: &mut JobSystem) -> bool {
+        let mut changed = self.validate_context(app, jobs);
         if self.in_flight.is_some() {
             return changed;
         }

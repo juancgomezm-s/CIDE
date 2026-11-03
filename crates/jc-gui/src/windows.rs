@@ -2,12 +2,18 @@ mod clipboard;
 mod clipboard_flow;
 mod ffi;
 mod folder;
+mod git_panel;
+mod git_smoke;
+mod git_view;
 mod notify;
 mod paint;
 mod project_paint;
 mod project_panel;
 mod project_results;
 mod project_smoke;
+mod replace_panel;
+mod replace_smoke;
+mod replace_view;
 mod save_flow;
 mod save_plan;
 mod save_smoke;
@@ -92,6 +98,32 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "&Cancel Project Search",
     ),
     (136, CommandId::ViewSearchResults, "Project Search &Results"),
+    (
+        137,
+        CommandId::SearchReplaceProject,
+        "Replace in Pro&ject...",
+    ),
+    (
+        140,
+        CommandId::GitRepositoryStatus,
+        "Repository &Status (Read-Only)",
+    ),
+    (141, CommandId::ViewGit, "Active File &Diff"),
+    (142, CommandId::GitDiffHead, "Compare &HEAD Snapshot"),
+    (143, CommandId::GitDiffIndex, "Compare &Index Snapshot"),
+    (144, CommandId::GitDiffRefresh, "&Refresh Active Diff"),
+    (145, CommandId::GitDiffCancel, "&Cancel Diff"),
+    (
+        146,
+        CommandId::GitStatusRefresh,
+        "Refresh Repository S&tatus",
+    ),
+    (147, CommandId::GitStatusCancel, "Cancel Repositor&y Status"),
+    (
+        148,
+        CommandId::GitConfigureExecutable,
+        "Choose Git &Executable...",
+    ),
 ];
 pub(super) fn command_id(command: CommandId) -> usize {
     COMMANDS
@@ -105,6 +137,8 @@ enum Action {
     Clipboard(CommandId),
     PasteSearch(u64),
     PasteProject(u64),
+    PasteReplacement(u64),
+    ConfigureGit(git_panel::GitIntent),
     ChooseFolder,
     Open(bool),
     SaveAs,
@@ -124,6 +158,18 @@ struct State {
     project_search: jc_app::ProjectSearch,
     project_options: Option<jc_app::ProjectSearchOptions>,
     project_workers: usize,
+    replace_panel: Option<replace_panel::ReplacePanel>,
+    replace_generation: u64,
+    git_executable: Option<PathBuf>,
+    git_context: Option<(PathBuf, PathBuf)>,
+    git_last_intent: git_panel::GitIntent,
+    git_source: jc_app::git_read::GitBlobSource,
+    git_panel: Option<git_panel::GitIntent>,
+    git_view: git_view::GitView,
+    git_diff: jc_app::git_diff::GitDiffController,
+    git_status: jc_app::git_status_tasks::GitStatusController,
+    git_status_options: Option<jc_app::git_status_tasks::GitStatusOptions>,
+    jobs: jc_app::JobSystem,
     encoding_target: Option<(jc_app::DocumentId, u64, Option<TextEncoding>)>,
     smoke_clipboard: Option<String>,
     quick_open: QuickOpenController,
@@ -186,6 +232,19 @@ impl State {
             project_search: jc_app::ProjectSearch::new(wakeup.clone()),
             project_options: None,
             project_workers: options.search_workers.unwrap_or(2),
+            replace_panel: None,
+            replace_generation: 0,
+            git_executable: options.git_executable.clone(),
+            git_context: None,
+            git_last_intent: git_panel::GitIntent::Status,
+            git_source: jc_app::git_read::GitBlobSource::Head,
+            git_panel: None,
+            git_view: Default::default(),
+            git_diff: jc_app::git_diff::GitDiffController::new(),
+            git_status: jc_app::git_status_tasks::GitStatusController::new(wakeup.clone()),
+            git_status_options: None,
+            jobs: jc_app::JobSystem::new(Default::default(), wakeup.clone())
+                .map_err(|e| format!("Native task admission: {e:?}"))?,
             encoding_target: None,
             smoke_clipboard: None,
             quick_open: QuickOpenController::new(wakeup.clone()),
@@ -258,6 +317,25 @@ impl State {
         context.has_project = self.project_root.is_some();
         context.project_search_running =
             self.project_search.state == jc_app::ProjectSearchState::Running;
+        context.project_replace_ready = self.project_root.as_deref() == self.project_search.root()
+            && self.project_search.can_replace()
+            && self
+                .replace_panel
+                .as_ref()
+                .is_none_or(|p| p.stage != replace_panel::ReplaceStage::Applying);
+        context.git_repository_available = context.has_project;
+        context.git_diff_available = context.has_project
+            && context.has_document
+            && self
+                .workbench
+                .active_document()
+                .is_some_and(|d| d.session.encoding().is_some());
+        context.git_diff_running = self.git_diff_running();
+        context.git_status_running = matches!(
+            self.git_status.state(),
+            jc_app::git_status_tasks::GitStatusTaskState::Queued
+                | jc_app::git_status_tasks::GitStatusTaskState::Running
+        );
         // Availability is an intention gate, never a read of another owner's
         // clipboard. Content is requested only by explicit Paste.
         if !context.rectangular_selection {
@@ -271,6 +349,37 @@ impl State {
             return Action::None;
         }
         match command {
+            CommandId::GitRepositoryStatus | CommandId::GitStatusRefresh => {
+                return self.request_git(git_panel::GitIntent::Status)
+            }
+            CommandId::ViewGit | CommandId::GitDiffRefresh => {
+                return self.request_git(git_panel::GitIntent::Diff(self.git_source));
+            }
+            CommandId::GitDiffHead => {
+                return self.request_git(git_panel::GitIntent::Diff(
+                    jc_app::git_read::GitBlobSource::Head,
+                ))
+            }
+            CommandId::GitDiffIndex => {
+                return self.request_git(git_panel::GitIntent::Diff(
+                    jc_app::git_read::GitBlobSource::Index,
+                ))
+            }
+            CommandId::GitDiffCancel => {
+                self.cancel_git(git_panel::GitIntent::Diff(
+                    jc_app::git_read::GitBlobSource::Head,
+                ));
+                return Action::None;
+            }
+            CommandId::GitStatusCancel => {
+                self.cancel_git(git_panel::GitIntent::Status);
+                return Action::None;
+            }
+            CommandId::GitConfigureExecutable => return Action::ConfigureGit(self.git_last_intent),
+            CommandId::SearchReplaceProject => {
+                self.open_project_replace();
+                return Action::None;
+            }
             CommandId::SearchProject => {
                 self.open_project_search(false);
                 return Action::None;
@@ -418,11 +527,21 @@ impl State {
                 &self.context(),
             );
             if let Resolution::Enabled(
-                command @ (CommandId::ViewToggleInvisibles | CommandId::FileExit),
+                command @ (CommandId::ViewToggleInvisibles
+                | CommandId::FileExit
+                | CommandId::SearchReplaceProject),
             ) = global
             {
-                return (true, self.execute(command));
+                if command != CommandId::SearchReplaceProject || self.replace_panel.is_none() {
+                    return (true, self.execute(command));
+                }
             }
+        }
+        if self.git_panel.is_some() {
+            return (true, self.git_key(code, modifiers));
+        }
+        if self.replace_panel.is_some() {
+            return (true, self.replace_key(code, modifiers));
         }
         if self.project_visible() {
             return (true, self.project_key(code, modifiers));
@@ -509,6 +628,13 @@ impl State {
             return;
         }
         let mut bytes = [0u8; 4];
+        if self.git_panel.is_some() {
+            return;
+        }
+        if self.replace_panel.is_some() {
+            self.edit_replace_field(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)));
+            return;
+        }
         if self.project_visible() {
             self.edit_project_field(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)));
             return;
@@ -734,6 +860,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 if state.selector.is_none()
                     && state.search_panel.is_none()
                     && !state.project_visible()
+                    && state.replace_panel.is_none()
+                    && state.git_panel.is_none()
                 {
                     paint::click(&mut state, x, y);
                 }
@@ -743,6 +871,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         }
         state.schedule_search();
         redraw |= state.validate_project_search();
+        redraw |= state.validate_git_context();
     }
     if !handled {
         return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -822,7 +951,7 @@ unsafe fn file_dialog_named(
 unsafe fn perform(hwnd: Hwnd, action: Action) {
     if matches!(
         action,
-        Action::Open(_) | Action::SaveAs | Action::ChooseFolder
+        Action::Open(_) | Action::SaveAs | Action::ChooseFolder | Action::ConfigureGit(_)
     ) && owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke)
     {
         if let Some(owner) = owner(hwnd) {
@@ -832,9 +961,11 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
     }
     match action {
         Action::None => {}
+        Action::ConfigureGit(intent) => git_panel::configure(hwnd, intent),
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
         Action::PasteProject(generation) => clipboard_flow::paste_project(hwnd, generation),
+        Action::PasteReplacement(generation) => clipboard_flow::paste_replacement(hwnd, generation),
         Action::SaveAll => save_flow::perform(hwnd),
         Action::ChooseFolder => {
             let selected = folder::choose(hwnd);
@@ -987,7 +1118,8 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
         ("&File", 101, 110),
         ("&Edit", 110, 118),
         ("&View", 120, 128),
-        ("&Search", 130, 137),
+        ("&Search", 130, 138),
+        ("&Git", 140, 149),
     ] {
         let popup = CreatePopupMenu();
         if popup.is_null() {
@@ -1040,6 +1172,13 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
 }
 
 pub(super) fn run(options: GuiOptions) -> Result<(), String> {
+    if options
+        .git_executable
+        .as_ref()
+        .is_some_and(|p| !p.is_absolute() || p.as_os_str().len() > 4096)
+    {
+        return Err("Choose an absolute Git executable path within4096 native units".into());
+    }
     if options
         .search_workers
         .is_some_and(|n| !(1..=4).contains(&n))

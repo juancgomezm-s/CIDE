@@ -1001,3 +1001,36 @@ publicación; notices offline con limitaciones explícitas.
 bitmaps GDI, no capturas de pantalla física. IME, clipboard OS, DPI/accesibilidad,
 targets globales RAM/pantalla y demás puertas siguen abiertos. Sin CI/push,
 instalaciones ni nuevos perfiles. Las pruebas manuales del propietario son al final.
+
+## Reemplazo de proyecto y Git gráficos — 2026-11-03
+
+53 Rust distintos dirigidos aprobados:30 GUI,10 S1,9 GitDiff y4 TUI de proyecto.
+Los25 GUI intermedios se solapan; no se suman dos veces. Ocho pruebas nuevas,
+histórico399 sin corrida399. fmt, Clippy workspace/all-targets y release workspace
+bins/examples aprobaron; la observación Clippy de format_collect en fixture se
+resolvió con write!, sin repetir suites ya aprobadas. No nuevos perfiles/CI.
+
+58 checks nativos del release final:17 nuevos (10 reemplazo/7 Git),0 errores de
+pintura, fixture13B intacto. Vacío elimina, no-op conserva revisión/redo y metadata
+del cerrado; preview/Enter no confirman, F9 duplicado no aplica dos veces, un archivo
+por TASKS_MESSAGE permite cancelar los pendientes. Abiertos conservan one-undo y
+no se guardan; conflicto de disco/encoding/root no sobrescribe destinos.
+
+Git status no incorpora Q dirty; HEAD e index identifican blobs distintos y diffs
+comparan contra el snapshot dirty exacto. Enter status no navega, Enter hunk revalida
+sin editar; undo marca Stale, refresh explícito, cancelación y root/executable
+invalidation. Pintura no copia/admite snapshots ni consume completions. Todos los
+hashes .git del repositorio sintético permanecieron iguales (index/config/refs/
+objetos/logs). Preparación de datos Git escribe solo en el fixture propio, nunca
+en el repositorio del proyecto. Seis ayudas/aliases e iconos PE verificados.
+
+Primera corrida nativa falló por un oráculo revisionID+1 tras Undo; se corrigió
+la expectativa, manteniendo el Undo exacto como prueba observable, se recompiló
+solo GUI y el recorrido integral58 pasó. Se retienen ese fallo y logs crudos.
+La revisión GDI corrigió además el draft de varias filas y el estado Git visible;
+solo GUI se recompiló y su recorrido58 pasó de nuevo. Artefactos final-* identifican
+las fuentes/binarios de ese cierre, sin sumar ambos recorridos como casos nuevos.
+[Contrato/evidencia/hash](M2B_PROJECT_REPLACE_GIT.md). PNG de GDI sin pérdida;
+no acredita pantalla física, clipboard OS, IME/DPI/accesibilidad o RAM global.
+Esas pruebas de Juan se conservan al final; no instalaciones, dependencias nuevas,
+Git con escritura productiva, CI remoto ni push. Próximo contrato Explorer M2B activo.

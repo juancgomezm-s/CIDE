@@ -370,3 +370,30 @@ suites/perfiles por docs. Paquete local de desarrollo, sin instalar ni publicar.
 Pendientes funcionales M2B: replace de proyecto y diff/status read-only gráficos;
 manual IME/clipboard/DPI/accesibilidad y gates globales permanecen al final. No
 motor nuevo, dependencias, regex, CI/push ni tocar RAG/servicios de otros proyectos.
+
+## Último cierre: reemplazo y Git GUI — 2026-11-03
+
+Leer M2B_PROJECT_REPLACE_GIT.md. Proyecto replace comparte S1: draft4096UTF8,
+Enterpreview, F9/CtrlEnter confirmados, un archivo por TASKS_MESSAGE, Esc conserva
+terminados y cancela pendientes; no-op conserva redo y cerrados no se reescriben.
+FileSession.open_in_root_at_version sustituyó lectura/apertura duplicadas del commit
+cerrado. No buffers/undo/planes clonados ni reemplazos desde workers/pintura.
+
+GUI status usa GitStatusController; diff HEAD/index usa GitDiffController + F3
+JobSystem lazy. Executable explícito por selector o --git-executable ABS. Solo
+poll_git en TASKS_MESSAGE acepta completions. validate_context de GitDiff separa
+invalidación de tick/admisión; prepare solo metadata+prefijos de readmodels.
+Paths status no se abren; hunks Enter revalidados, source/encoding/EOL preservados.
+
+53 pruebas Rust distintas dirigidas y58 nativas aprobadas, fmt/Clippy/release;
+8 nuevas, histórico399 (no corrida399). Evidencia m2b-replace-git-final-2026-11-03-*.
+No repetir suites ni CPU/RAM perfiles cerrados. Próximo frente activo: Explorer
+lateral gráfico con catálogo común lazy/cancelable/acotado. Construir e integrar
+antes de otra ventana de tests; manual al final. No CI/push/dependencias/regex ni
+servicios/procesos ajenos; ningún componente .NET8 apareció en la revisión previa.
+
+El siguiente contrato ya está preparado en M2B_EXPLORER_CONTRACT.md: hoy TUI enumera
+síncronamente y nombres usan to_string_lossy; Quick Open no es un árbol. Implementar
+un catálogo común con IDs y worker lazy, retirar la ruta TUI anterior al integrarlo,
+y conectar sidebar GUI/teclado/mouse antes de probar. No anunciarlo implementado
+por existir ese contrato; resolver límites/identidad de enumeración en jc-files.

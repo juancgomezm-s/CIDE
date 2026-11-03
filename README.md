@@ -215,3 +215,11 @@ Save All ya funciona en la GUI mediante Ctrl+Alt+S, File y Palette, solicitando
 destino para nuevos y reportando cancelación/conflictos sin perder pendientes.
 [Contrato/evidencia](docs/M2B_SAVE_ALL.md):32 checks nativos y6 pruebas nuevas;
 382 casos distintos acumulados, sin declarar una corrida global382.
+
+La GUI también ofrece reemplazo de proyecto con preview y confirmación explícita
+(Ctrl+Shift+H después de una búsqueda completa): abiertos con un undo sin guardar,
+cerrados por archivo con conflictos y cancelación de los pendientes. Git/Palette
+ya muestran estado de repositorio y diff HEAD/índice frente al buffer sucio;
+ejecutable Git elegido para la sesión o `--git-executable ABS`, refresh/cancel,
+sin escrituras Git. [Uso y evidencia del bloque integrado](docs/M2B_PROJECT_REPLACE_GIT.md):
+53 pruebas Rust dirigidas y58 controles nativos; pruebas físicas de usuario al final.

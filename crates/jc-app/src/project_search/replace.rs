@@ -106,7 +106,11 @@ impl ProjectSearch {
             }
             lines.push(format!(
                 "{}  ({} matches)",
-                path.strip_prefix(&root).unwrap_or(&path).display(),
+                path.strip_prefix(&root)
+                    .unwrap_or(&path)
+                    .as_os_str()
+                    .as_encoded_bytes()
+                    .escape_ascii(),
                 matches.len()
             ));
             let preview_new: String = replacement
@@ -204,23 +208,14 @@ impl ProjectSearch {
                     if find_open(app, &plan.path)?.is_some() {
                         return Err("File was opened since search; search again".into());
                     }
-                    let bytes = scan::read_file(&preview.root, &plan.path, 2 * 1024 * 1024)
-                        .map_err(|e| e.to_string())?;
-                    if ContentFingerprint::of(&bytes) != expected {
-                        return Err("File changed on disk since preview".into());
-                    }
-                    let mut session = FileSession::open(&plan.path, Some(plan.encoding))
-                        .map_err(|e| e.to_string())?;
-                    if session.document().len() > 2 * 1024 * 1024
-                        || ContentFingerprint::of(
-                            &session
-                                .document()
-                                .read_range(0..session.document().len())
-                                .map_err(|e| e.to_string())?,
-                        ) != expected
-                    {
-                        return Err("File changed while preparing replacement".into());
-                    }
+                    let mut session = FileSession::open_in_root_at_version(
+                        &preview.root,
+                        &plan.path,
+                        Some(plan.encoding),
+                        2 * 1024 * 1024,
+                        expected,
+                    )
+                    .map_err(|e| e.to_string())?;
                     let replacement = jc_text::encode(&preview.replacement, plan.encoding)
                         .map_err(|e| e.to_string())?;
                     let revision = session.document().revision();

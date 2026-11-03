@@ -12,7 +12,7 @@ pub(super) struct ProjectResultsView {
     total: usize,
 }
 pub(super) struct ProjectResultsPresentation {
-    pub title: &'static str,
+    pub title: String,
     pub message: String,
     pub rows: Vec<ProjectResultRow>,
     pub selected: usize,
@@ -203,7 +203,7 @@ impl ProjectResultsView {
             }
         ));
         ProjectResultsPresentation {
-            title: "Search Plus - project literal",
+            title: "Search Plus - project literal".into(),
             message: message.text,
             rows,
             selected: self.selected,

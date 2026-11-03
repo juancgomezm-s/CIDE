@@ -14,6 +14,7 @@ impl State {
             return Err("Project root must be a directory".into());
         }
         self.close_selector();
+        self.clear_git();
         self.project_search.clear();
         self.project_panel = None;
         self.project_options = None;
@@ -22,6 +23,8 @@ impl State {
         Ok(())
     }
     pub(super) fn close_selector(&mut self) {
+        self.git_panel = None;
+        self.cancel_project_replace();
         self.selector = None;
         self.search_panel = None;
         if let Some(panel) = self.project_panel.as_mut() {
@@ -96,7 +99,7 @@ impl State {
             self.status = "Quick Open worker recovered from a failure; refresh to retry".into();
         }
         if failed {
-            self.status = "Background notification failed; refresh Quick Open".into();
+            self.status = "Background notification failed; refresh the active query".into();
         }
         // Completion publication can race the acknowledgement. Coalescing leaves
         // at most one queued message and readiness closes the notification gap.
@@ -105,6 +108,8 @@ impl State {
         }
         changed |= self.workbench.poll_document_search();
         changed |= self.project_search.poll(&self.workbench, 2);
+        changed |= self.apply_project_replace_step();
+        changed |= self.poll_git();
         if self.project_search.take_recovery() {
             self.status = "Project search worker failed; refresh to retry".into();
             changed = true;

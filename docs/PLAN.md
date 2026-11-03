@@ -387,3 +387,23 @@ nativos. ZIP local de desarrollo con manifiesto, sin instalación/publicación.
 Quedan los flujos GUI de proyecto replace y diff/status read-only, proveedores y
 puertas físicas/globales ya documentadas. No se cierra M2A/M2B ni se solicita prueba
 manual intermedia; no repetir suites/perfiles aprobados para cambios documentales.
+
+## Reemplazo y Git GUI integrados — 2026-11-03
+
+Bloque amplio según instrucción nocturna de Juan: [reemplazo y Git readonly](M2B_PROJECT_REPLACE_GIT.md)
+construidos/cableados antes del cierre integral. Entrada multilínea/preview,
+confirmación, un archivo por turno, no-op, undo, conflictos/cancelación y resumen;
+status de disco/index y diff HEAD/índice contra buffer sucio, navegación validada,
+configuración explícita, delivery y pintura sin admisión de snapshots.
+
+53 Rust distintos dirigidos y58 checks nativos aprobaron;8 nuevos, histórico399
+(no corrida global399). fmt/Clippy/release aprobados, metadataGit sintética intacta.
+Sin dependencias/CI/push ni perfiles repetidos. M2A/M2B y gates físicos/globales
+permanecen abiertos. Próximo frente M2B activado: contrato del Explorer lateral
+gráfico sobre catálogo lazy compartido/acotado; respetar raíz, dirty, pin y vistas.
+Construcción completa antes de su siguiente ventana integral, sin pedir pruebas
+manuales al propietario ni ampliar a servicios/regex/dependencias no autorizados.
+
+El [contrato Explorer](M2B_EXPLORER_CONTRACT.md) ya inventaría la ruta TUI síncrona
+y define catálogo único, identidades, cuotas y migración de ambos frontends. Es
+diseño del siguiente bloque activo, sin afirmar árbol GUI ni pruebas de ese bloque.

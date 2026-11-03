@@ -6,7 +6,10 @@ The report is functional evidence, never a physical-display latency measurement.
 import argparse
 import datetime as dt
 import json
+import hashlib
+import os
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
@@ -21,6 +24,20 @@ REQUIRED = {
     "project_enter_dirty_document_no_reload_one_undo", "project_stale_rejected_refresh_no_hit",
     "project_cancel_no_late_result_revival", "project_changed_disk_fingerprint_rejected",
     "project_root_change_clears_results_source_preserved",
+    "project_replace_preview_gdi_read_only", "project_replace_preview_enter_no_commit_cancel",
+    "project_replace_open_dirty_closed_exact_eol_one_undo_confirm_once",
+    "project_replace_disk_conflict_not_overwritten", "project_replace_one_file_per_task_partial_cancel",
+    "project_replace_no_hit_disabled", "project_replace_encoding_stale_preview_denied",
+    "project_replace_root_change_drops_plan_source_preserved",
+    "project_replace_empty_draft_deletes_one_undo_preserves_eol_disk",
+    "project_replace_identical_open_closed_no_revision_history_or_save",
+    "git_status_native_delivery_typed_disk_index_no_enter_navigation",
+    "git_head_index_distinct_oid_exact_dirty_sources",
+    "git_prepare_and_gdi_no_snapshot_admission_or_completion_consumption",
+    "git_hunk_enter_navigation_without_edit",
+    "git_shared_undo_stale_enter_denied_explicit_refresh",
+    "git_cancel_late_notifications_no_result_revival",
+    "git_executable_and_root_reconfiguration_clear_accepted_state",
     "native_mouse_caret_without_jump_history",
     "unpaired_utf16_rejected", "selection_internal_clipboard_and_undo",
     "enter_shared_split_one_undo", "join_shared_transaction_one_undo",
@@ -43,6 +60,57 @@ def ordinary_directory(path):
     info = path.lstat()
     return path.is_dir() and not path.is_symlink() and not (getattr(info, "st_file_attributes", 0) & 0x400)
 
+def prepare_git_fixture(output):
+    """Write Git setup only in this newly owned smoke directory, never cwd repo."""
+    executable = shutil.which("git")
+    if not executable:
+        raise RuntimeError("existing Git is required for the integrated native fixture; nothing installed")
+    executable = Path(executable).resolve(strict=True)
+    if not executable.is_absolute() or not executable.is_file() or (output / ".git").exists():
+        raise RuntimeError("invalid Git executable or fixture ownership")
+    env = {key: os.environ[key] for key in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PATH") if key in os.environ}
+    env.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_AUTHOR_NAME": "CIDE fixture", "GIT_COMMITTER_NAME": "CIDE fixture",
+        "GIT_AUTHOR_EMAIL": "fixture@invalid", "GIT_COMMITTER_EMAIL": "fixture@invalid"})
+    def git(*args, data=None):
+        result = subprocess.run([str(executable), "-C", str(output), *args], env=env,
+            input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+        if result.returncode or len(result.stdout) > 4096 or len(result.stderr) > 16 * 1024:
+            raise RuntimeError("owned Git fixture setup failed")
+        return result.stdout.decode("ascii").strip()
+    git("init", "--quiet", "--template=", "--initial-branch=main")
+    head = git("hash-object", "-w", "--stdin", data=b"base\r\nbeta\r\n")
+    git("update-index", "--add", "--cacheinfo", f"100644,{head},fixture.txt")
+    tree = git("write-tree")
+    commit = git("commit-tree", tree, data=b"owned CIDE native fixture\n")
+    git("update-ref", "refs/heads/main", commit)
+    index = git("hash-object", "-w", "--stdin", data=SOURCE)
+    git("update-index", "--cacheinfo", f"100644,{index},fixture.txt")
+    assert head != index
+    return executable, {"head_blob":head,"index_blob":index,"commit":commit}
+
+def git_metadata(output):
+    """Hash all initial Git files, including index/config/objects/refs."""
+    git = output / ".git"
+    if not ordinary_directory(git):
+        raise RuntimeError("fixture .git ownership changed")
+    files = {}
+    for directory, names, leaves in os.walk(git, followlinks=False):
+        base = Path(directory)
+        if not ordinary_directory(base) or any(not ordinary_directory(base / name) for name in names):
+            raise RuntimeError("unexpected reparse directory in owned Git fixture")
+        for name in leaves:
+            path = base / name
+            info = path.lstat()
+            if path.is_symlink() or getattr(info,"st_file_attributes",0) & 0x400 or not path.is_file() or info.st_size > 4 * 1024 * 1024:
+                raise RuntimeError("unexpected metadata leaf in owned Git fixture")
+            files[path.relative_to(git).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+            if len(files) > 256:
+                raise RuntimeError("Git fixture metadata quota")
+    return files
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
@@ -64,9 +132,11 @@ def main():
     fixture, report, bitmap = [output / name for name in ("fixture.txt", "native-report.json", "native-frame.bmp")]
     with fixture.open("xb") as stream:
         stream.write(SOURCE)
+    git_executable, git_identity = prepare_git_fixture(output)
+    git_before = git_metadata(output)
     with (output / "stdout.txt").open("xb") as stdout, (output / "stderr.txt").open("xb") as stderr:
         result = subprocess.run(
-            [str(exe), "--smoke-fixture", str(fixture), "--smoke-report", str(report), "--smoke-bitmap", str(bitmap)],
+            [str(exe), "--git-executable", str(git_executable), "--smoke-fixture", str(fixture), "--smoke-report", str(report), "--smoke-bitmap", str(bitmap)],
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -74,6 +144,8 @@ def main():
         raise RuntimeError(f"native smoke exit {result.returncode}; evidence retained at {output}")
     if fixture.read_bytes() != SOURCE:
         raise RuntimeError("native smoke changed the owned fixture bytes")
+    if git_metadata(output) != git_before:
+        raise RuntimeError("native GUI changed owned Git metadata/index/config/objects/refs")
     payload = json.loads(report.read_text(encoding="utf-8"))
     if payload.get("ok") is not True or not REQUIRED.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
@@ -100,6 +172,8 @@ def main():
         "fixture_bytes": len(SOURCE), "fixture_unchanged": True,
         "native_report": payload, "bitmap_width": width, "bitmap_height": abs(height),
         "bitmap_colors": len(colors), "physical_display_verified": False,
+        "git_fixture":git_identity,"git_metadata_unchanged":True,"git_metadata_sha256":git_before,
+        "git_executable":str(git_executable),
     }
     with (output / "summary.json").open("x", encoding="utf-8") as stream:
         json.dump(summary, stream, ensure_ascii=False, indent=2)

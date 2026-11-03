@@ -415,3 +415,15 @@ Apertura versionada compara antes de mutar catálogo/foco y recorre piezas prest
 Un resultado de disco conserva su validación de disco aunque ya haya abierto el
 documento. No nuevo índice/motor ni edición directa desde worker/frontend.
 [Contrato y evidencia](M2B_PROJECT_SEARCH_NATIVE.md).
+
+## D40 — Preview de proyecto y Git readonly nativos sobre controllers existentes
+
+La GUI mueve un único ProjectReplacePreview desde revisión a aplicación explícita,
+un archivo por evento y cancelación de pendientes, sin undo global del filesystem.
+La apertura cerrada reutiliza FileSession confinada/versionada, retirando doble
+lectura y apertura genérica. No-op no toca historial ni disco. Git status conserva
+identidad de repositorio; diff conserva snapshot/revisión/vista y F3, sin otro motor.
+Separar validate_context de tick evita admitir/copiar al preparar una escena.
+Solo mensajes aceptan completions; Git ejecutable se elige para la sesión y el
+selector suelta préstamos/revalida contexto. El editor no escribe Git ni navega
+paths status. [Contrato y evidencia](M2B_PROJECT_REPLACE_GIT.md).

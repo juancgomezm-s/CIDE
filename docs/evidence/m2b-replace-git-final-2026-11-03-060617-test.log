@@ -1,0 +1,18 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.99s
+     Running tests\project_search.rs (target\debug\deps\project_search-eedb40d7f8c43b89.exe)
+
+running 10 tests
+test opened_dirty_snapshots_override_disk_and_stale_revisions_are_removed ... ok
+test replacement_skips_noops_and_rejects_files_opened_after_search ... ok
+test file_and_snapshot_budgets_are_explicit_and_crlf_interiors_never_match ... ok
+test replacement_revalidates_disk_open_revision_project_and_strict_encoding ... ok
+test replacement_preview_preserves_bytes_and_open_files_use_one_undo_without_save ... ok
+test limits_generations_and_cancellation_release_a_full_result_queue ... ok
+test recursive_globs_unicode_coordinates_notices_and_safe_navigation ... ok
+test explicit_legacy_encoding_preserves_byte_ranges_and_read_only_files ... ok
+test links_and_junctions_do_not_expose_files_outside_root ... ok
+test replacement_rejects_a_directory_redirected_outside_root_after_preview ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

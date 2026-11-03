@@ -13,6 +13,18 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("-h" | "--help") => return Ok(None),
+            Some("--git-executable") => {
+                if options.git_executable.is_some() {
+                    return Err("duplicate --git-executable".into());
+                }
+                let path = PathBuf::from(args.next().ok_or("missing Git executable path")?);
+                if !path.is_absolute() || path.as_os_str().len() > 4096 {
+                    return Err(
+                        "--git-executable requires an absolute path within4096 native units".into(),
+                    );
+                }
+                options.git_executable = Some(path);
+            }
             Some("--search-workers") => {
                 if options.search_workers.is_some() {
                     return Err("duplicate --search-workers".into());
@@ -88,7 +100,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
 
 pub(super) fn run() {
     match parse(std::env::args_os().skip(1)) {
-        Ok(None) => println!("CIDE native GUI\nUsage: cide-gui [--project-root DIR] [--search-workers 1..4] [--encoding utf-8|cp1252|latin1|ibm850] [files...]\nLegacy alias: jc-ide-gui. Windows native frontend. Smoke: --smoke-fixture ABS --smoke-report ABS [--smoke-bitmap ABS]"),
+        Ok(None) => println!("CIDE native GUI\nUsage: cide-gui [--project-root DIR] [--git-executable ABS] [--search-workers 1..4] [--encoding utf-8|cp1252|latin1|ibm850] [files...]\nLegacy alias: jc-ide-gui. Windows native frontend. Smoke: --smoke-fixture ABS --smoke-report ABS [--smoke-bitmap ABS]"),
         Ok(Some(options)) => {
             if let Err(error) = jc_gui::run(options) {
                 eprintln!("{error}");
@@ -104,6 +116,32 @@ pub(super) fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn git_executable_is_explicit_absolute_metadata_and_duplicate_or_missing_reject() {
+        let path = std::env::current_dir()
+            .unwrap()
+            .join("trusted Git that need not exist.exe");
+        let options = super::parse([
+            std::ffi::OsString::from("--git-executable"),
+            path.as_os_str().into(),
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(options.git_executable.as_ref(), Some(&path));
+        for args in [
+            vec!["--git-executable"],
+            vec!["--git-executable", "relative.exe"],
+        ] {
+            assert!(super::parse(args.into_iter().map(std::ffi::OsString::from)).is_err());
+        }
+        assert!(super::parse([
+            std::ffi::OsString::from("--git-executable"),
+            path.as_os_str().into(),
+            std::ffi::OsString::from("--git-executable"),
+            path.as_os_str().into()
+        ])
+        .is_err());
+    }
     #[test]
     fn project_workers_are_bounded_and_explicit() {
         let options = super::parse(

@@ -147,6 +147,39 @@ pub(super) unsafe fn draw(
     cw: i32,
     ch: i32,
 ) -> Result<(), String> {
+    draw_labeled(
+        dc,
+        p,
+        width,
+        height,
+        cw,
+        ch,
+        PanelLabels {
+            draft: "Project Search Plus - draft",
+            policy: "Literal case-sensitive | exact EOL | no permanent index",
+            footer: if p.results.is_some() {
+                "Enter open | arrows select | F5 refresh | F2 edit | Esc cancel"
+            } else {
+                "Enter search | Tab field | F2 LF F4 CRLF | Ctrl+V paste | Esc"
+            },
+        },
+    )
+}
+
+pub(super) struct PanelLabels {
+    pub draft: &'static str,
+    pub policy: &'static str,
+    pub footer: &'static str,
+}
+pub(super) unsafe fn draw_labeled(
+    dc: Hdc,
+    p: &ProjectPresentation,
+    width: i32,
+    height: i32,
+    cw: i32,
+    ch: i32,
+    labels: PanelLabels,
+) -> Result<(), String> {
     let Some(l) = Layout::new(width, height, cw, ch) else {
         return Ok(());
     };
@@ -160,19 +193,12 @@ pub(super) unsafe fn draw(
             };
             format!("{} [{selected}/{}]", results.title, results.total)
         } else {
-            "Project Search Plus - draft".into()
+            labels.draft.into()
         };
         line(dc, &l, row, &heading, TEXT, PANEL)?;
     }
     if let Some(row) = l.policy {
-        line(
-            dc,
-            &l,
-            row,
-            "Literal case-sensitive | exact EOL | no permanent index",
-            DIM,
-            PANEL,
-        )?;
+        line(dc, &l, row, labels.policy, DIM, PANEL)?;
     }
     let field_count = p.fields.len().min(3);
     let active = p.active.min(field_count.saturating_sub(1));
@@ -187,6 +213,10 @@ pub(super) unsafe fn draw(
         }
         let data_rows = if compact {
             l.body.len().saturating_sub(1).max(1)
+        } else if p.results.is_none() && field_count == 1 {
+            // A standalone replacement draft is multiline. Results reserve a
+            // single query row, but that policy must not clip the draft field.
+            l.field_rows(3)
         } else {
             l.field_rows(field_count)
         };
@@ -284,12 +314,7 @@ pub(super) unsafe fn draw(
         paint::text(dc, l.row(row), &status, DIM, PANEL)?;
     }
     if let Some(row) = l.footer {
-        let help = if p.results.is_some() {
-            "Enter open | arrows select | F5 refresh | F2 edit | Esc cancel"
-        } else {
-            "Enter search | Tab field | F2 LF F4 CRLF | Ctrl+V paste | Esc"
-        };
-        line(dc, &l, row, help, DIM, PANEL)?;
+        line(dc, &l, row, labels.footer, DIM, PANEL)?;
     }
     Ok(())
 }

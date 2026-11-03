@@ -1,5 +1,9 @@
 # CIDE — Search Plus de proyecto nativo
 
+Seguimiento: el [bloque GUI de reemplazo y Git](M2B_PROJECT_REPLACE_GIT.md) habilita
+ahora reemplazo de proyecto explícito. Las exclusiones de abajo describen el cierre
+histórico de búsqueda, no la disponibilidad del ejecutable actual.
+
 Este bloque conecta el S1 existente a la GUI Win32/GDI. No añade motor, índice,
 regex ni ámbito de reemplazo. El reemplazo documental multilínea ya implementado
 se conserva; reemplazo de proyecto GUI no se habilita por mostrar resultados.

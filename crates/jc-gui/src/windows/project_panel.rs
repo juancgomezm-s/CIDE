@@ -64,12 +64,14 @@ impl State {
             .root()
             .is_some_and(|root| Some(root) != self.project_root.as_deref());
         if wrong_root {
+            self.cancel_project_replace();
             self.project_search.clear();
             self.project_options = None;
             self.project_panel = None;
             return true;
         }
-        self.project_search.validate_context(&self.workbench)
+        let changed = self.project_search.validate_context(&self.workbench);
+        self.validate_replace_preview() | changed
     }
     pub(super) fn start_project_search(&mut self, refresh: bool) {
         let Some(root) = self.project_root.as_ref() else {
