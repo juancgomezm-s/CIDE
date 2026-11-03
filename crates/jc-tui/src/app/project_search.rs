@@ -30,6 +30,7 @@ impl TuiApp {
                 }
                 let mut draft = ProjectSearchOptions::literal(input);
                 draft.workers = self.project_search_workers;
+                draft.regex = self.workbench.search().regex;
                 self.project_draft = Some(draft);
                 self.open_prompt(PromptKind::ProjectInclude);
             }

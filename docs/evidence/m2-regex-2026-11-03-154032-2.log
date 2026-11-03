@@ -1,0 +1,42 @@
+cargo test -p jc-app --test project_search --test project_search_parallel --locked --offline
+
+running 10 tests
+test opened_dirty_snapshots_override_disk_and_stale_revisions_are_removed ... ok
+test replacement_skips_noops_and_rejects_files_opened_after_search ... ok
+test file_and_snapshot_budgets_are_explicit_and_crlf_interiors_never_match ... ok
+test replacement_revalidates_disk_open_revision_project_and_strict_encoding ... ok
+test recursive_globs_unicode_coordinates_notices_and_safe_navigation ... ok
+test limits_generations_and_cancellation_release_a_full_result_queue ... ok
+test explicit_legacy_encoding_preserves_byte_ranges_and_read_only_files ... ok
+test replacement_preview_preserves_bytes_and_open_files_use_one_undo_without_save ... ok
+test links_and_junctions_do_not_expose_files_outside_root ... FAILED
+test replacement_rejects_a_directory_redirected_outside_root_after_preview ... FAILED
+
+failures:
+
+---- links_and_junctions_do_not_expose_files_outside_root stdout ----
+
+thread 'links_and_junctions_do_not_expose_files_outside_root' panicked at crates\jc-app\tests\project_search.rs:389:5:
+assertion failed: std::process::Command::new("cmd.exe").raw_arg("/D /V:OFF /C mklink /J \"%JC_TEST_LINK%\" \"%JC_TEST_TARGET%\"").env("JC_TEST_LINK",
+                        link).env("JC_TEST_TARGET",
+                    target).output().unwrap().status.success()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- replacement_rejects_a_directory_redirected_outside_root_after_preview stdout ----
+
+thread 'replacement_rejects_a_directory_redirected_outside_root_after_preview' panicked at crates\jc-app\tests\project_search.rs:389:5:
+assertion failed: std::process::Command::new("cmd.exe").raw_arg("/D /V:OFF /C mklink /J \"%JC_TEST_LINK%\" \"%JC_TEST_TARGET%\"").env("JC_TEST_LINK",
+                        link).env("JC_TEST_TARGET",
+                    target).output().unwrap().status.success()
+
+
+failures:
+    links_and_junctions_do_not_expose_files_outside_root
+    replacement_rejects_a_directory_redirected_outside_root_after_preview
+
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.67s
+     Running tests\project_search.rs (target\debug\deps\project_search-96fa037a6c878465.exe)
+error: test failed, to rerun pass `-p jc-app --test project_search`

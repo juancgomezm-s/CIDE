@@ -542,3 +542,13 @@ propietario, sin depender de pinturas. Cuotas:64KiB/tramo,128KiB sintaxis; layou
 se reduce a768KiB y conserva invisibles128KiB dentro de1MiB/documento lógico.
 Fallback Plain pendiente/limitado es explícito. ABL/Rust/JSON/JSONC son capacidades
 léxicas parciales, sin parser ni semántica. [Contrato y evidencia](M2_SYNTAX_HIGHLIGHTING.md).
+
+## D51 — Regex DFA compartido con trabajo contabilizado
+
+La dependencia mantenida/fijada autorizada incorpora regex real en Scanner común
+para documento y proyecto. Compilación con cuotas NFA/DFA/determinización;
+ejecución por escalares con estado reanudable, chunks reutilizados y reintentos
+cargados al presupuesto. Sin decode fuente completo ni edits desde worker.
+Pattern compartido y reutilizado por revisión. Reemplazo conserva texto literal,
+revisión esperada y una transacción. Limitaciones de case folding, fronteras,
+complejidad adversaria y validación se explicitan en [M2_REGEX_SEARCH](M2_REGEX_SEARCH.md).

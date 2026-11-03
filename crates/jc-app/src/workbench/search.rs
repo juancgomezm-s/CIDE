@@ -12,6 +12,14 @@ pub(super) struct SearchWork {
     stamp: TaskStamp,
     scanner: Scanner,
 }
+#[derive(Debug)]
+pub(super) struct CompiledQuery {
+    query: String,
+    case: bool,
+    word: bool,
+    regex: bool,
+    pattern: std::sync::Arc<Pattern>,
+}
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Navigation {
     forward: bool,
@@ -57,7 +65,8 @@ impl Workbench {
         self.restart_search()
     }
     pub fn toggle_search_regex(&mut self) -> Result<(), WorkbenchError> {
-        Err(WorkbenchError::RegexUnavailable)
+        self.search.regex = !self.search.regex;
+        self.restart_search()
     }
     fn restart_search(&mut self) -> Result<(), WorkbenchError> {
         self.search.status = SearchStatus::Idle;
@@ -120,12 +129,37 @@ impl Workbench {
             self.search.status = SearchStatus::Unavailable;
             return Err(FileError::EncodingRequired.into());
         };
-        let pattern = Pattern::compile(
-            &self.search.query,
-            self.search.case_sensitive,
-            self.search.whole_word,
-        )
-        .map_err(|_| WorkbenchError::SearchInput)?;
+        let cached = self
+            .search_pattern
+            .as_ref()
+            .filter(|cached| {
+                cached.query == self.search.query
+                    && cached.case == self.search.case_sensitive
+                    && cached.word == self.search.whole_word
+                    && cached.regex == self.search.regex
+            })
+            .map(|cached| cached.pattern.clone());
+        let pattern = if let Some(cached) = cached {
+            cached
+        } else {
+            Pattern::compile_mode(
+                &self.search.query,
+                self.search.case_sensitive,
+                self.search.whole_word,
+                self.search.regex,
+            )
+            .map_err(|message| {
+                self.search.status = SearchStatus::Unavailable;
+                WorkbenchError::SearchPattern(message)
+            })?
+        };
+        self.search_pattern = Some(CompiledQuery {
+            query: self.search.query.clone(),
+            case: self.search.case_sensitive,
+            word: self.search.whole_word,
+            regex: self.search.regex,
+            pattern: pattern.clone(),
+        });
         let len = self.active_document().unwrap().session.document().len();
         self.search_work = Some(SearchWork {
             stamp,
@@ -324,6 +358,27 @@ impl Workbench {
     fn find(&mut self, forward: bool) -> Result<Option<Range<usize>>, WorkbenchError> {
         self.valid_search(false)?;
         self.remember_search();
+        // Empty matches own no selection. Repeated F3 must advance instead of
+        // selecting the same caret forever; only reuse a still-current caret.
+        if let Some(index) = self.search.current {
+            if let Some(hit) = self.search.matches.get(index) {
+                if hit.range.is_empty()
+                    && self.active_editor().is_some_and(|e| {
+                        e.cursor == hit.range.start && e.anchor == Some(hit.range.start)
+                    })
+                    && self.search.status == SearchStatus::Complete
+                {
+                    let next = if forward {
+                        (index + 1) % self.search.matches.len()
+                    } else {
+                        (index + self.search.matches.len() - 1) % self.search.matches.len()
+                    };
+                    let range = self.search.matches[next].range.clone();
+                    self.select_search_match(next)?;
+                    return Ok(Some(range));
+                }
+            }
+        }
         let from = self.active_editor().map_or(0, |e| {
             e.selection()
                 .map_or(e.cursor, |s| if forward { s.end } else { s.start })
@@ -369,7 +424,9 @@ impl Workbench {
         if !decoded.issues.is_empty() || decoded.text.len() > 4096 {
             return Err(WorkbenchError::SearchInput);
         }
-        self.set_search_query(decoded.text)?;
+        self.search.regex = false;
+        self.search.query = decoded.text;
+        self.restart_search()?;
         let _ = self.find(forward)?;
         Ok(())
     }
@@ -381,6 +438,7 @@ impl Workbench {
             query: self.search.query.clone(),
             case_sensitive: self.search.case_sensitive,
             whole_word: self.search.whole_word,
+            regex: self.search.regex,
         };
         self.search.history.retain(|old| old != &entry);
         self.search.history.push_front(entry);
@@ -399,6 +457,7 @@ impl Workbench {
         let entry = self.search.history[index].clone();
         self.search.case_sensitive = entry.case_sensitive;
         self.search.whole_word = entry.whole_word;
+        self.search.regex = entry.regex;
         self.search.query = entry.query;
         self.restart_search()?;
         self.search_history_index = Some(index);

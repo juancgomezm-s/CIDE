@@ -17,6 +17,7 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct ProjectSearchOptions {
     pub query: String,
+    pub regex: bool,
     /// Root-relative globs; a pattern without '/' matches the basename anywhere.
     pub include: Vec<String>,
     pub exclude: Vec<String>,
@@ -33,6 +34,7 @@ impl ProjectSearchOptions {
     pub fn literal(query: impl Into<String>) -> Self {
         Self {
             query: query.into(),
+            regex: false,
             include: vec!["**".into()],
             exclude: vec![".git/**".into(), "target/**".into(), "work/**".into()],
             encoding: None,
@@ -130,6 +132,7 @@ struct Request {
     generation: u64,
     root: PathBuf,
     options: ProjectSearchOptions,
+    pattern: Arc<crate::text_search::Pattern>,
     open: BTreeMap<PathBuf, OpenSource>,
     cancel: Cancellation,
 }
@@ -233,6 +236,8 @@ impl ProjectSearch {
         options: ProjectSearchOptions,
     ) -> Result<(), String> {
         options.validate()?;
+        let pattern =
+            crate::text_search::Pattern::compile_mode(&options.query, true, false, options.regex)?;
         let root = root.canonicalize().map_err(|e| e.to_string())?;
         if !root.is_dir() {
             return Err("Search root must be a directory".into());
@@ -307,6 +312,7 @@ impl ProjectSearch {
             generation,
             root,
             options,
+            pattern,
             open,
             cancel,
         });

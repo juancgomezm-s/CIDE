@@ -1,0 +1,15 @@
+cargo test -p jc-tui --lib multiline_tests --locked --offline
+
+running 5 tests
+test app::multiline_tests::legacy_multiline_replacement_rejects_unrepresentable_text_before_any_mutation ... ok
+test app::multiline_tests::find_blocks_preserve_exact_eol_controls_eof_navigation_and_case_word_toggles ... ok
+test app::multiline_tests::field_navigation_paste_in_middle_token_keys_and_overflow_do_not_edit_the_document ... ok
+test app::multiline_tests::regex_find_replace_events_project_draft_and_readonly_frames_share_the_capability ... ok
+test app::multiline_tests::multiline_replace_all_is_one_undo_and_save_preserves_exact_unicode_mixed_eol_bytes ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 96 filtered out; finished in 0.02s
+
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.53s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-e9bab7c6db37e0da.exe)

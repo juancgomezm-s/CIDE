@@ -1,0 +1,13 @@
+cargo test -p jc-app --test project_search_parallel --locked --offline
+
+running 5 tests
+test changed_root_replaces_a_backpressured_generation_and_worker_bounds_are_admitted ... ok
+test dirty_legacy_buffer_precedes_disk_and_stale_rows_do_not_change_bytes_or_undo ... ok
+test worker_counts_preserve_order_bytes_scalar_positions_encodings_and_notices ... ok
+test supersession_cancel_and_drop_release_unacknowledged_streams_for_all_worker_counts ... ok
+test result_and_scan_budgets_are_global_and_keep_the_serial_prefix ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running tests\project_search_parallel.rs (target\debug\deps\project_search_parallel-6fa158107391a589.exe)

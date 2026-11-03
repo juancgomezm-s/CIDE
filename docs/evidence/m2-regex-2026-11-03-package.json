@@ -1,0 +1,17 @@
+{
+  "archive": "work\\packages\\CIDE-windows-dev-regex-2026-11-03.zip",
+  "bytes": 5363246,
+  "sha256": "b34cfee2d4135df4078c4da5b3937c093cabc68a7057ba7836453c56ff84231e",
+  "members": 76,
+  "crc_and_manifest_hashes_verified": true,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ]
+}

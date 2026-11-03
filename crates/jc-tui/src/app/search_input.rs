@@ -30,7 +30,12 @@ impl TuiApp {
                 if let Err(error) = self.workbench.set_search_query(query) {
                     self.status = error.to_string();
                 } else {
-                    self.status = "Literal query updated · exact EOL".into();
+                    self.status = if self.workbench.search().regex {
+                        "Regex query updated · replacement is literal"
+                    } else {
+                        "Literal query updated · exact EOL"
+                    }
+                    .into();
                 }
             }
             Ok(None) => self.status = "Field ready · exact source text; no normalization".into(),

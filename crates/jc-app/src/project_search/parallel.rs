@@ -297,8 +297,7 @@ impl Executor {
         publish: impl FnMut(Vec<ProjectSearchRow>) -> bool,
         workers: usize,
     ) -> ProjectSearchState {
-        let pattern = crate::text_search::Pattern::compile(&request.options.query, true, false)
-            .expect("validated project query");
+        let pattern = request.pattern.clone();
         let mut walker = Walker::new(&request);
         let mut carry = None;
         let mut finished = false;
@@ -520,6 +519,7 @@ mod tests {
         Arc::new(Request {
             generation: 1,
             root,
+            pattern: crate::text_search::Pattern::compile("needle", true, false).unwrap(),
             options,
             open,
             cancel: Cancellation::new(Duration::from_secs(10)),

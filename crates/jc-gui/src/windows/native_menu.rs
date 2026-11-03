@@ -301,6 +301,7 @@ fn checked(command: CommandId, state: &State) -> bool {
         }
         CommandId::SearchToggleCase => state.workbench.search().case_sensitive,
         CommandId::SearchToggleWholeWord => state.workbench.search().whole_word,
+        CommandId::SearchToggleRegex => state.workbench.search().regex,
         _ => false,
     }
 }

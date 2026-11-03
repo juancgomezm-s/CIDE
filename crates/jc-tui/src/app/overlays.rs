@@ -56,6 +56,18 @@ impl TuiApp {
                 self.overlay = UiOverlay::ProjectReplacePreview { selected };
             }
             UiOverlay::Prompt { kind, mut input } => match key.code {
+                KeyCode::Char('r')
+                    if kind == crate::state::PromptKind::ProjectQuery
+                        && key.modifiers == KeyModifiers::ALT =>
+                {
+                    self.status = match self.workbench.toggle_search_regex() {
+                        Ok(()) => format!(
+                            "Project regex: {} · replacement is literal",
+                            self.workbench.search().regex
+                        ),
+                        Err(error) => error.to_string(),
+                    };
+                }
                 KeyCode::Esc => self.close_overlay(),
                 KeyCode::Enter => self.submit_prompt(kind, input),
                 KeyCode::Backspace => {

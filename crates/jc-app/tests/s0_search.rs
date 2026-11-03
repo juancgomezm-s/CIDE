@@ -203,9 +203,9 @@ fn scheduling_is_range_bounded_cancelable_versioned_and_incomplete_replace_is_re
     }
     assert_eq!(app.search().status, SearchStatus::Limited);
     assert_eq!(app.search().matches.len(), 2);
-    let before = app.search().clone();
-    assert!(app.toggle_search_regex().is_err());
-    assert_eq!(app.search(), &before);
+    app.toggle_search_regex().unwrap();
+    assert!(app.search().regex);
+    assert_eq!(app.search().status, SearchStatus::Running);
 }
 
 #[test]

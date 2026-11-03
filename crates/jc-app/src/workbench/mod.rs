@@ -31,7 +31,7 @@ pub enum WorkbenchError {
     NoDocument,
     File(FileError),
     Position(PositionError),
-    RegexUnavailable,
+    SearchPattern(String),
     ClipboardEncoding,
     ClipboardLimit,
     ClipboardStale,
@@ -53,9 +53,7 @@ impl fmt::Display for WorkbenchError {
             Self::NoDocument => f.write_str("no active document"),
             Self::File(error) => write!(f, "{error}"),
             Self::Position(error) => write!(f, "{error}"),
-            Self::RegexUnavailable => {
-                f.write_str("regular-expression search is not implemented yet")
-            }
+            Self::SearchPattern(message) => f.write_str(message),
             Self::ClipboardEncoding => {
                 f.write_str("clipboard text cannot be represented in the target document encoding")
             }
@@ -90,6 +88,7 @@ pub struct SearchState {
     pub current: Option<usize>,
     pub case_sensitive: bool,
     pub whole_word: bool,
+    pub regex: bool,
     pub status: crate::SearchStatus,
     pub target: Option<crate::TaskStamp>,
     pub generation: u64,
@@ -101,6 +100,7 @@ pub struct SearchHistoryEntry {
     pub query: String,
     pub case_sensitive: bool,
     pub whole_word: bool,
+    pub regex: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -187,6 +187,7 @@ pub struct Workbench {
     next_document: u64,
     pub(crate) search: SearchState,
     search_work: Option<search::SearchWork>,
+    search_pattern: Option<search::CompiledQuery>,
     search_limits: crate::SearchLimits,
     search_navigation: Option<search::PendingNavigation>,
     search_history_index: Option<usize>,

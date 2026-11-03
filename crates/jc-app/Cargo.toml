@@ -11,3 +11,4 @@ jc-core = { path = "../jc-core" }
 jc-files = { path = "../jc-files" }
 jc-languages = { path = "../jc-languages" }
 jc-text = { path = "../jc-text" }
+regex-automata = { version = "=0.4.18", default-features = false, features = ["std", "syntax", "dfa-build", "unicode"] }

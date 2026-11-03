@@ -110,6 +110,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (164, CommandId::SearchHistoryNext, "&Next Search Query"),
     (138, CommandId::SearchToggleCase, "Toggle &Case Sensitive"),
     (139, CommandId::SearchToggleWholeWord, "Toggle &Whole Word"),
+    (140, CommandId::SearchToggleRegex, "Regular E&xpression"),
     (101, CommandId::FileNew, "&New"),
     (102, CommandId::FileOpen, "&Open..."),
     (103, CommandId::FileSave, "&Save"),
@@ -595,7 +596,8 @@ impl State {
             CommandId::SearchHistoryPrevious
             | CommandId::SearchHistoryNext
             | CommandId::SearchToggleCase
-            | CommandId::SearchToggleWholeWord => {
+            | CommandId::SearchToggleWholeWord
+            | CommandId::SearchToggleRegex => {
                 self.execute_search_option(command);
                 return Action::None;
             }
@@ -817,6 +819,7 @@ impl State {
                 | CommandId::SearchHistoryNext
                 | CommandId::SearchToggleCase
                 | CommandId::SearchToggleWholeWord
+                | CommandId::SearchToggleRegex
                 | CommandId::PaletteOpen
         ) {
             self.close_selector();

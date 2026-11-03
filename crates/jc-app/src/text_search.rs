@@ -182,12 +182,30 @@ impl SearchLimits {
 }
 #[derive(Debug)]
 pub(crate) struct Pattern {
+    regex: Option<Arc<crate::regex_search::Dfa>>,
     chars: Vec<char>,
     prefix: Vec<usize>,
     fold: bool,
     word: bool,
 }
 impl Pattern {
+    pub(crate) fn compile_mode(
+        query: &str,
+        case: bool,
+        word: bool,
+        regex: bool,
+    ) -> Result<Arc<Self>, String> {
+        if !regex {
+            return Self::compile(query, case, word).map_err(str::to_owned);
+        }
+        Ok(Arc::new(Self {
+            regex: Some(crate::regex_search::compile(query, case)?),
+            chars: Vec::new(),
+            prefix: Vec::new(),
+            fold: !case,
+            word,
+        }))
+    }
     pub(crate) fn compile(query: &str, case: bool, word: bool) -> Result<Arc<Self>, &'static str> {
         if query.is_empty() || query.len() > 4096 {
             return Err("Search text must contain 1..4096 UTF-8 bytes");
@@ -209,6 +227,7 @@ impl Pattern {
             prefix[i] = j;
         }
         Ok(Arc::new(Self {
+            regex: None,
             chars,
             prefix,
             fold: !case,
@@ -338,6 +357,7 @@ impl Matcher {
 }
 #[derive(Debug)]
 pub(crate) struct Scanner {
+    regex: Option<Box<crate::regex_search::RegexScanner>>,
     matcher: Matcher,
     encoding: TextEncoding,
     len: usize,
@@ -360,6 +380,14 @@ pub(crate) struct Step {
 impl Scanner {
     pub(crate) fn new(pattern: Arc<Pattern>, encoding: TextEncoding, len: usize) -> Self {
         Self {
+            regex: pattern.regex.as_ref().map(|dfa| {
+                Box::new(crate::regex_search::RegexScanner::new(
+                    dfa.clone(),
+                    encoding,
+                    len,
+                    pattern.word,
+                ))
+            }),
             matcher: Matcher {
                 pattern,
                 origins: VecDeque::new(),
@@ -387,6 +415,9 @@ impl Scanner {
         limits: SearchLimits,
         mut read: impl FnMut(Range<usize>, &mut Vec<u8>),
     ) -> Step {
+        if let Some(regex) = &mut self.regex {
+            return regex.step(limits, read);
+        }
         let started = Instant::now();
         let mut hits = Vec::new();
         if self.status != SearchStatus::Running {

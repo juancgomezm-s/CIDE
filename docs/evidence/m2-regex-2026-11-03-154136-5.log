@@ -1,0 +1,7 @@
+cargo build --workspace --release --bins --examples --locked --offline
+   Compiling regex-syntax v0.8.11
+   Compiling regex-automata v0.4.18
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+    Finished `release` profile [optimized] target(s) in 37.27s

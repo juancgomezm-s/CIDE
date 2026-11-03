@@ -11,7 +11,7 @@ pub fn draw(app: &TuiApp, screen: &mut Screen) {
             draw_project_preview(app, screen, *selected)
         }
         UiOverlay::None => {}
-        UiOverlay::Prompt { kind, input } => draw_prompt(screen, *kind, input),
+        UiOverlay::Prompt { kind, input } => draw_prompt(app, screen, *kind, input),
         UiOverlay::Find { input } => draw_find(app, screen, input),
         UiOverlay::Replace {
             find,
@@ -25,13 +25,19 @@ pub fn draw(app: &TuiApp, screen: &mut Screen) {
     }
 }
 
-fn draw_prompt(screen: &mut Screen, kind: PromptKind, input: &str) {
+fn draw_prompt(app: &TuiApp, screen: &mut Screen, kind: PromptKind, input: &str) {
     let title = match kind {
         PromptKind::Open => "Open file",
         PromptKind::New => "New file path",
         PromptKind::SaveAs => "Save As",
         PromptKind::OpenFolder => "Open folder",
-        PromptKind::ProjectQuery => "Find in Project: literal, case sensitive",
+        PromptKind::ProjectQuery => {
+            if app.workbench.search().regex {
+                "Find in Project: REGEX, case sensitive"
+            } else {
+                "Find in Project: literal, case sensitive"
+            }
+        }
         PromptKind::ProjectInclude => "Include globs, comma separated (empty = **)",
         PromptKind::ProjectExclude => "Extra exclude globs (.git/target/work always excluded)",
         PromptKind::ProjectReplacement => "Replacement text (empty deletes matches)",
@@ -194,7 +200,8 @@ fn draw_search_fields(
         y + 1,
         &clip(
             &format!(
-                "Find C:{} W:{} {}/{} {:?}, {} hits",
+                "Find R:{} C:{} W:{} {}/{} {:?}, {} hits",
+                u8::from(app.workbench.search().regex),
                 u8::from(app.workbench.search().case_sensitive),
                 u8::from(app.workbench.search().whole_word),
                 field.first_row + 1,

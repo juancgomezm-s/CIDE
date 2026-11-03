@@ -100,7 +100,7 @@ impl State {
                 if let Err(error) = self.workbench.set_search_query(query) {
                     self.error(error);
                 } else {
-                    self.status = "Literal query updated · exact EOL".into();
+                    self.status = "Search query updated · exact source EOL".into();
                 }
             }
             Ok(false) => self.status = "Field ready · exact source text; no normalization".into(),
@@ -114,6 +114,7 @@ impl State {
             0x28 => Some(Key::Down),
             0x43 => Some(Key::Char('c')),
             0x57 => Some(Key::Char('w')),
+            0x52 => Some(Key::Char('r')),
             _ => None,
         };
         if let Some(key) = key {
@@ -132,7 +133,8 @@ impl State {
                     command @ (CommandId::SearchHistoryPrevious
                     | CommandId::SearchHistoryNext
                     | CommandId::SearchToggleCase
-                    | CommandId::SearchToggleWholeWord),
+                    | CommandId::SearchToggleWholeWord
+                    | CommandId::SearchToggleRegex),
                 ) => return self.execute(command),
                 Resolution::Disabled(
                     CommandId::SearchHistoryPrevious | CommandId::SearchHistoryNext,
@@ -255,7 +257,8 @@ impl State {
             }),
             replacement_active: panel.replacement_active,
             message: format!(
-                "Literal exact EOL · Case:{} Word:{} · {:?} · {} matches · {}",
+                "Regex:{} (literal replacement) · Case:{} Word:{} · {:?} · {} matches · {}",
+                self.workbench.search().regex,
                 self.workbench.search().case_sensitive,
                 self.workbench.search().whole_word,
                 self.workbench.search().status,

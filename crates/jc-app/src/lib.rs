@@ -64,5 +64,6 @@ pub use project_search::{
     ProjectReplacePreview, ProjectSearch, ProjectSearchMatch, ProjectSearchOptions,
     ProjectSearchRow, ProjectSearchState, ReplaceFileOutcome, SearchOrigin,
 };
+mod regex_search;
 mod text_search;
 pub use text_search::{SearchLimits, SearchMatch, SearchStatus};

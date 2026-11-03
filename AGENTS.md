@@ -536,3 +536,26 @@ palette in jc-app; rendering consumes prepared rows only. Continue deep pending
 work in owner events via continue_syntax, independently of exposure paints.
 64KiB is per-call work,128KiB is logical syntax cache/document; text layout768KiB
 plus invisibles128KiB preserves the1MiB total cache budget. Honor NO_COLOR.
+
+## Regex implementado — continuación TUI, 2026-11-03
+
+Regex real de documento y proyecto está integrado con regex-automata=0.4.18,
+autorizado por Juan. Alt+R, historial, rangos originales, cancelación/cuotas y
+reemplazo literal por transacciones; `docs/M2_REGEX_SEARCH.md`.
+Esta actualización sustituye las menciones históricas de regex deshabilitado.
+124 casos distintos aprobados observados, cuatro flujos ConPTY y fmt/Clippy/
+release locales. Dos fixtures junction y seis Git fallaron por creación/acceso
+restringido: no se declara suite global aprobada ni aceptación física/RAM.
+
+La instrucción vigente de Juan es continuar hasta terminar los pendientes TUI,
+en bloques amplios, validar al cerrar cada bloque y activar el siguiente sin
+esperar otro «continúa». Siguiente bloque: comparación de documentos abiertos
+sin Git, desde el checkpoint revisado sobre el código actual. No restaurar fuentes
+antiguas sobre resaltado/regex. Proveedores ABL/AVM y aceptación física conservan
+sus requisitos reales; no afirmar capacidades que solo tengan contrato.
+
+Regex must remain cooperative with charged retries, no whole-document decoded
+copy or unbounded backtracking. Reuse compiled patterns across revisions and
+share them across file workers. Regex replacement is literal; document the
+simple-fold/unsupported Unicode-boundary distinction from literal full folding.
+Do not repeat dependency permission. Keep CI dormant and validate broad blocks.

@@ -1,0 +1,50 @@
+cargo fmt --all -- --check
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui\src\windows\project_panel.rs:144:
+         }
+         let results = self.project_panel.as_ref().is_some_and(|p| p.results);
+         if !results && code == 0x52 && modifiers == Modifiers::ALT {
+-            if let Err(error) = self.workbench.toggle_search_regex() { self.error(error); }
++            if let Err(error) = self.workbench.toggle_search_regex() {
++                self.error(error);
++            }
+             let panel = self.project_panel.as_mut().unwrap();
+             panel.generation = panel.generation.wrapping_add(1);
+-            self.status = format!("Project regex: {} · replacement is literal", self.workbench.search().regex);
++            self.status = format!(
++                "Project regex: {} · replacement is literal",
++                self.workbench.search().regex
++            );
+             return Action::None;
+         }
+         if results {
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui\src\windows\project_panel.rs:268:
+             count,
+         );
+         let labels = [
+-            if self.workbench.search().regex { "Query REGEX (Alt+R; literal replacement)" } else { "Query literal (Alt+R toggles regex)" },
++            if self.workbench.search().regex {
++                "Query REGEX (Alt+R; literal replacement)"
++            } else {
++                "Query literal (Alt+R toggles regex)"
++            },
+             "Include globs (comma; empty=all)",
+             "Extra excludes (comma)",
+         ];
+Diff in \\?\C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui\src\app\overlays.rs:56:
+                 self.overlay = UiOverlay::ProjectReplacePreview { selected };
+             }
+             UiOverlay::Prompt { kind, mut input } => match key.code {
+-                KeyCode::Char('r') if kind == crate::state::PromptKind::ProjectQuery && key.modifiers == KeyModifiers::ALT => {
++                KeyCode::Char('r')
++                    if kind == crate::state::PromptKind::ProjectQuery
++                        && key.modifiers == KeyModifiers::ALT =>
++                {
+                     self.status = match self.workbench.toggle_search_regex() {
+-                        Ok(()) => format!("Project regex: {} · replacement is literal", self.workbench.search().regex),
++                        Ok(()) => format!(
++                            "Project regex: {} · replacement is literal",
++                            self.workbench.search().regex
++                        ),
+                         Err(error) => error.to_string(),
+                     };
+                 }

@@ -3,7 +3,7 @@
 use super::TuiApp;
 use crate::{
     render,
-    state::{LaunchOptions, ReplaceField, UiOverlay},
+    state::{LaunchOptions, PromptKind, ReplaceField, UiOverlay},
 };
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{CommandId, SearchStatus};
@@ -320,9 +320,9 @@ fn find_blocks_preserve_exact_eol_controls_eof_navigation_and_case_word_toggles(
     key(&mut app, KeyCode::Char('w'), KeyModifiers::ALT);
     finish(&mut app);
     assert_eq!(app.workbench.search().whole_word, !word);
-    let search = app.workbench.search().clone();
     key(&mut app, KeyCode::Char('r'), KeyModifiers::ALT);
-    assert_eq!(app.workbench.search(), &search); // Disabled regex cannot change a multiline literal.
+    assert!(app.workbench.search().regex);
+    finish(&mut app);
     assert_eq!(app.workbench.active_bytes().unwrap(), source.as_bytes());
     assert_eq!(revision(&app), before);
 }
@@ -430,4 +430,31 @@ fn legacy_multiline_replacement_rejects_unrepresentable_text_before_any_mutation
         key(&mut app, KeyCode::Char('z'), KeyModifiers::CONTROL);
         assert_eq!(app.workbench.active_bytes().unwrap(), original);
     }
+}
+
+#[test]
+fn regex_find_replace_events_project_draft_and_readonly_frames_share_the_capability() {
+    let mut app = editor("niño12\r\nniño345", TextEncoding::Windows1252);
+    key(&mut app, KeyCode::Char('h'), KeyModifiers::CONTROL);
+    paste(&mut app, r"niño\d+");
+    key(&mut app, KeyCode::Char('r'), KeyModifiers::ALT);
+    finish(&mut app);
+    assert!(app.workbench.search().regex);
+    assert_eq!(app.workbench.search().matches.len(), 2);
+    let before = app.workbench.search().clone();
+    let p = app.prepare_frame(140, 30);
+    assert_eq!(render::render(&p), render::render(&p));
+    assert_eq!(p.app.workbench.search(), &before);
+    plain(&mut app, KeyCode::Tab);
+    paste(&mut app, "$1");
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    assert_eq!(app.workbench.active_bytes().unwrap(), b"$1\r\n$1");
+    plain(&mut app, KeyCode::Esc);
+    app.workbench.undo().unwrap();
+    assert_eq!(
+        app.workbench.active_bytes().unwrap(),
+        b"ni\xf1o12\r\nni\xf1o345"
+    );
+    app.submit_project_prompt(PromptKind::ProjectQuery, r"niño\d+".into());
+    assert!(app.project_draft.as_ref().unwrap().regex);
 }

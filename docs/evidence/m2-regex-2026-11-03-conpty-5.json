@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "physical_display_verified": false,
+  "os_clipboard_verified": false,
+  "checks": [
+    "regex_document_completes_without_extra_input",
+    "regex_replace_all_literal_dollars",
+    "regex_one_undo_restores_source_without_save",
+    "regex_project_results_with_filters"
+  ],
+  "exit_code": 0,
+  "fixture_unchanged": true,
+  "vt_bytes": 21301
+}

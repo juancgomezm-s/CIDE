@@ -164,3 +164,20 @@ Los campos de Find/Replace ya admiten edición/pegado de saltos y navegación en
 TUI y GUI, con gestos independientes de ejecutar y política EOL literal exacta.
 El motor, cuotas/generaciones y transacción de reemplazo siguen siendo estos.
 [Uso y evidencia conjunta](M2_INVISIBLES_MULTILINE.md); no nuevo motor regex.
+
+## Regex implementado — continuación TUI, 2026-11-03
+
+Regex real de documento y proyecto está integrado con regex-automata=0.4.18,
+autorizado por Juan. Alt+R, historial, rangos originales, cancelación/cuotas y
+reemplazo literal por transacciones; [contrato y evidencia](M2_REGEX_SEARCH.md).
+Esta actualización sustituye las menciones históricas de regex deshabilitado.
+124 casos distintos aprobados observados, cuatro flujos ConPTY y fmt/Clippy/
+release locales. Dos fixtures junction y seis Git fallaron por creación/acceso
+restringido: no se declara suite global aprobada ni aceptación física/RAM.
+
+La instrucción vigente de Juan es continuar hasta terminar los pendientes TUI,
+en bloques amplios, validar al cerrar cada bloque y activar el siguiente sin
+esperar otro «continúa». Siguiente bloque: comparación de documentos abiertos
+sin Git, desde el checkpoint revisado sobre el código actual. No restaurar fuentes
+antiguas sobre resaltado/regex. Proveedores ABL/AVM y aceptación física conservan
+sus requisitos reales; no afirmar capacidades que solo tengan contrato.

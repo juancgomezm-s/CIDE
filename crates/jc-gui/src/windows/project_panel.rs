@@ -89,6 +89,7 @@ impl State {
                 return;
             };
             let mut options = ProjectSearchOptions::literal(panel.fields[0].clone());
+            options.regex = self.workbench.search().regex;
             if !panel.fields[1].trim().is_empty() {
                 options.include = patterns(&panel.fields[1]);
             }
@@ -107,7 +108,8 @@ impl State {
                 panel.visible = true;
                 panel.results = true;
                 panel.view.first();
-                self.status = "Search Plus running · literal, case-sensitive, exact EOL".into();
+                self.status =
+                    "Search Plus running · Find regex option, case-sensitive, exact EOL".into();
             }
             Err(error) => self.error(error),
         }
@@ -141,6 +143,18 @@ impl State {
             return Action::None;
         }
         let results = self.project_panel.as_ref().is_some_and(|p| p.results);
+        if !results && code == 0x52 && modifiers == Modifiers::ALT {
+            if let Err(error) = self.workbench.toggle_search_regex() {
+                self.error(error);
+            }
+            let panel = self.project_panel.as_mut().unwrap();
+            panel.generation = panel.generation.wrapping_add(1);
+            self.status = format!(
+                "Project regex: {} · replacement is literal",
+                self.workbench.search().regex
+            );
+            return Action::None;
+        }
         if results {
             self.validate_project_search();
             if let Some(panel) = self.project_panel.as_mut() {
@@ -259,7 +273,11 @@ impl State {
             count,
         );
         let labels = [
-            "Query (literal, exact EOL)",
+            if self.workbench.search().regex {
+                "Query REGEX (Alt+R; literal replacement)"
+            } else {
+                "Query literal (Alt+R toggles regex)"
+            },
             "Include globs (comma; empty=all)",
             "Extra excludes (comma)",
         ];

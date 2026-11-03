@@ -534,7 +534,7 @@ pub fn default_registry() -> CommandRegistry {
         ),
         spec!(SearchToggleCase, Search, "Match Case", always),
         spec!(SearchToggleWholeWord, Search, "Whole Word", always),
-        spec!(SearchToggleRegex, Search, "Regular Expression", never),
+        spec!(SearchToggleRegex, Search, "Regular Expression", always),
         spec!(PaletteOpen, Tools, "Command Palette…", always),
         spec!(TabNext, Navigation, "Next Tab", has_document),
         spec!(TabPrevious, Navigation, "Previous Tab", has_document),
