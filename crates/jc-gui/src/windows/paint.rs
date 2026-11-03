@@ -104,6 +104,147 @@ fn areas(state: &State) -> Vec<(PaneId, Rect)> {
     }
 }
 
+/// The same bounded text-cell rectangle used by preparation. No source is
+/// decoded here; the typed conversion below belongs to Workbench's layout.
+struct TextArea {
+    pane: PaneId,
+    tab: jc_app::TabId,
+    first: usize,
+    scroll: usize,
+    x: i32,
+    y: i32,
+    columns: usize,
+    rows: usize,
+}
+fn text_areas(state: &State) -> Vec<TextArea> {
+    let cw = state.cell_width.clamp(1, 8192);
+    let ch = state.cell_height.clamp(1, 8192);
+    areas(state)
+        .into_iter()
+        .filter_map(|(pane, rect)| {
+            let view = state.workbench.panes().view(pane)?;
+            let tab = view.location()?.tab;
+            let count = state.workbench.line_count_for_tab(tab)?;
+            let digits = count.max(1).to_string().len().clamp(3, 7);
+            let x = rect.left + (digits as i32 + 2) * cw + 8;
+            let y = (rect.top + ch + 6).min(rect.bottom);
+            let columns = ((rect.right - x - 8) / cw).clamp(0, 256) as usize;
+            let rows = ((rect.bottom - y) / ch).clamp(0, 128) as usize;
+            let first = view.scroll_line();
+            Some(TextArea {
+                pane,
+                tab,
+                first,
+                scroll: state
+                    .workbench
+                    .rectangle_for_pane(pane)
+                    .map_or(view.scroll_column(), |rect| rect.scroll_column),
+                x,
+                y,
+                columns,
+                rows: rows.min(count.saturating_sub(first)),
+            })
+        })
+        .collect()
+}
+
+/// A first hit converts the currently painted scalar/diagnostic coordinates;
+/// a captured drag uses TAB4 coordinates directly and stays in its original
+/// pane. Neither path changes focus, scroll, selection or worker delivery.
+pub(super) fn rectangle_hit(
+    state: &State,
+    x: i32,
+    y: i32,
+    locked: Option<PaneId>,
+) -> Result<Option<(PaneId, jc_app::rectangle::VisualPosition)>, String> {
+    use jc_app::rectangle::{VisualColumn, VisualPosition};
+    let cw = state.cell_width.clamp(1, 8192);
+    let ch = state.cell_height.clamp(1, 8192);
+    for area in text_areas(state) {
+        if area.columns == 0 || area.rows == 0 || locked.is_some_and(|pane| pane != area.pane) {
+            continue;
+        }
+        let right = area.x + area.columns as i32 * cw;
+        let bottom = area.y + area.rows as i32 * ch;
+        if locked.is_none() && (x < area.x || x >= right || y < area.y || y >= bottom) {
+            continue;
+        }
+        let x = x.clamp(area.x, right - 1);
+        let y = y.clamp(area.y, bottom - 1);
+        let line = area.first + ((y - area.y) / ch) as usize;
+        let column = area.scroll.saturating_add(((x - area.x) / cw) as usize);
+        let point = if state.workbench.rectangle_for_pane(area.pane).is_some() {
+            VisualPosition {
+                line,
+                column: VisualColumn(column),
+            }
+        } else if state.workbench.invisibles_visible() {
+            let (content, eol) = state
+                .workbench
+                .line_range_for_tab(area.tab, line)
+                .ok_or("Rectangle hit line disappeared")?;
+            let end_column = state
+                .workbench
+                .display_column_at_byte(area.tab, line, content.end)
+                .ok_or("Rectangle display boundary unavailable")?;
+            let after_indicators = end_column.saturating_add(eol.len().saturating_mul(2));
+            if column >= after_indicators {
+                let mut end = state
+                    .workbench
+                    .rectangle_position_from_byte(area.tab, content.end)
+                    .map_err(|e| e.to_string())?;
+                end.column.0 = end.column.0.saturating_add(column - after_indicators);
+                end
+            } else {
+                let byte = state
+                    .workbench
+                    .display_byte_at(area.tab, line, column)
+                    .ok_or("Rectangle display hit unavailable")?;
+                // CRLF and BOM indicators map atomically to legal content
+                // boundaries; never attempt to navigate inside CRLF.
+                state
+                    .workbench
+                    .rectangle_position_from_byte(
+                        area.tab,
+                        byte.min(content.end).max(content.start),
+                    )
+                    .map_err(|e| e.to_string())?
+            }
+        } else {
+            state
+                .workbench
+                .rectangle_position_from_scalar(area.tab, TextPosition { line, column })
+                .map_err(|e| e.to_string())?
+        };
+        return Ok(Some((area.pane, point)));
+    }
+    Ok(None)
+}
+
+/// Grid pixel for owned smoke input. Before activation callers use an ASCII
+/// prefix (before TAB); after activation columns have the shared TAB4 meaning.
+pub(super) fn rectangle_pixel(
+    state: &State,
+    pane: PaneId,
+    line: usize,
+    column: usize,
+) -> Option<(i32, i32)> {
+    let cw = state.cell_width.clamp(1, 8192);
+    let ch = state.cell_height.clamp(1, 8192);
+    let area = text_areas(state)
+        .into_iter()
+        .find(|area| area.pane == pane)?;
+    let row = line.checked_sub(area.first)?;
+    let col = column.checked_sub(area.scroll)?;
+    if row >= area.rows || col >= area.columns {
+        return None;
+    }
+    Some((
+        area.x + col as i32 * cw + cw / 2,
+        area.y + row as i32 * ch + ch / 2,
+    ))
+}
+
 pub(super) fn prepare(state: &mut State) -> Frame {
     state.validate_project_search();
     let areas = areas(state);
@@ -129,11 +270,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         let rectangle = state.workbench.rectangle_for_pane(id);
         let first = view.scroll_line();
         let invisible = state.workbench.invisibles_visible();
-        let scroll = if invisible {
-            view.scroll_column()
-        } else {
-            rectangle.map_or(view.scroll_column(), |rect| rect.scroll_column)
-        };
+        let scroll = rectangle.map_or(view.scroll_column(), |rect| rect.scroll_column);
         let position = state.workbench.position_for_pane(id);
         let count = state
             .workbench
@@ -147,12 +284,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         let selection = state.workbench.selection_for_pane(id);
         let mut prepared = Vec::with_capacity(rows);
         for line in first..count.min(first.saturating_add(rows)) {
-            if invisible {
-                let rectangle_source = rectangle.and_then(|rect| {
-                    state
-                        .workbench
-                        .rectangle_source_selection(location.tab, line, rect)
-                });
+            if invisible && rectangle.is_none() {
                 let cells = state
                     .workbench
                     .display_row(location.tab, line, scroll, columns)
@@ -161,12 +293,9 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                     .map(|cell| Cell {
                         ch: cell.ch,
                         marker: cell.marker,
-                        selected: selection
-                            .as_ref()
-                            .or(rectangle_source.as_ref())
-                            .is_some_and(|range| {
-                                range.start < cell.source.end && cell.source.start < range.end
-                            }),
+                        selected: selection.as_ref().is_some_and(|range| {
+                            range.start < cell.source.end && cell.source.start < range.end
+                        }),
                     })
                     .collect();
                 prepared.push(Row {
@@ -178,7 +307,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             let visible = if rectangle.is_some() {
                 state
                     .workbench
-                    .rectangle_visible_line(location.tab, line, scroll, columns)
+                    .rectangle_grid_line(location.tab, line, scroll, columns, invisible)
                     .unwrap_or_else(|_| {
                         "[unsupported rectangular layout]"
                             .chars()
@@ -197,7 +326,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                 .take(columns)
                 .enumerate()
                 .map(|(target, (ch, byte))| Cell {
-                    marker: false,
+                    marker: rectangle.is_some() && invisible && matches!(ch, '>' | '.'),
                     ch: if ch == '\t' {
                         '→'
                     } else if ch.is_control() {
@@ -222,13 +351,17 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         }
         let active = id == state.workbench.panes().active();
         let caret = position.and_then(|position| {
-            let column = if invisible {
+            let column = if let Some(rectangle) = rectangle {
+                rectangle.head_column
+            } else if invisible {
                 state.workbench.display_column_for_pane(id)?
             } else {
-                rectangle.map_or(position.column, |rect| rect.head_column)
+                position.column
             };
             (active
                 && state.focused
+                && state.selector.is_none()
+                && state.context().editor_input
                 && position.line >= first
                 && position.line < first.saturating_add(rows)
                 && column >= scroll
@@ -247,12 +380,17 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             .and_then(|name| name.to_str())
             .unwrap_or("<non-scalar path>");
         let header = wide(&format!(
-            "{} Group {} · {}{}",
+            "{} Group {} · {}{}{}",
             if active { ">" } else { " " },
             if id == PaneId::Primary { 1 } else { 2 },
             name.chars().take(80).collect::<String>(),
             if document.session.document().is_modified() {
                 " *"
+            } else {
+                ""
+            },
+            if rectangle.is_some() {
+                " · Rect TAB4"
             } else {
                 ""
             }
@@ -587,6 +725,37 @@ pub(super) fn click(state: &mut State, x: i32, y: i32) {
     }
     let line =
         (view.scroll_line() + (y - text_y) as usize / state.cell_height as usize).min(count - 1);
+    if let Some(rectangle) = state.workbench.rectangle_for_pane(pane) {
+        let column = rectangle
+            .scroll_column
+            .saturating_add((x - text_x) as usize / state.cell_width as usize);
+        let target = state
+            .workbench
+            .rectangle_byte_at(
+                location.tab,
+                jc_app::rectangle::VisualPosition {
+                    line,
+                    column: jc_app::rectangle::VisualColumn(column),
+                },
+            )
+            .map_err(|error| error.to_string())
+            .and_then(|byte| {
+                state
+                    .workbench
+                    .position_for_tab(location.tab, byte)
+                    .ok_or_else(|| "Rectangle click boundary unavailable".to_string())
+            });
+        match target {
+            Ok(position) => {
+                let select = state.modifiers().contains(jc_app::Modifiers::SHIFT);
+                if let Err(error) = state.workbench.set_caret_position(position, select) {
+                    state.error(error);
+                }
+            }
+            Err(error) => state.error(error),
+        }
+        return;
+    }
     let column = view.scroll_column() + (x - text_x) as usize / state.cell_width as usize;
     if state.workbench.invisibles_visible() {
         let target = state

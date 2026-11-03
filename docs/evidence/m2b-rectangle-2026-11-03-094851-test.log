@@ -1,0 +1,14 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.44s
+     Running unittests src\lib.rs (target\debug\deps\jc_app-d8378abed1e8cd0f.exe)
+
+running 6 tests
+test rectangle::tests::unsupported_widths_controls_and_invalid_decoding_fail_explicitly ... ok
+test rectangle::tests::supported_utf8_and_legacy_have_explicit_distinct_byte_coordinates ... ok
+test rectangle::tests::virtual_copy_pads_but_deletion_does_not_extend_source ... ok
+test rectangle::tests::zero_width_inside_tab_preserves_left_right_cells_and_empty_insert_is_noop ... ok
+test rectangle::tests::partial_tab_copy_mapping_and_replacement_preserve_unaffected_tabs ... ok
+test rectangle::tests::line_columns_input_and_result_limits_do_not_overflow ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.00s
+

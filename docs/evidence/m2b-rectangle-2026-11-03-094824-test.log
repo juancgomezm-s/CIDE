@@ -1,0 +1,18 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.36s
+     Running tests\rectangle.rs (target\debug\deps\rectangle-f50c55618ea14c7d.exe)
+
+running 10 tests
+test linear_selection_converts_to_visual_columns_and_plain_movement_exits_rectangle ... ok
+test shared_views_own_rectangles_independently_and_all_edits_invalidate_geometry ... ok
+test visual_selection_intent_cancels_deferred_find_even_when_byte_offsets_do_not_move ... ok
+test virtual_insert_delete_and_clipboard_do_not_add_line_endings ... ok
+test alt_shift_and_palette_commands_share_registry_and_respect_editor_focus ... ok
+test broadcast_and_multirow_paste_preserve_mixed_eol_and_terminal_newline ... ok
+test rejected_rows_unicode_encoding_and_commands_leave_the_transaction_untouched ... ok
+test partial_tabs_copy_cut_and_paste_are_rectangular_single_undo_steps ... ok
+test bom_and_invalid_bytes_outside_the_rectangle_are_never_rewritten ... ok
+test rectangle_admission_caps_and_unsupported_source_are_atomic ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -467,3 +467,23 @@ Evidencia m2b-selection-reopen-2026-11-03-*; dos fallos de arnés conservados, n
 suite cerrada/perfil repetido. Seguir capacidades universales GUI restantes de
 selección/rectángulo antes de proveedores. No nuevos servicios/AVM/CI/push ni
 preguntas manuales ahora; globales/físicos/notices GNU/symlink siguen pendientes.
+
+## Último cierre: rectángulo GUI — 2026-11-03
+
+Leer M2B_RECTANGLE_GUI.md. Seis comandos, AltShiftflechas y Alt+drag admiten solo
+repertorio/cuotas existentes. VisualPosition/LineLayout/Workbench poseen geometría;
+GUI/TUI con rect activo priorizan grid TAB4 (invisibles marca celdas, no escapes).
+No clonar buffer/undo ni reconstruir offsets desde labels; clipboard rectangular
+interno hasta nueva copia lineal, nada de clipboard rectangular OS implícito.
+
+Drag usa SourceEditTarget con intención visual, ReleaseCapture fuera de préstamos,
+solo HWND propio; loss/resize conserva selección, Escape cancela, stale no revive.
+editor_input protege modales también en TUI; Undo/Redo/clipboard requieren Editor.
+Flechas normales salen del rect incluso sin byte adyacente BOF/EOF. Una acción
+efectiva termina rect y publica un undo; pin/vistas siguen F1.
+
+26 dirigidos y15 HWND aprobados (4/8 nuevos), fmt/Clippy/release; evidencia
+m2b-rectangle-2026-11-03-* retiene bugs/lint/compile iniciales y hashes. No repetir
+suites/perfiles cerrados por docs. Sigue inventario universal GUI y gates M2;
+manual/global al final. Sin dependencias/proveedores/AVM/CI/push nuevos, symlink
+y notices GNU pendientes, no inferir certificación del ZIP o Unicode general.

@@ -26,6 +26,7 @@ impl State {
         Ok(())
     }
     pub(super) fn close_selector(&mut self) {
+        self.rectangle_drag = None;
         self.selector_editor_input = false;
         self.selector_edit_target = None;
         self.selector_search_panel = None;

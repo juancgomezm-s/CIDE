@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "archive": "work/packages/CIDE-windows-dev-rectangle-2026-11-03.zip",
+  "bytes": 3973928,
+  "sha256": "2600d68300c722ec2089641428f8fe0e81554ced0b0233c93e6032eac15266cc",
+  "members": 69,
+  "crc_all_passed": true,
+  "manifest_hashes_all_passed": true,
+  "missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ],
+  "channel": "local development; no installer or release certification"
+}

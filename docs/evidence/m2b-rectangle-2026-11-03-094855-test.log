@@ -1,0 +1,27 @@
+   Compiling jc-tui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-tui)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.28s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 4 tests
+test app::rectangle_parity_tests::rectangle_internal_copy_height_and_eof_failures_do_not_publish_partial_edits ... ok
+test app::rectangle_parity_tests::rectangle_invisible_grid_is_readonly_through_resize_split_and_cancel ... ok
+test app::rectangle_parity_tests::rectangle_rejections_and_shared_edit_invalidation_keep_source_and_single_history ... FAILED
+test app::rectangle_parity_tests::rectangle_commands_broadcast_partial_tab_and_virtual_preserve_four_encodings ... ok
+
+failures:
+
+---- app::rectangle_parity_tests::rectangle_rejections_and_shared_edit_invalidation_keep_source_and_single_history stdout ----
+
+thread 'app::rectangle_parity_tests::rectangle_rejections_and_shared_edit_invalidation_keep_source_and_single_history' panicked at crates\jc-tui\src\app\rectangle_parity_tests.rs:206:5:
+assertion `left == right` failed
+  left: Some(RectangleBounds { first_line: 0, last_line: 0, left: 0, right: 1, head_column: 1, scroll_column: 0 })
+ right: Some(RectangleBounds { first_line: 0, last_line: 0, left: 0, right: 0, head_column: 0, scroll_column: 0 })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    app::rectangle_parity_tests::rectangle_rejections_and_shared_edit_invalidation_keep_source_and_single_history
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 90 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p jc-tui --lib`

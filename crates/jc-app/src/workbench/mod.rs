@@ -422,7 +422,7 @@ impl Workbench {
         };
         let active = self.panes.active();
         let rectangle = self.rectangle_for_pane(active);
-        let caret_column = if self.show_invisibles {
+        let caret_column = if self.show_invisibles && rectangle.is_none() {
             self.display_column_for_pane(active).unwrap_or(0)
         } else {
             position.column
@@ -436,15 +436,13 @@ impl Workbench {
         } else if position.line >= line.saturating_add(rows.max(1)) {
             line = position.line + 1 - rows.max(1);
         }
-        if (rectangle.is_none() || self.show_invisibles) && caret_column < column {
+        if rectangle.is_none() && caret_column < column {
             column = caret_column;
-        } else if (rectangle.is_none() || self.show_invisibles)
-            && caret_column >= column.saturating_add(columns.max(1))
-        {
+        } else if rectangle.is_none() && caret_column >= column.saturating_add(columns.max(1)) {
             column = caret_column + 1 - columns.max(1);
         }
         self.panes.set_scroll(active, line, column);
-        if let Some(rect) = rectangle.filter(|_| !self.show_invisibles) {
+        if let Some(rect) = rectangle {
             let mut scroll = rect.scroll_column;
             if rect.head_column < scroll {
                 scroll = rect.head_column;

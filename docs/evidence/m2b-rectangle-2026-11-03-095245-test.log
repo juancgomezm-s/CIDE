@@ -1,0 +1,9 @@
+   Compiling jc-app v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.20s
+     Running tests\rectangle.rs (target\debug\deps\rectangle-f50c55618ea14c7d.exe)
+
+running 1 test
+test linear_selection_converts_to_visual_columns_and_plain_movement_exits_rectangle ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+

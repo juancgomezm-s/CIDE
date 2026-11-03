@@ -475,3 +475,14 @@ falla explícitamente para conservar su buffer dirty. Solo metadata32, no docume
 cerrado/undo; saved-file usa disco actual y new-file vacío. La confirmación dirty
 revalida doc/rev/encoding/vista/pane/caret/anchor tras modal, delegando cuentas de
 vistas a F1. [Contrato y evidencia](M2B_SELECTION_REOPEN.md).
+
+## D45 — Rectángulo nativo comparte cuadrícula e intención visual
+
+Entrada absoluta VisualPosition y relativa comparten admisión/LineLayout. Grid
+TAB4 tiene prioridad mientras una vista posee rectángulo, incluso con invisibles;
+marcas de celdas no alteran escala ni bytes. GUI/TUI retiran la ruta rectangular
+de escapes y conservan preferencia diagnóstica para salir del modo. Paleta y drag
+incluyen intención visual porque el bytecaret puede no cambiar dentro de TAB o
+virtual. Captura/release fuera de préstamos, última selección válida al interrumpir,
+stale sin reactivación; F1 posee transacciones, clipboard interno y vistas.
+[Contrato/evidencia y límites](M2B_RECTANGLE_GUI.md).

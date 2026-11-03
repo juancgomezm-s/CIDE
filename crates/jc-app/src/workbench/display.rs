@@ -94,6 +94,17 @@ impl Workbench {
         }
         Some(column)
     }
+    pub fn display_column_at_byte(&self, tab: TabId, line: usize, byte: usize) -> Option<usize> {
+        let document = self.document_by_tab(tab)?;
+        let (content, eol) = self.display_ranges(tab, line)?;
+        document.invisible.borrow_mut().column(
+            document.session.document(),
+            document.session.encoding()?,
+            content,
+            eol,
+            byte,
+        )
+    }
     fn rectangle_display_layout(&self, tab: TabId, line: usize) -> Option<LineLayout> {
         let document = self.document_by_tab(tab)?;
         let (content, _) = self.line_range_for_tab(tab, line)?;

@@ -2,7 +2,6 @@
 use super::TuiApp;
 use jc_app::{BottomPanel, PaneId, PrimaryFocus};
 use jc_text::TextPosition;
-use std::ops::Range;
 
 #[derive(Debug, Default)]
 pub(crate) struct GitPresentation {
@@ -98,7 +97,6 @@ pub(crate) struct EditorText {
     pub rows: Vec<Vec<(char, usize)>>,
     pub display_rows: Option<Vec<Vec<jc_app::DisplayCell>>>,
     pub cursor_column: Option<usize>,
-    pub rectangle_source_ranges: Vec<Option<Range<usize>>>,
 }
 pub(crate) struct Presentation<'a> {
     pub app: &'a TuiApp,
@@ -180,7 +178,7 @@ impl TuiApp {
                     ..count
                         .unwrap_or(0)
                         .min(first + usize::from(layout.content_height.saturating_sub(1)));
-                let all = self.workbench.invisibles_visible();
+                let all = self.workbench.invisibles_visible() && rectangle.is_none();
                 let cursor_column = if all {
                     self.workbench.display_column_for_pane(pane)
                 } else {
@@ -201,19 +199,6 @@ impl TuiApp {
                         })
                         .collect()
                 });
-                let rectangle_source_ranges = if all {
-                    visible
-                        .clone()
-                        .map(|line| {
-                            rectangle.and_then(|rect| {
-                                self.workbench
-                                    .rectangle_source_selection(location.tab, line, rect)
-                            })
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                };
                 let rows = if all {
                     Vec::new()
                 } else {
@@ -221,11 +206,12 @@ impl TuiApp {
                         .map(|line| {
                             if let Some(rect) = rectangle {
                                 self.workbench
-                                    .rectangle_visible_line(
+                                    .rectangle_grid_line(
                                         location.tab,
                                         line,
                                         rect.scroll_column,
                                         text_width,
+                                        self.workbench.invisibles_visible(),
                                     )
                                     .unwrap_or_else(|_| {
                                         "[rectangle layout unavailable]"
@@ -254,7 +240,6 @@ impl TuiApp {
                     rows,
                     display_rows,
                     cursor_column,
-                    rectangle_source_ranges,
                 };
                 match pane {
                     PaneId::Primary => primary = text,

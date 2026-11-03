@@ -1,5 +1,10 @@
 # M2A — Selección rectangular de una acción
 
+**Seguimiento GUI/presentación:** [M2B_RECTANGLE_GUI](M2B_RECTANGLE_GUI.md) completa
+las rutas nativas y reemplaza la presentación rectangular con invisibles por una
+cuadrícula TAB4 compartida. El alcance Unicode acotado de este contrato se conserva;
+las referencias a backend gráfico pendiente describen el checkpoint anterior.
+
 Implementada en el modelo compartido y la TUI, con alcance explícito de texto de
 una celda. No equivale todavía al modo columna Unicode general previsto en el
 plan: grafemas, ancho doble, emoji y backend gráfico continúan pendientes.

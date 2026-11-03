@@ -210,6 +210,21 @@ fn linear_selection_converts_to_visual_columns_and_plain_movement_exits_rectangl
     b.move_left(false).unwrap();
     assert!(b.rectangle_for_pane(PaneId::Primary).is_none());
     assert!(!b.context().has_selection);
+
+    let mut edge = bench("a", TextEncoding::Utf8);
+    at(&mut edge, 0, 1);
+    let history = steps(&edge);
+    edge.start_rectangle().unwrap();
+    edge.extend_rectangle(3, 0).unwrap();
+    edge.move_right(false).unwrap();
+    assert!(edge.rectangle_for_pane(PaneId::Primary).is_none());
+    assert_eq!(steps(&edge), history);
+    assert_eq!(edge.active_bytes().unwrap(), b"a");
+    at(&mut edge, 0, 0);
+    edge.start_rectangle().unwrap();
+    edge.move_left(false).unwrap();
+    assert!(edge.rectangle_for_pane(PaneId::Primary).is_none());
+    assert_eq!(steps(&edge), history);
 }
 
 #[test]

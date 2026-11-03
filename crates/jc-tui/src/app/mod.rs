@@ -38,6 +38,8 @@ mod navigation_integration_tests;
 #[cfg(test)]
 mod quick_open_tests;
 #[cfg(test)]
+mod rectangle_parity_tests;
+#[cfg(test)]
 mod rectangle_tests;
 #[cfg(test)]
 mod selection_reopen_integration_tests;
@@ -267,6 +269,10 @@ impl TuiApp {
     pub(crate) fn command_context(&self) -> jc_app::CommandContext {
         let mut context = self.workbench.context();
         context.focus = self.focus.primary();
+        context.editor_input = matches!(
+            self.overlay,
+            UiOverlay::None | UiOverlay::Menu { .. } | UiOverlay::Palette { .. }
+        );
         context.has_project = self.project_root.is_some();
         context.explorer_focused = self.focus.primary() == jc_app::PrimaryFocus::Sidebar
             && self.panels.sidebar() == jc_app::SidebarView::Explorer;

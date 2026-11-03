@@ -177,7 +177,7 @@ fn linear_byte_selection_marks_complete_tab_unicode_and_crlf_atoms() {
 }
 
 #[test]
-fn rectangle_keeps_source_visual_geometry_and_highlights_partial_tab_as_one_atom() {
+fn rectangle_invisibles_share_visual_grid_and_highlight_partial_tab_and_virtual_cells() {
     let mut app = editor("A\tB\r\né\r\n");
     app.workbench
         .go_to_position(TextPosition { line: 0, column: 1 })
@@ -198,18 +198,19 @@ fn rectangle_keeps_source_visual_geometry_and_highlights_partial_tab_as_one_atom
             original.right
         )
     );
-    assert_eq!(text.rectangle_source_ranges[0], Some(1..2));
-    assert!(text.rectangle_source_ranges[1].as_ref().unwrap().is_empty()); // Virtual-only row.
+    assert!(text.display_rows.is_none());
+    assert_eq!(
+        text.rows[0].iter().take(5).map(|c| c.0).collect::<String>(),
+        "A>..B"
+    );
     let screen = render::render(&p);
-    for (column, cell) in text.display_rows.as_ref().unwrap()[0].iter().enumerate() {
-        if cell.source == (1..2) {
-            assert_eq!(screen.cell(5 + column as u16, 3).style, CellStyle::Reverse);
-        } else {
-            assert_ne!(screen.cell(5 + column as u16, 3).style, CellStyle::Reverse);
+    for row in [3, 4] {
+        for column in 0..10 {
+            assert_eq!(
+                screen.cell(5 + column, row).style == CellStyle::Reverse,
+                (1..3).contains(&column)
+            );
         }
-    }
-    for column in 5..30 {
-        assert_ne!(screen.cell(column, 4).style, CellStyle::Reverse);
     }
     assert_eq!(
         p.app.workbench.active_bytes().unwrap(),

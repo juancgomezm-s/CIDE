@@ -476,3 +476,18 @@ privado retenidos, sin repetir otros casos aprobados ni suites cerradas.
 Seguimiento M2B: capacidades universales GUI restantes de selección/rectángulo y
 presentación según contratos ya existentes, antes de proveedores opcionales.
 M2A/M2B y gates físicos/globales abiertos; no AVM/dependencias/CI/push nuevos.
+
+## Selección rectangular GUI y presentación — 2026-11-03
+
+[Bloque integrado](M2B_RECTANGLE_GUI.md): seis comandos/menú/paleta/AltShiftflechas,
+Alt+drag con captura versionada, Source geometry absoluta compartida, clipboard
+interno/edición/undo y cuadrícula TAB4 también con invisibles en GUI/TUI. No motor
+rectangular nuevo ni ampliación de repertorio/cuotas. Se retiró la ruta visual
+rectangular de escapes que confundía columnas; al cancelar retorna diagnóstico.
+
+26 casos dirigidos (cuatro nuevos) y15 checks HWND (ocho nuevos), fmt/Clippy/release
+aprobados. Dos bugs corregidos con evidencia: permiso TUI tras Find y salida de
+rectángulo en BOF/EOF sin byte adyacente. Fallos y hashes retenidos, Source13B intacto.
+No suites cerradas/perfiles/CI repetidos. Queda inventario final de paridad universal
+GUI y puertas M2 físicas/globales; proveedores opcionales según arquitectura después.
+Sin nuevas dependencias/instalación/AVM/push ni claim de columna Unicode general.

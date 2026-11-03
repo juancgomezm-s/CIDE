@@ -1148,3 +1148,25 @@ Dos PNG1000×650 GDI→PNG sin pérdida revisados, fuente y metadataGit propias 
 [hashes](evidence/m2b-selection-reopen-2026-11-03-metadata.json). No suites cerradas
 de líneas/nav/Explorer ni perfiles repetidos, OS clipboard/AVM/CI/push o instalación.
 M2A/M2B y gates físicos/globales siguen abiertos; notices GNU/symlink no resueltos.
+
+## Rectángulo GUI y grid compartido — 2026-11-03
+
+Bloque completo antes de checks. **26 casos dirigidos distintos aprobados**:
+16 modelo afectado, cuatro TUI nuevos, uno invisible-grid afectado y cinco CLI GUI.
+Primera TUI3/4: Find dejaba editor_input=true; corregido contexto, repetido solo
+ese flujo. Native inicial encontró flecha Derecha en EOF virtual sin salir del
+rectángulo; BOF/EOF corregidos y caso core ampliado/repetido sin contarlo dos veces.
+Compiler shadow de owner y lint de precedencia en fixture corregidos. Logs crudos
+retienen fallos; fmt/Clippy workspace/all-targets -D warnings y release bins/examples
+aprobados. No corrida global ni suites/perfiles cerrados repetidos.
+
+**15 checks HWND propios aprobados**, ocho nuevos: comandos/codificaciones/BOM/EOL,
+clipboard interno/altura/EOF, Delete/Backspace/Tab/noop/undo, grid/invisibles/resize,
+foco/paleta/intención visual, split/pin/invalidate por revisión/encoding, repertorio/
+cuotas y Alt+drag/capture/Up/CancelMode/Escape/stale. Un WM_PAINT, cero errores,
+Source13B y metadataGit sintética intactos; no otra suite Git. GDI PNG1000×650
+sin pérdida revisados, ayudas/aliases e iconos PE aprobados.
+[Contrato/evidencia](M2B_RECTANGLE_GUI.md),
+[hashes](evidence/m2b-rectangle-2026-11-03-metadata.json). No mouse físico/clipboard OS,
+IME/DPI/accesibilidad/Linux/RAM global certificados. M2A/M2B, symlink y notices GNU
+abiertos. Sin dependencias/proveedores/AVM/instalaciones/CI/push/publicación nuevos.

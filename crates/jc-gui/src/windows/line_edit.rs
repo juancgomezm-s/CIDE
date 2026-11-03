@@ -23,6 +23,7 @@ pub(super) struct EditTarget {
     pane: PaneId,
     cursor: usize,
     anchor: Option<usize>,
+    rectangle: Option<(usize, usize, u64)>,
 }
 impl State {
     pub(super) fn source_edit_target(&self) -> Option<EditTarget> {
@@ -37,6 +38,9 @@ impl State {
             pane,
             cursor: editor.cursor,
             anchor: editor.anchor,
+            rectangle: editor
+                .rectangle
+                .map(|r| (r.anchor_column.0, r.head_column.0, r.revision)),
         })
     }
 }

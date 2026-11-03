@@ -1,0 +1,14 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src\lib.rs (target\debug\deps\jc_tui-7cdea51892be5d85.exe)
+
+running 1 test
+test app::invisibles_tests::rectangle_invisibles_share_visual_grid_and_highlight_partial_tab_and_virtual_cells ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 93 filtered out; finished in 0.00s
+
+     Running unittests src\main.rs (target\debug\deps\cide_tui-276d3eb826bfa013.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

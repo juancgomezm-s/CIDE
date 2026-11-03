@@ -171,6 +171,8 @@ impl Workbench {
     pub fn move_left(&mut self, select: bool) -> Result<(), WorkbenchError> {
         if let Some(offset) = self.previous_boundary()? {
             self.move_cursor_to(offset, select)?;
+        } else {
+            self.cancel_rectangle();
         }
         Ok(())
     }
@@ -178,6 +180,8 @@ impl Workbench {
     pub fn move_right(&mut self, select: bool) -> Result<(), WorkbenchError> {
         if let Some(offset) = self.next_boundary()? {
             self.move_cursor_to(offset, select)?;
+        } else {
+            self.cancel_rectangle();
         }
         Ok(())
     }

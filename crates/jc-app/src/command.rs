@@ -300,16 +300,13 @@ fn dirty_documents(ctx: &CommandContext) -> bool {
     ctx.dirty_documents > 0
 }
 fn can_undo(ctx: &CommandContext) -> bool {
-    ctx.has_document && ctx.can_undo
+    rectangle_editor(ctx) && ctx.can_undo
 }
 fn can_redo(ctx: &CommandContext) -> bool {
-    ctx.has_document && ctx.can_redo
-}
-fn selection(ctx: &CommandContext) -> bool {
-    ctx.has_document && ctx.has_selection
+    rectangle_editor(ctx) && ctx.can_redo
 }
 fn rectangle_editor(ctx: &CommandContext) -> bool {
-    ctx.has_document && ctx.focus == PrimaryFocus::Editor
+    ctx.has_document && ctx.focus == PrimaryFocus::Editor && ctx.editor_input
 }
 fn rectangle_active(ctx: &CommandContext) -> bool {
     rectangle_editor(ctx) && ctx.rectangular_selection
@@ -324,7 +321,10 @@ fn source_selection(ctx: &CommandContext) -> bool {
     linear_editor(ctx) && ctx.has_selection
 }
 fn paste(ctx: &CommandContext) -> bool {
-    ctx.has_document && ctx.clipboard_has_text
+    rectangle_editor(ctx) && ctx.clipboard_has_text
+}
+fn source_clipboard_selection(ctx: &CommandContext) -> bool {
+    rectangle_editor(ctx) && ctx.has_selection
 }
 fn block_comment(ctx: &CommandContext) -> bool {
     linear_editor(ctx)
@@ -413,10 +413,10 @@ pub fn default_registry() -> CommandRegistry {
         spec!(FileExit, File, "Exit", always),
         spec!(EditUndo, Edit, "Undo", can_undo),
         spec!(EditRedo, Edit, "Redo", can_redo),
-        spec!(EditCut, Edit, "Cut", selection),
-        spec!(EditCopy, Edit, "Copy", selection),
+        spec!(EditCut, Edit, "Cut", source_clipboard_selection),
+        spec!(EditCopy, Edit, "Copy", source_clipboard_selection),
         spec!(EditPaste, Edit, "Paste", paste),
-        spec!(EditSelectAll, Edit, "Select All", has_document),
+        spec!(EditSelectAll, Edit, "Select All", rectangle_editor),
         spec!(
             EditDuplicate,
             Edit,

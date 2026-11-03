@@ -12,6 +12,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut navigation_only = false;
     let mut line_edit_only = false;
     let mut selection_reopen_only = false;
+    let mut rectangle_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -39,6 +40,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     );
                 }
                 options.git_executable = Some(path);
+            }
+            Some("--smoke-rectangle-only") => {
+                if rectangle_only {
+                    return Err("duplicate --smoke-rectangle-only".into());
+                }
+                rectangle_only = true;
             }
             Some("--smoke-selection-reopen-only") => {
                 if selection_reopen_only {
@@ -100,6 +107,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     if usize::from(navigation_only)
         + usize::from(line_edit_only)
         + usize::from(selection_reopen_only)
+        + usize::from(rectangle_only)
         > 1
     {
         return Err("choose only one smoke section".into());
@@ -110,6 +118,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || navigation_only
         || line_edit_only
         || selection_reopen_only
+        || rectangle_only
     {
         if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("smoke uses only its explicit fixture".into());
@@ -130,6 +139,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             navigation_only,
             line_edit_only,
             selection_reopen_only,
+            rectangle_only,
         });
     }
     Ok(Some(options))
@@ -284,6 +294,19 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(selection_reopen.smoke.unwrap().selection_reopen_only);
+        let rectangle = args(&[
+            "--smoke-rectangle-only",
+            "--smoke-fixture",
+            &fixture,
+            "--smoke-report",
+            &report,
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(rectangle.smoke.unwrap().rectangle_only);
+        assert!(args(&["--smoke-rectangle-only"]).is_err());
+        assert!(args(&["--smoke-rectangle-only", "--smoke-rectangle-only"]).is_err());
+        assert!(args(&["--smoke-line-edit-only", "--smoke-rectangle-only"]).is_err());
         assert!(args(&["--smoke-selection-reopen-only"]).is_err());
         assert!(args(&[
             "--smoke-selection-reopen-only",

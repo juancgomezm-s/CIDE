@@ -95,6 +95,12 @@ SELECTION_REOPEN_REQUIRED = {
     "reopen_closed_error_retry_lifo_metadata_preserved",
     "tabs_index_last_preserve_caret_selection_flags_and_document_identity",
 }
+RECTANGLE_REQUIRED = {
+    "rectangle_commands_four_encodings_atomic", "rectangle_internal_clipboard_height_eof",
+    "rectangle_delete_backspace_tab_noop", "rectangle_invisibles_readonly_resize",
+    "rectangle_modal_explorer_palette_target", "rectangle_split_pin_revision_encoding",
+    "rectangle_repertoire_budget_atomic", "rectangle_mouse_capture_versioned",
+}
 
 def ordinary_directory(path):
     info = path.lstat()
@@ -154,7 +160,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen"), default="all")
+    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -180,7 +186,8 @@ def main():
             [str(exe), "--git-executable", str(git_executable), "--smoke-fixture", str(fixture), "--smoke-report", str(report), "--smoke-bitmap", str(bitmap)]
                 + (["--smoke-navigation-only"] if args.section == "navigation" else
                    ["--smoke-line-edit-only"] if args.section == "line-edit" else
-                   ["--smoke-selection-reopen-only"] if args.section == "selection-reopen" else []),
+                   ["--smoke-selection-reopen-only"] if args.section == "selection-reopen" else
+                   ["--smoke-rectangle-only"] if args.section == "rectangle" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -194,7 +201,8 @@ def main():
     required = (NAVIGATION_REQUIRED if args.section == "navigation" else
                 LINE_EDIT_REQUIRED if args.section == "line-edit" else
                 SELECTION_REOPEN_REQUIRED if args.section == "selection-reopen" else
-                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED)
+                RECTANGLE_REQUIRED if args.section == "rectangle" else
+                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED)
     if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
     if payload.get("backend") != "Win32/GDI" or payload.get("window") != "own_hidden_hwnd" or payload.get("native_paints", 0) < 1:

@@ -324,10 +324,6 @@ fn draw_editor(
         let number = format!("{:>width$} ", line_index + 1, width = number_width as usize);
         screen.text_styled(x, row_y, &number, CellStyle::Dim);
         if let Some(display) = &prepared.display_rows {
-            let rectangle_source = prepared
-                .rectangle_source_ranges
-                .get(row)
-                .and_then(Option::as_ref);
             for (target, cell) in display
                 .get(row)
                 .map(Vec::as_slice)
@@ -346,8 +342,7 @@ fn draw_editor(
                         .is_some_and(|hit| hit.range.start < cell.source.end)
                         || selection
                             .as_ref()
-                            .is_some_and(|range| intersects(range, &cell.source))
-                        || rectangle_source.is_some_and(|range| intersects(range, &cell.source)));
+                            .is_some_and(|range| intersects(range, &cell.source)));
                 let style = if selected {
                     CellStyle::Reverse
                 } else if cell.marker {

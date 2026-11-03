@@ -381,3 +381,21 @@ Retain setup/compile fixture failures and hashes; no closed suites/profiles reru
 Continue remaining universal GUI selection/rectangle parity under existing scope;
 manual/global gates, omitted symlink and GNU notices remain open. No new provider,
 AVM/dependency/install/security changes, CI, push or publication.
+
+## Native rectangle/grid closure
+
+Read docs/M2B_RECTANGLE_GUI.md and the limited repertoire contract. Six rectangle
+commands and Alt+drag now use Workbench/VisualPosition/LineLayout, not a GUI engine.
+Rectangles override diagnostic escapes with one TAB4 grid in both frontends;
+invisibles marks cells without changing global preference. Preserve one-action
+editing, bounded internal rectangular clipboard, no implicit OS rectangular format.
+Palette/drag targets include visual anchor/head because byte offsets may not move.
+SetCapture/ReleaseCapture happen outside model borrows; release only own HWND.
+Capture loss/resize keeps last admitted selection, Escape clears it, stale cannot
+revive it. MouseMove without drag does not continuously repaint. Normal arrows
+exit rectangle even at BOF/EOF; editor_input also protects TUI modal controls.
+26 directed cases and15 own-HWND checks passed (4/8 new), fmt/Clippy/release approved.
+Raw focus/edge/compile/lint failures and hashes retained, no closed profiles rerun.
+Finish the remaining universal GUI inventory before optional provider APIs; global/
+physical gates, general Unicode columns, OS clipboard, symlink and GNU notices stay
+open. No new dependency/provider/AVM/install/security changes, CI, push or publication.

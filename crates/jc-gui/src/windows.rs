@@ -20,6 +20,8 @@ mod project_paint;
 mod project_panel;
 mod project_results;
 mod project_smoke;
+mod rectangle_input;
+mod rectangle_smoke;
 mod replace_panel;
 mod replace_smoke;
 mod replace_view;
@@ -60,6 +62,20 @@ fn os_error(operation: &str) -> String {
 
 const OPEN_SIDE: usize = 190;
 const COMMANDS: &[(usize, CommandId, &str)] = &[
+    (
+        200,
+        CommandId::EditRectangleStart,
+        "Rectangle: &Start From Caret / Selection",
+    ),
+    (201, CommandId::EditRectangleCancel, "Rectangle: &Cancel"),
+    (202, CommandId::EditRectangleLeft, "Rectangle: Extend &Left"),
+    (
+        203,
+        CommandId::EditRectangleRight,
+        "Rectangle: Extend &Right",
+    ),
+    (204, CommandId::EditRectangleUp, "Rectangle: Extend &Up"),
+    (205, CommandId::EditRectangleDown, "Rectangle: Extend &Down"),
     (
         160,
         CommandId::SearchGoToPosition,
@@ -202,6 +218,7 @@ pub(super) fn command_id(command: CommandId) -> usize {
 
 enum Action {
     None,
+    CaptureRectangle,
     Clipboard(CommandId),
     PasteSearch(u64),
     PasteNavigation(u64),
@@ -226,6 +243,7 @@ struct State {
     explorer_visible: bool,
     explorer_focused: bool,
     explorer_hits: Option<explorer_panel::ExplorerHits>,
+    rectangle_drag: Option<rectangle_input::RectangleDrag>,
     selector: Option<Selector>,
     selector_explorer_focus: bool,
     selector_search_panel: Option<search_panel::SearchPanel>,
@@ -313,6 +331,7 @@ impl State {
             explorer_visible: false,
             explorer_focused: false,
             explorer_hits: None,
+            rectangle_drag: None,
             selector: None,
             selector_explorer_focus: false,
             selector_search_panel: None,
@@ -481,11 +500,19 @@ impl State {
         context
     }
     fn execute(&mut self, command: CommandId) -> Action {
+        self.rectangle_drag = None;
         if !self.registry.is_enabled(command, &self.context()) {
             self.status = "Command unavailable in the current context".into();
             return Action::None;
         }
         match command {
+            command if rectangle_input::is_rectangle(command) => {
+                match self.workbench.execute(command) {
+                    Ok(_) => self.rectangle_status(),
+                    Err(error) => self.error(error),
+                }
+                return Action::None;
+            }
             CommandId::FileReopenClosed => {
                 self.reopen_tab();
                 return Action::None;
@@ -752,6 +779,9 @@ impl State {
         modifiers
     }
     fn key(&mut self, code: usize) -> (bool, Action) {
+        if !matches!(code, 0x10..=0x12) {
+            self.rectangle_drag = None;
+        }
         self.pending_surrogate = None;
         let modifiers = self.modifiers();
         let key = match code {
@@ -913,6 +943,7 @@ impl State {
         }
     }
     fn insert_character(&mut self, ch: char) {
+        self.rectangle_drag = None;
         if ch.is_control() {
             return;
         }
@@ -1090,6 +1121,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 redraw = state.poll_tasks();
             }
             WM_SIZE => {
+                state.rectangle_drag = None;
                 state.explorer_hits = None;
                 let mut rect = Rect::default();
                 if GetClientRect(hwnd, &mut rect) != 0 {
@@ -1102,6 +1134,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_SETFOCUS => state.focused = true,
             WM_KILLFOCUS => {
+                state.rectangle_drag = None;
                 state.focused = false;
                 state.pending_surrogate = None;
             }
@@ -1165,9 +1198,38 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     && !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK)
                     && message == WM_LBUTTONDOWN
                 {
-                    state.explorer_focused = false;
-                    paint::click(&mut state, x, y);
+                    state.rectangle_drag = None;
+                    let modifiers = state.modifiers();
+                    if modifiers.contains(Modifiers::ALT) && !modifiers.contains(Modifiers::CTRL) {
+                        if state.begin_rectangle_drag(x, y) {
+                            action = Action::CaptureRectangle;
+                        }
+                    } else {
+                        state.explorer_focused = false;
+                        paint::click(&mut state, x, y);
+                    }
                 }
+            }
+            WM_MOUSEMOVE => {
+                redraw = state.rectangle_drag.is_some();
+                if wparam & 1 != 0 {
+                    state.update_rectangle_drag(
+                        (lparam as u16) as i16 as i32,
+                        ((lparam as usize >> 16) as u16) as i16 as i32,
+                    );
+                } else {
+                    state.rectangle_drag = None;
+                }
+            }
+            WM_LBUTTONUP => {
+                state.update_rectangle_drag(
+                    (lparam as u16) as i16 as i32,
+                    ((lparam as usize >> 16) as u16) as i16 as i32,
+                );
+                state.rectangle_drag = None;
+            }
+            WM_CAPTURECHANGED | WM_CANCELMODE => {
+                state.rectangle_drag = None;
             }
             WM_CLOSE => action = Action::Exit,
             _ => handled = false,
@@ -1175,6 +1237,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         state.schedule_search();
         redraw |= state.validate_project_search();
         redraw |= state.validate_git_context();
+        state.validate_rectangle_drag();
     }
     if !handled {
         return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -1182,6 +1245,12 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     perform(hwnd, action);
     if let Some(current) = self::owner(hwnd) {
         current.state.borrow().schedule_search();
+    }
+    // Release may synchronously send WM_CAPTURECHANGED. No model borrow crosses it.
+    if self::owner(hwnd).is_some_and(|m| m.state.borrow().rectangle_drag.is_none())
+        && GetCapture() == hwnd
+    {
+        ReleaseCapture();
     }
     if redraw && IsWindow(hwnd) != 0 {
         InvalidateRect(hwnd, std::ptr::null(), 0);
@@ -1263,6 +1332,16 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         return;
     }
     match action {
+        Action::CaptureRectangle => {
+            SetCapture(hwnd);
+            if GetCapture() != hwnd {
+                if let Some(model) = owner(hwnd) {
+                    let mut state = model.state.borrow_mut();
+                    state.rectangle_drag = None;
+                    state.error("Mouse capture unavailable; rectangle retained");
+                }
+            }
+        }
         Action::None => {}
         Action::ConfigureGit(intent) => git_panel::configure(hwnd, intent),
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
@@ -1401,6 +1480,7 @@ unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
         for (id, command, label) in COMMANDS.iter().filter(|(id, _, _)| {
             (*id >= start && *id < end)
                 || (start == 110 && (170..176).contains(id))
+                || (start == 110 && (200..206).contains(id))
                 || (start == 101 && *id == 119)
                 || (start == 130 && (194..197).contains(id))
                 || (start == 160 && (180..189).contains(id))

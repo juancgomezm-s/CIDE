@@ -1,0 +1,17 @@
+   Compiling jc-gui v0.1.0 (C:\Users\juanc\OneDrive\Documentos\JC-IDE\crates\jc-gui)
+error[E0618]: expected function, found `&Owner`
+    --> crates\jc-gui\src\windows.rs:1250:8
+     |
+1019 | unsafe fn owner<'window>(hwnd: Hwnd) -> Option<&'window Owner> {
+     | -------------------------------------------------------------- this function of the same name is available here, but it's shadowed by the local binding
+...
+1066 |     let Some(owner) = owner(hwnd) else {
+     |              ----- `owner` has type `&Owner`
+...
+1250 |     if owner(hwnd).is_some_and(|m| m.state.borrow().rectangle_drag.is_none())
+     |        ^^^^^------
+     |        |
+     |        call expression requires function
+
+For more information about this error, try `rustc --explain E0618`.
+error: could not compile `jc-gui` (lib) due to 1 previous error

@@ -1,6 +1,6 @@
 //! Bounded, one-action rectangular selections. Geometry never owns source bytes.
 use super::{TextReplacement, Workbench, WorkbenchError};
-use crate::rectangle::{LineLayout, RectangleError, VisualColumn};
+use crate::rectangle::{LineLayout, RectangleError, VisualColumn, VisualPosition};
 use crate::{PaneId, RectangularSelection, TabId};
 use jc_files::FileError;
 
@@ -174,7 +174,7 @@ impl Workbench {
     /// Relative visual-cell/line movement. Failure leaves the old selection intact.
     pub fn extend_rectangle(&mut self, dx: isize, dy: isize) -> Result<(), WorkbenchError> {
         let previous = self.active_rectangle();
-        let (anchor, old_cursor, mut rect) = self.rectangle_seed()?;
+        let (anchor, old_cursor, rect) = self.rectangle_seed()?;
         let editor = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let tab = editor.tab_id;
         let anchor_line = self
@@ -192,27 +192,83 @@ impl Workbench {
             .saturating_add_signed(dy)
             .min(line_count.saturating_sub(1));
         let column = rect.head_column.0.saturating_add_signed(dx);
+        self.assign_rectangle(
+            VisualPosition {
+                line: anchor_line,
+                column: rect.anchor_column,
+            },
+            VisualPosition {
+                line,
+                column: VisualColumn(column),
+            },
+            previous,
+            Some(anchor),
+        )
+    }
+
+    /// Absolute visual input, admitted atomically by the same geometry as keys.
+    pub fn set_rectangle(
+        &mut self,
+        anchor: VisualPosition,
+        head: VisualPosition,
+    ) -> Result<(), WorkbenchError> {
+        let previous = self.active_rectangle();
+        let known = self.active_editor().and_then(|editor| {
+            let byte = editor.anchor.unwrap_or(editor.cursor);
+            (previous.is_some()
+                && editor.rectangle?.anchor_column == anchor.column
+                && self.position_for_tab(editor.tab_id, byte)?.line == anchor.line)
+                .then_some(byte)
+        });
+        self.assign_rectangle(anchor, head, previous, known)
+    }
+
+    fn assign_rectangle(
+        &mut self,
+        anchor: VisualPosition,
+        head: VisualPosition,
+        previous: Option<RectangleBounds>,
+        known_anchor: Option<usize>,
+    ) -> Result<(), WorkbenchError> {
+        let editor = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
+        let tab = editor.tab_id;
+        let revision = editor.session.document().revision();
+        let scroll = editor
+            .rectangle
+            .map_or(VisualColumn(0), |r| r.scroll_column);
         let bounds = RectangleBounds {
-            first_line: anchor_line.min(line),
-            last_line: anchor_line.max(line),
-            left: rect.anchor_column.0.min(column),
-            right: rect.anchor_column.0.max(column),
-            head_column: column,
-            scroll_column: rect.scroll_column.0,
+            first_line: anchor.line.min(head.line),
+            last_line: anchor.line.max(head.line),
+            left: anchor.column.0.min(head.column.0),
+            right: anchor.column.0.max(head.column.0),
+            head_column: head.column.0,
+            scroll_column: scroll.0,
         };
         self.validate_rectangle(tab, bounds, previous)?;
+        let anchor_byte = match known_anchor {
+            Some(byte) => byte,
+            None => {
+                self.rectangle_line(tab, anchor.line, &mut 0)?
+                    .column(anchor.column)?
+                    .byte
+            }
+        };
         let target = self
-            .rectangle_line(tab, line, &mut 0)?
-            .column(VisualColumn(column))?
+            .rectangle_line(tab, head.line, &mut 0)?
+            .column(head.column)?
             .byte;
-        rect.head_column = VisualColumn(column);
         let state = self
             .panes
             .active_state_mut()
             .ok_or(WorkbenchError::NoDocument)?;
-        state.anchor = Some(anchor);
+        state.anchor = Some(anchor_byte);
         state.cursor = target;
-        state.rectangle = Some(rect);
+        state.rectangle = Some(RectangularSelection {
+            anchor_column: anchor.column,
+            head_column: head.column,
+            scroll_column: scroll,
+            revision,
+        });
         // Visual movement within a TAB/virtual space may leave byte caret and
         // anchor unchanged. It is still new selection intent for deferred find.
         self.search_navigation = None;
@@ -247,9 +303,83 @@ impl Workbench {
         column: usize,
         width: usize,
     ) -> Result<Vec<(char, usize)>, WorkbenchError> {
+        self.rectangle_grid_line(tab, line, column, width, false)
+    }
+    pub fn rectangle_grid_line(
+        &self,
+        tab: TabId,
+        line: usize,
+        column: usize,
+        width: usize,
+        markers: bool,
+    ) -> Result<Vec<(char, usize)>, WorkbenchError> {
+        Ok(self.rectangle_line(tab, line, &mut 0)?.expanded_cells(
+            VisualColumn(column),
+            width,
+            markers,
+        )?)
+    }
+
+    pub fn rectangle_position_from_byte(
+        &self,
+        tab: TabId,
+        byte: usize,
+    ) -> Result<VisualPosition, WorkbenchError> {
+        let position = self
+            .position_for_tab(tab, byte)
+            .ok_or_else(|| rejected("rectangle byte is not a source boundary"))?;
+        Ok(VisualPosition {
+            line: position.line,
+            column: self
+                .rectangle_line(tab, position.line, &mut 0)?
+                .visual_column_at_byte(byte)?,
+        })
+    }
+    pub fn rectangle_byte_at(
+        &self,
+        tab: TabId,
+        position: VisualPosition,
+    ) -> Result<usize, WorkbenchError> {
         Ok(self
-            .rectangle_line(tab, line, &mut 0)?
-            .expanded_visible(VisualColumn(column), width)?)
+            .rectangle_line(tab, position.line, &mut 0)?
+            .column(position.column)?
+            .byte)
+    }
+    /// Map the scalar presentation, including padding past EOL, to TAB4 cells.
+    pub fn rectangle_position_from_scalar(
+        &self,
+        tab: TabId,
+        position: jc_text::TextPosition,
+    ) -> Result<VisualPosition, WorkbenchError> {
+        let (content, _) = self
+            .line_range_for_tab(tab, position.line)
+            .ok_or(WorkbenchError::NoDocument)?;
+        let end = self
+            .position_for_tab(tab, content.end)
+            .ok_or(WorkbenchError::NoDocument)?;
+        let byte = self
+            .with_text(tab, |text, source| {
+                text.offset(
+                    source,
+                    jc_text::TextPosition {
+                        line: position.line,
+                        column: position.column.min(end.column),
+                    },
+                )
+            })
+            .ok_or(WorkbenchError::NoDocument)??;
+        let layout = self.rectangle_line(tab, position.line, &mut 0)?;
+        let column = VisualColumn(
+            layout
+                .visual_column_at_byte(byte)?
+                .0
+                .saturating_add(position.column.saturating_sub(end.column)),
+        );
+        layout.column(column)?;
+        Ok(VisualPosition {
+            line: position.line,
+            column,
+        })
     }
 
     fn rectangle_copy_rows(&self) -> Result<Vec<String>, WorkbenchError> {

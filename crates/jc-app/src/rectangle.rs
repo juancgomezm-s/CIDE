@@ -15,6 +15,13 @@ pub const VIRTUAL_BYTE: usize = usize::MAX;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VisualColumn(pub usize);
 
+/// A logical line and a visual TAB4 cell. Never a scalar/LSP/display position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VisualPosition {
+    pub line: usize,
+    pub column: VisualColumn,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColumnLocation {
     /// Absolute valid source boundary. Inside a TAB this is the TAB byte start.
@@ -259,6 +266,15 @@ impl LineLayout {
         start: VisualColumn,
         width: usize,
     ) -> Result<Vec<(char, usize)>, RectangleError> {
+        self.expanded_cells(start, width, false)
+    }
+    /// Diagnostic marks stay in the exact same visual grid as rectangular edits.
+    pub fn expanded_cells(
+        &self,
+        start: VisualColumn,
+        width: usize,
+        markers: bool,
+    ) -> Result<Vec<(char, usize)>, RectangleError> {
         column_limit(start.0)?;
         column_limit(width)?;
         let end = start
@@ -276,14 +292,24 @@ impl LineLayout {
             if let Some(atom) = self.atoms.get(atom_index) {
                 result.push((
                     if atom.character == '\t' {
-                        ' '
+                        if markers {
+                            if column == atom.columns.start {
+                                '>'
+                            } else {
+                                '.'
+                            }
+                        } else {
+                            ' '
+                        }
+                    } else if markers && atom.character == ' ' {
+                        '.'
                     } else {
                         atom.character
                     },
                     atom.bytes.start,
                 ));
             } else {
-                result.push((' ', VIRTUAL_BYTE));
+                result.push((if markers { '.' } else { ' ' }, VIRTUAL_BYTE));
             }
         }
         Ok(result)
