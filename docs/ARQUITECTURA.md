@@ -132,3 +132,10 @@ idle. Worker1 comparte engine; no otra ruta serial ni pool F3 anidado. TUI propa
 --search-workers al modelo compartido. [Diseño](CPU_PROJECT_EXECUTOR.md) y
 [costes/medición](CPU_PERFORMANCE.md), incluido aumento de CPU total. Escrituras
 de documentos permanecen seriales y transaccionales. No se cambia release s.
+
+La selección rectangular acotada añade columnas/scroll visuales por vista sobre
+los mismos caret/anchor de bytes, sin otro documento ni undo. LineLayout convierte
+explícitamente el repertorio de una celda/TAB4 a rangos; no generaliza escalar a
+grafema/display. Las propuestas por fila se codifican antes de apply_text_edits,
+con revisión esperada y undo único. Presentación visible expandida y render
+readonly; cambios invalidan la geometría. [Contrato y límites pendientes](M2_RECTANGULAR_SELECTION.md).

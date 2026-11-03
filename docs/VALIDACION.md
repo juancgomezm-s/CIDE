@@ -1,8 +1,8 @@
 # Validación
 
 **Evidencia local más reciente:** Git read-only con tareas versionadas y visor TUI,
-290 pruebas aprobadas en una corrida completa al integrar status de repositorio
-(cero fallos; dos helpers ignorados invocados por sus tests padre),
+310 pruebas distintas aprobadas al integrar selección rectangular acotada
+(cierre selectivo tras corregir una regresión; no una corrida única de 310),
 fmt/Clippy/release, tres pares fríos equivalentes y catorce procesos nativos
 retenidos de edición/undo en ocho documentos. Máximo histórico actual 52,461 MiB;
 Memoria/teclado global y
@@ -791,3 +791,37 @@ push ni escritura Git desde la función. Estado refleja disco/índice, no buffer
 sucios ni snapshot atómico del filesystem. Rutas siguen opacas y Enter no abre
 archivos. Windows local; GUI, aceptación RAM global y pantalla física abiertas.
 Este cierre no declara M2A completo ni autoriza ampliar optimización CPU.
+
+## Selección rectangular acotada — 2026-11-02
+
+Integración completa de geometría, vista, comandos/menu/Palette, clipboard interno
+tipado y composición antes de validar. [Contrato y límites](M2_RECTANGULAR_SELECTION.md).
+Son 20 pruebas nuevas: seis geometría, diez Workbench y cuatro Screen. TAB4,
+virtual, UTF-8/1252/ISO-8859-1/IBM850, encoding estricto, rechazos de caracteres
+fuera del repertorio, one-step undo/redo, vistas compartidas, cambios externos,
+BOM/bytes inválidos fuera del rango y mixed EOL. No escrituras al archivo fuente.
+
+Corrida inicial workspace: 142 aprobadas antes de una nueva aserción fallida;
+selection_for_pane todavía exponía un rango lineal para una selección rectangular.
+Se eliminó ese cálculo duplicado y se delegó en ViewState. Después, 53 dirigidas
+de app (corrección, f1/panes, rectangle y pendientes s0/workbench) y 138 de otros
+crates (60 TUI + cinco main TUI incluidos) aprobaron. Hasta ese punto: **309 pruebas
+distintas aprobadas**, dos helpers ignorados invocados por padres; no una corrida completa
+única de 310. No se repitieron la suite costosa aprobada ni los perfiles previos.
+Formato, Clippy workspace all-targets con -D warnings y release workspace
+bins/examples aprobaron. No CI/push, nuevo ConPTY ni medición física.
+
+Limitación material: rectángulo de una acción sobre repertorio explícito de una
+celda, con tabs y virtual; Unicode general/grafemas/ancho doble siguen pendientes.
+Clipboard es el interno de Workbench; no OS clipboard. Edición efectiva termina
+la selección; no multicaret persistente. Columnas0…4096/1024filas/64KiB línea,
+2MiB fuente y cuotas lógicas separadas de clipboard/staging, no RAM privada.
+Render Screen 45/140/resize/split es evidencia lógica, no aceptación global M2.
+
+Revisión final: extender dentro de TAB/virtual puede cambiar intención visual sin
+mover cursor/anchor en bytes. Se descarta la navegación documental diferida en esa
+acción; una décima prueba Workbench verifica que la entrega de find no reemplace
+el rectángulo. Pasaron las diez pruebas de rectangle, Clippy dirigido de app y
+release actualizado. Ese caso adicional completa las **310 distintas**; la fase
+anterior de 142 + cierre dirigido + otros crates había reunido 309. No se repitió
+la suite global por esta corrección localizada.

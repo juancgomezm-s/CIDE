@@ -244,3 +244,19 @@ repiten perfiles ni pruebas por ajustes documentales. Las menciones anteriores
 de presentación status pendiente describen checkpoints históricos. Navegación
 segura desde paths Git, otras funciones M2 y aceptación global de RAM/pantalla
 siguen pendientes; no se declara cierre de M2A ni se activa otro incremento aquí.
+
+## Rectángulo de una acción y siguiente bloque activo — 2026-11-02
+
+Implementado el [rectángulo acotado](M2_RECTANGULAR_SELECTION.md): selección real
+por celdas, TAB4/virtual, clipboard interno rectangular, copy/cut/paste/entrada/
+Delete/Backspace con transacción única, comandos y Palette, paint readonly.
+No es cierre del modo columna Unicode general: rechaza grafemas/anchos no
+admitidos; las ediciones efectivas terminan el rectángulo. No OS clipboard ni GUI.
+
+Cierre local: 310 pruebas distintas aprobadas en cierre selectivo después de
+corregir un acceso que exponía también selección lineal; fmt/Clippy/release.
+No repetir pruebas aprobadas ni perfiles por documentación. El siguiente pendiente
+M2A está activo: revisión/contrato de unir y dividir líneas genéricos del anexo
+ABL_EDITOR_COMMAND_SCOPE. Join usará rangos de separadores/indentación y un batch
+F1; Split reutilizará insert_newline/preferred EOL. No ampliar a AVM/GUI, Unicode
+general ni otra optimización CPU sin una necesidad concreta.

@@ -306,7 +306,9 @@ fn draw_editor(
     }
     let visible_height = usize::from(height);
     let first_line = view.scroll_line().min(line_count.saturating_sub(1));
-    let hscroll = view.scroll_column();
+    let rectangle = frame.editor(pane).rectangle;
+    let hscroll = rectangle.map_or_else(|| view.scroll_column(), |bounds| bounds.scroll_column);
+    let cursor_column = rectangle.map_or(cursor.column, |bounds| bounds.head_column);
     let selection = app.workbench.selection_for_pane(pane);
     let highlights = app.workbench.search_matches_for_tab(_document.tab_id);
 
@@ -324,11 +326,25 @@ fn draw_editor(
             .get(row)
             .map(Vec::as_slice)
             .unwrap_or(&[]);
-        for (target, (ch, source_offset)) in visible.iter().copied().enumerate() {
+        for (target, (ch, source_offset)) in visible
+            .iter()
+            .copied()
+            .take(usize::from(text_width))
+            .enumerate()
+        {
             let hit = highlights.partition_point(|hit| hit.range.end <= source_offset);
-            let style = if highlights
-                .get(hit)
-                .is_some_and(|m| m.range.start <= source_offset)
+            // Prepared rows already expand tabs at absolute visual stops and
+            // include required virtual spaces. Rectangular highlighting uses
+            // cells, never a byte test that would select an entire partial tab.
+            let rectangular = rectangle.is_some_and(|bounds| {
+                line_index >= bounds.first_line
+                    && line_index <= bounds.last_line
+                    && (bounds.left..bounds.right).contains(&target.saturating_add(hscroll))
+            });
+            let style = if rectangular
+                || highlights
+                    .get(hit)
+                    .is_some_and(|m| m.range.start <= source_offset)
                 || selection
                     .as_ref()
                     .is_some_and(|range| contains_byte(range, source_offset))
@@ -345,9 +361,9 @@ fn draw_editor(
         && active
         && cursor.line >= first_line
         && cursor.line < first_line + visible_height
-        && cursor.column >= hscroll
+        && cursor_column >= hscroll
     {
-        let cx = cursor.column - hscroll;
+        let cx = cursor_column - hscroll;
         if cx < usize::from(text_width) {
             screen.set_cursor(text_x + cx as u16, y + (cursor.line - first_line) as u16);
         }

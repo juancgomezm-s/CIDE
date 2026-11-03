@@ -187,6 +187,13 @@ pub fn default_menu_model() -> MenuModel {
                 SEP,
                 command(EditIndent),
                 command(EditOutdent),
+                SEP,
+                command(EditRectangleStart),
+                command(EditRectangleLeft),
+                command(EditRectangleRight),
+                command(EditRectangleUp),
+                command(EditRectangleDown),
+                command(EditRectangleCancel),
             ],
         ),
         menu(

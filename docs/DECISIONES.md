@@ -311,3 +311,18 @@ se descarta junto con la entrega. Se conserva aislamiento/filtros/límites del
 proveedor, sin prometer igualdad con Git personal ni snapshot atómico del disco.
 [Contrato y validación](GIT_STATUS_PRESENTATION.md): 290 pruebas completas locales,
 Clippy/release; sin aceptación GUI/RAM global/latencia física ni escrituras Git.
+
+## D32 — Rectángulos reales con admisión de geometría explícita
+
+Implementar selección rectangular por vista, clipboard interno por filas y edición
+atómica sobre la ruta F1 existente antes de exponer comandos. La TUI todavía no
+tiene layout general de grafemas/ancho doble: admitir un repertorio cerrado de
+una celda y TAB4/virtual, rechazar lo demás antes de editar y declarar el límite.
+No un switch de modo columna completo ni una whitelist ampliada por intuición.
+
+Caret/anchor de bytes siguen únicos, columnas/scroll visuales son metadata y
+se invalidan por revisión/encoding. No exponer el rectángulo como selección lineal.
+Una edición efectiva termina esa selección; clipboard tipado conserva filas y
+ancho con tabs normalizados solo al copiar. No crear líneas tras EOF ni escribir
+disco. [Contrato/validación](M2_RECTANGULAR_SELECTION.md): 310 distintas en cierre
+selectivo, fmt/Clippy/release; GUI/Unicode general/pantalla física/RAM global abiertos.

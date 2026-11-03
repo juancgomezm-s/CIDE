@@ -1,6 +1,7 @@
 mod commands;
 mod edit;
 mod line_index;
+pub(crate) mod rectangular;
 mod search;
 mod text;
 use std::cell::RefCell;
@@ -23,11 +24,13 @@ pub enum WorkbenchError {
     ClipboardEncoding,
     SearchInput,
     SearchIncomplete,
+    Rectangle(String),
 }
 
 impl fmt::Display for WorkbenchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Rectangle(message) => f.write_str(message),
             Self::NoDocument => f.write_str("no active document"),
             Self::File(error) => write!(f, "{error}"),
             Self::Position(error) => write!(f, "{error}"),
@@ -165,7 +168,7 @@ pub struct Workbench {
     search_limits: crate::SearchLimits,
     search_navigation: Option<search::PendingNavigation>,
     search_history_index: Option<usize>,
-    pub(crate) clipboard: Option<String>,
+    pub(crate) clipboard: Option<rectangular::Clipboard>,
     output: Vec<String>,
     problems: Vec<String>,
 }
@@ -380,10 +383,7 @@ impl Workbench {
     }
 
     pub fn selection_for_pane(&self, pane: PaneId) -> Option<Range<usize>> {
-        let view = self.panes.view(pane)?;
-        let cursor = view.location()?.byte_offset;
-        let anchor = view.anchor()?;
-        (anchor != cursor).then_some(anchor.min(cursor)..anchor.max(cursor))
+        self.panes.view(pane)?.state()?.selection()
     }
 
     /// Reveal the caret in the active viewport. Other viewports move only when
@@ -393,6 +393,7 @@ impl Workbench {
             return;
         };
         let active = self.panes.active();
+        let rectangle = self.rectangle_for_pane(active);
         let view = self.panes.view(active).expect("active view");
         let old_line = view.scroll_line();
         let mut line = old_line;
@@ -402,12 +403,25 @@ impl Workbench {
         } else if position.line >= line.saturating_add(rows.max(1)) {
             line = position.line + 1 - rows.max(1);
         }
-        if position.column < column {
+        if rectangle.is_none() && position.column < column {
             column = position.column;
-        } else if position.column >= column.saturating_add(columns.max(1)) {
+        } else if rectangle.is_none() && position.column >= column.saturating_add(columns.max(1)) {
             column = position.column + 1 - columns.max(1);
         }
         self.panes.set_scroll(active, line, column);
+        if let Some(rect) = rectangle {
+            let mut scroll = rect.scroll_column;
+            if rect.head_column < scroll {
+                scroll = rect.head_column;
+            } else if rect.head_column >= scroll.saturating_add(columns.max(1)) {
+                scroll = rect.head_column + 1 - columns.max(1);
+            }
+            if let Some(state) = self.panes.active_state_mut() {
+                if let Some(selection) = &mut state.rectangle {
+                    selection.scroll_column = crate::rectangle::VisualColumn(scroll);
+                }
+            }
+        }
         if self.panes.scroll_linked() {
             let other = if active == PaneId::Primary {
                 PaneId::Secondary
@@ -621,10 +635,14 @@ impl Workbench {
             can_undo: active.is_some_and(|document| document.session.document().can_undo()),
             can_redo: active.is_some_and(|document| document.session.document().can_redo()),
             has_selection: self
-                .active_editor()
-                .and_then(|editor| editor.selection())
-                .is_some(),
-            clipboard_has_text: self.clipboard.as_ref().is_some_and(|text| !text.is_empty()),
+                .rectangle_for_pane(self.panes.active())
+                .is_some_and(|r| r.left < r.right)
+                || self
+                    .active_editor()
+                    .and_then(|editor| editor.selection())
+                    .is_some(),
+            clipboard_has_text: self.clipboard.as_ref().is_some_and(|clip| clip.has_text()),
+            rectangular_selection: self.rectangle_for_pane(self.panes.active()).is_some(),
             has_project: false,
             document_search_running: self.search_running(),
             search_history_available: !self.search.history.is_empty(),
@@ -654,6 +672,7 @@ impl Workbench {
             .active_document()
             .ok_or(WorkbenchError::NoDocument)?
             .tab_id;
+        self.panes.clear_rectangles(tab);
         self.normalize_views(tab);
         let _ = self.rebuild_search();
         Ok(())

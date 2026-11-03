@@ -44,6 +44,9 @@ impl Workbench {
     }
 
     pub fn insert_text(&mut self, text: &str) -> Result<(), WorkbenchError> {
+        if self.active_rectangle().is_some() {
+            return self.insert_rectangle_text(text);
+        }
         let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         let encoding = document
             .session
@@ -71,6 +74,7 @@ impl Workbench {
     }
 
     pub fn insert_newline(&mut self) -> Result<(), WorkbenchError> {
+        self.require_linear_selection()?;
         let text = std::str::from_utf8(self.preferred_ending()?).expect("ASCII line ending");
         self.insert_text(text)
     }
@@ -80,6 +84,9 @@ impl Workbench {
     }
 
     pub fn backspace(&mut self) -> Result<(), WorkbenchError> {
+        if self.active_rectangle().is_some() {
+            return self.delete_rectangle(true);
+        }
         if self.delete_selection()? {
             return Ok(());
         }
@@ -98,6 +105,9 @@ impl Workbench {
     }
 
     pub fn delete_forward(&mut self) -> Result<(), WorkbenchError> {
+        if self.active_rectangle().is_some() {
+            return self.delete_rectangle(false);
+        }
         if self.delete_selection()? {
             return Ok(());
         }
@@ -223,6 +233,9 @@ impl Workbench {
 
     fn move_cursor_to(&mut self, offset: usize, select: bool) -> Result<(), WorkbenchError> {
         let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
+        if document.rectangle.take().is_some() {
+            document.anchor = None;
+        }
         if select {
             if document.anchor.is_none() {
                 document.anchor = Some(document.cursor);
@@ -235,6 +248,7 @@ impl Workbench {
     }
 
     pub fn duplicate_selection_or_line(&mut self) -> Result<(), WorkbenchError> {
+        self.require_linear_selection()?;
         if let Some(selection) = self.active_editor().and_then(|editor| editor.selection()) {
             let bytes = self
                 .active_editor()
@@ -284,6 +298,7 @@ impl Workbench {
     }
 
     pub fn delete_line(&mut self) -> Result<(), WorkbenchError> {
+        self.require_linear_selection()?;
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let line = self.line_slice(position.line)?;
         let (range, cursor) = if line.separator.is_empty() && position.line > 0 {
@@ -307,6 +322,7 @@ impl Workbench {
     }
 
     pub fn move_line_up(&mut self) -> Result<(), WorkbenchError> {
+        self.require_linear_selection()?;
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         if position.line == 0 {
             return Ok(());
@@ -322,6 +338,7 @@ impl Workbench {
     }
 
     pub fn move_line_down(&mut self) -> Result<(), WorkbenchError> {
+        self.require_linear_selection()?;
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let tab = self
             .active_document()
@@ -344,6 +361,7 @@ impl Workbench {
     }
 
     pub fn toggle_line_comment(&mut self) -> Result<(), WorkbenchError> {
+        self.require_linear_selection()?;
         let path = self.active_path().ok_or(WorkbenchError::NoDocument)?;
         let language = detect(&path.to_string_lossy());
         if language.line_comment.is_none() && language.block_comment.is_some() {
@@ -474,6 +492,7 @@ impl Workbench {
     }
 
     pub fn toggle_block_comment(&mut self) -> Result<(), WorkbenchError> {
+        self.require_linear_selection()?;
         let path = self.active_path().ok_or(WorkbenchError::NoDocument)?;
         let language = detect(&path.to_string_lossy());
         let Some(markers) = language.block_comment else {
@@ -579,10 +598,14 @@ impl Workbench {
     }
 
     pub fn indent_lines(&mut self) -> Result<(), WorkbenchError> {
+        if self.active_rectangle().is_some() {
+            return self.insert_rectangle_text("    ");
+        }
         self.adjust_indentation(true)
     }
 
     pub fn outdent_lines(&mut self) -> Result<(), WorkbenchError> {
+        self.require_linear_selection()?;
         self.adjust_indentation(false)
     }
 
@@ -709,6 +732,7 @@ impl Workbench {
     }
 
     pub fn select_all(&mut self) -> Result<(), WorkbenchError> {
+        self.cancel_rectangle();
         let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         document.anchor = Some(0);
         document.cursor = document.session.document().len();
@@ -716,6 +740,9 @@ impl Workbench {
     }
 
     pub fn copy_selection(&mut self) -> Result<(), WorkbenchError> {
+        if self.active_rectangle().is_some() {
+            return self.copy_rectangle();
+        }
         let document = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let Some(range) = document.selection() else {
             return Ok(());
@@ -733,19 +760,28 @@ impl Workbench {
         if !decoded.issues.is_empty() {
             return Err(WorkbenchError::ClipboardEncoding);
         }
-        self.clipboard = Some(decoded.text);
+        self.clipboard = Some(super::rectangular::Clipboard::Text(decoded.text));
         Ok(())
     }
 
     pub fn cut_selection(&mut self) -> Result<(), WorkbenchError> {
+        if self.active_rectangle().is_some() {
+            return self.cut_rectangle();
+        }
         self.copy_selection()?;
         self.delete_selection()?;
         Ok(())
     }
 
     pub fn paste(&mut self) -> Result<(), WorkbenchError> {
-        let Some(text) = self.clipboard.clone() else {
+        let Some(clip) = self.clipboard.clone() else {
             return Ok(());
+        };
+        let text = match clip {
+            super::rectangular::Clipboard::Text(text) => text,
+            super::rectangular::Clipboard::Rectangle(rows) => {
+                return self.paste_rectangle_rows(&rows)
+            }
         };
         self.insert_text(&text).map_err(|error| match error {
             WorkbenchError::File(FileError::Encode(_)) => WorkbenchError::ClipboardEncoding,
@@ -754,6 +790,7 @@ impl Workbench {
     }
 
     pub fn undo(&mut self) -> Result<(), WorkbenchError> {
+        self.cancel_rectangle();
         let editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         if editor.session.document_mut().undo() {
             let change = editor
@@ -768,6 +805,7 @@ impl Workbench {
     }
 
     pub fn redo(&mut self) -> Result<(), WorkbenchError> {
+        self.cancel_rectangle();
         let editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         if editor.session.document_mut().redo() {
             let change = editor

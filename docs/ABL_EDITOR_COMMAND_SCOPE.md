@@ -88,3 +88,12 @@ Entradas objetivo: Alt+Shift+flechas cuando el terminal las reporte; comandos de
 - [Progress: COMPILE y XREF](https://docs.progress.com/bundle/openedge-abl-reference-128/page/COMPILE-statement.html)
 
 Los manuales recientes no certifican automáticamente las instalaciones 10.0B o 11.7 del usuario.
+
+## Checkpoint posterior — selección rectangular acotada
+
+El [rectángulo de una acción](M2_RECTANGULAR_SELECTION.md) ya conecta selección
+visual TAB4/virtual, clipboard interno y undo único a comandos/menu/Palette/TUI.
+Su repertorio de una celda es explícito; grafemas/ancho doble y Unicode general
+se rechazan y siguen pendientes. No declarar cerrado el requisito general de
+modo columna ni clipboard OS. 310 pruebas distintas en cierre selectivo,
+fmt/Clippy/release locales. Próximo bloque activo: unir/dividir líneas genéricos.

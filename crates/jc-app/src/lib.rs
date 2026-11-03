@@ -18,6 +18,7 @@ mod keymap;
 mod menu;
 mod panels;
 mod panes;
+pub mod rectangle;
 mod tabs;
 mod workbench;
 pub use jobs::{
@@ -35,9 +36,12 @@ pub use keymap::{
 };
 pub use menu::{default_menu_model, Menu, MenuId, MenuItem, MenuModel, MenuValidationError};
 pub use panels::{BottomPanel, PanelManager, SidebarView};
-pub use panes::{NavLocation, PaneId, PaneManager, PaneView, ViewId, ViewState};
+pub use panes::{
+    NavLocation, PaneId, PaneManager, PaneView, RectangularSelection, ViewId, ViewState,
+};
 pub use tabs::{CloseRequest, Tab, TabId, TabManager};
 
+pub use workbench::rectangular::RectangleBounds;
 pub use workbench::{
     CommandOutcome, DocumentId, EditorDocument, EditorRead, SearchHistoryEntry, SearchState,
     TextReplacement, Workbench, WorkbenchError,

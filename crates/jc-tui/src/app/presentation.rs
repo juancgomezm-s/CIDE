@@ -93,6 +93,7 @@ impl FrameLayout {
 pub(crate) struct EditorText {
     pub line_count: Option<usize>,
     pub position: Option<TextPosition>,
+    pub rectangle: Option<jc_app::RectangleBounds>,
     pub rows: Vec<Vec<(char, usize)>>,
 }
 pub(crate) struct Presentation<'a> {
@@ -150,6 +151,7 @@ impl TuiApp {
                 let Some(location) = view.location() else {
                     continue;
                 };
+                let rectangle = self.workbench.rectangle_for_pane(pane);
                 let count = self.workbench.line_count_for_tab(location.tab);
                 let position = self.workbench.position_for_pane(pane);
                 let number = count.map_or(3, |n| (n.max(1).to_string().len() as u16).clamp(3, 7));
@@ -165,14 +167,32 @@ impl TuiApp {
                         .unwrap_or(0)
                         .min(first + usize::from(layout.content_height.saturating_sub(1))))
                     .map(|line| {
-                        self.workbench
-                            .visible_line(location.tab, line, view.scroll_column(), text_width)
-                            .unwrap_or_default()
+                        if let Some(rect) = rectangle {
+                            self.workbench
+                                .rectangle_visible_line(
+                                    location.tab,
+                                    line,
+                                    rect.scroll_column,
+                                    text_width,
+                                )
+                                .unwrap_or_else(|_| {
+                                    "[rectangle layout unavailable]"
+                                        .chars()
+                                        .take(text_width)
+                                        .map(|ch| (ch, usize::MAX))
+                                        .collect()
+                                })
+                        } else {
+                            self.workbench
+                                .visible_line(location.tab, line, view.scroll_column(), text_width)
+                                .unwrap_or_default()
+                        }
                     })
                     .collect();
                 let text = EditorText {
                     line_count: count,
                     position,
+                    rectangle,
                     rows,
                 };
                 match pane {

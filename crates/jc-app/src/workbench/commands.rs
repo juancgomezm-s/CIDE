@@ -45,6 +45,21 @@ impl Workbench {
                 self.paste()?;
                 Ok(CommandOutcome::None)
             }
+            EditRectangleStart | EditRectangleLeft | EditRectangleRight | EditRectangleUp
+            | EditRectangleDown | EditRectangleCancel => {
+                match command {
+                    EditRectangleStart => self.start_rectangle()?,
+                    EditRectangleLeft => self.extend_rectangle(-1, 0)?,
+                    EditRectangleRight => self.extend_rectangle(1, 0)?,
+                    EditRectangleUp => self.extend_rectangle(0, -1)?,
+                    EditRectangleDown => self.extend_rectangle(0, 1)?,
+                    EditRectangleCancel => {
+                        self.cancel_rectangle();
+                    }
+                    _ => unreachable!(),
+                }
+                Ok(CommandOutcome::None)
+            }
             EditSelectAll => {
                 self.select_all()?;
                 Ok(CommandOutcome::None)
@@ -107,6 +122,7 @@ impl Workbench {
             }
             SearchGoToPosition => Ok(CommandOutcome::ShowGoToPosition),
             SearchCancel => {
+                self.cancel_rectangle();
                 self.cancel_search();
                 Ok(CommandOutcome::None)
             }

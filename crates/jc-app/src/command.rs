@@ -41,6 +41,12 @@ pub enum CommandId {
     EditToggleBlockComment,
     EditIndent,
     EditOutdent,
+    EditRectangleStart,
+    EditRectangleLeft,
+    EditRectangleRight,
+    EditRectangleUp,
+    EditRectangleDown,
+    EditRectangleCancel,
 
     SearchFind,
     SearchReplace,
@@ -127,6 +133,7 @@ pub struct CommandContext {
     pub can_undo: bool,
     pub can_redo: bool,
     pub has_selection: bool,
+    pub rectangular_selection: bool,
     pub clipboard_has_text: bool,
     pub has_project: bool,
     pub project_search_running: bool,
@@ -160,6 +167,7 @@ impl Default for CommandContext {
             can_undo: false,
             can_redo: false,
             has_selection: false,
+            rectangular_selection: false,
             clipboard_has_text: false,
             has_project: false,
             project_search_running: false,
@@ -249,7 +257,7 @@ fn always(_: &CommandContext) -> bool {
     true
 }
 fn document_search_running(ctx: &CommandContext) -> bool {
-    ctx.document_search_running
+    ctx.document_search_running || ctx.rectangular_selection
 }
 fn search_history(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.search_history_available
@@ -287,11 +295,23 @@ fn can_redo(ctx: &CommandContext) -> bool {
 fn selection(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.has_selection
 }
+fn rectangle_editor(ctx: &CommandContext) -> bool {
+    ctx.has_document && ctx.focus == PrimaryFocus::Editor
+}
+fn rectangle_active(ctx: &CommandContext) -> bool {
+    rectangle_editor(ctx) && ctx.rectangular_selection
+}
+fn linear_document(ctx: &CommandContext) -> bool {
+    ctx.has_document && !ctx.rectangular_selection
+}
+fn linear_selection(ctx: &CommandContext) -> bool {
+    selection(ctx) && !ctx.rectangular_selection
+}
 fn paste(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.clipboard_has_text
 }
 fn block_comment(ctx: &CommandContext) -> bool {
-    ctx.has_document
+    linear_document(ctx)
         && ctx
             .active_language
             .as_deref()
@@ -299,7 +319,7 @@ fn block_comment(ctx: &CommandContext) -> bool {
             .is_some_and(|profile| profile.block_comment.is_some())
 }
 fn line_comment(ctx: &CommandContext) -> bool {
-    ctx.has_document
+    linear_document(ctx)
         && ctx
             .active_language
             .as_deref()
@@ -372,11 +392,11 @@ pub fn default_registry() -> CommandRegistry {
             EditDuplicate,
             Edit,
             "Duplicate Selection/Line",
-            has_document
+            linear_document
         ),
-        spec!(EditDeleteLine, Edit, "Delete Line", has_document),
-        spec!(EditMoveLineUp, Edit, "Move Line Up", has_document),
-        spec!(EditMoveLineDown, Edit, "Move Line Down", has_document),
+        spec!(EditDeleteLine, Edit, "Delete Line", linear_document),
+        spec!(EditMoveLineUp, Edit, "Move Line Up", linear_document),
+        spec!(EditMoveLineDown, Edit, "Move Line Down", linear_document),
         spec!(EditToggleLineComment, Edit, "Toggle Comment", line_comment),
         spec!(
             EditToggleBlockComment,
@@ -385,7 +405,43 @@ pub fn default_registry() -> CommandRegistry {
             block_comment
         ),
         spec!(EditIndent, Edit, "Indent", has_document),
-        spec!(EditOutdent, Edit, "Outdent", has_document),
+        spec!(EditOutdent, Edit, "Outdent", linear_document),
+        spec!(
+            EditRectangleStart,
+            Edit,
+            "Rectangle: Select From Caret/Selection (single-cell text)",
+            rectangle_editor
+        ),
+        spec!(
+            EditRectangleLeft,
+            Edit,
+            "Rectangle: Extend Left",
+            rectangle_editor
+        ),
+        spec!(
+            EditRectangleRight,
+            Edit,
+            "Rectangle: Extend Right",
+            rectangle_editor
+        ),
+        spec!(
+            EditRectangleUp,
+            Edit,
+            "Rectangle: Extend Up",
+            rectangle_editor
+        ),
+        spec!(
+            EditRectangleDown,
+            Edit,
+            "Rectangle: Extend Down",
+            rectangle_editor
+        ),
+        spec!(
+            EditRectangleCancel,
+            Edit,
+            "Rectangle: Cancel",
+            rectangle_active
+        ),
         spec!(SearchFind, Search, "Find", has_document),
         spec!(SearchReplace, Search, "Replace", has_document),
         spec!(SearchFindNext, Search, "Find Next", has_document),
@@ -394,13 +450,13 @@ pub fn default_registry() -> CommandRegistry {
             SearchSelectionNext,
             Search,
             "Find Selection Next",
-            selection
+            linear_selection
         ),
         spec!(
             SearchSelectionPrevious,
             Search,
             "Find Selection Previous",
-            selection
+            linear_selection
         ),
         spec!(
             SearchGoToPosition,
@@ -411,7 +467,7 @@ pub fn default_registry() -> CommandRegistry {
         spec!(
             SearchCancel,
             Search,
-            "Cancel Document Search",
+            "Cancel Document Search / Rectangle",
             document_search_running
         ),
         spec!(

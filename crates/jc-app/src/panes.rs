@@ -30,15 +30,26 @@ impl NavLocation {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct RectangularSelection {
+    pub anchor_column: crate::rectangle::VisualColumn,
+    pub head_column: crate::rectangle::VisualColumn,
+    pub scroll_column: crate::rectangle::VisualColumn,
+    pub revision: u64,
+}
 #[derive(Debug, Clone, Default)]
 pub struct ViewState {
     pub cursor: usize,
     pub anchor: Option<usize>,
+    pub rectangle: Option<RectangularSelection>,
     pub scroll_line: usize,
     pub scroll_column: usize,
 }
 impl ViewState {
     pub fn selection(&self) -> Option<std::ops::Range<usize>> {
+        if self.rectangle.is_some() {
+            return None;
+        }
         let anchor = self.anchor?;
         (anchor != self.cursor).then_some(anchor.min(self.cursor)..anchor.max(self.cursor))
     }
@@ -107,6 +118,7 @@ impl PaneView {
             if jump {
                 view.state.cursor = loc.byte_offset;
                 view.state.anchor = None;
+                view.state.rectangle = None;
             }
         } else {
             let id = ViewId(*next);
@@ -253,6 +265,9 @@ impl PaneManager {
         for id in [PaneId::Primary, PaneId::Secondary] {
             let group = self.view_mut(id);
             for v in &mut group.views {
+                if v.tab == tab && v.state.rectangle.take().is_some() {
+                    v.state.anchor = None;
+                }
                 if v.tab == tab && (include_active || !(id == active && Some(v.id) == group.active))
                 {
                     v.state.cursor = change.map_offset(v.state.cursor);
@@ -319,6 +334,15 @@ impl PaneManager {
         group.select(loc, &mut next, true);
         self.next_view = next;
         Some(loc)
+    }
+    pub(crate) fn clear_rectangles(&mut self, tab: TabId) {
+        for group in [&mut self.primary, &mut self.secondary] {
+            for view in &mut group.views {
+                if view.tab == tab && view.state.rectangle.take().is_some() {
+                    view.state.anchor = None;
+                }
+            }
+        }
     }
     pub(crate) fn normalize_with(&mut self, tab: TabId, mut snap: impl FnMut(usize) -> usize) {
         for group in [&mut self.primary, &mut self.secondary] {

@@ -162,3 +162,10 @@ en 16 MiB, espera mediana 1,24–1,49× más rápida y memoria privada muestread
 con CPU total 30–48% mayor. Se conservan cuotas, cancelación, orden y bytes; Qwen
 queda como carga desconocida, sin tocar sus procesos. `opt-level=s` se mantiene
 tras compararlo. [Uso y límites](docs/CPU_RUNTIME_OPTIONS.md).
+
+Selección rectangular disponible en Editor para el repertorio explícito de una
+celda, TAB4 y columnas virtuales: Alt+Shift+flechas o Edit/Palette `Rectangle`.
+Copy/Cut/Paste usan filas en el clipboard interno y una transacción por edición;
+Escape cancela. La edición efectiva termina la selección. Unicode general,
+ancho doble, grafemas y clipboard del sistema siguen pendientes; caracteres no
+admitidos se rechazan. [Uso y límites](docs/M2_RECTANGULAR_SELECTION.md).

@@ -277,6 +277,7 @@ impl Workbench {
         let range = hit.range.clone();
         self.search.current = Some(index);
         let mut editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
+        editor.rectangle = None;
         editor.anchor = Some(range.start);
         editor.cursor = range.end;
         Ok(true)

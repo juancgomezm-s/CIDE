@@ -133,3 +133,19 @@ escaped opaque paths, explicit refresh/cancel, read-only rendering and terminal
 recovery even for stale worker panics. No file navigation from status yet.
 Build complete functional blocks before their validation window; do not repeat
 passing suites for documentation or minor changes without a concrete concern.
+
+## Rectangular selection checkpoint
+
+Read docs/M2_RECTANGULAR_SELECTION.md. A real one-action rectangle is integrated
+for an explicit one-cell repertoire plus TAB4 and virtual cells; this does NOT
+close the general Unicode column-mode gate. Reject unsupported scalars, invalid
+decoding, line/row/column/source/staging limits before mutation. Source byte caret/
+anchor remain unique; visual columns/scroll are separate metadata per view.
+selection_for_pane delegates to ViewState, with no linear range for a rectangle.
+Content or encoding changes clear rectangular geometry/anchor in affected views.
+One apply_text_edits batch, one undo, no disk write; internal rectangular clipboard
+does not imply OS clipboard. Visible preparation expands tabs/padding; renderer
+is read-only and never treats VIRTUAL_BYTE as an edit/source-match position.
+310 distinct local tests passed in selective closure, not a single310 run;
+fmt/Clippy/release passed. Next active M2A block: generic join/split lines, using
+bounded range proposals and existing newline insertion, no second edit engine.
