@@ -16,6 +16,7 @@ mod interaction_smoke;
 mod line_edit;
 mod line_edit_smoke;
 mod menu_input;
+mod menu_invoker_smoke;
 mod native_menu;
 mod navigation_paint;
 mod navigation_panel;

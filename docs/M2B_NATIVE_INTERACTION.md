@@ -124,3 +124,10 @@ Paquete `work/packages/CIDE-windows-dev-native-interaction-2026-11-03.zip`:
 4.177.463 bytes, SHA-256 `f59348b8a6cf0940bc1243b5e54aa653ad6404bfd6e6b95a2fd9edd7f63bca52`.
 CRC y hashes de69 miembros aprobados; [detalle](evidence/m2b-native-interaction-2026-11-03-package.json).
 Dos notices GNU pendientes; es un ZIP de desarrollo local.
+
+Seguimiento posterior a171af05: [invocador Find/Replace](M2B_MENU_INVOKER_VALIDATION.md)
+cierra el caso separado paleta→macro de menú antes ausente. Un check integrado
+nuevo y siete de arranque/pintura, tres rechazos CLI, fmt/Clippy/release GUI
+aprobados a la primera, sin modificar handlers ni repetir13 checks anteriores.
+Los restantes gestos de mouse listados como límites no quedan admitidos para
+construcción por esta validación; requieren decisión de alcance y contrato.

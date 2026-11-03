@@ -581,3 +581,21 @@ latencia/RAM global, mouse horizontal/autoscroll/word-selection/campos y symlink
 notices siguen pendientes. Proveedores/terminal/regex conservan contratos y puertas
 propias. No inferir M3 ni distribución certificada. Continuar en bloques amplios
 y dejar pruebas manuales/OS con el usuario al final, según su preferencia.
+
+## Seguimiento de validación y límite de admisión — 2026-11-03
+
+[Auditoría previa y evidencia](M2B_MENU_INVOKER_VALIDATION.md), base171af05.
+Se cierra el recorrido comprometido paleta→macro de menú con Find/Replace:
+seis macros, tres estados de campo, cancelación repetida, continuidad del teclado,
+acción View permitida, edición fuente rechazada y ocho cambios tardíos de draft.
+Un check integrado nuevo + siete de arranque/pintura, tres rechazos CLI y fmt/
+ClippyGUI/releaseGUI aprobados a la primera. Sin pruebas unitarias, repetición de
+la sección histórica13 o cambios de handlers; no nueva funcionalidad de producto.
+
+La auditoría de la mención previa a mouse horizontal/autoscroll/word-selection/
+campos no la convierte en admisión: son limitaciones/exclusiones, sin contrato
+específico de siguiente bloque. Su construcción no se activa. Hace falta decidir
+alcance, coordenadas, límites y cancelación del incremento antes de implementarlo.
+Esta nota registra la decisión de no ampliar, sin añadir funcionalidades al plan
+para justificar código retrospectivamente. M3/proveedores y puertas físicas/globales
+no se infieren ni se cierran; sin dependencias/AVM/CI/push/publicación nuevos.

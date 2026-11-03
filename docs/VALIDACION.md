@@ -1288,3 +1288,29 @@ entradas. Aceptación física/global/Unicode/OS clipboard/IME/DPI/accesibilidad/
 RAM o latencia global, symlink y dos notices GNU siguen pendientes. Paquete local
 de desarrollo, sin instalador/distribución final. Sin nuevos proveedores/AVM/
 dependencias/regex/instalaciones/seguridad/CI/push/publicación.
+
+## Seguimiento paleta/menú con Find/Replace — 2026-11-03
+
+[Alcance auditado](M2B_MENU_INVOKER_VALIDATION.md). Un check nuevo, con siete
+checks comunes de arranque/pintura; sección menu-invoker aprobada a la primera.
+Tres estados de campo × seis macros × dos cancelaciones base (36 subflujos,
+no36 pruebas distintas), continuación WM_CHAR/Backspace en campo, toggle View
+permitido/revertido y Duplicate rechazado sin editar fuente. Ocho reentradas con
+texto/caret/campo cambiados descartan la elección tardía. Draft Unicode/emoji/CRLF,
+carets bytes/modo/generación, Source13B identidad/revisión/encoding/dirty/undo/redo,
+vistas/split/pin/catálogo/disco y preferencia conservados; query inicial restaurada,
+scan cancelado. Source13B ASCII jamás se edita: no otra matriz de BOM/legacy aquí.
+Un WM_PAINT, cero errores;16ms del arnés no son latencia física.
+
+Tres rechazos CLI por rutas faltantes, sección duplicada o mezclada, exit2.
+Fmt, ClippyGUI/all-targets -D warnings y releaseGUI bins offline/MSVC aprobados.
+Cero ejecuciones unitarias ni suites/perfiles históricos repetidos. Construcción
+y cableado completos antes de checks, sin fallos/correcciones de producto/oráculo.
+[Reporte](evidence/m2b-menu-invoker-2026-11-03-native-report.json),
+[logs/hashes](evidence/m2b-menu-invoker-2026-11-03-metadata.json),
+[CLI](evidence/m2b-menu-invoker-2026-11-03-cli.json).
+Elección HMENU y clipboard sintéticos, no clipboard privado ni pantalla/menú físico.
+Handlers productivos intactos frente a171af05; sin paquete nuevo. Los gestos mouse
+horizontal/autoscroll/word-selection/campos continúan sin admisión de construcción.
+Puertas físicas/globales/Unicode/OS/IME/DPI/accesibilidad/symlink/notices abiertas;
+sin dependencias/proveedores/AVM/terminal/regex/instalaciones/seguridad/CI/push nuevos.

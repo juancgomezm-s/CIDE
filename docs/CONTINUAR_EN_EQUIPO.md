@@ -588,3 +588,21 @@ cerrados por documentación. Conservar bloques amplios y manual/OS al final.
 Pendientes física/global/Unicode/clipboard/IME/DPI/accesibilidad, mouse horizontal/
 autoscroll/word-selection/campos, symlink y notices; proveedores/terminal/regex
 requieren sus propias puertas. Sin nuevas dependencias/AVM/CI/push/publicación.
+
+## Último seguimiento: invocador de menú validado, gestos sin admisión
+
+Leer [auditoría y evidencia](M2B_MENU_INVOKER_VALIDATION.md). El recorrido faltante
+de171af05 paleta→Menu* con Find/Replace ya está validado: seis macros, tres campos
+activos, cancel/repetición, continuidad de edición, acción permitida/deshabilitada
+y ocho reentradas obsoletas. Un check nuevo + siete comunes, tres rechazos CLI,
+fmt/ClippyGUI/releaseGUI aprobados a la primera. Sin ejecutar unitarias o repetir
+secciones históricas, cambiar handlers o generar otro ZIP. Evidencia anterior se
+conserva histórica; ya no falta esa combinación separada.
+
+No activar mouse horizontal/autoscroll/selección por palabra/mouse en campos:
+PLAN/AGENTS/contratos los describen como pendientes/excluidos, no orden concreta.
+La decisión necesaria es admitir qué conjunto y definir gesto/coordenadas/límites/
+cancelación antes de otro bloque. No ampliar el plan retrospectivamente para
+justificar código ni inferir M3/proveedores. Se conservan las puertas física/global/
+Unicode/clipboard externo/IME/DPI/accesibilidad/symlink/distribución; sin nuevos
+permisos/dependencias/proveedores/AVM/terminal/regex/CI/push/publicación.

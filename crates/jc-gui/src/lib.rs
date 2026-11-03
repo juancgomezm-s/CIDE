@@ -28,6 +28,7 @@ pub struct SmokeOptions {
     pub bottom_only: bool,
     pub selector_input_only: bool,
     pub interaction_only: bool,
+    pub menu_invoker_only: bool,
 }
 
 #[cfg(windows)]

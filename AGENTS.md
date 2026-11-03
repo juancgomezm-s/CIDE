@@ -492,3 +492,21 @@ accessibility, horizontal/autoscroll/word-selection/field mouse, symlink/notices
 gates. No closed suites/profiles repeated for docs. Keep broad construction before
 tests, manual/OS at end. No new dependency/provider/AVM/regex/install/security
 changes, CI, push or publication.
+
+## Menu-invoker validation follow-up and admission boundary
+
+Read docs/M2B_MENU_INVOKER_VALIDATION.md. It closes the previously missing
+Palette->Menu*->Find/Replace case at171af05: six macros, three active-field states,
+36 base cancellations, continued field input, permitted View action, rejected
+source edit and eight stale field reentries. One new integrated check plus seven
+startup/paint checks passed first run, three CLI rejections, fmt/ClippyGUI/releaseGUI.
+Zero unit test runs or repeated historical runtime suites; product handlers unchanged.
+The earlier no-separate-case statement is historical, superseded by this evidence.
+
+The scope audit found horizontal mouse/autoscroll/word-selection/field mouse only
+as limitations or exclusions, not admitted construction. Do not convert their
+pending status or broad M2B acceptance into a build order. A next increment for
+those gestures requires an explicit scope/coordinate/limits/cancellation decision;
+do not add plan scope retrospectively to justify work or infer M3/providers.
+Preserve all physical/global/Unicode/OS clipboard/IME/DPI/accessibility/symlink/
+notices gates. No new dependency/provider/AVM/install/security/CI/push/publication.

@@ -126,6 +126,8 @@ INTERACTION_REQUIRED = {
     "interaction_readonly_compact_cleanup",
 }
 
+MENU_INVOKER_REQUIRED = {"native_menu_palette_find_invoker_roundtrip"}
+
 def ordinary_directory(path):
     info = path.lstat()
     return path.is_dir() and not path.is_symlink() and not (getattr(info, "st_file_attributes", 0) & 0x400)
@@ -184,7 +186,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity", "bottom", "selector-input", "interaction"), default="all")
+    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity", "bottom", "selector-input", "interaction", "menu-invoker"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -215,7 +217,8 @@ def main():
                    ["--smoke-parity-only"] if args.section == "parity" else
                    ["--smoke-bottom-only"] if args.section == "bottom" else
                    ["--smoke-selector-input-only"] if args.section == "selector-input" else
-                   ["--smoke-interaction-only"] if args.section == "interaction" else []),
+                   ["--smoke-interaction-only"] if args.section == "interaction" else
+                   ["--smoke-menu-invoker-only"] if args.section == "menu-invoker" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
         )
@@ -232,9 +235,10 @@ def main():
                 RECTANGLE_REQUIRED if args.section == "rectangle" else
                 PARITY_REQUIRED if args.section == "parity" else
                 BOTTOM_REQUIRED if args.section == "bottom" else
+                MENU_INVOKER_REQUIRED if args.section == "menu-invoker" else
                 INTERACTION_REQUIRED if args.section == "interaction" else
                 SELECTOR_INPUT_REQUIRED if args.section == "selector-input" else
-                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED | PARITY_REQUIRED | BOTTOM_REQUIRED | SELECTOR_INPUT_REQUIRED | INTERACTION_REQUIRED)
+                REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED | PARITY_REQUIRED | BOTTOM_REQUIRED | SELECTOR_INPUT_REQUIRED | INTERACTION_REQUIRED | MENU_INVOKER_REQUIRED)
     if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
     if payload.get("backend") != "Win32/GDI" or payload.get("window") != "own_hidden_hwnd" or payload.get("native_paints", 0) < 1:
