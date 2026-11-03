@@ -6,6 +6,7 @@ use std::path::PathBuf;
 #[derive(Debug, Default)]
 pub struct GuiOptions {
     pub paths: Vec<PathBuf>,
+    pub project_root: Option<PathBuf>,
     pub encoding: Option<TextEncoding>,
     pub smoke: Option<SmokeOptions>,
 }

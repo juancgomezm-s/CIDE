@@ -123,6 +123,37 @@ unsafe fn position(hwnd: Hwnd, line: usize, column: usize) -> Result<(), String>
         .go_to_position(TextPosition { line, column })
         .map_err(|e| e.to_string())
 }
+unsafe fn type_query(hwnd: Hwnd, text: &str) {
+    for unit in text.encode_utf16() {
+        SendMessageW(hwnd, WM_CHAR, unit as usize, 0);
+    }
+}
+unsafe fn wait_for_paths(hwnd: Hwnd) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        // Dispatch the actual worker-posted message for this HWND only. No
+        // direct controller poll or synthetic keystroke advances the result.
+        let mut message: Msg = std::mem::zeroed();
+        while PeekMessageW(&mut message, hwnd, TASKS_MESSAGE, TASKS_MESSAGE, 1) != 0 {
+            DispatchMessageW(&message);
+        }
+        let state = owner(hwnd)
+            .ok_or("Selector smoke lost HWND")?
+            .state
+            .borrow();
+        match state.quick_open.state() {
+            jc_app::quick_open::QuickOpenState::Complete => return Ok(()),
+            jc_app::quick_open::QuickOpenState::Queued
+            | jc_app::quick_open::QuickOpenState::Running => {}
+            state => return Err(format!("Quick Open did not complete: {state:?}")),
+        }
+        drop(state);
+        if Instant::now() >= deadline {
+            return Err("Native worker notification deadline exceeded".into());
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
 fn escaped(value: &str) -> String {
     value
         .chars()
@@ -296,6 +327,90 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             state.status = "Ready · internal clipboard · scalar-cell preview".into();
         }
         expected(hwnd, SOURCE)?;
+        // A complete native selector flow: modal query input, real PostMessage
+        // delivery, authoritative target, dirty session reuse and shared undo.
+        position(hwnd, 0, 0)?;
+        SendMessageW(hwnd, WM_CHAR, 'Q' as usize, 0);
+        let original_document = owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .workbench
+            .active_document()
+            .unwrap()
+            .id;
+        let before_delivery = owner(hwnd).unwrap().state.borrow().deliveries;
+        key(hwnd, 0x50, Modifiers::CTRL)?;
+        type_query(hwnd, "FIXTURE.TXT");
+        expected(hwnd, b"Qalpha\r\nbeta\r\n")?;
+        wait_for_paths(hwnd)?;
+        {
+            let state = owner(hwnd).unwrap().state.borrow();
+            if state.deliveries <= before_delivery || state.quick_open.results().len() != 1 {
+                return Err(
+                    "Native Quick Open did not receive the latest worker completion".into(),
+                );
+            }
+        }
+        checks.push("quick_open_native_message_delivery");
+        checks.push("selector_query_preserves_document");
+        key(hwnd, 0x0d, Modifiers::CTRL)?;
+        {
+            let state = owner(hwnd).unwrap().state.borrow();
+            if state.selector.is_some()
+                || state.workbench.active_document().unwrap().id != original_document
+                || !state.workbench.panes().is_split()
+            {
+                return Err("Native Quick Open did not reuse the dirty document to side".into());
+            }
+        }
+        expected(hwnd, b"Qalpha\r\nbeta\r\n")?;
+        key(hwnd, 0x5a, Modifiers::CTRL)?;
+        expected(hwnd, SOURCE)?;
+        checks.push("quick_open_dirty_side_shared_undo");
+        position(hwnd, 0, 5)?;
+        key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
+        type_query(hwnd, "Split Line");
+        expected(hwnd, SOURCE)?;
+        key(hwnd, 0x0d, Modifiers::NONE)?;
+        expected(hwnd, b"alpha\r\n\r\nbeta\r\n")?;
+        key(hwnd, 0x5a, Modifiers::CTRL)?;
+        expected(hwnd, SOURCE)?;
+        checks.push("palette_shared_command_one_undo");
+        key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
+        type_query(hwnd, "Save All");
+        key(hwnd, 0x0d, Modifiers::NONE)?;
+        if owner(hwnd).unwrap().state.borrow().selector.is_none() {
+            return Err("Palette executed an unsupported native flow".into());
+        }
+        expected(hwnd, SOURCE)?;
+        checks.push("palette_unavailable_command_rejected");
+        key(hwnd, 0x1b, Modifiers::NONE)?;
+        key(hwnd, 0x50, Modifiers::CTRL)?;
+        type_query(hwnd, "fixture.txt");
+        // Root replacement must invalidate/cancel the old selector before any
+        // next completion is admitted. Reuse only the owned fixture directory.
+        {
+            let mut state = owner(hwnd).unwrap().state.borrow_mut();
+            state.set_project_root(options.fixture.parent().unwrap().to_owned())?;
+            if state.selector.is_some() || !state.quick_open.results().is_empty() {
+                return Err("Project root replacement retained a stale selector".into());
+            }
+        }
+        checks.push("project_change_cancels_selector");
+        // Capture the real popup renderer as part of the final native canvas.
+        key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
+        type_query(hwnd, "Split");
+        let revision = owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .revision();
         SendMessageW(hwnd, WM_PAINT, 0, 0);
         let frame = {
             let mut state = owner(hwnd).unwrap().state.borrow_mut();
@@ -306,6 +421,22 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             checks.push("actual_gdi_offscreen_bitmap");
             checks.push("gdi_partial_clip_no_error");
         }
+        if owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .revision()
+            != revision
+        {
+            return Err("Native popup painting changed the source revision".into());
+        }
+        checks.push("selector_gdi_paint_read_only");
+        key(hwnd, 0x1b, Modifiers::NONE)?;
         if owner(hwnd).unwrap().state.borrow().paint_count == 0 {
             return Err("WM_PAINT handler did not run".into());
         }

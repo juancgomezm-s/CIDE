@@ -186,3 +186,10 @@ consulta de rutas Unicode acotada/cancelable, Enter/Ctrl+Enter y revalidación a
 de abrir, conservando sesiones sucias. [Uso y cuotas](docs/M2_QUICK_OPEN.md).
 El cierre local reúne339 pruebas distintas y16 checks nativos; no certifica aún
 todo M2A/M2B, la pantalla física ni RAM global. Continúa adaptación Quick Open/Palette al GUI.
+
+
+La GUI ya ofrece Ctrl+P Quick Open, Ctrl+Shift+P Command Palette y Open Folder;
+también admite --project-root DIR. Reutiliza el finder/registro y recibe resultados
+sin otra tecla, con consulta modal separada del documento. [Uso y evidencia](docs/M2B_NATIVE_SELECTORS.md):
+350 pruebas completas locales y23 checks del ejecutable nativo. Continúa clipboard
+del sistema y elección gráfica explícita de encoding; manual/IME/DPI siguen abiertos.

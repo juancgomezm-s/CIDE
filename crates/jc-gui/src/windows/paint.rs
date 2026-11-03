@@ -36,6 +36,7 @@ pub(super) struct Frame {
     top: Vec<u16>,
     status: Vec<u16>,
     panes: Vec<Pane>,
+    selector: Option<super::selector::SelectorPresentation>,
 }
 
 fn areas(state: &State) -> Vec<(PaneId, Rect)> {
@@ -233,10 +234,16 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         top: wide(&top),
         status,
         panes,
+        selector: state.selector_presentation(super::selector_paint::list_capacity(
+            state.width,
+            state.height,
+            state.cell_width,
+            state.cell_height,
+        )),
     }
 }
 
-unsafe fn fill(dc: Hdc, rect: Rect, color: u32) -> Result<(), String> {
+pub(super) unsafe fn fill(dc: Hdc, rect: Rect, color: u32) -> Result<(), String> {
     if rect.right <= rect.left || rect.bottom <= rect.top {
         return Ok(());
     }
@@ -256,7 +263,7 @@ unsafe fn fill(dc: Hdc, rect: Rect, color: u32) -> Result<(), String> {
         Ok(())
     }
 }
-unsafe fn text(
+pub(super) unsafe fn text(
     dc: Hdc,
     rect: Rect,
     value: &[u16],
@@ -404,6 +411,16 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         DIM,
         HEADER,
     )?;
+    if let Some(presentation) = &frame.selector {
+        super::selector_paint::draw(
+            dc,
+            presentation,
+            frame.width,
+            frame.height,
+            frame.cell_width,
+            frame.cell_height,
+        )?;
+    }
     drop(selected);
     Ok(())
 }

@@ -13,29 +13,54 @@ use std::{
 };
 
 #[derive(Clone, Default)]
-pub struct Wakeup(Arc<(Mutex<u64>, Condvar)>);
+pub struct Wakeup(Arc<WakeState>);
+#[derive(Default)]
+struct WakeState {
+    ticket: Mutex<u64>,
+    changed: Condvar,
+    notifier: Option<Arc<dyn Fn() + Send + Sync>>,
+    notifier_failed: AtomicBool,
+}
 impl Wakeup {
+    /// Optional native-loop transport. It must be short and nonblocking, must
+    /// never mutate a live editor, and runs after releasing the ticket mutex.
+    /// A panic is latched instead of unwinding through a worker's delivery path.
+    pub fn with_notifier(notifier: impl Fn() + Send + Sync + 'static) -> Self {
+        Self(Arc::new(WakeState {
+            notifier: Some(Arc::new(notifier)),
+            ..WakeState::default()
+        }))
+    }
+    pub fn take_notifier_failure(&self) -> bool {
+        self.0.notifier_failed.swap(false, Ordering::AcqRel)
+    }
     pub fn ticket(&self) -> u64 {
-        *self.0 .0.lock().unwrap_or_else(|e| e.into_inner())
+        *self.0.ticket.lock().unwrap_or_else(|e| e.into_inner())
     }
     pub fn signal(&self) {
-        let mut ticket = self.0 .0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut ticket = self.0.ticket.lock().unwrap_or_else(|e| e.into_inner());
         *ticket = ticket.wrapping_add(1);
-        self.0 .1.notify_all();
+        drop(ticket);
+        self.0.changed.notify_all();
+        if let Some(notifier) = &self.0.notifier {
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| notifier())).is_err() {
+                self.0.notifier_failed.store(true, Ordering::Release);
+            }
+        }
     }
     pub fn wait(&self, ticket: u64, timeout: Option<Duration>) {
-        let guard = self.0 .0.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self.0.ticket.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(timeout) = timeout {
             drop(
                 self.0
-                     .1
+                    .changed
                     .wait_timeout_while(guard, timeout, |current| *current == ticket)
                     .unwrap_or_else(|e| e.into_inner()),
             );
         } else {
             drop(
                 self.0
-                     .1
+                    .changed
                     .wait_while(guard, |current| *current == ticket)
                     .unwrap_or_else(|e| e.into_inner()),
             );

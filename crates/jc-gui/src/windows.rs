@@ -1,18 +1,26 @@
 mod ffi;
+mod folder;
+mod notify;
 mod paint;
+mod selector;
+mod selector_flow;
+mod selector_paint;
 mod smoke;
 use crate::GuiOptions;
 use ffi::*;
+use jc_app::quick_open::QuickOpenController;
 use jc_app::{
     default_keymap, default_registry, CommandId, CommandOutcome, CommandRegistry, Key, KeyMap,
-    KeyScope, KeyStroke, Modifiers, PrimaryFocus, Resolution, Workbench,
+    KeyScope, KeyStroke, Modifiers, PrimaryFocus, Resolution, Wakeup, Workbench,
 };
 use jc_text::TextEncoding;
+use selector::{Selector, SelectorKind};
 use std::os::windows::ffi::OsStringExt;
 use std::{
     cell::{Cell, RefCell},
     path::PathBuf,
     ptr::null_mut,
+    sync::Arc,
 };
 
 pub(super) fn wide(text: &str) -> Vec<u16> {
@@ -24,34 +32,29 @@ fn os_error(operation: &str) -> String {
 
 const OPEN_SIDE: usize = 190;
 const COMMANDS: &[(usize, CommandId, &str)] = &[
-    (101, CommandId::FileNew, "&New\tCtrl+N"),
-    (102, CommandId::FileOpen, "&Open...\tCtrl+O"),
-    (103, CommandId::FileSave, "&Save\tCtrl+S"),
-    (104, CommandId::FileSaveAs, "Save &As...\tCtrl+Shift+S"),
-    (105, CommandId::FileClose, "&Close Tab\tCtrl+W"),
-    (106, CommandId::FileExit, "E&xit\tAlt+F4"),
-    (110, CommandId::EditUndo, "&Undo\tCtrl+Z"),
-    (111, CommandId::EditRedo, "&Redo\tCtrl+Y"),
-    (112, CommandId::EditCut, "Cu&t (internal)\tCtrl+X"),
-    (113, CommandId::EditCopy, "&Copy (internal)\tCtrl+C"),
-    (114, CommandId::EditPaste, "&Paste (internal)\tCtrl+V"),
-    (115, CommandId::EditSelectAll, "Select &All\tCtrl+A"),
-    (116, CommandId::EditJoinLines, "&Join Lines\tCtrl+Shift+J"),
-    (117, CommandId::EditSplitLine, "&Split Line\tEnter"),
-    (
-        120,
-        CommandId::EditorSplitRight,
-        "Split &Right\tAlt+Shift+2",
-    ),
-    (121, CommandId::EditorOneGroup, "&One Group\tAlt+Shift+1"),
-    (122, CommandId::EditorFocusPrimary, "Focus Group &1\tCtrl+1"),
-    (
-        123,
-        CommandId::EditorFocusSecondary,
-        "Focus Group &2\tCtrl+2",
-    ),
-    (124, CommandId::TabNext, "&Next Tab\tCtrl+Tab"),
-    (125, CommandId::TabPrevious, "&Previous Tab\tCtrl+Shift+Tab"),
+    (101, CommandId::FileNew, "&New"),
+    (102, CommandId::FileOpen, "&Open..."),
+    (103, CommandId::FileSave, "&Save"),
+    (104, CommandId::FileSaveAs, "Save &As..."),
+    (105, CommandId::FileClose, "&Close Tab"),
+    (106, CommandId::FileExit, "E&xit"),
+    (107, CommandId::FileOpenFolder, "Open &Folder..."),
+    (108, CommandId::FileQuickOpen, "&Quick Open..."),
+    (110, CommandId::EditUndo, "&Undo"),
+    (111, CommandId::EditRedo, "&Redo"),
+    (112, CommandId::EditCut, "Cu&t (internal)"),
+    (113, CommandId::EditCopy, "&Copy (internal)"),
+    (114, CommandId::EditPaste, "&Paste (internal)"),
+    (115, CommandId::EditSelectAll, "Select &All"),
+    (116, CommandId::EditJoinLines, "&Join Lines"),
+    (117, CommandId::EditSplitLine, "&Split Line"),
+    (120, CommandId::EditorSplitRight, "Split &Right"),
+    (121, CommandId::EditorOneGroup, "&One Group"),
+    (122, CommandId::EditorFocusPrimary, "Focus Group &1"),
+    (123, CommandId::EditorFocusSecondary, "Focus Group &2"),
+    (124, CommandId::TabNext, "&Next Tab"),
+    (125, CommandId::TabPrevious, "&Previous Tab"),
+    (126, CommandId::PaletteOpen, "Command &Palette..."),
 ];
 pub(super) fn command_id(command: CommandId) -> usize {
     COMMANDS
@@ -62,6 +65,7 @@ pub(super) fn command_id(command: CommandId) -> usize {
 
 enum Action {
     None,
+    ChooseFolder,
     Open(bool),
     SaveAs,
     CloseTab,
@@ -72,6 +76,12 @@ struct State {
     registry: CommandRegistry,
     keymap: KeyMap,
     encoding: Option<TextEncoding>,
+    project_root: Option<PathBuf>,
+    selector: Option<Selector>,
+    quick_open: QuickOpenController,
+    wakeup: Wakeup,
+    bridge: Arc<notify::Bridge>,
+    deliveries: usize,
     pub status: String,
     pub width: i32,
     pub height: i32,
@@ -99,6 +109,9 @@ impl Drop for State {
 }
 impl State {
     fn new(options: &GuiOptions) -> Result<Self, String> {
+        let bridge = Arc::new(notify::Bridge::default());
+        let callback = bridge.clone();
+        let wakeup = Wakeup::with_notifier(move || callback.signal());
         let face = wide("Consolas");
         let created =
             unsafe { CreateFontW(-17, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0x31, face.as_ptr()) };
@@ -115,6 +128,12 @@ impl State {
             registry: default_registry(),
             keymap: default_keymap(),
             encoding: options.encoding,
+            project_root: None,
+            selector: None,
+            quick_open: QuickOpenController::new(wakeup.clone()),
+            wakeup,
+            bridge,
+            deliveries: 0,
             status: "Native Win32/GDI · scalar cells · internal clipboard".into(),
             width: 1000,
             height: 650,
@@ -131,6 +150,14 @@ impl State {
             smoke: options.smoke.is_some(),
             key_override: None,
         };
+        if let Some(root) = options
+            .smoke
+            .as_ref()
+            .and_then(|s| s.fixture.parent())
+            .or(options.project_root.as_deref())
+        {
+            state.set_project_root(root.to_owned())?;
+        }
         if let Some(smoke) = &options.smoke {
             state
                 .workbench
@@ -162,6 +189,7 @@ impl State {
     fn context(&self) -> jc_app::CommandContext {
         let mut context = self.workbench.context();
         context.focus = PrimaryFocus::Editor;
+        context.has_project = self.project_root.is_some();
         context
     }
     fn execute(&mut self, command: CommandId) -> Action {
@@ -170,6 +198,18 @@ impl State {
             return Action::None;
         }
         match command {
+            CommandId::FileOpenFolder => {
+                self.close_selector();
+                return Action::ChooseFolder;
+            }
+            CommandId::PaletteOpen => {
+                self.open_selector(SelectorKind::Palette);
+                return Action::None;
+            }
+            CommandId::FileQuickOpen => {
+                self.open_selector(SelectorKind::Files);
+                return Action::None;
+            }
             CommandId::FileNew => {
                 self.new_document();
                 return Action::None;
@@ -238,6 +278,9 @@ impl State {
     fn key(&mut self, code: usize) -> (bool, Action) {
         self.pending_surrogate = None;
         let modifiers = self.modifiers();
+        if self.selector.is_some() {
+            return (true, self.selector_key(code, modifiers));
+        }
         let key = match code {
             0x09 => Some(Key::Tab),
             0x0d => Some(Key::Enter),
@@ -329,6 +372,14 @@ impl State {
             return;
         }
         let mut bytes = [0u8; 4];
+        if let Some(selector) = self.selector.as_mut() {
+            if selector.append(ch.encode_utf8(&mut bytes)) {
+                self.request_files();
+            } else {
+                self.status = "Selector query limit or unsupported control".into();
+            }
+            return;
+        }
         match self.workbench.insert_text(ch.encode_utf8(&mut bytes)) {
             Ok(()) => self.status = "Ready".into(),
             Err(error) => self.error(error),
@@ -392,10 +443,16 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     if message == WM_NCCREATE {
         let create = &*(lparam as *const CreateStruct);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.parameter as isize);
+        if let Some(owner) = owner(hwnd) {
+            owner.state.borrow().bridge.attach(hwnd);
+        }
         return 1;
     }
     if message == WM_NCDESTROY {
         let pointer = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Owner;
+        if !pointer.is_null() {
+            (*pointer).state.borrow().bridge.detach();
+        }
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         if !pointer.is_null() && (*pointer).hwnd_owned.get() {
             drop(Box::from_raw(pointer));
@@ -457,6 +514,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     ReleaseDC(hwnd, dc);
                 }
             }
+            TASKS_MESSAGE => {
+                state.poll_tasks();
+            }
             WM_SIZE => {
                 let mut rect = Rect::default();
                 if GetClientRect(hwnd, &mut rect) != 0 {
@@ -485,6 +545,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             WM_COMMAND if lparam == 0 => {
+                state.close_selector();
                 if wparam & 0xffff == OPEN_SIDE {
                     action = Action::Open(true);
                 } else if let Some((_, command, _)) =
@@ -510,7 +571,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             WM_LBUTTONDOWN => {
                 let x = (lparam as u16) as i16 as i32;
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
-                paint::click(&mut state, x, y);
+                if state.selector.is_none() {
+                    paint::click(&mut state, x, y);
+                }
             }
             WM_CLOSE => action = Action::Exit,
             _ => handled = false,
@@ -582,8 +645,10 @@ unsafe fn file_dialog(hwnd: Hwnd, save: bool) -> Result<Option<PathBuf>, String>
     ))))
 }
 unsafe fn perform(hwnd: Hwnd, action: Action) {
-    if matches!(action, Action::Open(_) | Action::SaveAs)
-        && owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke)
+    if matches!(
+        action,
+        Action::Open(_) | Action::SaveAs | Action::ChooseFolder
+    ) && owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke)
     {
         if let Some(owner) = owner(hwnd) {
             owner.state.borrow_mut().status = "Smoke prevented an unexpected native dialog".into();
@@ -592,6 +657,21 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
     }
     match action {
         Action::None => {}
+        Action::ChooseFolder => {
+            let selected = folder::choose(hwnd);
+            if let Some(owner) = owner(hwnd) {
+                let mut state = owner.state.borrow_mut();
+                match selected {
+                    Ok(Some(path)) => {
+                        if let Err(error) = state.set_project_root(path) {
+                            state.error(error);
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => state.error(error),
+                }
+            }
+        }
         Action::Open(side) => {
             let selected = file_dialog(hwnd, false);
             if let Some(owner) = owner(hwnd) {
@@ -696,15 +776,15 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
     }
 }
 
-unsafe fn create_menu() -> Result<Handle, String> {
+unsafe fn create_menu(keymap: &KeyMap) -> Result<Handle, String> {
     let bar = CreateMenu();
     if bar.is_null() {
         return Err(os_error("CreateMenu"));
     }
     for (label, start, end) in [
-        ("&File", 101, 107),
+        ("&File", 101, 109),
         ("&Edit", 110, 118),
-        ("&View", 120, 126),
+        ("&View", 120, 127),
     ] {
         let popup = CreatePopupMenu();
         if popup.is_null() {
@@ -716,11 +796,15 @@ unsafe fn create_menu() -> Result<Handle, String> {
             DestroyMenu(bar);
             return Err(os_error("AppendMenu"));
         }
-        for (id, _, text) in COMMANDS
+        for (id, command, label) in COMMANDS
             .iter()
             .filter(|(id, _, _)| *id >= start && *id < end)
         {
-            if AppendMenuW(popup, 0, *id, wide(text).as_ptr()) == 0 {
+            let text = match keymap.primary_shortcut(*command) {
+                Some(shortcut) => format!("{label}\t{shortcut}"),
+                None => (*label).to_owned(),
+            };
+            if AppendMenuW(popup, 0, *id, wide(&text).as_ptr()) == 0 {
                 DestroyMenu(bar);
                 return Err(os_error("AppendMenu item"));
             }
@@ -764,7 +848,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
         if RegisterClassW(&descriptor) == 0 {
             return Err(os_error("RegisterClassW"));
         }
-        let menu = match create_menu() {
+        let menu = match create_menu(&owner.state.borrow().keymap) {
             Ok(menu) => menu,
             Err(error) => {
                 UnregisterClassW(class.as_ptr(), instance);

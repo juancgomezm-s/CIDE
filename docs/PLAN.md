@@ -332,3 +332,13 @@ GDI readonly, usando los controllers y comandos existentes. Una notificación al
 loop nativo debe recibir completions sin otra tecla y sin polling permanente.
 Regex permanece pendiente; no solicitar su dependencia para avanzar este frente.
 Las pruebas manuales de usuario se conservan para el final.
+
+
+## Cierre de selectores GUI y siguiente construcción M2B
+
+Quick Open/Palette/Open Folder nativos implementados: [contrato](M2B_NATIVE_SELECTORS.md).
+350 pruebas completas locales y23 checks del release real, Clippy/release aprobados.
+Se conserva el único Workbench/undo y no hay hilo puente/indexador ni dependencia
+nueva. M2B permanece abierto. Próximo bloque amplio: clipboard OS + elección de
+encoding en GUI; pruebas locales al cerrar ambas rutas. Manual/IME/DPI/accesibilidad
+y aceptación física/global siguen pendientes, sin posponer construcción funcional.

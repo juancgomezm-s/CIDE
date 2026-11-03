@@ -21,6 +21,10 @@ REQUIRED = {
     "split_shared_document_undo", "shared_save_exact_fixture_bytes",
     "unsaved_save_routes_to_save_as", "native_save_all_requires_flow",
     "actual_gdi_offscreen_bitmap", "gdi_partial_clip_no_error", "native_paint_handler", "native_paint_no_errors",
+    "quick_open_native_message_delivery", "selector_query_preserves_document",
+    "quick_open_dirty_side_shared_undo", "palette_shared_command_one_undo",
+    "palette_unavailable_command_rejected", "project_change_cancels_selector",
+    "selector_gdi_paint_read_only",
 }
 
 def ordinary_directory(path):

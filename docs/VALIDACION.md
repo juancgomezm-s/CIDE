@@ -892,3 +892,27 @@ el canvas es rasterización propia del renderer, no screenshot del escritorio.
 Pruebas manuales de usuario quedan al final, sin solicitarlas ahora. Regex sigue
 pendiente, no se descargaron dependencias ni se ejecutó CI/push/AVM. Se continúa
 el roadmap en GUI Quick Open/Palette con los contratos ya disponibles.
+
+
+## M2B: Quick Open/Palette/carpeta nativos — 2026-11-02
+
+Bloque construido completo antes de su ventana serial de validación. Suite
+workspace locked/offline: **350 aprobadas**, cero fallos, dos helpers de procesos
+ignorados en ejecución directa e invocados por pruebas padres. Nuevas:3 notifier,
+4 selector,3 geometría/composición y1 CLI. Formato y Clippy workspace all-targets
+-D warnings, release workspace bins/examples aprobados. Se corrigió un nombre
+de campo del smoke tras el primer error de compilación; ninguna suite pasada se
+repitió por documentación. Sin CI/red/dependencias nuevas ni perfiles CPU/index.
+
+Ejecutable release: **23 checks nativos aprobados**, native_paint_errors=0 y13
+bytes de fixture final intactos. Los7 nuevos cubren PostMessage real sin otra
+tecla, consulta sin editar, dirty/open-to-side/undo, palette en un undo, comando
+no conectado rechazado, raíz invalidada y popup GDI sin mutar revisión. Retenido
+en work/native-gui-smoke/20261103T014708Z-0be3b3ba871a; reporte/hash/PNG copiados
+en docs/evidence como m2b-native-selectors*. Canvas1000x650/162 colores revisado.
+[Contrato, fuentes y evidencia](M2B_NATIVE_SELECTORS.md).
+
+No acredita interacción con el folder picker modal, pantalla física, OS clipboard,
+IME, DPI, accesibilidad, RAM global ni otra plataforma. Fallo PostMessage exige
+refresh manual si no llega otra señal; no hay transporte OS alternativo. wall_ms
+del smoke no es tecla-a-pantalla. Las pruebas manuales de Juan siguen para el final.

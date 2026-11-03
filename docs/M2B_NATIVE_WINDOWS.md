@@ -124,3 +124,13 @@ Para legacy hay que elegir la página real con --encoding; su valor del proyecto
 del usuario sigue sin confirmarse. No se pide realizar la prueba manual ahora.
 El siguiente bloque activo añade Quick Open y Palette a esta ventana mediante
 componentes del mismo jc-app, sin GUI buffer alterno ni nuevas dependencias.
+
+
+## Segundo bloque: selectores nativos
+
+Quick Open (Ctrl+P), Command Palette (Ctrl+Shift+P), Open Folder y --project-root
+ya están conectados. [Contrato y evidencia](M2B_NATIVE_SELECTORS.md): consulta
+modal, búsqueda metadata-only compartida, apertura lateral/sesión sucia, menú
+derivado del KeyMap y PostMessage sin hilo puente. Una corrida completa350 Rust,
+Clippy/release workspace y23 checks nativos aprobaron. Clipboard OS/encoding UI
+son el siguiente bloque; IME/DPI/accesibilidad y prueba física siguen pendientes.

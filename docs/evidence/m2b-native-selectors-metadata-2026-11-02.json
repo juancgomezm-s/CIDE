@@ -1,0 +1,29 @@
+{
+  "run_id": "20261103T014708Z-0be3b3ba871a",
+  "platform": "Windows MSVC x64 local",
+  "binary": "target/release/jc-ide-gui.exe",
+  "binary_sha256": "a099a5ed7d4b5c49a14b0d40aac706a5a21b2160925307bc23ae1c1a2e80f744",
+  "fixture_sha256": "98ab4d3aeab1e120560e942e2df6a0db1147bf94bafcf1590000ffb3c2b6fc80",
+  "fixture_bytes": 13,
+  "fixture_unchanged": true,
+  "native_report_sha256": "65839427561a2b83291ec00c630e63710f5a8037144279a8be291c62746cccbd",
+  "bmp_sha256": "4d3e0f962e45b4cd8e3f86c44d550c53366bf85226367ea864a31981573753c5",
+  "png_sha256": "764037160455f5df4b4a0b5850a745f3460cc6c892e56fe0760fa598fa04fdd7",
+  "png_conversion": "Lossless BGRX BMP to RGB PNG; Python stdlib struct/zlib, no redraw or image generation",
+  "native_sources_sha256": {
+    "crates/jc-gui/Cargo.toml": "0cff743959e9ebf6b93e25cc285cb5e9fe5b2c2d3383fda70a6ea9ba6ce8346a",
+    "crates/jc-gui/src/lib.rs": "41a24b1a67cd555db5789a98a6a260bf47644ead086ecc7d75b1ccaa6a71c156",
+    "crates/jc-gui/src/main.rs": "eb74630fee88456680d2be53344577fcf65772e89345ac6682e5605d4a240d3a",
+    "crates/jc-gui/src/windows/ffi.rs": "f1b1047c25537484bd5b13a23b47ad7fa52aed88a6fba9b49f7e41f9256f5a01",
+    "crates/jc-gui/src/windows/folder.rs": "5d879f315a63941c4bdd274e661cc1d793d505d974c5bf5d5b69b38ea7a0261a",
+    "crates/jc-gui/src/windows/notify.rs": "4c63cd1df08e39b3ecbf3076e72cb505b1315fce230fc792a303f18e9a22e6d0",
+    "crates/jc-gui/src/windows/paint.rs": "9cc74c3ac1f860f3d4cf84fee6a90ceef36f3e8cd8745769b6558c4514054b0b",
+    "crates/jc-gui/src/windows/selector.rs": "8fca3ceb6155894d3422c176750339aabff5a0095c511bf5e1e5dec193500aef",
+    "crates/jc-gui/src/windows/selector_flow.rs": "f85366935dafded28583513b703662308366fb770397b15088685fa936ae7129",
+    "crates/jc-gui/src/windows/selector_paint.rs": "c916e2c20451cf3dc4dc429e4caffc3537e00daf7eb995df17161fe81095f220",
+    "crates/jc-gui/src/windows/smoke.rs": "c8d505a48a29f8ec267da38ed1e7ee84f8cc398e9e2d2ef03ae1a667ffa6375a",
+    "crates/jc-gui/src/windows.rs": "24e05ec3c348c787b191dbce1004125e3c338188d5bc697b524b511f7915e4cf"
+  },
+  "physical_display_verified": false,
+  "os_clipboard_verified": false
+}

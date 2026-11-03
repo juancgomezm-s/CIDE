@@ -214,3 +214,15 @@ requires its frontend flow. Ordinary caret placement must not add jump history.
 Next admitted block: native GUI Quick Open + Command Palette, reusing core controller
 and registry, bounded selector input/visible presentation and completion wakeup.
 No dependency installs/regex enabling/CI/push; manual user tests stay for the end.
+
+
+## Native selectors closure and next broad construction
+
+Read docs/M2B_NATIVE_SELECTORS.md. Native Quick Open/Palette/Open Folder and
+--project-root are implemented; one full350 Rust run, Clippy/release and23 native
+checks passed. Wakeup supports an optional short notifier outside ticket lock;
+Win32 coalesces PostMessage with serialized detach, accepts only in TASKS_MESSAGE,
+and painting only prepares bounded rows. Do not repeat passing suites for docs.
+Next broad M2B block: OS clipboard plus explicit GUI encoding selection, sharing
+Workbench operations and strict encoding. No new dependency/regex/CI, manual user
+tests remain deferred. No OS clipboard mutation from the existing native smoke.

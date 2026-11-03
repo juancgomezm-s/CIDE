@@ -14,6 +14,13 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("-h" | "--help") => return Ok(None),
+            Some("--project-root") => {
+                if options.project_root.is_some() {
+                    return Err("duplicate --project-root".into());
+                }
+                options.project_root =
+                    Some(PathBuf::from(args.next().ok_or("missing project root")?));
+            }
             Some("--encoding") => {
                 if options.encoding.is_some() {
                     return Err("duplicate --encoding".into());
@@ -47,7 +54,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         }
     }
     if fixture.is_some() || report.is_some() || bitmap.is_some() {
-        if !options.paths.is_empty() {
+        if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("smoke uses only its explicit fixture".into());
         }
         let fixture = fixture.ok_or("--smoke-fixture requires --smoke-report")?;
@@ -70,7 +77,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
 
 fn main() {
     match parse(std::env::args_os().skip(1)) {
-        Ok(None) => println!("jc-ide-gui [--encoding utf-8|cp1252|latin1|ibm850] [files...]\nWindows native frontend. Smoke: --smoke-fixture ABS --smoke-report ABS [--smoke-bitmap ABS]"),
+        Ok(None) => println!("jc-ide-gui [--project-root DIR] [--encoding utf-8|cp1252|latin1|ibm850] [files...]\nWindows native frontend. Smoke: --smoke-fixture ABS --smoke-report ABS [--smoke-bitmap ABS]"),
         Ok(Some(options)) => {
             if let Err(error) = jc_gui::run(options) {
                 eprintln!("{error}");
@@ -104,6 +111,16 @@ mod tests {
         assert!(args(&["--encoding", "utf8", "--encoding", "cp850"]).is_err());
         assert!(args(&["--unknown"]).is_err());
         assert!(args(&["--help"]).unwrap().is_none());
+    }
+    #[test]
+    fn project_root_is_explicit_and_preserves_native_path() {
+        let path = OsString::from("proyecto con espacios");
+        let options = parse([OsString::from("--project-root"), path.clone()])
+            .unwrap()
+            .unwrap();
+        assert_eq!(options.project_root, Some(PathBuf::from(path)));
+        assert!(args(&["--project-root"]).is_err());
+        assert!(args(&["--project-root", "a", "--project-root", "b"]).is_err());
     }
     #[test]
     fn smoke_requires_distinct_absolute_owned_paths() {

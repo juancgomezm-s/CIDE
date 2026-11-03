@@ -305,3 +305,14 @@ GDI readonly, usando los controllers y comandos existentes. Una notificación al
 loop nativo debe recibir completions sin otra tecla y sin polling permanente.
 Regex permanece pendiente; no solicitar su dependencia para avanzar este frente.
 Las pruebas manuales de usuario se conservan para el final.
+
+
+## Último cierre: selectores GUI nativos; siguiente clipboard/encoding
+
+Leer docs/M2B_NATIVE_SELECTORS.md.350 pruebas completas y23 checks reales nativos,
+Clippy/release; Quick Open/Palette/carpeta ya conectados. No repetir suites por
+documentación ni perfiles cerrados. Siguiente bloque amplio M2B: clipboard del
+sistema y selector explícito de encoding. No activar regex/dependencias/CI ni pedir
+prueba manual ahora. Preservar notifier opcional corto fuera del ticket mutex,
+detach serializado con PostMessage, aceptación solo en TASKS_MESSAGE y composición
+de selector visible/solo lectura. Clipboard OS todavía no certificado por smoke.

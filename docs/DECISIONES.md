@@ -360,3 +360,15 @@ caret sin historial de salto y Save As deriva sesión. [Contrato/evidencia](M2B_
 339 pruebas distintas en cierre selectivo y16 checks nativos, formato/Clippy/
 release. Continuar Quick Open/Palette GUI con notificación nativa, no perfiles
 indefinidos ni regex/dependencias sin autorización.
+
+
+## D35 — Selectores GUI sobre controller/registro y transporte opcional
+
+Quick Open nativo usa el controller core; Palette filtra el registro y revalida
+soporte/contexto antes de ejecutar. Menús/filas derivan shortcuts del KeyMap.
+Consulta modal separada del documento; preparación visible no acepta completions.
+Wakeup añade notifier opcional sin dependencia Win32 en jc-app; la GUI publica un
+mensaje coalescido a su HWND, sin hilo puente ni polling. Mutex breve protege
+detach/PostMessage; callback no posee punteros al modelo. Fallo de PostMessage
+se registra con recuperación manual documentada. [Contrato](M2B_NATIVE_SELECTORS.md).
+350 Rust/23 checks reales nativos pasaron; no inferir aceptación física/clipboard.

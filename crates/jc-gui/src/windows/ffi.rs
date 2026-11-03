@@ -155,6 +155,7 @@ pub const WM_INITMENU: u32 = 0x116;
 pub const WM_LBUTTONDOWN: u32 = 0x201;
 pub const GWLP_USERDATA: i32 = -21;
 pub const SMOKE_MESSAGE: u32 = 0x8001;
+pub const TASKS_MESSAGE: u32 = 0x8002;
 #[link(name = "kernel32")]
 extern "system" {
     pub fn GetModuleHandleW(name: *const u16) -> Handle;
@@ -186,6 +187,7 @@ extern "system" {
     pub fn UpdateWindow(hwnd: Hwnd) -> i32;
     pub fn SetFocus(hwnd: Hwnd) -> Hwnd;
     pub fn GetMessageW(message: *mut Msg, hwnd: Hwnd, min: u32, max: u32) -> i32;
+    pub fn PeekMessageW(message: *mut Msg, hwnd: Hwnd, min: u32, max: u32, remove: u32) -> i32;
     pub fn TranslateMessage(message: *const Msg) -> i32;
     pub fn DispatchMessageW(message: *const Msg) -> isize;
     pub fn PostQuitMessage(code: i32);
