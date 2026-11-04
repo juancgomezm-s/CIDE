@@ -1576,3 +1576,12 @@ de variables y rutinas, rechazo de llamadas dinámicas, vista previa sin
 mutación y deshacer de toda la propuesta con conservación de CRLF.
 Clippy del workspace y formato aprobados. El análisis no se ha validado
 contra el compilador OpenEdge.
+
+## Renombrado ABL con FORWARD — 2026-11-04
+
+Pasaron ocho pruebas dirigidas de renombrado. Los casos nuevos verifican
+que prototipo, implementación y llamadas producen los mismos rangos, que
+los parámetros omitidos en la implementación se resuelven desde el prototipo
+y que las firmas incompatibles o sin contraparte se rechazan. La prueba
+TUI revisa los cuatro cambios antes de confirmar y recupera el archivo con
+un solo deshacer. Formato y Clippy aprobados. Validación local en Rust.

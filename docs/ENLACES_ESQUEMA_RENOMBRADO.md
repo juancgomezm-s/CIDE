@@ -38,9 +38,19 @@ declaración y las referencias vinculadas. El analizador distingue los usos de
 variables de los nombres de rutina y reconoce llamadas anidadas en expresiones
 admitidas. Mantiene los límites y la confirmación explícita del flujo anterior.
 
-Las declaraciones `FORWARD`, llamadas externas o dinámicas, `RUN ... IN`,
-includes y macros quedan fuera del subconjunto. Si aparecen construcciones que
-impiden resolver el documento, el comando informa el rechazo sin editar.
+Las funciones escalares con `FORWARD` se vinculan a una implementación
+posterior en el mismo archivo. La vista previa incluye el prototipo, la
+implementación y las llamadas estáticas. Se comprueba el tipo de retorno y,
+si la implementación declara parámetros, su cantidad, orden, tipo y modo.
+Si la implementación omite la lista, el analizador usa la del prototipo.
+Prototipos duplicados, sin implementación o con firmas incompatibles se
+rechazan antes de generar una propuesta.
+
+Las llamadas externas o dinámicas, `RUN ... IN`, includes y macros quedan
+fuera del subconjunto. Si aparecen construcciones que impiden resolver el
+documento, el comando informa el rechazo sin editar.
+
+[Referencia de declaraciones FORWARD de Progress](https://docs.progress.com/bundle/openedge-develop-abl-applications-122/page/Making-a-forward-declaration-for-a-function.html).
 
 ## Bloques de renombrado posteriores
 

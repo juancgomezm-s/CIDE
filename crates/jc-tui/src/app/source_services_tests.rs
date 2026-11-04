@@ -26,11 +26,11 @@ fn editor(text: &str, path: &str) -> TuiApp {
 
 #[test]
 fn source_tui_renames_internal_procedures_and_functions_after_preview() {
-    let text = "FUNCTION total RETURNS INTEGER():\r\nRETURN 1.\r\nEND FUNCTION.\r\nPROCEDURE report:\r\nDISPLAY total().\r\nEND PROCEDURE.\r\nRUN report.";
+    let text = "FUNCTION total RETURNS INTEGER() FORWARD.\r\nDISPLAY total().\r\nFUNCTION total RETURNS INTEGER():\r\nRETURN 1.\r\nEND FUNCTION.\r\nPROCEDURE report:\r\nDISPLAY total().\r\nEND PROCEDURE.\r\nRUN report.";
     let mut a = editor(text, "routines.p");
-    for (line, column, old, new) in [
-        (6, 5, "report", "show-report"),
-        (4, 9, "total", "sum-value"),
+    for (line, column, old, new, changes) in [
+        (8, 5, "report", "show-report", 2),
+        (1, 9, "total", "sum-value", 4),
     ] {
         a.workbench
             .go_to_position(TextPosition { line, column })
@@ -47,7 +47,7 @@ fn source_tui_renames_internal_procedures_and_functions_after_preview() {
             "{}",
             a.source.message()
         );
-        assert_eq!(a.source.items().len(), 2);
+        assert_eq!(a.source.items().len(), changes);
         assert_eq!(a.workbench.active_bytes().unwrap(), text.as_bytes());
         key(&mut a, KeyCode::F(9), KeyModifiers::NONE);
         assert_eq!(

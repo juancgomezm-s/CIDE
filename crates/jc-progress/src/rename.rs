@@ -112,6 +112,7 @@ enum Role {
     Declaration(bool),
     Reference,
     RoutineDeclaration(Routine),
+    Forward,
     RoutineCall(Routine),
 }
 
@@ -234,8 +235,75 @@ fn declaration(occurrences: &mut Vec<Occurrence>, token: usize, scope: usize, re
     });
 }
 
+struct FunctionHeader {
+    result: usize,
+    parameters: Option<Vec<usize>>,
+}
+
+impl FunctionHeader {
+    fn parse(tokens: &[Token<'_>], start: usize, end: usize) -> Result<Self, String> {
+        let mut result = start + 2;
+        if tokens.get(result).is_some_and(|word| word.is(b"RETURNS")) {
+            result += 1;
+        }
+        if result >= end || !scalar(&tokens[result]) {
+            return Err(UNSUPPORTED.into());
+        }
+        let parameters = match &tokens[result + 1..end] {
+            [] => None,
+            [open, parameters @ .., close] if open.is(b"(") && close.is(b")") => {
+                let mut names = Vec::new();
+                for (index, parameter) in parameters.split(|token| token.is(b",")).enumerate() {
+                    if parameters.is_empty() {
+                        break;
+                    }
+                    let [direction, name, as_word, datatype] = parameter else {
+                        return Err(UNSUPPORTED.into());
+                    };
+                    if !(direction.is(b"INPUT")
+                        || direction.is(b"OUTPUT")
+                        || direction.is(b"INPUT-OUTPUT"))
+                        || !name.name()
+                        || !as_word.is(b"AS")
+                        || !scalar(datatype)
+                    {
+                        return Err(UNSUPPORTED.into());
+                    }
+                    names.push(result + 3 + index * 5);
+                }
+                Some(names)
+            }
+            _ => return Err(UNSUPPORTED.into()),
+        };
+        Ok(Self { result, parameters })
+    }
+
+    fn bind(self, prototype: Option<Self>, tokens: &[Token<'_>]) -> Result<Vec<usize>, String> {
+        let Some(prototype) = prototype else {
+            return Ok(self.parameters.unwrap_or_default());
+        };
+        let expected = prototype.parameters.unwrap_or_default();
+        let matches = |left: usize, right: usize| tokens[left].is(tokens[right].text);
+        if !matches(self.result, prototype.result)
+            || self.parameters.as_ref().is_some_and(|actual| {
+                actual.len() != expected.len()
+                    || actual
+                        .iter()
+                        .zip(&expected)
+                        .any(|(&a, &b)| !matches(a - 1, b - 1) || !matches(a + 2, b + 2))
+            })
+        {
+            return Err(
+                "El prototipo FORWARD y la implementación tienen firmas incompatibles".into(),
+            );
+        }
+        Ok(self.parameters.unwrap_or(expected))
+    }
+}
+
 fn classify(tokens: &[Token<'_>]) -> Result<Vec<Occurrence>, String> {
     let mut occurrences = Vec::new();
+    let mut prototypes = HashMap::new();
     let mut routine = None;
     let mut scope = 0;
     let mut next_scope = 0;
@@ -258,11 +326,27 @@ fn classify(tokens: &[Token<'_>]) -> Result<Vec<Occurrence>, String> {
             return Err(UNSUPPORTED.into());
         };
         if let Some(kind) = Routine::from_token(first) {
-            if routine.is_some()
-                || blocks != 0
-                || !delimiter.is(b":")
-                || !statement.get(1).is_some_and(Token::name)
-            {
+            if routine.is_some() || blocks != 0 || !statement.get(1).is_some_and(Token::name) {
+                return Err(UNSUPPORTED.into());
+            }
+            let forward = kind == Routine::Function
+                && delimiter.is(b".")
+                && statement.last().is_some_and(|token| token.is(b"FORWARD"));
+            if forward {
+                let signature = FunctionHeader::parse(tokens, start, end - 1)?;
+                let name = statement[1].text.to_ascii_uppercase();
+                if prototypes.insert(name, signature).is_some() {
+                    return Err("Hay prototipos FORWARD duplicados".into());
+                }
+                occurrences.push(Occurrence {
+                    token: start + 1,
+                    scope: 0,
+                    role: Role::Forward,
+                });
+                start = end + 1;
+                continue;
+            }
+            if !delimiter.is(b":") {
                 return Err(UNSUPPORTED.into());
             }
             next_scope += 1;
@@ -275,34 +359,11 @@ fn classify(tokens: &[Token<'_>]) -> Result<Vec<Occurrence>, String> {
             });
             match (kind, statement) {
                 (Routine::Procedure, [_, _]) => {}
-                (Routine::Function, [_, _, returns, datatype, open, params @ .., close])
-                    if returns.is(b"RETURNS")
-                        && scalar(datatype)
-                        && open.is(b"(")
-                        && close.is(b")") =>
-                {
-                    let mut at = 0;
-                    while at < params.len() {
-                        let [direction, name, as_word, datatype, ..] = &params[at..] else {
-                            return Err(UNSUPPORTED.into());
-                        };
-                        if !(direction.is(b"INPUT")
-                            || direction.is(b"OUTPUT")
-                            || direction.is(b"INPUT-OUTPUT"))
-                            || !name.name()
-                            || !as_word.is(b"AS")
-                            || !scalar(datatype)
-                        {
-                            return Err(UNSUPPORTED.into());
-                        }
-                        declaration(&mut occurrences, start + 6 + at, scope, false);
-                        at += 4;
-                        if at < params.len() {
-                            if !params[at].is(b",") || at + 1 == params.len() {
-                                return Err(UNSUPPORTED.into());
-                            }
-                            at += 1;
-                        }
+                (Routine::Function, _) => {
+                    let prototype = prototypes.remove(&statement[1].text.to_ascii_uppercase());
+                    let signature = FunctionHeader::parse(tokens, start, end)?;
+                    for name in signature.bind(prototype, tokens)? {
+                        declaration(&mut occurrences, name, scope, false);
                     }
                 }
                 _ => return Err(UNSUPPORTED.into()),
@@ -394,7 +455,11 @@ fn classify(tokens: &[Token<'_>]) -> Result<Vec<Occurrence>, String> {
             || first.is(b"RETURN")
         {
             references(&mut occurrences, &statement[1..], start + 1, scope)?;
-        } else if first.name() && statement.get(1).is_some_and(|word| word.is(b"=")) {
+        } else if first.name()
+            && (statement.get(1).is_some_and(|word| word.is(b"="))
+                || statement.get(1).is_some_and(|word| word.is(b"("))
+                    && statement.last().is_some_and(|word| word.is(b")")))
+        {
             references(&mut occurrences, statement, start, scope)?;
         } else {
             return Err(UNSUPPORTED.into());
@@ -403,6 +468,9 @@ fn classify(tokens: &[Token<'_>]) -> Result<Vec<Occurrence>, String> {
     }
     if start != tokens.len() || routine.is_some() || blocks != 0 {
         return Err(UNSUPPORTED.into());
+    }
+    if !prototypes.is_empty() {
+        return Err("Hay un prototipo FORWARD sin implementación posterior".into());
     }
     Ok(occurrences)
 }
@@ -458,7 +526,11 @@ pub fn propose(
         let key = token.text.to_ascii_uppercase();
         let (binding, renameable, is_routine) = match occurrence.role {
             Role::RoutineDeclaration(_) => (occurrence.token, true, true),
-            Role::RoutineCall(kind) => {
+            Role::Forward | Role::RoutineCall(_) => {
+                let kind = match occurrence.role {
+                    Role::RoutineCall(kind) => kind,
+                    _ => Routine::Function,
+                };
                 let &(binding, _) = routines
                     .get(&key)
                     .filter(|(_, declared)| *declared == kind)
@@ -523,6 +595,48 @@ pub fn propose(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn forward_prototype_implementation_and_calls_share_one_binding() {
+        let source = "FUNCTION amount RETURNS INTEGER (INPUT n AS INTEGER) FORWARD.\r\namount(1).\r\nFUNCTION Amount RETURNS INTEGER:\r\nRETURN n.\r\nEND FUNCTION.\r\nDISPLAY AMOUNT(2).";
+        let positions = ["amount RETURNS", "amount(1)", "Amount RETURNS", "AMOUNT(2)"]
+            .map(|needle| source.find(needle).unwrap());
+        for position in positions {
+            assert_eq!(
+                propose(source.as_bytes(), TextEncoding::Utf8, position, "quantity").unwrap(),
+                positions.map(|start| start..start + 6),
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_incompatible_and_missing_forward_signatures() {
+        let prototype = "FUNCTION amount RETURNS INTEGER (INPUT n AS INTEGER) FORWARD.\n";
+        for header in [
+            "DECIMAL (INPUT n AS INTEGER)",
+            "INTEGER (OUTPUT n AS INTEGER)",
+            "INTEGER (INPUT n AS DECIMAL)",
+            "INTEGER ()",
+        ] {
+            let source =
+                format!("{prototype}FUNCTION amount RETURNS {header}:\nRETURN 1.\nEND FUNCTION.");
+            assert!(
+                propose(source.as_bytes(), TextEncoding::Utf8, 10, "quantity")
+                    .unwrap_err()
+                    .contains("firmas incompatibles")
+            );
+        }
+        for source in [prototype.to_owned(), prototype.repeat(2)] {
+            assert!(propose(source.as_bytes(), TextEncoding::Utf8, 10, "quantity").is_err());
+        }
+        let source = format!("{prototype}FUNCTION amount RETURNS INTEGER (INPUT other AS INTEGER):\nRETURN other.\nEND FUNCTION.");
+        assert_eq!(
+            propose(source.as_bytes(), TextEncoding::Utf8, 10, "quantity")
+                .unwrap()
+                .len(),
+            2
+        );
+    }
 
     #[test]
     fn renames_routine_declarations_and_static_calls_without_touching_trivia() {
