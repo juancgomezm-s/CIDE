@@ -47,6 +47,7 @@ fn draw_prompt(app: &TuiApp, screen: &mut Screen, kind: PromptKind, input: &str)
         PromptKind::ProjectReplacement => "Texto de reemplazo (vacío elimina coincidencias)",
         PromptKind::GoToPosition => "Ir a línea[:columna] (escalares desde uno)",
         PromptKind::GitExecutable => "Ruta absoluta al ejecutable Git (esta sesión)",
+        PromptKind::RenameVariable => "Renombrar variable · nombre nuevo",
     };
     let (x, y, width, height) = centered(screen, 64, 5);
     panel(screen, x, y, width, height, title);

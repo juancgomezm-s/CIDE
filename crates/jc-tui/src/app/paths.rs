@@ -17,6 +17,10 @@ impl TuiApp {
             self.status = format!("La entrada supera {limit} bytes UTF-8");
             return;
         }
+        if kind == PromptKind::RenameVariable {
+            self.preview_variable_rename(&input);
+            return;
+        }
         if kind == PromptKind::GitExecutable {
             let path = PathBuf::from(input.trim());
             if input.len() > 4096 || !path.is_absolute() {
@@ -82,7 +86,9 @@ impl TuiApp {
             return;
         }
         let result: Result<(), String> = match kind {
-            PromptKind::GoToPosition | PromptKind::GitExecutable => unreachable!(),
+            PromptKind::GoToPosition | PromptKind::GitExecutable | PromptKind::RenameVariable => {
+                unreachable!()
+            }
             PromptKind::Open => self.open_path(path),
             PromptKind::New => {
                 let encoding = self.default_encoding.unwrap_or(TextEncoding::Utf8);

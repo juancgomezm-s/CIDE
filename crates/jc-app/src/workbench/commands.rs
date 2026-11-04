@@ -252,6 +252,7 @@ impl Workbench {
             | SourceIncoming
             | SourceDependencies
             | SourceComplete
+            | SourceRename
             | SourceRefresh
             | SourceCancel
             | SourceAccept

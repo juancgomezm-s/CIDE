@@ -1557,3 +1557,13 @@ El intento de suite completa de TUI encontró una prueba que requiere crear
 una unión de directorio y recibió acceso denegado. Al omitirla, la suite
 terminó con `0xc0000409` en una prueba de integración de estado Git. No se
 acredita una pasada completa de la TUI.
+
+## Renombrado ABL de variables — 2026-11-03
+
+Pasaron dos pruebas dirigidas del analizador ABL, 17 de servicios de fuente
+y 24 pruebas filtradas de GUI y TUI. Los casos nuevos cubren sombreado local
+y global, colisiones, comentarios y cadenas, confirmación explícita, un solo
+deshacer y conservación de CP1252 y CRLF. Formato y Clippy de todo el
+workspace aprobados. Compilación optimizada en `target/rename-next/release`.
+La evidencia es local en Rust. Ver
+[subconjunto admitido](ENLACES_ESQUEMA_RENOMBRADO.md).

@@ -7,19 +7,29 @@ use super::{
     Action, State,
 };
 use jc_app::{
+    edit_field, present_field,
+    snippets::SnippetTarget,
     source_services::{
         display_label, display_ui_label, SourceController, SourceMode, SourcePresentation,
         SourceRegistry, SourceRow, SourceState,
     },
-    CommandContext, CommandId, CompletedTask, Modifiers,
+    CommandContext, CommandId, CompletedTask, FieldEdit, Modifiers,
 };
 use std::path::PathBuf;
+
+struct RenameDraft {
+    target: SnippetTarget,
+    name: String,
+    cursor: usize,
+    reviewing: bool,
+}
 
 pub(super) struct SourceGui {
     registry: SourceRegistry,
     pub(super) controller: SourceController,
     visible: bool,
     candidates: Option<(Vec<PathBuf>, usize)>,
+    rename: Option<RenameDraft>,
     epoch: u64,
 }
 impl SourceGui {
@@ -33,6 +43,7 @@ impl SourceGui {
             controller: SourceController::default(),
             visible: false,
             candidates: None,
+            rename: None,
             epoch: 0,
         }
     }
@@ -60,6 +71,7 @@ pub(super) fn is_command(command: CommandId) -> bool {
             | CommandId::SourceIncoming
             | CommandId::SourceDependencies
             | CommandId::SourceComplete
+            | CommandId::SourceRename
             | CommandId::SourceRefresh
             | CommandId::SourceCancel
             | CommandId::SourceAccept
@@ -78,6 +90,12 @@ impl State {
         }
         self.source_gui.visible = false;
         self.source_gui.candidates = None;
+        if self.source_gui.rename.take().is_some()
+            && self.source_gui.controller.mode() == Some(SourceMode::Rename)
+            && self.source_gui.controller.state() != SourceState::Cancelled
+        {
+            self.source_gui.controller.cancel(&mut self.jobs);
+        }
     }
     pub(super) fn source_context(&self, context: &mut CommandContext) {
         let language = context.active_language.as_deref().unwrap_or("");
@@ -92,6 +110,11 @@ impl State {
         context.source_completion_available = context.has_document
             && encoded
             && registry.resolve(language, SourceMode::Completion).is_some();
+        context.source_rename_available = encoded
+            && context.editor_input
+            && !context.has_selection
+            && !context.rectangular_selection
+            && registry.supports_document(&self.workbench, SourceMode::Rename);
         context.source_calls_available =
             encoded && registry.resolve(language, SourceMode::Calls).is_some();
         context.source_dependencies_available = encoded
@@ -101,14 +124,18 @@ impl State {
         let controller = &self.source_gui.controller;
         context.source_incoming_available =
             registry.supports_incoming(&self.workbench, self.project_root.as_deref());
-        context.source_active = controller.mode().is_some()
-            && !matches!(
-                controller.state(),
-                SourceState::Idle | SourceState::Cancelled
-            );
-        context.source_ready = controller.ready(&self.workbench, self.project_root.as_deref());
+        let rename = self.source_gui.rename.is_some();
+        let can_accept = !rename && controller.mode() != Some(SourceMode::Rename);
+        context.source_active = rename
+            || controller.mode().is_some()
+                && !matches!(
+                    controller.state(),
+                    SourceState::Idle | SourceState::Cancelled
+                );
+        context.source_ready =
+            can_accept && controller.ready(&self.workbench, self.project_root.as_deref());
         context.source_side_ready =
-            controller.side_ready(&self.workbench, self.project_root.as_deref());
+            can_accept && controller.side_ready(&self.workbench, self.project_root.as_deref());
         if self.source_visible() {
             context.editor_input = false;
         }
@@ -118,6 +145,7 @@ impl State {
         self.bottom.focused = false;
         self.explorer_focused = false;
         self.source_gui.candidates = None;
+        self.source_gui.rename = None;
         self.source_gui.visible = true;
         self.source_gui.epoch = self.source_gui.epoch.saturating_add(1);
         self.status = match self.source_gui.controller.request(
@@ -139,7 +167,13 @@ impl State {
             CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
             CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
             CommandId::SourceComplete => self.request_source(SourceMode::Completion),
+            CommandId::SourceRename => self.start_rename(),
             CommandId::SourceRefresh => {
+                if self.source_gui.rename.is_some()
+                    || self.source_gui.controller.mode() == Some(SourceMode::Rename)
+                {
+                    return Action::None;
+                }
                 if let Some(mode) = self.source_gui.controller.mode() {
                     self.request_source(mode);
                 }
@@ -150,6 +184,11 @@ impl State {
                 self.status = self.source_gui.controller.message().into();
             }
             CommandId::SourceAccept | CommandId::SourceOpenToSide => {
+                if self.source_gui.rename.is_some()
+                    || self.source_gui.controller.mode() == Some(SourceMode::Rename)
+                {
+                    return Action::None;
+                }
                 self.validate_source();
                 let side = command == CommandId::SourceOpenToSide;
                 let result = if let Some((paths, selected)) = &self.source_gui.candidates {
@@ -196,10 +235,126 @@ impl State {
         }
         Action::None
     }
+    fn start_rename(&mut self) {
+        let target = match SnippetTarget::capture(&self.workbench) {
+            Ok(target) if !target.has_selection() => target,
+            _ => {
+                self.status = "Coloca el cursor sobre una variable de un documento ABL con codificación elegida".into();
+                return;
+            }
+        };
+        self.close_selector();
+        self.bottom.focused = false;
+        self.explorer_focused = false;
+        self.source_gui.controller.cancel(&mut self.jobs);
+        self.source_gui.candidates = None;
+        self.source_gui.rename = Some(RenameDraft {
+            target,
+            name: String::new(),
+            cursor: 0,
+            reviewing: false,
+        });
+        self.source_gui.visible = true;
+        self.source_gui.epoch = self.source_gui.epoch.saturating_add(1);
+        self.status = "Escribe el nuevo nombre y pulsa Intro para revisar".into();
+    }
+    fn rename_key(&mut self, code: usize, modifiers: Modifiers) -> bool {
+        let Some(draft) = self.source_gui.rename.as_mut() else {
+            return false;
+        };
+        if draft.reviewing {
+            if (code == 0x0d && modifiers == Modifiers::CTRL)
+                || (code == 0x78 && modifiers == Modifiers::NONE)
+            {
+                if draft.target.current(&self.workbench)
+                    && self.source_gui.controller.mode() == Some(SourceMode::Rename)
+                    && self
+                        .source_gui
+                        .controller
+                        .ready(&self.workbench, self.project_root.as_deref())
+                {
+                    match self.source_gui.controller.activate(
+                        &mut self.workbench,
+                        self.project_root.as_deref(),
+                        false,
+                    ) {
+                        Ok(_) => {
+                            self.close_source_ui();
+                            self.status = "Variable renombrada en una operación de deshacer".into();
+                        }
+                        Err(error) => self.error(error),
+                    }
+                } else {
+                    self.status = "La vista previa aún no está lista o cambió el destino".into();
+                }
+                return true;
+            }
+            if code == 0x71 && modifiers == Modifiers::NONE {
+                draft.reviewing = false;
+                self.source_gui.controller.cancel(&mut self.jobs);
+                self.source_gui.epoch = self.source_gui.epoch.saturating_add(1);
+                self.status = "Edita el nombre y pulsa Intro para revisar".into();
+                return true;
+            }
+            return matches!(code, 0x0d | 0x74 | 0x78);
+        }
+        if code == 0x0d && modifiers == Modifiers::NONE {
+            if !draft.target.current(&self.workbench) {
+                self.status = "Cambió el destino; cancela y vuelve a abrir".into();
+                return true;
+            }
+            match self.source_gui.controller.request_rename(
+                &draft.name,
+                &self.source_gui.registry,
+                &self.workbench,
+                self.project_root.as_deref(),
+                &mut self.jobs,
+            ) {
+                Ok(()) => {
+                    draft.reviewing = true;
+                    self.source_gui.epoch = self.source_gui.epoch.saturating_add(1);
+                    self.status = self.source_gui.controller.message().into();
+                }
+                Err(error) => self.error(error),
+            }
+            return true;
+        }
+        let edit = match (code, modifiers) {
+            (0x08, Modifiers::NONE) => Some(FieldEdit::Backspace),
+            (0x2e, Modifiers::NONE) => Some(FieldEdit::Delete),
+            (0x24, Modifiers::NONE) => Some(FieldEdit::Home),
+            (0x23, Modifiers::NONE) => Some(FieldEdit::End),
+            (0x25, Modifiers::NONE) => Some(FieldEdit::Left),
+            (0x27, Modifiers::NONE) => Some(FieldEdit::Right),
+            (0x55, Modifiers::CTRL) => Some(FieldEdit::Clear),
+            _ => None,
+        };
+        if let Some(edit) = edit {
+            self.edit_rename(edit);
+        }
+        true
+    }
+    fn edit_rename(&mut self, edit: FieldEdit<'_>) {
+        let Some(draft) = self.source_gui.rename.as_mut() else {
+            return;
+        };
+        if draft.reviewing || !draft.target.current(&self.workbench) {
+            return;
+        }
+        match edit_field(&mut draft.name, &mut draft.cursor, edit, 128) {
+            Ok(_) => self.source_gui.epoch = self.source_gui.epoch.saturating_add(1),
+            Err(error) => self.status = error.into(),
+        }
+    }
     pub(super) fn source_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
         self.validate_source();
+        if code == 0x1b {
+            return self.source_command(CommandId::SourceCancel);
+        }
+        if self.rename_key(code, modifiers) {
+            return Action::None;
+        }
         match code {
-            0x1b => return self.source_command(CommandId::SourceCancel),
             0x74 if modifiers == Modifiers::NONE => {
                 return self.source_command(CommandId::SourceRefresh)
             }
@@ -242,9 +397,10 @@ impl State {
         }
         Action::None
     }
-    pub(super) fn source_character(&mut self, _ch: char) {
-        // Both lists and completion candidates are read models. Typing/paste
-        // here must never edit the hidden live source or imply implicit accept.
+    pub(super) fn source_character(&mut self, ch: char) {
+        if !ch.is_control() {
+            self.edit_rename(FieldEdit::Insert(ch.encode_utf8(&mut [0; 4])));
+        }
     }
     pub(super) fn validate_source(&mut self) -> bool {
         let changed = self.source_gui.controller.validate_context(
@@ -303,6 +459,30 @@ impl State {
             self.cell_width,
             self.cell_height,
         );
+        if let Some(draft) = self
+            .source_gui
+            .rename
+            .as_ref()
+            .filter(|draft| !draft.reviewing)
+        {
+            return Some(GitFrame {
+                panel: ProjectPresentation {
+                    fields: vec![(
+                        "Nuevo nombre",
+                        present_field(&draft.name, draft.cursor, columns, 1),
+                    )],
+                    active: 0,
+                    status: display_ui_label(&self.status, columns),
+                    results: None,
+                },
+                labels: super::project_paint::PanelLabels {
+                    draft: "Renombrar variable",
+                    policy: "Ámbito ABL | El documento sigue intacto",
+                    footer: "Intro revisa | Ctrl+U vacía | Esc cancela",
+                },
+            });
+        }
+        let reviewing = self.source_gui.rename.is_some();
         let (presentation, selected, total) =
             if let Some((paths, selected)) = &self.source_gui.candidates {
                 let count = rows.min(64);
@@ -370,8 +550,13 @@ impl State {
             },
             labels: super::project_paint::PanelLabels {
                 draft: "Servicios locales de código",
-                policy: "Evidencia léxica | captura acotada | aceptación explícita | sin AVM/indexador",
-                footer: "Flechas/Inicio/Fin eligen | Intro acepta | Ctrl+Intro al lado | F5 actualiza | Esc",
+                policy:
+                    "Evidencia léxica | captura acotada | aceptación explícita | sin AVM/indexador",
+                footer: if reviewing {
+                    "F9/Ctrl+Intro aplica todo | F2 edita | Flechas recorren | Esc cancela"
+                } else {
+                    "Flechas/Inicio/Fin eligen | Intro acepta | Ctrl+Intro al lado | F5 actualiza | Esc"
+                },
             },
         })
     }
@@ -447,6 +632,44 @@ mod tests {
             state.workbench.active_bytes().unwrap(),
             b"customer custom\r\ncustomer"
         );
+        state.workbench.undo().unwrap();
+        assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+    }
+    #[test]
+    fn source_gui_rename_requires_explicit_confirmation_of_preview_and_one_undo() {
+        let source =
+            "DEFINE VARIABLE contador AS INTEGER NO-UNDO.\r\nASSIGN contador = contador + 1.";
+        let mut state = editor("gui-rename.p", source, TextEncoding::Windows1252);
+        state
+            .workbench
+            .go_to_position(jc_text::TextPosition {
+                line: 0,
+                column: 17,
+            })
+            .unwrap();
+        state.source_command(CommandId::SourceRename);
+        for ch in "acumulado".chars() {
+            state.source_character(ch);
+        }
+        assert_eq!(state.source_presentation().unwrap().panel.fields.len(), 1);
+        state.source_key(0x0d, Modifiers::NONE);
+        finish(&mut state);
+        assert_eq!(
+            state.source_gui.controller.state(),
+            SourceState::Ready,
+            "{}",
+            state.status
+        );
+        assert_eq!(state.source_gui.controller.items().len(), 3);
+        state.source_key(0x0d, Modifiers::NONE);
+        state.source_command(CommandId::SourceAccept);
+        assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+        state.source_key(0x0d, Modifiers::CTRL);
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            source.replace("contador", "acumulado").as_bytes()
+        );
+        assert!(!state.source_visible());
         state.workbench.undo().unwrap();
         assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
     }

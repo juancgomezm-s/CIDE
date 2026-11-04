@@ -19,6 +19,7 @@ pub fn descriptor() -> SourceProviderDescriptor {
         calls: Some(calls),
         dependencies: Some(dependencies),
         completion: None,
+        rename: Some(crate::rename::propose),
         file_resolution: FileResolution::OrderedProjectPath,
         snippets: super::snippets::TEMPLATES,
     }

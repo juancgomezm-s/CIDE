@@ -24,6 +24,40 @@ fn editor(text: &str, path: &str) -> TuiApp {
     a
 }
 #[test]
+fn source_tui_rename_previews_scoped_ranges_and_applies_one_undo() {
+    let text = "DEFINE VARIABLE total AS INTEGER NO-UNDO.\r\nPROCEDURE worker:\r\nDEFINE VARIABLE total AS INTEGER NO-UNDO.\r\ntotal = 1.\r\nEND PROCEDURE.\r\ntotal = 2.";
+    let mut a = editor(text, "scope.p");
+    a.workbench
+        .go_to_position(TextPosition { line: 3, column: 1 })
+        .unwrap();
+    key(&mut a, KeyCode::F(2), KeyModifiers::NONE);
+    for ch in "local-total".chars() {
+        key(&mut a, KeyCode::Char(ch), KeyModifiers::NONE);
+    }
+    key(&mut a, KeyCode::Enter, KeyModifiers::NONE);
+    finish(&mut a);
+    assert_eq!(
+        a.source.state(),
+        SourceState::Ready,
+        "{}",
+        a.source.message()
+    );
+    assert_eq!(a.source.items().len(), 2);
+    key(&mut a, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(a.workbench.active_bytes().unwrap(), text.as_bytes());
+    key(&mut a, KeyCode::F(9), KeyModifiers::NONE);
+    assert_eq!(
+        a.workbench.active_bytes().unwrap(),
+        text.replace(
+            "DEFINE VARIABLE total AS INTEGER NO-UNDO.\r\ntotal = 1.",
+            "DEFINE VARIABLE local-total AS INTEGER NO-UNDO.\r\nlocal-total = 1."
+        )
+        .as_bytes()
+    );
+    a.workbench.undo().unwrap();
+    assert_eq!(a.workbench.active_bytes().unwrap(), text.as_bytes());
+}
+#[test]
 fn source_tui_symbols_keyboard_navigation_readonly_render_and_explicit_refresh() {
     let text="/* PROCEDURE hidden: */\r\nPROCEDURE alpha:\r\nEND PROCEDURE.\r\nFUNCTION beta RETURNS INTEGER():\r\nEND FUNCTION.";
     let mut a = editor(text, "source.p");

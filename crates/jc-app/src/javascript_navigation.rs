@@ -16,6 +16,7 @@ pub(crate) fn descriptor() -> SourceProviderDescriptor {
         dependencies: Some(dependencies),
         file_resolution: FileResolution::DocumentRelative,
         completion: None,
+        rename: None,
         snippets: &[],
     }
 }

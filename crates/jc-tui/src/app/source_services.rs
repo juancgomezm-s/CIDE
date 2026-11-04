@@ -1,7 +1,7 @@
 //! Frontend intentions only; providers and versioned source results belong to
 //! the shared host. File opening/application happens only on explicit accept.
 use super::TuiApp;
-use crate::state::UiOverlay;
+use crate::state::{PromptKind, UiOverlay};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{
     source_services::{
@@ -18,6 +18,7 @@ pub(crate) fn is_command(command: CommandId) -> bool {
             | CommandId::SourceIncoming
             | CommandId::SourceDependencies
             | CommandId::SourceComplete
+            | CommandId::SourceRename
             | CommandId::SourceRefresh
             | CommandId::SourceCancel
             | CommandId::SourceAccept
@@ -61,6 +62,10 @@ impl TuiApp {
                 .source_registry
                 .resolve(language, SourceMode::Completion)
                 .is_some();
+        context.source_rename_available = self.workbench.active_encoding().is_some()
+            && self
+                .source_registry
+                .supports_document(&self.workbench, SourceMode::Rename);
         context.source_active = self.source.mode().is_some()
             && !matches!(
                 self.source.state(),
@@ -108,6 +113,43 @@ impl TuiApp {
             Err(e) => e,
         };
     }
+    fn start_variable_rename(&mut self) {
+        match jc_app::snippets::SnippetTarget::capture(&self.workbench) {
+            Ok(target) => {
+                self.source.cancel(&mut self.tasks);
+                self.source_candidates = None;
+                self.source_popup = false;
+                self.open_prompt(PromptKind::RenameVariable);
+                self.rename_target = Some(target);
+                self.status = "Escribe el nombre nuevo y pulsa Intro para revisar".into();
+            }
+            Err(error) => self.status = error,
+        }
+    }
+    pub(crate) fn preview_variable_rename(&mut self, name: &str) {
+        if !self
+            .rename_target
+            .as_ref()
+            .is_some_and(|target| target.current(&self.workbench))
+        {
+            self.status = "Cambió el destino del renombrado; vuelve a abrir el comando".into();
+            return;
+        }
+        match self.source.request_rename(
+            name,
+            &self.source_registry,
+            &self.workbench,
+            self.project_root.as_deref(),
+            &mut self.tasks,
+        ) {
+            Ok(()) => {
+                self.close_overlay();
+                self.source_popup = true;
+                self.status = self.source.message().into();
+            }
+            Err(error) => self.status = error,
+        }
+    }
     pub(crate) fn source_command(&mut self, command: CommandId) {
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
@@ -116,9 +158,14 @@ impl TuiApp {
             CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
             CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
             CommandId::SourceComplete => self.request_source(SourceMode::Completion),
+            CommandId::SourceRename => self.start_variable_rename(),
             CommandId::SourceRefresh => {
                 if let Some(mode) = self.source.mode() {
-                    self.request_source(mode);
+                    if mode == SourceMode::Rename {
+                        self.start_variable_rename();
+                    } else {
+                        self.request_source(mode);
+                    }
                 }
             }
             CommandId::SourceCancel => {
@@ -162,8 +209,11 @@ impl TuiApp {
                         self.close_overlay();
                         let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
                         self.ensure_encoding_choice();
-                        self.status =
-                            "Elemento del documento aceptado · solo evidencia léxica".into();
+                        self.status = if self.source.mode() == Some(SourceMode::Rename) {
+                            "Variable renombrada · un paso para deshacer".into()
+                        } else {
+                            "Elemento del documento aceptado · solo evidencia léxica".into()
+                        };
                     }
                     Err(e) => self.status = e,
                 }
@@ -172,6 +222,17 @@ impl TuiApp {
         }
     }
     pub(crate) fn source_key(&mut self, key: KeyEvent) {
+        if self.source.mode() == Some(SourceMode::Rename) {
+            if key.code == KeyCode::F(9)
+                || key.code == KeyCode::Enter && key.modifiers.contains(KeyModifiers::CONTROL)
+            {
+                self.dispatch(CommandId::SourceAccept);
+                return;
+            }
+            if key.code == KeyCode::Enter {
+                return;
+            }
+        }
         match key.code {
             KeyCode::Esc => {
                 self.dispatch(CommandId::SourceCancel);

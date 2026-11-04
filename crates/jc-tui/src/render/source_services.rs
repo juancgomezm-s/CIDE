@@ -72,7 +72,11 @@ pub(super) fn popup(frame: &Presentation<'_>, screen: &mut Screen) {
             x + 2,
             y + height - 2,
             &super::clip(
-                "Intro abrir | Ctrl+Intro al lado | Flechas elegir | Esc",
+                if frame.app.source.mode() == Some(jc_app::source_services::SourceMode::Rename) {
+                    "F9/Ctrl+Intro aplicar | Flechas revisar | F5 editar | Esc"
+                } else {
+                    "Intro abrir | Ctrl+Intro al lado | Flechas elegir | Esc"
+                },
                 width.saturating_sub(4),
             ),
             CellStyle::Dim,

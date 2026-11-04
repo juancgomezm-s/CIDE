@@ -187,6 +187,7 @@ fn registry() -> SourceRegistry {
         dependencies: None,
         file_resolution: FileResolution::ProjectCandidates,
         completion: None,
+        rename: None,
         snippets: &[],
     })
     .unwrap();
@@ -212,6 +213,7 @@ fn source_registry_capabilities_are_optional_namespaced_and_default_completion_n
             dependencies: None,
             file_resolution: FileResolution::ProjectCandidates,
             completion: None,
+            rename: None,
             snippets: &[],
         })
         .is_err());
@@ -225,6 +227,7 @@ fn source_registry_capabilities_are_optional_namespaced_and_default_completion_n
             dependencies: None,
             file_resolution: FileResolution::ProjectCandidates,
             completion: None,
+            rename: None,
             snippets: &[],
         })
         .is_err());
@@ -354,6 +357,7 @@ fn source_provider_wrong_action_and_result_quota_cannot_publish_or_edit() {
             dependencies: None,
             file_resolution: FileResolution::ProjectCandidates,
             completion: None,
+            rename: None,
             snippets: &[],
         })
         .unwrap();

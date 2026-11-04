@@ -809,9 +809,10 @@ no pedirla de nuevo. Sin instalación de programas, CI ni AVM.
 ## Enlaces, esquema y renombrado
 
 La navegación lateral de enlaces Markdown y el Esquema ABL de la GUI están
-integrados. El próximo bloque del proveedor ABL es resolver usos de variables
-por identidad y ámbito antes de habilitar propuestas de renombrado. Ver el
-[alcance y orden de implementación](ENLACES_ESQUEMA_RENOMBRADO.md).
+integrados. El proveedor ABL incorpora renombrado de variables de documento
+y locales de procedimiento o función en un subconjunto comprobable, con
+vista previa y una transacción. Sigue ampliar los ámbitos y contextos que
+puede resolver. Ver [alcance y orden de implementación](ENLACES_ESQUEMA_RENOMBRADO.md).
 
 La [navegación por proveedor](NAVEGACION_MULTILENGUAJE.md) separa llamadas ABL
 de inclusiones y conecta el Esquema y las dependencias de JavaScript.

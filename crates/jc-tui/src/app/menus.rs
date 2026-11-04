@@ -55,6 +55,7 @@ impl TuiApp {
     }
 
     pub(crate) fn open_focus_overlay(&mut self, overlay: Overlay) {
+        self.rename_target = None;
         self.invalidate_mouse();
         self.file_browser.clear();
         if matches!(self.overlay, UiOverlay::QuickOpen { .. }) {
@@ -66,6 +67,7 @@ impl TuiApp {
     }
 
     pub(crate) fn close_overlay(&mut self) {
+        self.rename_target = None;
         self.invalidate_mouse();
         self.file_browser.clear();
         if matches!(self.overlay, UiOverlay::QuickOpen { .. }) {

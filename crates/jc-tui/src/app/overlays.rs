@@ -288,7 +288,10 @@ impl TuiApp {
 }
 
 pub(super) fn prompt_limit(kind: crate::state::PromptKind) -> usize {
-    if kind == crate::state::PromptKind::GoToPosition {
+    if matches!(
+        kind,
+        crate::state::PromptKind::GoToPosition | crate::state::PromptKind::RenameVariable
+    ) {
         64
     } else {
         4096

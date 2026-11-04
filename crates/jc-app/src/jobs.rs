@@ -405,7 +405,7 @@ struct Job {
 }
 enum Provider {
     Plain(TaskProvider),
-    Incoming(crate::source_services::IncomingScan),
+    Source(crate::source_services::SourceJob),
     GitDiff(crate::git_diff::GitDiffWork),
     OpenDiff(crate::open_diff::OpenDiffWork),
 }
@@ -822,8 +822,7 @@ impl JobSystem {
         key: JobKey,
         stamp: TaskStamp,
         len: usize,
-        provider: TaskProvider,
-        incoming: Option<crate::source_services::IncomingScan>,
+        work: crate::source_services::SourceJob,
     ) -> Result<JobId, SubmitError> {
         let limits = self.shared.limits;
         if len > limits.snapshot_bytes || len > limits.total_snapshot_bytes {
@@ -842,7 +841,7 @@ impl JobSystem {
                 document: stamp.document,
                 view: stamp.view,
                 range: 0..len,
-                provider: incoming.map_or(Provider::Plain(provider), Provider::Incoming),
+                provider: Provider::Source(work),
                 artifact_limit: 0,
                 timeout: limits.timeout,
                 expected: Some(stamp),
@@ -953,7 +952,7 @@ fn worker(shared: Arc<Shared>) {
         } else {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match job.provider {
                 Provider::Plain(provider) => provider(&job.snapshot, &job.cancel, &mut output),
-                Provider::Incoming(scan) => scan.run(job.snapshot.stamp, &job.cancel, &mut output),
+                Provider::Source(work) => work.run(&job.snapshot, &job.cancel, &mut output),
                 Provider::GitDiff(work) => {
                     crate::git_diff::run(work, &job.snapshot, &job.cancel, &mut output)
                 }

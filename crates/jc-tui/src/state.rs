@@ -20,6 +20,7 @@ pub enum PromptKind {
     ProjectReplacement,
     GoToPosition,
     GitExecutable,
+    RenameVariable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

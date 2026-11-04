@@ -22,6 +22,7 @@ pub enum SourceMode {
     Incoming,
     Dependencies,
     Completion,
+    Rename,
 }
 impl SourceMode {
     pub fn label(self) -> &'static str {
@@ -32,6 +33,7 @@ impl SourceMode {
             Self::Incoming => "Llamado por",
             Self::Dependencies => "Dependencias",
             Self::Completion => "Completado",
+            Self::Rename => "Renombrar variable",
         }
     }
 }
@@ -89,6 +91,7 @@ impl SourceItem {
                     SourceMode::References | SourceMode::Calls | SourceMode::Dependencies,
                 ) => reason.len() <= 512,
                 (SourceAction::Replace(text), SourceMode::Completion) => text.len() <= 4096,
+                (SourceAction::Replace(text), SourceMode::Rename) => text.len() <= 64,
                 (SourceAction::Caller { path, .. }, SourceMode::Incoming) => {
                     path.is_absolute() && path.as_os_str().len() <= 4096
                 }
@@ -103,6 +106,87 @@ pub enum FileResolution {
     OrderedProjectPath,
 }
 
+pub type RenameProvider =
+    fn(&[u8], jc_text::TextEncoding, usize, &str) -> Result<Vec<Range<usize>>, String>;
+
+pub(crate) enum SourceJob {
+    Plain(TaskProvider),
+    Incoming(IncomingScan),
+    Rename {
+        provider: RenameProvider,
+        cursor: usize,
+        name: String,
+    },
+}
+
+impl SourceJob {
+    pub(crate) fn run(
+        &self,
+        snapshot: &TaskSnapshot,
+        cancel: &Cancellation,
+        output: &mut TaskOutput,
+    ) -> Result<(), TaskFailure> {
+        match self {
+            Self::Plain(provider) => provider(snapshot, cancel, output),
+            Self::Incoming(scan) => scan.run(snapshot.stamp, cancel, output),
+            Self::Rename {
+                provider,
+                cursor,
+                name,
+            } => {
+                if cancel.is_cancelled() {
+                    return Err(TaskFailure::Cancelled);
+                }
+                let mut ranges =
+                    match provider(snapshot.bytes(), snapshot.stamp.encoding, *cursor, name) {
+                        Ok(ranges) => ranges,
+                        Err(error) => return output.push(TaskItem::Message(error)),
+                    };
+                if ranges.len() > 64 {
+                    return Err(TaskFailure::LimitExceeded);
+                }
+                ranges.sort_unstable_by_key(|range| range.start);
+                let mut previous = 0;
+                let mut line = 1;
+                let mut line_start = 0;
+                for range in ranges {
+                    if cancel.is_cancelled() {
+                        return Err(TaskFailure::Cancelled);
+                    }
+                    if range.is_empty() || range.start < previous {
+                        return Err(TaskFailure::InvalidRange);
+                    }
+                    let bytes = snapshot.bytes();
+                    let old = bytes.get(range.clone()).ok_or(TaskFailure::InvalidRange)?;
+                    let old = jc_text::decode_fragment(old, snapshot.stamp.encoding, range.start);
+                    if !old.issues.is_empty()
+                        || old.text.len() > 128
+                        || old.text.chars().any(char::is_control)
+                    {
+                        return Err(TaskFailure::InvalidRange);
+                    }
+                    for (delta, byte) in bytes[previous..range.start].iter().enumerate() {
+                        let index = previous + delta;
+                        if *byte == b'\n' || *byte == b'\r' && bytes.get(index + 1) != Some(&b'\n')
+                        {
+                            line += 1;
+                            line_start = index + 1;
+                        }
+                    }
+                    previous = range.end;
+                    let column = range.start - line_start + 1;
+                    output.push(TaskItem::Source(SourceItem {
+                        range,
+                        label: format!("Línea {line}, byte {column}  {} → {name}", old.text),
+                        action: SourceAction::Replace(name.clone()),
+                    }))?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct SourceProviderDescriptor {
     pub id: &'static str,
@@ -113,6 +197,7 @@ pub struct SourceProviderDescriptor {
     pub dependencies: Option<TaskProvider>,
     pub file_resolution: FileResolution,
     pub completion: Option<TaskProvider>,
+    pub rename: Option<RenameProvider>,
     pub snippets: &'static [crate::snippets::SnippetTemplate],
 }
 impl SourceProviderDescriptor {
@@ -124,6 +209,14 @@ impl SourceProviderDescriptor {
             SourceMode::Incoming => self.dependencies.and(self.references),
             SourceMode::Dependencies => self.dependencies,
             SourceMode::Completion => self.completion,
+            SourceMode::Rename => None,
+        }
+    }
+    fn supports(self, mode: SourceMode) -> bool {
+        if mode == SourceMode::Rename {
+            self.rename.is_some()
+        } else {
+            self.provider(mode).is_some()
         }
     }
 }
@@ -145,6 +238,7 @@ impl Default for SourceRegistry {
                     dependencies: None,
                     file_resolution: FileResolution::ProjectCandidates,
                     completion: Some(local_words),
+                    rename: None,
                     snippets: &[],
                 },
             ],
@@ -188,6 +282,7 @@ impl SourceRegistry {
             ]
             .iter()
             .all(Option::is_none)
+                && descriptor.rename.is_none()
                 && descriptor.snippets.is_empty()
             || self
                 .providers
@@ -232,11 +327,11 @@ impl SourceRegistry {
     pub fn resolve(&self, language: &str, mode: SourceMode) -> Option<SourceProviderDescriptor> {
         self.providers
             .iter()
-            .find(|p| p.language == language && p.provider(mode).is_some())
+            .find(|p| p.language == language && p.supports(mode))
             .or_else(|| {
                 self.providers
                     .iter()
-                    .find(|p| p.language == "*" && p.provider(mode).is_some())
+                    .find(|p| p.language == "*" && p.supports(mode))
             })
             .copied()
     }
@@ -321,7 +416,7 @@ impl Origin {
                 .active_document()
                 .is_some_and(|d| d.id == self.stamp.document && d.session.path() == self.path)
             && app.active_editor().is_some_and(|e| {
-                mode != SourceMode::Completion
+                !matches!(mode, SourceMode::Completion | SourceMode::Rename)
                     || e.cursor == self.cursor
                         && e.anchor == self.anchor
                         && app.rectangle_for_pane(self.pane).is_none()
@@ -334,6 +429,7 @@ struct Request {
     origin: Origin,
     mode: SourceMode,
     provider: SourceProviderDescriptor,
+    rename: Option<String>,
 }
 struct Flight {
     id: JobId,
@@ -494,6 +590,7 @@ impl SourceController {
                     Some(SourceMode::References) => "Referencias (léxicas)",
                     Some(SourceMode::Calls) => "Llama a",
                     Some(SourceMode::Incoming) => "Llamado por (fuentes en disco)",
+                    Some(SourceMode::Rename) => "Vista previa del renombrado",
                     Some(SourceMode::Dependencies) => "Dependencias",
                     _ => "Completado (palabras locales)",
                 },
@@ -558,6 +655,40 @@ impl SourceController {
         root: Option<&Path>,
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
+        self.request_named(mode, None, registry, app, root, jobs)
+    }
+    pub fn request_rename(
+        &mut self,
+        name: &str,
+        registry: &SourceRegistry,
+        app: &Workbench,
+        root: Option<&Path>,
+        jobs: &mut JobSystem,
+    ) -> Result<(), String> {
+        if name.is_empty() || name.len() > 64 || name.chars().any(char::is_control) {
+            return Err("Escribe un identificador de hasta 64 bytes".into());
+        }
+        self.request_named(
+            SourceMode::Rename,
+            Some(name.into()),
+            registry,
+            app,
+            root,
+            jobs,
+        )
+    }
+    fn request_named(
+        &mut self,
+        mode: SourceMode,
+        rename: Option<String>,
+        registry: &SourceRegistry,
+        app: &Workbench,
+        root: Option<&Path>,
+        jobs: &mut JobSystem,
+    ) -> Result<(), String> {
+        if mode == SourceMode::Rename && rename.is_none() {
+            return Err("Escribe primero el nombre nuevo".into());
+        }
         if self.outline && mode != SourceMode::Symbols {
             return Err("El esquema solo admite símbolos".into());
         }
@@ -567,11 +698,11 @@ impl SourceController {
         self.invalidate(jobs);
         self.mode = Some(mode);
         self.status(SourceState::Failed, "Solicitud de código no disponible");
-        if mode == SourceMode::Completion
+        if matches!(mode, SourceMode::Completion | SourceMode::Rename)
             && (app.active_editor().is_some_and(|e| e.selection().is_some())
                 || app.rectangle_for_pane(app.panes().active()).is_some())
         {
-            return Err("El completado requiere cursor de texto sin selección".into());
+            return Err("Coloca el cursor en el texto, sin selección".into());
         }
         let origin = Origin::capture(app, root)?;
         if mode == SourceMode::Incoming
@@ -595,6 +726,7 @@ impl SourceController {
             origin,
             mode,
             provider,
+            rename,
         });
         self.status(SourceState::Queued, "Capacidad de código en cola");
         self.tick(app, root, jobs);
@@ -653,19 +785,20 @@ impl SourceController {
                 "La captura del servicio de código excede2MiB",
             );
         }
-        let incoming = (r.mode == SourceMode::Incoming).then(|| IncomingScan {
-            root: r.origin.root.clone().unwrap(),
-            target: r.origin.path.clone(),
-            provider: r.provider,
-        });
-        match jobs.submit_source(
-            app,
-            self.job_key(),
-            r.origin.stamp,
-            len,
-            r.provider.provider(r.mode).unwrap(),
-            incoming,
-        ) {
+        let work = match r.mode {
+            SourceMode::Incoming => SourceJob::Incoming(IncomingScan {
+                root: r.origin.root.clone().unwrap(),
+                target: r.origin.path.clone(),
+                provider: r.provider,
+            }),
+            SourceMode::Rename => SourceJob::Rename {
+                provider: r.provider.rename.unwrap(),
+                cursor: r.origin.cursor,
+                name: r.rename.clone().unwrap(),
+            },
+            mode => SourceJob::Plain(r.provider.provider(mode).unwrap()),
+        };
+        match jobs.submit_source(app, self.job_key(), r.origin.stamp, len, work) {
             Ok(id) => {
                 let request = self.pending.take().unwrap();
                 self.flight = Some(Flight {
@@ -746,6 +879,12 @@ impl SourceController {
             .tab_id;
         let mut items = Vec::new();
         for item in task.output.take_items() {
+            if let TaskItem::Message(message) = &item {
+                if request.mode == SourceMode::Rename {
+                    self.status(SourceState::Failed, message.clone());
+                    return true;
+                }
+            }
             let TaskItem::Source(item) = item else {
                 self.status(
                     SourceState::Failed,
@@ -809,6 +948,31 @@ impl SourceController {
             .ok_or("No hay resultado de código vigente")?;
         if !request.origin.current(app, root, request.mode) {
             return Err("Cambió el resultado del código; actualiza".into());
+        }
+        if request.mode == SourceMode::Rename {
+            if to_side || self.items.is_empty() {
+                return Err("No hay una propuesta de renombrado para aplicar".into());
+            }
+            let edits = self
+                .items
+                .iter()
+                .map(|item| {
+                    let SourceAction::Replace(text) = &item.action else {
+                        return Err("La propuesta de renombrado no es válida".to_owned());
+                    };
+                    Ok(crate::TextReplacement {
+                        range: item.range.clone(),
+                        text: text.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            app.apply_text_edits(
+                request.origin.stamp.document,
+                request.origin.stamp.revision,
+                edits,
+            )
+            .map_err(|error| error.to_string())?;
+            return Ok(None);
         }
         let item = self
             .items

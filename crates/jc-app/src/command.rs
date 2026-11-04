@@ -109,6 +109,7 @@ pub enum CommandId {
     SourceIncoming,
     SourceDependencies,
     SourceComplete,
+    SourceRename,
     SourceRefresh,
     SourceCancel,
     SourceAccept,
@@ -194,6 +195,7 @@ pub struct CommandContext {
     pub source_incoming_available: bool,
     pub source_dependencies_available: bool,
     pub source_completion_available: bool,
+    pub source_rename_available: bool,
     pub source_active: bool,
     pub source_ready: bool,
     pub source_side_ready: bool,
@@ -250,6 +252,7 @@ impl Default for CommandContext {
             source_incoming_available: false,
             source_dependencies_available: false,
             source_completion_available: false,
+            source_rename_available: false,
             source_active: false,
             source_ready: false,
             source_side_ready: false,
@@ -484,6 +487,9 @@ fn source_completion(ctx: &CommandContext) -> bool {
         && !ctx.rectangular_selection
         && !ctx.has_selection
         && ctx.source_completion_available
+}
+fn source_rename(ctx: &CommandContext) -> bool {
+    ctx.source_rename_available && !ctx.rectangular_selection && !ctx.has_selection
 }
 fn source_active(ctx: &CommandContext) -> bool {
     ctx.source_active
@@ -838,6 +844,7 @@ pub fn default_registry() -> CommandRegistry {
             "Completar palabra local",
             source_completion
         ),
+        spec!(SourceRename, Edit, "Renombrar variable", source_rename),
         spec!(
             SourceRefresh,
             Navigation,
