@@ -86,6 +86,13 @@ pub struct TaskSnapshot {
     bytes: Arc<Vec<u8>>,
 }
 impl TaskSnapshot {
+    pub(crate) fn scan_source(stamp: TaskStamp, bytes: Vec<u8>) -> Self {
+        Self {
+            stamp,
+            range: 0..bytes.len(),
+            bytes: Arc::new(bytes),
+        }
+    }
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -165,6 +172,15 @@ pub struct TaskOutput {
     second_stamp: Option<TaskStamp>,
 }
 impl TaskOutput {
+    pub(crate) fn for_source_scan(snapshot: &TaskSnapshot) -> Self {
+        Self::new(
+            JobLimits::default(),
+            snapshot.range.clone(),
+            snapshot.stamp,
+            0,
+            None,
+        )
+    }
     fn new(
         limits: JobLimits,
         range: Range<usize>,
@@ -389,6 +405,7 @@ struct Job {
 }
 enum Provider {
     Plain(TaskProvider),
+    Incoming(crate::source_services::IncomingScan),
     GitDiff(crate::git_diff::GitDiffWork),
     OpenDiff(crate::open_diff::OpenDiffWork),
 }
@@ -806,6 +823,7 @@ impl JobSystem {
         stamp: TaskStamp,
         len: usize,
         provider: TaskProvider,
+        incoming: Option<crate::source_services::IncomingScan>,
     ) -> Result<JobId, SubmitError> {
         let limits = self.shared.limits;
         if len > limits.snapshot_bytes || len > limits.total_snapshot_bytes {
@@ -824,7 +842,7 @@ impl JobSystem {
                 document: stamp.document,
                 view: stamp.view,
                 range: 0..len,
-                provider: Provider::Plain(provider),
+                provider: incoming.map_or(Provider::Plain(provider), Provider::Incoming),
                 artifact_limit: 0,
                 timeout: limits.timeout,
                 expected: Some(stamp),
@@ -935,6 +953,7 @@ fn worker(shared: Arc<Shared>) {
         } else {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match job.provider {
                 Provider::Plain(provider) => provider(&job.snapshot, &job.cancel, &mut output),
+                Provider::Incoming(scan) => scan.run(job.snapshot.stamp, &job.cancel, &mut output),
                 Provider::GitDiff(work) => {
                     crate::git_diff::run(work, &job.snapshot, &job.cancel, &mut output)
                 }

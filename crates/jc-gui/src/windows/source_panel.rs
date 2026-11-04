@@ -57,6 +57,7 @@ pub(super) fn is_command(command: CommandId) -> bool {
         CommandId::ViewSymbols
             | CommandId::SourceReferences
             | CommandId::SourceCalls
+            | CommandId::SourceIncoming
             | CommandId::SourceDependencies
             | CommandId::SourceComplete
             | CommandId::SourceRefresh
@@ -98,6 +99,8 @@ impl State {
                 .resolve(language, SourceMode::Dependencies)
                 .is_some();
         let controller = &self.source_gui.controller;
+        context.source_incoming_available =
+            registry.supports_incoming(&self.workbench, self.project_root.as_deref());
         context.source_active = controller.mode().is_some()
             && !matches!(
                 controller.state(),
@@ -133,6 +136,7 @@ impl State {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
             CommandId::SourceCalls => self.request_source(SourceMode::Calls),
+            CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
             CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
             CommandId::SourceComplete => self.request_source(SourceMode::Completion),
             CommandId::SourceRefresh => {

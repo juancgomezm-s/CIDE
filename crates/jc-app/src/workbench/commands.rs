@@ -249,6 +249,7 @@ impl Workbench {
             | ViewSymbols
             | SourceReferences
             | SourceCalls
+            | SourceIncoming
             | SourceDependencies
             | SourceComplete
             | SourceRefresh

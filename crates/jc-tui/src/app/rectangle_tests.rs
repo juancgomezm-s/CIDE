@@ -119,7 +119,7 @@ fn resizing_keeps_virtual_cursor_visible_without_reinterpreting_visual_bounds() 
         let bounds = p.editor(PaneId::Primary).rectangle.unwrap();
         assert_eq!(geometry(bounds), expected);
         let x = p.layout.editor_x + 5;
-        let text_width = usize::from(p.layout.editor_width - 5);
+        let text_width = usize::from(p.layout.editor_width - 6);
         let screen = render::render(&p);
         let cell = bounds.head_column - bounds.scroll_column;
         assert!(cell < text_width);

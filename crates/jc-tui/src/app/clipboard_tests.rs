@@ -164,9 +164,12 @@ fn clipboard_tui_paste_goes_to_topmost_fields_with_destination_limits() {
     assert_eq!(m.borrow().reads.len(), reads); // preview is read-only
     key(&mut a, KeyCode::Esc);
     a.open_prompt(PromptKind::Open);
+    let before = a.overlay.clone();
     m.borrow_mut().text = Some("x".repeat(4097));
     paste(&mut a);
-    assert!(matches!(&a.overlay,UiOverlay::Prompt {input,..} if input.is_empty()));
+    assert!(
+        matches!((&before, &a.overlay), (UiOverlay::Prompt {input: old, ..}, UiOverlay::Prompt {input, ..}) if old == input)
+    );
     key(&mut a, KeyCode::Esc);
     a.dispatch(CommandId::SearchFind);
     m.borrow_mut().text = Some("exact\r\nquery".into());

@@ -97,6 +97,14 @@ fn markdown_reference_opens_sibling_in_other_group_without_project() {
     fs::remove_dir(root).unwrap();
 }
 fn finish(controller: &mut SourceController, a: &Workbench, jobs: &mut JobSystem) {
+    finish_in_project(controller, a, jobs, None);
+}
+fn finish_in_project(
+    controller: &mut SourceController,
+    a: &Workbench,
+    jobs: &mut JobSystem,
+    root: Option<&std::path::Path>,
+) {
     let until = Instant::now() + Duration::from_secs(5);
     while jobs.outstanding() > 0
         || matches!(
@@ -105,12 +113,61 @@ fn finish(controller: &mut SourceController, a: &Workbench, jobs: &mut JobSystem
         )
     {
         for mut task in jobs.poll(a, 4) {
-            controller.accept(a, None, &mut task);
+            controller.accept(a, root, &mut task);
         }
-        controller.tick(a, None, jobs);
+        controller.tick(a, root, jobs);
         assert!(Instant::now() < until);
         std::thread::yield_now();
     }
+}
+
+#[test]
+fn javascript_incoming_opens_static_import_at_its_line_in_other_group() {
+    use std::fs;
+    let root = std::env::temp_dir().join(format!("cide-js-incoming-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    let source = root.join("caller.js");
+    let target = root.join("target.js");
+    let text = "// origen\r\nimport './target.js';\r\nimport('./target.js');";
+    fs::write(&source, text).unwrap();
+    fs::write(&target, "export function demo() {}").unwrap();
+    let mut a = Workbench::default();
+    let tab = a.open_file(&target, Some(TextEncoding::Utf8)).unwrap();
+    let mut c = SourceController::default();
+    let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+    c.request(
+        SourceMode::Incoming,
+        &SourceRegistry::default(),
+        &a,
+        Some(&root),
+        &mut jobs,
+    )
+    .unwrap();
+    finish_in_project(&mut c, &a, &mut jobs, Some(&root));
+    assert_eq!(c.state(), SourceState::Ready, "{}", c.message());
+    assert_eq!(c.items().len(), 1);
+    assert_eq!(c.items()[0].label, "caller.js:2");
+    fs::write(&source, "import './other.js';").unwrap();
+    assert!(c.activate(&mut a, Some(&root), true).is_err());
+    assert!(!a.panes().is_split());
+    fs::write(&source, text).unwrap();
+    c.activate(&mut a, Some(&root), true).unwrap();
+    assert_eq!(a.panes().active(), jc_app::PaneId::Secondary);
+    assert_eq!(
+        a.panes()
+            .view(jc_app::PaneId::Primary)
+            .unwrap()
+            .location()
+            .unwrap()
+            .tab,
+        tab
+    );
+    assert_eq!(a.active_path().unwrap(), source.canonicalize().unwrap());
+    assert!(a.active_editor().unwrap().cursor >= "// origen\r\n".len());
+    drop(a);
+    fs::remove_file(source).unwrap();
+    fs::remove_file(target).unwrap();
+    fs::remove_dir(root).unwrap();
 }
 fn symbols(_: &TaskSnapshot, _: &Cancellation, out: &mut TaskOutput) -> Result<(), TaskFailure> {
     out.push(TaskItem::Source(SourceItem {

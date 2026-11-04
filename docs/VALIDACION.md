@@ -1540,3 +1540,20 @@ Una prueba de integración abre el destino ABL en el grupo lateral y comprueba
 el orden de dos entradas PROPATH con el mismo nombre de archivo. Formato y
 Clippy de todo el workspace aprobados. El alcance del analizador y la
 configuración se describen en [Navegación por proveedor](NAVEGACION_MULTILENGUAJE.md).
+
+## Navegación inversa y desplazamiento de los editores — 2026-11-03
+
+Pasaron 17 pruebas de servicios de fuente. Los casos de navegación inversa
+verifican `RUN` e inclusiones con PROPATH, importaciones estáticas JavaScript,
+apertura lateral y rechazo ante cambios en el origen o la resolución.
+Pasaron siete pruebas de ratón TUI y una prueba dirigida de barras y minimapa
+GUI. Las pruebas comprueban que el arrastre mueve la vista y conserva el cursor.
+Clippy y formato aprobados. El minimapa GUI muestra una muestra acotada del
+documento y se oculta en paneles estrechos. La barra horizontal mide el
+contenido visible dentro de su presupuesto. Compilación optimizada aprobada
+en `target/editor-navigation-next/release`.
+
+El intento de suite completa de TUI encontró una prueba que requiere crear
+una unión de directorio y recibió acceso denegado. Al omitirla, la suite
+terminó con `0xc0000409` en una prueba de integración de estado Git. No se
+acredita una pasada completa de la TUI.

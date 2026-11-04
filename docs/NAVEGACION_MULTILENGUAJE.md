@@ -36,11 +36,28 @@ La configuración se lee al activar la referencia. Admite hasta 32 entradas y
 8 KiB. La apertura vuelve a comprobar la ruta del archivo mediante el lector
 confinado del proyecto.
 
+## Llamado por
+
+Con un archivo guardado de un proyecto abierto, usa **Llamado por** desde la
+paleta o el menú. **Intro** salta a la referencia y **Ctrl+Intro** la abre en
+el otro grupo. La lista muestra el archivo que contiene el uso y su línea.
+
+El recorrido cancelable inspecciona los fuentes en disco. Para ABL incluye
+`RUN` e inclusiones estáticas con el orden de PROPATH. Para JavaScript incluye
+importaciones y reexportaciones relativas admitidas por su proveedor. La
+selección revalida la resolución y la huella del fuente antes de abrirlo. Si el
+fuente abierto tiene contenido o codificación distintos de la versión analizada,
+se rechaza el salto. El alcance es de referencias directas al archivo.
+
+El recorrido se limita a 512 archivos, 128 directorios, 2 MiB por archivo y
+16 MiB en total, además de los límites de tiempo y resultados del servicio.
+Excluye directorios de Git, `node_modules`, `target` y `.cide`. Los resultados
+reflejan el subconjunto léxico de cada proveedor. Las llamadas dinámicas y la
+navegación semántica entre símbolos quedan fuera de este recorrido.
+
 ## Siguientes bloques
 
-**Llamado por** requiere un recorrido cancelable del proyecto que use las mismas
-reglas de resolución y entregue relaciones con archivo, revisión y rango. Ese
-recorrido también debe distinguir posibles puntos de entrada de ciclos y de
-destinos inciertos. C# y PHP podrán registrar sus capacidades sobre el mismo
+La navegación transitiva debe distinguir posibles puntos de entrada de ciclos
+y de destinos inciertos. C# y PHP podrán registrar sus capacidades sobre el mismo
 contrato. El catálogo de esquemas y sus proveedores OpenEdge, PostgreSQL y
 MySQL se desarrollan como un componente separado.

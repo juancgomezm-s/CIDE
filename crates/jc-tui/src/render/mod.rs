@@ -295,7 +295,6 @@ fn draw_editor(
         },
     );
     let y = y + 1;
-    let height = height.saturating_sub(1);
     let Some(_document) = document else {
         screen.text(x + 2, y + 2, "CIDE");
         screen.text_styled(
@@ -326,11 +325,11 @@ fn draw_editor(
         .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
     let number_width = (line_count.max(1).to_string().len() as u16).clamp(3, 7);
     let text_x = x + number_width + 2;
-    let text_width = width.saturating_sub(number_width + 2);
+    let text_width = width.saturating_sub(number_width + 3);
     if text_width == 0 {
         return;
     }
-    let visible_height = usize::from(height);
+    let visible_height = usize::from(frame.layout.editor_rows());
     let first_line = view.scroll_line().min(line_count.saturating_sub(1));
     let prepared = frame.editor(pane);
     let rectangle = prepared.rectangle;
@@ -445,6 +444,29 @@ fn draw_editor(
             };
             if cx < cursor_width {
                 screen.set_cursor(text_x + cx as u16, y + (cursor.line - first_line) as u16);
+            }
+        }
+    }
+    if let Some(bars) = prepared.bars {
+        for bar in bars {
+            for offset in 0..bar.length {
+                let thumb = bar.maximum > 0 && bar.thumb_contains(offset);
+                let ch = match (bar.vertical, thumb) {
+                    (true, true) => '┃',
+                    (true, false) => '│',
+                    (false, true) => '━',
+                    (false, false) => '─',
+                };
+                screen.put_styled(
+                    bar.x + if bar.vertical { 0 } else { offset },
+                    bar.y + if bar.vertical { offset } else { 0 },
+                    ch,
+                    if thumb {
+                        CellStyle::Accent
+                    } else {
+                        CellStyle::Dim
+                    },
+                );
             }
         }
     }

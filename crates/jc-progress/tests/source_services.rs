@@ -76,6 +76,25 @@ fn abl_calls_and_includes_are_separate_and_propath_selects_first_destination() {
             .tab,
         tab
     );
+    let mut callers = scan(&a, Some(&root), SourceMode::Incoming);
+    assert_eq!(callers.state(), SourceState::Ready, "{}", callers.message());
+    assert_eq!(callers.items().len(), 1);
+    assert!(callers.items()[0].label.ends_with("origen.p:1"));
+    fs::write(root.join(".cide/propath"), "primero\nsegundo\n").unwrap();
+    assert!(callers.activate(&mut a, Some(&root), true).is_err());
+    fs::write(root.join(".cide/propath"), "segundo\nprimero\n").unwrap();
+    callers.activate(&mut a, Some(&root), true).unwrap();
+    assert_eq!(
+        a.active_path().unwrap().canonicalize().unwrap(),
+        origin.canonicalize().unwrap()
+    );
+    a.open_file(root.join("primero/datos.i"), Some(TextEncoding::Utf8))
+        .unwrap();
+    let mut callers = scan(&a, Some(&root), SourceMode::Incoming);
+    assert_eq!(callers.items().len(), 1);
+    assert!(callers.items()[0].label.ends_with("origen.p:2"));
+    callers.activate(&mut a, Some(&root), true).unwrap();
+    assert_eq!(a.active_editor().unwrap().cursor, "RUN destino.p.\n".len());
     drop(a);
     for file in [
         "origen.p",

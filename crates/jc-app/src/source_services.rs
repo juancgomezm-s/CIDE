@@ -10,6 +10,8 @@ use std::{
 };
 
 pub const SOURCE_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0001);
+mod incoming;
+pub(crate) use incoming::IncomingScan;
 const OUTLINE_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0002);
 const SNAPSHOT: usize = 2 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +19,7 @@ pub enum SourceMode {
     Symbols,
     References,
     Calls,
+    Incoming,
     Dependencies,
     Completion,
 }
@@ -26,6 +29,7 @@ impl SourceMode {
             Self::Symbols => "Símbolos",
             Self::References => "Referencias",
             Self::Calls => "Llama a",
+            Self::Incoming => "Llamado por",
             Self::Dependencies => "Dependencias",
             Self::Completion => "Completado",
         }
@@ -37,6 +41,13 @@ pub enum SourceAction {
     RelativeFile(String),
     Unresolved(String),
     Replace(String),
+    Caller {
+        path: PathBuf,
+        offset: usize,
+        relative: String,
+        encoding: jc_text::TextEncoding,
+        version: jc_files::ContentFingerprint,
+    },
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceItem {
@@ -53,6 +64,9 @@ impl SourceItem {
                 SourceAction::RelativeFile(s)
                 | SourceAction::Unresolved(s)
                 | SourceAction::Replace(s) => s.capacity(),
+                SourceAction::Caller { path, relative, .. } => {
+                    path.capacity() + relative.capacity()
+                }
             }
     }
     fn valid_for(&self, mode: SourceMode) -> bool {
@@ -75,6 +89,9 @@ impl SourceItem {
                     SourceMode::References | SourceMode::Calls | SourceMode::Dependencies,
                 ) => reason.len() <= 512,
                 (SourceAction::Replace(text), SourceMode::Completion) => text.len() <= 4096,
+                (SourceAction::Caller { path, .. }, SourceMode::Incoming) => {
+                    path.is_absolute() && path.as_os_str().len() <= 4096
+                }
                 _ => false,
             }
     }
@@ -104,6 +121,7 @@ impl SourceProviderDescriptor {
             SourceMode::Symbols => self.symbols,
             SourceMode::References => self.references,
             SourceMode::Calls => self.calls,
+            SourceMode::Incoming => self.dependencies.and(self.references),
             SourceMode::Dependencies => self.dependencies,
             SourceMode::Completion => self.completion,
         }
@@ -134,6 +152,13 @@ impl Default for SourceRegistry {
     }
 }
 impl SourceRegistry {
+    pub fn supports_incoming(&self, app: &Workbench, root: Option<&Path>) -> bool {
+        root.is_some()
+            && app
+                .active_document()
+                .is_some_and(|doc| !doc.session.is_new() && doc.session.encoding().is_some())
+            && self.supports_document(app, SourceMode::Incoming)
+    }
     pub fn supports_document(&self, app: &Workbench, mode: SourceMode) -> bool {
         app.active_document().is_some_and(|document| {
             let path = document.session.path().to_string_lossy();
@@ -452,10 +477,12 @@ impl SourceController {
                 .accepted
                 .as_ref()
                 .is_some_and(|request| reference_root(root, request).is_ok())
-            && self
-                .items
-                .get(self.selected)
-                .is_some_and(|item| matches!(item.action, SourceAction::RelativeFile(_)))
+            && self.items.get(self.selected).is_some_and(|item| {
+                matches!(
+                    item.action,
+                    SourceAction::RelativeFile(_) | SourceAction::Caller { .. }
+                )
+            })
     }
     pub fn present(&self, max_rows: usize, columns: usize) -> SourcePresentation {
         let count = max_rows.min(64);
@@ -466,6 +493,7 @@ impl SourceController {
                     Some(SourceMode::Symbols) => "Símbolos (léxicos)",
                     Some(SourceMode::References) => "Referencias (léxicas)",
                     Some(SourceMode::Calls) => "Llama a",
+                    Some(SourceMode::Incoming) => "Llamado por (fuentes en disco)",
                     Some(SourceMode::Dependencies) => "Dependencias",
                     _ => "Completado (palabras locales)",
                 },
@@ -546,6 +574,16 @@ impl SourceController {
             return Err("El completado requiere cursor de texto sin selección".into());
         }
         let origin = Origin::capture(app, root)?;
+        if mode == SourceMode::Incoming
+            && (root.is_none()
+                || app
+                    .active_document()
+                    .is_some_and(|doc| doc.session.is_new()))
+        {
+            return Err(
+                "Llamado por requiere un archivo guardado y una carpeta de proyecto".into(),
+            );
+        }
         if self.outline {
             self.outline_attempt = Some(origin.clone());
         }
@@ -600,7 +638,9 @@ impl SourceController {
         let Some(r) = self.pending.as_ref() else {
             return changed;
         };
-        let len = if r.mode == SourceMode::Completion {
+        let len = if r.mode == SourceMode::Incoming {
+            0
+        } else if r.mode == SourceMode::Completion {
             r.origin.cursor
         } else {
             app.document_by_id(r.origin.stamp.document)
@@ -613,12 +653,18 @@ impl SourceController {
                 "La captura del servicio de código excede2MiB",
             );
         }
+        let incoming = (r.mode == SourceMode::Incoming).then(|| IncomingScan {
+            root: r.origin.root.clone().unwrap(),
+            target: r.origin.path.clone(),
+            provider: r.provider,
+        });
         match jobs.submit_source(
             app,
             self.job_key(),
             r.origin.stamp,
             len,
             r.provider.provider(r.mode).unwrap(),
+            incoming,
         ) {
             Ok(id) => {
                 let request = self.pending.take().unwrap();
@@ -710,8 +756,9 @@ impl SourceController {
             if !item.valid_for(request.mode)
                 || request.mode == SourceMode::Completion
                     && (item.range.end != request.origin.cursor || item.range.len() > 512)
-                || app.position_for_tab(tab, item.range.start).is_none()
-                || app.position_for_tab(tab, item.range.end).is_none()
+                || request.mode != SourceMode::Incoming
+                    && (app.position_for_tab(tab, item.range.start).is_none()
+                        || app.position_for_tab(tab, item.range.end).is_none())
             {
                 self.status(
                     SourceState::Failed,
@@ -768,6 +815,50 @@ impl SourceController {
             .get(index)
             .ok_or("No hay elemento de código seleccionado")?;
         match &item.action {
+            SourceAction::Caller {
+                path,
+                offset,
+                relative,
+                encoding,
+                version,
+            } => {
+                let root = root.ok_or("Abre una carpeta de proyecto")?;
+                let canonical_root = root.canonicalize().map_err(|error| error.to_string())?;
+                let target = request
+                    .origin
+                    .path
+                    .canonicalize()
+                    .map_err(|error| error.to_string())?;
+                let paths = resolve_from(
+                    &canonical_root,
+                    path,
+                    relative,
+                    request.provider.file_resolution,
+                    SourceMode::Incoming,
+                )?;
+                if !paths
+                    .iter()
+                    .any(|candidate| candidate.canonicalize().is_ok_and(|p| p == target))
+                {
+                    return Err(
+                        "Cambió la resolución de la referencia; actualiza la búsqueda".into(),
+                    );
+                }
+                let tab = app
+                    .open_project_file_at_version(
+                        &canonical_root,
+                        path.clone(),
+                        Some(*encoding),
+                        to_side,
+                        SNAPSHOT,
+                        *version,
+                    )
+                    .map_err(|error| error.to_string())?;
+                if !app.jump_to_pane_location(app.panes().active(), tab, *offset) {
+                    return Err("El destino de la referencia no es una posición válida".into());
+                }
+                Ok(None)
+            }
             SourceAction::Unresolved(reason) => {
                 Err(format!("Referencia léxica sin resolver: {reason}"))
             }
@@ -857,8 +948,24 @@ fn reference_root<'a>(root: Option<&'a Path>, request: &'a Request) -> Result<&'
 }
 
 fn resolve_file(root: &Path, request: &Request, relative: &str) -> Result<Vec<PathBuf>, String> {
-    let source = &request.origin.path;
-    match request.provider.file_resolution {
+    let root = root.canonicalize().map_err(|error| error.to_string())?;
+    resolve_from(
+        &root,
+        &request.origin.path,
+        relative,
+        request.provider.file_resolution,
+        request.mode,
+    )
+}
+
+fn resolve_from(
+    root: &Path,
+    source: &Path,
+    relative: &str,
+    resolution: FileResolution,
+    mode: SourceMode,
+) -> Result<Vec<PathBuf>, String> {
+    match resolution {
         FileResolution::ProjectCandidates => {
             find_reference_candidates(root, source, relative, true)
         }
@@ -866,47 +973,57 @@ fn resolve_file(root: &Path, request: &Request, relative: &str) -> Result<Vec<Pa
             find_reference_candidates(root, source, relative, false)
         }
         FileResolution::OrderedProjectPath => {
-            let root = root.canonicalize().map_err(|error| error.to_string())?;
-            let config = root.join(".cide").join("propath");
-            match jc_files::read_in_root(&root, &config, 8192) {
-                Ok((_, bytes)) => {
-                    let config =
-                        std::str::from_utf8(&bytes).map_err(|_| "PROPATH debe estar en UTF-8")?;
-                    let mut parents = Vec::new();
-                    for entry in config.trim_start_matches('\u{feff}').lines().map(str::trim) {
-                        if entry.is_empty() || entry.starts_with('#') {
-                            continue;
-                        }
-                        if parents.len() == 32
-                            || !project_relative(Path::new(entry))
-                            || entry.chars().any(char::is_control)
-                        {
-                            return Err(
-                                "PROPATH admite hasta 32 directorios relativos al proyecto".into(),
-                            );
-                        }
-                        parents.push(root.join(entry));
-                    }
-                    let mut paths = candidates_from(
-                        &root,
-                        relative,
-                        parents.iter().map(PathBuf::as_path),
-                        true,
-                    )?;
-                    paths.truncate(1);
-                    Ok(paths)
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    let mut paths = find_reference_candidates(&root, source, relative, true)?;
-                    if request.mode != SourceMode::References {
-                        paths.truncate(1);
-                    }
-                    Ok(paths)
-                }
-                Err(error) => Err(format!("No se pudo leer PROPATH: {error}")),
-            }
+            let propath = load_propath(root)?;
+            resolve_ordered(
+                root,
+                source,
+                relative,
+                propath.as_deref(),
+                mode == SourceMode::References,
+            )
         }
     }
+}
+
+fn resolve_ordered(
+    root: &Path,
+    source: &Path,
+    relative: &str,
+    propath: Option<&[PathBuf]>,
+    allow_ambiguity: bool,
+) -> Result<Vec<PathBuf>, String> {
+    if let Some(parents) = propath {
+        return candidates_from(root, relative, parents.iter().map(PathBuf::as_path), true);
+    }
+    let mut paths = find_reference_candidates(root, source, relative, true)?;
+    if !allow_ambiguity {
+        paths.truncate(1);
+    }
+    Ok(paths)
+}
+
+fn load_propath(root: &Path) -> Result<Option<Vec<PathBuf>>, String> {
+    let config = root.join(".cide").join("propath");
+    let bytes = match jc_files::read_in_root(root, &config, 8192) {
+        Ok((_, bytes)) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("No se pudo leer PROPATH: {error}")),
+    };
+    let config = std::str::from_utf8(&bytes).map_err(|_| "PROPATH debe estar en UTF-8")?;
+    let mut parents = Vec::new();
+    for entry in config.trim_start_matches('\u{feff}').lines().map(str::trim) {
+        if entry.is_empty() || entry.starts_with('#') {
+            continue;
+        }
+        if parents.len() == 32
+            || !project_relative(Path::new(entry))
+            || entry.chars().any(char::is_control)
+        {
+            return Err("PROPATH admite hasta 32 directorios relativos al proyecto".into());
+        }
+        parents.push(root.join(entry));
+    }
+    Ok(Some(parents))
 }
 
 fn project_relative(path: &Path) -> bool {

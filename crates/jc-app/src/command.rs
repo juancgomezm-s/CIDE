@@ -106,6 +106,7 @@ pub enum CommandId {
     ViewSymbols,
     SourceReferences,
     SourceCalls,
+    SourceIncoming,
     SourceDependencies,
     SourceComplete,
     SourceRefresh,
@@ -190,6 +191,7 @@ pub struct CommandContext {
     pub source_symbols_available: bool,
     pub source_references_available: bool,
     pub source_calls_available: bool,
+    pub source_incoming_available: bool,
     pub source_dependencies_available: bool,
     pub source_completion_available: bool,
     pub source_active: bool,
@@ -245,6 +247,7 @@ impl Default for CommandContext {
             source_symbols_available: false,
             source_references_available: false,
             source_calls_available: false,
+            source_incoming_available: false,
             source_dependencies_available: false,
             source_completion_available: false,
             source_active: false,
@@ -468,6 +471,9 @@ fn source_references(ctx: &CommandContext) -> bool {
 }
 fn source_calls(ctx: &CommandContext) -> bool {
     ctx.source_calls_available
+}
+fn source_incoming(ctx: &CommandContext) -> bool {
+    ctx.source_incoming_available
 }
 fn source_dependencies(ctx: &CommandContext) -> bool {
     ctx.source_dependencies_available
@@ -819,6 +825,7 @@ pub fn default_registry() -> CommandRegistry {
             source_references
         ),
         spec!(SourceCalls, Navigation, "Llama a", source_calls),
+        spec!(SourceIncoming, Navigation, "Llamado por", source_incoming),
         spec!(
             SourceDependencies,
             Navigation,

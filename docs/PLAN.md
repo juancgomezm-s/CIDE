@@ -814,8 +814,9 @@ por identidad y ámbito antes de habilitar propuestas de renombrado. Ver el
 [alcance y orden de implementación](ENLACES_ESQUEMA_RENOMBRADO.md).
 
 La [navegación por proveedor](NAVEGACION_MULTILENGUAJE.md) separa llamadas ABL
-de inclusiones y conecta el Esquema y las dependencias de JavaScript. Sigue
-la navegación inversa con resolución versionada del proyecto.
+de inclusiones y conecta el Esquema y las dependencias de JavaScript.
+**Llamado por** incorpora navegación inversa directa desde fuentes en disco
+para ambos proveedores, con apertura lateral y revalidación antes del salto.
 
 ## Expansión DataDigger
 

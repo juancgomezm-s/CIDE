@@ -15,6 +15,7 @@ pub(crate) fn is_command(command: CommandId) -> bool {
         CommandId::ViewSymbols
             | CommandId::SourceReferences
             | CommandId::SourceCalls
+            | CommandId::SourceIncoming
             | CommandId::SourceDependencies
             | CommandId::SourceComplete
             | CommandId::SourceRefresh
@@ -78,6 +79,9 @@ impl TuiApp {
         context.source_ready = self
             .source
             .ready(&self.workbench, self.project_root.as_deref());
+        context.source_incoming_available = self
+            .source_registry
+            .supports_incoming(&self.workbench, self.project_root.as_deref());
         context.source_side_ready = self
             .source
             .side_ready(&self.workbench, self.project_root.as_deref());
@@ -109,6 +113,7 @@ impl TuiApp {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
             CommandId::SourceCalls => self.request_source(SourceMode::Calls),
+            CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
             CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
             CommandId::SourceComplete => self.request_source(SourceMode::Completion),
             CommandId::SourceRefresh => {

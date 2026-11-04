@@ -87,10 +87,78 @@ impl FrameLayout {
             two_columns,
         }
     }
+    pub fn pane_area(self, pane: PaneId) -> (u16, u16) {
+        if pane == PaneId::Secondary && self.two_columns {
+            (
+                self.editor_x + self.pane_width + 1,
+                self.editor_width - self.pane_width - 1,
+            )
+        } else {
+            (self.editor_x, self.pane_width)
+        }
+    }
+    pub fn editor_rows(self) -> u16 {
+        self.content_height.saturating_sub(2)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ScrollBar {
+    pub x: u16,
+    pub y: u16,
+    pub length: u16,
+    pub vertical: bool,
+    pub maximum: usize,
+    pub thumb_length: u16,
+    pub thumb_start: u16,
+}
+impl ScrollBar {
+    fn new((x, y): (u16, u16), length: u16, vertical: bool, offset: usize, maximum: usize) -> Self {
+        let thumb_length = if maximum == 0 {
+            length
+        } else {
+            let track = u128::from(length);
+            (track * track / (track + maximum as u128)).max(1) as u16
+        };
+        let travel = length.saturating_sub(thumb_length);
+        let thumb_start = if maximum > 0 {
+            (offset.min(maximum) as u128 * u128::from(travel) / maximum as u128) as u16
+        } else {
+            0
+        };
+        Self {
+            x,
+            y,
+            length,
+            vertical,
+            maximum,
+            thumb_length,
+            thumb_start,
+        }
+    }
+    pub fn pointer_offset(self, x: u16, y: u16) -> u16 {
+        if self.vertical {
+            y.saturating_sub(self.y)
+        } else {
+            x.saturating_sub(self.x)
+        }
+    }
+    pub fn thumb_contains(self, offset: u16) -> bool {
+        (self.thumb_start..self.thumb_start + self.thumb_length).contains(&offset)
+    }
+    pub fn target(self, offset: u16, grab: u16) -> usize {
+        let travel = self.length.saturating_sub(self.thumb_length);
+        if travel == 0 {
+            return 0;
+        }
+        let thumb = offset.saturating_sub(grab).min(travel);
+        (u128::from(thumb) * self.maximum as u128 / u128::from(travel)) as usize
+    }
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct EditorText {
+    pub bars: Option<[ScrollBar; 2]>,
     pub line_count: Option<usize>,
     pub syntax: jc_app::SyntaxRows,
     pub position: Option<TextPosition>,
@@ -161,13 +229,14 @@ impl TuiApp {
                 .active_document()
                 .and_then(|d| self.workbench.line_count_for_tab(d.tab_id))
                 .map_or(3, |n| (n.max(1).to_string().len() as u16).clamp(3, 7));
+            let (_, active_width) = layout.pane_area(self.workbench.panes().active());
             self.workbench.reveal_active_pane(
-                usize::from(layout.content_height.saturating_sub(1)),
+                usize::from(layout.editor_rows()),
                 if self.workbench.invisibles_visible() {
-                    usize::from(layout.pane_width.saturating_sub(number_width + 2))
+                    usize::from(active_width.saturating_sub(number_width + 3))
                         .min(crate::render::MAX_DISPLAY_COLUMNS)
                 } else {
-                    usize::from(layout.pane_width.saturating_sub(number_width + 2))
+                    usize::from(active_width.saturating_sub(number_width + 3))
                 },
             );
             for pane in [PaneId::Primary, PaneId::Secondary] {
@@ -184,18 +253,40 @@ impl TuiApp {
                 let count = self.workbench.line_count_for_tab(location.tab);
                 let position = self.workbench.position_for_pane(pane);
                 let number = count.map_or(3, |n| (n.max(1).to_string().len() as u16).clamp(3, 7));
-                let width = if pane == PaneId::Secondary && layout.two_columns {
-                    layout.editor_width - layout.pane_width - 1
-                } else {
-                    layout.pane_width
-                };
-                let text_width = usize::from(width.saturating_sub(number + 2));
+                let (x, width) = layout.pane_area(pane);
+                let text_width = usize::from(width.saturating_sub(number + 3));
                 let first = view.scroll_line().min(count.unwrap_or(0).saturating_sub(1));
-                let visible = first
-                    ..count
-                        .unwrap_or(0)
-                        .min(first + usize::from(layout.content_height.saturating_sub(1)));
+                let page = usize::from(layout.editor_rows());
+                let visible = first..count.unwrap_or(0).min(first + page);
                 let all = self.workbench.invisibles_visible() && rectangle.is_none();
+                let bars = count.filter(|_| page > 0 && text_width > 0).map(|count| {
+                    let offset = self.workbench.horizontal_scroll_for_pane(pane).unwrap_or(0);
+                    let columns = if all {
+                        text_width.min(crate::render::MAX_DISPLAY_COLUMNS)
+                    } else {
+                        text_width
+                    };
+                    let horizontal_max = self
+                        .workbench
+                        .horizontal_scroll_max(location.tab, first, page, columns, all)
+                        .max(offset);
+                    [
+                        ScrollBar::new(
+                            (x + width - 1, 3),
+                            layout.editor_rows(),
+                            true,
+                            first,
+                            count.saturating_sub(page),
+                        ),
+                        ScrollBar::new(
+                            (x + number + 2, 3 + layout.editor_rows()),
+                            text_width as u16,
+                            false,
+                            offset,
+                            horizontal_max,
+                        ),
+                    ]
+                });
                 let cursor_column = if all {
                     self.workbench.display_column_for_pane(pane)
                 } else {
@@ -268,15 +359,12 @@ impl TuiApp {
                         })
                         .collect()
                 };
-                let syntax = self.workbench.syntax_rows(
-                    location.tab,
-                    first,
-                    usize::from(layout.content_height.saturating_sub(1)),
-                );
+                let syntax = self.workbench.syntax_rows(location.tab, first, page);
                 self.syntax_pending |= syntax.pending;
                 self.syntax_targets[usize::from(pane == PaneId::Secondary)] =
                     Some((pane, location.tab));
                 let text = EditorText {
+                    bars,
                     syntax,
                     line_count: count,
                     position,

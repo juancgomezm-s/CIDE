@@ -6,6 +6,7 @@ mod chrome;
 mod clipboard;
 mod clipboard_flow;
 mod close_flow;
+mod editor_scroll;
 mod explorer_paint;
 mod explorer_panel;
 mod explorer_smoke;
@@ -121,6 +122,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     ),
     (232, CommandId::SourceComplete, "Completar palabra local"),
     (237, CommandId::SourceCalls, "Llama a"),
+    (239, CommandId::SourceIncoming, "Llamado por"),
     (
         238,
         CommandId::SourceDependencies,
@@ -404,6 +406,8 @@ struct State {
     bottom_hits: Option<bottom_panel::BottomHits>,
     rectangle_drag: Option<rectangle_input::RectangleDrag>,
     linear_drag: Option<pointer_input::LinearDrag>,
+    editor_scroll_drag: Option<editor_scroll::Drag>,
+    editor_maps: [editor_scroll::MapCache; 2],
     wheel: Option<pointer_input::WheelState>,
     menu_stamp: Option<Box<menu_input::MenuStamp>>,
     interaction_epoch: u64,
@@ -534,6 +538,8 @@ impl State {
             bottom_hits: None,
             rectangle_drag: None,
             linear_drag: None,
+            editor_scroll_drag: None,
+            editor_maps: Default::default(),
             wheel: None,
             menu_stamp: None,
             interaction_epoch: 0,
@@ -1679,7 +1685,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     && message == WM_LBUTTONDOWN
                 {
                     let modifiers = state.modifiers();
-                    let started = if modifiers.contains(Modifiers::ALT)
+                    let started = if state.begin_editor_scroll(x, y) {
+                        true
+                    } else if modifiers.contains(Modifiers::ALT)
                         && !modifiers.contains(Modifiers::CTRL)
                     {
                         state.begin_rectangle_drag(x, y)
@@ -1692,7 +1700,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             WM_MOUSEMOVE | WM_LBUTTONUP => {
-                redraw = state.rectangle_drag.is_some() || state.linear_drag.is_some();
+                redraw = state.rectangle_drag.is_some()
+                    || state.linear_drag.is_some()
+                    || state.editor_scroll_drag.is_some();
                 let point = (
                     (lparam as u16) as i16 as i32,
                     ((lparam as usize >> 16) as u16) as i16 as i32,
@@ -1709,7 +1719,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 if wparam & 1 != 0 || message == WM_LBUTTONUP {
                     let x = (lparam as u16) as i16 as i32;
                     let y = ((lparam as usize >> 16) as u16) as i16 as i32;
-                    if state.rectangle_drag.is_some() {
+                    if state.editor_scroll_drag.is_some() {
+                        state.update_editor_scroll(x, y);
+                    } else if state.rectangle_drag.is_some() {
                         state.update_rectangle_drag(x, y);
                     } else {
                         state.update_linear_drag(x, y);

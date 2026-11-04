@@ -268,6 +268,16 @@ impl PaneManager {
             view.state.manual_scroll = manual;
         }
     }
+    pub(crate) fn set_horizontal_scroll(&mut self, id: PaneId, column: usize) {
+        if let Some(view) = self.view_mut(id).editor_mut() {
+            if let Some(selection) = &mut view.state.rectangle {
+                selection.scroll_column = crate::rectangle::VisualColumn(column);
+            } else {
+                view.state.scroll_column = column;
+            }
+            view.state.manual_scroll = true;
+        }
+    }
     pub(crate) fn rebase(&mut self, tab: TabId, change: &ChangeSet, include_active: bool) {
         let active = self.active;
         for id in [PaneId::Primary, PaneId::Secondary] {

@@ -1,6 +1,6 @@
 //! Versioned terminal hit metadata. No live document, decoded text or I/O in draw.
 use super::{
-    presentation::{EditorText, FrameLayout},
+    presentation::{EditorText, FrameLayout, ScrollBar},
     TuiApp,
 };
 use crate::state::UiOverlay;
@@ -64,7 +64,7 @@ impl SourceContext {
             path: doc.session.path().to_owned(),
             root: app.project_root.clone(),
             first: view.scroll_line(),
-            column: view.scroll_column(),
+            column: app.workbench.horizontal_scroll_for_pane(pane)?,
             focus: app.focus.primary(),
             active: app.workbench.panes().active(),
             cursor: state.cursor,
@@ -187,6 +187,7 @@ enum Action {
     Command(CommandId),
     Tab(usize, TabId),
     Source(usize),
+    Scroll(PaneId, ScrollBar),
     Explorer(NodeId),
     Bottom(usize),
     Symbol(usize),
@@ -232,10 +233,17 @@ struct LinearDrag {
     context: SourceContext,
     anchor: usize,
 }
+struct ScrollDrag {
+    context: SourceContext,
+    bar: ScrollBar,
+    grab: u16,
+    previous: u16,
+}
 #[derive(Default)]
 pub(crate) struct MouseState {
     frame: Option<Box<MouseFrame>>,
     drag: Option<LinearDrag>,
+    scroll_drag: Option<ScrollDrag>,
 }
 impl MouseState {
     pub(super) fn frame_changed(&mut self) {
@@ -307,6 +315,7 @@ impl TuiApp {
     pub(crate) fn invalidate_mouse(&mut self) {
         self.mouse.frame = None;
         self.mouse.drag = None;
+        self.mouse.scroll_drag = None;
     }
     fn mouse_source_available(&self) -> bool {
         matches!(self.overlay, UiOverlay::None)
@@ -333,6 +342,25 @@ impl TuiApp {
                 || SourceContext::capture(self, drag.context.pane).as_ref() != Some(&drag.context)
         }) {
             self.mouse.drag = None;
+        }
+        if self.mouse.scroll_drag.as_ref().is_some_and(|drag| {
+            let editor = if drag.context.pane == PaneId::Primary {
+                primary
+            } else {
+                secondary
+            };
+            !self.mouse_source_available()
+                || SourceContext::capture(self, drag.context.pane).as_ref() != Some(&drag.context)
+                || !editor.bars.is_some_and(|bars| {
+                    bars.iter().any(|bar| {
+                        bar.vertical == drag.bar.vertical
+                            && bar.x == drag.bar.x
+                            && bar.y == drag.bar.y
+                            && bar.length == drag.bar.length
+                    })
+                })
+        }) {
+            self.mouse.scroll_drag = None;
         }
         let mut frame = MouseFrame {
             stamp: FrameStamp::capture(self),
@@ -593,6 +621,19 @@ impl TuiApp {
             let Some(context) = SourceContext::capture(self, pane) else {
                 continue;
             };
+            if let Some(bars) = text.bars {
+                for bar in bars {
+                    frame.hits.push(Hit {
+                        area: Rect {
+                            x: bar.x,
+                            y: bar.y,
+                            width: if bar.vertical { 1 } else { bar.length },
+                            height: if bar.vertical { bar.length } else { 1 },
+                        },
+                        action: Action::Scroll(pane, bar),
+                    });
+                }
+            }
             if self.workbench.rectangle_for_pane(pane).is_some() {
                 continue;
             }
@@ -602,21 +643,11 @@ impl TuiApp {
             let Some(tab) = view.location().map(|location| location.tab) else {
                 continue;
             };
-            let x = layout.editor_x
-                + if pane == PaneId::Secondary && layout.two_columns {
-                    layout.pane_width + 1
-                } else {
-                    0
-                };
-            let width = if pane == PaneId::Secondary && layout.two_columns {
-                layout.editor_width - layout.pane_width - 1
-            } else {
-                layout.pane_width
-            };
+            let (x, width) = layout.pane_area(pane);
             let number = text.line_count.map_or(3, |count| {
                 (count.max(1).to_string().len() as u16).clamp(3, 7)
             });
-            if width < 6 || layout.content_height <= 1 {
+            if width < 7 || layout.editor_rows() == 0 {
                 continue;
             }
             let rows = if let Some(rows) = &text.display_rows {
@@ -631,8 +662,8 @@ impl TuiApp {
                 area: Rect {
                     x,
                     y: 3,
-                    width,
-                    height: layout.content_height.saturating_sub(1),
+                    width: width - 1,
+                    height: layout.editor_rows(),
                 },
                 text_x: x + number + 2,
                 context,
@@ -645,7 +676,11 @@ impl TuiApp {
                 action: Action::Source(index),
             });
             frame.wheels.push(WheelHit {
-                area: area.area,
+                area: Rect {
+                    width: area.area.width + 1,
+                    height: area.area.height + 1,
+                    ..area.area
+                },
                 action: Wheel::Source(index),
             });
             frame.sources.push(area);
@@ -654,14 +689,24 @@ impl TuiApp {
     }
     pub(crate) fn handle_mouse(&mut self, event: MouseEvent) -> bool {
         match event.kind {
+            MouseEventKind::Drag(MouseButton::Left) if self.mouse.scroll_drag.is_some() => {
+                return self.drag_scrollbar(event, false);
+            }
+            MouseEventKind::Up(MouseButton::Left) if self.mouse.scroll_drag.is_some() => {
+                return self.drag_scrollbar(event, true);
+            }
             MouseEventKind::Drag(MouseButton::Left) => return self.drag_mouse(event),
             MouseEventKind::Up(MouseButton::Left) => {
                 let changed = self.drag_mouse(event);
                 self.mouse.drag = None;
                 return changed;
             }
-            MouseEventKind::Down(MouseButton::Left) => self.mouse.drag = None,
-            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => self.mouse.drag = None,
+            MouseEventKind::Down(MouseButton::Left)
+            | MouseEventKind::ScrollUp
+            | MouseEventKind::ScrollDown => {
+                self.mouse.drag = None;
+                self.mouse.scroll_drag = None;
+            }
             _ => return false,
         }
         let Some(mut frame) = self.mouse.frame.take() else {
@@ -797,6 +842,7 @@ impl TuiApp {
             Some(Action::Source(index)) => {
                 self.begin_mouse_source(frame.sources[index].clone(), event)
             }
+            Some(Action::Scroll(pane, bar)) => self.begin_scrollbar(pane, bar, event),
             Some(Action::Explorer(id)) => {
                 self.explorer_view.select(id);
                 let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
@@ -877,6 +923,73 @@ impl TuiApp {
                 false
             }
         }
+    }
+    fn begin_scrollbar(&mut self, pane: PaneId, bar: ScrollBar, event: MouseEvent) -> bool {
+        if bar.maximum == 0 || !event.modifiers.is_empty() {
+            return false;
+        }
+        let Some(context) = SourceContext::capture(self, pane) else {
+            return false;
+        };
+        let offset = bar.pointer_offset(event.column, event.row);
+        let on_thumb = bar.thumb_contains(offset);
+        let mut drag = ScrollDrag {
+            context,
+            bar,
+            grab: if on_thumb {
+                offset - bar.thumb_start
+            } else {
+                bar.thumb_length / 2
+            },
+            previous: offset,
+        };
+        if !on_thumb {
+            self.move_scrollbar(&mut drag, offset);
+        }
+        self.mouse.scroll_drag = Some(drag);
+        true
+    }
+    fn drag_scrollbar(&mut self, event: MouseEvent, release: bool) -> bool {
+        let Some(mut drag) = self.mouse.scroll_drag.take() else {
+            return false;
+        };
+        if !self.mouse_source_available()
+            || SourceContext::capture(self, drag.context.pane).as_ref() != Some(&drag.context)
+        {
+            return false;
+        }
+        let offset = drag.bar.pointer_offset(event.column, event.row);
+        let changed = offset != drag.previous && self.move_scrollbar(&mut drag, offset);
+        drag.previous = offset;
+        if !release {
+            self.mouse.scroll_drag = Some(drag);
+        }
+        changed
+    }
+    fn move_scrollbar(&mut self, drag: &mut ScrollDrag, offset: u16) -> bool {
+        let pane = drag.context.pane;
+        let target = drag.bar.target(offset, drag.grab);
+        let old = if drag.bar.vertical {
+            drag.context.first
+        } else {
+            drag.context.column
+        };
+        let delta = if target >= old {
+            isize::try_from(target - old).unwrap_or(isize::MAX)
+        } else {
+            -isize::try_from(old - target).unwrap_or(isize::MAX)
+        };
+        let changed = if drag.bar.vertical {
+            self.workbench
+                .scroll_view_vertical(pane, delta, usize::from(drag.bar.length))
+        } else {
+            self.workbench
+                .scroll_view_horizontal(pane, delta, drag.bar.maximum)
+        };
+        if changed {
+            drag.context = SourceContext::capture(self, pane).expect("scroll preserves the view");
+        }
+        changed
     }
     fn begin_mouse_source(&mut self, source: SourceArea, event: MouseEvent) -> bool {
         if event

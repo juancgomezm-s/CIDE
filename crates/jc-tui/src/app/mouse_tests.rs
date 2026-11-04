@@ -52,6 +52,72 @@ fn find(screen: &Screen, text: &str) -> (u16, u16) {
     panic!("visible text missing: {text}")
 }
 #[test]
+fn mouse_scrollbars_move_the_view_without_moving_the_caret() {
+    let source = format!("{}\r\n", "abcd".repeat(40)).repeat(80);
+    let mut app = app(&source);
+    let caret = app.workbench.active_position();
+    let [vertical, horizontal] = app.prepare_frame(100, 24).primary.bars.unwrap();
+    assert!(vertical.maximum > 0 && horizontal.maximum > 0);
+    click(
+        &mut app,
+        vertical.x,
+        vertical.y + vertical.length - 1,
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        app.workbench
+            .panes()
+            .view(PaneId::Primary)
+            .unwrap()
+            .scroll_line(),
+        vertical.maximum
+    );
+    let [vertical, horizontal] = app.prepare_frame(100, 24).primary.bars.unwrap();
+    mouse(
+        &mut app,
+        MouseEventKind::Down(MouseButton::Left),
+        vertical.x,
+        vertical.y + vertical.thumb_start,
+        KeyModifiers::NONE,
+    );
+    mouse(
+        &mut app,
+        MouseEventKind::Drag(MouseButton::Left),
+        vertical.x,
+        vertical.y,
+        KeyModifiers::NONE,
+    );
+    mouse(
+        &mut app,
+        MouseEventKind::Up(MouseButton::Left),
+        vertical.x,
+        vertical.y,
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        app.workbench
+            .panes()
+            .view(PaneId::Primary)
+            .unwrap()
+            .scroll_line(),
+        0
+    );
+    app.frame(100, 24);
+    click(
+        &mut app,
+        horizontal.x + horizontal.length - 1,
+        horizontal.y,
+        KeyModifiers::NONE,
+    );
+    assert_eq!(
+        app.workbench.horizontal_scroll_for_pane(PaneId::Primary),
+        Some(horizontal.maximum)
+    );
+    assert_eq!(app.workbench.active_position(), caret);
+    assert_eq!(app.workbench.active_bytes().unwrap(), source.as_bytes());
+}
+
+#[test]
 fn mouse_unicode_click_shift_drag_use_graphemes_tabs_crlf_and_preserve_one_undo() {
     let mut app = app("\u{feff}Ae\u{301}\t界Z\r\nsegunda\r\nfinal");
     let bytes = app.workbench.active_bytes().unwrap();

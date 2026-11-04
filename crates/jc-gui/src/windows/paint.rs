@@ -1,6 +1,6 @@
 //! Preparation owns only visible cells. Painting borrows that presentation and
 //! never accesses Workbench, document caches or a mutable editor widget.
-use super::{ffi::*, wide, State};
+use super::{editor_scroll, ffi::*, wide, State};
 use jc_app::{PaneId, SyntaxKind, SyntaxProfile};
 use jc_text::TextPosition;
 use std::ptr::{null, null_mut};
@@ -112,6 +112,7 @@ struct Pane {
     text_x: i32,
     text_y: i32,
     caret: Option<(i32, i32)>,
+    scroll: editor_scroll::Frame,
 }
 pub(super) struct Frame {
     pub width: i32,
@@ -255,18 +256,20 @@ pub(super) fn areas(state: &State) -> Vec<(PaneId, Rect)> {
 
 /// The same bounded text-cell rectangle used by preparation. No source is
 /// decoded here; the typed conversion below belongs to Workbench's layout.
-struct TextArea {
-    pane: PaneId,
-    tab: jc_app::TabId,
-    first: usize,
-    scroll: usize,
-    x: i32,
-    y: i32,
-    columns: usize,
-    rows: usize,
-    capacity_rows: usize,
+pub(super) struct TextArea {
+    pub pane: PaneId,
+    pub tab: jc_app::TabId,
+    pub first: usize,
+    pub scroll: usize,
+    pub x: i32,
+    pub y: i32,
+    pub columns: usize,
+    pub rows: usize,
+    pub capacity_rows: usize,
+    pub count: usize,
+    pub geometry: editor_scroll::Geometry,
 }
-fn text_areas(state: &State) -> Vec<TextArea> {
+pub(super) fn text_areas(state: &State) -> Vec<TextArea> {
     let cw = state.cell_width.clamp(1, 8192);
     let ch = state.cell_height.clamp(1, 8192);
     areas(state)
@@ -275,9 +278,11 @@ fn text_areas(state: &State) -> Vec<TextArea> {
             let view = state.workbench.panes().view(pane)?;
             let tab = view.location()?.tab;
             let count = state.workbench.line_count_for_tab(tab)?;
+            let geometry = editor_scroll::Geometry::new(rect);
+            let rect = geometry.text;
             let digits = count.max(1).to_string().len().clamp(3, 7);
             let x = rect.left + (digits as i32 + 2) * cw + 8;
-            let y = (rect.top + super::shell::HEADER).min(rect.bottom);
+            let y = rect.top;
             let columns = ((rect.right - x - 8) / cw).clamp(0, 256) as usize;
             let rows = ((rect.bottom - y) / ch).clamp(0, 128) as usize;
             let first = view.scroll_line();
@@ -294,6 +299,8 @@ fn text_areas(state: &State) -> Vec<TextArea> {
                 columns,
                 rows: rows.min(count.saturating_sub(first)),
                 capacity_rows: rows,
+                count,
+                geometry,
             })
         })
         .collect()
@@ -301,8 +308,9 @@ fn text_areas(state: &State) -> Vec<TextArea> {
 
 pub(super) fn source_pane_at(state: &State, x: i32, y: i32) -> Option<(PaneId, usize)> {
     for (pane, rect) in areas(state) {
-        let top = rect.top + super::shell::HEADER;
-        let rows = ((rect.bottom - top) / state.cell_height.clamp(1, 8192)).clamp(0, 128) as usize;
+        let text = editor_scroll::Geometry::new(rect).text;
+        let top = text.top;
+        let rows = ((text.bottom - top) / state.cell_height.clamp(1, 8192)).clamp(0, 128) as usize;
         if rows > 0
             && x >= rect.left
             && x < rect.right
@@ -484,59 +492,56 @@ pub(super) fn prepare(state: &mut State) -> Frame {
     state.syntax_targets = [None, None];
     state.validate_project_search();
     let covered = state.open_diff_visible || state.markdown_gui.is_some();
-    let areas = if covered { Vec::new() } else { areas(state) };
-    let columns = areas.first().map_or(1, |(_, rect)| {
-        ((rect.right - rect.left) / state.cell_width - 7).clamp(1, 256) as usize
-    });
-    let rows = areas.first().map_or(1, |(_, rect)| {
-        ((rect.bottom - rect.top - super::shell::HEADER) / state.cell_height).clamp(1, 128) as usize
-    });
     if !covered {
-        state.workbench.reveal_active_pane(rows, columns);
+        if let Some(area) = text_areas(state)
+            .into_iter()
+            .find(|area| area.pane == state.workbench.panes().active())
+        {
+            state
+                .workbench
+                .reveal_active_pane(area.capacity_rows.max(1), area.columns.max(1));
+        }
     }
+    let areas = if covered {
+        Vec::new()
+    } else {
+        text_areas(state)
+    };
     let mut panes = Vec::with_capacity(areas.len());
     let mut glyph_budget = jc_app::MAX_PRESENTATION_TEXT_BYTES;
     let mut syntax_limited = false;
     let mut syntax_plain = false;
-    for (id, rect) in areas {
-        let Some(view) = state.workbench.panes().view(id) else {
-            continue;
-        };
-        let Some(location) = view.location() else {
-            continue;
-        };
-        if state.workbench.document_by_tab(location.tab).is_none() {
-            continue;
-        }
+    for area in areas {
+        let id = area.pane;
+        let rect = area.geometry.text;
+        let tab = area.tab;
+        let scroll_frame = editor_scroll::Frame::prepare(state, &area);
         let rectangle = state.workbench.rectangle_for_pane(id);
-        let first = view.scroll_line();
+        let first = area.first;
         let invisible = state.workbench.invisibles_visible();
-        let scroll = rectangle.map_or(view.scroll_column(), |rect| rect.scroll_column);
+        let scroll = area.scroll;
         let position = state.workbench.position_for_pane(id);
-        let count = state
-            .workbench
-            .line_count_for_tab(location.tab)
-            .unwrap_or(0);
+        let count = area.count;
         let digits = count.max(1).to_string().len().clamp(3, 7);
-        let text_x = rect.left + (digits as i32 + 2) * state.cell_width + 8;
-        let text_y = (rect.top + super::shell::HEADER).min(rect.bottom);
-        let columns = ((rect.right - text_x - 8) / state.cell_width).clamp(0, 256) as usize;
-        let rows = ((rect.bottom - text_y) / state.cell_height).clamp(0, 128) as usize;
+        let text_x = area.x;
+        let text_y = area.y;
+        let columns = area.columns;
+        let rows = area.capacity_rows;
         let selection = state.workbench.selection_for_pane(id);
-        let syntax = state.workbench.syntax_rows(location.tab, first, rows);
-        state.syntax_targets[usize::from(id == PaneId::Secondary)] = Some((id, location.tab));
+        let syntax = state.workbench.syntax_rows(tab, first, rows);
+        state.syntax_targets[usize::from(id == PaneId::Secondary)] = Some((id, tab));
         state.syntax_pending |= syntax.pending;
         syntax_limited |= syntax.limited;
         if id == state.workbench.panes().active() {
             syntax_plain = syntax.profile == SyntaxProfile::Plain && syntax.encoding.is_some();
         }
-        let matches = state.workbench.search_matches_for_tab(location.tab);
+        let matches = state.workbench.search_matches_for_tab(tab);
         let mut prepared = Vec::with_capacity(rows);
         for line in first..count.min(first.saturating_add(rows)) {
             if invisible && rectangle.is_none() {
                 let cells = state
                     .workbench
-                    .display_row(location.tab, line, scroll, columns)
+                    .display_row(tab, line, scroll, columns)
                     .unwrap_or_default()
                     .into_iter()
                     .enumerate()
@@ -568,12 +573,10 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             } else if rectangle.is_some() {
                 state
                     .workbench
-                    .rectangle_glyph_line(location.tab, line, scroll, columns, invisible)
+                    .rectangle_glyph_line(tab, line, scroll, columns, invisible)
                     .ok()
             } else {
-                state
-                    .workbench
-                    .visual_row(location.tab, line, scroll, columns)
+                state.workbench.visual_row(tab, line, scroll, columns)
             }
             .filter(|row| {
                 let bytes = row.iter().map(|a| a.glyph.byte_len()).sum::<usize>();
@@ -668,6 +671,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             text_x,
             text_y,
             caret,
+            scroll: scroll_frame,
         });
     }
     let tabs = super::tab_bar::prepare(state);
@@ -788,6 +792,26 @@ pub(super) unsafe fn fill(dc: Hdc, rect: Rect, color: u32) -> Result<(), String>
     } else {
         Ok(())
     }
+}
+
+pub(super) unsafe fn fill_marks(
+    dc: Hdc,
+    rectangles: impl Iterator<Item = Rect>,
+    color: u32,
+) -> Result<(), String> {
+    let brush = CreateSolidBrush(color);
+    if brush.is_null() {
+        return Err(super::os_error("CreateSolidBrush"));
+    }
+    let mut result = Ok(());
+    for rect in rectangles {
+        if RectVisible(dc, &rect) != 0 && FillRect(dc, &rect, brush) == 0 {
+            result = Err(super::os_error("Dibujar marcas del minimapa"));
+            break;
+        }
+    }
+    DeleteObject(brush);
+    result
 }
 pub(super) unsafe fn text(
     dc: Hdc,
@@ -957,6 +981,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
                 ACCENT,
             )?;
         }
+        pane.scroll.draw(dc)?;
     }
     SelectObject(dc, frame.ui_font);
     if let Some(explorer) = &frame.explorer {

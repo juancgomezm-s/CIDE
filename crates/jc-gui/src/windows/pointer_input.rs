@@ -49,6 +49,7 @@ impl State {
     pub(super) fn cancel_pointer(&mut self) {
         self.linear_drag = None;
         self.rectangle_drag = None;
+        self.editor_scroll_drag = None;
         self.wheel = None;
     }
     pub(super) fn begin_linear_drag(&mut self, x: i32, y: i32, shift: bool) -> bool {
@@ -137,6 +138,7 @@ impl State {
     pub(super) fn pointer_wheel(&mut self, x: i32, y: i32, delta: i32, lines: u32, flags: usize) {
         self.linear_drag = None;
         self.rectangle_drag = None;
+        self.editor_scroll_drag = None;
         let modifiers = self.modifiers();
         if flags & 0x0c != 0
             || modifiers.contains(Modifiers::ALT)

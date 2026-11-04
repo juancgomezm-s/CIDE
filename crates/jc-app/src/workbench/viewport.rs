@@ -120,6 +120,67 @@ impl Workbench {
         self.link_scroll_delta(pane, old, next, rows);
         true
     }
+    pub fn horizontal_scroll_for_pane(&self, pane: PaneId) -> Option<usize> {
+        let state = self.panes.view(pane)?.state()?;
+        Some(
+            state
+                .rectangle
+                .map_or(state.scroll_column, |rect| rect.scroll_column.0),
+        )
+    }
+    /// Manually move the viewport without changing its caret or selection.
+    pub fn scroll_view_horizontal(&mut self, pane: PaneId, delta: isize, max: usize) -> bool {
+        let Some(old) = self.horizontal_scroll_for_pane(pane) else {
+            return false;
+        };
+        let next = old.saturating_add_signed(delta).min(max);
+        if next == old {
+            return false;
+        }
+        self.panes.set_horizontal_scroll(pane, next);
+        true
+    }
+    /// The horizontal track reflects the visible lines. Scan only candidates
+    /// that can overflow, with a shared byte budget and a conservative upper
+    /// bound for long rows whose exact widths are outside that budget.
+    pub fn horizontal_scroll_max(
+        &self,
+        tab: TabId,
+        first: usize,
+        rows: usize,
+        visible_columns: usize,
+        invisibles: bool,
+    ) -> usize {
+        let count = self.line_count_for_tab(tab).unwrap_or(0);
+        let mut width = visible_columns;
+        let mut budget = 64 * 1024;
+        for line in first..first.saturating_add(rows).min(count) {
+            let Some((content, eol)) = self.line_range_for_tab(tab, line) else {
+                break;
+            };
+            let upper = if invisibles {
+                content.len().saturating_mul(12).saturating_add(12)
+            } else {
+                content.len().saturating_mul(4)
+            };
+            if upper <= width {
+                continue;
+            }
+            let bytes = eol.end - content.start + 8;
+            let exact = if bytes <= budget {
+                budget -= bytes;
+                if invisibles {
+                    self.display_column_at_byte(tab, line, eol.end)
+                } else {
+                    self.visual_column_at_byte(tab, line, content.end)
+                }
+            } else {
+                None
+            };
+            width = width.max(exact.unwrap_or(upper));
+        }
+        width.saturating_sub(visible_columns)
+    }
     pub(super) fn link_scroll_delta(&mut self, pane: PaneId, old: usize, next: usize, rows: usize) {
         if !self.panes.scroll_linked() || old == next {
             return;
