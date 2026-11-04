@@ -186,7 +186,10 @@ fn browser_folder_frame_navigates_selects_current_folder_and_cancel_restores_foc
     assert!(app.file_browser.catalog.generation() > generation);
     wait(&mut app, &wake);
     assert_eq!(app.file_browser.catalog.root(), Some(child));
-    key(&mut app, KeyCode::Up, KeyModifiers::ALT);
+    key(&mut app, KeyCode::Home, KeyModifiers::NONE);
+    let frame = app.frame(100, 30);
+    assert!((0..frame.height()).any(|row| frame.row_text(row).trim_start().starts_with("│ ..")));
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     wait(&mut app, &wake);
     assert_eq!(
         app.file_browser.catalog.root(),

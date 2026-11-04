@@ -1,19 +1,25 @@
 //! Optional progress.abl source provider. Lexical inference only: no AVM, XREF,
 //! include expansion, filesystem access or compiler certification.
 use jc_app::{
-    source_services::{SourceAction, SourceItem, SourceProviderDescriptor},
+    source_services::{FileResolution, SourceAction, SourceItem, SourceProviderDescriptor},
     Cancellation, TaskFailure, TaskItem, TaskOutput, TaskSnapshot,
 };
 use jc_languages::syntax::{scan, LexerState, SyntaxKind, SyntaxProfile};
 use jc_text::decode_fragment;
-use std::ops::Range;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 pub fn descriptor() -> SourceProviderDescriptor {
     SourceProviderDescriptor {
         id: "progress.abl",
         language: "abl",
         symbols: Some(symbols),
         references: Some(references),
+        calls: Some(calls),
+        dependencies: Some(dependencies),
         completion: None,
+        file_resolution: FileResolution::OrderedProjectPath,
         snippets: super::snippets::TEMPLATES,
     }
 }
@@ -25,7 +31,122 @@ struct Symbol {
 struct Model {
     symbols: Vec<Symbol>,
     references: Vec<SourceItem>,
+    local_procedures: HashMap<String, Option<Range<usize>>>,
     limited: bool,
+}
+const MAX_SYMBOLS: usize = 64;
+const MAX_REFERENCES: usize = 64;
+const LOCAL_CALL: &str = "local-or-PROPATH:";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Analysis<'a> {
+    Symbols,
+    References,
+    Calls,
+    Dependencies,
+    LocalProcedures(&'a HashSet<String>),
+}
+
+impl Analysis<'_> {
+    fn wants_calls(self) -> bool {
+        matches!(self, Self::References | Self::Calls)
+    }
+
+    fn wants_includes(self) -> bool {
+        matches!(self, Self::References | Self::Dependencies)
+    }
+}
+
+fn push_symbol(model: &mut Model, symbol: Symbol) {
+    if model.symbols.len() == MAX_SYMBOLS {
+        model.limited = true;
+    } else {
+        model.symbols.push(symbol);
+    }
+}
+
+fn push_reference(model: &mut Model, item: SourceItem) {
+    if model.references.len() == MAX_REFERENCES {
+        model.limited = true;
+    } else {
+        model.references.push(item);
+    }
+}
+
+fn definition(snapshot: &TaskSnapshot, after_define: usize) -> Option<Symbol> {
+    let bytes = snapshot.bytes();
+    let limit = after_define.saturating_add(1024).min(bytes.len());
+    let mut at = after_define;
+    let mut word = || {
+        while at < limit && bytes[at].is_ascii_whitespace() {
+            at += 1;
+        }
+        let start = at;
+        while at < limit
+            && (bytes[at].is_ascii_alphanumeric()
+                || matches!(bytes[at], b'_' | b'-')
+                || bytes[at] >= 128)
+        {
+            at += 1;
+        }
+        (start < at && (at < limit || limit == bytes.len())).then_some(start..at)
+    };
+    let kind = loop {
+        let range = word()?;
+        let token = &bytes[range];
+        let options: &[(&[u8], &str)] = &[
+            (b"VARIABLE", "Variable"),
+            (b"VAR", "Variable"),
+            (b"PARAMETER", "Parámetro"),
+            (b"BUFFER", "Búfer"),
+            (b"TEMP-TABLE", "Tabla temporal"),
+            (b"WORK-TABLE", "Tabla de trabajo"),
+            (b"DATASET", "Conjunto de datos"),
+            (b"QUERY", "Consulta"),
+            (b"FRAME", "Marco"),
+            (b"BUTTON", "Botón"),
+            (b"BROWSE", "Explorador de datos"),
+            (b"RECTANGLE", "Rectángulo"),
+            (b"IMAGE", "Imagen"),
+            (b"MENU", "Menú"),
+            (b"SUB-MENU", "Submenú"),
+        ];
+        if let Some((_, kind)) = options
+            .iter()
+            .find(|(keyword, _)| token.eq_ignore_ascii_case(keyword))
+        {
+            break *kind;
+        }
+        let modifiers: &[&[u8]] = &[
+            b"INPUT",
+            b"OUTPUT",
+            b"INPUT-OUTPUT",
+            b"RETURN",
+            b"NEW",
+            b"GLOBAL",
+            b"SHARED",
+            b"PUBLIC",
+            b"PRIVATE",
+            b"PROTECTED",
+            b"PACKAGE-PRIVATE",
+            b"PACKAGE-PROTECTED",
+            b"STATIC",
+            b"SERIALIZABLE",
+            b"NON-SERIALIZABLE",
+        ];
+        if !modifiers
+            .iter()
+            .any(|word| token.eq_ignore_ascii_case(word))
+        {
+            return None;
+        }
+    };
+    let range = word()?;
+    let name = text(snapshot, range.clone())?;
+    if !name.starts_with(|ch: char| ch.is_alphabetic() || ch == '_') {
+        return None;
+    }
+    Some(Symbol { kind, name, range })
 }
 fn label(mut value: String) -> String {
     if value.len() > 512 {
@@ -97,26 +218,26 @@ fn reference(snapshot: &TaskSnapshot, trigger: Range<usize>, include: bool) -> S
         || at == stop && stop < bytes.len()
         || raw.iter().any(|b| matches!(b, b'{' | b'}' | b'&' | b'~'))
         || quoted.is_some_and(|quote| bytes.get(at) != Some(&quote))
+        || include && raw.iter().all(u8::is_ascii_digit)
         || (!include && target.eq_ignore_ascii_case("value"));
     let action = if unsafe_syntax {
-        SourceAction::Unresolved("dynamic, escaped or unsupported reference syntax".into())
+        SourceAction::Unresolved("Referencia dinámica, con escapes o sin soporte léxico".into())
     } else if include
         || target
-            .rsplit('.')
-            .next()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("p") || ext.eq_ignore_ascii_case("w"))
+            .rsplit_once('.')
+            .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("p") || ext.eq_ignore_ascii_case("w"))
     {
         SourceAction::RelativeFile(target.clone())
     } else {
-        SourceAction::Unresolved(format!("local-or-PROPATH:{target}"))
+        SourceAction::Unresolved(format!("{LOCAL_CALL}{target}"))
     };
     SourceItem {
         range: trigger,
         label: label(format!(
-            "{} {} (lexical)",
-            if include { "include" } else { "RUN" },
+            "{} {}",
+            if include { "Inclusión" } else { "RUN" },
             if target.is_empty() {
-                "<dynamic>"
+                "<dinámica>"
             } else {
                 &target
             }
@@ -127,11 +248,12 @@ fn reference(snapshot: &TaskSnapshot, trigger: Range<usize>, include: bool) -> S
 fn parse(
     snapshot: &TaskSnapshot,
     cancel: &Cancellation,
-    want_references: bool,
+    analysis: Analysis<'_>,
 ) -> Result<Model, TaskFailure> {
     let mut model = Model {
         symbols: Vec::new(),
         references: Vec::new(),
+        local_procedures: HashMap::new(),
         limited: false,
     };
     let mut state = LexerState::default();
@@ -155,14 +277,34 @@ fn parse(
                     return;
                 }
                 let source = &snapshot.bytes()[token.source.clone()];
-                if token.kind == SyntaxKind::Preprocessor && source == b"{" && want_references {
-                    if model.references.len() >= 64 {
-                        model.limited = true;
-                        return;
+                if token.kind == SyntaxKind::Preprocessor && source == b"{" {
+                    if analysis.wants_includes() {
+                        push_reference(&mut model, reference(snapshot, token.source, true));
+                    } else if analysis == Analysis::Symbols {
+                        let item = reference(snapshot, token.source, true);
+                        if let SourceAction::RelativeFile(name) = item.action {
+                            push_symbol(
+                                &mut model,
+                                Symbol {
+                                    kind: "Inclusión",
+                                    name,
+                                    range: item.range,
+                                },
+                            );
+                        }
                     }
-                    model
-                        .references
-                        .push(reference(snapshot, token.source, true));
+                    return;
+                }
+                if matches!(
+                    analysis,
+                    Analysis::References | Analysis::Calls | Analysis::Dependencies
+                ) {
+                    if analysis.wants_calls()
+                        && matches!(token.kind, SyntaxKind::Plain | SyntaxKind::Keyword)
+                        && source.eq_ignore_ascii_case(b"run")
+                    {
+                        push_reference(&mut model, reference(snapshot, token.source, false));
+                    }
                     return;
                 }
                 if token.kind == SyntaxKind::Operator {
@@ -176,15 +318,14 @@ fn parse(
                                 return;
                             }
                             if let Some(name) = text(snapshot, range.clone()) {
-                                if model.symbols.len() >= 64 {
-                                    model.limited = true;
-                                    return;
-                                }
-                                model.symbols.push(Symbol {
-                                    kind: "method",
-                                    name,
-                                    range,
-                                });
+                                push_symbol(
+                                    &mut model,
+                                    Symbol {
+                                        kind: "Método",
+                                        name,
+                                        range,
+                                    },
+                                );
                             }
                         }
                         pending = None;
@@ -206,14 +347,10 @@ fn parse(
                 {
                     return;
                 }
-                if source.eq_ignore_ascii_case(b"run") && want_references {
-                    if model.references.len() >= 64 {
-                        model.limited = true;
-                        return;
+                if analysis == Analysis::Symbols && source.eq_ignore_ascii_case(b"define") {
+                    if let Some(symbol) = definition(snapshot, token.source.end) {
+                        push_symbol(&mut model, symbol);
                     }
-                    model
-                        .references
-                        .push(reference(snapshot, token.source.clone(), false));
                 }
                 let declaration = if source.eq_ignore_ascii_case(b"procedure") {
                     Some("procedure")
@@ -226,7 +363,9 @@ fn parse(
                 } else {
                     None
                 };
-                if let Some(kind) = declaration.filter(|_| !previous_end) {
+                if let Some(kind) = declaration.filter(|kind| {
+                    !previous_end && (analysis == Analysis::Symbols || *kind == "procedure")
+                }) {
                     pending = Some(kind);
                     declaration_end = token.source.end;
                     method_name = None;
@@ -269,11 +408,18 @@ fn parse(
                                 pending = None;
                                 return;
                             };
-                            if model.symbols.len() >= 64 {
-                                model.limited = true;
-                                return;
+                            if let Analysis::LocalProcedures(targets) = analysis {
+                                let name = name.to_ascii_lowercase();
+                                if targets.contains(&name) {
+                                    model
+                                        .local_procedures
+                                        .entry(name)
+                                        .and_modify(|location| *location = None)
+                                        .or_insert(Some(range));
+                                }
+                            } else {
+                                push_symbol(&mut model, Symbol { kind, name, range });
                             }
-                            model.symbols.push(Symbol { kind, name, range });
                             pending = None;
                         }
                     }
@@ -285,30 +431,33 @@ fn parse(
             return Err(TaskFailure::LimitExceeded);
         }
     }
-    if want_references {
-        for item in &mut model.references {
-            if let SourceAction::Unresolved(reason) = &item.action {
-                if let Some(name) = reason.strip_prefix("local-or-PROPATH:") {
-                    if let Some(symbol) = model.symbols.iter().find(|symbol| {
-                        symbol.kind == "procedure" && symbol.name.eq_ignore_ascii_case(name)
-                    }) {
-                        item.range = symbol.range.clone();
-                        item.action = SourceAction::Navigate;
-                    }
-                }
-            }
-        }
-    }
     Ok(model)
 }
+
+fn local_call(item: &SourceItem) -> Option<&str> {
+    match &item.action {
+        SourceAction::Unresolved(reason) => reason.strip_prefix(LOCAL_CALL),
+        _ => None,
+    }
+}
+
 fn symbols(
     snapshot: &TaskSnapshot,
     cancel: &Cancellation,
     output: &mut TaskOutput,
 ) -> Result<(), TaskFailure> {
-    for symbol in parse(snapshot, cancel, false)?.symbols {
+    for symbol in parse(snapshot, cancel, Analysis::Symbols)?.symbols {
         output.push(TaskItem::Source(SourceItem {
-            label: label(format!("{} {} (lexical)", symbol.kind, symbol.name)),
+            label: label(format!(
+                "{} {}",
+                match symbol.kind {
+                    "procedure" => "Procedimiento",
+                    "function" => "Función",
+                    "class" => "Clase",
+                    kind => kind,
+                },
+                symbol.name
+            )),
             range: symbol.range,
             action: SourceAction::Navigate,
         }))?;
@@ -320,7 +469,55 @@ fn references(
     cancel: &Cancellation,
     output: &mut TaskOutput,
 ) -> Result<(), TaskFailure> {
-    for item in parse(snapshot, cancel, true)?.references {
+    emit_references(snapshot, cancel, output, Analysis::References)
+}
+
+fn calls(
+    snapshot: &TaskSnapshot,
+    cancel: &Cancellation,
+    output: &mut TaskOutput,
+) -> Result<(), TaskFailure> {
+    emit_references(snapshot, cancel, output, Analysis::Calls)
+}
+
+fn dependencies(
+    snapshot: &TaskSnapshot,
+    cancel: &Cancellation,
+    output: &mut TaskOutput,
+) -> Result<(), TaskFailure> {
+    emit_references(snapshot, cancel, output, Analysis::Dependencies)
+}
+
+fn emit_references(
+    snapshot: &TaskSnapshot,
+    cancel: &Cancellation,
+    output: &mut TaskOutput,
+    analysis: Analysis<'_>,
+) -> Result<(), TaskFailure> {
+    let mut references = parse(snapshot, cancel, analysis)?.references;
+    let targets: HashSet<_> = references
+        .iter()
+        .filter_map(local_call)
+        .map(str::to_ascii_lowercase)
+        .collect();
+    if !targets.is_empty() {
+        let locations =
+            parse(snapshot, cancel, Analysis::LocalProcedures(&targets))?.local_procedures;
+        for item in &mut references {
+            let Some(name) = local_call(item) else {
+                continue;
+            };
+            item.action = match locations.get(&name.to_ascii_lowercase()) {
+                Some(Some(range)) => {
+                    item.range = range.clone();
+                    SourceAction::Navigate
+                }
+                Some(None) => SourceAction::Unresolved("Procedimiento local ambiguo".into()),
+                None => SourceAction::Unresolved("Procedimiento local sin resolver".into()),
+            };
+        }
+    }
+    for item in references {
         output.push(TaskItem::Source(item))?;
     }
     Ok(())

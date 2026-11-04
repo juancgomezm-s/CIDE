@@ -806,3 +806,19 @@ amplia que su trait; se corrigieron antes del cierre, logs retenidos.
 autorizó unicode-segmentation=1.13.3 y unicode-width=0.2.2; [admisión](M2_UNICODE_LAYOUT_ADMISSION.md).
 Esa autorización sustituye la restricción previa para estas dos dependencias;
 no pedirla de nuevo. Sin instalación de programas, CI ni AVM.
+## Enlaces, esquema y renombrado
+
+La navegación lateral de enlaces Markdown y el Esquema ABL de la GUI están
+integrados. El próximo bloque del proveedor ABL es resolver usos de variables
+por identidad y ámbito antes de habilitar propuestas de renombrado. Ver el
+[alcance y orden de implementación](ENLACES_ESQUEMA_RENOMBRADO.md).
+
+La [navegación por proveedor](NAVEGACION_MULTILENGUAJE.md) separa llamadas ABL
+de inclusiones y conecta el Esquema y las dependencias de JavaScript. Sigue
+la navegación inversa con resolución versionada del proyecto.
+
+## Expansión DataDigger
+
+Planificado como navegador de registros de solo lectura en una cuadrícula
+nativa de CIDE, con un auxiliar ABL y verificación independiente en OpenEdge
+10.0B y 10.2B. Ver [plan de expansión](EXPANSION_DATADIGGER.md).

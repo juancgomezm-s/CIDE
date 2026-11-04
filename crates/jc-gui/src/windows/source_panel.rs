@@ -8,8 +8,8 @@ use super::{
 };
 use jc_app::{
     source_services::{
-        display_label, display_ui_label, SourceAction, SourceController, SourceMode,
-        SourcePresentation, SourceRegistry, SourceRow, SourceState,
+        display_label, display_ui_label, SourceController, SourceMode, SourcePresentation,
+        SourceRegistry, SourceRow, SourceState,
     },
     CommandContext, CommandId, CompletedTask, Modifiers,
 };
@@ -56,6 +56,8 @@ pub(super) fn is_command(command: CommandId) -> bool {
         command,
         CommandId::ViewSymbols
             | CommandId::SourceReferences
+            | CommandId::SourceCalls
+            | CommandId::SourceDependencies
             | CommandId::SourceComplete
             | CommandId::SourceRefresh
             | CommandId::SourceCancel
@@ -89,6 +91,12 @@ impl State {
         context.source_completion_available = context.has_document
             && encoded
             && registry.resolve(language, SourceMode::Completion).is_some();
+        context.source_calls_available =
+            encoded && registry.resolve(language, SourceMode::Calls).is_some();
+        context.source_dependencies_available = encoded
+            && registry
+                .resolve(language, SourceMode::Dependencies)
+                .is_some();
         let controller = &self.source_gui.controller;
         context.source_active = controller.mode().is_some()
             && !matches!(
@@ -96,12 +104,8 @@ impl State {
                 SourceState::Idle | SourceState::Cancelled
             );
         context.source_ready = controller.ready(&self.workbench, self.project_root.as_deref());
-        context.source_side_ready = context.source_ready
-            && self.project_root.is_some()
-            && controller
-                .items()
-                .get(controller.selected())
-                .is_some_and(|item| matches!(item.action, SourceAction::RelativeFile(_)));
+        context.source_side_ready =
+            controller.side_ready(&self.workbench, self.project_root.as_deref());
         if self.source_visible() {
             context.editor_input = false;
         }
@@ -128,6 +132,8 @@ impl State {
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
+            CommandId::SourceCalls => self.request_source(SourceMode::Calls),
+            CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
             CommandId::SourceComplete => self.request_source(SourceMode::Completion),
             CommandId::SourceRefresh => {
                 if let Some(mode) = self.source_gui.controller.mode() {

@@ -37,7 +37,7 @@ fn source_tui_symbols_keyboard_navigation_readonly_render_and_explicit_refresh()
     let p = a.prepare_frame(140, 30);
     let screen = render::render(&p);
     assert_eq!(screen, render::render(&p));
-    assert!((0..screen.height()).any(|row| screen.row_text(row).contains("procedure alpha")));
+    assert!((0..screen.height()).any(|row| screen.row_text(row).contains("Procedimiento alpha")));
     key(&mut a, KeyCode::Down, KeyModifiers::NONE);
     key(&mut a, KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(a.focus.primary(), PrimaryFocus::Editor);

@@ -5,8 +5,7 @@ use crate::state::UiOverlay;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{
     source_services::{
-        display_label, display_ui_label, SourceAction, SourceMode, SourcePresentation, SourceRow,
-        SourceState,
+        display_label, display_ui_label, SourceMode, SourcePresentation, SourceRow, SourceState,
     },
     CommandId, PrimaryFocus, SidebarView,
 };
@@ -15,6 +14,8 @@ pub(crate) fn is_command(command: CommandId) -> bool {
         command,
         CommandId::ViewSymbols
             | CommandId::SourceReferences
+            | CommandId::SourceCalls
+            | CommandId::SourceDependencies
             | CommandId::SourceComplete
             | CommandId::SourceRefresh
             | CommandId::SourceCancel
@@ -64,16 +65,22 @@ impl TuiApp {
                 self.source.state(),
                 SourceState::Idle | SourceState::Cancelled
             );
+        context.source_calls_available = context.has_document
+            && self
+                .source_registry
+                .resolve(language, SourceMode::Calls)
+                .is_some();
+        context.source_dependencies_available = context.has_document
+            && self
+                .source_registry
+                .resolve(language, SourceMode::Dependencies)
+                .is_some();
         context.source_ready = self
             .source
             .ready(&self.workbench, self.project_root.as_deref());
-        context.source_side_ready = context.source_ready
-            && self.project_root.is_some()
-            && self
-                .source
-                .items()
-                .get(self.source.selected())
-                .is_some_and(|item| matches!(item.action, SourceAction::RelativeFile(_)));
+        context.source_side_ready = self
+            .source
+            .side_ready(&self.workbench, self.project_root.as_deref());
         if self.source_popup {
             context.editor_input = false;
         }
@@ -101,6 +108,8 @@ impl TuiApp {
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
+            CommandId::SourceCalls => self.request_source(SourceMode::Calls),
+            CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
             CommandId::SourceComplete => self.request_source(SourceMode::Completion),
             CommandId::SourceRefresh => {
                 if let Some(mode) = self.source.mode() {

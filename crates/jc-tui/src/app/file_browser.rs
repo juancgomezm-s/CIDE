@@ -137,10 +137,16 @@ impl FileBrowser {
         );
         // A normal Unicode filename stays readable; opaque names retain the
         // catalog's diagnostic escape and their original native acceptance path.
+        let root_id = self.catalog.root_id();
+        let has_parent = self.catalog.root().and_then(Path::parent).is_some();
         for row in &mut frame.rows {
+            if Some(row.id) == root_id && has_parent {
+                row.label = "..".into();
+                continue;
+            }
             if let Some(path) = self.catalog.path(row.id) {
                 if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
-                    let prefix = if row.id == self.catalog.root_id().unwrap() {
+                    let prefix = if Some(row.id) == root_id {
                         "[.] "
                     } else if row.is_dir {
                         "[+] "
@@ -432,6 +438,14 @@ impl TuiApp {
         };
         if node.is_dir() {
             if let Some(path) = self.file_browser.catalog.path(id) {
+                let path = if Some(id) == self.file_browser.catalog.root_id() {
+                    let Some(parent) = path.parent() else {
+                        return;
+                    };
+                    parent.to_owned()
+                } else {
+                    path
+                };
                 self.browser_navigate_prompt(kind, path);
             }
         } else if kind == PromptKind::Open {

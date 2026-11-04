@@ -82,3 +82,5 @@ pub use project_search::{
 mod regex_search;
 mod text_search;
 pub use text_search::{SearchLimits, SearchMatch, SearchStatus};
+mod document_links;
+mod javascript_navigation;

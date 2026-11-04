@@ -136,6 +136,7 @@ pub(super) struct Frame {
     snippet: Option<super::git_panel::GitFrame>,
     markdown: Option<super::markdown_panel::MarkdownFrame>,
     explorer: Option<super::explorer_panel::ExplorerFrame>,
+    outline: Option<super::outline_panel::OutlineFrame>,
     bottom: Option<super::bottom_panel::BottomFrame>,
 }
 impl Frame {
@@ -194,6 +195,9 @@ impl Frame {
         self.explorer
             .as_ref()
             .map(|frame| frame.hits(self.cell_height))
+    }
+    pub(super) fn outline_hits(&self) -> Option<super::outline_panel::OutlineHits> {
+        self.outline.as_ref().map(|frame| frame.hits())
     }
     pub(super) fn contains_source_row(&self, needle: &str) -> bool {
         self.panes.iter().flat_map(|p| &p.rows).any(|row| {
@@ -754,6 +758,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         snippet: state.snippet_presentation(),
         markdown: state.markdown_presentation(),
         explorer: state.explorer_presentation(),
+        outline: state.outline_presentation(),
         bottom: state.bottom_presentation(),
         selector: state.selector_presentation(super::selector_paint::list_capacity(
             state.width,
@@ -956,6 +961,9 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
     SelectObject(dc, frame.ui_font);
     if let Some(explorer) = &frame.explorer {
         super::explorer_paint::draw(dc, explorer, frame.cell_height)?;
+    }
+    if let Some(outline) = &frame.outline {
+        super::outline_panel::draw(dc, outline)?;
     }
     if let Some(bottom) = &frame.bottom {
         super::bottom_paint::draw(dc, bottom, frame.cell_height)?;

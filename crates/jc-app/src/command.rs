@@ -105,6 +105,8 @@ pub enum CommandId {
     DiffOpenNavigateRight,
     ViewSymbols,
     SourceReferences,
+    SourceCalls,
+    SourceDependencies,
     SourceComplete,
     SourceRefresh,
     SourceCancel,
@@ -187,6 +189,8 @@ pub struct CommandContext {
     pub open_diff_ready: bool,
     pub source_symbols_available: bool,
     pub source_references_available: bool,
+    pub source_calls_available: bool,
+    pub source_dependencies_available: bool,
     pub source_completion_available: bool,
     pub source_active: bool,
     pub source_ready: bool,
@@ -240,6 +244,8 @@ impl Default for CommandContext {
             open_diff_ready: false,
             source_symbols_available: false,
             source_references_available: false,
+            source_calls_available: false,
+            source_dependencies_available: false,
             source_completion_available: false,
             source_active: false,
             source_ready: false,
@@ -459,6 +465,12 @@ fn source_symbols(ctx: &CommandContext) -> bool {
 }
 fn source_references(ctx: &CommandContext) -> bool {
     ctx.source_references_available
+}
+fn source_calls(ctx: &CommandContext) -> bool {
+    ctx.source_calls_available
+}
+fn source_dependencies(ctx: &CommandContext) -> bool {
+    ctx.source_dependencies_available
 }
 fn source_completion(ctx: &CommandContext) -> bool {
     ctx.editor_input
@@ -805,6 +817,13 @@ pub fn default_registry() -> CommandRegistry {
             Navigation,
             "Referencias del documento",
             source_references
+        ),
+        spec!(SourceCalls, Navigation, "Llama a", source_calls),
+        spec!(
+            SourceDependencies,
+            Navigation,
+            "Dependencias e inclusiones",
+            source_dependencies
         ),
         spec!(
             SourceComplete,

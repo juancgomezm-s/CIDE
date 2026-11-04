@@ -248,6 +248,8 @@ impl Workbench {
             | DiffOpenNavigateRight
             | ViewSymbols
             | SourceReferences
+            | SourceCalls
+            | SourceDependencies
             | SourceComplete
             | SourceRefresh
             | SourceCancel

@@ -10,11 +10,14 @@ use std::{
 };
 
 pub const SOURCE_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0001);
+const OUTLINE_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0002);
 const SNAPSHOT: usize = 2 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceMode {
     Symbols,
     References,
+    Calls,
+    Dependencies,
     Completion,
 }
 impl SourceMode {
@@ -22,6 +25,8 @@ impl SourceMode {
         match self {
             Self::Symbols => "Símbolos",
             Self::References => "Referencias",
+            Self::Calls => "Llama a",
+            Self::Dependencies => "Dependencias",
             Self::Completion => "Completado",
         }
     }
@@ -54,22 +59,42 @@ impl SourceItem {
         self.label.len() <= 512
             && !self.label.chars().any(char::is_control)
             && match (&self.action, mode) {
-                (SourceAction::Navigate, SourceMode::Symbols | SourceMode::References) => true,
-                (SourceAction::RelativeFile(path), SourceMode::References) => {
-                    path.len() <= 4096 && !path.is_empty() && !path.chars().any(char::is_control)
-                }
-                (SourceAction::Unresolved(reason), SourceMode::References) => reason.len() <= 512,
+                (
+                    SourceAction::Navigate,
+                    SourceMode::Symbols
+                    | SourceMode::References
+                    | SourceMode::Calls
+                    | SourceMode::Dependencies,
+                ) => true,
+                (
+                    SourceAction::RelativeFile(path),
+                    SourceMode::References | SourceMode::Calls | SourceMode::Dependencies,
+                ) => path.len() <= 4096 && !path.is_empty() && !path.chars().any(char::is_control),
+                (
+                    SourceAction::Unresolved(reason),
+                    SourceMode::References | SourceMode::Calls | SourceMode::Dependencies,
+                ) => reason.len() <= 512,
                 (SourceAction::Replace(text), SourceMode::Completion) => text.len() <= 4096,
                 _ => false,
             }
     }
 }
 #[derive(Clone, Copy)]
+pub enum FileResolution {
+    ProjectCandidates,
+    DocumentRelative,
+    OrderedProjectPath,
+}
+
+#[derive(Clone, Copy)]
 pub struct SourceProviderDescriptor {
     pub id: &'static str,
     pub language: &'static str,
     pub symbols: Option<TaskProvider>,
     pub references: Option<TaskProvider>,
+    pub calls: Option<TaskProvider>,
+    pub dependencies: Option<TaskProvider>,
+    pub file_resolution: FileResolution,
     pub completion: Option<TaskProvider>,
     pub snippets: &'static [crate::snippets::SnippetTemplate],
 }
@@ -78,6 +103,8 @@ impl SourceProviderDescriptor {
         match mode {
             SourceMode::Symbols => self.symbols,
             SourceMode::References => self.references,
+            SourceMode::Calls => self.calls,
+            SourceMode::Dependencies => self.dependencies,
             SourceMode::Completion => self.completion,
         }
     }
@@ -88,18 +115,31 @@ pub struct SourceRegistry {
 impl Default for SourceRegistry {
     fn default() -> Self {
         Self {
-            providers: vec![SourceProviderDescriptor {
-                id: "core.words",
-                language: "*",
-                symbols: None,
-                references: None,
-                completion: Some(local_words),
-                snippets: &[],
-            }],
+            providers: vec![
+                crate::document_links::descriptor(),
+                crate::javascript_navigation::descriptor(),
+                SourceProviderDescriptor {
+                    id: "core.words",
+                    language: "*",
+                    symbols: None,
+                    references: None,
+                    calls: None,
+                    dependencies: None,
+                    file_resolution: FileResolution::ProjectCandidates,
+                    completion: Some(local_words),
+                    snippets: &[],
+                },
+            ],
         }
     }
 }
 impl SourceRegistry {
+    pub fn supports_document(&self, app: &Workbench, mode: SourceMode) -> bool {
+        app.active_document().is_some_and(|document| {
+            let path = document.session.path().to_string_lossy();
+            self.resolve(jc_languages::detect(&path).id, mode).is_some()
+        })
+    }
     pub fn register(&mut self, descriptor: SourceProviderDescriptor) -> Result<(), &'static str> {
         if self.providers.len() >= 16
             || !descriptor.id.contains('.')
@@ -117,6 +157,8 @@ impl SourceRegistry {
             || [
                 descriptor.symbols,
                 descriptor.references,
+                descriptor.calls,
+                descriptor.dependencies,
                 descriptor.completion,
             ]
             .iter()
@@ -284,6 +326,8 @@ pub struct SourceController {
     state: SourceState,
     message: String,
     mode: Option<SourceMode>,
+    outline: bool,
+    outline_attempt: Option<Origin>,
 }
 pub struct SourceRow {
     pub index: usize,
@@ -347,6 +391,38 @@ pub fn display_ui_label(text: &str, columns: usize) -> String {
     out
 }
 impl SourceController {
+    pub fn outline() -> Self {
+        Self {
+            outline: true,
+            ..Self::default()
+        }
+    }
+    fn job_key(&self) -> JobKey {
+        if self.outline {
+            OUTLINE_JOB_KEY
+        } else {
+            SOURCE_JOB_KEY
+        }
+    }
+    /// A failed attempt is remembered until its source context changes.
+    /// This checks only metadata; actual capture belongs in the task path.
+    pub fn needs_outline_refresh(&self, app: &Workbench, root: Option<&Path>) -> bool {
+        self.outline
+            && !self
+                .outline_attempt
+                .as_ref()
+                .is_some_and(|origin| origin.current(app, root, SourceMode::Symbols))
+            && app.active_document().is_some_and(|document| {
+                document.session.encoding().is_some()
+                    && document.session.path().as_os_str().len() <= 4096
+            })
+            && root.is_none_or(|path| path.as_os_str().len() <= 4096)
+            && app
+                .panes()
+                .view(app.panes().active())
+                .and_then(|view| view.view_id())
+                .is_some()
+    }
     pub fn state(&self) -> SourceState {
         self.state
     }
@@ -370,6 +446,17 @@ impl SourceController {
                 .as_ref()
                 .is_some_and(|r| r.origin.current(app, root, r.mode))
     }
+    pub fn side_ready(&self, app: &Workbench, root: Option<&Path>) -> bool {
+        self.ready(app, root)
+            && self
+                .accepted
+                .as_ref()
+                .is_some_and(|request| reference_root(root, request).is_ok())
+            && self
+                .items
+                .get(self.selected)
+                .is_some_and(|item| matches!(item.action, SourceAction::RelativeFile(_)))
+    }
     pub fn present(&self, max_rows: usize, columns: usize) -> SourcePresentation {
         let count = max_rows.min(64);
         let first = self.selected.saturating_sub(count.saturating_sub(1));
@@ -378,6 +465,8 @@ impl SourceController {
                 match self.mode {
                     Some(SourceMode::Symbols) => "Símbolos (léxicos)",
                     Some(SourceMode::References) => "Referencias (léxicas)",
+                    Some(SourceMode::Calls) => "Llama a",
+                    Some(SourceMode::Dependencies) => "Dependencias",
                     _ => "Completado (palabras locales)",
                 },
                 columns,
@@ -391,7 +480,7 @@ impl SourceController {
                 .take(count)
                 .map(|(index, item)| SourceRow {
                     index,
-                    label: display_label(&item.label, columns),
+                    label: display_ui_label(&item.label, columns),
                     selected: index == self.selected,
                 })
                 .collect(),
@@ -418,9 +507,10 @@ impl SourceController {
     }
     fn invalidate(&mut self, jobs: &mut JobSystem) {
         self.generation = self.generation.saturating_add(1);
+        let key = self.job_key();
         if let Some(f) = &mut self.flight {
             f.discard = true;
-            jobs.cancel(SOURCE_JOB_KEY);
+            jobs.cancel(key);
         }
         self.pending = None;
         self.accepted = None;
@@ -429,6 +519,7 @@ impl SourceController {
     }
     pub fn cancel(&mut self, jobs: &mut JobSystem) {
         self.invalidate(jobs);
+        self.outline_attempt = None;
         self.status(SourceState::Cancelled, "Servicio de código cancelado");
     }
     pub fn request(
@@ -439,6 +530,9 @@ impl SourceController {
         root: Option<&Path>,
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
+        if self.outline && mode != SourceMode::Symbols {
+            return Err("El esquema solo admite símbolos".into());
+        }
         if self.generation == u64::MAX {
             return Err("Se agotó la generación de código".into());
         }
@@ -452,6 +546,9 @@ impl SourceController {
             return Err("El completado requiere cursor de texto sin selección".into());
         }
         let origin = Origin::capture(app, root)?;
+        if self.outline {
+            self.outline_attempt = Some(origin.clone());
+        }
         let provider = registry
             .resolve(&origin.language, mode)
             .ok_or("No hay proveedor para esta capacidad de código")?;
@@ -518,7 +615,7 @@ impl SourceController {
         }
         match jobs.submit_source(
             app,
-            SOURCE_JOB_KEY,
+            self.job_key(),
             r.origin.stamp,
             len,
             r.provider.provider(r.mode).unwrap(),
@@ -561,7 +658,7 @@ impl SourceController {
         root: Option<&Path>,
         task: &mut CompletedTask,
     ) -> bool {
-        if task.key != SOURCE_JOB_KEY {
+        if task.key != self.job_key() {
             return false;
         }
         if self.flight.as_ref().is_none_or(|f| f.id != task.id) {
@@ -624,8 +721,15 @@ impl SourceController {
             }
             items.push(item);
         }
+        self.selected = if request.provider.id == crate::document_links::ID {
+            items
+                .iter()
+                .position(|item| item.range.contains(&request.origin.cursor))
+                .unwrap_or(0)
+        } else {
+            0
+        };
         self.items = items;
-        self.selected = 0;
         let provider = request.provider.id;
         self.accepted = Some(request);
         self.status(
@@ -643,6 +747,15 @@ impl SourceController {
         root: Option<&Path>,
         to_side: bool,
     ) -> Result<Option<Vec<PathBuf>>, String> {
+        self.activate_at_index(app, root, self.selected, to_side)
+    }
+    pub fn activate_at_index(
+        &self,
+        app: &mut Workbench,
+        root: Option<&Path>,
+        index: usize,
+        to_side: bool,
+    ) -> Result<Option<Vec<PathBuf>>, String> {
         let request = self
             .accepted
             .as_ref()
@@ -652,7 +765,7 @@ impl SourceController {
         }
         let item = self
             .items
-            .get(self.selected)
+            .get(index)
             .ok_or("No hay elemento de código seleccionado")?;
         match &item.action {
             SourceAction::Unresolved(reason) => {
@@ -681,8 +794,8 @@ impl SourceController {
                 Ok(None)
             }
             SourceAction::RelativeFile(relative) => {
-                let root = root.ok_or("Abre una carpeta de proyecto para resolver referencias")?;
-                let paths = reference_candidates(root, &request.origin.path, relative)?;
+                let root = reference_root(root, request)?;
+                let paths = resolve_file(root, request, relative)?;
                 if paths.is_empty() {
                     return Err("No hay candidato existente dentro de la raíz del proyecto".into());
                 }
@@ -716,8 +829,8 @@ impl SourceController {
         let SourceAction::RelativeFile(relative) = &item.action else {
             return Err("No es una referencia de archivo".into());
         };
-        let root = root.ok_or("Abre una carpeta de proyecto para resolver referencias")?;
-        if !reference_candidates(root, &request.origin.path, relative)?
+        let root = reference_root(root, request)?;
+        if !resolve_file(root, request, relative)?
             .iter()
             .any(|path| path == candidate)
         {
@@ -728,20 +841,119 @@ impl SourceController {
         Ok(())
     }
 }
+fn reference_root<'a>(root: Option<&'a Path>, request: &'a Request) -> Result<&'a Path, String> {
+    root.or_else(|| {
+        if matches!(
+            request.provider.file_resolution,
+            FileResolution::DocumentRelative
+        ) && request.origin.path.is_absolute()
+        {
+            request.origin.path.parent()
+        } else {
+            None
+        }
+    })
+    .ok_or_else(|| "Abre una carpeta de proyecto para resolver referencias".into())
+}
+
+fn resolve_file(root: &Path, request: &Request, relative: &str) -> Result<Vec<PathBuf>, String> {
+    let source = &request.origin.path;
+    match request.provider.file_resolution {
+        FileResolution::ProjectCandidates => {
+            find_reference_candidates(root, source, relative, true)
+        }
+        FileResolution::DocumentRelative => {
+            find_reference_candidates(root, source, relative, false)
+        }
+        FileResolution::OrderedProjectPath => {
+            let root = root.canonicalize().map_err(|error| error.to_string())?;
+            let config = root.join(".cide").join("propath");
+            match jc_files::read_in_root(&root, &config, 8192) {
+                Ok((_, bytes)) => {
+                    let config =
+                        std::str::from_utf8(&bytes).map_err(|_| "PROPATH debe estar en UTF-8")?;
+                    let mut parents = Vec::new();
+                    for entry in config.trim_start_matches('\u{feff}').lines().map(str::trim) {
+                        if entry.is_empty() || entry.starts_with('#') {
+                            continue;
+                        }
+                        if parents.len() == 32
+                            || !project_relative(Path::new(entry))
+                            || entry.chars().any(char::is_control)
+                        {
+                            return Err(
+                                "PROPATH admite hasta 32 directorios relativos al proyecto".into(),
+                            );
+                        }
+                        parents.push(root.join(entry));
+                    }
+                    let mut paths = candidates_from(
+                        &root,
+                        relative,
+                        parents.iter().map(PathBuf::as_path),
+                        true,
+                    )?;
+                    paths.truncate(1);
+                    Ok(paths)
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    let mut paths = find_reference_candidates(&root, source, relative, true)?;
+                    if request.mode != SourceMode::References {
+                        paths.truncate(1);
+                    }
+                    Ok(paths)
+                }
+                Err(error) => Err(format!("No se pudo leer PROPATH: {error}")),
+            }
+        }
+    }
+}
+
+fn project_relative(path: &Path) -> bool {
+    path.components().all(|part| {
+        matches!(
+            part,
+            std::path::Component::Normal(_) | std::path::Component::CurDir
+        )
+    })
+}
+
 pub fn reference_candidates(
     root: &Path,
     source: &Path,
     relative: &str,
 ) -> Result<Vec<PathBuf>, String> {
+    find_reference_candidates(root, source, relative, true)
+}
+
+fn find_reference_candidates(
+    root: &Path,
+    source: &Path,
+    relative: &str,
+    project_fallback: bool,
+) -> Result<Vec<PathBuf>, String> {
     let canonical_root = root.canonicalize().map_err(|e| e.to_string())?;
     let root = canonical_root.as_path();
     let canonical_parent = source.parent().and_then(|p| p.canonicalize().ok());
+    let parents = [
+        canonical_parent.as_deref(),
+        project_fallback.then_some(root),
+    ];
+    candidates_from(root, relative, parents.into_iter().flatten(), false)
+}
+
+fn candidates_from<'a>(
+    root: &Path,
+    relative: &str,
+    parents: impl Iterator<Item = &'a Path>,
+    first_only: bool,
+) -> Result<Vec<PathBuf>, String> {
     let path = Path::new(relative);
-    if path.is_absolute() || relative.contains(':') || relative.contains('\0') {
+    if path.has_root() || relative.contains(':') || relative.contains('\0') {
         return Err("La referencia debe ser relativa al proyecto".into());
     }
     let mut candidates = Vec::new();
-    for parent in [canonical_parent.as_deref().unwrap_or(root), root] {
+    for parent in parents {
         let joined = parent.join(path);
         let mut normalized = PathBuf::new();
         for component in joined.components() {
@@ -759,6 +971,9 @@ pub fn reference_candidates(
             && !candidates.contains(&normalized)
         {
             candidates.push(normalized);
+            if first_only {
+                break;
+            }
         }
     }
     Ok(candidates)

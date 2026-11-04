@@ -27,6 +27,7 @@ mod navigation_panel;
 mod navigation_smoke;
 mod notify;
 mod open_diff_panel;
+mod outline_panel;
 mod paint;
 mod parity_smoke;
 mod pointer_input;
@@ -119,6 +120,12 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "Referencias del documento",
     ),
     (232, CommandId::SourceComplete, "Completar palabra local"),
+    (237, CommandId::SourceCalls, "Llama a"),
+    (
+        238,
+        CommandId::SourceDependencies,
+        "Dependencias e inclusiones",
+    ),
     (
         233,
         CommandId::SourceRefresh,
@@ -392,6 +399,7 @@ struct State {
     explorer_visible: bool,
     explorer_focused: bool,
     explorer_hits: Option<explorer_panel::ExplorerHits>,
+    outline: outline_panel::Outline,
     bottom: bottom_panel::BottomState,
     bottom_hits: Option<bottom_panel::BottomHits>,
     rectangle_drag: Option<rectangle_input::RectangleDrag>,
@@ -521,6 +529,7 @@ impl State {
             explorer_visible: false,
             explorer_focused: false,
             explorer_hits: None,
+            outline: outline_panel::Outline::default(),
             bottom: Default::default(),
             bottom_hits: None,
             rectangle_drag: None,
@@ -676,11 +685,12 @@ impl State {
                 && self.git_panel.is_none()
         };
         if explorer_focus {
-            context.can_open_to_side = self
-                .explorer_view
-                .selected()
-                .and_then(|id| self.explorer.node(id))
-                .is_some_and(|n| !n.is_dir());
+            context.can_open_to_side = !self.outline_focused()
+                && self
+                    .explorer_view
+                    .selected()
+                    .and_then(|id| self.explorer.node(id))
+                    .is_some_and(|n| !n.is_dir());
         }
         context.has_project = self.project_root.is_some();
         context.project_search_running =
@@ -808,11 +818,19 @@ impl State {
                 return Action::None;
             }
             CommandId::ExplorerRefresh => {
-                self.refresh_explorer();
+                if self.outline_focused() {
+                    self.refresh_outline();
+                } else {
+                    self.refresh_explorer();
+                }
                 return Action::None;
             }
             CommandId::ExplorerCancel => {
-                self.cancel_explorer();
+                if self.outline_focused() {
+                    self.exit_outline();
+                } else {
+                    self.cancel_explorer();
+                }
                 return Action::None;
             }
             CommandId::FocusNext | CommandId::FocusPrevious => {
@@ -1451,6 +1469,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 owner.frame.borrow_mut().take();
                 let frame = std::rc::Rc::new(paint::prepare(&mut state));
                 state.explorer_hits = frame.explorer_hits();
+                state.outline.hits = frame.outline_hits();
                 state.bottom_hits = frame.bottom_hits();
                 state.tab_hits = Some(frame.tab_hits());
                 *owner.frame.borrow_mut() = Some(frame.clone());
@@ -1544,6 +1563,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 state.cancel_pointer();
                 state.interaction_epoch = state.interaction_epoch.saturating_add(1);
                 state.explorer_hits = None;
+                state.outline.hits = None;
                 state.bottom_hits = None;
                 state.tab_hits = None;
                 state.maximized = wparam == 2;
@@ -1710,6 +1730,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         redraw |= state.validate_git_context();
         redraw |= state.validate_open_diff();
         redraw |= state.validate_source();
+        state.schedule_outline();
         state.validate_rectangle_drag();
         state.validate_linear_drag();
         if redraw && !matches!(message, TASKS_MESSAGE | 0x113 | WM_CREATE) {
@@ -1725,7 +1746,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     recovery::arm(hwnd);
     perform(hwnd, action);
     if let Some(current) = self::owner(hwnd) {
-        current.state.borrow().schedule_search();
+        let state = current.state.borrow();
+        state.schedule_search();
+        state.schedule_outline();
     }
     release_idle_capture(hwnd);
     if redraw && IsWindow(hwnd) != 0 {

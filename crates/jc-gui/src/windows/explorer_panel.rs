@@ -65,10 +65,18 @@ pub(super) fn region(state: &State) -> Option<Rect> {
         bottom: (height - ch - 8).max(ch + 8),
     })
 }
+fn tree_region(state: &State) -> Option<Rect> {
+    let mut rect = region(state)?;
+    if let Some(outline) = super::outline_panel::region(state) {
+        rect.bottom = outline.top;
+    }
+    Some(rect)
+}
 impl State {
     pub(super) fn show_explorer(&mut self) {
         self.bottom.focused = false;
         let collapse = self.explorer_visible && self.explorer_focused;
+        self.outline.focused = false;
         self.close_selector();
         if collapse {
             self.explorer_visible = false;
@@ -102,7 +110,7 @@ impl State {
             self.explorer.clear();
             self.explorer_hits = None;
         }
-        let rect = region(self)?;
+        let rect = tree_region(self)?;
         let rows = ((rect.bottom - rect.top - super::shell::TREE_HEAD) / super::shell::TREE_ROW)
             .clamp(0, 128) as usize;
         let columns =
@@ -125,7 +133,7 @@ impl State {
         Some(ExplorerFrame {
             rect,
             presentation,
-            focused: self.explorer_focused,
+            focused: self.explorer_focused && !self.outline_focused(),
         })
     }
     fn explorer_directory(&self) -> Option<NodeId> {
@@ -210,6 +218,10 @@ impl State {
         }
     }
     pub(super) fn explorer_key(&mut self, code: usize, modifiers: Modifiers) {
+        if self.outline_focused() {
+            self.outline_key(code, modifiers);
+            return;
+        }
         self.explorer_view.prepare(&self.explorer, 0, 0);
         match code {
             0x26 => self.explorer_view.move_selection(&self.explorer, -1),
@@ -239,7 +251,10 @@ impl State {
         }
     }
     pub(super) fn explorer_click(&mut self, x: i32, y: i32, double: bool) -> bool {
-        let Some(region) = region(self) else {
+        if self.outline_click(x, y, double) {
+            return true;
+        }
+        let Some(region) = tree_region(self) else {
             return false;
         };
         if x < region.left || x >= region.right || y < region.top || y >= region.bottom {
@@ -271,6 +286,7 @@ impl State {
         let is_dir = node.is_dir();
         let disclosure = x < region.left + 24 + depth.min(12) as i32 * 14;
         self.explorer_focused = true;
+        self.outline.focused = false;
         self.bottom.focused = false;
         self.explorer_view.select(id);
         if (is_dir && disclosure && !double) || (double && !disclosure) || (double && !is_dir) {

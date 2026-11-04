@@ -12,23 +12,84 @@ fn run(text: &str, encoding: TextEncoding, mode: SourceMode) -> (Workbench, Sour
     let mut a = Workbench::default();
     a.new_file("test.p", encoding);
     a.insert_text(text).unwrap();
+    let c = scan(&a, None, mode);
+    (a, c)
+}
+fn scan(a: &Workbench, root: Option<&std::path::Path>, mode: SourceMode) -> SourceController {
     let mut r = SourceRegistry::default();
     r.register(jc_progress::source_services::descriptor())
         .unwrap();
     let mut c = SourceController::default();
     let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
-    c.request(mode, &r, &a, None, &mut jobs).unwrap();
+    c.request(mode, &r, a, root, &mut jobs).unwrap();
     let until = Instant::now() + Duration::from_secs(5);
     while jobs.outstanding() > 0 || matches!(c.state(), SourceState::Queued | SourceState::Running)
     {
-        for mut task in jobs.poll(&a, 4) {
-            c.accept(&a, None, &mut task);
+        for mut task in jobs.poll(a, 4) {
+            c.accept(a, root, &mut task);
         }
-        c.tick(&a, None, &mut jobs);
+        c.tick(a, root, &mut jobs);
         assert!(Instant::now() < until);
         std::thread::yield_now();
     }
-    (a, c)
+    c
+}
+
+#[test]
+fn abl_calls_and_includes_are_separate_and_propath_selects_first_destination() {
+    use std::fs;
+    let root = std::env::temp_dir().join(format!("cide-source-propath-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    for dir in [".cide", "primero", "segundo"] {
+        fs::create_dir(root.join(dir)).unwrap();
+    }
+    let origin = root.join("origen.p");
+    fs::write(&origin, "RUN destino.p.\n{datos.i}\nRUN VALUE(nombre).").unwrap();
+    fs::write(root.join(".cide/propath"), "segundo\nprimero\n").unwrap();
+    fs::write(root.join("primero/destino.p"), "/* primero */").unwrap();
+    fs::write(root.join("segundo/destino.p"), "/* segundo */").unwrap();
+    fs::write(root.join("primero/datos.i"), "/* include */").unwrap();
+    let mut a = Workbench::default();
+    let tab = a.open_file(&origin, Some(TextEncoding::Utf8)).unwrap();
+    let includes = scan(&a, Some(&root), SourceMode::Dependencies);
+    assert_eq!(includes.state(), SourceState::Ready);
+    assert_eq!(includes.items().len(), 1);
+    assert_eq!(
+        includes.items()[0].action,
+        SourceAction::RelativeFile("datos.i".into())
+    );
+    let mut calls = scan(&a, Some(&root), SourceMode::Calls);
+    assert_eq!(calls.state(), SourceState::Ready);
+    assert_eq!(calls.items().len(), 2);
+    assert!(matches!(
+        calls.items()[1].action,
+        SourceAction::Unresolved(_)
+    ));
+    calls.activate(&mut a, Some(&root), true).unwrap();
+    assert_eq!(a.active_bytes().unwrap(), b"/* segundo */");
+    assert_eq!(
+        a.panes()
+            .view(jc_app::PaneId::Primary)
+            .unwrap()
+            .location()
+            .unwrap()
+            .tab,
+        tab
+    );
+    drop(a);
+    for file in [
+        "origen.p",
+        ".cide/propath",
+        "primero/destino.p",
+        "segundo/destino.p",
+        "primero/datos.i",
+    ] {
+        fs::remove_file(root.join(file)).unwrap();
+    }
+    for dir in [".cide", "primero", "segundo"] {
+        fs::remove_dir(root.join(dir)).unwrap();
+    }
+    fs::remove_dir(root).unwrap();
 }
 #[test]
 fn abl_symbols_ignore_comments_strings_preprocessor_and_end_statements_in_all_encodings() {
@@ -45,10 +106,10 @@ fn abl_symbols_ignore_comments_strings_preprocessor_and_end_statements_in_all_en
         assert_eq!(
             labels,
             vec![
-                "procedure niño (lexical)",
-                "function compute (lexical)",
-                "class Example (lexical)",
-                "method work (lexical)"
+                "Procedimiento niño",
+                "Función compute",
+                "Clase Example",
+                "Método work"
             ]
         );
         assert_eq!(
@@ -143,21 +204,18 @@ fn qualified_and_fragmented_names_preserve_full_ranges_instead_of_return_types_o
         TextEncoding::Utf8,
         SourceMode::Symbols,
     );
-    assert_eq!(
-        controller.items()[0].label,
-        "class Example.Tools.Worker (lexical)"
-    );
+    assert_eq!(controller.items()[0].label, "Clase Example.Tools.Worker");
     let text=format!("FUNCTION {} RETURNS CustomType():\nEND FUNCTION.\nMETHOD PUBLIC SomeType {}():\nEND METHOD.","a".repeat(100),"b".repeat(100));
     let (_, controller) = run(&text, TextEncoding::Utf8, SourceMode::Symbols);
     assert_eq!(controller.state(), SourceState::Ready);
     assert_eq!(controller.items().len(), 2);
     assert_eq!(
         controller.items()[0].label,
-        format!("function {} (lexical)", "a".repeat(100))
+        format!("Función {}", "a".repeat(100))
     );
     assert_eq!(
         controller.items()[1].label,
-        format!("method {} (lexical)", "b".repeat(100))
+        format!("Método {}", "b".repeat(100))
     );
     assert_eq!(
         &text.as_bytes()[controller.items()[0].range.clone()],
@@ -167,4 +225,51 @@ fn qualified_and_fragmented_names_preserve_full_ranges_instead_of_return_types_o
         &text.as_bytes()[controller.items()[1].range.clone()],
         b"b".repeat(100)
     );
+}
+
+#[test]
+fn abl_outline_lists_declarations_and_static_includes_without_reading_targets() {
+    let source = concat!(
+        "{shared.i}\r\n",
+        "{&not-a-file}\r\n",
+        "/* DEFINE VARIABLE excluded AS INT. */\r\n",
+        "PROCEDURE consume:\r\n",
+        "  DEFINE INPUT-OUTPUT PARAMETER valor AS INTEGER.\r\n",
+        "  DEFINE VARIABLE número AS INTEGER NO-UNDO.\r\n",
+        "  DEFINE BUFFER cliente FOR customers.\r\n",
+        "  DEFINE TEMP-TABLE tt-customer NO-UNDO FIELD id AS INT.\r\n",
+        "  DEFINE BUTTON btn-save LABEL \"Guardar\".\r\n",
+        "END PROCEDURE.\r\n",
+    );
+    let (mut app, controller) = run(source, TextEncoding::Windows1252, SourceMode::Symbols);
+    assert_eq!(controller.state(), SourceState::Ready);
+    let labels: Vec<_> = controller
+        .items()
+        .iter()
+        .map(|i| i.label.as_str())
+        .collect();
+    assert_eq!(
+        labels,
+        [
+            "Inclusión shared.i",
+            "Procedimiento consume",
+            "Parámetro valor",
+            "Variable número",
+            "Búfer cliente",
+            "Tabla temporal tt-customer",
+            "Botón btn-save",
+        ]
+    );
+    let index = 3;
+    controller
+        .activate_at_index(&mut app, None, index, false)
+        .unwrap();
+    assert_eq!(
+        app.active_editor().unwrap().cursor,
+        controller.items()[index].range.start
+    );
+    app.insert_text("x").unwrap();
+    assert!(controller
+        .activate_at_index(&mut app, None, index, false)
+        .is_err());
 }

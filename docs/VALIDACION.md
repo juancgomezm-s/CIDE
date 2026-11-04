@@ -1521,3 +1521,22 @@ amplia que su trait; se corrigieron antes del cierre, logs retenidos.
 autorizó unicode-segmentation=1.13.3 y unicode-width=0.2.2; [admisión](M2_UNICODE_LAYOUT_ADMISSION.md).
 Esa autorización sustituye la restricción previa para estas dos dependencias;
 no pedirla de nuevo. Sin instalación de programas, CI ni AVM.
+## Enlaces Markdown y esquema ABL — 2026-11-03
+
+Las suites dirigidas de servicios de fuente de `jc-app` y `jc-progress`
+pasaron 15 casos, incluidos selección del enlace bajo el cursor, apertura
+lateral de un archivo Markdown en Windows y extracción de declaraciones ABL.
+Pasaron también 38 pruebas unitarias filtradas de aplicación, GUI y TUI, una
+prueba de destinos relativos y una prueba de navegación del Esquema que rechaza
+clics sobre filas obsoletas. Formato, Clippy de todo el workspace y compilación
+de ejecutables en modo release aprobados. Binarios en `target/source-next/release`.
+El renombrado por ámbito sigue pendiente de resolución semántica.
+Ver [enlaces y esquema](ENLACES_ESQUEMA_RENOMBRADO.md).
+
+## Navegación por proveedor — 2026-11-03
+
+Pasaron 40 pruebas dirigidas de aplicación, ABL, JavaScript, GUI y TUI.
+Una prueba de integración abre el destino ABL en el grupo lateral y comprueba
+el orden de dos entradas PROPATH con el mismo nombre de archivo. Formato y
+Clippy de todo el workspace aprobados. El alcance del analizador y la
+configuración se describen en [Navegación por proveedor](NAVEGACION_MULTILENGUAJE.md).

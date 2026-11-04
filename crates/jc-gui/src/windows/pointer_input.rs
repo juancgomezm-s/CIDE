@@ -147,6 +147,10 @@ impl State {
             self.wheel = None;
             return;
         }
+        if self.outline_wheel(x, y, delta, lines) {
+            self.wheel = None;
+            return;
+        }
         let Some((pane, rows)) = paint::source_pane_at(self, x, y) else {
             self.wheel = None;
             return;

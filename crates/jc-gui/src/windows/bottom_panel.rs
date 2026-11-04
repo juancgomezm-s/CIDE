@@ -137,11 +137,16 @@ impl State {
         if sidebar {
             regions.push(1);
         }
+        if super::outline_panel::region(self).is_some() {
+            regions.push(3);
+        }
         if bottom {
             regions.push(2);
         }
         let current = if self.bottom.focused {
             2
+        } else if self.outline_focused() {
+            3
         } else if self.explorer_focused {
             1
         } else {
@@ -153,7 +158,8 @@ impl State {
         } else {
             (i + regions.len() - 1) % regions.len()
         };
-        self.explorer_focused = regions[next] == 1;
+        self.explorer_focused = matches!(regions[next], 1 | 3);
+        self.outline.focused = regions[next] == 3;
         self.bottom.focused = regions[next] == 2;
     }
     pub(super) fn bottom_presentation(&mut self) -> Option<BottomFrame> {

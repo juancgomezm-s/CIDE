@@ -1,7 +1,7 @@
 use jc_app::{
     source_services::{
-        SourceAction, SourceController, SourceItem, SourceMode, SourceProviderDescriptor,
-        SourceRegistry, SourceState,
+        FileResolution, SourceAction, SourceController, SourceItem, SourceMode,
+        SourceProviderDescriptor, SourceRegistry, SourceState,
     },
     Cancellation, JobSystem, TaskFailure, TaskItem, TaskOutput, TaskSnapshot, Wakeup, Workbench,
 };
@@ -12,6 +12,89 @@ fn app(text: &str) -> Workbench {
     a.new_file("source-memory.txt", TextEncoding::Utf8);
     a.insert_text(text).unwrap();
     a
+}
+
+#[test]
+fn markdown_references_select_link_at_caret_and_ignore_code_and_images() {
+    let mut a = Workbench::default();
+    a.new_file("enlaces.md", TextEncoding::Utf8);
+    let text = "[Primero](uno.md)\n`[código](no.md)`\n![imagen](no.png)\n```md\n[falso](no.md)\n```\n[Segundo](guía%20rápida.md#inicio)\n[Web](https://example.com)";
+    a.insert_text(text).unwrap();
+    a.go_to_position(TextPosition { line: 6, column: 3 })
+        .unwrap();
+    let mut c = SourceController::default();
+    let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+    c.request(
+        SourceMode::References,
+        &SourceRegistry::default(),
+        &a,
+        None,
+        &mut jobs,
+    )
+    .unwrap();
+    finish(&mut c, &a, &mut jobs);
+    assert_eq!(c.state(), SourceState::Ready);
+    assert_eq!(c.items().len(), 3);
+    assert_eq!(c.selected(), 1);
+    assert_eq!(
+        c.items()[1].action,
+        SourceAction::RelativeFile("guía rápida.md".into())
+    );
+    assert!(matches!(c.items()[2].action, SourceAction::Unresolved(_)));
+    assert_eq!(a.active_bytes().unwrap(), text.as_bytes());
+}
+
+#[cfg(windows)]
+#[test]
+fn markdown_reference_opens_sibling_in_other_group_without_project() {
+    use std::fs;
+    let root = std::env::temp_dir().join(format!(
+        "cide-document-links-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir(&root).unwrap();
+    let source = root.join("indice.md");
+    let target = root.join("mi guía.md");
+    fs::write(&source, "[Guía](mi%20guía.md)").unwrap();
+    fs::write(&target, "Contenido").unwrap();
+    let mut a = Workbench::default();
+    let tab = a
+        .open_file(source.clone(), Some(TextEncoding::Utf8))
+        .unwrap();
+    let mut c = SourceController::default();
+    let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+    c.request(
+        SourceMode::References,
+        &SourceRegistry::default(),
+        &a,
+        None,
+        &mut jobs,
+    )
+    .unwrap();
+    finish(&mut c, &a, &mut jobs);
+    c.activate(&mut a, None, true).unwrap();
+    assert_eq!(
+        a.active_path().unwrap().canonicalize().unwrap(),
+        target.canonicalize().unwrap()
+    );
+    assert_eq!(a.active_bytes().unwrap(), "Contenido".as_bytes());
+    assert_eq!(
+        a.panes()
+            .view(jc_app::PaneId::Primary)
+            .unwrap()
+            .location()
+            .unwrap()
+            .tab,
+        tab
+    );
+    drop(a);
+    fs::remove_file(source).unwrap();
+    fs::remove_file(target).unwrap();
+    fs::remove_dir(root).unwrap();
 }
 fn finish(controller: &mut SourceController, a: &Workbench, jobs: &mut JobSystem) {
     let until = Instant::now() + Duration::from_secs(5);
@@ -43,6 +126,9 @@ fn registry() -> SourceRegistry {
         language: "text",
         symbols: Some(symbols),
         references: None,
+        calls: None,
+        dependencies: None,
+        file_resolution: FileResolution::ProjectCandidates,
         completion: None,
         snippets: &[],
     })
@@ -65,6 +151,9 @@ fn source_registry_capabilities_are_optional_namespaced_and_default_completion_n
             language: "rust",
             symbols: Some(symbols),
             references: None,
+            calls: None,
+            dependencies: None,
+            file_resolution: FileResolution::ProjectCandidates,
             completion: None,
             snippets: &[],
         })
@@ -75,6 +164,9 @@ fn source_registry_capabilities_are_optional_namespaced_and_default_completion_n
             language: "rust",
             symbols: Some(symbols),
             references: None,
+            calls: None,
+            dependencies: None,
+            file_resolution: FileResolution::ProjectCandidates,
             completion: None,
             snippets: &[],
         })
@@ -201,6 +293,9 @@ fn source_provider_wrong_action_and_result_quota_cannot_publish_or_edit() {
             language: "text",
             symbols: Some(provider),
             references: None,
+            calls: None,
+            dependencies: None,
+            file_resolution: FileResolution::ProjectCandidates,
             completion: None,
             snippets: &[],
         })

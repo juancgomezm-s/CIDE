@@ -72,7 +72,7 @@ pub(super) fn popup(frame: &Presentation<'_>, screen: &mut Screen) {
             x + 2,
             y + height - 2,
             &super::clip(
-                "Intro aceptar | Flechas elegir | F5 actualizar | Esc",
+                "Intro abrir | Ctrl+Intro al lado | Flechas elegir | Esc",
                 width.saturating_sub(4),
             ),
             CellStyle::Dim,

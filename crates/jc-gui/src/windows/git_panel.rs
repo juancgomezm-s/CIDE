@@ -176,7 +176,7 @@ impl State {
                 if self.open_diff_visible {
                     self.status = self.open_diff.message().into();
                 }
-            } else if self.accept_source(&mut completion) {
+            } else if self.accept_source(&mut completion) || self.accept_outline(&mut completion) {
                 changed = true;
             } else {
                 changed |= self.workbench.accept_task_completion(&completion);
@@ -186,6 +186,7 @@ impl State {
         changed |= diff_changed;
         changed |= self.open_diff.tick(&self.workbench, &mut self.jobs);
         changed |= self.tick_source();
+        changed |= self.tick_outline();
         let mut status_changed = false;
         if let Some(options) = &self.git_status_options {
             status_changed = self.git_status.poll(options);
