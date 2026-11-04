@@ -113,20 +113,20 @@ impl TuiApp {
             Err(e) => e,
         };
     }
-    fn start_variable_rename(&mut self) {
+    fn start_symbol_rename(&mut self) {
         match jc_app::snippets::SnippetTarget::capture(&self.workbench) {
             Ok(target) => {
                 self.source.cancel(&mut self.tasks);
                 self.source_candidates = None;
                 self.source_popup = false;
-                self.open_prompt(PromptKind::RenameVariable);
+                self.open_prompt(PromptKind::RenameSymbol);
                 self.rename_target = Some(target);
                 self.status = "Escribe el nombre nuevo y pulsa Intro para revisar".into();
             }
             Err(error) => self.status = error,
         }
     }
-    pub(crate) fn preview_variable_rename(&mut self, name: &str) {
+    pub(crate) fn preview_symbol_rename(&mut self, name: &str) {
         if !self
             .rename_target
             .as_ref()
@@ -158,11 +158,11 @@ impl TuiApp {
             CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
             CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
             CommandId::SourceComplete => self.request_source(SourceMode::Completion),
-            CommandId::SourceRename => self.start_variable_rename(),
+            CommandId::SourceRename => self.start_symbol_rename(),
             CommandId::SourceRefresh => {
                 if let Some(mode) = self.source.mode() {
                     if mode == SourceMode::Rename {
-                        self.start_variable_rename();
+                        self.start_symbol_rename();
                     } else {
                         self.request_source(mode);
                     }
@@ -210,7 +210,7 @@ impl TuiApp {
                         let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
                         self.ensure_encoding_choice();
                         self.status = if self.source.mode() == Some(SourceMode::Rename) {
-                            "Variable renombrada · un paso para deshacer".into()
+                            "Símbolo renombrado · un paso para deshacer".into()
                         } else {
                             "Elemento del documento aceptado · solo evidencia léxica".into()
                         };

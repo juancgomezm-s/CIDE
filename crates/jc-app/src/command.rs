@@ -844,7 +844,7 @@ pub fn default_registry() -> CommandRegistry {
             "Completar palabra local",
             source_completion
         ),
-        spec!(SourceRename, Edit, "Renombrar variable", source_rename),
+        spec!(SourceRename, Edit, "Renombrar símbolo ABL", source_rename),
         spec!(
             SourceRefresh,
             Navigation,

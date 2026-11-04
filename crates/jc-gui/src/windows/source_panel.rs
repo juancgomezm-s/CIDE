@@ -280,7 +280,7 @@ impl State {
                     ) {
                         Ok(_) => {
                             self.close_source_ui();
-                            self.status = "Variable renombrada en una operación de deshacer".into();
+                            self.status = "Símbolo renombrado en una operación de deshacer".into();
                         }
                         Err(error) => self.error(error),
                     }
@@ -476,7 +476,7 @@ impl State {
                     results: None,
                 },
                 labels: super::project_paint::PanelLabels {
-                    draft: "Renombrar variable",
+                    draft: "Renombrar símbolo ABL",
                     policy: "Ámbito ABL | El documento sigue intacto",
                     footer: "Intro revisa | Ctrl+U vacía | Esc cancela",
                 },

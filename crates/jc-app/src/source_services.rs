@@ -33,7 +33,7 @@ impl SourceMode {
             Self::Incoming => "Llamado por",
             Self::Dependencies => "Dependencias",
             Self::Completion => "Completado",
-            Self::Rename => "Renombrar variable",
+            Self::Rename => "Renombrar símbolo ABL",
         }
     }
 }

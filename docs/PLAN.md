@@ -811,8 +811,10 @@ no pedirla de nuevo. Sin instalación de programas, CI ni AVM.
 La navegación lateral de enlaces Markdown y el Esquema ABL de la GUI están
 integrados. El proveedor ABL incorpora renombrado de variables de documento
 y locales de procedimiento o función en un subconjunto comprobable, con
-vista previa y una transacción. Sigue ampliar los ámbitos y contextos que
-puede resolver. Ver [alcance y orden de implementación](ENLACES_ESQUEMA_RENOMBRADO.md).
+vista previa y una transacción. También admite declaraciones y llamadas
+estáticas a procedimientos y funciones internas en el mismo archivo. Sigue
+ampliar los contextos y la resolución entre archivos.
+Ver [alcance y orden de implementación](ENLACES_ESQUEMA_RENOMBRADO.md).
 
 La [navegación por proveedor](NAVEGACION_MULTILENGUAJE.md) separa llamadas ABL
 de inclusiones y conecta el Esquema y las dependencias de JavaScript.

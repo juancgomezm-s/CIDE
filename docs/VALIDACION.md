@@ -1567,3 +1567,12 @@ deshacer y conservación de CP1252 y CRLF. Formato y Clippy de todo el
 workspace aprobados. Compilación optimizada en `target/rename-next/release`.
 La evidencia es local en Rust. Ver
 [subconjunto admitido](ENLACES_ESQUEMA_RENOMBRADO.md).
+
+## Renombrado ABL de rutinas internas — 2026-11-04
+
+Pasaron seis pruebas dirigidas del analizador, GUI y TUI. Los casos nuevos
+cubren `RUN` estático, llamadas anidadas a funciones, colisiones con nombres
+de variables y rutinas, rechazo de llamadas dinámicas, vista previa sin
+mutación y deshacer de toda la propuesta con conservación de CRLF.
+Clippy del workspace y formato aprobados. El análisis no se ha validado
+contra el compilador OpenEdge.

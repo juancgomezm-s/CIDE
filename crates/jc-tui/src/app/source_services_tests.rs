@@ -23,6 +23,41 @@ fn editor(text: &str, path: &str) -> TuiApp {
     a.workbench.insert_text(text).unwrap();
     a
 }
+
+#[test]
+fn source_tui_renames_internal_procedures_and_functions_after_preview() {
+    let text = "FUNCTION total RETURNS INTEGER():\r\nRETURN 1.\r\nEND FUNCTION.\r\nPROCEDURE report:\r\nDISPLAY total().\r\nEND PROCEDURE.\r\nRUN report.";
+    let mut a = editor(text, "routines.p");
+    for (line, column, old, new) in [
+        (6, 5, "report", "show-report"),
+        (4, 9, "total", "sum-value"),
+    ] {
+        a.workbench
+            .go_to_position(TextPosition { line, column })
+            .unwrap();
+        key(&mut a, KeyCode::F(2), KeyModifiers::NONE);
+        for ch in new.chars() {
+            key(&mut a, KeyCode::Char(ch), KeyModifiers::NONE);
+        }
+        key(&mut a, KeyCode::Enter, KeyModifiers::NONE);
+        finish(&mut a);
+        assert_eq!(
+            a.source.state(),
+            SourceState::Ready,
+            "{}",
+            a.source.message()
+        );
+        assert_eq!(a.source.items().len(), 2);
+        assert_eq!(a.workbench.active_bytes().unwrap(), text.as_bytes());
+        key(&mut a, KeyCode::F(9), KeyModifiers::NONE);
+        assert_eq!(
+            a.workbench.active_bytes().unwrap(),
+            text.replace(old, new).as_bytes()
+        );
+        a.workbench.undo().unwrap();
+        assert_eq!(a.workbench.active_bytes().unwrap(), text.as_bytes());
+    }
+}
 #[test]
 fn source_tui_rename_previews_scoped_ranges_and_applies_one_undo() {
     let text = "DEFINE VARIABLE total AS INTEGER NO-UNDO.\r\nPROCEDURE worker:\r\nDEFINE VARIABLE total AS INTEGER NO-UNDO.\r\ntotal = 1.\r\nEND PROCEDURE.\r\ntotal = 2.";

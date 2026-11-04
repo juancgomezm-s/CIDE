@@ -17,8 +17,8 @@ impl TuiApp {
             self.status = format!("La entrada supera {limit} bytes UTF-8");
             return;
         }
-        if kind == PromptKind::RenameVariable {
-            self.preview_variable_rename(&input);
+        if kind == PromptKind::RenameSymbol {
+            self.preview_symbol_rename(&input);
             return;
         }
         if kind == PromptKind::GitExecutable {
@@ -86,7 +86,7 @@ impl TuiApp {
             return;
         }
         let result: Result<(), String> = match kind {
-            PromptKind::GoToPosition | PromptKind::GitExecutable | PromptKind::RenameVariable => {
+            PromptKind::GoToPosition | PromptKind::GitExecutable | PromptKind::RenameSymbol => {
                 unreachable!()
             }
             PromptKind::Open => self.open_path(path),

@@ -9,7 +9,7 @@ En la GUI, **Esquema** aparece debajo del Explorador cuando el documento tiene u
 ## Renombrado de variables ABL
 
 En GUI y TUI, coloca el cursor dentro de una declaración `DEFINE VARIABLE`
-o de uno de sus usos y pulsa **F2**. También puedes elegir **Renombrar variable**
+o de uno de sus usos y pulsa **F2**. También puedes elegir **Renombrar símbolo ABL**
 en la paleta. Escribe el nombre nuevo y pulsa **Intro** para ver la lista de
 cambios con su línea. **F9** o **Ctrl+Intro** aplica la lista completa como
 una sola transacción de deshacer. **Esc** cancela.
@@ -28,6 +28,19 @@ clases y métodos. Rechaza colisiones y nombres que no cumplan el subconjunto de
 identificadores admitido. Admite hasta 256 KiB de fuente y 64 cambios por
 vista previa. La validación es local en Rust y queda pendiente la validación
 con un compilador OpenEdge.
+
+## Procedimientos y funciones del mismo archivo
+
+El mismo comando admite declaraciones internas `PROCEDURE` y `FUNCTION`,
+llamadas estáticas `RUN nombre` y llamadas directas a funciones con paréntesis.
+Desde la declaración o una llamada se obtiene la misma propuesta, con la
+declaración y las referencias vinculadas. El analizador distingue los usos de
+variables de los nombres de rutina y reconoce llamadas anidadas en expresiones
+admitidas. Mantiene los límites y la confirmación explícita del flujo anterior.
+
+Las declaraciones `FORWARD`, llamadas externas o dinámicas, `RUN ... IN`,
+includes y macros quedan fuera del subconjunto. Si aparecen construcciones que
+impiden resolver el documento, el comando informa el rechazo sin editar.
 
 ## Bloques de renombrado posteriores
 

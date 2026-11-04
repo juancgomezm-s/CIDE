@@ -1,4 +1,4 @@
-//! Closed ABL subset for document-local variable refactoring. Unsupported
+//! Closed ABL subset for document-local refactoring. Unsupported
 //! statements reject the whole proposal because they can affect name binding.
 use jc_languages::syntax::{scan, LexerState, SyntaxKind, SyntaxProfile};
 use jc_text::TextEncoding;
@@ -111,6 +111,8 @@ fn tokenize(bytes: &[u8]) -> Result<Vec<Token<'_>>, String> {
 enum Role {
     Declaration(bool),
     Reference,
+    RoutineDeclaration(Routine),
+    RoutineCall(Routine),
 }
 
 struct Occurrence {
@@ -190,21 +192,36 @@ fn references(
     start: usize,
     scope: usize,
 ) -> Result<(), String> {
-    if !expression(tokens)
-        || tokens
-            .windows(2)
-            .any(|pair| pair[0].name() && pair[1].is(b"("))
-    {
-        return Err(UNSUPPORTED.into());
-    }
+    let mut depth = 0usize;
     for (index, token) in tokens.iter().enumerate() {
-        if token.name() {
+        if token.is(b"(") {
+            depth += 1;
+        } else if token.is(b")") {
+            depth = depth.checked_sub(1).ok_or(UNSUPPORTED)?;
+        }
+        let argument_separator = depth > 0 && token.is(b",");
+        let argument_direction = depth > 0
+            && index > 0
+            && (tokens[index - 1].is(b"(") || tokens[index - 1].is(b","))
+            && (token.is(b"INPUT") || token.is(b"OUTPUT") || token.is(b"INPUT-OUTPUT"));
+        if !argument_separator && !argument_direction && !expression(std::slice::from_ref(token)) {
+            return Err(UNSUPPORTED.into());
+        }
+        if !argument_direction && token.name() {
+            let role = if tokens.get(index + 1).is_some_and(|next| next.is(b"(")) {
+                Role::RoutineCall(Routine::Function)
+            } else {
+                Role::Reference
+            };
             occurrences.push(Occurrence {
                 token: start + index,
                 scope,
-                role: Role::Reference,
+                role,
             });
         }
+    }
+    if depth != 0 {
+        return Err(UNSUPPORTED.into());
     }
     Ok(())
 }
@@ -217,9 +234,8 @@ fn declaration(occurrences: &mut Vec<Occurrence>, token: usize, scope: usize, re
     });
 }
 
-fn classify(tokens: &[Token<'_>]) -> Result<(Vec<Occurrence>, Vec<usize>), String> {
+fn classify(tokens: &[Token<'_>]) -> Result<Vec<Occurrence>, String> {
     let mut occurrences = Vec::new();
-    let mut routine_names = Vec::new();
     let mut routine = None;
     let mut scope = 0;
     let mut next_scope = 0;
@@ -252,7 +268,11 @@ fn classify(tokens: &[Token<'_>]) -> Result<(Vec<Occurrence>, Vec<usize>), Strin
             next_scope += 1;
             scope = next_scope;
             routine = Some(kind);
-            routine_names.push(start + 1);
+            occurrences.push(Occurrence {
+                token: start + 1,
+                scope,
+                role: Role::RoutineDeclaration(kind),
+            });
             match (kind, statement) {
                 (Routine::Procedure, [_, _]) => {}
                 (Routine::Function, [_, _, returns, datatype, open, params @ .., close])
@@ -352,6 +372,22 @@ fn classify(tokens: &[Token<'_>]) -> Result<(Vec<Occurrence>, Vec<usize>), Strin
                 _ => return Err(UNSUPPORTED.into()),
             }
             declaration(&mut occurrences, start + name_at, scope, renameable);
+        } else if first.is(b"RUN") {
+            let [_, name, arguments @ ..] = statement else {
+                return Err(UNSUPPORTED.into());
+            };
+            let valid_arguments = arguments.is_empty()
+                || arguments.first().is_some_and(|t| t.is(b"("))
+                    && arguments.last().is_some_and(|t| t.is(b")"));
+            if !name.name() || name.is(b"VALUE") || !valid_arguments {
+                return Err(UNSUPPORTED.into());
+            }
+            occurrences.push(Occurrence {
+                token: start + 1,
+                scope,
+                role: Role::RoutineCall(Routine::Procedure),
+            });
+            references(&mut occurrences, arguments, start + 2, scope)?;
         } else if first.is(b"ASSIGN")
             || first.is(b"DISPLAY")
             || first.is(b"MESSAGE")
@@ -368,7 +404,7 @@ fn classify(tokens: &[Token<'_>]) -> Result<(Vec<Occurrence>, Vec<usize>), Strin
     if start != tokens.len() || routine.is_some() || blocks != 0 {
         return Err(UNSUPPORTED.into());
     }
-    Ok((occurrences, routine_names))
+    Ok(occurrences)
 }
 
 /// Returns the declaration and uses in the closed lexical subset, in source order.
@@ -392,9 +428,16 @@ pub fn propose(
     let prefix =
         usize::from(encoding == TextEncoding::Utf8 && bytes.starts_with(&[0xef, 0xbb, 0xbf])) * 3;
     let tokens = tokenize(&bytes[prefix..])?;
-    let (occurrences, routine_names) = classify(&tokens)?;
+    let occurrences = classify(&tokens)?;
     let mut bindings = HashMap::new();
+    let mut routines = HashMap::new();
     for occurrence in &occurrences {
+        if let Role::RoutineDeclaration(kind) = occurrence.role {
+            let key = tokens[occurrence.token].text.to_ascii_uppercase();
+            if routines.insert(key, (occurrence.token, kind)).is_some() {
+                return Err(AMBIGUOUS.into());
+            }
+        }
         if let Role::Declaration(renameable) = occurrence.role {
             let key = (
                 occurrence.scope,
@@ -413,20 +456,36 @@ pub fn propose(
     for occurrence in occurrences {
         let token = &tokens[occurrence.token];
         let key = token.text.to_ascii_uppercase();
-        let local = (occurrence.scope, key);
-        let (binding, renameable) = bindings
-            .get(&local)
-            .or_else(|| bindings.get(&(0, local.1)))
-            .copied()
-            .ok_or(AMBIGUOUS)?;
+        let (binding, renameable, is_routine) = match occurrence.role {
+            Role::RoutineDeclaration(_) => (occurrence.token, true, true),
+            Role::RoutineCall(kind) => {
+                let &(binding, _) = routines
+                    .get(&key)
+                    .filter(|(_, declared)| *declared == kind)
+                    .ok_or(
+                        "Hay una llamada que no se puede vincular a una declaración del archivo",
+                    )?;
+                (binding, true, true)
+            }
+            Role::Declaration(_) | Role::Reference => {
+                let local = (occurrence.scope, key);
+                let (binding, renameable) = bindings
+                    .get(&local)
+                    .or_else(|| bindings.get(&(0, local.1)))
+                    .copied()
+                    .ok_or(AMBIGUOUS)?;
+                (binding, renameable, false)
+            }
+        };
         let range = token.range.start + prefix..token.range.end + prefix;
         if range.contains(&cursor) && renameable {
-            selected = Some((binding, occurrence.scope));
+            selected = Some((binding, occurrence.scope, is_routine));
         }
         uses.push((binding, range));
     }
-    let (selected, selected_use_scope) =
-        selected.ok_or("Coloca el cursor en una variable DEFINE VARIABLE o en uno de sus usos")?;
+    let (selected, selected_use_scope, is_routine) = selected.ok_or(
+        "Coloca el cursor en una variable, procedimiento o función admitidos, o en uno de sus usos",
+    )?;
     let original = &tokens[selected];
     if original.text == name {
         return Err("El nombre nuevo coincide con el actual".into());
@@ -438,13 +497,15 @@ pub fn propose(
     } else {
         0
     };
-    if routine_names.iter().any(|&index| tokens[index].is(name))
+    if routines
+        .get(&uppercase)
+        .is_some_and(|(binding, _)| *binding != selected)
         || bindings
             .iter()
             .any(|((other_scope, other_name), (binding, _))| {
                 *binding != selected
                     && *other_name == uppercase
-                    && (scope == 0 || *other_scope == 0 || *other_scope == scope)
+                    && (is_routine || scope == 0 || *other_scope == 0 || *other_scope == scope)
             })
     {
         return Err("El nombre nuevo entra en conflicto con otra declaración".into());
@@ -462,6 +523,52 @@ pub fn propose(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renames_routine_declarations_and_static_calls_without_touching_trivia() {
+        let source = b"\xef\xbb\xbfDEFINE VARIABLE total AS INTEGER NO-UNDO.\r\n\
+            FUNCTION amount RETURNS INTEGER (INPUT n AS INTEGER):\r\n\
+              RETURN n.\r\nEND FUNCTION.\r\n\
+            PROCEDURE calculate:\r\n\
+              total = amount(amount(2)).\r\nEND PROCEDURE.\r\n\
+            /* RUN calculate. */\r\nMESSAGE 'amount(2)'.\r\nRUN CALCULATE.";
+        let find = |word: &[u8]| {
+            source
+                .windows(word.len())
+                .position(|part| part == word)
+                .unwrap()
+        };
+        let procedure = propose(source, TextEncoding::Utf8, find(b"CALCULATE"), "compute").unwrap();
+        let function = propose(
+            source,
+            TextEncoding::Utf8,
+            find(b"amount(amount"),
+            "value-total",
+        )
+        .unwrap();
+        let selected = |ranges: Vec<Range<usize>>| {
+            ranges
+                .into_iter()
+                .map(|range| &source[range])
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            selected(procedure),
+            vec![b"calculate".as_slice(), b"CALCULATE"]
+        );
+        assert_eq!(selected(function), vec![b"amount".as_slice(); 3]);
+        assert!(propose(
+            source,
+            TextEncoding::Utf8,
+            find(b"amount(amount"),
+            "calculate"
+        )
+        .is_err());
+        assert!(propose(source, TextEncoding::Utf8, find(b"CALCULATE"), "total").is_err());
+        let mut external = source.to_vec();
+        external.extend_from_slice(b"\r\nRUN VALUE(total).");
+        assert!(propose(&external, TextEncoding::Utf8, find(b"CALCULATE"), "compute").is_err());
+    }
 
     #[test]
     fn renames_global_and_local_without_crossing_shadowed_scopes_or_trivia() {

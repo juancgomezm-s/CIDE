@@ -123,7 +123,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (232, CommandId::SourceComplete, "Completar palabra local"),
     (237, CommandId::SourceCalls, "Llama a"),
     (239, CommandId::SourceIncoming, "Llamado por"),
-    (246, CommandId::SourceRename, "Renombrar variable"),
+    (246, CommandId::SourceRename, "Renombrar símbolo ABL"),
     (
         238,
         CommandId::SourceDependencies,
