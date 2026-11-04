@@ -174,7 +174,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     if owner(hwnd).unwrap().state.borrow().bottom.kind != PanelKind::Output {
         return Err("Bottom Alt2 did not switch Output".into());
     }
-    palette(hwnd, "Problems")?;
+    palette(hwnd, "Problemas")?;
     if owner(hwnd).unwrap().state.borrow().bottom.kind != PanelKind::Problems {
         return Err("Palette Problems missed host".into());
     }

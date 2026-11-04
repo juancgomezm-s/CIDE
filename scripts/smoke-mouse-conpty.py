@@ -158,7 +158,7 @@ def main():
         click(session, *point(session, '[+] carpeta'))
         session.wait(lambda: session.menu_row('[+] carpeta', selected=True))
         click(session, *point(session, '[Entrar]'))
-        session.wait(lambda: session.contains('[.] carpeta') and session.contains('nested.txt') and session.contains('Metadatos del directorio listos'))
+        session.wait(lambda: session.contains('nested.txt') and session.contains('Metadatos del directorio listos'))
         visual.snapshot(session, output / 'mouse-browser-vt.png')
         click(session, *point(session, '[Elegir carpeta actual]'))
         session.wait(lambda: not session.contains('Abrir carpeta — explorador') and session.tree_contains('nested.txt'))

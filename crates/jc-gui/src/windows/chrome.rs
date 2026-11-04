@@ -2,6 +2,7 @@
 //! The real HMENU stays attached for routing/popups; this module paints only
 //! immutable UI metadata, never source documents or application state.
 use super::{
+    dpi::Dpi,
     ffi::*,
     native_menu::{self, NativeMenuGroup},
     paint, shell, wide,
@@ -26,14 +27,23 @@ pub(super) struct Layout {
     pub width: i32,
     pub height: i32,
     pub maximized: bool,
+    pub dpi: Dpi,
 }
 impl Layout {
+    #[cfg(test)]
     pub(super) fn new(width: i32, height: i32, maximized: bool) -> Self {
+        Self::at_dpi(width, height, maximized, Dpi::BASE)
+    }
+    pub(super) fn at_dpi(width: i32, height: i32, maximized: bool, dpi: Dpi) -> Self {
         Self {
             width: width.clamp(1, 8192),
             height: height.clamp(1, 8192),
             maximized,
+            dpi,
         }
+    }
+    pub(super) fn top(self) -> i32 {
+        self.dpi.pixels(TOP)
     }
     fn button(self, action: Action) -> Rect {
         let slot = match action {
@@ -42,11 +52,12 @@ impl Layout {
             Action::Exit => 1,
             Action::Menu(_) => 0,
         };
+        let button_width = self.dpi.pixels(BUTTON_WIDTH);
         Rect {
-            left: (self.width - slot * BUTTON_WIDTH).max(0),
-            right: (self.width - (slot - 1) * BUTTON_WIDTH).clamp(0, self.width),
+            left: (self.width - slot * button_width).max(0),
+            right: (self.width - (slot - 1) * button_width).clamp(0, self.width),
             top: 0,
-            bottom: TITLE_HEIGHT.min(self.height),
+            bottom: self.dpi.pixels(TITLE_HEIGHT).min(self.height),
         }
     }
 }
@@ -73,24 +84,24 @@ fn preferred_width(group: NativeMenuGroup) -> i32 {
 }
 /// The same stable pixel rectangles are used by draw, click and popup anchoring.
 /// Compact windows compress padding/labels but retain a target for every group.
-pub(super) fn menu_rect(width: i32, group: NativeMenuGroup) -> Rect {
-    let width = width.clamp(1, 8192);
-    let left = 8.min(width);
-    let available = (width - 16).max(0);
+pub(super) fn menu_rect(layout: Layout, group: NativeMenuGroup) -> Rect {
+    let width = layout.width;
+    let left = layout.dpi.pixels(8).min(width);
+    let available = (width - 2 * left).max(0);
     let total = groups()
         .iter()
-        .map(|(group, _)| preferred_width(*group))
+        .map(|(group, _)| layout.dpi.pixels(preferred_width(*group)))
         .sum::<i32>()
         .max(1);
     let mut from = 0;
     for (candidate, _) in groups() {
-        let to = from + preferred_width(*candidate);
+        let to = from + layout.dpi.pixels(preferred_width(*candidate));
         if *candidate == group {
             return Rect {
                 left: left + from * available.min(total) / total,
                 right: left + to * available.min(total) / total,
-                top: TITLE_HEIGHT,
-                bottom: TOP,
+                top: layout.dpi.pixels(TITLE_HEIGHT),
+                bottom: layout.top(),
             };
         }
         from = to;
@@ -98,8 +109,8 @@ pub(super) fn menu_rect(width: i32, group: NativeMenuGroup) -> Rect {
     Rect {
         left: width,
         right: width,
-        top: TITLE_HEIGHT,
-        bottom: TOP,
+        top: layout.dpi.pixels(TITLE_HEIGHT),
+        bottom: layout.top(),
     }
 }
 fn inside(rect: Rect, x: i32, y: i32) -> bool {
@@ -114,10 +125,10 @@ pub(super) fn action_at(layout: Layout, x: i32, y: i32) -> Option<Action> {
             return Some(action);
         }
     }
-    if (TITLE_HEIGHT..TOP).contains(&y) {
+    if (layout.dpi.pixels(TITLE_HEIGHT)..layout.top()).contains(&y) {
         return groups()
             .iter()
-            .find(|(group, _)| inside(menu_rect(layout.width, *group), x, y))
+            .find(|(group, _)| inside(menu_rect(layout, *group), x, y))
             .map(|(group, _)| Action::Menu(*group));
     }
     None
@@ -215,10 +226,11 @@ fn local_hit(layout: Layout, x: i32, y: i32) -> isize {
         return 0;
     }
     if !layout.maximized {
-        let left = x < RESIZE_BORDER;
-        let right = x >= layout.width - RESIZE_BORDER;
-        let top = y < RESIZE_BORDER;
-        let bottom = y >= layout.height - RESIZE_BORDER;
+        let border = layout.dpi.pixels(RESIZE_BORDER);
+        let left = x < border;
+        let right = x >= layout.width - border;
+        let top = y < border;
+        let bottom = y >= layout.height - border;
         match (left, right, top, bottom) {
             (true, _, true, _) => return 13,
             (_, true, true, _) => return 14,
@@ -231,7 +243,7 @@ fn local_hit(layout: Layout, x: i32, y: i32) -> isize {
             _ => {}
         }
     }
-    if y < TITLE_HEIGHT && action_at(layout, x, y).is_none() {
+    if y < layout.dpi.pixels(TITLE_HEIGHT) && action_at(layout, x, y).is_none() {
         2
     } else {
         1
@@ -286,7 +298,7 @@ impl Frame {
             menus: groups()
                 .iter()
                 .map(|(group, title)| MenuLabel {
-                    rect: menu_rect(layout.width, *group),
+                    rect: menu_rect(layout, *group),
                     text: wide(title),
                     action: Action::Menu(*group),
                 })
@@ -307,13 +319,14 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         return Err("No se pudo preservar el contexto del marco".into());
     }
     let result = (|| -> Result<(), String> {
+        let px = |value| frame.layout.dpi.pixels(value);
         paint::fill(
             dc,
             Rect {
                 left: 0,
                 top: 0,
                 right: frame.layout.width,
-                bottom: TOP.min(frame.layout.height),
+                bottom: frame.layout.top().min(frame.layout.height),
             },
             shell::SURFACE,
         )?;
@@ -328,16 +341,26 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
             },
         );
         if !frame.icon.is_null()
-            && frame.layout.width > 180
-            && DrawIconEx(dc, 11, 8, frame.icon, 16, 16, 0, null_mut(), 3) == 0
+            && frame.layout.width > px(180)
+            && DrawIconEx(
+                dc,
+                px(11),
+                px(8),
+                frame.icon,
+                px(16),
+                px(16),
+                0,
+                null_mut(),
+                3,
+            ) == 0
         {
             return Err("No se pudo dibujar el icono del marco".into());
         }
         let mut title = Rect {
-            left: 36,
+            left: px(36),
             top: 0,
-            right: (frame.layout.width - 3 * BUTTON_WIDTH - 10).max(36),
-            bottom: TITLE_HEIGHT.min(frame.layout.height),
+            right: (frame.layout.width - 3 * px(BUTTON_WIDTH) - px(10)).max(px(36)),
+            bottom: px(TITLE_HEIGHT).min(frame.layout.height),
         };
         if title.right > title.left
             && DrawTextW(
@@ -350,7 +373,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         {
             return Err("No se pudo dibujar el título de CIDE".into());
         }
-        let pen = CreatePen(0, 1, shell::TEXT);
+        let pen = CreatePen(0, px(1).max(1), shell::TEXT);
         if pen.is_null() {
             return Err("No se pudieron preparar los controles del marco".into());
         }
@@ -373,26 +396,26 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                     )?;
                 }
                 let x = (rect.left + rect.right) / 2;
-                let y = TITLE_HEIGHT / 2;
+                let y = px(TITLE_HEIGHT) / 2;
                 match action {
-                    Action::Minimize => line(dc, (x - 5, y + 3), (x + 6, y + 3))?,
+                    Action::Minimize => line(dc, (x - px(5), y + px(3)), (x + px(6), y + px(3)))?,
                     Action::Exit => {
-                        line(dc, (x - 4, y - 4), (x + 5, y + 5))?;
-                        line(dc, (x - 4, y + 4), (x + 5, y - 5))?;
+                        line(dc, (x - px(4), y - px(4)), (x + px(5), y + px(5)))?;
+                        line(dc, (x - px(4), y + px(4)), (x + px(5), y - px(5)))?;
                     }
                     Action::MaxRestore => {
                         let (left, top, size) = if frame.layout.maximized {
-                            (x - 3, y - 5, 8)
+                            (x - px(3), y - px(5), px(8))
                         } else {
-                            (x - 5, y - 4, 10)
+                            (x - px(5), y - px(4), px(10))
                         };
                         line(dc, (left, top), (left + size, top))?;
-                        line(dc, (left + size, top), (left + size, top + 8))?;
-                        line(dc, (left + size, top + 8), (left, top + 8))?;
-                        line(dc, (left, top + 8), (left, top))?;
+                        line(dc, (left + size, top), (left + size, top + px(8)))?;
+                        line(dc, (left + size, top + px(8)), (left, top + px(8)))?;
+                        line(dc, (left, top + px(8)), (left, top))?;
                         if frame.layout.maximized {
-                            line(dc, (x - 5, y - 2), (x - 5, y + 5))?;
-                            line(dc, (x - 5, y + 5), (x + 2, y + 5))?;
+                            line(dc, (x - px(5), y - px(2)), (x - px(5), y + px(5)))?;
+                            line(dc, (x - px(5), y + px(5)), (x + px(2), y + px(5)))?;
                         }
                     }
                     Action::Menu(_) => {}
@@ -412,8 +435,8 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                 paint::fill(dc, menu.rect, shell::SELECTED)?;
             }
             let mut rect = Rect {
-                left: menu.rect.left + 8,
-                right: (menu.rect.right - 6).max(menu.rect.left + 8),
+                left: menu.rect.left + px(8),
+                right: (menu.rect.right - px(6)).max(menu.rect.left + px(8)),
                 ..menu.rect
             };
             if rect.right > rect.left
@@ -443,6 +466,26 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn scaled_chrome_keeps_draw_hit_and_popup_origins_aligned() {
+        for dpi in [96, 144, 192] {
+            let layout = Layout::at_dpi(1400, 900, false, Dpi::from_raw(dpi));
+            assert_eq!(layout.top(), 60 * dpi as i32 / 96);
+            let button = layout.button(Action::Exit);
+            let (x, y) = ((button.left + button.right) / 2, button.bottom / 2);
+            assert_eq!(action_at(layout, x, y), Some(Action::Exit));
+            assert_eq!(local_hit(layout, x, y), 1);
+            assert_eq!(local_hit(layout, 1, 1), 13);
+            for (group, _) in groups() {
+                let rect = menu_rect(layout, *group);
+                assert_eq!(rect.bottom, layout.top());
+                let x = (rect.left + rect.right) / 2;
+                let y = (rect.top + rect.bottom) / 2;
+                assert_eq!(action_at(layout, x, y), Some(Action::Menu(*group)));
+                assert_eq!(local_hit(layout, x, y), 1);
+            }
+        }
+    }
+    #[test]
     fn chrome_has_owned_title_controls_and_menu_targets_at_normal_and_compact_widths() {
         for width in [320, 640, 1400] {
             let layout = Layout::new(width, 600, false);
@@ -450,7 +493,7 @@ mod tests {
             assert_eq!(action_at(layout, width - 69, 16), Some(Action::MaxRestore));
             assert_eq!(action_at(layout, width - 115, 16), Some(Action::Minimize));
             for (group, _) in groups() {
-                let rect = menu_rect(width, *group);
+                let rect = menu_rect(layout, *group);
                 assert!(rect.left < rect.right && rect.left >= 0 && rect.right <= width);
                 assert_eq!(
                     action_at(layout, (rect.left + rect.right) / 2, 46),

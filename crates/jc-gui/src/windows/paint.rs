@@ -216,7 +216,7 @@ pub(super) fn areas(state: &State) -> Vec<(PaneId, Rect)> {
     let height = state.height.clamp(1, 8192);
     let bottom = super::bottom_panel::region(state)
         .map_or((height - state.cell_height - 8).max(0), |r| r.top);
-    let top = super::shell::TABS.min(bottom);
+    let top = state.dpi.pixels(super::shell::TABS).min(bottom);
     let left = super::explorer_panel::region(state).map_or(0, |r| r.right + 1);
     let available = width - left;
     if state.workbench.panes().is_split() && available / state.cell_width.clamp(1, 8192) >= 90 {
@@ -726,7 +726,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         cell_height: state.cell_height,
         tabs,
         chrome: super::chrome::Frame::new(
-            super::chrome::Layout::new(state.width, state.height, state.maximized),
+            state.chrome_layout(),
             state.ui_font,
             state.icon,
             &state.workbench.active_document().map_or_else(
@@ -766,7 +766,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         bottom: state.bottom_presentation(),
         selector: state.selector_presentation(super::selector_paint::list_capacity(
             state.width,
-            state.height,
+            (state.height, state.chrome_layout().top()),
             state.cell_width,
             state.cell_height,
         )),
@@ -1011,7 +1011,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             dc,
             presentation,
             frame.width,
-            frame.height,
+            (frame.height, frame.chrome.layout.top()),
             frame.cell_width,
             frame.cell_height,
         )?;
@@ -1022,7 +1022,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             dc,
             presentation,
             frame.width,
-            frame.height,
+            (frame.height, frame.chrome.layout.top()),
             frame.cell_width,
             frame.cell_height,
         )?;
@@ -1032,7 +1032,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             dc,
             presentation,
             frame.width,
-            frame.height,
+            (frame.height, frame.chrome.layout.top()),
             frame.cell_width,
             frame.cell_height,
         )?;
@@ -1042,7 +1042,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             dc,
             project,
             frame.width,
-            frame.height,
+            (frame.height, frame.chrome.layout.top()),
             frame.cell_width,
             frame.cell_height,
         )?;
@@ -1052,7 +1052,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             dc,
             &replacement.panel,
             frame.width,
-            frame.height,
+            (frame.height, frame.chrome.layout.top()),
             frame.cell_width,
             frame.cell_height,
             super::project_paint::PanelLabels {
@@ -1067,7 +1067,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             dc,
             &git.panel,
             frame.width,
-            frame.height,
+            (frame.height, frame.chrome.layout.top()),
             frame.cell_width,
             frame.cell_height,
             super::project_paint::PanelLabels {
@@ -1090,7 +1090,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             dc,
             &p.panel,
             frame.width,
-            frame.height,
+            (frame.height, frame.chrome.layout.top()),
             frame.cell_width,
             frame.cell_height,
             super::project_paint::PanelLabels {
@@ -1105,7 +1105,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             dc,
             p,
             frame.width,
-            frame.height,
+            (frame.height, frame.chrome.layout.top()),
             frame.cell_width,
             frame.cell_height,
         )?;

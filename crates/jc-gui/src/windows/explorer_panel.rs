@@ -8,6 +8,7 @@ use jc_app::{
 
 pub(super) struct ExplorerFrame {
     pub rect: Rect,
+    pub dpi: super::dpi::Dpi,
     pub presentation: ExplorerPresentation,
     pub focused: bool,
 }
@@ -30,8 +31,10 @@ impl ExplorerFrame {
                 .take(128)
                 .enumerate()
                 .map(|(i, row)| {
-                    let top =
-                        self.rect.top + super::shell::TREE_HEAD + i as i32 * super::shell::TREE_ROW;
+                    let row_height = self.dpi.pixels(super::shell::TREE_ROW);
+                    let top = self.rect.top
+                        + self.dpi.pixels(super::shell::TREE_HEAD)
+                        + i as i32 * row_height;
                     (
                         row.id,
                         row.indent / 2,
@@ -39,7 +42,7 @@ impl ExplorerFrame {
                             left: self.rect.left,
                             top,
                             right: self.rect.right,
-                            bottom: (top + super::shell::TREE_ROW).min(self.rect.bottom),
+                            bottom: (top + row_height).min(self.rect.bottom),
                         },
                     )
                 })
@@ -50,7 +53,7 @@ impl ExplorerFrame {
 pub(super) fn region(state: &State) -> Option<Rect> {
     let width = state.width.clamp(1, 8192);
     let height = state.height.clamp(1, 8192);
-    if !state.explorer_visible || width < 640 || height < 200 {
+    if !state.explorer_visible || width < state.dpi.pixels(640) || height < state.dpi.pixels(200) {
         return None;
     }
     let cw = state.cell_width.clamp(1, 8192);
@@ -60,8 +63,8 @@ pub(super) fn region(state: &State) -> Option<Rect> {
     }
     Some(Rect {
         left: 0,
-        top: super::chrome::TOP,
-        right: 250.min(width / 3),
+        top: state.chrome_layout().top(),
+        right: state.dpi.pixels(250).min(width / 3),
         bottom: (height - ch - 8).max(ch + 8),
     })
 }
@@ -111,8 +114,9 @@ impl State {
             self.explorer_hits = None;
         }
         let rect = tree_region(self)?;
-        let rows = ((rect.bottom - rect.top - super::shell::TREE_HEAD) / super::shell::TREE_ROW)
-            .clamp(0, 128) as usize;
+        let rows = ((rect.bottom - rect.top - self.dpi.pixels(super::shell::TREE_HEAD))
+            / self.dpi.pixels(super::shell::TREE_ROW))
+        .clamp(0, 128) as usize;
         let columns =
             ((rect.right - rect.left - 12) / self.cell_width.clamp(1, 8192)).clamp(0, 256) as usize;
         let mut presentation = self.explorer_view.prepare(&self.explorer, rows, columns);
@@ -132,6 +136,7 @@ impl State {
         }
         Some(ExplorerFrame {
             rect,
+            dpi: self.dpi,
             presentation,
             focused: self.explorer_focused && !self.outline_focused(),
         })
@@ -284,7 +289,8 @@ impl State {
             return true;
         };
         let is_dir = node.is_dir();
-        let disclosure = x < region.left + 24 + depth.min(12) as i32 * 14;
+        let disclosure =
+            x < region.left + self.dpi.pixels(24) + depth.min(12) as i32 * self.dpi.pixels(14);
         self.explorer_focused = true;
         self.outline.focused = false;
         self.bottom.focused = false;

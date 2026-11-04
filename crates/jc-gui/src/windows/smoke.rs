@@ -87,9 +87,16 @@ unsafe fn bytes(hwnd: Hwnd) -> Result<Vec<u8>, String> {
         .read_range(0..document.session.document().len())
         .map_err(|e| e.to_string())
 }
+#[track_caller]
 pub(super) unsafe fn expected(hwnd: Hwnd, value: &[u8]) -> Result<(), String> {
-    if bytes(hwnd)? != value {
-        Err("Smoke model bytes differ from the expected action".into())
+    let actual = bytes(hwnd)?;
+    if actual != value {
+        Err(format!(
+            "{}: smoke model bytes differ (expected {}, got {})",
+            std::panic::Location::caller(),
+            value.len(),
+            actual.len()
+        ))
     } else {
         Ok(())
     }
@@ -200,6 +207,41 @@ fn escaped(value: &str) -> String {
         .collect()
 }
 
+#[link(name = "user32")]
+extern "system" {
+    fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+}
+
+unsafe fn dpi_transition(hwnd: Hwnd) -> Result<(), String> {
+    let owner = owner(hwnd).ok_or("No se encontró la ventana de prueba de DPI")?;
+    let mut rect: Rect = std::mem::zeroed();
+    if GetWindowRect(hwnd, &mut rect) == 0 {
+        return Err("No se pudo leer el marco de prueba de DPI".into());
+    }
+    let original_dpi = owner.state.borrow().dpi.pixels(96) as usize;
+    let set_dpi = |dpi| {
+        SendMessageW(
+            hwnd,
+            super::dpi::CHANGED,
+            dpi | (dpi << 16),
+            &rect as *const Rect as isize,
+        );
+        let state = owner.state.borrow();
+        (state.dpi.pixels(96), state.cell_width, state.cell_height)
+    };
+    let baseline = set_dpi(96);
+    let medium = set_dpi(144);
+    let large = set_dpi(192);
+    set_dpi(original_dpi);
+    if [baseline.0, medium.0, large.0] != [96, 144, 192]
+        || !(baseline.1 < medium.1 && medium.1 < large.1)
+        || !(baseline.2 < medium.2 && medium.2 < large.2)
+    {
+        return Err("Los cambios nativos de DPI no actualizaron la cuadrícula".into());
+    }
+    expected(hwnd, SOURCE)
+}
+
 pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
     let mut report = fs::OpenOptions::new()
         .write(true)
@@ -229,6 +271,8 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             return Err("Native editor unexpectedly contains a child text control".into());
         }
         checks.push("no_child_edit_control");
+        dpi_transition(hwnd)?;
+        checks.push("native_dpi_changes_96_144_192_preserve_document");
         if options.navigation_only
             || options.line_edit_only
             || options.selection_reopen_only
@@ -504,7 +548,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         type_query(
             hwnd,
             jc_app::default_registry()
-                .get(CommandId::SearchGoToPosition)
+                .get(CommandId::ProgressCompile)
                 .unwrap()
                 .label,
         );
@@ -737,7 +781,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         checks.push("multiline_fields_gdi_and_invisibles_read_only");
         // Capture the real popup renderer as part of the final native canvas.
         key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
-        type_query(hwnd, "Split");
+        type_query(hwnd, "Dividir");
         let revision = owner(hwnd)
             .unwrap()
             .state

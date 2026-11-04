@@ -4,13 +4,14 @@ pub(super) unsafe fn draw(
     dc: Hdc,
     p: &SearchPresentation,
     width: i32,
-    height: i32,
+    height: (i32, i32),
     cw: i32,
     ch: i32,
 ) -> Result<(), String> {
     let left = 20.min(width.max(0));
     let right = (width - 20).max(left);
-    let top = (super::chrome::TOP + 20).min(height.max(0));
+    let (height, chrome_top) = height;
+    let top = (chrome_top + 20).min(height.max(0));
     let bottom = (top + ch * 20).min((height - 30).max(top));
     let rect = Rect {
         left,

@@ -30,8 +30,9 @@ struct Layout {
     count: usize,
 }
 impl Layout {
-    fn new(width: i32, height: i32, cell_width: i32, cell_height: i32) -> Option<Self> {
-        if width <= 0 || height <= super::chrome::TOP {
+    fn new(width: i32, height: (i32, i32), cell_width: i32, cell_height: i32) -> Option<Self> {
+        let (height, chrome_top) = height;
+        if width <= 0 || height <= chrome_top {
             return None;
         }
         // Compute in i64 before narrowing: even bogus i32::MAX font metrics and
@@ -39,12 +40,12 @@ impl Layout {
         let cw = i64::from(cell_width.max(1));
         let ch = i64::from(cell_height.max(1));
         let width = i64::from(width);
-        let height = i64::from(height - super::chrome::TOP);
+        let height = i64::from(height - chrome_top);
         let rows = (height / ch).clamp(1, 20) as usize;
         let popup_width = width.min(cw * 96);
         let popup_height = height.min(ch * rows as i64);
         let left = (width - popup_width) / 2;
-        let top = i64::from(super::chrome::TOP) + (height - popup_height) / 2;
+        let top = i64::from(chrome_top) + (height - popup_height) / 2;
         let popup = Rect {
             left: left as i32,
             top: top as i32,
@@ -100,7 +101,12 @@ impl Layout {
 /// The owner passes this capacity into Selector::prepare before drawing. The
 /// same layout removes title/query/message/footer exactly once, including tiny
 /// clients; normal geometry exposes at most sixteen candidate rows.
-pub(super) fn list_capacity(width: i32, height: i32, cell_width: i32, cell_height: i32) -> usize {
+pub(super) fn list_capacity(
+    width: i32,
+    height: (i32, i32),
+    cell_width: i32,
+    cell_height: i32,
+) -> usize {
     Layout::new(width, height, cell_width, cell_height).map_or(0, |layout| layout.count)
 }
 
@@ -166,7 +172,7 @@ pub(super) unsafe fn draw(
     dc: Hdc,
     presentation: &SelectorPresentation,
     width: i32,
-    height: i32,
+    height: (i32, i32),
     cell_width: i32,
     cell_height: i32,
 ) -> Result<(), String> {
@@ -339,7 +345,8 @@ mod tests {
             (i32::MAX, i32::MAX, i32::MAX, i32::MAX),
             (i32::MAX, i32::MAX, 0, -1),
         ] {
-            let Some(layout) = Layout::new(width, height, cw, ch) else {
+            let Some(layout) = Layout::new(width, (height, super::super::chrome::TOP), cw, ch)
+            else {
                 assert!(width <= 0 || height <= super::super::chrome::TOP);
                 continue;
             };
@@ -357,9 +364,15 @@ mod tests {
                 );
                 assert!(rect.left <= rect.right && rect.top <= rect.bottom);
             }
-            assert_eq!(list_capacity(width, height, cw, ch), layout.count);
+            assert_eq!(
+                list_capacity(width, (height, super::super::chrome::TOP), cw, ch),
+                layout.count
+            );
         }
-        assert_eq!(list_capacity(1260, 600, 9, 20), 16);
+        assert_eq!(
+            list_capacity(1260, (600, super::super::chrome::TOP), 9, 20),
+            16
+        );
     }
 
     #[test]

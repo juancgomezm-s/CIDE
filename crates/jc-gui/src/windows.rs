@@ -6,6 +6,7 @@ mod chrome;
 mod clipboard;
 mod clipboard_flow;
 mod close_flow;
+mod dpi;
 mod editor_scroll;
 mod explorer_paint;
 mod explorer_panel;
@@ -15,6 +16,7 @@ mod folder;
 mod git_panel;
 mod git_smoke;
 mod git_view;
+mod ime;
 mod interaction_smoke;
 mod line_edit;
 mod line_edit_smoke;
@@ -452,6 +454,7 @@ struct State {
     pub height: i32,
     pub cell_width: i32,
     pub cell_height: i32,
+    dpi: dpi::Dpi,
     pub font: Handle,
     pub ui_font: Handle,
     ascii_runs: [bool; 128],
@@ -462,6 +465,7 @@ struct State {
     maximized: bool,
     icon: Handle,
     pending_surrogate: Option<u16>,
+    ime_target: Option<(line_edit::EditTarget, u64)>,
     next_untitled: usize,
     pub paint_count: usize,
     pub paint_errors: usize,
@@ -583,6 +587,7 @@ impl State {
             height: 650,
             cell_width: 9,
             cell_height: 20,
+            dpi: dpi::Dpi::BASE,
             font,
             ui_font,
             ascii_runs: [false; 128],
@@ -593,6 +598,7 @@ impl State {
             maximized: false,
             icon: null_mut(),
             pending_surrogate: None,
+            ime_target: None,
             next_untitled: 0,
             paint_count: 0,
             paint_errors: 0,
@@ -1427,9 +1433,27 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     if message == 0x84 {
         let layout = {
             let state = owner.state.borrow();
-            chrome::Layout::new(state.width, state.height, state.maximized)
+            state.chrome_layout()
         };
         return chrome::hit_test(hwnd, lparam, layout);
+    }
+    if message == dpi::CHANGED {
+        let Some(rect) = (lparam as *const Rect).as_ref().copied() else {
+            return 0;
+        };
+        if let Ok(mut state) = owner.state.try_borrow_mut() {
+            // The previous frame stores font handles owned by State.
+            owner.frame.borrow_mut().take();
+            owner.frame_dirty.set(true);
+            state.refresh_dpi(hwnd, dpi::Dpi::from_raw((wparam >> 16) as u16 as u32));
+        } else {
+            return 0;
+        }
+        // SetWindowPos may synchronously deliver WM_SIZE. No model borrow crosses it.
+        dpi::apply_rect(hwnd, rect);
+        release_idle_capture(hwnd);
+        InvalidateRect(hwnd, std::ptr::null(), 0);
+        return 0;
     }
     if matches!(message, 0x2b | 0x2c | 0x120) {
         let theme = owner.menu_theme.borrow().clone();
@@ -1514,6 +1538,37 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         }
         return 0;
     }
+    if message == ime::START {
+        let caret = {
+            let Ok(mut state) = owner.state.try_borrow_mut() else {
+                return DefWindowProcW(hwnd, message, wparam, lparam);
+            };
+            state.pending_surrogate = None;
+            state.ime_target = state.ime_editor_target();
+            state.ime_target.and_then(|_| state.ime_caret())
+        };
+        if let Some(caret) = caret {
+            ime::place(hwnd, caret);
+        }
+        return DefWindowProcW(hwnd, message, wparam, lparam);
+    }
+    if message == ime::END {
+        if let Ok(mut state) = owner.state.try_borrow_mut() {
+            state.ime_target = None;
+        }
+        return DefWindowProcW(hwnd, message, wparam, lparam);
+    }
+    let ime_result = if message == ime::COMPOSITION && lparam & ime::RESULT != 0 {
+        let target = owner
+            .state
+            .try_borrow()
+            .ok()
+            .and_then(|state| state.ime_target);
+        target.map(|target| (target, ime::read_result(hwnd)))
+    } else {
+        None
+    };
+    let handled_ime = ime_result.is_some();
     // No RefCell borrow crosses dialogs, DestroyWindow or SendMessage. Modal
     // Win32 calls may reenter this callback and prepare another read-only frame.
     // Screen coordinates and OS settings are read outside the model borrow.
@@ -1544,20 +1599,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                         state.error(error);
                     }
                 }
-                let dc = GetDC(hwnd);
-                if !dc.is_null() {
-                    let old = SelectObject(dc, state.font);
-                    let mut metrics: TextMetric = std::mem::zeroed();
-                    if GetTextMetricsW(dc, &mut metrics) != 0 {
-                        // Reserve one pixel for glyph edge filtering. The code
-                        // grid and hit testing use this same advance everywhere.
-                        state.cell_width = metrics.average.saturating_add(1).max(6);
-                        state.cell_height = (metrics.height + metrics.external).max(12);
-                    }
-                    state.ascii_runs = shell::safe_ascii_runs(dc, state.cell_width);
-                    SelectObject(dc, old);
-                    ReleaseDC(hwnd, dc);
-                }
+                state.refresh_dpi(hwnd, dpi::for_window(hwnd));
             }
             TASKS_MESSAGE => {
                 redraw = state.poll_tasks();
@@ -1611,6 +1653,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 redraw = false;
             }
             WM_CHAR => state.character(wparam as u16),
+            ime::COMPOSITION if handled_ime => {
+                let (target, result) = ime_result.unwrap();
+                state.ime_commit(target, result);
+            }
             WM_UNICHAR => {
                 if wparam == 0xffff {
                     return 1;
@@ -1661,11 +1707,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 let x = (lparam as u16) as i16 as i32;
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
                 state.cancel_pointer();
-                let chrome_action = chrome::action_at(
-                    chrome::Layout::new(state.width, state.height, state.maximized),
-                    x,
-                    y,
-                );
+                let chrome_action = chrome::action_at(state.chrome_layout(), x, y);
                 let tab_action = if message == WM_LBUTTONDOWN && chrome_action.is_none() {
                     state.tab_click(x, y)
                 } else {
@@ -1708,11 +1750,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     (lparam as u16) as i16 as i32,
                     ((lparam as usize >> 16) as u16) as i16 as i32,
                 );
-                let hover = chrome::action_at(
-                    chrome::Layout::new(state.width, state.height, state.maximized),
-                    point.0,
-                    point.1,
-                );
+                let hover = chrome::action_at(state.chrome_layout(), point.0, point.1);
                 if state.chrome_hover != hover {
                     state.chrome_hover = hover;
                     redraw = true;
@@ -1770,7 +1808,11 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         }
         InvalidateRect(hwnd, std::ptr::null(), 0);
     }
-    if message == WM_UNICHAR {
+    if handled_ime && lparam & ime::PREEDIT != 0 && IsWindow(hwnd) != 0 {
+        // Preserve native preedit for mixed commit/composition messages.
+        // Forwarding result flags would produce duplicate WM_CHAR input.
+        DefWindowProcW(hwnd, message, 0, lparam & ime::PREEDIT)
+    } else if message == WM_UNICHAR {
         1
     } else {
         0
@@ -2038,6 +2080,8 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
     if let Some(smoke) = &options.smoke {
         smoke::validate(smoke)?;
     }
+    // The HWND adopts this thread context when it is created.
+    let _dpi_context = unsafe { dpi::ThreadContext::enter() };
     let mut owner = Box::new(Owner {
         state: RefCell::new(State::new(&options)?),
         buffer: RefCell::new(back_buffer::Buffer::default()),

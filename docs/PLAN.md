@@ -1,5 +1,12 @@
 # Plan de desarrollo
 
+## Estado de cierre M2 — 2026-11-04
+
+La [matriz de cierre](M2_CIERRE.md) reúne la evidencia automatizada y las
+puertas restantes. La GUI ya responde a cambios de DPI y confirma composición
+IME como una edición. Quedan abiertos UI Automation, la aceptación física
+en escritorio y las mediciones actuales de proceso y pantalla.
+
 ## Estado vigente — recuperación periódica y limpieza segura, 2026-11-03
 
 Recuperación automática en Rust integrada en GUI y TUI: captura cooperativa de

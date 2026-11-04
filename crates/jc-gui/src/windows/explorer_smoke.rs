@@ -371,7 +371,7 @@ unsafe fn cancelled_messages(hwnd: Hwnd) -> Result<(), String> {
 }
 
 pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'static str>, String> {
-    expected(hwnd, SOURCE)?;
+    expected(hwnd, SOURCE).map_err(|error| format!("Explorer inicial: {error}"))?;
     // Earlier smoke stages may retain two views of this same source. Establish
     // one group so this block can prove the side/pin transition from scratch.
     let split = owner(hwnd)
@@ -383,7 +383,8 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         .is_split();
     if split {
         command(hwnd, CommandId::EditorOneGroup)?;
-        expected(hwnd, SOURCE)?;
+        expected(hwnd, SOURCE)
+            .map_err(|error| format!("Explorer al volver a un grupo: {error}"))?;
     }
     let parent = options
         .fixture
@@ -549,7 +550,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     }
     select_label(hwnd, filename, false)?;
     key(hwnd, 0x50, Modifiers::CTRL.union(Modifiers::SHIFT))?;
-    for unit in "Open to Side".encode_utf16() {
+    for unit in "Abrir al lado".encode_utf16() {
         SendMessageW(hwnd, WM_CHAR, unit as usize, 0);
     }
     key(hwnd, 0x0d, Modifiers::NONE)?;
@@ -744,7 +745,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         s.explorer_hits = None;
     }
     key(hwnd, 0x5a, Modifiers::CTRL)?;
-    expected(hwnd, SOURCE)?;
+    expected(hwnd, SOURCE).map_err(|error| format!("Explorer después de deshacer: {error}"))?;
     if owner(hwnd)
         .unwrap()
         .state

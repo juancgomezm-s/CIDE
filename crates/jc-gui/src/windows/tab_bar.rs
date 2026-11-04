@@ -73,12 +73,12 @@ pub(super) fn prepare(s: &mut State) -> Bars {
         let rect = Rect {
             left: area.left,
             right: area.right,
-            top: super::chrome::TOP,
-            bottom: super::shell::TABS.min(s.height.max(0)),
+            top: s.chrome_layout().top(),
+            bottom: s.dpi.pixels(super::shell::TABS).min(s.height.max(0)),
         };
         let cw = s.cell_width.clamp(1, 8192);
         let available = (rect.right - rect.left).max(0);
-        if available < cw * 7 || rect.bottom <= 0 {
+        if available < cw * 7 || rect.bottom <= rect.top {
             continue;
         }
         let tabs = s.workbench.tabs().tabs();

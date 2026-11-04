@@ -33,16 +33,17 @@ struct Geometry {
     dual: bool,
 }
 impl Geometry {
-    fn new(width: i32, height: i32, cw: i32, ch: i32) -> Self {
+    fn new(width: i32, height: (i32, i32), cw: i32, ch: i32) -> Self {
         let width = width.clamp(1, 8192);
+        let (height, tabs_bottom) = height;
         let height = height.clamp(1, 8192);
         let cw = cw.clamp(1, 8192);
         let ch = ch.clamp(1, 8192);
         let rect = Rect {
             left: 0,
-            top: super::shell::TABS.min(height),
+            top: tabs_bottom.min(height),
             right: width,
-            bottom: (height - ch - 6).max(super::shell::TABS.min(height)),
+            bottom: (height - ch - 6).max(tabs_bottom.min(height)),
         };
         let columns = ((width - 16).max(0) / cw).clamp(0, 256) as usize;
         let rows = ((rect.bottom - rect.top).max(0) / ch).clamp(0, 100) as usize;
@@ -144,8 +145,12 @@ impl State {
                     self.open_diff_view.first();
                 }
                 0x21 | 0x22 => {
-                    let g =
-                        Geometry::new(self.width, self.height, self.cell_width, self.cell_height);
+                    let g = Geometry::new(
+                        self.width,
+                        (self.height, self.dpi.pixels(super::shell::TABS)),
+                        self.cell_width,
+                        self.cell_height,
+                    );
                     self.open_diff_view.scroll(if code == 0x21 {
                         -(g.rows.saturating_sub(4) as isize)
                     } else {
@@ -164,7 +169,12 @@ impl State {
         if !self.open_diff_visible {
             return None;
         }
-        let geometry = Geometry::new(self.width, self.height, self.cell_width, self.cell_height);
+        let geometry = Geometry::new(
+            self.width,
+            (self.height, self.dpi.pixels(super::shell::TABS)),
+            self.cell_width,
+            self.cell_height,
+        );
         let origins = self.open_diff.result().map(|result| {
             [&result.left, &result.right].map(|origin| {
                 jc_app::source_services::display_ui_label(
@@ -335,7 +345,7 @@ mod tests {
             (1400, 800, 9, 20),
             (i32::MAX, i32::MAX, i32::MAX, i32::MAX),
         ] {
-            let g = Geometry::new(w, h, cw, ch);
+            let g = Geometry::new(w, (h, super::super::shell::TABS), cw, ch);
             assert!(g.columns <= 256 && g.rows <= 100);
             for i in 0..g.rows {
                 let r = g.row(i);
@@ -347,7 +357,7 @@ mod tests {
                 );
             }
         }
-        assert!(!Geometry::new(360, 240, 9, 20).dual);
-        assert!(Geometry::new(1400, 800, 9, 20).dual);
+        assert!(!Geometry::new(360, (240, super::super::shell::TABS), 9, 20).dual);
+        assert!(Geometry::new(1400, (800, super::super::shell::TABS), 9, 20).dual);
     }
 }

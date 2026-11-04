@@ -416,12 +416,12 @@ pub(super) unsafe fn open_with(
         if !current_menu(hwnd, bar, popup, index as i32) {
             return Err("El menú nativo cambió durante su inicialización".into());
         }
-        let width = owner(hwnd)
+        let layout = owner(hwnd)
             .ok_or("La ventana del menú está cerrada")?
             .state
             .borrow()
-            .width;
-        let rect = super::chrome::menu_rect(width, group);
+            .chrome_layout();
+        let rect = super::chrome::menu_rect(layout, group);
         let mut point = Point {
             x: rect.left,
             y: rect.bottom,

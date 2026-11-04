@@ -53,9 +53,17 @@ unsafe fn input(hwnd: Hwnd) -> Result<Input, String> {
         kind: selector.kind(),
     })
 }
+#[track_caller]
 unsafe fn text(hwnd: Hwnd, value: &str) -> Result<(), String> {
-    if input(hwnd)?.text != value {
-        return Err("Selector field differs from exact synthetic input".into());
+    let actual = input(hwnd)?;
+    if actual.text != value {
+        return Err(format!(
+            "{}: selector {:?} differs from synthetic input (expected {:?}, got {:?})",
+            std::panic::Location::caller(),
+            actual.kind,
+            value,
+            actual.text
+        ));
     }
     Ok(())
 }
@@ -549,7 +557,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
                 }
             }
             8 => {
-                text(hwnd, "Tab")?;
+                text(hwnd, query)?;
                 if input(hwnd)?.candidate == 0 {
                     return Err("Reentrant candidate setup did not move to an existing row".into());
                 }

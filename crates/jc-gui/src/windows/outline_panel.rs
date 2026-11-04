@@ -30,6 +30,7 @@ impl Default for Outline {
 
 pub(super) struct OutlineFrame {
     rect: Rect,
+    dpi: super::dpi::Dpi,
     rows: Vec<SourceRow>,
     message: String,
     focused: bool,
@@ -62,17 +63,17 @@ fn provider(state: &State) -> bool {
 pub(super) fn region(state: &State) -> Option<Rect> {
     let rect = super::explorer_panel::region(state)?;
     let height = rect.bottom - rect.top;
-    if height < 260 || !provider(state) {
+    if height < state.dpi.pixels(260) || !provider(state) {
         return None;
     }
     Some(Rect {
-        top: rect.bottom - (height * 2 / 5).max(112),
+        top: rect.bottom - (height * 2 / 5).max(state.dpi.pixels(112)),
         ..rect
     })
 }
 
-fn capacity(rect: Rect) -> usize {
-    ((rect.bottom - rect.top - HEAD) / ROW).clamp(0, 64) as usize
+fn capacity(rect: Rect, dpi: super::dpi::Dpi) -> usize {
+    ((rect.bottom - rect.top - dpi.pixels(HEAD)) / dpi.pixels(ROW)).clamp(0, 64) as usize
 }
 
 fn contains(rect: Rect, x: i32, y: i32) -> bool {
@@ -153,11 +154,14 @@ impl State {
                 .iter()
                 .enumerate()
                 .skip(
-                    self.outline
-                        .first
-                        .min(controller.items().len().saturating_sub(capacity(rect))),
+                    self.outline.first.min(
+                        controller
+                            .items()
+                            .len()
+                            .saturating_sub(capacity(rect, self.dpi)),
+                    ),
                 )
-                .take(capacity(rect))
+                .take(capacity(rect, self.dpi))
                 .map(|(index, item)| SourceRow {
                     index,
                     label: display_ui_label(&item.label, columns),
@@ -176,6 +180,7 @@ impl State {
         };
         Some(OutlineFrame {
             rect,
+            dpi: self.dpi,
             rows,
             message: display_ui_label(message, columns),
             focused: self.outline_focused(),
@@ -238,7 +243,9 @@ impl State {
             _ => return,
         }
         let selected = controller.selected();
-        let rows = region(self).map_or(1, capacity).max(1);
+        let rows = region(self)
+            .map_or(1, |rect| capacity(rect, self.dpi))
+            .max(1);
         self.outline.first = self
             .outline
             .first
@@ -264,8 +271,10 @@ impl State {
                         && hits.rect.bottom == rect.bottom
                 })
                 .and_then(|hits| {
-                    hits.rows
-                        .get(usize::try_from(y - rect.top - HEAD).ok()? / ROW as usize)
+                    hits.rows.get(
+                        usize::try_from(y - rect.top - self.dpi.pixels(HEAD)).ok()?
+                            / self.dpi.pixels(ROW) as usize,
+                    )
                 })
                 .copied();
             if let Some(index) = index {
@@ -283,7 +292,7 @@ impl State {
         let Some(rect) = region(self).filter(|r| contains(*r, x, y)) else {
             return false;
         };
-        let rows = capacity(rect);
+        let rows = capacity(rect, self.dpi);
         let lines = if lines == u32::MAX {
             rows
         } else {
@@ -306,6 +315,7 @@ impl State {
 
 pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
     let rect = frame.rect;
+    let px = |value| frame.dpi.pixels(value);
     paint::fill(dc, rect, shell::SIDEBAR)?;
     paint::fill(
         dc,
@@ -331,14 +341,14 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
     };
     paint::text(
         dc,
-        label(rect.top + 6, rect.top + 25),
+        label(rect.top + px(6), rect.top + px(25)),
         &wide("ESQUEMA"),
         shell::TEXT,
         shell::SIDEBAR,
     )?;
     paint::text(
         dc,
-        label(rect.top + 25, rect.top + HEAD),
+        label(rect.top + px(25), rect.top + px(HEAD)),
         &wide("Intro · ir al símbolo"),
         shell::MUTED,
         shell::SIDEBAR,
@@ -346,14 +356,14 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
     if frame.rows.is_empty() {
         paint::text(
             dc,
-            label(rect.top + HEAD, rect.bottom),
+            label(rect.top + px(HEAD), rect.bottom),
             &wide(&frame.message),
             shell::MUTED,
             shell::SIDEBAR,
         )?;
     }
     for (i, row) in frame.rows.iter().enumerate() {
-        let top = rect.top + HEAD + i as i32 * ROW;
+        let top = rect.top + px(HEAD) + i as i32 * px(ROW);
         let background = if row.selected {
             shell::SELECTED
         } else {
@@ -365,7 +375,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
                 left: rect.left + 6,
                 top,
                 right: rect.right - 6,
-                bottom: top + ROW,
+                bottom: top + px(ROW),
             },
             background,
         )?;
@@ -376,14 +386,14 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
                     left: rect.left + 6,
                     top,
                     right: rect.left + 8,
-                    bottom: top + ROW,
+                    bottom: top + px(ROW),
                 },
                 shell::ACCENT,
             )?;
         }
         paint::text(
             dc,
-            label(top + 2, top + ROW),
+            label(top + px(2), top + px(ROW)),
             &wide(&row.label),
             shell::TEXT,
             background,

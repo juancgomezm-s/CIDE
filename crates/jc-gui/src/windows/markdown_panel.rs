@@ -12,6 +12,7 @@ pub(super) struct MarkdownFrame {
     pub presentation: MarkdownPresentation,
     width: i32,
     height: i32,
+    top: i32,
     cw: i32,
     ch: i32,
 }
@@ -87,6 +88,7 @@ impl State {
                 .active_document()
                 .is_some_and(|d| d.id == ui.stamp.document);
         let (width, height) = (self.width.clamp(1, 8192), self.height.clamp(1, 8192));
+        let top = self.dpi.pixels(super::shell::TABS).min(height);
         let (cw, ch) = (
             self.cell_width.clamp(1, 8192),
             self.cell_height.clamp(1, 8192),
@@ -95,8 +97,7 @@ impl State {
             ui.view.prepare(
                 &self.workbench,
                 tab,
-                (((height - super::shell::TABS).max(0) / ch).saturating_sub(5)).clamp(0, 96)
-                    as usize,
+                (((height - top).max(0) / ch).saturating_sub(5)).clamp(0, 96) as usize,
                 ((width - 32).max(0) / cw).clamp(12, 256) as usize,
             )
         } else {
@@ -114,6 +115,7 @@ impl State {
             presentation,
             width,
             height,
+            top,
             cw,
             ch,
         })
@@ -124,7 +126,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> 
     let panel = super::shell::SURFACE;
     let fg = 0x00d5d7d8;
     let accent = 0x00d0d467;
-    let top = super::shell::TABS.min(frame.height);
+    let top = frame.top;
     let bottom = (frame.height - frame.ch - 6).max(top);
     paint::fill(
         dc,

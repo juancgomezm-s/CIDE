@@ -37,7 +37,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     {
         let state = owner(hwnd).unwrap().state.borrow();
         if !state.status.contains("cancelado")
-            || !state.status.contains("1 saved; 1 pending")
+            || !state.status.contains("1 guardados; 1 pendientes")
             || !state.workbench.active_document().unwrap().session.is_new()
             || generated.exists()
         {
@@ -93,8 +93,8 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     command(hwnd, CommandId::FileSaveAll)?;
     {
         let state = owner(hwnd).unwrap().state.borrow();
-        if !state.status.contains("stopped")
-            || !state.status.contains("0 saved; 1 pending")
+        if !state.status.contains("detenido")
+            || !state.status.contains("0 guardados; 1 pendientes")
             || !state
                 .workbench
                 .active_document()

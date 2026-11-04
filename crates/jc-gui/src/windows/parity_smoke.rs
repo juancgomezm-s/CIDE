@@ -432,7 +432,9 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             let metrics = (state.jobs.snapshot_bytes(), state.jobs.artifact_bytes());
             (paint::prepare(&mut state), metrics)
         };
-        if !frame.contains_status("Scroll linked") || !linked(hwnd) || carets(hwnd) != caret_before
+        if !frame.contains_status("Desplazamiento vinculado")
+            || !linked(hwnd)
+            || carets(hwnd) != caret_before
         {
             return Err("Compact presentation dropped link or synchronized carets".into());
         }
@@ -479,7 +481,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     }
     {
         let mut state = owner(hwnd).unwrap().state.borrow_mut();
-        if paint::prepare(&mut state).contains_status("Scroll linked") {
+        if paint::prepare(&mut state).contains_status("Desplazamiento vinculado") {
             return Err("Single-group frame retained stale linked indicator".into());
         }
     }

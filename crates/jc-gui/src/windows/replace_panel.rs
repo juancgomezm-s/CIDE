@@ -339,7 +339,7 @@ impl State {
         let draft = panel.stage == ReplaceStage::Draft;
         let (columns, rows) = super::project_paint::field_geometry(
             self.width,
-            self.height,
+            (self.height, self.dpi.pixels(super::chrome::TOP)),
             self.cell_width,
             self.cell_height,
             if draft { 3 } else { 1 },
@@ -354,7 +354,7 @@ impl State {
         };
         let capacity = super::project_paint::result_capacity(
             self.width,
-            self.height,
+            (self.height, self.dpi.pixels(super::chrome::TOP)),
             self.cell_width,
             self.cell_height,
         );

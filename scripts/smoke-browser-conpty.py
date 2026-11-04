@@ -101,10 +101,10 @@ def main():
         stage = 'navegar_subdirectorio_padre'
         select_row(session, '[+] subcarpeta')
         session.send('\r')
-        session.wait(lambda: session.contains('[.] subcarpeta') and session.contains('niño.md') and session.contains('Metadatos del directorio listos'))
-        session.send('\x1b[1;3A')
-        session.wait(lambda: session.contains('[.] proyecto') and session.contains('[+] subcarpeta') and session.contains('Metadatos del directorio listos'))
-        checks.append('tui_folder_browser_enter_child_alt_up_parent')
+        session.wait(lambda: session.menu_row('..', selected=True) and session.contains('niño.md') and session.contains('Metadatos del directorio listos'))
+        session.send('\r')
+        session.wait(lambda: session.contains('[+] subcarpeta') and session.contains('Metadatos del directorio listos'))
+        checks.append('tui_folder_browser_enter_child_and_parent_row')
         stage = 'elegir_carpeta'
         session.send(CONTROL_ENTER)
         session.wait(lambda: not session.contains('Abrir carpeta — explorador') and session.contains('Carpeta del proyecto seleccionada'))
@@ -114,7 +114,7 @@ def main():
         session.wait(lambda: session.contains('Abrir archivo — explorador') and session.contains('[+] subcarpeta') and session.contains('Metadatos del directorio listos'))
         select_row(session, '[+] subcarpeta')
         session.send('\r')
-        session.wait(lambda: session.contains('[.] subcarpeta') and session.contains('niño.md') and session.contains('Metadatos del directorio listos'))
+        session.wait(lambda: session.contains('niño.md') and session.contains('Metadatos del directorio listos'))
         select_row(session, 'niño.md')
         session.send('\r')
         session.wait(lambda: not session.contains('Abrir archivo — explorador') and session.contains('Archivo español') and session.contains('Niño, café'))

@@ -482,7 +482,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             SyntaxKind::Keyword,
         )?;
         if !selected.selected
-            || selected.foreground != rgb(SyntaxKind::Plain)
+            || selected.foreground != super::shell::TEXT
             || selected.background == normal.background
         {
             return Err("Source selection did not override syntax foreground/background".into());
@@ -500,7 +500,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             SyntaxKind::Keyword,
         )?;
         if !found.search
-            || found.foreground != rgb(SyntaxKind::Plain)
+            || found.foreground != super::shell::TEXT
             || found.background == normal.background
         {
             return Err("Literal search highlight did not override GUI syntax color".into());
@@ -537,7 +537,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         )?;
         if !selected_marker.selected
             || !selected_marker.marker
-            || selected_marker.foreground != rgb(SyntaxKind::Plain)
+            || selected_marker.foreground != super::shell::TEXT
             || selected_marker.background == marked.background
         {
             return Err(
@@ -596,9 +596,9 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         .ok_or("Partial TAB syntax cell missing")?;
     if virtual_cell.kind != SyntaxKind::Plain
         || !virtual_cell.selected
-        || virtual_cell.foreground != rgb(SyntaxKind::Plain)
+        || virtual_cell.foreground != super::shell::TEXT
         || !tab.selected
-        || tab.foreground != rgb(SyntaxKind::Plain)
+        || tab.foreground != super::shell::TEXT
     {
         return Err(
             "Virtual/TAB rectangle cells acquired false source syntax or lost selection priority"
@@ -629,7 +629,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     {
         return Err("Deep syntax request did not expose bounded pending context".into());
     }
-    if !first.contains_status("Syntax preparing") {
+    if !first.contains_status("Preparando resaltado") {
         return Err("Pending lexical context was not explicit in GUI presentation".into());
     }
     kind(hwnd, &first, PaneId::Primary, byte, SyntaxKind::Plain)?;
@@ -711,7 +711,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     let stats = limited
         .syntax_budget(PaneId::Primary)
         .ok_or("Rust hash-limit metadata missing")?;
-    if !stats.limited || stats.pending || !limited.contains_status("Syntax plain: budget") {
+    if !stats.limited || stats.pending || !limited.contains_status("Texto plano: límite") {
         return Err("Rust raw-hash budget failed to terminate in explicit Plain fallback".into());
     }
     kind(
@@ -738,7 +738,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     )?;
     let fallback = ready(hwnd)?;
     kind(hwnd, &fallback, PaneId::Primary, 0, SyntaxKind::Plain)?;
-    if !fallback.contains_status("Syntax: plain") {
+    if !fallback.contains_status("Resaltado: texto plano") {
         return Err(
             "Unsupported lexical profile did not present its explicit Plain fallback".into(),
         );

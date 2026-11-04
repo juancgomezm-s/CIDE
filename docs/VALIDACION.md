@@ -1585,3 +1585,11 @@ los parámetros omitidos en la implementación se resuelven desde el prototipo
 y que las firmas incompatibles o sin contraparte se rechazan. La prueba
 TUI revisa los cuatro cambios antes de confirmar y recupera el archivo con
 un solo deshacer. Formato y Clippy aprobados. Validación local en Rust.
+
+## Ventana de cierre M2 — 2026-11-04
+
+Workspace completo en Windows, 654 pruebas aprobadas y tres auxiliares
+ejecutados desde sus pruebas padre. Formato, Clippy y compilación optimizada
+aprobados. La GUI pasó 131 comprobaciones en ventana propia y la TUI 23 en
+ConPTY, incluida recuperación. La GUI pasó también su recorrido aislado de
+recuperación periódica. [Matriz de cierre y pendientes](M2_CIERRE.md).

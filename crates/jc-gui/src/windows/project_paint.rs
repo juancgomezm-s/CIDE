@@ -26,8 +26,9 @@ struct Layout {
     body: std::ops::Range<usize>,
 }
 impl Layout {
-    fn new(width: i32, height: i32, cw: i32, ch: i32) -> Option<Self> {
-        if width <= 0 || height <= super::chrome::TOP {
+    fn new(width: i32, height: (i32, i32), cw: i32, ch: i32) -> Option<Self> {
+        let (height, chrome_top) = height;
+        if width <= 0 || height <= chrome_top {
             return None;
         }
         let width = width.clamp(1, 8192);
@@ -35,7 +36,7 @@ impl Layout {
         let cw = cw.clamp(1, 8192);
         let ch = ch.clamp(1, 8192);
         let left = 20.min(width / 8);
-        let top = super::chrome::TOP + 50.min((height - super::chrome::TOP) / 8);
+        let top = chrome_top + 50.min((height - chrome_top) / 8);
         let right = (width - left).min(left + 100 * cw + 16);
         let bottom = height.min(top + 24 * ch);
         let padding = 8.min((right - left) / 4);
@@ -92,7 +93,7 @@ impl Layout {
 /// only the active field visible; a zero capacity means there is no body area.
 pub(super) fn field_geometry(
     width: i32,
-    height: i32,
+    height: (i32, i32),
     cw: i32,
     ch: i32,
     fields: usize,
@@ -100,7 +101,7 @@ pub(super) fn field_geometry(
     Layout::new(width, height, cw, ch).map_or((0, 0), |l| (l.columns, l.field_rows(fields)))
 }
 /// Results mode reserves one label and one query row in the same body layout.
-pub(super) fn result_capacity(width: i32, height: i32, cw: i32, ch: i32) -> usize {
+pub(super) fn result_capacity(width: i32, height: (i32, i32), cw: i32, ch: i32) -> usize {
     Layout::new(width, height, cw, ch).map_or(0, |l| l.body.len().saturating_sub(2).min(32))
 }
 
@@ -138,7 +139,7 @@ pub(super) unsafe fn draw(
     dc: Hdc,
     p: &ProjectPresentation,
     width: i32,
-    height: i32,
+    height: (i32, i32),
     cw: i32,
     ch: i32,
 ) -> Result<(), String> {
@@ -170,7 +171,7 @@ pub(super) unsafe fn draw_labeled(
     dc: Hdc,
     p: &ProjectPresentation,
     width: i32,
-    height: i32,
+    height: (i32, i32),
     cw: i32,
     ch: i32,
     labels: PanelLabels,
@@ -319,7 +320,7 @@ mod tests {
     use super::*;
     #[test]
     fn geometry_stays_inside_client_for_tiny_and_extreme_metrics() {
-        assert!(Layout::new(0, 10, 8, 16).is_none());
+        assert!(Layout::new(0, (10, super::super::chrome::TOP), 8, 16).is_none());
         for (width, height) in [
             (1, 1),
             (45, 30),
@@ -328,7 +329,8 @@ mod tests {
             (i32::MAX, i32::MAX),
         ] {
             for (cw, ch) in [(0, 0), (8, 16), (i32::MAX, i32::MAX)] {
-                let Some(l) = Layout::new(width, height, cw, ch) else {
+                let Some(l) = Layout::new(width, (height, super::super::chrome::TOP), cw, ch)
+                else {
                     assert!(height <= super::super::chrome::TOP);
                     continue;
                 };
@@ -339,17 +341,23 @@ mod tests {
                     let r = l.row(row);
                     assert!(r.left <= r.right && r.top <= r.bottom && r.bottom <= l.rect.bottom);
                 }
-                assert!(result_capacity(width, height, cw, ch) <= l.body.len());
+                assert!(
+                    result_capacity(width, (height, super::super::chrome::TOP), cw, ch)
+                        <= l.body.len()
+                );
             }
         }
     }
     #[test]
     fn field_and_result_budgets_match_normal_layout_and_output_is_control_free() {
-        let l = Layout::new(1000, 700, 8, 16).unwrap();
-        let (columns, rows) = field_geometry(1000, 700, 8, 16, 3);
+        let l = Layout::new(1000, (700, super::super::chrome::TOP), 8, 16).unwrap();
+        let (columns, rows) = field_geometry(1000, (700, super::super::chrome::TOP), 8, 16, 3);
         assert_eq!(columns, l.columns);
         assert!((rows + 1) * 3 <= l.body.len());
-        assert_eq!(result_capacity(1000, 700, 8, 16), l.body.len() - 2);
+        assert_eq!(
+            result_capacity(1000, (700, super::super::chrome::TOP), 8, 16),
+            l.body.len() - 2
+        );
         let prepared = clipped(r"\r\n\u{E9}", 100);
         assert_eq!(
             String::from_utf16(&prepared[..prepared.len() - 1]).unwrap(),

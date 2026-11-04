@@ -461,7 +461,7 @@ impl State {
         let ui = self.snippet_gui.as_mut()?;
         let (columns, _) = super::project_paint::field_geometry(
             self.width,
-            self.height,
+            (self.height, self.dpi.pixels(super::chrome::TOP)),
             self.cell_width,
             self.cell_height,
             1,
@@ -469,7 +469,7 @@ impl State {
         let columns = columns.min(96);
         let rows = super::project_paint::result_capacity(
             self.width,
-            self.height,
+            (self.height, self.dpi.pixels(super::chrome::TOP)),
             self.cell_width,
             self.cell_height,
         )

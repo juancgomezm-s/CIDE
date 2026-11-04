@@ -448,14 +448,14 @@ impl State {
         }
         let (columns, _) = super::project_paint::field_geometry(
             self.width,
-            self.height,
+            (self.height, self.dpi.pixels(super::chrome::TOP)),
             self.cell_width,
             self.cell_height,
             1,
         );
         let rows = super::project_paint::result_capacity(
             self.width,
-            self.height,
+            (self.height, self.dpi.pixels(super::chrome::TOP)),
             self.cell_width,
             self.cell_height,
         );

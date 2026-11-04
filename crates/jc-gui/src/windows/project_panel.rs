@@ -271,7 +271,7 @@ impl State {
         let count = if panel.results { 1 } else { 3 };
         let (cols, rows) = super::project_paint::field_geometry(
             self.width,
-            self.height,
+            (self.height, self.dpi.pixels(super::chrome::TOP)),
             self.cell_width,
             self.cell_height,
             count,
@@ -298,7 +298,7 @@ impl State {
                 &self.project_search,
                 super::project_paint::result_capacity(
                     self.width,
-                    self.height,
+                    (self.height, self.dpi.pixels(super::chrome::TOP)),
                     self.cell_width,
                     self.cell_height,
                 ),
