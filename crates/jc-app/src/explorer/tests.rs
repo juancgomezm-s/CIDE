@@ -199,6 +199,97 @@ fn catalog_and_visible_budgets_are_global_not_per_directory() {
     assert!(catalog.node(two).is_some());
 }
 
+fn scrolling_catalog() -> ProjectExplorer {
+    let mut catalog = custom(
+        |_, _| {
+            Ok(DirectoryListing {
+                entries: (0..64)
+                    .map(|i| DirectoryEntry {
+                        name: format!("archivo-{i:02}.txt").into(),
+                        is_dir: false,
+                    })
+                    .collect(),
+                limited: false,
+                examined: 64,
+                skipped: 0,
+            })
+        },
+        Default::default(),
+    );
+    catalog.set_root(root("virtual-explorer-scroll")).unwrap();
+    let id = catalog.root_id().unwrap();
+    ready(&mut catalog, id);
+    catalog
+}
+
+#[test]
+fn manual_explorer_scroll_preserves_selection_and_keyboard_reveals_it_again() {
+    let catalog = scrolling_catalog();
+    let mut view = ExplorerView::default();
+    let original = view.prepare(&catalog, 4, 40);
+    let selected = view.selected();
+    let identity = (
+        catalog.generation(),
+        catalog.revision(),
+        catalog.owned_bytes(),
+    );
+    assert_eq!(original.first, 0);
+    assert!(view.scroll_by(&catalog, 10, 4));
+    for _ in 0..3 {
+        // Metadata-only preparation and repeated composition cannot undo a wheel intention.
+        view.prepare(&catalog, 0, 0);
+        let p = view.prepare(&catalog, 4, 40);
+        assert_eq!(p.first, 10);
+        assert!(p.rows.iter().all(|row| !row.selected));
+        assert_eq!(view.selected(), selected);
+        assert_eq!(catalog.visible_nodes().nth(10).unwrap().id, p.rows[0].id);
+    }
+    view.move_selection(&catalog, 1);
+    let p = view.prepare(&catalog, 4, 40);
+    assert!(p.rows.iter().any(|row| row.selected));
+    assert_eq!(p.first, 1);
+    assert_eq!(
+        (
+            catalog.generation(),
+            catalog.revision(),
+            catalog.owned_bytes()
+        ),
+        identity
+    );
+}
+
+#[test]
+fn explorer_scroll_clamps_extremes_resize_and_root_replacement_without_stale_selection() {
+    let mut catalog = scrolling_catalog();
+    let mut view = ExplorerView::default();
+    view.prepare(&catalog, 4, 40);
+    assert!(view.scroll_to(&catalog, usize::MAX, 4));
+    let p = view.prepare(&catalog, 4, 40);
+    assert_eq!(p.first, 61);
+    assert_eq!(p.rows.len(), 4);
+    assert!(!view.scroll_by(&catalog, isize::MAX, 4));
+    assert!(!view.scroll_to(&catalog, 0, 0));
+    assert_eq!(view.scroll(), 61);
+    assert!(view.scroll_by(&catalog, isize::MIN, 4));
+    assert_eq!(view.scroll(), 0);
+    view.last(&catalog);
+    assert!(view.prepare(&catalog, 4, 40).rows.last().unwrap().selected);
+    view.scroll_to(&catalog, 30, 4);
+    let wide = view.prepare(&catalog, usize::MAX, 40);
+    assert_eq!(wide.first, 0);
+    assert_eq!(wide.rows.len(), 65);
+    view.scroll_to(&catalog, 20, 4);
+    let old = view.selected().unwrap();
+    catalog.set_root(root("virtual-explorer-replaced")).unwrap();
+    let id = catalog.root_id().unwrap();
+    ready(&mut catalog, id);
+    view.select(old); // A late click from a previous catalog cannot select its replacement.
+    let p = view.prepare(&catalog, 4, 40);
+    assert_eq!(view.selected(), Some(id));
+    assert_eq!(p.first, 0);
+    assert!(p.rows[0].selected);
+}
+
 #[derive(Default)]
 struct Gate {
     state: Mutex<(bool, bool)>,

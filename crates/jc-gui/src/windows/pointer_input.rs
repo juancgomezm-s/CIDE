@@ -51,6 +51,7 @@ impl State {
         self.linear_drag = None;
         self.rectangle_drag = None;
         self.editor_scroll_drag = None;
+        self.explorer_scroll = Default::default();
         self.wheel = None;
     }
     pub(super) fn begin_linear_drag(&mut self, x: i32, y: i32, shift: bool) -> bool {
@@ -147,6 +148,7 @@ impl State {
         self.linear_drag = None;
         self.rectangle_drag = None;
         self.editor_scroll_drag = None;
+        self.explorer_scroll.drag = None;
         let modifiers = self.modifiers();
         if flags & 0x0c != 0
             || modifiers.contains(Modifiers::ALT)
@@ -155,8 +157,14 @@ impl State {
             || !self.pointer_source_available()
         {
             self.wheel = None;
+            self.explorer_scroll.clear_wheel();
             return false;
         }
+        if let Some(changed) = self.explorer_wheel(x, y, delta, lines) {
+            self.wheel = None;
+            return changed;
+        }
+        self.explorer_scroll.clear_wheel();
         if self.outline_wheel(x, y, delta, lines) {
             self.wheel = None;
             return true;

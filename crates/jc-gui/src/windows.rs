@@ -10,6 +10,7 @@ mod dpi;
 mod editor_scroll;
 mod explorer_paint;
 mod explorer_panel;
+mod explorer_scroll;
 mod explorer_smoke;
 mod ffi;
 mod folder;
@@ -402,6 +403,7 @@ struct State {
     explorer_visible: bool,
     explorer_focused: bool,
     explorer_hits: Option<explorer_panel::ExplorerHits>,
+    explorer_scroll: explorer_scroll::Interaction,
     outline: outline_panel::Outline,
     bottom: bottom_panel::BottomState,
     bottom_hits: Option<bottom_panel::BottomHits>,
@@ -533,6 +535,7 @@ impl State {
             explorer_visible: false,
             explorer_focused: false,
             explorer_hits: None,
+            explorer_scroll: Default::default(),
             outline: outline_panel::Outline::default(),
             bottom: Default::default(),
             bottom_hits: None,
@@ -1767,6 +1770,11 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 } else if state.status_click(x, y) {
                     // Status controls consume the click before source hit-testing.
                 } else if state.pointer_source_available()
+                    && message == WM_LBUTTONDOWN
+                    && state.begin_explorer_scroll(x, y)
+                {
+                    action = Action::CapturePointer;
+                } else if state.pointer_source_available()
                     && !state.bottom_click(x, y, message == WM_LBUTTONDBLCLK)
                     && !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK)
                     && message == WM_LBUTTONDOWN
@@ -1787,7 +1795,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             WM_MOUSEMOVE | WM_LBUTTONUP => {
-                redraw = state.rectangle_drag.is_some()
+                redraw = state.explorer_scroll.drag.is_some()
+                    || state.rectangle_drag.is_some()
                     || state.linear_drag.is_some()
                     || state.editor_scroll_drag.is_some();
                 let point = (
@@ -1803,7 +1812,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 if wparam & 1 != 0 || message == WM_LBUTTONUP {
                     let x = (lparam as u16) as i16 as i32;
                     let y = ((lparam as usize >> 16) as u16) as i16 as i32;
-                    if state.editor_scroll_drag.is_some() {
+                    if state.explorer_scroll.drag.is_some() {
+                        redraw = state.update_explorer_scroll(x, y) || hover_changed;
+                    } else if state.editor_scroll_drag.is_some() {
                         redraw = state.update_editor_scroll(x, y) || hover_changed;
                     } else if state.rectangle_drag.is_some() {
                         state.update_rectangle_drag(x, y);
@@ -1830,6 +1841,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         redraw |= state.validate_open_diff();
         redraw |= state.validate_source();
         state.schedule_outline();
+        state.validate_explorer_scroll();
         state.validate_rectangle_drag();
         state.validate_linear_drag();
         if redraw && !matches!(message, TASKS_MESSAGE | 0x113 | WM_CREATE) {
@@ -1936,6 +1948,7 @@ unsafe fn release_idle_capture(hwnd: Hwnd) {
         state.rectangle_drag.is_none()
             && state.linear_drag.is_none()
             && state.editor_scroll_drag.is_none()
+            && state.explorer_scroll.drag.is_none()
     });
     if idle && GetCapture() == hwnd {
         if let Some(m) = owner(hwnd) {

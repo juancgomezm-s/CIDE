@@ -236,6 +236,22 @@ fn draw_sidebar(
                     CellStyle::Accent,
                 );
             }
+            if let Some(bar) = crate::app::explorer_scrollbar(x, y, width, height, &frame.explorer)
+            {
+                for offset in 0..bar.length {
+                    let thumb = bar.thumb_contains(offset);
+                    screen.put_styled(
+                        bar.x,
+                        bar.y + offset,
+                        if thumb { '┃' } else { '│' },
+                        if thumb {
+                            CellStyle::Accent
+                        } else {
+                            CellStyle::Dim
+                        },
+                    );
+                }
+            }
         }
         SidebarView::Database => {
             screen.text(x + 1, y + 1, "Proveedor de esquema");

@@ -35,7 +35,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &ExplorerFrame, _ch: i32) -> Result<()
             Rect {
                 left: r.left + 6,
                 top,
-                right: r.right - 6,
+                right: r.right - px(10),
                 bottom: (top + px(shell::TREE_ROW)).min(r.bottom),
             },
             bg,
@@ -60,7 +60,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &ExplorerFrame, _ch: i32) -> Result<()
             Rect {
                 left: x + px(34),
                 top: top + px(4),
-                right: r.right - 10,
+                right: r.right - px(14),
                 bottom: (top + px(shell::TREE_ROW)).min(r.bottom),
             },
             &wide(&row.label),
@@ -86,7 +86,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &ExplorerFrame, _ch: i32) -> Result<()
             Rect {
                 left: r.left + px(18),
                 top: r.top + px(shell::TREE_HEAD + 6),
-                right: r.right - 10,
+                right: r.right - px(14),
                 bottom: (r.top + px(shell::TREE_HEAD + 54)).min(r.bottom),
             },
             &wide(&frame.presentation.message),
@@ -94,6 +94,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &ExplorerFrame, _ch: i32) -> Result<()
             shell::SIDEBAR,
         )?;
     }
+    super::explorer_scroll::draw(dc, frame)?;
     paint::fill(
         dc,
         Rect {

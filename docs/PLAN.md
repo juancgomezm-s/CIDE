@@ -2,6 +2,18 @@
 
 ## Estado de cierre M2 — 2026-11-04
 
+Actualización 2026-11-05: el Git embebido validado y los ajustes de interfaz
+anteriores están guardados en el commit local `223b050`. Se integra el siguiente
+bloque [navegación lateral](M2_SIDEBAR_NAVIGATION.md): rueda y barra del
+Explorador en GUI/TUI, viewport independiente de selección y atajos globales
+desde Símbolos. Ejecutables vigentes: `target/m2-sidebar-next/release`.
+254 pruebas selectivas, 138 checks nativos y siete ConPTY aprobaron; la corrida
+integral posterior pasó 683 pruebas del workspace con Rust1.88. Puertas actuales
+en [matriz de cierre](M2_CIERRE.md).
+M2 no se declara aceptado globalmente por pasar pruebas ocultas/privadas:
+siguen separadas IME real, traslado entre monitores y latencia física.
+Narrador/accesibilidad avanzada permanecen aplazados por Juan.
+
 Requisito autorizado e integrado: [motor Git Rust embebido](GIT_EMBEDDED_ENGINE.md),
 sin instalación de Git. `jc-git` enlaza gix 0.90.0 en GUI/TUI, reemplazando
 el runner externo para estado y blobs HEAD/índice. Rust 1.88.0 está instalado

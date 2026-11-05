@@ -44,6 +44,7 @@ mod visual_spanish_tests;
 #[cfg(test)]
 pub(crate) use git_status::GitStatusRow;
 pub(crate) use git_status::{git_status_list_height, GitStatusPresentation};
+pub(crate) use presentation::explorer_scrollbar;
 pub(crate) use presentation::Presentation;
 pub(crate) use presentation::{GitDiffRow, GitHunkRow, GitPresentation, GitRowKind};
 #[cfg(test)]

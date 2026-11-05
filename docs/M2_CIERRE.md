@@ -2,6 +2,32 @@
 
 ## Prioridad vigente de M2
 
+[Navegación lateral](M2_SIDEBAR_NAVIGATION.md) sustituye la rueda que movía la
+selección TUI y conecta la que faltaba en Archivos GUI. El viewport es propio
+de la vista del árbol, con barras navegables, hits por origen/generación/revisión
+y revelado explícito por teclado. Símbolos no consume Ctrl+RePág/AvPág.
+Pasaron 254 pruebas selectivas, 138 checks HWND y siete ConPTY. Binarios vigentes:
+`target/m2-sidebar-next/release`; el bloque Git previo está en `223b050`.
+El cierre integral y los límites se registran en VALIDACION; los apartados que
+siguen conservan la historia de versiones anteriores, no rutas recomendadas.
+
+La regresión integral final con Rust 1.88.0 aprobó 683 pruebas, cero fallos;
+tres helpers se ejecutan desde sus padres. Formato, Clippy workspace/todos los
+destinos y release offline aprobaron. Es cierre automatizado local: las puertas
+físicas de la tabla siguiente permanecen independientes.
+
+| Pendiente actual de aceptación | Tratamiento |
+|---|---|
+| IME de composición instalado | Pruebas nativas de contrato implementadas; falta sesión real de composición, cancelación y confirmación. No instalar/cambiar idioma del equipo por iniciativa propia. |
+| Traslado entre monitores | DPI 96/144/192 probado sintéticamente; falta segundo monitor activo para la aceptación física. |
+| Pantalla y terminal físicas | HWND/ConPTY y tiempos de confirmación de pintura no equivalen a latencia del compositor/panel ni a todos los terminales. |
+| Narrador/accesibilidad avanzada | Diferidos expresamente por Juan; no reabrir como prioridad. |
+| Selección exacta anterior a Undo | Mejora de UX prevista en F1; hoy contenido/posiciones se restauran con el mapa documentado. Requiere metadatos acotados y recuperables, no otro historial de contenido. |
+| Archivos editables de varios GB | Plan independiente; evidencia aislada paginada no implica integración al editor. No usar este cierre para anunciarla. |
+
+Las operaciones Git de escritura/red y proveedores AVM/semánticos no son
+pendientes que deban añadirse a M2 para suplir estas puertas de aceptación.
+
 [Motor Git embebido](GIT_EMBEDDED_ENGINE.md): estado y blobs HEAD/índice ya
 usan gix 0.90.0 dentro de GUI/TUI, sin instalar ni buscar Git. Sesiones v4
 con lectura de las anteriores y licencias conservadas. 533 pruebas por suites,

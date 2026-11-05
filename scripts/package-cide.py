@@ -28,6 +28,7 @@ FIXED = [
     "assets/branding/cide-tui-256.png", "assets/branding/cide-gui-256.png",
     "assets/branding/provenance.json", "README.md", "LICENSE", "LICENSING.md",
     "docs/GIT_EMBEDDED_ENGINE.md", "docs/GIT_EMBEDDED_LICENSES.md",
+    "docs/M2_SIDEBAR_NAVIGATION.md",
     "third_party/limetext-text-LICENSE", "third_party/unicode-17/LICENSE.txt",
 ]
 DEVELOPMENT = """CIDE 0.1.0 - Windows MSVC x64 development package

@@ -35,6 +35,234 @@ extern "system" {
         flags: u32,
     ) -> i32;
     fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
+    fn ClientToScreen(hwnd: Hwnd, point: *mut Point) -> i32;
+}
+
+struct OwnedOverflow {
+    root: PathBuf,
+    parent: PathBuf,
+    files: Vec<PathBuf>,
+}
+impl OwnedOverflow {
+    fn new(parent: &Path) -> Result<Self, String> {
+        let parent = parent.canonicalize().map_err(|e| e.to_string())?;
+        let root = parent.join("cide-explorer-scroll-smoke");
+        fs::create_dir(&root).map_err(|e| e.to_string())?;
+        let mut own = Self {
+            root,
+            parent,
+            files: Vec::new(),
+        };
+        for index in 0..80 {
+            let path = own.root.join(format!("archivo-{index:03}.txt"));
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .map_err(|e| e.to_string())?;
+            own.files.push(path);
+            file.write_all(b"owned scroll fixture\r\n")
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(own)
+    }
+}
+impl Drop for OwnedOverflow {
+    fn drop(&mut self) {
+        // Only exact registered files, never recursive deletion or catalog paths.
+        if !ordinary(&self.root).unwrap_or(false)
+            || self
+                .root
+                .canonicalize()
+                .ok()
+                .as_deref()
+                .and_then(Path::parent)
+                != Some(self.parent.as_path())
+        {
+            return;
+        }
+        for path in &self.files {
+            if ordinary(path).unwrap_or(false)
+                && path.canonicalize().ok().as_deref().and_then(Path::parent)
+                    == Some(self.root.as_path())
+            {
+                let _ = fs::remove_file(path);
+            }
+        }
+        let _ = fs::remove_dir(&self.root);
+    }
+}
+
+unsafe fn scroll_messages(hwnd: Hwnd, parent: &Path) -> Result<Vec<&'static str>, String> {
+    let own = OwnedOverflow::new(parent)?;
+    let (previous_root, previous_focus) = {
+        let state = owner(hwnd)
+            .ok_or("Explorer scroll lost HWND")?
+            .state
+            .borrow();
+        (
+            state
+                .project_root
+                .clone()
+                .ok_or("Explorer scroll needs its fixture root")?,
+            state.explorer_focused,
+        )
+    };
+    let result = (|| {
+        owner(hwnd)
+            .unwrap()
+            .state
+            .borrow_mut()
+            .set_project_root(own.root.canonicalize().map_err(|e| e.to_string())?)?;
+        let root = owner(hwnd)
+            .unwrap()
+            .state
+            .borrow()
+            .explorer
+            .root_id()
+            .unwrap();
+        ready(hwnd, root)?;
+        {
+            let mut state = owner(hwnd).unwrap().state.borrow_mut();
+            state.explorer_focused = previous_focus;
+            state.key_override = Some(Modifiers::NONE);
+            state.smoke_wheel_lines = Some(3);
+        }
+        actual_paint(hwnd);
+        let (rect, selected, before) = {
+            let state = owner(hwnd).unwrap().state.borrow();
+            let hits = state
+                .explorer_hits
+                .as_ref()
+                .ok_or("Scroll paint published no Explorer hits")?;
+            if hits.first != 0 || hits.total <= hits.capacity {
+                return Err("Scroll fixture did not overflow from origin zero".into());
+            }
+            (hits.rect, state.explorer_view.selected(), snapshot(hwnd)?)
+        };
+        let mut point = Point {
+            x: rect.left + 20,
+            y: rect.top + 100,
+        };
+        if ClientToScreen(hwnd, &mut point) == 0 {
+            return Err("Cannot translate own wheel point".into());
+        }
+        let packed = |x: i32, y: i32| ((y as u16 as usize) << 16 | x as u16 as usize) as isize;
+        SendMessageW(
+            hwnd,
+            WM_MOUSEWHEEL,
+            (-120i16 as u16 as usize) << 16,
+            packed(point.x, point.y),
+        );
+        {
+            let state = owner(hwnd).unwrap().state.borrow();
+            if state.explorer_view.scroll() == 0
+                || state.explorer_view.selected() != selected
+                || state.explorer_focused != previous_focus
+                || state.explorer_hits.is_some()
+            {
+                return Err(
+                    "Native wheel lost selection/focus, failed scroll, or retained stale hits"
+                        .into(),
+                );
+            }
+        }
+        // No paint between the new viewport and this old row coordinate. It must
+        // not open a different file using a previous frame's typed identity.
+        SendMessageW(
+            hwnd,
+            WM_LBUTTONDBLCLK,
+            1,
+            packed(rect.left + 70, rect.top + 70),
+        );
+        if snapshot(hwnd)? != before {
+            return Err("Stale Explorer row opened/navigated another identity".into());
+        }
+        actual_paint(hwnd);
+        SendMessageW(
+            hwnd,
+            WM_LBUTTONDOWN,
+            1,
+            packed(rect.right - 4, rect.bottom - 1),
+        );
+        if GetCapture() != hwnd
+            || owner(hwnd)
+                .unwrap()
+                .state
+                .borrow()
+                .explorer_scroll
+                .drag
+                .is_none()
+        {
+            return Err("Explorer rail did not retain own HWND capture".into());
+        }
+        SendMessageW(
+            hwnd,
+            WM_MOUSEMOVE,
+            1,
+            packed(rect.right - 4, rect.top - 100),
+        );
+        {
+            let state = owner(hwnd).unwrap().state.borrow();
+            if state.explorer_view.scroll() != 0
+                || state.explorer_view.selected() != selected
+                || state.explorer_focused != previous_focus
+                || GetCapture() != hwnd
+            {
+                return Err(
+                    "Explorer drag did not reach origin with stable selection/focus/capture".into(),
+                );
+            }
+        }
+        SendMessageW(
+            hwnd,
+            WM_LBUTTONUP,
+            0,
+            packed(rect.right - 4, rect.top - 100),
+        );
+        if GetCapture() == hwnd
+            || owner(hwnd)
+                .unwrap()
+                .state
+                .borrow()
+                .explorer_scroll
+                .drag
+                .is_some()
+        {
+            return Err("Explorer rail left mouse capture after button release".into());
+        }
+        if snapshot(hwnd)? != before {
+            return Err("Explorer scrolling edited source or its caret".into());
+        }
+        Ok(vec![
+            "explorer_native_wheel_preserves_focus_selection_source",
+            "explorer_native_stale_viewport_click_rejected",
+            "explorer_native_rail_capture_drag_release",
+        ])
+    })();
+    // Restore the ordinary catalog before the exact owned fixture is removed.
+    let restored = {
+        let mut state = owner(hwnd)
+            .ok_or("Explorer scroll lost HWND")?
+            .state
+            .borrow_mut();
+        state.cancel_pointer();
+        state.key_override = None;
+        state.smoke_wheel_lines = None;
+        let restored = state.set_project_root(previous_root);
+        state.explorer_focused = previous_focus;
+        restored
+    };
+    restored?;
+    let root = owner(hwnd)
+        .unwrap()
+        .state
+        .borrow()
+        .explorer
+        .root_id()
+        .unwrap();
+    ready(hwnd, root)?;
+    result
 }
 struct OwnSize {
     hwnd: Hwnd,
@@ -428,6 +656,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         }
     }
     checks.push("explorer_root_native_delivery_no_input_git_excluded");
+    checks.extend(scroll_messages(hwnd, &parent)?);
 
     let folder = select_label(hwnd, "cide-explorer-smoke", true)?;
     if owner(hwnd)

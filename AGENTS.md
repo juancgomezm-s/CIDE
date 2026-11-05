@@ -1,5 +1,22 @@
 # Working on JC-IDE
 
+## Current sidebar navigation closure — 2026-11-05
+
+Read docs/M2_SIDEBAR_NAVIGATION.md before changing sidebar input. ExplorerView
+owns viewport separately from selection: scroll_by/to never move the node;
+select/keyboard movement reveal it again. Presentation.first participates in
+GUI/TUI hit/drag identities. Keep wheel focus/caret unchanged, bounded128 rows,
+catalog generation/revision checks and native capture ownership. GUI/TUI current
+binaries are target/m2-sidebar-next/release; preserve previous paths. Seven new
+regressions,254 selective tests,138 own-HWND checks and7 private ConPTY checks
+passed. One full workspace Rust1.88 runtime run passed683 tests, three helpers
+invoked by parents; fmt/workspace all-target Clippy/release passed. Logs in
+VALIDACION.md; no physical acceptance. Do not repeat suites for docs-only changes.
+Git embedded block is committed locally as223b050. Keep CI dormant. Narrator stays
+deferred; real IME/second-monitor availability must be confirmed, never inferred
+from synthetic DPI/IME contracts. Exact historical selection restoration remains
+the F1 UX improvement: no second content undo or unbounded view snapshots.
+
 ## Current embedded Rust Git closure — 2026-11-05
 
 Read docs/GIT_EMBEDDED_ENGINE.md and docs/GIT_EMBEDDED_LICENSES.md first for Git.

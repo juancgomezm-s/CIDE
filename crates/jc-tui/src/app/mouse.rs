@@ -133,7 +133,7 @@ struct FrameStamp {
     active: PaneId,
     sidebar: (bool, SidebarView),
     bottom: (bool, BottomPanel),
-    explorer: (u64, u64),
+    explorer: (u64, u64, usize),
     browser: (u64, u64),
     sources: [Option<SourceContext>; 2],
     tabs: Vec<TabId>,
@@ -147,7 +147,11 @@ impl FrameStamp {
             active: app.workbench.panes().active(),
             sidebar: (app.panels.sidebar_visible(), app.panels.sidebar()),
             bottom: (app.panels.bottom_visible(), app.panels.bottom()),
-            explorer: (app.explorer.generation(), app.explorer.revision()),
+            explorer: (
+                app.explorer.generation(),
+                app.explorer.revision(),
+                app.explorer_view.scroll(),
+            ),
             browser: (
                 app.file_browser.catalog.generation(),
                 app.file_browser.catalog.revision(),
@@ -189,6 +193,7 @@ enum Action {
     Source(usize),
     Scroll(PaneId, ScrollBar),
     Explorer(NodeId),
+    ExplorerScroll(ScrollBar),
     Bottom(usize),
     Symbol(usize),
     GitStatus(usize),
@@ -208,7 +213,7 @@ struct Hit {
 #[derive(Clone, Copy)]
 enum Wheel {
     Source(usize),
-    Explorer,
+    Explorer(usize),
     Browser,
     Bottom,
     Menu,
@@ -239,11 +244,18 @@ struct ScrollDrag {
     grab: u16,
     previous: u16,
 }
+struct ExplorerScrollDrag {
+    stamp: FrameStamp,
+    bar: ScrollBar,
+    grab: u16,
+    rows: usize,
+}
 #[derive(Default)]
 pub(crate) struct MouseState {
     frame: Option<Box<MouseFrame>>,
     drag: Option<LinearDrag>,
     scroll_drag: Option<ScrollDrag>,
+    explorer_drag: Option<ExplorerScrollDrag>,
 }
 impl MouseState {
     pub(super) fn frame_changed(&mut self) {
@@ -316,6 +328,7 @@ impl TuiApp {
         self.mouse.frame = None;
         self.mouse.drag = None;
         self.mouse.scroll_drag = None;
+        self.mouse.explorer_drag = None;
     }
     fn mouse_source_available(&self) -> bool {
         matches!(self.overlay, UiOverlay::None)
@@ -337,6 +350,22 @@ impl TuiApp {
         ),
     ) {
         let (symbols, git_status, git) = aux;
+        if self.mouse.explorer_drag.as_ref().is_some_and(|drag| {
+            !self.mouse_source_available()
+                || !drag.stamp.current(self, false)
+                || !super::explorer_scrollbar(
+                    0,
+                    2,
+                    layout.sidebar_width,
+                    layout.content_height,
+                    explorer,
+                )
+                .is_some_and(|bar| {
+                    bar.x == drag.bar.x && bar.y == drag.bar.y && bar.length == drag.bar.length
+                })
+        }) {
+            self.mouse.explorer_drag = None;
+        }
         if self.mouse.drag.as_ref().is_some_and(|drag| {
             !self.mouse_source_available()
                 || SourceContext::capture(self, drag.context.pane).as_ref() != Some(&drag.context)
@@ -521,9 +550,22 @@ impl TuiApp {
                             action: Action::Explorer(item.id),
                         });
                     }
+                    if let Some(bar) =
+                        super::explorer_scrollbar(area.x, area.y, area.width, area.height, explorer)
+                    {
+                        frame.hits.push(Hit {
+                            area: Rect {
+                                x: bar.x,
+                                y: bar.y,
+                                width: 1,
+                                height: bar.length,
+                            },
+                            action: Action::ExplorerScroll(bar),
+                        });
+                    }
                     frame.wheels.push(WheelHit {
                         area,
-                        action: Wheel::Explorer,
+                        action: Wheel::Explorer(usize::from(area.height.saturating_sub(4))),
                     });
                 }
                 SidebarView::Symbols => {
@@ -689,6 +731,12 @@ impl TuiApp {
     }
     pub(crate) fn handle_mouse(&mut self, event: MouseEvent) -> bool {
         match event.kind {
+            MouseEventKind::Drag(MouseButton::Left) if self.mouse.explorer_drag.is_some() => {
+                return self.drag_explorer_scrollbar(event, false);
+            }
+            MouseEventKind::Up(MouseButton::Left) if self.mouse.explorer_drag.is_some() => {
+                return self.drag_explorer_scrollbar(event, true);
+            }
             MouseEventKind::Drag(MouseButton::Left) if self.mouse.scroll_drag.is_some() => {
                 return self.drag_scrollbar(event, false);
             }
@@ -706,6 +754,7 @@ impl TuiApp {
             | MouseEventKind::ScrollDown => {
                 self.mouse.drag = None;
                 self.mouse.scroll_drag = None;
+                self.mouse.explorer_drag = None;
             }
             _ => return false,
         }
@@ -743,9 +792,8 @@ impl TuiApp {
                         usize::from(area.area.height),
                     )
                 }
-                Some(Wheel::Explorer) => {
-                    self.explorer_view.move_selection(&self.explorer, delta);
-                    true
+                Some(Wheel::Explorer(rows)) => {
+                    self.explorer_view.scroll_by(&self.explorer, delta, rows)
                 }
                 Some(Wheel::Browser) => {
                     self.file_browser.path_focused = false;
@@ -843,6 +891,32 @@ impl TuiApp {
                 self.begin_mouse_source(frame.sources[index].clone(), event)
             }
             Some(Action::Scroll(pane, bar)) => self.begin_scrollbar(pane, bar, event),
+            Some(Action::ExplorerScroll(bar)) => {
+                if !event.modifiers.is_empty() {
+                    return false;
+                }
+                let offset = bar.pointer_offset(event.column, event.row);
+                let on_thumb = bar.thumb_contains(offset);
+                let grab = if on_thumb {
+                    offset - bar.thumb_start
+                } else {
+                    bar.thumb_length / 2
+                };
+                if !on_thumb {
+                    self.explorer_view.scroll_to(
+                        &self.explorer,
+                        bar.target(offset, grab),
+                        usize::from(bar.length),
+                    );
+                }
+                self.mouse.explorer_drag = Some(ExplorerScrollDrag {
+                    stamp: FrameStamp::capture(self),
+                    bar,
+                    grab,
+                    rows: usize::from(bar.length),
+                });
+                true
+            }
             Some(Action::Explorer(id)) => {
                 self.explorer_view.select(id);
                 let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
@@ -948,6 +1022,27 @@ impl TuiApp {
         }
         self.mouse.scroll_drag = Some(drag);
         true
+    }
+    fn drag_explorer_scrollbar(&mut self, event: MouseEvent, release: bool) -> bool {
+        let Some(mut drag) = self.mouse.explorer_drag.take() else {
+            return false;
+        };
+        if !self.mouse_source_available() || !drag.stamp.current(self, false) {
+            return false;
+        }
+        let offset = drag.bar.pointer_offset(event.column, event.row);
+        let changed = self.explorer_view.scroll_to(
+            &self.explorer,
+            drag.bar.target(offset, drag.grab),
+            drag.rows,
+        );
+        drag.stamp = FrameStamp::capture(self);
+        // Old row hit targets must not be usable until the scrolled list is painted.
+        self.mouse.frame = None;
+        if !release {
+            self.mouse.explorer_drag = Some(drag);
+        }
+        changed
     }
     fn drag_scrollbar(&mut self, event: MouseEvent, release: bool) -> bool {
         let Some(mut drag) = self.mouse.scroll_drag.take() else {

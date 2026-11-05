@@ -17,12 +17,18 @@ pub(super) struct ExplorerHits {
     pub revision: u64,
     pub rect: Rect,
     pub rows: Vec<(NodeId, usize, Rect)>,
+    pub first: usize,
+    pub total: usize,
+    pub capacity: usize,
 }
 impl ExplorerFrame {
     pub(super) fn hits(&self, _ch: i32) -> ExplorerHits {
         ExplorerHits {
             generation: self.presentation.generation,
             revision: self.presentation.revision,
+            first: self.presentation.first,
+            total: self.presentation.total,
+            capacity: super::explorer_scroll::capacity(self.rect, self.dpi),
             rect: self.rect,
             rows: self
                 .presentation
@@ -41,7 +47,7 @@ impl ExplorerFrame {
                         Rect {
                             left: self.rect.left,
                             top,
-                            right: self.rect.right,
+                            right: self.rect.right - self.dpi.pixels(10),
                             bottom: (top + row_height).min(self.rect.bottom),
                         },
                     )
@@ -266,6 +272,7 @@ impl State {
         };
         if hits.generation != self.explorer.generation()
             || hits.revision != self.explorer.revision()
+            || hits.first != self.explorer_view.scroll()
             || hits.rect.left != region.left
             || hits.rect.right != region.right
             || hits.rect.top != region.top

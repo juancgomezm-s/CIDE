@@ -1,5 +1,39 @@
 # Validación
 
+## Navegación lateral y atajos de foco — 2026-11-05
+
+[Contrato del bloque](M2_SIDEBAR_NAVIGATION.md), posterior al commit Git
+embebido `223b050`. Pasaron 254 pruebas selectivas: catálogo 10, GUI 78+6 y
+TUI 155+5. Siete regresiones nuevas. Clippy workspace/all-targets con warnings
+denegados y release workspace offline aprobaron. Logs `work/m2-sidebar-*`.
+
+138 checks GUI nativos con PATH vacío aprobaron: tres nuevos verifican rueda,
+foco/selección conservados, clic obsoleto y captura/arrastre/liberación con
+mensajes del HWND propio. Informe
+`work/native-gui-smoke/20261105T230359Z-158d0e06c998`.
+ConPTY pasó siete checks, salida 0, 50 archivos sin cambios:
+`work/sidebar-conpty/20261105T230518Z-b9eac20e/report.json`.
+El primer intento de ConPTY falló por esperar el nombre completo en ancho
+compacto; se corrigió únicamente el oracle para el texto correctamente recortado.
+No implica ratón/pantalla físicos ni una nueva aceptación IME/DPI entre monitores.
+Ejecutables nuevos: `target/m2-sidebar-next/release`.
+
+Regresión integral posterior: `cargo test --workspace --locked --offline --
+--test-threads=1` aprobó con Rust 1.88.0: 683 pruebas, cero fallos y tres
+helpers marcados como ignorados que se invocan desde sus respectivos padres.
+Log `work/m2-sidebar-workspace-tests.log`, resumen en
+`work/m2-sidebar-workspace-summary.json`. Esta sí fue una corrida integral,
+distinta del cierre por suites del motor. Formato final volvió a aprobar;
+no se repitieron perfiles CPU, RAM ni aceptación física.
+
+Paquete verificado: `work/packages/CIDE-M2-laterales-20261105.zip`, 351 archivos
+y seis ejecutables, 11 513 642 bytes. CRC y todos los hashes del manifest
+coinciden; las licencias de los 127 paquetes nuevos están incluidas y verificadas.
+SHA-256: `514dd94c53ba588d6cc1bdda73e3012cb33ce844a318ca23bdc6a5c1af24931e`.
+Conserva las dos omisiones previas de avisos GNU condicionales declaradas en el
+manifest; no corresponde al destino MSVC construido. Informe
+`work/m2-sidebar-package-verified.json`. Sin instalación, push ni CI.
+
 ## Git embebido Rust, GUI y TUI — 2026-11-05
 
 [Contrato y costes](GIT_EMBEDDED_ENGINE.md). Proveedor `jc-git` con gix 0.90.0;

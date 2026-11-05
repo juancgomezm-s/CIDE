@@ -156,6 +156,25 @@ impl ScrollBar {
     }
 }
 
+pub(crate) fn explorer_scrollbar(
+    x: u16,
+    y: u16,
+    width: u16,
+    height: u16,
+    explorer: &jc_app::explorer::ExplorerPresentation,
+) -> Option<ScrollBar> {
+    let rows = height.saturating_sub(4).min(128);
+    (width >= 2 && rows > 0 && explorer.total > usize::from(rows)).then(|| {
+        ScrollBar::new(
+            (x + width - 1, y + 2),
+            rows,
+            true,
+            explorer.first,
+            explorer.total.saturating_sub(usize::from(rows)),
+        )
+    })
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct EditorText {
     pub bars: Option<[ScrollBar; 2]>,

@@ -2,6 +2,19 @@
 
 ## Prioridad vigente — pulido de interfaz y edición M2
 
+Último bloque: [navegación lateral](M2_SIDEBAR_NAVIGATION.md). GUI/TUI vigentes
+en `target/m2-sidebar-next/release`, conservando todas las rutas anteriores.
+El motor Git y el pulido previo están en commit local `223b050`; el nuevo bloque
+está cerrado y documentado para su propio commit. 254 pruebas selectivas,
+138 checks nativos y siete ConPTY aprobaron. Cierre integral: 683 pruebas del
+workspace, formato, Clippy todos los destinos y release aprobados con Rust1.88.
+Paquete verificado: `work/packages/CIDE-M2-laterales-20261105.zip`.
+No reactivar Narrador ni repetir perfiles CPU. Las pruebas físicas de IME y
+segundo monitor requieren confirmar su disponibilidad; no se simulan como
+aceptación física. La semántica vigente de undo conserva texto y mapea posiciones;
+restaurar exactamente la selección histórica es mejora pendiente de F1, no un
+fallo del historial de contenido ni licencia para introducir uno paralelo.
+
 Juan autorizó adaptar gitoxide. El [motor embebido](GIT_EMBEDDED_ENGINE.md)
 sustituye el proveedor externo de estado y blobs en ambas interfaces.
 `jc-git` fija gix 0.90.0; toolchain Rust 1.88.0 local al workspace.

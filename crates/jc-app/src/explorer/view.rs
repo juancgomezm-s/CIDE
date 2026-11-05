@@ -6,6 +6,7 @@ pub struct ExplorerView {
     ancestors: Vec<NodeId>,
     generation: u64,
     scroll: usize,
+    manual_scroll: bool,
 }
 pub struct ExplorerPresentation {
     pub title: String,
@@ -13,6 +14,8 @@ pub struct ExplorerPresentation {
     pub rows: Vec<ExplorerRow>,
     pub selected: usize,
     pub total: usize,
+    /// Global ordinal of the first visible row, independent of selection.
+    pub first: usize,
     pub generation: u64,
     pub revision: u64,
 }
@@ -73,6 +76,7 @@ impl ExplorerView {
         // normalize still rejects an ID from any other catalog generation.
         self.generation = id.generation;
         self.selected = Some(id);
+        self.manual_scroll = false;
     }
     fn normalize(&mut self, catalog: &ProjectExplorer) {
         if self.generation != catalog.generation() {
@@ -80,11 +84,13 @@ impl ExplorerView {
             self.selected = catalog.root_id();
             self.ancestors.clear();
             self.scroll = 0;
+            self.manual_scroll = false;
         }
         let visible = self
             .selected
             .is_some_and(|id| catalog.visible_nodes().any(|n| n.id == id));
         if !visible {
+            self.manual_scroll = false;
             self.selected = self
                 .ancestors
                 .iter()
@@ -105,6 +111,7 @@ impl ExplorerView {
         self.ancestors.reverse();
     }
     pub fn move_selection(&mut self, catalog: &ProjectExplorer, delta: isize) {
+        self.manual_scroll = false;
         self.normalize(catalog);
         let total = catalog.visible_nodes().count();
         let index = catalog
@@ -116,15 +123,18 @@ impl ExplorerView {
         self.normalize(catalog);
     }
     pub fn first(&mut self, catalog: &ProjectExplorer) {
+        self.manual_scroll = false;
         self.selected = catalog.root_id();
         self.normalize(catalog);
     }
     pub fn last(&mut self, catalog: &ProjectExplorer) {
+        self.manual_scroll = false;
         self.normalize(catalog);
         self.selected = catalog.visible_nodes().last().map(|n| n.id);
         self.normalize(catalog);
     }
     pub fn parent(&mut self, catalog: &ProjectExplorer) {
+        self.manual_scroll = false;
         self.normalize(catalog);
         if let Some(parent) = self
             .selected
@@ -134,6 +144,44 @@ impl ExplorerView {
             self.selected = Some(parent);
         }
         self.normalize(catalog);
+    }
+    /// Viewport origin, never the selected node's ordinal.
+    pub fn scroll(&self) -> usize {
+        self.scroll
+    }
+    /// Move only the viewport. Keyboard selection explicitly reveals itself again.
+    pub fn scroll_by(
+        &mut self,
+        catalog: &ProjectExplorer,
+        delta: isize,
+        visible_rows: usize,
+    ) -> bool {
+        self.normalize(catalog);
+        let count = visible_rows.min(128);
+        if count == 0 {
+            return false;
+        }
+        let max = catalog.visible_nodes().count().saturating_sub(count);
+        let target = super::shift_index(self.scroll.min(max), delta, max);
+        self.scroll_to(catalog, target, count)
+    }
+    /// Absolute scrollbar intention; clamps before publication and never opens a node.
+    pub fn scroll_to(
+        &mut self,
+        catalog: &ProjectExplorer,
+        first: usize,
+        visible_rows: usize,
+    ) -> bool {
+        self.normalize(catalog);
+        let count = visible_rows.min(128);
+        if count == 0 {
+            return false;
+        }
+        let next = first.min(catalog.visible_nodes().count().saturating_sub(count));
+        let changed = self.scroll != next;
+        self.scroll = next;
+        self.manual_scroll = true;
+        changed
     }
     pub fn prepare(
         &mut self,
@@ -150,7 +198,7 @@ impl ExplorerView {
         let count = max_rows.min(128).min(total);
         let cols = max_cols.min(256);
         self.scroll = self.scroll.min(total.saturating_sub(count));
-        if count > 0 {
+        if count > 0 && !self.manual_scroll {
             if selected < self.scroll {
                 self.scroll = selected;
             } else if selected >= self.scroll + count {
@@ -211,6 +259,7 @@ impl ExplorerView {
             rows,
             selected,
             total,
+            first: self.scroll,
             generation: catalog.generation(),
             revision: catalog.revision(),
         }

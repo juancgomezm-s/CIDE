@@ -96,6 +96,8 @@ impl TuiApp {
         }
         if self.focus.primary() == PrimaryFocus::Sidebar
             && self.panels.sidebar() == SidebarView::Symbols
+            && (key.modifiers.is_empty()
+                || key.code == KeyCode::Enter && key.modifiers == KeyModifiers::CONTROL)
             && matches!(
                 key.code,
                 KeyCode::Up

@@ -52,6 +52,133 @@ fn find(screen: &Screen, text: &str) -> (u16, u16) {
     panic!("visible text missing: {text}")
 }
 #[test]
+fn explorer_wheel_and_scrollbar_preserve_selection_focus_and_reject_stale_rows() {
+    use crossterm::event::{KeyCode, KeyEvent};
+    use jc_app::{explorer::ExplorerLoadState, SidebarView};
+    let fixture = super::file_browser_tests::Fixture::new();
+    for index in 0..50 {
+        fixture.put(&format!("archivo{index:02}.txt"), b"sin cambios");
+    }
+    let (mut app, wake) = fixture.app();
+    let end = Instant::now() + Duration::from_secs(5);
+    loop {
+        let ticket = wake.ticket();
+        app.poll_tasks();
+        let root = app.explorer.root_id().unwrap();
+        if app.explorer.node(root).unwrap().state() == ExplorerLoadState::Ready {
+            break;
+        }
+        assert!(Instant::now() < end);
+        wake.wait(ticket, Some(Duration::from_millis(10)));
+    }
+    app.workbench.new_file("sin tocar.txt", TextEncoding::Utf8);
+    let tab = app.workbench.tabs().active_id();
+    app.panels.show_sidebar(SidebarView::Explorer);
+    assert!(app.focus.focus(PrimaryFocus::Editor, &app.panels));
+    let frame = app.prepare_frame(100, 24);
+    let bar = super::explorer_scrollbar(
+        0,
+        2,
+        frame.layout.sidebar_width,
+        frame.layout.content_height,
+        &frame.explorer,
+    )
+    .unwrap();
+    let selected = app.explorer_view.selected();
+    mouse(
+        &mut app,
+        MouseEventKind::ScrollDown,
+        4,
+        6,
+        KeyModifiers::NONE,
+    );
+    mouse(
+        &mut app,
+        MouseEventKind::ScrollDown,
+        4,
+        6,
+        KeyModifiers::NONE,
+    );
+    assert_eq!(app.explorer_view.scroll(), 6);
+    assert_eq!(app.explorer_view.selected(), selected);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
+    // The old painted node at this position must not activate after a wheel event.
+    click(&mut app, 4, 6, KeyModifiers::NONE);
+    assert_eq!(app.explorer_view.selected(), selected);
+    assert_eq!(app.workbench.tabs().active_id(), tab);
+    let frame = app.prepare_frame(100, 24);
+    assert_eq!(frame.explorer.first, 6);
+    let bar = super::explorer_scrollbar(
+        0,
+        2,
+        frame.layout.sidebar_width,
+        frame.layout.content_height,
+        &frame.explorer,
+    )
+    .unwrap_or(bar);
+    mouse(
+        &mut app,
+        MouseEventKind::Down(MouseButton::Left),
+        bar.x,
+        bar.y + bar.thumb_start,
+        KeyModifiers::NONE,
+    );
+    mouse(
+        &mut app,
+        MouseEventKind::Drag(MouseButton::Left),
+        bar.x,
+        bar.y + bar.length - 1,
+        KeyModifiers::NONE,
+    );
+    assert_eq!(app.explorer_view.scroll(), bar.maximum);
+    app.frame(60, 12);
+    let compact = app.explorer_view.scroll();
+    // Changing geometry invalidates an in-progress drag.
+    mouse(
+        &mut app,
+        MouseEventKind::Drag(MouseButton::Left),
+        bar.x,
+        bar.y,
+        KeyModifiers::NONE,
+    );
+    assert_eq!(app.explorer_view.scroll(), compact);
+    assert_eq!(app.explorer_view.selected(), selected);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
+    assert!(app.focus.focus(PrimaryFocus::Sidebar, &app.panels));
+    app.handle_event(Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
+    let frame = app.prepare_frame(60, 12);
+    assert!(frame.explorer.rows.iter().any(|row| row.selected));
+    assert!(frame.explorer.first < compact);
+}
+
+#[test]
+fn symbols_sidebar_keeps_global_tab_shortcuts_and_plain_page_navigation() {
+    use crossterm::event::{KeyCode, KeyEvent};
+    use jc_app::SidebarView;
+    let mut app = app("uno");
+    let first = app.workbench.tabs().active_id();
+    app.workbench.new_file("dos.txt", TextEncoding::Utf8);
+    let second = app.workbench.tabs().active_id();
+    app.panels.show_sidebar(SidebarView::Symbols);
+    assert!(app.focus.focus(PrimaryFocus::Sidebar, &app.panels));
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::PageUp,
+        KeyModifiers::CONTROL,
+    )));
+    assert_eq!(app.workbench.tabs().active_id(), first);
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::PageDown,
+        KeyModifiers::CONTROL,
+    )));
+    assert_eq!(app.workbench.tabs().active_id(), second);
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::PageUp,
+        KeyModifiers::NONE,
+    )));
+    assert_eq!(app.workbench.tabs().active_id(), second);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Sidebar);
+}
+#[test]
 fn mouse_scrollbars_move_the_view_without_moving_the_caret() {
     let source = format!("{}\r\n", "abcd".repeat(40)).repeat(80);
     let mut app = app(&source);
