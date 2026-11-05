@@ -1593,3 +1593,14 @@ ejecutados desde sus pruebas padre. Formato, Clippy y compilación optimizada
 aprobados. La GUI pasó 131 comprobaciones en ventana propia y la TUI 23 en
 ConPTY, incluida recuperación. La GUI pasó también su recorrido aislado de
 recuperación periódica. [Matriz de cierre y pendientes](M2_CIERRE.md).
+
+## UI Automation del editor GUI — 2026-11-04
+
+Pasaron 13 comprobaciones desde un cliente Windows en otro proceso, con
+la GUI optimizada y una ventana propia oculta. Cubren nombre del documento,
+Unicode con BOM y CRLF, lectura y movimiento por rangos, coordenadas del
+cursor, selección lineal, foco simulado y caducidad tras editar. También
+pasaron las 55 pruebas unitarias GUI, 131 comprobaciones del recorrido
+nativo integral, formato, Clippy y compilación optimizada. El cliente
+nativo se registra en `work/m2-uia-native.log`. La verificación con
+lector de pantalla sigue abierta. [Contrato y límites](M2_CIERRE.md).

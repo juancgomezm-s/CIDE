@@ -11,7 +11,7 @@ proveedores de lenguaje avanzados pertenecen a M3–M4.
 | TUI en terminal privada | 23 comprobaciones entre explorador, ratón, español/Markdown y recuperación periódica. Se usa ConPTY propio y archivos sintéticos. |
 | GUI en Windows | 131 comprobaciones integrales con ventana propia, entre ellas cambios de DPI simulados a 96/144/192. Dos recorridos adicionales de 16 comprobaciones cada uno cubren herramientas de código y marco. Recuperación periódica confirmada en siete comprobaciones con tres procesos aislados. |
 | Interoperabilidad | Pendiente probar portapapeles entre aplicaciones, IME instalado y cambio real de monitor en un escritorio de referencia. |
-| Accesibilidad | Pendiente exponer el editor personalizado a UI Automation y verificarlo con lector de pantalla. La navegación de teclado tiene cobertura propia. |
+| Accesibilidad | El editor nativo ya expone el grupo activo mediante UI Automation. Un cliente de Windows en otro proceso verificó lectura de rangos, foco, cursor, selección y rechazo de revisiones obsoletas. Sigue pendiente comprobarlo con un lector de pantalla. |
 | Rendimiento | GUI oculta, archivo UTF-8 de 4095 bytes, Windows 10.0.26300, siete muestras tras una de calentamiento. Arranque hasta respuesta del marco p95 de 31,10 ms y máximo de 2,15 MiB privados en ese punto. Faltan la medición con ventana visible, las cargas amplias y la latencia hasta pantalla física. |
 | Archivos de varios GB | La prueba aislada de lectura paginada sigue vigente. La instantánea privada y el documento editable de varios GB conservan su plan separado. |
 
@@ -34,7 +34,7 @@ IME empleado.
    tras reiniciar. Para automatización, mantener aislado el depósito de sesión
    y usar una memoria de portapapeles inyectada.
 5. Registrar lectura de nombres y estados, foco, cursor y selección con
-   lector de pantalla cuando esté conectado el proveedor de accesibilidad.
+   un lector de pantalla, tanto al editar como al cambiar de grupo.
 
 Los objetivos cuantitativos y el corpus se conservan en el
 [plan de M2](PLAN.md). El historial de resultados está en
@@ -61,11 +61,36 @@ deshabilitada y sin garantizar el tiempo hasta el primer cuadro visible.
 [Cambio de DPI en Win32](https://learn.microsoft.com/en-us/windows/win32/hidpi/wm-dpichanged)
 · [Procesamiento de composición IME](https://learn.microsoft.com/en-us/windows/win32/intl/processing-the-wm-ime-composition-message).
 
-## Siguiente bloque de cierre
+## UI Automation del editor nativo
 
-Conectar un proveedor UI Automation para el editor nativo. Exponer por grupo
-la identidad del documento, el foco, la selección y el texto mediante
-lecturas por rango sobre el modelo compartido. Las llamadas del lector de
-pantalla deben respetar revisiones y cuotas y observar cambios de foco sin
-materializar el documento. Validar consultas y cambios en una ventana propia
-antes de ejecutar el recorrido con un lector de pantalla.
+El proveedor del marco expone el documento del grupo activo mediante
+`TextPattern` y `TextPattern2`. Los rangos capturan identidad de documento,
+vista, codificación y revisión. Las peticiones COM llegan al hilo dueño
+mediante identificadores opacos y una cola acotada. El proveedor lee el
+modelo compartido y publica cambios de foco, selección y texto.
+
+Los clientes pueden leer por rangos, mover extremos por carácter, línea
+o documento, consultar el cursor y su geometría, convertir coordenadas en
+rangos y aplicar una selección lineal. La lectura admite 64 KiB de fuente
+y 65536 unidades UTF-16 por llamada. Los bytes inválidos se representan
+mediante escapes en la salida accesible. La selección rectangular, los
+otros paneles de la aplicación y las funciones de búsqueda de TextPattern
+quedan fuera de este incremento.
+
+`scripts/smoke-uia-gui.py --exe target/uia-next/release/cide-gui.exe`
+crea una ventana oculta y un cliente de Windows independiente. Usa un
+archivo sintético, recuperación desactivada y ninguna interacción con
+otras ventanas. La prueba distingue un evento de foco enviado al marco
+de una verificación real con Narrador o NVDA.
+
+[Patrones Text y TextRange de Windows](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-implementingtextandtextrange).
+
+La siguiente puerta es la aceptación en un escritorio con lector de
+pantalla e IME instalados, portapapeles entre aplicaciones y monitores de
+distinta escala. Las mediciones visibles se registrarán con ese entorno.
+
+Con UI Automation integrado, el recorrido de arranque oculto de siete
+muestras dio p95 de 36,38 ms y un máximo de 2,39 MiB privados hasta respuesta
+del marco. La comprobación del marco y el dibujo fuera de pantalla pasó
+16 casos. Estos resultados se registran en `work/m2-uia-startup.log` y
+`work/m2-uia-shell.log`.

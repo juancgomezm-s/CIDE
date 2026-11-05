@@ -4,8 +4,9 @@
 
 La [matriz de cierre](M2_CIERRE.md) reúne la evidencia automatizada y las
 puertas restantes. La GUI ya responde a cambios de DPI y confirma composición
-IME como una edición. Quedan abiertos UI Automation, la aceptación física
-en escritorio y las mediciones actuales de proceso y pantalla.
+IME como una edición. UI Automation expone el grupo activo, incluidos foco,
+cursor, selección y texto por rangos. Quedan abiertas la aceptación física
+con lector de pantalla y las mediciones con ventana visible.
 
 ## Estado vigente — recuperación periódica y limpieza segura, 2026-11-03
 

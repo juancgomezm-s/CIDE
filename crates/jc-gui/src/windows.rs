@@ -64,6 +64,7 @@ mod snippet_panel;
 mod source_panel;
 mod syntax_smoke;
 mod tab_bar;
+mod uia;
 mod workflow_smoke;
 use crate::GuiOptions;
 use ffi::*;
@@ -1374,6 +1375,8 @@ struct Owner {
     frame_preparations: Cell<usize>,
     menu_theme: RefCell<Option<std::rc::Rc<menu_theme::Theme>>>,
     hwnd_owned: Cell<bool>,
+    uia_id: usize,
+    uia_events: Cell<Option<uia::EventState>>,
 }
 // Caller bounds the returned reference to a live HWND; never retain it across
 // DestroyWindow. Dialog/message calls are made only after RefCell guards end.
@@ -1430,6 +1433,23 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     let Some(owner) = owner(hwnd) else {
         return DefWindowProcW(hwnd, message, wparam, lparam);
     };
+    if message == uia::GET_OBJECT && lparam as i32 == -25 {
+        return uia::get_object(uia::Window::new(hwnd, owner.uia_id), wparam, lparam);
+    }
+    if message == uia::REQUEST {
+        if uia::serve(uia::Window::new(hwnd, owner.uia_id), wparam, &owner.state) {
+            owner.frame_dirty.set(true);
+            InvalidateRect(hwnd, std::ptr::null(), 0);
+            PostMessageW(hwnd, uia::NOTIFY, owner.uia_id, 0);
+        }
+        return 0;
+    }
+    if message == uia::NOTIFY {
+        if wparam == owner.uia_id {
+            uia::notify(hwnd);
+        }
+        return 0;
+    }
     if message == 0x84 {
         let layout = {
             let state = owner.state.borrow();
@@ -1807,6 +1827,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             owner.frame_dirty.set(true);
         }
         InvalidateRect(hwnd, std::ptr::null(), 0);
+        uia::notify(hwnd);
     }
     if handled_ime && lparam & ime::PREEDIT != 0 && IsWindow(hwnd) != 0 {
         // Preserve native preedit for mixed commit/composition messages.
@@ -2090,6 +2111,8 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
         frame_preparations: Cell::new(0),
         menu_theme: RefCell::new(None),
         hwnd_owned: Cell::new(false),
+        uia_id: uia::identity(),
+        uia_events: Cell::new(None),
     });
     let class = wide(&format!("JCIDE.Native.{}", std::process::id()));
     unsafe {
