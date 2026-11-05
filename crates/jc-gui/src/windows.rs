@@ -24,6 +24,7 @@ mod markdown_panel;
 mod menu_input;
 mod menu_invoker_smoke;
 mod menu_theme;
+mod message_dialog;
 mod native_menu;
 mod navigation_paint;
 mod navigation_panel;
@@ -62,9 +63,11 @@ mod shell_smoke;
 mod smoke;
 mod snippet_panel;
 mod source_panel;
+mod status_bar;
 mod syntax_smoke;
 mod tab_bar;
 mod uia;
+mod untitled;
 mod workflow_smoke;
 use crate::GuiOptions;
 use ffi::*;
@@ -351,11 +354,6 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         CommandId::GitStatusCancel,
         "Cancelar estado del re&positorio",
     ),
-    (
-        148,
-        CommandId::GitConfigureExecutable,
-        "Elegir &ejecutable Git...",
-    ),
 ];
 pub(super) fn command_id(command: CommandId) -> usize {
     COMMANDS
@@ -375,7 +373,6 @@ enum Action {
     SelectorClipboard(CommandId, Box<selector_input::SelectorInputTarget>),
     PasteProject(u64),
     PasteReplacement(u64),
-    ConfigureGit(git_panel::GitIntent),
     ChooseFolder,
     Open(bool),
     SaveAs,
@@ -434,9 +431,8 @@ struct State {
     project_workers: usize,
     replace_panel: Option<replace_panel::ReplacePanel>,
     replace_generation: u64,
-    git_executable: Option<PathBuf>,
-    git_context: Option<(PathBuf, PathBuf)>,
-    git_last_intent: git_panel::GitIntent,
+    git_status_due: bool,
+    git_context: Option<PathBuf>,
     git_source: jc_app::git_read::GitBlobSource,
     git_panel: Option<git_panel::GitIntent>,
     git_view: git_view::GitView,
@@ -510,9 +506,7 @@ impl State {
         if font.is_null() {
             return Err(os_error("Crear fuente monoespaciada nativa"));
         }
-        let ui_face = wide("Segoe UI");
-        let ui_created =
-            unsafe { CreateFontW(-14, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, ui_face.as_ptr()) };
+        let ui_created = unsafe { dpi::ui_font(dpi::Dpi::BASE) };
         let ui_font = if ui_created.is_null() {
             unsafe { GetStockObject(17) }
         } else {
@@ -566,9 +560,8 @@ impl State {
             project_workers: options.search_workers.unwrap_or(2),
             replace_panel: None,
             replace_generation: 0,
-            git_executable: options.git_executable.clone(),
+            git_status_due: false,
             git_context: None,
-            git_last_intent: git_panel::GitIntent::Status,
             git_source: jc_app::git_read::GitBlobSource::Head,
             git_panel: None,
             git_view: Default::default(),
@@ -655,9 +648,8 @@ impl State {
     fn new_document(&mut self) {
         self.bottom.focused = false;
         self.explorer_focused = false;
-        self.next_untitled += 1;
         self.workbench.new_file(
-            format!("Sin título {}.txt", self.next_untitled),
+            untitled::next_name(&self.workbench),
             self.encoding.unwrap_or(TextEncoding::Utf8),
         );
     }
@@ -699,12 +691,14 @@ impl State {
                 && self.git_panel.is_none()
         };
         if explorer_focus {
-            context.can_open_to_side = !self.outline_focused()
-                && self
-                    .explorer_view
+            context.can_open_to_side = if self.outline_focused() {
+                self.outline_ready()
+            } else {
+                self.explorer_view
                     .selected()
                     .and_then(|id| self.explorer.node(id))
-                    .is_some_and(|n| !n.is_dir());
+                    .is_some_and(|n| !n.is_dir())
+            };
         }
         context.has_project = self.project_root.is_some();
         context.project_search_running =
@@ -852,7 +846,11 @@ impl State {
                 return Action::None;
             }
             CommandId::EditorOpenToSide if self.explorer_focused => {
-                self.activate_explorer(true, false);
+                if self.outline_focused() {
+                    self.activate_outline(true);
+                } else {
+                    self.activate_explorer(true, false);
+                }
                 return Action::None;
             }
             CommandId::GitRepositoryStatus | CommandId::GitStatusRefresh => {
@@ -881,7 +879,10 @@ impl State {
                 self.cancel_git(git_panel::GitIntent::Status);
                 return Action::None;
             }
-            CommandId::GitConfigureExecutable => return Action::ConfigureGit(self.git_last_intent),
+            CommandId::GitConfigureExecutable => {
+                self.status = "Motor Git integrado en CIDE".into();
+                return Action::None;
+            }
             CommandId::SearchReplaceProject => {
                 self.open_project_replace();
                 return Action::None;
@@ -1009,6 +1010,7 @@ impl State {
                 }
                 if command == CommandId::FileSave {
                     self.save_count += 1;
+                    self.schedule_git_status();
                 }
                 self.status = if self.context().rectangular_selection {
                     "Listo · el portapapeles rectangular sigue interno"
@@ -1244,12 +1246,15 @@ impl State {
             0x28 => self.workbench.move_vertical(1, select),
             0x24 => self.workbench.move_home(select),
             0x23 => self.workbench.move_end(select),
-            0x21 => self
-                .workbench
-                .move_vertical(-((self.height / self.cell_height).max(1) as isize), select),
-            0x22 => self
-                .workbench
-                .move_vertical((self.height / self.cell_height).max(1) as isize, select),
+            0x21 | 0x22 => {
+                let rows = paint::text_areas(self)
+                    .into_iter()
+                    .find(|area| area.pane == self.workbench.panes().active())
+                    .map_or(1, |area| area.capacity_rows.max(1))
+                    as isize;
+                self.workbench
+                    .move_vertical(if code == 0x21 { -rows } else { rows }, select)
+            }
             _ => return (false, Action::None),
         };
         if let Err(error) = result {
@@ -1368,6 +1373,7 @@ fn supported(command: CommandId) -> bool {
 /// Box remains Rust-owned during CreateWindowEx. Only after success does the
 /// HWND acquire ownership; failed creation cannot double-free an NCCREATE pointer.
 struct Owner {
+    client_capture: Cell<bool>,
     state: RefCell<State>,
     buffer: RefCell<back_buffer::Buffer>,
     frame: RefCell<Option<std::rc::Rc<paint::Frame>>>,
@@ -1466,6 +1472,11 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             owner.frame.borrow_mut().take();
             owner.frame_dirty.set(true);
             state.refresh_dpi(hwnd, dpi::Dpi::from_raw((wparam >> 16) as u16 as u32));
+            if let Some(theme) = owner.menu_theme.borrow().as_ref() {
+                if let Err(error) = theme.set_dpi(state.dpi) {
+                    state.error(error);
+                }
+            }
         } else {
             return 0;
         }
@@ -1620,6 +1631,11 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     }
                 }
                 state.refresh_dpi(hwnd, dpi::for_window(hwnd));
+                if let Some(theme) = owner.menu_theme.borrow().as_ref() {
+                    if let Err(error) = theme.set_dpi(state.dpi) {
+                        state.error(error);
+                    }
+                }
             }
             TASKS_MESSAGE => {
                 redraw = state.poll_tasks();
@@ -1648,7 +1664,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     }
                 }
             }
-            WM_SETFOCUS => state.focused = true,
+            WM_SETFOCUS => {
+                state.focused = true;
+                state.schedule_git_status();
+            }
             WM_KILLFOCUS => {
                 state.cancel_pointer();
                 state.interaction_epoch = state.interaction_epoch.saturating_add(1);
@@ -1710,9 +1729,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             WM_MOUSEWHEEL => {
+                redraw = false;
                 if let Some((point, lines)) = wheel {
                     let lines = state.smoke_wheel_lines.unwrap_or(lines);
-                    state.pointer_wheel(
+                    redraw = state.pointer_wheel(
                         point.x,
                         point.y,
                         ((wparam >> 16) as u16) as i16 as i32,
@@ -1742,6 +1762,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     };
                 } else if let Some(tab_action) = tab_action {
                     action = tab_action;
+                } else if let Some(git_action) = state.status_git_click(x, y) {
+                    action = git_action;
+                } else if state.status_click(x, y) {
+                    // Status controls consume the click before source hit-testing.
                 } else if state.pointer_source_available()
                     && !state.bottom_click(x, y, message == WM_LBUTTONDBLCLK)
                     && !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK)
@@ -1771,7 +1795,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     ((lparam as usize >> 16) as u16) as i16 as i32,
                 );
                 let hover = chrome::action_at(state.chrome_layout(), point.0, point.1);
-                if state.chrome_hover != hover {
+                let hover_changed = state.chrome_hover != hover;
+                if hover_changed {
                     state.chrome_hover = hover;
                     redraw = true;
                 }
@@ -1779,7 +1804,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     let x = (lparam as u16) as i16 as i32;
                     let y = ((lparam as usize >> 16) as u16) as i16 as i32;
                     if state.editor_scroll_drag.is_some() {
-                        state.update_editor_scroll(x, y);
+                        redraw = state.update_editor_scroll(x, y) || hover_changed;
                     } else if state.rectangle_drag.is_some() {
                         state.update_rectangle_drag(x, y);
                     } else {
@@ -1791,6 +1816,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             WM_CAPTURECHANGED | WM_CANCELMODE => {
+                if message == WM_CAPTURECHANGED && GetCapture() != hwnd {
+                    owner.client_capture.set(false);
+                }
                 state.cancel_pointer();
             }
             WM_CLOSE => action = Action::Exit,
@@ -1901,10 +1929,18 @@ unsafe fn file_dialog_named(
 unsafe fn release_idle_capture(hwnd: Hwnd) {
     // Release can synchronously send WM_CAPTURECHANGED; drop the borrow first.
     let idle = owner(hwnd).is_some_and(|m| {
+        if !m.client_capture.get() {
+            return false;
+        }
         let state = m.state.borrow();
-        state.rectangle_drag.is_none() && state.linear_drag.is_none()
+        state.rectangle_drag.is_none()
+            && state.linear_drag.is_none()
+            && state.editor_scroll_drag.is_none()
     });
     if idle && GetCapture() == hwnd {
+        if let Some(m) = owner(hwnd) {
+            m.client_capture.set(false);
+        }
         ReleaseCapture();
     }
 }
@@ -1912,7 +1948,7 @@ unsafe fn release_idle_capture(hwnd: Hwnd) {
 unsafe fn perform(hwnd: Hwnd, action: Action) {
     if matches!(
         action,
-        Action::Open(_) | Action::SaveAs | Action::ChooseFolder | Action::ConfigureGit(_)
+        Action::Open(_) | Action::SaveAs | Action::ChooseFolder
     ) && owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke)
     {
         if let Some(owner) = owner(hwnd) {
@@ -1924,6 +1960,9 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
     match action {
         Action::CapturePointer => {
             SetCapture(hwnd);
+            if let Some(m) = owner(hwnd) {
+                m.client_capture.set(GetCapture() == hwnd);
+            }
             if GetCapture() != hwnd {
                 if let Some(model) = owner(hwnd) {
                     let mut state = model.state.borrow_mut();
@@ -1940,7 +1979,6 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             }
         }
         Action::None => {}
-        Action::ConfigureGit(intent) => git_panel::configure(hwnd, intent),
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
         Action::PasteNavigation(generation) => clipboard_flow::paste_navigation(hwnd, generation),
@@ -2025,6 +2063,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                         Ok(()) => {
                             state.save_count += 1;
                             state.status = "Guardado".into();
+                            state.schedule_git_status();
                         }
                         Err(error) => state.error(error),
                     },
@@ -2043,36 +2082,14 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         }
         Action::Exit => {
             if let Some(owner) = owner(hwnd) {
-                let result = owner.state.borrow_mut().checkpoint_session();
-                match result {
-                    Ok(true) => {
-                        DestroyWindow(hwnd);
-                        return;
-                    }
-                    Ok(false) => {}
-                    Err(error) => {
-                        owner
-                            .state
-                            .borrow_mut()
-                            .error(format!("No se cerró el editor: {error}"));
-                        return;
-                    }
+                let result = owner.state.borrow_mut().prepare_exit();
+                if let Err(error) = result {
+                    owner
+                        .state
+                        .borrow_mut()
+                        .error(format!("No se cerró el editor: {error}"));
+                    return;
                 }
-            }
-            let dirty = owner(hwnd)
-                .is_some_and(|owner| owner.state.borrow().workbench.context().dirty_documents > 0);
-            if dirty
-                && MessageBoxW(
-                    hwnd,
-                    wide(
-                        "¿Cerrar y descartar TODOS los cambios sin guardar? Guarda los documentos para conservarlos.",
-                    )
-                    .as_ptr(),
-                    wide("CIDE").as_ptr(),
-                    0x134,
-                ) != 6
-            {
-                return;
             }
             DestroyWindow(hwnd);
         }
@@ -2080,15 +2097,6 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
 }
 
 pub(super) fn run(options: GuiOptions) -> Result<(), String> {
-    if options
-        .git_executable
-        .as_ref()
-        .is_some_and(|p| !p.is_absolute() || p.as_os_str().len() > 4096)
-    {
-        return Err(
-            "Elige una ruta absoluta del ejecutable Git de hasta4096 unidades nativas".into(),
-        );
-    }
     if options
         .search_workers
         .is_some_and(|n| !(1..=4).contains(&n))
@@ -2104,6 +2112,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
     // The HWND adopts this thread context when it is created.
     let _dpi_context = unsafe { dpi::ThreadContext::enter() };
     let mut owner = Box::new(Owner {
+        client_capture: Cell::new(false),
         state: RefCell::new(State::new(&options)?),
         buffer: RefCell::new(back_buffer::Buffer::default()),
         frame: RefCell::new(None),

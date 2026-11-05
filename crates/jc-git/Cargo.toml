@@ -1,0 +1,11 @@
+[package]
+name = "jc-git"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+description = "Embedded Rust Git engine for CIDE"
+license = "MIT"
+
+[dependencies]
+gix = { version = "=0.90.0", default-features = false, features = ["status", "revision", "sha1", "sha256"] }

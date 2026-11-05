@@ -14,17 +14,17 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args_os().skip(1).collect();
-    if args.len() != 2 {
+    if args.len() != 1 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "usage: git_status ABSOLUTE_GIT_EXECUTABLE ABSOLUTE_REPOSITORY_ROOT",
+            "Uso: git_status RAÍZ_ABSOLUTA_DEL_REPOSITORIO",
         )
         .into());
     }
-    let reader = GitReader::new(&args[0])?;
+    let reader = GitReader::new()?;
     let snapshot = read_status(
         &reader,
-        Path::new(&args[1]),
+        Path::new(&args[0]),
         GitStatusReadOptions::default(),
         || false,
     )?;

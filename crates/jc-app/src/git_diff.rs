@@ -22,7 +22,6 @@ const READ_LIMIT: &str = "El blob Git excede los límites de comparación";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitDiffOptions {
-    pub git_executable: PathBuf,
     pub root: PathBuf,
     /// Absolute launch context for a FileSession whose stored path is relative.
     pub cwd: PathBuf,
@@ -217,7 +216,6 @@ impl GitDiffController {
                 return Err(READ_LIMIT);
             }
             if [
-                options.git_executable.as_path(),
                 options.root.as_path(),
                 options.cwd.as_path(),
                 document.session.path(),
@@ -227,12 +225,9 @@ impl GitDiffController {
             {
                 return Err("La ruta de comparación Git excede el límite de metadatos");
             }
-            if !options.git_executable.is_absolute()
-                || !options.root.is_absolute()
-                || !options.cwd.is_absolute()
-            {
+            if !options.root.is_absolute() || !options.cwd.is_absolute() {
                 return Err(
-                    "El ejecutable Git, la raíz del repositorio y el directorio de inicio deben ser absolutos",
+                    "La raíz del repositorio y el directorio de inicio deben ser absolutos",
                 );
             }
             let stamp = TaskStamp {
@@ -569,8 +564,7 @@ fn compute(
     if cancel.is_cancelled() {
         return Err("Comparación Git cancelada".into());
     }
-    let reader = GitReader::new(&work.options.git_executable)
-        .map_err(|e| bounded_error(format!("Ejecutable Git: {e}")))?;
+    let reader = GitReader::new().map_err(|e| bounded_error(format!("Motor Git: {e}")))?;
     let blob = reader
         .read_blob(
             &root,

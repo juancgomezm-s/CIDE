@@ -179,6 +179,7 @@ pub fn default_menu_model() -> MenuModel {
                 command(EditCopy),
                 command(EditPaste),
                 command(EditSelectAll),
+                SEP,
                 command(SourceComplete),
                 command(SourceRename),
                 command(EditInsertSnippet),
@@ -197,11 +198,6 @@ pub fn default_menu_model() -> MenuModel {
                 command(EditSplitLine),
                 SEP,
                 command(EditRectangleStart),
-                command(EditRectangleLeft),
-                command(EditRectangleRight),
-                command(EditRectangleUp),
-                command(EditRectangleDown),
-                command(EditRectangleCancel),
             ],
         ),
         menu(
@@ -221,9 +217,6 @@ pub fn default_menu_model() -> MenuModel {
                 command(SearchSelectionNext),
                 command(SearchSelectionPrevious),
                 command(SearchGoToPosition),
-                command(SearchCancel),
-                command(SearchHistoryPrevious),
-                command(SearchHistoryNext),
             ],
         ),
         menu(
@@ -231,40 +224,16 @@ pub fn default_menu_model() -> MenuModel {
             "Proyecto",
             'p',
             &[
-                command(ViewExplorer),
                 command(ExplorerRefresh),
-                command(ExplorerCancel),
-                command(ViewDatabase),
+                SEP,
                 command(ViewSymbols),
                 command(SourceReferences),
                 command(SourceCalls),
                 command(SourceIncoming),
                 command(SourceDependencies),
-                command(SourceRefresh),
-                command(SourceCancel),
-                command(SourceAccept),
-                command(SourceOpenToSide),
             ],
         ),
-        menu(
-            Build,
-            "Compilar",
-            'c',
-            &[
-                command(ProgressCheck),
-                command(ProgressCompile),
-                SEP,
-                command(ProgressRun),
-                SEP,
-                command(ProgressRefreshSchema),
-            ],
-        ),
-        menu(
-            Tools,
-            "Herramientas",
-            'h',
-            &[command(PaletteOpen), command(ViewTerminal)],
-        ),
+        menu(Tools, "Herramientas", 'h', &[command(PaletteOpen)]),
         menu(
             View,
             "Ver",
@@ -273,17 +242,7 @@ pub fn default_menu_model() -> MenuModel {
                 command(ViewToggleInvisibles),
                 command(ViewMarkdownPreview),
                 command(ViewExplorer),
-                command(ViewDatabase),
                 command(ViewGit),
-                command(ViewSymbols),
-                command(SourceReferences),
-                command(SourceCalls),
-                command(SourceIncoming),
-                command(SourceDependencies),
-                command(SourceRefresh),
-                command(SourceCancel),
-                command(SourceAccept),
-                command(SourceOpenToSide),
                 SEP,
                 command(ViewProblems),
                 command(ViewOutput),
@@ -292,8 +251,6 @@ pub fn default_menu_model() -> MenuModel {
                 SEP,
                 command(EditorSplitRight),
                 command(EditorOneGroup),
-                command(EditorFocusPrimary),
-                command(EditorFocusSecondary),
                 command(EditorTogglePin),
                 command(EditorToggleScrollLink),
                 command(EditorOpenToSide),
@@ -307,15 +264,53 @@ pub fn default_menu_model() -> MenuModel {
                 command(GitRepositoryStatus),
                 command(GitStatusRefresh),
                 command(GitStatusCancel),
-                command(GitConfigureExecutable),
                 SEP,
                 command(DiffCompareOpen),
-                command(DiffRefreshOpen),
-                command(DiffCancelOpen),
-                command(DiffOpenNavigateLeft),
-                command(DiffOpenNavigateRight),
             ],
         ),
-        menu(Help, "Ayuda", 'y', &[]),
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn menus_have_unique_entry_points_and_keep_context_mechanics_in_registry() {
+        let model = default_menu_model();
+        let registry = crate::default_registry();
+        assert!(model.validate(&registry).is_empty());
+        assert!(model.get(MenuId::Build).is_none());
+        assert!(model.get(MenuId::Help).is_none());
+        let mut commands = BTreeSet::new();
+        for menu in model.menus() {
+            for item in &menu.items {
+                if let MenuItem::Command(command) = item {
+                    assert!(
+                        commands.insert(*command),
+                        "duplicate menu entry {command:?}"
+                    );
+                }
+            }
+        }
+        for command in [
+            CommandId::EditRectangleLeft,
+            CommandId::SourceAccept,
+            CommandId::SearchHistoryNext,
+            CommandId::SnippetNext,
+            CommandId::ViewTerminal,
+            CommandId::ViewDatabase,
+            CommandId::ProgressCheck,
+            CommandId::ProgressCompile,
+            CommandId::ProgressRun,
+            CommandId::ProgressRefreshSchema,
+        ] {
+            assert!(registry.contains(command));
+            assert!(!commands.contains(&command));
+        }
+        assert!(commands.contains(&CommandId::SourceIncoming));
+        assert!(commands.contains(&CommandId::SourceDependencies));
+        assert!(commands.contains(&CommandId::SourceRename));
+    }
 }

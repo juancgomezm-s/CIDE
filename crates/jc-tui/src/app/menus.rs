@@ -5,6 +5,15 @@ use jc_app::{CommandId, MenuId, Overlay};
 impl TuiApp {
     pub(crate) fn open_menu(&mut self, command: CommandId) {
         if let Some(menu) = menu_for_command(command) {
+            if self.menus.get(menu).is_none() {
+                self.status = match menu {
+                    MenuId::Build => "Compilar requiere un proveedor AVM configurado (M3)",
+                    MenuId::Help => "La ayuda integrada aún no está disponible",
+                    _ => "Este menú no está disponible",
+                }
+                .into();
+                return;
+            }
             self.open_focus_overlay(Overlay::Menu);
             let entries = self.menu_commands(menu);
             self.overlay = UiOverlay::Menu {
@@ -73,15 +82,6 @@ impl TuiApp {
         if matches!(self.overlay, UiOverlay::QuickOpen { .. }) {
             self.quick_open.clear();
             self.quick_open_root = None;
-        }
-        if matches!(
-            self.overlay,
-            UiOverlay::Prompt {
-                kind: crate::state::PromptKind::GitExecutable,
-                ..
-            }
-        ) {
-            self.git_configuration_target = None;
         }
         self.overlay = UiOverlay::None;
         let _ = self.focus.close_overlay();

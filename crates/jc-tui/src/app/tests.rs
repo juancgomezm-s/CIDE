@@ -509,7 +509,9 @@ fn view_menu_scrolls_to_the_selected_command_in_a_short_terminal() {
     app.dispatch(CommandId::MenuView);
     key(&mut app, KeyCode::Up, KeyModifiers::NONE); // wrap to the final registered command
     let screen = app.frame(45, 10);
-    assert!((1..9).any(|row| screen.row_text(row).contains("bloque de diferencias")));
+    // The final entry now starts comparison; per-hunk navigation stays in
+    // the comparison panel rather than duplicating its controls in View.
+    assert!((1..9).any(|row| screen.row_text(row).contains("Comparar grupos abiertos")));
     // Menu interiors must be opaque even when shorter labels leave spare cells.
     for row in 2..8 {
         assert!(!screen

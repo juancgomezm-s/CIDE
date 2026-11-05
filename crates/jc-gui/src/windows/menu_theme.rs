@@ -153,6 +153,8 @@ pub(super) struct Statistics {
 }
 pub(super) struct Theme {
     font: Handle,
+    scaled_font: Cell<Handle>,
+    dpi: Cell<super::dpi::Dpi>,
     palette: Cell<Palette>,
     brushes: RefCell<Brushes>,
     menus: RefCell<Vec<(Handle, bool)>>,
@@ -196,22 +198,7 @@ fn plain_label(label: &str) -> String {
 }
 impl Theme {
     pub(super) unsafe fn new() -> Result<Self, String> {
-        let font = CreateFontW(
-            -14,
-            0,
-            0,
-            0,
-            400,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            5,
-            0,
-            wide("Segoe UI").as_ptr(),
-        );
+        let font = super::dpi::ui_font(super::dpi::Dpi::BASE);
         if font.is_null() {
             return Err("No se pudo preparar la tipografía del menú".into());
         }
@@ -225,6 +212,8 @@ impl Theme {
         };
         Ok(Self {
             font,
+            scaled_font: Cell::new(null_mut()),
+            dpi: Cell::new(super::dpi::Dpi::BASE),
             palette: Cell::new(palette),
             brushes: RefCell::new(brushes),
             menus: RefCell::new(Vec::new()),
@@ -234,6 +223,28 @@ impl Theme {
             style_updates: Cell::new(0),
             width_calculations: Cell::new(0),
         })
+    }
+    pub(super) unsafe fn set_dpi(&self, dpi: super::dpi::Dpi) -> Result<(), String> {
+        if self.dpi.get() == dpi {
+            return Ok(());
+        }
+        let font = if dpi == super::dpi::Dpi::BASE {
+            null_mut()
+        } else {
+            let font = super::dpi::ui_font(dpi);
+            if font.is_null() {
+                return Err(
+                    "No se pudo ajustar la tipografía del menú a la escala de la ventana".into(),
+                );
+            }
+            font
+        };
+        let previous = self.scaled_font.replace(font);
+        self.dpi.set(dpi);
+        if !previous.is_null() {
+            DeleteObject(previous);
+        }
+        Ok(())
     }
     pub(super) fn statistics(&self) -> Statistics {
         Statistics {
@@ -488,6 +499,9 @@ impl Theme {
                 27,
             ),
         };
+        let dpi = self.dpi.get();
+        item.width = dpi.pixels(item.width as i32) as u32;
+        item.height = dpi.pixels(item.height as i32) as u32;
         self.measures.set(self.measures.get().saturating_add(1));
         Ok(true)
     }
@@ -509,6 +523,7 @@ impl Theme {
             return Ok(false);
         }
         let palette = self.palette.get();
+        let px = |value| self.dpi.get().pixels(value);
         let selected = item.state & (1 | 0x40) != 0;
         let disabled = item.state & (2 | 4) != 0;
         let brush = {
@@ -531,8 +546,8 @@ impl Theme {
             }
             if entry.kind == Kind::Separator {
                 let rect = Rect {
-                    left: item.rect.left + 28,
-                    right: item.rect.right - 8,
+                    left: item.rect.left + px(28),
+                    right: item.rect.right - px(8),
                     top: (item.rect.top + item.rect.bottom) / 2,
                     bottom: (item.rect.top + item.rect.bottom) / 2 + 1,
                 };
@@ -542,7 +557,8 @@ impl Theme {
                 }
                 return Ok(());
             }
-            SelectObject(item.dc, self.font);
+            let scaled = self.scaled_font.get();
+            SelectObject(item.dc, if scaled.is_null() { self.font } else { scaled });
             SetBkMode(item.dc, 1);
             SetTextColor(
                 item.dc,
@@ -553,8 +569,13 @@ impl Theme {
                 },
             );
             let mut text = Rect {
-                left: item.rect.left + if entry.kind == Kind::Bar { 12 } else { 30 },
-                right: item.rect.right - 12,
+                left: item.rect.left + px(if entry.kind == Kind::Bar { 12 } else { 30 }),
+                right: item.rect.right
+                    - px(if entry.shortcut_width > 0 {
+                        entry.shortcut_width + 24
+                    } else {
+                        12
+                    }),
                 ..item.rect
             };
             if DrawTextW(
@@ -569,8 +590,8 @@ impl Theme {
             }
             if entry.shortcut.len() > 1 {
                 let mut right = Rect {
-                    left: item.rect.right - entry.shortcut_width - 16,
-                    right: item.rect.right - 12,
+                    left: item.rect.right - px(entry.shortcut_width + 16),
+                    right: item.rect.right - px(12),
                     ..item.rect
                 };
                 SetTextColor(
@@ -595,8 +616,8 @@ impl Theme {
             if item.state & 8 != 0 && entry.kind == Kind::Item {
                 let mark = wide("✓");
                 let mut gutter = Rect {
-                    left: item.rect.left + 7,
-                    right: item.rect.left + 26,
+                    left: item.rect.left + px(7),
+                    right: item.rect.left + px(26),
                     ..item.rect
                 };
                 if DrawTextW(item.dc, mark.as_ptr(), 1, &mut gutter, 0x20 | 4 | 0x800) == 0 {
@@ -650,6 +671,9 @@ impl Drop for Theme {
     fn drop(&mut self) {
         unsafe {
             DeleteObject(self.font);
+            if !self.scaled_font.get().is_null() {
+                DeleteObject(self.scaled_font.get());
+            }
         }
     }
 }

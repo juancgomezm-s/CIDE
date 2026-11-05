@@ -1,5 +1,75 @@
 # Continuación local — después del bloque de evidencia M2
 
+## Prioridad vigente — pulido de interfaz y edición M2
+
+Juan autorizó adaptar gitoxide. El [motor embebido](GIT_EMBEDDED_ENGINE.md)
+sustituye el proveedor externo de estado y blobs en ambas interfaces.
+`jc-git` fija gix 0.90.0; toolchain Rust 1.88.0 local al workspace.
+Los binarios nuevos están en `target/embedded-git-next/release` y preservan
+los anteriores. Las sesiones GUI v4 leen v1/v2/v3, ignorando la ruta Git antigua.
+Las licencias se conservan en `third_party/gitoxide` y se incluyen en el ZIP.
+Paquete nuevo: `work/packages/CIDE-git-embebido-20261105.zip` (CRC/manifest
+verificados, seis ejecutables). 533 pruebas por suites, 135 checks GUI con
+PATH vacío, formato, Clippy workspace/todos los destinos y release aprobaron.
+Estado y comparación siguen siendo de solo lectura; escrituras y red son M5.
+Consultar VALIDACION.md por los resultados y límites concretos de este bloque.
+
+El [bloque Git anterior](M2_GIT_INTEGRADO_OMNI.md) sustituyó la selección manual
+por detección automática, adaptando el flujo de OmniCore/OmniCoder a Rust.
+GUI/TUI actuales en `target/git-integrated-next/release`. El recorrido nativo
+GUI pasó 135 checks, incluido resolver instalado sin selector, con Git y
+fuentes sintéticos intactos. Preservar solo lectura y ejecución fuera de pintura.
+
+Último bloque: [Git GUI utilizable desde el estado](M2_GIT_GUI_STATUS_UX.md),
+con configuración explícita recordada, actualización por eventos y contador
+del resultado aceptado. La leyenda F6 se quitó solo de GUI. Pasaron 75+6
+pruebas GUI y 134 checks nativos integrales. GUI actual:
+`target/git-ux-next/release/cide-gui.exe`; TUI conserva `target/m2-panels-next/release`.
+Metadatos gráficos v3 leen v1/v2. Mantener Git de solo lectura y fuera de pintura.
+
+El bloque más reciente es [marco/pestañas/paneles](M2_SHELL_PANELS_MENUS.md).
+Código está a la derecha, con consultas opcionales y apertura lateral; ambos
+laterales se controlan desde el estado inferior. Menús compartidos 109→73,
+sin duplicados. Se reprodujo el fallo de resize y se corrigió la liberación
+indebida de la captura nativa. El arrastre físico y maximizar aprobaron.
+Los ejecutables están en `target/m2-panels-next/release`; se preservan los
+anteriores. La recuperación visual v2 conserva la visibilidad de Código y
+lee v1. No reabrir perfiles de CPU, Narrador o CI por este bloque.
+
+Juan dejó Narrador y accesibilidad avanzada como pendientes. Continuar
+con interfaz, fluidez y edición en español, conservando Sublime como
+referencia visual. El bloque de pestañas/barras pasó 57 pruebas GUI de
+biblioteca, seis de entrada, Clippy y release. El recorrido nativo integral
+pasó con acceso normal a fixtures propios. El ejecutable está en
+`target/m2-polish-next/release`; se preservan los anteriores.
+
+La medición visible de 360 pasos a 60 Hz sobre 4,4 MB dio 3,35 ms de mediana
+y 4,79 ms de p95 hasta confirmación de pintura. Latencia física, IME real
+y cambio entre monitores siguen abiertos. [Estado y evidencia](M2_CIERRE.md).
+El cierre de edición también corrigió AvPág/RePág para usar las filas
+visibles del grupo activo, con y sin panel inferior. Pasaron la regresión
+dirigida, Clippy/release y 15 comprobaciones nativas de interacción.
+La aceptación de M2 conserva las puertas físicas y los pendientes diferidos
+expresamente por Juan; no reactivar Narrador como prioridad de desarrollo.
+
+El bloque siguiente ya integra confirmaciones propias con la paleta de CIDE
+y nombres de borrador derivados del catálogo vivo. La sesión vacía vuelve
+a «Sin título 1.txt». La inspección visual de ese aviso encontró acceso
+denegado y captura negra del escritorio, por lo que su apariencia queda
+pendiente de una captura válida en ese momento.
+El ejecutable está en `target/m2-dialog-final/release`. Pasaron 63 pruebas
+GUI y seis de entrada, regresiones dirigidas de diálogo y numeración,
+Clippy/release, el recorrido nativo integral y tres procesos de recuperación.
+
+La continuación corrigió el aviso a 420 × 176 píxeles de diseño, centrado
+sobre CIDE y limitado al área útil del monitor, cuerpo elevado y borde claro.
+La revisión de escritorio confirmó aspecto, Intro para cancelar, conservación
+del texto, numeración en 1 tras cerrar todas las pestañas y salida normal.
+Pasaron 65 pruebas de biblioteca GUI y seis de entrada, fmt, Clippy y release.
+Ejecutable actual: `target/m2-dialog-compact/release/cide-gui.exe`.
+Continúan abiertas las puertas físicas de latencia, IME instalado y segundo
+monitor. No reactivar Narrador ni ampliar automáticamente a M3 para cubrirlas.
+
 ## Estado vigente — recuperación periódica y limpieza segura, 2026-11-03
 
 Recuperación automática en Rust integrada en GUI y TUI: captura cooperativa de

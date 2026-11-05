@@ -425,7 +425,7 @@ unsafe extern "system" fn selection_kind(interface: Interface, result: *mut i32)
     *result = 0;
     match text_snapshot(interface) {
         Ok(_) => {
-            *result = 2; // SupportedTextSelection_Multiple: rectangular selection.
+            *result = 1; // SupportedTextSelection_Single: the provider exposes only linear selection.
             OK
         }
         Err(status) => status,

@@ -2,7 +2,7 @@
 name = "jc-gui"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 publish = false
 default-run = "cide-gui"
 description = "Native Windows frontend sharing the CIDE application model"

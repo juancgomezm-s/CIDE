@@ -27,7 +27,13 @@ class MemoryCounters(c.Structure):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", required=True, type=Path)
+    parser.add_argument("--visible", action="store_true",
+                        help="medir hasta ventana visible y bucle de mensajes en espera")
+    parser.add_argument("--lines", type=int, default=315,
+                        help="cantidad de líneas sintéticas del archivo")
     args = parser.parse_args()
+    if not 1 <= args.lines <= 1_000_000:
+        parser.error("use entre 1 y 1 000 000 líneas")
     root = Path(__file__).resolve().parents[1]
     exe = (root / args.exe).resolve(strict=True)
     if not exe.is_relative_to(root) or exe.name != "cide-gui.exe":
@@ -38,7 +44,7 @@ def main():
     if not output.resolve().is_relative_to(root):
         raise RuntimeError("La carpeta de prueba quedó fuera del proyecto")
     source = output / "prueba.txt"
-    original = b"Texto CIDE.\r\n" * 315
+    original = b"Texto CIDE.\r\n" * args.lines
     with source.open("xb") as file:
         file.write(original)
     ui = c.WinDLL("user32", use_last_error=True)
@@ -59,7 +65,7 @@ def main():
     for index in range(8):
         startup = subprocess.STARTUPINFO()
         startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startup.wShowWindow = 0
+        startup.wShowWindow = 1 if args.visible else 0
         started = time.perf_counter()
         with subprocess.Popen(
             [str(exe), "--encoding", "utf8", str(source)], cwd=root,
@@ -79,20 +85,24 @@ def main():
                         time.sleep(0.002)
                 pid = w.DWORD()
                 if not hwnd or not ui.GetWindowThreadProcessId(hwnd, c.byref(pid)) \
-                        or pid.value != process.pid or ui.IsWindowVisible(hwnd):
-                    raise RuntimeError("No se encontró el marco propio oculto de CIDE")
+                        or pid.value != process.pid or bool(ui.IsWindowVisible(hwnd)) != args.visible:
+                    raise RuntimeError("No se encontró el marco propio de CIDE en el estado solicitado")
                 result = c.c_size_t()
-                if not ui.SendMessageTimeoutW(hwnd, 0, 0, 0, 2, 5000, c.byref(result)):
+                if not args.visible and not ui.SendMessageTimeoutW(hwnd, 0, 0, 0, 2, 5000, c.byref(result)):
                     raise c.WinError(c.get_last_error())
                 elapsed = (time.perf_counter() - started) * 1000
                 counters = MemoryCounters()
                 counters.size = c.sizeof(counters)
                 if not memory.GetProcessMemoryInfo(process_handle, c.byref(counters), counters.size):
                     raise c.WinError(c.get_last_error())
-                if not ui.SendMessageTimeoutW(hwnd, 0x10, 0, 0, 2, 5000, c.byref(result)):
-                    raise c.WinError(c.get_last_error())
-                if process.wait(timeout=5) != 0:
-                    raise RuntimeError("La GUI de prueba no cerró correctamente")
+                if args.visible:
+                    process.terminate()
+                    process.wait(timeout=5)
+                else:
+                    if not ui.SendMessageTimeoutW(hwnd, 0x10, 0, 0, 2, 5000, c.byref(result)):
+                        raise c.WinError(c.get_last_error())
+                    if process.wait(timeout=5) != 0:
+                        raise RuntimeError("La GUI de prueba no cerró correctamente")
                 samples.append(dict(ms=elapsed, private_bytes=counters.private, warmup=index == 0))
             finally:
                 if process.poll() is None:
@@ -105,6 +115,8 @@ def main():
         output=str(output), samples=samples, median_ms=statistics.median(times),
         p95_ms=times[math.ceil(0.95 * len(times)) - 1],
         max_private_mib=max(sample["private_bytes"] for sample in measured) / 2**20,
+        visible_window=args.visible,
+        endpoint="visible_and_input_idle" if args.visible else "hidden_and_wm_null",
         physical_display_verified=False,
     )
     with (output / "report.json").open("x", encoding="utf-8") as file:

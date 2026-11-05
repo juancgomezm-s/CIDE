@@ -8,6 +8,8 @@ const MAX_VISIBLE: usize = 32;
 pub(super) struct Scroll {
     first: usize,
     observed: Option<TabId>,
+    capacity: usize,
+    catalog_len: usize,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Geometry {
@@ -35,6 +37,7 @@ enum Target {
     Previous,
     Next,
     List,
+    New,
 }
 #[derive(Clone)]
 struct Button {
@@ -43,6 +46,7 @@ struct Button {
     selected: bool,
     dirty: bool,
     target: Target,
+    tab_background: Option<Rect>,
 }
 #[derive(Clone)]
 struct Strip {
@@ -78,7 +82,7 @@ pub(super) fn prepare(s: &mut State) -> Bars {
         };
         let cw = s.cell_width.clamp(1, 8192);
         let available = (rect.right - rect.left).max(0);
-        if available < cw * 7 || rect.bottom <= rect.top {
+        if available < cw * 2 || rect.bottom - rect.top < 4 {
             continue;
         }
         let tabs = s.workbench.tabs().tabs();
@@ -92,12 +96,21 @@ pub(super) fn prepare(s: &mut State) -> Bars {
             .and_then(|id| tabs.iter().position(|t| t.id == id))
             .unwrap_or(0);
         let arrow = cw * 2;
-        let room = (available - 3 * arrow).max(cw * 3);
-        let capacity = ((room / (cw * 15)).max(1) as usize).min(MAX_VISIBLE);
-        let width = (room / capacity as i32).min(cw * 26);
+        let room = (available - 4 * arrow).max(0);
+        let capacity = if room >= cw * 4 {
+            ((room / (cw * 15)).max(1) as usize).min(MAX_VISIBLE)
+        } else {
+            0
+        };
+        let width = (room / capacity.max(1) as i32).min(cw * 26);
         let scroll = &mut s.tab_scroll[index(pane)];
         scroll.first = scroll.first.min(tabs.len().saturating_sub(capacity));
-        if scroll.observed != active {
+        if capacity == 0 {
+            scroll.observed = None;
+        } else if scroll.observed != active
+            || scroll.capacity != capacity
+            || scroll.catalog_len != tabs.len()
+        {
             scroll.observed = active;
             if active_index < scroll.first {
                 scroll.first = active_index;
@@ -105,10 +118,12 @@ pub(super) fn prepare(s: &mut State) -> Bars {
                 scroll.first = active_index.saturating_add(1).saturating_sub(capacity);
             }
         }
+        scroll.capacity = capacity;
+        scroll.catalog_len = tabs.len();
         let first = scroll.first;
         let end = first.saturating_add(capacity).min(tabs.len());
         let mut buttons = Vec::with_capacity(2 * capacity + 2);
-        if first > 0 {
+        if capacity > 0 {
             buttons.push(Button {
                 rect: Rect {
                     right: rect.left + arrow,
@@ -118,16 +133,28 @@ pub(super) fn prepare(s: &mut State) -> Bars {
                 selected: false,
                 dirty: false,
                 target: Target::Previous,
+                tab_background: None,
+            });
+            buttons.push(Button {
+                rect: Rect {
+                    left: rect.left + arrow,
+                    right: rect.left + 2 * arrow,
+                    ..rect
+                },
+                label: wide("›"),
+                selected: false,
+                dirty: false,
+                target: Target::Next,
+                tab_background: None,
             });
         }
         for (offset, tab) in tabs[first..end].iter().enumerate() {
             let Some(document) = s.workbench.document_by_tab(tab.id) else {
                 continue;
             };
-            let x = rect.left + arrow + offset as i32 * width;
+            let x = rect.left + 2 * arrow + offset as i32 * width;
             let close = cw * 2;
-            let columns = ((width - close - cw) / cw).clamp(1, 64) as usize;
-            let label = jc_app::source_services::display_ui_label(&tab.title, columns);
+            let label = jc_app::source_services::display_ui_label(&tab.title, 64);
             let selected = Some(tab.id) == active;
             let revision = document.session.document().revision();
             let body = Rect {
@@ -135,36 +162,43 @@ pub(super) fn prepare(s: &mut State) -> Bars {
                 right: x + width - close,
                 ..rect
             };
+            let full = Rect {
+                right: x + width - s.dpi.pixels(2),
+                ..body
+            };
             buttons.push(Button {
                 rect: body,
-                label: wide(&format!(" {label}")),
+                label: wide(&label),
                 selected,
                 dirty: tab.dirty,
                 target: Target::Select(tab.id, document.id, revision),
+                tab_background: Some(full),
             });
             buttons.push(Button {
                 rect: Rect {
                     left: body.right,
-                    right: x + width,
+                    right: full.right,
                     ..rect
                 },
                 label: wide(if tab.dirty { "●" } else { "×" }),
                 selected,
                 dirty: tab.dirty,
                 target: Target::Close(tab.id, document.id, revision),
+                tab_background: None,
             });
         }
-        if end < tabs.len() {
+        if capacity > 0 {
             buttons.push(Button {
                 rect: Rect {
                     left: rect.right - 2 * arrow,
                     right: rect.right - arrow,
                     ..rect
                 },
-                label: wide("›"),
+                label: wide("+"),
                 selected: false,
                 dirty: false,
-                target: Target::Next,
+                target: Target::New,
+                tab_background: None,
             });
         }
         buttons.push(Button {
@@ -176,6 +210,7 @@ pub(super) fn prepare(s: &mut State) -> Bars {
             selected: false,
             dirty: false,
             target: Target::List,
+            tab_background: None,
         });
         bars.strips.push(Strip {
             pane,
@@ -260,6 +295,11 @@ impl State {
             return Some(Action::None);
         };
         match target {
+            Target::New => {
+                self.workbench.focus_editor_pane(pane);
+                self.tab_hits = None;
+                return Some(self.execute(jc_app::CommandId::FileNew));
+            }
             Target::List => {
                 self.workbench.focus_editor_pane(pane);
                 self.explorer_focused = false;
@@ -318,43 +358,66 @@ pub(super) unsafe fn draw(dc: Hdc, bars: &Bars) -> Result<(), String> {
             } else {
                 super::shell::SURFACE
             };
-            if matches!(button.target, Target::Select(..)) {
-                let full = Rect {
-                    right: button.rect.right + 18,
-                    ..button.rect
-                };
+            if let Some(full) = button.tab_background {
                 super::shell::rounded_tab(dc, full, background)?;
-            } else if !matches!(button.target, Target::Close(..)) {
-                paint::fill(dc, button.rect, background)?;
+                if !button.selected {
+                    paint::fill(
+                        dc,
+                        Rect {
+                            left: full.right - 1,
+                            right: full.right,
+                            top: full.top + 7,
+                            bottom: full.bottom - 7,
+                        },
+                        super::shell::MUTED,
+                    )?;
+                }
             }
-            paint::text(
+            let mut rect = button.rect;
+            let alignment = if button.tab_background.is_some() {
+                let padding = (rect.bottom - rect.top) / 5;
+                rect.left += padding;
+                rect.right -= padding / 2;
+                0x8000 // DT_END_ELLIPSIS
+            } else {
+                1 // DT_CENTER
+            };
+            if rect.left >= rect.right {
+                continue;
+            }
+            SetTextColor(
                 dc,
-                Rect {
-                    top: button.rect.top + 10,
-                    bottom: button.rect.bottom - 4,
-                    ..button.rect
-                },
-                &button.label,
                 if button.dirty {
                     super::shell::ACCENT
                 } else {
                     super::shell::TEXT
                 },
-                background,
-            )?;
-            if button.selected {
-                paint::fill(
-                    dc,
-                    Rect {
-                        top: button.rect.bottom - 1,
-                        ..button.rect
-                    },
-                    super::shell::BACKGROUND,
-                )?;
+            );
+            let old_mode = SetBkMode(dc, 1);
+            let result = DrawTextW(
+                dc,
+                button.label.as_ptr(),
+                -1,
+                &mut rect,
+                alignment | 0x04 | 0x20 | 0x800,
+            ); // VCENTER | SINGLELINE | NOPREFIX
+            SetBkMode(dc, old_mode);
+            if result == 0 {
+                return Err(super::os_error("Dibujar texto de pestaña"));
             }
         }
     }
     Ok(())
+}
+
+#[link(name = "gdi32")]
+extern "system" {
+    fn SetBkMode(dc: Hdc, mode: i32) -> i32;
+}
+
+#[link(name = "user32")]
+extern "system" {
+    fn DrawTextW(dc: Hdc, text: *const u16, count: i32, rect: *mut Rect, format: u32) -> i32;
 }
 
 #[cfg(test)]
@@ -412,6 +475,54 @@ mod tests {
             .strips
             .iter()
             .all(|s| s.identities.len() <= MAX_VISIBLE));
+    }
+    #[test]
+    fn tab_strip_navigation_is_left_and_new_and_direct_list_are_right() {
+        let mut s = state(3);
+        s.width = 1600;
+        let bars = prepare(&mut s);
+        let strip = &bars.strips[0];
+        let first = strip
+            .buttons
+            .iter()
+            .find(|b| matches!(b.target, Target::Select(..)))
+            .unwrap()
+            .rect
+            .left;
+        let last = strip
+            .buttons
+            .iter()
+            .filter(|b| matches!(b.target, Target::Close(..)))
+            .map(|b| b.rect.right)
+            .max()
+            .unwrap();
+        for b in &strip.buttons {
+            match b.target {
+                Target::Previous | Target::Next => assert!(b.rect.right <= first),
+                Target::New | Target::List => assert!(b.rect.left >= last),
+                _ => {}
+            }
+        }
+        let count = s.workbench.tabs().tabs().len();
+        click(&mut s, |target| matches!(target, Target::New));
+        assert_eq!(s.workbench.tabs().tabs().len(), count + 1);
+        assert_eq!(s.workbench.active_bytes().unwrap(), b"");
+    }
+    #[test]
+    fn tab_strip_resize_reveals_active_without_resetting_manual_scroll() {
+        let mut s = state(40);
+        s.width = 1500;
+        let active = s.workbench.tabs().active_id().unwrap();
+        prepare(&mut s);
+        s.width = 370;
+        let bars = prepare(&mut s);
+        assert!(bars.tab_pixel(PaneId::Primary, active, false).is_some());
+        click(&mut s, |target| matches!(target, Target::Previous));
+        let first = s.tab_scroll[0].first;
+        prepare(&mut s);
+        assert_eq!(s.tab_scroll[0].first, first);
+        s.height = s.chrome_layout().top() + 1;
+        assert!(prepare(&mut s).strips.is_empty());
     }
     #[test]
     fn tab_strip_rejects_stale_revision_resize_and_modal_without_touching_source() {

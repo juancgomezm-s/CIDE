@@ -40,36 +40,72 @@ pub(super) unsafe fn safe_ascii_runs(dc: Hdc, cell_width: i32) -> [bool; 128] {
 }
 #[link(name = "gdi32")]
 extern "system" {
-    fn RoundRect(
-        dc: Hdc,
-        left: i32,
-        top: i32,
-        right: i32,
-        bottom: i32,
-        width: i32,
-        height: i32,
-    ) -> i32;
+    fn BeginPath(dc: Hdc) -> i32;
+    fn EndPath(dc: Hdc) -> i32;
+    fn AbortPath(dc: Hdc) -> i32;
+    fn CloseFigure(dc: Hdc) -> i32;
+    fn FillPath(dc: Hdc) -> i32;
+    fn MoveToEx(dc: Hdc, x: i32, y: i32, old: *mut Point) -> i32;
+    fn LineTo(dc: Hdc, x: i32, y: i32) -> i32;
+    fn PolyBezierTo(dc: Hdc, points: *const Point, count: u32) -> i32;
 }
 pub(super) unsafe fn rounded_tab(dc: Hdc, rect: Rect, color: u32) -> Result<(), String> {
+    let top = rect.top + 2;
+    let radius = ((rect.bottom - top) / 8)
+        .min((rect.right - rect.left) / 2)
+        .max(1);
+    let curve = (radius * 55 + 50) / 100;
+    // One closed contour avoids the bottom-edge seam from overlapping a
+    // rounded rectangle with a second rectangular fill.
     let brush = CreateSolidBrush(color);
     if brush.is_null() {
         return Err("No se pudo preparar la pestaña gráfica".into());
     }
     let previous_brush = SelectObject(dc, brush);
-    let previous_pen = SelectObject(dc, GetStockObject(8));
-    let ok = RoundRect(
-        dc,
-        rect.left,
-        rect.top + 2,
-        rect.right,
-        rect.bottom + 1,
-        8,
-        8,
-    );
-    SelectObject(dc, previous_pen);
+    let left_corner = [
+        Point {
+            x: rect.left,
+            y: top + radius - curve,
+        },
+        Point {
+            x: rect.left + radius - curve,
+            y: top,
+        },
+        Point {
+            x: rect.left + radius,
+            y: top,
+        },
+    ];
+    let right_corner = [
+        Point {
+            x: rect.right - radius + curve,
+            y: top,
+        },
+        Point {
+            x: rect.right,
+            y: top + radius - curve,
+        },
+        Point {
+            x: rect.right,
+            y: top + radius,
+        },
+    ];
+    let ok = BeginPath(dc) != 0
+        && MoveToEx(dc, rect.left, rect.bottom, std::ptr::null_mut()) != 0
+        && LineTo(dc, rect.left, top + radius) != 0
+        && PolyBezierTo(dc, left_corner.as_ptr(), 3) != 0
+        && LineTo(dc, rect.right - radius, top) != 0
+        && PolyBezierTo(dc, right_corner.as_ptr(), 3) != 0
+        && LineTo(dc, rect.right, rect.bottom) != 0
+        && CloseFigure(dc) != 0
+        && EndPath(dc) != 0
+        && FillPath(dc) != 0;
+    if !ok {
+        AbortPath(dc);
+    }
     SelectObject(dc, previous_brush);
     DeleteObject(brush);
-    if ok == 0 {
+    if !ok {
         Err("No se pudo dibujar la pestaña gráfica".into())
     } else {
         Ok(())

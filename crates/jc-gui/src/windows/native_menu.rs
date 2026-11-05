@@ -108,18 +108,6 @@ fn destination(
         fallback
     }
 }
-fn category_group(category: CommandCategory) -> Option<NativeMenuGroup> {
-    match category {
-        CommandCategory::File => Some(NativeMenuGroup::File),
-        CommandCategory::Edit => Some(NativeMenuGroup::Edit),
-        CommandCategory::Search => Some(NativeMenuGroup::Search),
-        CommandCategory::Project => Some(NativeMenuGroup::Project),
-        CommandCategory::Tools => Some(NativeMenuGroup::Tools),
-        CommandCategory::View => Some(NativeMenuGroup::View),
-        CommandCategory::Navigation => Some(NativeMenuGroup::Navigation),
-        _ => None,
-    }
-}
 fn spec_mut(specs: &mut [MenuSpec], group: NativeMenuGroup) -> &mut MenuSpec {
     specs.iter_mut().find(|spec| spec.group == group).unwrap()
 }
@@ -170,21 +158,30 @@ pub(super) fn definitions() -> Vec<MenuSpec> {
             }
         }
     }
-    // The shared model intentionally does not list every registry command.
-    // Include implemented Search flags, indexed tabs and focus routes once.
-    for (id, command, _) in COMMANDS {
-        if seen.contains(id) || !supported(*command) {
-            continue;
-        }
-        let Some(command_spec) = registry.get(*command) else {
-            continue;
-        };
-        let Some(group) = category_group(command_spec.category) else {
-            continue;
-        };
-        let group = destination(*command, command_spec.category, group);
-        if seen.insert(*id) {
-            spec_mut(&mut specs, group).items.push(Some(*id));
+    // Menus are a curated set of entry points, not a dump of the command
+    // registry. Overlay traversal, result acceptance/cancellation, focus and
+    // indexed-tab shortcuts remain in the palette/keymap and local controls.
+    for (group, commands) in [
+        (
+            NativeMenuGroup::Search,
+            &[
+                CommandId::SearchToggleCase,
+                CommandId::SearchToggleWholeWord,
+                CommandId::SearchToggleRegex,
+            ][..],
+        ),
+        (
+            NativeMenuGroup::Navigation,
+            &[CommandId::TabPrevious, CommandId::TabNext][..],
+        ),
+    ] {
+        let items = &mut spec_mut(&mut specs, group).items;
+        separator(items);
+        for command in commands {
+            let id = command_id(*command);
+            if id != 0 && supported(*command) && seen.insert(id) {
+                items.push(Some(id));
+            }
         }
     }
     if seen.insert(OPEN_SIDE) {
@@ -481,7 +478,7 @@ pub(super) unsafe fn open(hwnd: Hwnd, group: NativeMenuGroup) -> Result<(), Stri
 mod tests {
     use super::*;
     #[test]
-    fn definitions_cover_each_implemented_command_once_and_have_clean_separators() {
+    fn definitions_expose_curated_implemented_entries_once_and_have_clean_separators() {
         let specs = definitions();
         let mut ids = BTreeSet::new();
         for spec in &specs {
@@ -503,7 +500,20 @@ mod tests {
             COMMANDS.len() + 1,
             "handler IDs must be globally unique, including the explicit file-side picker"
         );
-        assert_eq!(ids, expected);
+        assert!(ids.is_subset(&expected));
+        assert!(ids.len() < expected.len());
+        // Contextual mechanics are still implemented commands, but no longer
+        // inflate the menu into a second copy of every overlay's controls.
+        for command in [
+            CommandId::Tab1,
+            CommandId::Tab9,
+            CommandId::SnippetNext,
+            CommandId::SourceAccept,
+            CommandId::EditRectangleLeft,
+        ] {
+            assert!(expected.contains(&command_id(command)));
+            assert!(!ids.contains(&command_id(command)));
+        }
         let file = specs
             .iter()
             .find(|spec| spec.group == NativeMenuGroup::File)
@@ -527,8 +537,8 @@ mod tests {
             CommandId::SearchGoToPosition,
             CommandId::NavigateBack,
             CommandId::NavigateForward,
-            CommandId::Tab1,
-            CommandId::Tab9,
+            CommandId::TabPrevious,
+            CommandId::TabNext,
         ] {
             assert!(nav.items.contains(&Some(command_id(command))));
         }

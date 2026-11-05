@@ -74,7 +74,6 @@ fn overlay_closure_all_prompt_ingress_is_atomic_and_byte_bounded() {
         PromptKind::Open,
         PromptKind::OpenFolder,
         PromptKind::SaveAs,
-        PromptKind::GitExecutable,
         PromptKind::ProjectQuery,
         PromptKind::ProjectInclude,
         PromptKind::ProjectExclude,
@@ -123,10 +122,8 @@ fn overlay_closure_every_menu_selection_is_visible_after_page_and_wrap_in_small_
         CommandId::MenuEdit,
         CommandId::MenuSearch,
         CommandId::MenuProject,
-        CommandId::MenuBuild,
         CommandId::MenuTools,
         CommandId::MenuView,
-        CommandId::MenuHelp,
     ] {
         a.dispatch(command);
         a.frame(40, 10);

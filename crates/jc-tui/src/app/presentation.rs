@@ -207,7 +207,7 @@ impl TuiApp {
             .validate_context(&self.workbench, &mut self.tasks);
         self.git_diff.tick(&self.workbench, &mut self.tasks);
         self.git_status
-            .validate_context(self.project_root.as_deref(), self.git_executable.as_deref());
+            .validate_context(self.project_root.as_deref());
         self.validate_quick_open_context();
         self.syntax_pending = false;
         self.syntax_targets = [None, None];

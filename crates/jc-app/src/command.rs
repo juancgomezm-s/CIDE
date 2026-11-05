@@ -746,7 +746,7 @@ pub fn default_registry() -> CommandRegistry {
         spec!(
             GitConfigureExecutable,
             View,
-            "Git: configurar ejecutable…",
+            "Git: motor integrado",
             git_repository
         ),
         spec!(

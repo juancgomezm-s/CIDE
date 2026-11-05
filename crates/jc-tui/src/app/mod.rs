@@ -41,7 +41,6 @@ mod syntax_integration_tests;
 mod unicode_tests;
 #[cfg(test)]
 mod visual_spanish_tests;
-use git_repository::GitConfigurationTarget;
 #[cfg(test)]
 pub(crate) use git_status::GitStatusRow;
 pub(crate) use git_status::{git_status_list_height, GitStatusPresentation};
@@ -123,8 +122,6 @@ pub struct TuiApp {
     pub(crate) git_status: git_status::GitStatusView,
     pub(crate) quick_open: jc_app::quick_open::QuickOpenController,
     quick_open_root: Option<PathBuf>,
-    git_configuration_target: Option<GitConfigurationTarget>,
-    pub(crate) git_executable: Option<PathBuf>,
     pub(crate) git_cwd: PathBuf,
     pub(crate) git_source: jc_app::git_read::GitBlobSource,
     pub(crate) git_diff_scroll: usize,
@@ -206,8 +203,6 @@ impl TuiApp {
             git_status: git_status::GitStatusView::new(wakeup.clone()),
             quick_open: jc_app::quick_open::QuickOpenController::new(wakeup.clone()),
             quick_open_root: None,
-            git_configuration_target: None,
-            git_executable: None,
             git_cwd: std::env::current_dir().unwrap_or_default(),
             git_source: jc_app::git_read::GitBlobSource::Head,
             git_diff_scroll: 0,
@@ -327,9 +322,7 @@ impl TuiApp {
         );
         update.changed |= self.open_diff.tick(&self.workbench, &mut self.tasks);
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
-        let status_changed = self
-            .git_status
-            .poll(self.project_root.as_deref(), self.git_executable.as_deref());
+        let status_changed = self.git_status.poll(self.project_root.as_deref());
         update.changed |= status_changed;
         update.recover |= self.git_status.take_recovery();
         if status_changed {

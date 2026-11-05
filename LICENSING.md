@@ -11,6 +11,15 @@ Los manifiestos mantienen `publish = false`: el rebranding no publica paquetes,
 cambia derechos de terceros ni instala el producto. Los recursos gráficos nuevos
 y su procedencia están descritos en [assets/branding](assets/branding/README.md).
 
+## Motor Git embebido
+
+`jc-git` adapta las APIs de gitoxide mediante `gix` 0.90.0, enlazado como
+biblioteca Rust. Sus textos MIT y Apache-2.0 y los avisos de las nuevas
+dependencias se conservan en `third_party/gitoxide`. El inventario, checksums
+y alcance están documentados en [docs/GIT_EMBEDDED_LICENSES.md](docs/GIT_EMBEDDED_LICENSES.md).
+El empaquetado incluye estos archivos; las dependencias conservan sus propias
+licencias y autorías. Esta integración no cambia la licencia de terceros.
+
 ## Port parcial de Lime Text
 
 `crates/jc-core/src/region.rs` adapta operaciones de `Region` y casos de compatibilidad de

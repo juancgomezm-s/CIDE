@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>, String> {
     let mut options = GuiOptions::default();
+    let mut legacy_git_argument = false;
     let mut fixture = None;
     let mut report = None;
     let mut bitmap = None;
@@ -38,7 +39,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                 line_edit_only = true;
             }
             Some("--git-executable") => {
-                if options.git_executable.is_some() {
+                if legacy_git_argument {
                     return Err("Opción --git-executable duplicada".into());
                 }
                 let path = PathBuf::from(args.next().ok_or("Falta la ruta al ejecutable Git")?);
@@ -48,7 +49,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                             .into(),
                     );
                 }
-                options.git_executable = Some(path);
+                legacy_git_argument = true; // Accepted only for old launchers; the embedded engine ignores it.
             }
             Some("--smoke-rectangle-only") => {
                 if rectangle_only {
@@ -231,7 +232,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
 
 pub(super) fn run() {
     match parse(std::env::args_os().skip(1)) {
-        Ok(None) => println!("Interfaz gráfica CIDE\nUso: cide-gui [--project-root DIR] [--git-executable ABS] [--search-workers 1..4] [--encoding utf-8|cp1252|latin1|ibm850] [ARCHIVOS...]\nAlias anterior: jc-ide-gui. Interfaz nativa de Windows. Prueba: --smoke-fixture ABS --smoke-report ABS [--smoke-bitmap ABS]"),
+        Ok(None) => println!("Interfaz gráfica CIDE\nUso: cide-gui [--project-root DIR] [--search-workers 1..4] [--encoding utf-8|cp1252|latin1|ibm850] [ARCHIVOS...]\nAlias anterior: jc-ide-gui. Interfaz nativa de Windows. Prueba: --smoke-fixture ABS --smoke-report ABS [--smoke-bitmap ABS]"),
         Ok(Some(options)) => {
             if let Err(error) = jc_gui::run(options) {
                 eprintln!("{error}");
@@ -248,7 +249,7 @@ pub(super) fn run() {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn git_executable_is_explicit_absolute_metadata_and_duplicate_or_missing_reject() {
+    fn legacy_git_argument_is_consumed_without_configuring_an_external_engine() {
         let path = std::env::current_dir()
             .unwrap()
             .join("trusted Git that need not exist.exe");
@@ -258,7 +259,7 @@ mod tests {
         ])
         .unwrap()
         .unwrap();
-        assert_eq!(options.git_executable.as_ref(), Some(&path));
+        assert!(options.project_root.is_none());
         for args in [
             vec!["--git-executable"],
             vec!["--git-executable", "relative.exe"],

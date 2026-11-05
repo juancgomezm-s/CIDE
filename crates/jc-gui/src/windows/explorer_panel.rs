@@ -69,11 +69,7 @@ pub(super) fn region(state: &State) -> Option<Rect> {
     })
 }
 fn tree_region(state: &State) -> Option<Rect> {
-    let mut rect = region(state)?;
-    if let Some(outline) = super::outline_panel::region(state) {
-        rect.bottom = outline.top;
-    }
-    Some(rect)
+    region(state)
 }
 impl State {
     pub(super) fn show_explorer(&mut self) {

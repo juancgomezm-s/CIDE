@@ -135,6 +135,7 @@ unsafe fn run(hwnd: Hwnd, plan: &mut SavePlan) -> Result<(), String> {
             .save_target(target, destination)
             .map_err(|e| e.to_string())?;
         state.save_count = state.save_count.saturating_add(1);
+        state.schedule_git_status();
         plan.saved(candidate).map_err(str::to_owned)?;
     }
     Ok(())

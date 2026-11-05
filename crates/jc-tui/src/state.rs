@@ -19,7 +19,6 @@ pub enum PromptKind {
     ProjectExclude,
     ProjectReplacement,
     GoToPosition,
-    GitExecutable,
     RenameSymbol,
 }
 

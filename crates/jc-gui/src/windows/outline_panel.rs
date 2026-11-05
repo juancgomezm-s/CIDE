@@ -9,6 +9,9 @@ use jc_app::{
 };
 
 pub(super) struct Outline {
+    pub visible: bool,
+    mode: SourceMode,
+    candidates: Option<(Vec<std::path::PathBuf>, usize)>,
     controller: SourceController,
     pub focused: bool,
     pub hits: Option<OutlineHits>,
@@ -19,6 +22,9 @@ pub(super) struct Outline {
 impl Default for Outline {
     fn default() -> Self {
         Self {
+            visible: true,
+            mode: SourceMode::Symbols,
+            candidates: None,
             controller: SourceController::outline(),
             focused: false,
             hits: None,
@@ -34,6 +40,8 @@ pub(super) struct OutlineFrame {
     rows: Vec<SourceRow>,
     message: String,
     focused: bool,
+    mode: SourceMode,
+    tools: Vec<(Rect, SourceMode, bool)>,
 }
 
 pub(super) struct OutlineHits {
@@ -50,7 +58,7 @@ impl OutlineFrame {
     }
 }
 
-const HEAD: i32 = 46;
+const HEAD: i32 = 114;
 const ROW: i32 = 22;
 
 fn provider(state: &State) -> bool {
@@ -61,15 +69,51 @@ fn provider(state: &State) -> bool {
 }
 
 pub(super) fn region(state: &State) -> Option<Rect> {
-    let rect = super::explorer_panel::region(state)?;
-    let height = rect.bottom - rect.top;
-    if height < state.dpi.pixels(260) || !provider(state) {
+    if !state.outline.visible
+        || state.width < state.dpi.pixels(900)
+        || state.height < state.dpi.pixels(280)
+    {
+        return None;
+    }
+    let panel_width = state.dpi.pixels(260).min(state.width / 3);
+    let left = super::explorer_panel::region(state).map_or(0, |r| r.right + 1);
+    if state.workbench.panes().is_split()
+        && (state.width - left - panel_width - 1) / state.cell_width.max(1) < 90
+    {
         return None;
     }
     Some(Rect {
-        top: rect.bottom - (height * 2 / 5).max(state.dpi.pixels(112)),
-        ..rect
+        left: state.width - panel_width,
+        right: state.width,
+        top: state.chrome_layout().top(),
+        bottom: (state.height - state.cell_height - 8).max(0),
     })
+}
+
+fn tools(rect: Rect, dpi: super::dpi::Dpi) -> Vec<(Rect, SourceMode)> {
+    [
+        SourceMode::Symbols,
+        SourceMode::Calls,
+        SourceMode::Incoming,
+        SourceMode::Dependencies,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, mode)| {
+        let width = (rect.right - rect.left - dpi.pixels(16)) / 2;
+        let left = rect.left + dpi.pixels(8) + (i % 2) as i32 * width;
+        let top = rect.top + dpi.pixels(32 + (i / 2) as i32 * 28);
+        (
+            Rect {
+                left,
+                top,
+                right: left + width - dpi.pixels(4),
+                bottom: top + dpi.pixels(24),
+            },
+            mode,
+        )
+    })
+    .collect()
 }
 
 fn capacity(rect: Rect, dpi: super::dpi::Dpi) -> usize {
@@ -82,9 +126,10 @@ fn contains(rect: Rect, x: i32, y: i32) -> bool {
 
 impl State {
     pub(super) fn schedule_outline(&self) {
-        let wanted = region(self).is_some();
+        let wanted = region(self).is_some() && provider(self);
         let controller = &self.outline.controller;
         if (wanted
+            && self.outline.mode == SourceMode::Symbols
             && controller.needs_outline_refresh(&self.workbench, self.project_root.as_deref()))
             || (!wanted
                 && !matches!(
@@ -97,7 +142,7 @@ impl State {
     }
 
     pub(super) fn tick_outline(&mut self) -> bool {
-        let wanted = region(self).is_some();
+        let wanted = region(self).is_some() && provider(self);
         let controller = &mut self.outline.controller;
         if !wanted {
             if self.outline.focused {
@@ -116,7 +161,9 @@ impl State {
         }
         let root = self.project_root.as_deref();
         let mut changed = controller.validate_context(&self.workbench, root, &mut self.jobs);
-        if controller.needs_outline_refresh(&self.workbench, root) {
+        if self.outline.mode == SourceMode::Symbols
+            && controller.needs_outline_refresh(&self.workbench, root)
+        {
             self.outline.hits = None;
             self.outline.first = 0;
             let _ = controller.request(
@@ -148,7 +195,20 @@ impl State {
         let columns = ((rect.right - rect.left - 26) / self.cell_width.max(1)).max(1) as usize;
         let controller = &self.outline.controller;
         let ready = self.outline_ready();
-        let rows = if ready {
+        let rows = if ready && self.outline.candidates.is_some() {
+            let (paths, selected) = self.outline.candidates.as_ref().unwrap();
+            paths
+                .iter()
+                .enumerate()
+                .skip(self.outline.first)
+                .take(capacity(rect, self.dpi))
+                .map(|(index, path)| SourceRow {
+                    index,
+                    label: display_ui_label(&path.display().to_string(), columns),
+                    selected: *selected == index,
+                })
+                .collect()
+        } else if ready {
             controller
                 .items()
                 .iter()
@@ -171,9 +231,13 @@ impl State {
         } else {
             Vec::new()
         };
-        let message = if self.workbench.active_encoding().is_none() {
+        let message = if !provider(self) {
+            "Sin proveedor para este lenguaje"
+        } else if self.workbench.active_encoding().is_none() {
             "Elige la codificación del documento"
-        } else if controller.needs_outline_refresh(&self.workbench, self.project_root.as_deref()) {
+        } else if self.outline.mode == SourceMode::Symbols
+            && controller.needs_outline_refresh(&self.workbench, self.project_root.as_deref())
+        {
             "Actualizando símbolos…"
         } else {
             controller.message()
@@ -184,6 +248,22 @@ impl State {
             rows,
             message: display_ui_label(message, columns),
             focused: self.outline_focused(),
+            mode: self.outline.mode,
+            tools: tools(rect, self.dpi)
+                .into_iter()
+                .map(|(r, mode)| {
+                    let enabled = if mode == SourceMode::Incoming {
+                        self.source_gui
+                            .registry()
+                            .supports_incoming(&self.workbench, self.project_root.as_deref())
+                    } else {
+                        self.source_gui
+                            .registry()
+                            .supports_document(&self.workbench, mode)
+                    };
+                    (r, mode, enabled)
+                })
+                .collect(),
         })
     }
 
@@ -197,23 +277,53 @@ impl State {
             .ready(&self.workbench, self.project_root.as_deref())
     }
 
-    fn activate_outline(&mut self) {
+    pub(super) fn activate_outline(&mut self, side: bool) {
+        if let Some((paths, selected)) = &self.outline.candidates {
+            let result = paths
+                .get(*selected)
+                .ok_or_else(|| "Elige una referencia".to_owned())
+                .and_then(|path| {
+                    self.outline.controller.activate_candidate(
+                        &mut self.workbench,
+                        self.project_root.as_deref(),
+                        path,
+                        side,
+                    )
+                });
+            match result {
+                Ok(()) => {
+                    self.outline.candidates = None;
+                    self.exit_outline();
+                    self.ensure_encoding_selector();
+                }
+                Err(error) => self.error(error),
+            }
+            return;
+        }
         let index = self.outline.controller.selected();
         match self.outline.controller.activate_at_index(
             &mut self.workbench,
             self.project_root.as_deref(),
             index,
-            false,
+            side,
         ) {
-            Ok(_) => {
+            Ok(Some(paths)) => {
+                self.outline.candidates = Some((paths, 0));
+                self.outline.first = 0;
+                self.outline.hits = None;
+                self.status = "Referencia ambigua: elige un candidato en el panel Código".into();
+            }
+            Ok(None) => {
                 self.exit_outline();
-                self.status = "Símbolo localizado en el documento".into();
+                self.ensure_encoding_selector();
+                self.status = "Destino léxico abierto desde Código".into();
             }
             Err(error) => self.error(error),
         }
     }
 
     pub(super) fn refresh_outline(&mut self) {
+        self.outline.mode = SourceMode::Symbols;
         self.outline.controller.cancel(&mut self.jobs);
         self.outline.hits = None;
         self.schedule_outline();
@@ -225,11 +335,30 @@ impl State {
     }
 
     pub(super) fn outline_key(&mut self, code: usize, modifiers: Modifiers) {
-        if modifiers != Modifiers::NONE || !self.outline_ready() {
+        if (modifiers != Modifiers::NONE && modifiers != Modifiers::CTRL) || !self.outline_ready() {
             return;
         }
         if code == 0x0d {
-            self.activate_outline();
+            self.activate_outline(modifiers == Modifiers::CTRL);
+            return;
+        }
+        if let Some((paths, selected)) = &mut self.outline.candidates {
+            *selected = match code {
+                0x26 => selected.saturating_sub(1),
+                0x28 => selected
+                    .saturating_add(1)
+                    .min(paths.len().saturating_sub(1)),
+                0x24 | 0x21 => 0,
+                0x23 | 0x22 => paths.len().saturating_sub(1),
+                _ => return,
+            };
+            let rows = capacity(region(self).unwrap(), self.dpi).max(1);
+            let selected = self.outline.candidates.as_ref().unwrap().1;
+            self.outline.first = self
+                .outline
+                .first
+                .clamp(selected.saturating_sub(rows - 1), selected);
+            self.outline.hits = None;
             return;
         }
         let controller = &mut self.outline.controller;
@@ -257,6 +386,39 @@ impl State {
         let Some(rect) = region(self).filter(|r| contains(*r, x, y)) else {
             return false;
         };
+        if let Some((_, mode)) = tools(rect, self.dpi)
+            .into_iter()
+            .find(|(r, _)| contains(*r, x, y))
+        {
+            let enabled = if mode == SourceMode::Incoming {
+                self.source_gui
+                    .registry()
+                    .supports_incoming(&self.workbench, self.project_root.as_deref())
+            } else {
+                self.source_gui
+                    .registry()
+                    .supports_document(&self.workbench, mode)
+            };
+            if enabled {
+                self.explorer_focused = true;
+                self.outline.focused = true;
+                self.bottom.focused = false;
+                self.outline.mode = mode;
+                self.outline.first = 0;
+                self.outline.hits = None;
+                self.outline.candidates = None;
+                if let Err(error) = self.outline.controller.request(
+                    mode,
+                    self.source_gui.registry(),
+                    &self.workbench,
+                    self.project_root.as_deref(),
+                    &mut self.jobs,
+                ) {
+                    self.error(error);
+                }
+            }
+            return true;
+        }
         self.explorer_focused = true;
         self.outline.focused = true;
         self.bottom.focused = false;
@@ -267,6 +429,7 @@ impl State {
                 .as_ref()
                 .filter(|hits| {
                     hits.rect.top == rect.top
+                        && hits.rect.left == rect.left
                         && hits.rect.right == rect.right
                         && hits.rect.bottom == rect.bottom
                 })
@@ -278,10 +441,14 @@ impl State {
                 })
                 .copied();
             if let Some(index) = index {
-                self.outline.controller.first();
-                self.outline.controller.select_relative(index as isize);
+                if let Some((_, selected)) = &mut self.outline.candidates {
+                    *selected = index;
+                } else {
+                    self.outline.controller.first();
+                    self.outline.controller.select_relative(index as isize);
+                }
                 if double {
-                    self.activate_outline();
+                    self.activate_outline(self.modifiers().contains(Modifiers::CTRL));
                 }
             }
         }
@@ -302,11 +469,15 @@ impl State {
         self.outline.wheel = total % 120;
         let step = (total / 120) as isize * lines as isize;
         if step != 0 && self.outline_ready() {
-            self.outline.first = self
-                .outline
-                .first
-                .saturating_add_signed(-step)
-                .min(self.outline.controller.items().len().saturating_sub(rows));
+            self.outline.first = self.outline.first.saturating_add_signed(-step).min(
+                self.outline
+                    .candidates
+                    .as_ref()
+                    .map_or(self.outline.controller.items().len(), |(paths, _)| {
+                        paths.len()
+                    })
+                    .saturating_sub(rows),
+            );
             self.outline.hits = None;
         }
         true
@@ -342,17 +513,36 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
     paint::text(
         dc,
         label(rect.top + px(6), rect.top + px(25)),
-        &wide("ESQUEMA"),
+        &wide("CÓDIGO"),
         shell::TEXT,
         shell::SIDEBAR,
     )?;
     paint::text(
         dc,
-        label(rect.top + px(25), rect.top + px(HEAD)),
-        &wide("Intro · ir al símbolo"),
+        label(rect.top + px(90), rect.top + px(HEAD)),
+        &wide("Intro · abrir   Ctrl+Intro · al lado"),
         shell::MUTED,
         shell::SIDEBAR,
     )?;
+    for (r, mode, enabled) in &frame.tools {
+        let background = if *mode == frame.mode {
+            shell::SELECTED
+        } else {
+            shell::RAISED
+        };
+        paint::fill(dc, *r, background)?;
+        paint::text(
+            dc,
+            Rect {
+                left: r.left + px(5),
+                top: r.top + px(2),
+                ..*r
+            },
+            &wide(mode.label()),
+            if *enabled { shell::TEXT } else { shell::MUTED },
+            background,
+        )?;
+    }
     if frame.rows.is_empty() {
         paint::text(
             dc,
@@ -458,5 +648,142 @@ mod tests {
         finish(&mut state);
         let frame = state.outline_presentation().unwrap();
         assert!(frame.rows.iter().any(|row| row.label.contains("xbeta")));
+    }
+
+    #[test]
+    fn right_code_panel_runs_explicit_abl_and_javascript_queries_without_editing() {
+        for (path, text, mode) in [
+            (
+                "code.p",
+                "RUN beta.\r\n{common.i}\r\n",
+                SourceMode::Dependencies,
+            ),
+            (
+                "code.js",
+                "import { inner } from './other.js';\nfunction outer() { inner(); }\n",
+                SourceMode::Dependencies,
+            ),
+        ] {
+            let mut s = State::new(&GuiOptions::default()).unwrap();
+            s.width = 1400;
+            s.height = 900;
+            s.explorer_visible = true;
+            s.workbench.new_file(path, TextEncoding::Utf8);
+            s.workbench.insert_text(text).unwrap();
+            finish(&mut s);
+            let r = region(&s).unwrap();
+            let tree = super::super::explorer_panel::region(&s).unwrap();
+            assert!(r.left > tree.right);
+            assert!(super::super::paint::areas(&s)
+                .iter()
+                .all(|(_, area)| area.right < r.left));
+            let (button, _) = tools(r, s.dpi)
+                .into_iter()
+                .find(|(_, m)| *m == mode)
+                .unwrap();
+            assert!(s.outline_click(button.left + 2, button.top + 2, false));
+            finish(&mut s);
+            assert_eq!(s.outline.controller.mode(), Some(mode));
+            assert_eq!(
+                s.outline.controller.state(),
+                SourceState::Ready,
+                "{}",
+                s.outline.controller.message()
+            );
+            assert!(!s.outline_presentation().unwrap().rows.is_empty());
+            assert_eq!(s.workbench.active_bytes().unwrap(), text.as_bytes());
+            s.workbench.insert_text(" ").unwrap();
+            s.poll_tasks();
+            assert!(s.outline_presentation().unwrap().rows.is_empty());
+            assert_eq!(s.outline.controller.mode(), Some(mode));
+        }
+    }
+
+    #[test]
+    fn right_code_dependencies_open_to_side_using_propath_and_javascript_relative_paths() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("work/test-temp")
+            .join(format!(
+                "right-code-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+        std::fs::create_dir_all(root.join("inc")).unwrap();
+        std::fs::create_dir_all(root.join(".cide")).unwrap();
+        std::fs::write(root.join(".cide/propath"), b"inc\n").unwrap();
+        for (name, source, target) in [
+            ("main.p", "{common.i}\r\n", "inc/common.i"),
+            ("main.js", "import './other.js';\n", "other.js"),
+        ] {
+            let path = root.join(name);
+            let destination = root.join(target);
+            std::fs::write(&path, source).unwrap();
+            std::fs::write(&destination, b"// destino\n").unwrap();
+            let mut s = State::new(&GuiOptions::default()).unwrap();
+            s.width = 1400;
+            s.height = 900;
+            s.set_project_root(root.clone()).unwrap();
+            s.workbench
+                .open_file(&path, Some(TextEncoding::Utf8))
+                .unwrap();
+            let r = region(&s).unwrap();
+            let (button, _) = tools(r, s.dpi)
+                .into_iter()
+                .find(|(_, mode)| *mode == SourceMode::Dependencies)
+                .unwrap();
+            s.outline_click(button.left + 2, button.top + 2, false);
+            finish(&mut s);
+            assert!(s.outline_ready(), "{}", s.outline.controller.message());
+            s.activate_outline(true);
+            assert!(s.workbench.panes().is_split());
+            assert_eq!(
+                s.workbench.active_document().unwrap().session.path(),
+                destination.canonicalize().unwrap()
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
+            assert_eq!(s.workbench.active_bytes().unwrap(), b"// destino\n");
+        }
+    }
+    #[test]
+    fn right_code_symbol_side_open_shares_document_and_keeps_origin_caret() {
+        let mut s = State::new(&GuiOptions::default()).unwrap();
+        s.workbench = jc_app::Workbench::default();
+        s.width = 1600;
+        s.height = 900;
+        s.workbench.new_file("simbolos.p", TextEncoding::Utf8);
+        let source = "PROCEDURE uno:\nEND PROCEDURE.\nPROCEDURE dos:\nEND PROCEDURE.\n";
+        s.workbench.insert_text(source).unwrap();
+        s.workbench.move_home(false).unwrap();
+        let original = s.workbench.active_editor().unwrap().cursor;
+        finish(&mut s);
+        s.outline.controller.last();
+        s.activate_outline(true);
+        assert!(s.workbench.panes().is_split());
+        assert_eq!(s.workbench.panes().active(), jc_app::PaneId::Secondary);
+        assert_eq!(
+            s.workbench.active_editor().unwrap().cursor,
+            source.find("dos").unwrap()
+        );
+        assert_eq!(
+            s.workbench
+                .panes()
+                .view(jc_app::PaneId::Primary)
+                .unwrap()
+                .state()
+                .unwrap()
+                .cursor,
+            original
+        );
+        assert_eq!(s.workbench.tabs().tabs().len(), 1);
+        assert_eq!(s.workbench.active_bytes().unwrap(), source.as_bytes());
+        s.workbench.undo().unwrap();
+        assert!(s.workbench.active_bytes().unwrap().is_empty());
     }
 }

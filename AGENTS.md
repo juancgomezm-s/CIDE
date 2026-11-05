@@ -1,5 +1,27 @@
 # Working on JC-IDE
 
+## Current embedded Rust Git closure — 2026-11-05
+
+Read docs/GIT_EMBEDDED_ENGINE.md and docs/GIT_EMBEDDED_LICENSES.md first for Git.
+Juan authorized gitoxide adaptation and its dependencies. jc-git pins gix0.90.0;
+Rust1.88.0 is installed only in work/toolchain and fixed by rust-toolchain.toml.
+GUI/TUI production state and HEAD/index blobs no longer execute/discover git.exe.
+Do not restore that fallback. Historical CLI/session executable values are
+consumed/ignored; GUI metadata v4 reads v1/v2/v3. Current binaries are under
+target/embedded-git-next/release; preserve all previous paths. All Git calls remain
+read-only/off render through existing versioned controllers. Keep typed status,
+including distinct staged-deleted and untracked records sharing the same path.
+Submodules, includes, external filters, sparse/partial/alternate-ref repos fail
+explicitly instead of reporting false clean. Quotas/monitor cancellation are
+cooperative, not hard process-memory/I/O deadline guarantees. Preserve these limits
+and document large-index/pack peaks as pending. Writes/network/advanced Git remain M5.
+Licenses and notices live in third_party/gitoxide; packaging verifies inventory
+hashes and includes them. Retain attribution in files. 533 tests passed by suites,
+two child helpers invoked by parents; not a global runtime workspace pass.
+135 hidden own-HWND GUI checks passed with PATH empty and fixture/Git metadata
+unchanged. Fmt/all-target Clippy/workspace release offline passed. No new physical
+desktop/ConPTY/IME/accessibility or global performance acceptance. CI remains dormant.
+
 ## Current periodic recovery / retention closure — 2026-11-03
 
 Read docs/PERIODIC_RECOVERY_RETENTION.md and docs/SESSION_RECOVERY.md first.

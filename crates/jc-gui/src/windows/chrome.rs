@@ -13,7 +13,9 @@ pub(super) const TITLE_HEIGHT: i32 = 32;
 pub(super) const MENU_HEIGHT: i32 = 28;
 pub(super) const TOP: i32 = TITLE_HEIGHT + MENU_HEIGHT;
 const BUTTON_WIDTH: i32 = 46;
-const RESIZE_BORDER: i32 = 5;
+// Keep an accessible inside edge after extending the client over the native
+// frame. Five pixels were too narrow to reliably acquire at normal scale.
+const RESIZE_BORDER: i32 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Action {
@@ -259,6 +261,20 @@ pub(super) unsafe fn hit_test(hwnd: Hwnd, lparam: isize, layout: Layout) -> isiz
     if ScreenToClient(hwnd, &mut point) == 0 {
         return 0;
     }
+    // Hit testing must use the current HWND, not the retained painting geometry.
+    // Windows can ask for hits while size/restore messages are still being
+    // processed, before the next prepared presentation catches up.
+    let mut client = Rect::default();
+    let layout = if GetClientRect(hwnd, &mut client) != 0 {
+        Layout::at_dpi(
+            client.right - client.left,
+            client.bottom - client.top,
+            IsZoomed(hwnd) != 0,
+            layout.dpi,
+        )
+    } else {
+        layout
+    };
     local_hit(layout, point.x, point.y)
 }
 
@@ -465,6 +481,96 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[link(name = "user32")]
+    extern "system" {
+        fn ClientToScreen(hwnd: Hwnd, point: *mut Point) -> i32;
+    }
+
+    #[test]
+    fn native_resize_hit_uses_current_window_instead_of_stale_paint_size() {
+        struct Window(Hwnd);
+        impl Drop for Window {
+            fn drop(&mut self) {
+                unsafe {
+                    DestroyWindow(self.0);
+                }
+            }
+        }
+        unsafe {
+            // Built-in STATIC is a hidden, owned geometry fixture. No editor,
+            // filesystem, source document or desktop input is involved.
+            let window = Window(CreateWindowExW(
+                0,
+                wide("STATIC").as_ptr(),
+                wide("CIDE resize fixture").as_ptr(),
+                0x00cf0000,
+                0,
+                0,
+                800,
+                600,
+                null_mut(),
+                null_mut(),
+                GetModuleHandleW(std::ptr::null()),
+                null_mut(),
+            ));
+            assert!(!window.0.is_null());
+            let stale = Layout::new(20, 20, true);
+            for (width, height) in [(800, 600), (1000, 750)] {
+                assert_ne!(
+                    SetWindowPos(window.0, null_mut(), 0, 0, width, height, 0x16),
+                    0
+                );
+                let mut client = Rect::default();
+                assert_ne!(GetClientRect(window.0, &mut client), 0);
+                for (x, y, expected) in [
+                    (client.right - 1, client.bottom / 2, 11),
+                    (client.right / 2, client.bottom - 1, 15),
+                    (client.right - 1, client.bottom - 1, 17),
+                ] {
+                    let mut point = Point { x, y };
+                    assert_ne!(ClientToScreen(window.0, &mut point), 0);
+                    let packed =
+                        (((point.y as u16 as usize) << 16) | point.x as u16 as usize) as isize;
+                    assert_eq!(hit_test(window.0, packed, stale), expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn all_resize_edges_remain_acquirable_at_each_dpi_and_stop_when_maximized() {
+        for raw in [96, 144, 192] {
+            let dpi = Dpi::from_raw(raw);
+            let layout = Layout::at_dpi(1600, 1000, false, dpi);
+            // Test the inner edge of each resize target, not only outer pixels.
+            let edge = dpi.pixels(RESIZE_BORDER) - 1;
+            let points = [
+                (edge, 500, 10),
+                (1599 - edge, 500, 11),
+                (800, edge, 12),
+                (800, 999 - edge, 15),
+                (edge, edge, 13),
+                (1599 - edge, edge, 14),
+                (edge, 999 - edge, 16),
+                (1599 - edge, 999 - edge, 17),
+            ];
+            for (x, y, expected) in points {
+                assert_eq!(local_hit(layout, x, y), expected, "DPI {raw} at {x},{y}");
+                let maximized = Layout {
+                    maximized: true,
+                    ..layout
+                };
+                assert!(!matches!(local_hit(maximized, x, y), 10..=17));
+            }
+            let outside = dpi.pixels(RESIZE_BORDER);
+            assert_eq!(local_hit(layout, outside, 500), 1);
+            assert_eq!(local_hit(layout, 1599 - outside, 500), 1);
+            assert_eq!(local_hit(layout, 800, 999 - outside), 1);
+            assert_eq!(local_hit(layout, 800, outside), 2);
+            assert_eq!(local_hit(layout, -1, 500), 0);
+            assert_eq!(local_hit(layout, 1600, 500), 0);
+        }
+    }
     #[test]
     fn scaled_chrome_keeps_draw_hit_and_popup_origins_aligned() {
         for dpi in [96, 144, 192] {

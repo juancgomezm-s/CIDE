@@ -21,28 +21,6 @@ impl TuiApp {
             self.preview_symbol_rename(&input);
             return;
         }
-        if kind == PromptKind::GitExecutable {
-            let path = PathBuf::from(input.trim());
-            if input.len() > 4096 || !path.is_absolute() {
-                self.status = "Usa una ruta absoluta al ejecutable Git (máximo 4096 bytes)".into();
-                return;
-            }
-            self.git_diff.clear(&mut self.tasks);
-            self.git_status.clear();
-            let target = self.git_configuration_target.take();
-            self.git_executable = Some(path);
-            self.close_overlay();
-            match target {
-                Some(super::git_repository::GitConfigurationTarget::Diff) => {
-                    self.request_git_diff(self.git_source)
-                }
-                Some(super::git_repository::GitConfigurationTarget::Status) => {
-                    self.request_git_repository_status()
-                }
-                None => self.status = "Ejecutable Git configurado".into(),
-            }
-            return;
-        }
         if kind == PromptKind::GoToPosition {
             if let Some(position) = jc_app::parse_text_position(&input) {
                 match self.workbench.go_to_position(position) {
@@ -86,7 +64,7 @@ impl TuiApp {
             return;
         }
         let result: Result<(), String> = match kind {
-            PromptKind::GoToPosition | PromptKind::GitExecutable | PromptKind::RenameSymbol => {
+            PromptKind::GoToPosition | PromptKind::RenameSymbol => {
                 unreachable!()
             }
             PromptKind::Open => self.open_path(path),

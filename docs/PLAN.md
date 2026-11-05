@@ -2,11 +2,56 @@
 
 ## Estado de cierre M2 — 2026-11-04
 
-La [matriz de cierre](M2_CIERRE.md) reúne la evidencia automatizada y las
-puertas restantes. La GUI ya responde a cambios de DPI y confirma composición
-IME como una edición. UI Automation expone el grupo activo, incluidos foco,
-cursor, selección y texto por rangos. Quedan abiertas la aceptación física
-con lector de pantalla y las mediciones con ventana visible.
+Requisito autorizado e integrado: [motor Git Rust embebido](GIT_EMBEDDED_ENGINE.md),
+sin instalación de Git. `jc-git` enlaza gix 0.90.0 en GUI/TUI, reemplazando
+el runner externo para estado y blobs HEAD/índice. Rust 1.88.0 está instalado
+solo en el workspace; Cargo.lock y licencias de las transitivas están fijados.
+Ejecutables nuevos: `target/embedded-git-next/release`. G0/G1/G2 de lectura
+se cierran con la evidencia de VALIDACION.md y las limitaciones allí registradas.
+Operaciones de escritura, red, merge/rebase y credenciales siguen en M5;
+esta integración no anuncia paridad completa con Git.
+
+[Integración Git automática](M2_GIT_INTEGRADO_OMNI.md), adaptada de los flujos
+de OmniCore/OmniCoder: no se pide elegir ejecutable en GUI. Validación nativa
+integral de 135 checks y binarios GUI/TUI en `target/git-integrated-next/release`.
+
+Última corrección GUI: [estado Git accesible](M2_GIT_GUI_STATUS_UX.md), con
+ejecutable elegido recordado, contador corregido y actualización por eventos.
+Leyenda F6 retirada solo de GUI; atajo conservado. Binario GUI vigente en
+`target/git-ux-next/release`, con pruebas y límites en la matriz de cierre.
+
+Incremento vigente: [marco/pestañas/paneles](M2_SHELL_PANELS_MENUS.md) y
+[menús depurados](M2_MENU_AUDIT.md). Se corrige la captura que impedía
+redimensionar por el borde, se separa Código al lado derecho y se añaden
+controles inferiores independientes para ambos laterales. Pestañas con
+flechas a la izquierda, Nuevo/lista a la derecha y delimitadores. Estado de
+validación detallado en la matriz de cierre; ejecutables en
+`target/m2-panels-next/release`.
+
+La [matriz de cierre](M2_CIERRE.md) reúne la evidencia y las puertas restantes.
+Por indicación de Juan, Narrador y accesibilidad avanzada quedan pendientes.
+M2 concentra el trabajo actual en interfaz, desplazamiento y edición.
+
+El bloque de avisos y nombres de borradores sustituye la confirmación
+clara de Windows por un diálogo propio con la paleta de CIDE y cancelación
+inicial. Los nombres «Sin título» usan el primer número libre del catálogo
+vivo, para reiniciar en una sesión vacía y conservar borradores recuperados.
+La revisión posterior corrigió el tamaño y centrado: aviso de 420 × 176
+píxeles de diseño, cuerpo más claro y borde visible. Pasaron la inspección
+de escritorio, cancelación con Intro, reinicio de numeración y salida normal.
+Ejecutable vigente: `target/m2-dialog-compact/release/cide-gui.exe`.
+
+El pulido mantiene visible la pestaña activa al reducir ancho, escala las
+barras con DPI y evita reconstruir el dibujo cuando la rueda o el arrastre
+conservan la misma vista. El recorrido integral nativo pasó. Una medición
+visible de 360 pasos de rueda sobre 4,4 MB dio 3,35 ms de mediana y
+4,79 ms de p95 hasta confirmación de pintura.
+
+AvPág/RePág ya usan las filas visibles del grupo activo, con selección
+y panel inferior, y pasaron su regresión dirigida. Quedan pendientes la
+latencia física, IME real y cambio entre monitores de distinta escala.
+La validación de composición existente es inyectada. Los ejecutables de
+este bloque están en `target/m2-polish-next/release`.
 
 ## Estado vigente — recuperación periódica y limpieza segura, 2026-11-03
 

@@ -87,7 +87,7 @@ pub(super) fn region(s: &State) -> Option<Rect> {
     Some(Rect {
         left: super::explorer_panel::region(s).map_or(0, |r| r.right + 1),
         top: (bottom - (height / 3).max(ch * 5)).max(ch * 4 + 20),
-        right: s.width.clamp(1, 8192),
+        right: super::outline_panel::region(s).map_or(s.width.clamp(1, 8192), |r| r.left - 1),
         bottom,
     })
 }

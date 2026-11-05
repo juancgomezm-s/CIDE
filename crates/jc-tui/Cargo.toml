@@ -2,7 +2,7 @@
 name = "jc-tui"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 publish = false
 default-run = "cide-tui"
 description = "Keyboard-first terminal frontend for CIDE"

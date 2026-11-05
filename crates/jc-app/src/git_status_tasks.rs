@@ -21,8 +21,6 @@ const PATH_LIMIT: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitStatusOptions {
-    /// Trusted absolute installed executable; validated/opened only by worker.
-    pub git_executable: PathBuf,
     /// Absolute repository root, not an editor document's directory.
     pub root: PathBuf,
     pub limits: GitStatusReadOptions,
@@ -30,7 +28,7 @@ pub struct GitStatusOptions {
 impl GitStatusOptions {
     fn valid(&self) -> bool {
         self.limits.valid()
-            && [&self.git_executable, &self.root].into_iter().all(|path| {
+            && [&self.root].into_iter().all(|path| {
                 path.is_absolute()
                     && path.as_os_str().len() <= PATH_LIMIT
                     && path.capacity() <= PATH_LIMIT
@@ -368,7 +366,7 @@ fn run_provider(
     if cancel.is_cancelled() {
         return Err(GitStatusError::Cancelled);
     }
-    let reader = GitReader::new(options.git_executable.clone()).map_err(GitStatusError::Read)?;
+    let reader = GitReader::new().map_err(GitStatusError::Read)?;
     read_status(&reader, &options.root, options.limits, || {
         cancel.is_cancelled()
     })
@@ -469,7 +467,6 @@ mod tests {
     fn options(name: &str) -> GitStatusOptions {
         let base = std::env::temp_dir().join("jc-status-controller-fixture");
         GitStatusOptions {
-            git_executable: base.join("git.exe"),
             root: base.join(name),
             limits: GitStatusReadOptions::default(),
         }
@@ -599,7 +596,7 @@ mod tests {
             let mut next = original.clone();
             match change {
                 0 => next.root = options("other-root").root,
-                1 => next.git_executable = next.git_executable.with_file_name("other-git.exe"),
+                1 => next.root = next.root.with_file_name("other-root"),
                 _ => next.limits.parse.max_entries -= 1,
             }
             assert!(controller.poll(&next));

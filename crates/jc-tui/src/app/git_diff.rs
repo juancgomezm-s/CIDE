@@ -1,7 +1,6 @@
 //! Git UI coordination and bounded preparation; rendering consumes the returned
 //! read-only rows and never reaches into a live document or immutable source.
 use super::{GitDiffRow, GitHunkRow, GitPresentation, GitRowKind, TuiApp};
-use crate::state::PromptKind;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{
     diff_model::{DiffKind, DiffLine, DiffSide, DiffSpan, OwnedDiffModel},
@@ -19,22 +18,12 @@ impl TuiApp {
     pub(crate) fn request_git_diff(&mut self, source: GitBlobSource) {
         self.git_source = source;
         self.git_diff_scroll = 0;
-        let Some(git_executable) = self.git_executable.clone() else {
-            self.git_configuration_target =
-                Some(super::git_repository::GitConfigurationTarget::Diff);
-            self.git_diff.clear(&mut self.tasks);
-            self.status = "Elige una ruta absoluta al ejecutable Git".into();
-            self.open_prompt(PromptKind::GitExecutable);
-            return;
-        };
-        self.git_configuration_target = None;
         let Some(root) = self.project_root.clone() else {
             self.git_diff.clear(&mut self.tasks);
             self.status = "Abre la carpeta raíz del repositorio antes de comparar".into();
             return;
         };
         let options = GitDiffOptions {
-            git_executable,
             root,
             cwd: self.git_cwd.clone(),
             source,
@@ -82,12 +71,7 @@ impl TuiApp {
                 &format!("{source} frente al documento activo; solo lectura"),
                 width,
             ));
-            if self.git_executable.is_none() {
-                prepared.details.push(plain_prefix(
-                    "Configura una ruta absoluta al ejecutable Git",
-                    width,
-                ));
-            } else if self.project_root.is_none() {
+            if self.project_root.is_none() {
                 prepared
                     .details
                     .push(plain_prefix("Abre la carpeta raíz del repositorio", width));

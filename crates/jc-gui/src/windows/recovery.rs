@@ -64,7 +64,7 @@ impl State {
             let mut reader = Cursor::new(metadata.as_slice());
             let mut header = [0; 20];
             reader.read_exact(&mut header).map_err(|e| e.to_string())?;
-            if header[0] != 1 || header[1..8].iter().any(|v| *v > 1) {
+            if !matches!(header[0], 1..=4) || header[1..8].iter().any(|v| *v > 1) {
                 return Err("Estado visual de la sesión inválido".into());
             }
             let width = u32::from_le_bytes(header[8..12].try_into().unwrap());
@@ -73,6 +73,16 @@ impl State {
             if !(320..=8192).contains(&width) || !(200..=8192).contains(&height) {
                 return Err("Tamaño de ventana recuperado inválido".into());
             }
+            let code_visible = if header[0] >= 2 {
+                let mut flag = [0];
+                reader.read_exact(&mut flag).map_err(|e| e.to_string())?;
+                if flag[0] > 1 {
+                    return Err("Estado del panel Código inválido".into());
+                }
+                flag[0] == 1
+            } else {
+                true
+            };
             let root = if header[1] == 1 {
                 Some(
                     jc_app::session::read_recovery_path(&mut reader, 32768)
@@ -81,10 +91,29 @@ impl State {
             } else {
                 None
             };
+            let _legacy_git = if header[0] == 3 {
+                let mut flag = [0];
+                reader.read_exact(&mut flag).map_err(|e| e.to_string())?;
+                match flag[0] {
+                    0 => None,
+                    1 => {
+                        let path = jc_app::session::read_recovery_path(&mut reader, 4096)
+                            .map_err(|e| e.to_string())?;
+                        if !path.is_absolute() {
+                            return Err("Ruta Git recuperada inválida".into());
+                        }
+                        Some(path)
+                    }
+                    _ => return Err("Configuración Git recuperada inválida".into()),
+                }
+            } else {
+                None
+            };
             if reader.position() != metadata.len() as u64 {
                 return Err("Metadatos de ventana incompletos".into());
             }
             self.workbench = workbench;
+            self.outline.visible = code_visible;
             if let Some(root) = root {
                 if let Err(error) = self.set_project_root(root) {
                     self.status = error;
@@ -113,7 +142,7 @@ impl State {
     }
     pub(super) fn recovery_metadata(&self) -> Result<Vec<u8>, String> {
         let mut metadata = vec![
-            1,
+            4,
             u8::from(self.project_root.is_some()),
             u8::from(self.explorer_visible),
             u8::from(self.explorer_focused),
@@ -126,6 +155,7 @@ impl State {
         metadata.extend_from_slice(&(self.height.clamp(200, 8192) as u32).to_le_bytes());
         metadata
             .extend_from_slice(&(self.next_untitled.min(u32::MAX as usize) as u32).to_le_bytes());
+        metadata.push(u8::from(self.outline.visible));
         if let Some(root) = &self.project_root {
             jc_app::session::write_recovery_path(root, &mut metadata).map_err(|e| e.to_string())?;
         }
@@ -143,6 +173,15 @@ impl State {
             .checkpoint_recovery(&mut recovery.store, &recovery.base, &metadata)?;
         let _ = recovery.store.prune_obsolete();
         Ok(true)
+    }
+    pub(super) fn prepare_exit(&mut self) -> Result<(), String> {
+        if !self.checkpoint_session()? && self.workbench.context().dirty_documents > 0 {
+            return Err(
+                "La recuperación está desactivada en esta ejecución. Se conservó la ventana con los cambios sin guardar."
+                    .into(),
+            );
+        }
+        Ok(())
     }
     pub(super) fn poll_periodic_recovery(&mut self) -> bool {
         let now = std::time::Instant::now();
@@ -230,6 +269,96 @@ mod tests {
         }
     }
     #[test]
+    fn gui_exit_without_recovery_keeps_dirty_document_and_history() {
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.workbench = Workbench::default();
+        state
+            .workbench
+            .new_file("sin-guardar.txt", TextEncoding::Utf8);
+        state.workbench.insert_text("pendiente\r\n").unwrap();
+        assert!(state.prepare_exit().is_err());
+        assert_eq!(state.workbench.active_bytes().unwrap(), b"pendiente\r\n");
+        state.workbench.undo().unwrap();
+        assert_eq!(state.workbench.active_bytes().unwrap(), b"");
+    }
+    #[test]
+    fn gui_empty_recovered_session_restarts_draft_names_after_old_counter() {
+        let fixture = Fixture::new();
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.workbench = Workbench::default();
+        state.next_untitled = 5;
+        state.outline.visible = false;
+        state.restore_from(fixture.recovery()).unwrap();
+        assert!(state.checkpoint_session().unwrap());
+        drop(state);
+        let mut recovered = State::new(&GuiOptions::default()).unwrap();
+        recovered.restore_from(fixture.recovery()).unwrap();
+        assert!(!recovered.outline.visible);
+        recovered.new_document();
+        assert_eq!(
+            recovered
+                .workbench
+                .active_document()
+                .unwrap()
+                .session
+                .path()
+                .file_name()
+                .unwrap(),
+            "Sin título 1.txt"
+        );
+    }
+    #[test]
+    fn gui_legacy_visual_metadata_restores_with_code_panel_default() {
+        let fixture = Fixture::new();
+        let state = State::new(&GuiOptions::default()).unwrap();
+        let mut legacy = state.recovery_metadata().unwrap();
+        legacy[0] = 1;
+        legacy.remove(20);
+        let mut recovery = fixture.recovery();
+        state
+            .workbench
+            .checkpoint_recovery(&mut recovery.store, &recovery.base, &legacy)
+            .unwrap();
+        drop(recovery);
+        let mut recovered = State::new(&GuiOptions::default()).unwrap();
+        recovered.restore_from(fixture.recovery()).unwrap();
+        assert!(recovered.outline.visible);
+    }
+    #[test]
+    fn gui_recovery_ignores_legacy_git_path_and_writes_embedded_metadata() {
+        let fixture = Fixture::new();
+        let state = State::new(&GuiOptions::default()).unwrap();
+        let mut legacy = state.recovery_metadata().unwrap();
+        assert_eq!(legacy[0], 4);
+        legacy[0] = 3;
+        legacy.push(1);
+        let path = fixture.root.join("obsolete-git.exe");
+        jc_app::session::write_recovery_path(&path, &mut legacy).unwrap();
+        let mut depot = fixture.recovery();
+        state
+            .workbench
+            .checkpoint_recovery(&mut depot.store, &depot.base, &legacy)
+            .unwrap();
+        drop(depot);
+        let mut restored = State::new(&GuiOptions::default()).unwrap();
+        restored.restore_from(fixture.recovery()).unwrap();
+        assert_eq!(restored.recovery_metadata().unwrap()[0], 4);
+        assert!(!restored.git_status_due);
+        drop(restored);
+        let other = Fixture::new();
+        let mut v2 = state.recovery_metadata().unwrap();
+        v2[0] = 2;
+        let mut depot = other.recovery();
+        state
+            .workbench
+            .checkpoint_recovery(&mut depot.store, &depot.base, &v2)
+            .unwrap();
+        drop(depot);
+        let mut restored = State::new(&GuiOptions::default()).unwrap();
+        restored.restore_from(other.recovery()).unwrap();
+        assert_eq!(restored.recovery_metadata().unwrap()[0], 4);
+    }
+    #[test]
     fn gui_recovery_restores_window_panels_project_and_dirty_editor_without_environment_or_original_writes(
     ) {
         let fixture = Fixture::new();
@@ -262,7 +391,7 @@ mod tests {
         state.workbench.focus_editor_pane(PaneId::Primary);
         state
             .workbench
-            .new_file(fixture.root.join("borrador.rs"), TextEncoding::Utf8);
+            .new_file(fixture.root.join("Sin título 1.txt"), TextEncoding::Utf8);
         state.workbench.insert_text("borrador\r\n").unwrap();
         state
             .workbench
@@ -284,6 +413,10 @@ mod tests {
         recovered.restore_from(fixture.recovery()).unwrap();
         assert_eq!(recovered.restore_window, Some((1234, 777, true)));
         assert_eq!(recovered.next_untitled, 42);
+        assert_eq!(
+            super::super::untitled::next_name(&recovered.workbench),
+            "Sin título 2.txt"
+        );
         assert_eq!(
             recovered.project_root.as_deref(),
             Some(fixture.root.as_path())
@@ -326,7 +459,7 @@ mod tests {
             expected_original
         );
         assert_eq!(fs::read(&original).unwrap(), bytes);
-        assert!(!fixture.root.join("borrador.rs").exists());
+        assert!(!fixture.root.join("Sin título 1.txt").exists());
     }
     #[test]
     fn gui_failed_hot_exit_checkpoint_keeps_live_edits_and_last_confirmed_backup_until_retry() {
@@ -358,7 +491,7 @@ mod tests {
             .unwrap();
         state.workbench.insert_text("dos ").unwrap();
         let live = state.workbench.active_bytes().unwrap();
-        assert!(state.checkpoint_session().is_err());
+        assert!(state.prepare_exit().is_err());
         assert_eq!(state.workbench.active_bytes().unwrap(), live);
         assert!(state
             .workbench

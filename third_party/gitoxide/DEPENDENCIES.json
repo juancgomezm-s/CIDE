@@ -1,0 +1,3356 @@
+{
+  "scope": "New registry package identities versus git HEAD:Cargo.lock; includes target-conditional lock entries, not a built-package claim",
+  "baseline": "4b08d4861f53d735dbce990058857e2c1e819f62",
+  "baseline_cargo_lock_sha256": "17749f71519b69edf3a5a341423d3c9ac8685a23b3cae503427127e014d81319",
+  "cargo_lock_sha256": "ec9db1afe35e53973b17a8339bf3f25434b86de24db3b7a8a136949236bfc5fb",
+  "packages": [
+    {
+      "name": "allocator-api2",
+      "version": "0.2.21",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "20fe7b00e904ed690e3b9fd6073784d3fc428141dbd10b81c01fd143d0797f58",
+          "bytes": 9899
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "36516aefdc84c5d5a1e7485425913a22dbda69eb1930c5e84d6ae4972b5194b9",
+          "bytes": 1046
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Zakarum <zaq.dev@icloud.com>"
+      ],
+      "repository": "https://github.com/zakarumych/allocator-api2",
+      "homepage": "https://github.com/zakarumych/allocator-api2",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "arc-swap",
+      "version": "1.9.3",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "380962b3d93b99642e50b9febf72c071e97e8b32d86eae9cf4ef582bb960ae6e",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "ff3f1cd12af8866d9bde961d6cc40df774cd131d484de31d3170c4b02b21a7b5",
+          "bytes": 1063
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Michal 'vorner' Vaner <vorner@vorner.cz>"
+      ],
+      "repository": "https://github.com/vorner/arc-swap",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "autocfg",
+      "version": "1.5.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "27995d58ad5c1145c1a8cd86244ce844886958a35eb2b78c6b772748669999ac",
+          "bytes": 1054
+        }
+      ],
+      "license": "Apache-2.0 OR MIT",
+      "license-file": null,
+      "authors": [
+        "Josh Stone <cuviper@gmail.com>"
+      ],
+      "repository": "https://github.com/cuviper/autocfg",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "bitflags",
+      "version": "1.3.2",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb",
+          "bytes": 1071
+        }
+      ],
+      "license": "MIT/Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "The Rust Project Developers"
+      ],
+      "repository": "https://github.com/bitflags/bitflags",
+      "homepage": "https://github.com/bitflags/bitflags",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "block-buffer",
+      "version": "0.12.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+          "bytes": 10849
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "98181e7249d0c01737645ec982499ce99a0f07eb8f7d625b8840d799d10dbc01",
+          "bytes": 1082
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "RustCrypto Developers"
+      ],
+      "repository": "https://github.com/RustCrypto/utils",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "bstr",
+      "version": "1.13.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "6bb31b46c14244e20ee9984b11bf5c992b91fb6939fea616e3512c8baecdbe5f",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "68653aaa727a2bfa31b7a751e31701ce33c49d695c12dd291a07d1c54da4c14b",
+          "bytes": 262
+        },
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "6b7374c39a57e57fc2c38eb529c4c88340152b10f51dd5ae2d819dfa67f61715",
+          "bytes": 1086
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/bstr",
+      "homepage": "https://github.com/BurntSushi/bstr",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "byteorder",
+      "version": "1.5.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "bytes": 126
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "bytes": 1081
+        },
+        {
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "bytes": 1211
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/byteorder",
+      "homepage": "https://github.com/BurntSushi/byteorder",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "bytes",
+      "version": "1.12.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "45f522cacecb1023856e46df79ca625dfc550c94910078bd8aec6e02880b3d42",
+          "bytes": 1055
+        }
+      ],
+      "license": "MIT",
+      "license-file": null,
+      "authors": [
+        "Carl Lerche <me@carllerche.com>",
+        "Sean McArthur <sean@seanmonstar.com>"
+      ],
+      "repository": "https://github.com/tokio-rs/bytes",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "clru",
+      "version": "0.6.3",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "197fd99cb113a8d5d9b6376f3aa817f32c1078f2343b714fff7d2ca44fdf67d5",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "7109978a83ec9d6932d511c224e300c430851a2d6123de5895a3531788976bee",
+          "bytes": 1094
+        }
+      ],
+      "license": "MIT",
+      "license-file": null,
+      "authors": [
+        "marmeladema <xademax@gmail.com>"
+      ],
+      "repository": "https://github.com/marmeladema/clru-rs",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "core_detect",
+      "version": "1.0.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "769f80b5bcb42ed0af4e4d2fd74e1ac9bf843cb80c5a29219d1ef3544428a6bb",
+          "bytes": 10846
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "8569ebf6bf52937b961d9c9c934d8400a2bb6b09651a9afacbb3fc18fe5c09b1",
+          "bytes": 1076
+        }
+      ],
+      "license": "MIT/Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Thom Chiovoloni <chiovolonit@gmail.com>"
+      ],
+      "repository": "https://github.com/thomcc/core_detect",
+      "homepage": "https://github.com/thomcc/core_detect",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "cpufeatures",
+      "version": "0.3.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+          "bytes": 10849
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "73b9dc2e79c7308998dd30296e073aefaefb944a68fb89aa412c23c0edcabcaa",
+          "bytes": 1082
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "RustCrypto Developers"
+      ],
+      "repository": "https://github.com/RustCrypto/utils",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "crc32fast",
+      "version": "1.5.4",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "5f97d3416d5337d15c4b0d78c8c91df922ca143f57ec20e2d1c188333047ef04",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
+          "bytes": 11358
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "61d383b05b87d78f94d2937e2580cce47226d17823c0430fbcad09596537efcf",
+          "bytes": 1097
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sam Rijs <srijs@airpost.net>",
+        "Alex Crichton <alex@alexcrichton.com>"
+      ],
+      "repository": "https://github.com/srijs/rust-crc32fast",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "crossbeam-channel",
+      "version": "0.5.17",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "98b0cc327b5bc766e7fda9c9260cc0fa81b43a8e240440422dff70788e3f9ef1",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab",
+          "bytes": 1099
+        },
+        {
+          "path": "LICENSE-THIRD-PARTY",
+          "sha256": "b16db96b93b1d7cf7bea533f572091ec6bca3234fbe0a83038be772ff391a44c",
+          "bytes": 33447
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/crossbeam-rs/crossbeam",
+      "homepage": "https://github.com/crossbeam-rs/crossbeam/tree/master/crossbeam-channel",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "crossbeam-utils",
+      "version": "0.8.23",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "5734ed989dfca1f625b40281ee9f4530f91b2411ec01cb748223e7eb87e201ab",
+          "bytes": 1099
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/crossbeam-rs/crossbeam",
+      "homepage": "https://github.com/crossbeam-rs/crossbeam/tree/master/crossbeam-utils",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "crypto-common",
+      "version": "0.2.2",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+          "bytes": 10849
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "d2e7ec5355c96eeade56b09187ceb48a6a30299da3ce7531a66d3d11405ab963",
+          "bytes": 1070
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "RustCrypto Developers"
+      ],
+      "repository": "https://github.com/RustCrypto/traits",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "dashmap",
+      "version": "6.2.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "e6361d5c062261c78a176addb82d4c821ae42bed6089de0e12603cd25de2059c",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "16692e8cee4aa06e3913787497eba2d47c42002014136f5da67be6ee640e28a3",
+          "bytes": 1064
+        }
+      ],
+      "license": "MIT",
+      "license-file": null,
+      "authors": [
+        "Acrimon <joel.wejdenstal@gmail.com>"
+      ],
+      "repository": "https://github.com/xacrimon/dashmap",
+      "homepage": "https://github.com/xacrimon/dashmap",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "defmt",
+      "version": "0.3.101",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "4deef977660e373c458df605a913d4ab121db0ccd18d1ad6976dff7d37cddb53",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+          "bytes": 10850
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "2710a622a896bba67356913d4d0492cab5465f61b2ecce6d880aeb483834fb50",
+          "bytes": 1053
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "The Knurling-rs developers"
+      ],
+      "repository": "https://github.com/knurling-rs/defmt",
+      "homepage": "https://knurling.ferrous-systems.com/",
+      "archive_checksum_verified": true,
+      "license_notice_source": {
+        "package": "defmt-1.2.0",
+        "upstream_commit": "719491ca3529abd07205165b9b10e4d988552bc2",
+        "target_path_in_vcs": "defmt-03",
+        "source_path_in_vcs": "defmt",
+        "reason": "Compatibility shim omitted notices; sibling at identical upstream commit ships workspace licenses"
+      }
+    },
+    {
+      "name": "defmt",
+      "version": "1.2.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "e4a0795ac740cb54d7b3775c9c17345f6aaecf884c01733b39d6017738e0e3e1",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+          "bytes": 10850
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "2710a622a896bba67356913d4d0492cab5465f61b2ecce6d880aeb483834fb50",
+          "bytes": 1053
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "The Knurling-rs developers"
+      ],
+      "repository": "https://github.com/knurling-rs/defmt",
+      "homepage": "https://knurling.ferrous-systems.com/",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "defmt-macros",
+      "version": "1.2.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "840bb056bd99c495c9188198a258ab787c79f306d864db3e6e8451442d6d8366",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+          "bytes": 10850
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "2710a622a896bba67356913d4d0492cab5465f61b2ecce6d880aeb483834fb50",
+          "bytes": 1053
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "The Knurling-rs developers"
+      ],
+      "repository": "https://github.com/knurling-rs/defmt",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "defmt-parser",
+      "version": "1.1.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "71958f69fb2de856c5dd51ac9377e986ca1aa5919f931bf5395a807277f889a0",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90",
+          "bytes": 10850
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "2710a622a896bba67356913d4d0492cab5465f61b2ecce6d880aeb483834fb50",
+          "bytes": 1053
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "The Knurling-rs developers"
+      ],
+      "repository": "https://github.com/knurling-rs/defmt",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "digest",
+      "version": "0.11.3",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+          "bytes": 10849
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "af59cea35d7f5e2777a713b8d155d65efa2c339eb43f3c14e868c6ac8506edad",
+          "bytes": 1103
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "RustCrypto Developers"
+      ],
+      "repository": "https://github.com/RustCrypto/traits",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "dunce",
+      "version": "1.0.5",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+          "bytes": 7048
+        }
+      ],
+      "license": "CC0-1.0 OR MIT-0 OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Kornel <kornel@geekhood.net>"
+      ],
+      "repository": "https://gitlab.com/kornelski/dunce",
+      "homepage": "https://lib.rs/crates/dunce",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "encoding_rs",
+      "version": "0.8.44",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "89253175e704ab869b04f9db224d38630e0211a53841a79181deae0889e169f5",
+      "notices": [
+        {
+          "path": "COPYRIGHT",
+          "sha256": "11789f45bb180841cd362a5eee6789c68ddb573a11105e30768c308a6add0190",
+          "bytes": 713
+        },
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "bytes": 11358
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c",
+          "bytes": 1053
+        },
+        {
+          "path": "LICENSE-WHATWG",
+          "sha256": "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50",
+          "bytes": 1501
+        }
+      ],
+      "license": "(Apache-2.0 OR MIT) AND BSD-3-Clause",
+      "license-file": null,
+      "authors": [
+        "Henri Sivonen <hsivonen@hsivonen.fi>"
+      ],
+      "repository": "https://github.com/hsivonen/encoding_rs",
+      "homepage": "https://docs.rs/encoding_rs/",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "equivalent",
+      "version": "1.0.3",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "00d174d5400e5e8fd687ad1049e2f578285fa914201b1af7e8b112a4546bd826",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "7365cc8878a1d7ce155a58c4ca09c3d7a6be413efa5334a80ea842912b669349",
+          "bytes": 1049
+        }
+      ],
+      "license": "Apache-2.0 OR MIT",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/indexmap-rs/equivalent",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "faster-hex",
+      "version": "0.10.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "04839bdf9d8c10f66806fad16b852fc72aab80873aebc3cb69d85b4fa41543ed",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "7e4baa202160a035c769bb83bd994222c74f479ec582624e3aedaa8f553481c7",
+          "bytes": 1074
+        }
+      ],
+      "license": "MIT",
+      "license-file": null,
+      "authors": [
+        "zhangsoledad <787953403@qq.com>"
+      ],
+      "repository": "https://github.com/NervosFoundation/faster-hex",
+      "homepage": "https://github.com/NervosFoundation/faster-hex",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "fastrand",
+      "version": "2.5.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "Apache-2.0 OR MIT",
+      "license-file": null,
+      "authors": [
+        "Stjepan Glavina <stjepang@gmail.com>"
+      ],
+      "repository": "https://github.com/smol-rs/fastrand",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "filetime",
+      "version": "0.2.29",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "378f5840b258e2779c39418f3f2d7b2ba96f1c7917dd6be0713f88305dbda397",
+          "bytes": 1057
+        }
+      ],
+      "license": "MIT/Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Alex Crichton <alex@alexcrichton.com>"
+      ],
+      "repository": "https://github.com/alexcrichton/filetime",
+      "homepage": "https://github.com/alexcrichton/filetime",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "fnv",
+      "version": "1.0.7",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "65fdb6c76cd61612070c066eec9ecdb30ee74fb27859d0d9af58b9f499fd0c3e",
+          "bytes": 1056
+        }
+      ],
+      "license": "Apache-2.0 / MIT",
+      "license-file": null,
+      "authors": [
+        "Alex Crichton <alex@alexcrichton.com>"
+      ],
+      "repository": "https://github.com/servo/rust-fnv",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "foldhash",
+      "version": "0.2.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "b1181a40b2a7b25cf66fd01481713bc1005df082c53ef73e851e55071b102744",
+          "bytes": 856
+        }
+      ],
+      "license": "Zlib",
+      "license-file": null,
+      "authors": [
+        "Orson Peters <orsonpeters@gmail.com>"
+      ],
+      "repository": "https://github.com/orlp/foldhash",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "getrandom",
+      "version": "0.4.3",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "aaff376532ea30a0cd5330b9502ad4a4c8bf769c539c87ffe78819d188a18ebf",
+          "bytes": 10849
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "523a42c25d245dde9c015f882cec7f4555aad883382a6cf19b4b7d9b2cd5419b",
+          "bytes": 1130
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "The Rand Project Developers"
+      ],
+      "repository": "https://github.com/rust-random/getrandom",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix",
+      "version": "0.90.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "b92b20c1560511a9014b16e29db2f3c6f0580d4fe289b70f41131277b065a3b0",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-actor",
+      "version": "0.44.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "78243d3371019288a40a75ba1a58de2815c32591fc87b9f7cb01918bce364ca8",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-attributes",
+      "version": "0.37.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "6b9947d93a94d41ddde66ac655674269121cbebaf6cdee30d8d0e7dbe85edb4c",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-bitmap",
+      "version": "0.6.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "422cd23418fd80e9e965595323975d72abd6364a66ff8f0daade5c105a7f35d2",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-chunk",
+      "version": "0.10.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "dc6a775aba54f0d65698126cc4214b6bf8ddb208312e4ef4240dfe34b0697b87",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-command",
+      "version": "0.12.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "df63215f103299169e239dfe76f5cfa4a3d6d4adf69a01774085e3e0423cba34",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-commitgraph",
+      "version": "0.42.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "60b53b700d2a506cf98075099df1fcc0558265cbb47fd86bc6d03c231e4bd72a",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Conor Davis <gitoxide@conor.fastmail.fm>",
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-config",
+      "version": "0.62.2",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "3e11ccf82e9630c4e7befbae07cbe90e79de61dc73a34448c2dec70a13da9ebf",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Edward Shen <code@eddie.sh>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-config-value",
+      "version": "0.21.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "6cdada8bd9c97dc6522505c08226d9c88f0a1286f2c06b9e1bf51c3bf7ad7b2b",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-date",
+      "version": "0.18.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "4c538190012dbb536df54734ec38cc1109270c73f2f76585c011dd5b0c9f087c",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-diff",
+      "version": "0.70.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "2c794988335792f85c3ca79c385c950b3a921a71ba3df361cb1f9e5b6bd4a6e4",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-dir",
+      "version": "0.32.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "af939f21c65d4f15457c72d08c874d454893185c51a3596e3c2bd3d9c567618d",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-discover",
+      "version": "0.57.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "4a0875f4e5408713fcf92265973cc38bf9dc5a93384ce218beba0572b7785a03",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-error",
+      "version": "0.5.2",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "d87ff4b3f3daf01234d38d176b0ec00e92de514cc0e3fb8a8898c5cb7ccd22bb",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-filter",
+      "version": "0.36.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "f8df8d50fda4684c6ec366f75e4082ab6fc3d437d3deec30ff88462710b68d17",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-fs",
+      "version": "0.24.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "808f23d897ddfe847d9b7206bda947901885be623bdf96b226a2dccf87f018c7",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-glob",
+      "version": "0.29.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "7a12789fa68a150293ad8834d267b31044240532b5ccf2734d228fe985cba2be",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-hash",
+      "version": "0.28.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "b4802ffb87e051795822bfdaa8ab9075b23e316684f7054e6ce4a246b2b76f4e",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-hashtable",
+      "version": "0.18.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "2f66822aee11ccb28d6a2e63b587254e578fb52a138bd5806b58d8560125592b",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Pascal Kuthe <pascal.kuthe@semimod.de>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-ignore",
+      "version": "0.24.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "968f12fe42896873504f46127cd5bf0f9a34fc1479a781f43cf94b5d8d760a15",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-imara-diff",
+      "version": "0.3.3",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "7518b930f6aeb75e871d32ce873c2ae46e35cef19b5a0b039d4337f651d897cd",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        }
+      ],
+      "license": "Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "pascalkuthe <pascalkuthe@pm.me>",
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-index",
+      "version": "0.58.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "06bfc736774a623307eda890c918d308ef5acd37402bde2d6768fccb1f6ecb5d",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-lock",
+      "version": "26.0.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "64783de116c477c5ea4a7f3b56e18ab363dabfdae2724291ea0587b642cadb3d",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-macros",
+      "version": "0.2.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "d02e51a52e15255757c06a6873529ae01205711aa9e8f9a1d46b556f1a14a96e",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Jiahao XU <Jiahao_XU@outlook.com>",
+        "Andre Bogus <bogusandre@gmail.com>",
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-note",
+      "version": "0.3.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "8473688f2262f4364f521b39ce2a5dbe94494f327fc19c945318d7aff580952e",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-object",
+      "version": "0.66.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "beaf9086dd00b9d2a177ca3ae83210ce926cee7c0faa112e053851221cd8f94d",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-odb",
+      "version": "0.87.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "941b5b99fed282a5b05b54ea486c36c76b558afe151e6804c3acdd5c8f3c3459",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-pack",
+      "version": "0.77.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "e2ef461798b1e6cb652192c69dfc9658dfc1bab457ef812dd1ab85d75104cbef",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-packetline",
+      "version": "0.24.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "8ebb59ef7aff9d435946a5e5c3d9cfb673be7665839fd72961c08c733a934fb7",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-parallel",
+      "version": "0.50.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "58e7e10f8343e05f6ad8651f97dffa1caca1531bb274bfc8e3050e80e3ed5946",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-path",
+      "version": "0.14.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "83976e926a485e6fb4b8d9a0d7a30c53c1f607b81b5d310f06f92fd8385bf16a",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-pathspec",
+      "version": "0.22.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "490aa03a11e0cbb998a0a593b75e27ea2e30df4ebd8f84f60e0641b9b72270e8",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-protocol",
+      "version": "0.68.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "83677ebae6a1a09dc07f2435b5ebe68470dc51afb74052135e98fd7c11f85ba9",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-quote",
+      "version": "0.10.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "2413e65271303e9b674ec4785d469df4c3c36e888dbd165e3035de0405c6d9d1",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-ref",
+      "version": "0.69.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "68686e4697b9cd15d1b152ef51df870513210ed22938eacc13b3672b76035f13",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-refspec",
+      "version": "0.47.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "2569309da6fdc230973cf5b846508154c0e813fda60f2b2da768cc5655ed312c",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-revision",
+      "version": "0.52.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "241465fc73530f41d0a1c18320c5e291365b7c2c2a3dfd07afe2a5d6265085c8",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-revwalk",
+      "version": "0.38.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "8b46edeacd25d9d3131941ae6bc91002bf7ba10e130393b7e9bc23d528625447",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-sec",
+      "version": "0.16.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "9598d1f35baec7038c2d278bfcc18f1d8951f41dcc3f51ab6175661dfe5a6137",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-shallow",
+      "version": "0.15.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "1d805949578724b5164c90ec6d19567832ccaa5ba8a3fe26f7befc52007e2407",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-status",
+      "version": "0.37.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "31b00c359278210e3cc0803d057db1d61c5d6694c21ed9ad0b8f8f862157247a",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>",
+        "Pascal Kuthe <pascal.kuthe@semimod.de>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-submodule",
+      "version": "0.36.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "d558a1307b6f3de2a92bd91d0570c53952d4f2329e6860813007508c8ed413dc",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-tempfile",
+      "version": "26.0.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "b8fdb135a043d6106b59bc58d59a326b277e495ec26fb9e02a1e2b6354bf4b5a",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-trace",
+      "version": "0.3.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "c477c029518d3f235c26db21ff7cccc1fa13c0c31b05c005a55b7affd4ffbd81",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        },
+        {
+          "path": "LICENSE-MIT-tracing-forest",
+          "sha256": "2ccb35ce51bb2522509cdcd3ae57256ffe05b6ff4811c63750f34e1e460c80e7",
+          "bytes": 1256
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-transport",
+      "version": "0.62.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "cdcd9cdfd8745aa38f926a4a380c13d76b200d7338de57fc492982cd5a6652ba",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-traverse",
+      "version": "0.64.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "00171e00e91508300d0361072c4eb110ec0f1322d8b95ed36887231702a38ebc",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-url",
+      "version": "0.40.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "def12e1016b872f1094442882f627905c59bd73480435291a4958cf373a8f28d",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-utils",
+      "version": "0.5.2",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "11a9446060447e9ec58f5d333b98bed53389dfa10de5d8dd46fc76d01dfc2954",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-validate",
+      "version": "0.13.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "02b617c17754bf37ee7a9b48e33ffb806abecbbed779ba415199ac1480acf699",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-worktree",
+      "version": "0.59.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "fe92aec0a25cf073394492a6ee2aa4d27632acde91a653d34de0e4da6afb485d",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-worktree-stream",
+      "version": "0.39.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "3fe5d65793848ffb596f6c5596fd120b132038736525628227e2388ca454f64d",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "gix-zlib",
+      "version": "0.4.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "7c5b29808570149d86f417184605111ede9dda5aa06015e9ea6da07f0c3ca41e",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/gitoxide",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "hash32",
+      "version": "0.3.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "47d60b12902ba28e2730cd37e95b8c9223af2808df9e902d4df49588d1470606",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "c986bcdb83103d4ddf58aeb7b5302359782e54dc4eea14a0cc27c62dcbd50729",
+          "bytes": 1058
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Jorge Aparicio <jorge@japaric.io>"
+      ],
+      "repository": "https://github.com/japaric/hash32",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "hashbrown",
+      "version": "0.14.5",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "ff8f68cb076caf8cefe7a6430d4ac086ce6af2ca8ce2c4e5a2004d4552ef52a2",
+          "bytes": 1060
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Amanieu d'Antras <amanieu@gmail.com>"
+      ],
+      "repository": "https://github.com/rust-lang/hashbrown",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "hashbrown",
+      "version": "0.16.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "ff8f68cb076caf8cefe7a6430d4ac086ce6af2ca8ce2c4e5a2004d4552ef52a2",
+          "bytes": 1060
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Amanieu d'Antras <amanieu@gmail.com>"
+      ],
+      "repository": "https://github.com/rust-lang/hashbrown",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "hashbrown",
+      "version": "0.17.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "ff8f68cb076caf8cefe7a6430d4ac086ce6af2ca8ce2c4e5a2004d4552ef52a2",
+          "bytes": 1060
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/rust-lang/hashbrown",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "heapless",
+      "version": "0.8.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "035e70219855119df4273b3c5b97543ae82e0dd60c520416e759107c602f651b",
+          "bytes": 1058
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Jorge Aparicio <jorge@japaric.io>",
+        "Per Lindgren <per.lindgren@ltu.se>",
+        "Emil Fresk <emil.fresk@gmail.com>"
+      ],
+      "repository": "https://github.com/rust-embedded/heapless",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "hybrid-array",
+      "version": "0.4.15",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+          "bytes": 10849
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "70c9d40f1f9545c3f133b8a67206e89da850f6468eed072281bb3701514114a9",
+          "bytes": 1082
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "RustCrypto Developers"
+      ],
+      "repository": "https://github.com/RustCrypto/hybrid-array",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "itoa",
+      "version": "1.0.18",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/dtolnay/itoa",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "jiff",
+      "version": "0.2.39",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "3ac703058abac89e5c39b0b879dce2b6b14a4ba36600c7e7e3d0c60a6883ef3c",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "bytes": 126
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "bytes": 1081
+        },
+        {
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "bytes": 1211
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/jiff",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "jiff-core",
+      "version": "0.1.2",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "aee43309eb53bafb8c36d35d6e444769c8f8e6206a9fbf7546f5db9d7d4a0e93",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "bytes": 126
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "bytes": 1081
+        },
+        {
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "bytes": 1211
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/jiff",
+      "homepage": "https://github.com/BurntSushi/jiff/tree/master/crates/jiff-core",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "jiff-static",
+      "version": "0.2.39",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "6dc32470c67eb7d0e9ccb74303fa925313dc04cecb1aa048beaa6f391e36a93d",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "bytes": 126
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "bytes": 1081
+        },
+        {
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "bytes": 1211
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/jiff",
+      "homepage": "https://github.com/BurntSushi/jiff/tree/master/crates/jiff-static",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "jiff-tzdb",
+      "version": "0.1.9",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "fa8377070c6bae868759445e5a77f66d84f0b72f3a054bfb00e6d038b8282da7",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "bytes": 126
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "bytes": 1081
+        },
+        {
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "bytes": 1211
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/jiff",
+      "homepage": "https://github.com/BurntSushi/jiff/tree/master/crates/jiff-tzdb",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "jiff-tzdb-platform",
+      "version": "0.1.3",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "875a5a69ac2bab1a891711cf5eccbec1ce0341ea805560dcd90b7a2e925132e8",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "bytes": 126
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "bytes": 1081
+        },
+        {
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "bytes": 1211
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/jiff",
+      "homepage": "https://github.com/BurntSushi/jiff/tree/master/crates/jiff-tzdb-platform",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "memmap2",
+      "version": "0.9.12",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "6b0ca1155a9ecc25aa12e8313a119f32edf0255fea2f44839c4ac0a12b2ac157",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "04ea4849dba9dcae07113850c6f1b1a69052c625210639914eee352023f750ad",
+          "bytes": 10835
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "0d25d03b5ab49576178ad0cae7a2648d12c17ad0452fe49c07e55e4b59aa5257",
+          "bytes": 1091
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Dan Burkert <dan@danburkert.com>",
+        "Yevhenii Reizner <razrfalcon@gmail.com>",
+        "The Contributors"
+      ],
+      "repository": "https://github.com/RazrFalcon/memmap2-rs",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "multiversion_no_op",
+      "version": "1.0.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "743fb55ba31b18fb1ecef6bdc9aa2743314978ac084044301a7eee33fb99a20d",
+      "notices": [
+        {
+          "path": "COPYRIGHT",
+          "sha256": "d2a809eafabba137f508bea16a1b93d8ff24df7da6f38129d830db9bc118bdfe",
+          "bytes": 644
+        },
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "bytes": 11358
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c",
+          "bytes": 1053
+        }
+      ],
+      "license": "Apache-2.0 OR MIT",
+      "license-file": null,
+      "authors": [
+        "Henri Sivonen <hsivonen@hsivonen.fi>"
+      ],
+      "repository": "https://github.com/hsivonen/multiversion_no_op",
+      "homepage": "https://docs.rs/multiversion_no_op/",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "nonempty",
+      "version": "0.12.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "9737e026353e5cd0736f98eddae28665118eb6f6600902a7f50db585621fecb6",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "e9a7f23bee03fd95309a52a27f3eb77ad8ba9910ec47871111dd80db4df41648",
+          "bytes": 1058
+        }
+      ],
+      "license": "MIT",
+      "license-file": null,
+      "authors": [
+        "Alexis Sellier <self@cloudhead.io>"
+      ],
+      "repository": "https://github.com/cloudhead/nonempty",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "once_cell",
+      "version": "1.21.4",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Aleksey Kladov <aleksey.kladov@gmail.com>"
+      ],
+      "repository": "https://github.com/matklad/once_cell",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "percent-encoding",
+      "version": "2.3.2",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "b38f11f6096706e6de553dabe2a7ed142d59b6fa8c97e290c67496154745cdd5",
+          "bytes": 1072
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "The rust-url developers"
+      ],
+      "repository": "https://github.com/servo/rust-url/",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "portable-atomic",
+      "version": "1.15.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "05c8b63e8d9609db387f0324918f81d68fe27748f084ef092fb35954d0539a85",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "Apache-2.0 OR MIT",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/taiki-e/portable-atomic",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "portable-atomic-util",
+      "version": "0.2.8",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "bytes": 10174
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "Apache-2.0 OR MIT",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/taiki-e/portable-atomic-util",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "proc-macro2",
+      "version": "1.0.107",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "David Tolnay <dtolnay@gmail.com>",
+        "Alex Crichton <alex@alexcrichton.com>"
+      ],
+      "repository": "https://github.com/dtolnay/proc-macro2",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "prodash",
+      "version": "31.0.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "cf52d87428247c5aa3760ac8e7d8b13ec7b3579b955a8c3f311668b6860acba5",
+      "notices": [
+        {
+          "path": "LICENSE.md",
+          "sha256": "fd6e8d4faaa8ad5856140481c2d7664ded0c92ddba62bd3d1f84fa50ba026a30",
+          "bytes": 1115
+        }
+      ],
+      "license": "MIT",
+      "license-file": null,
+      "authors": [
+        "Sebastian Thiel <sebastian.thiel@icloud.com>"
+      ],
+      "repository": "https://github.com/GitoxideLabs/prodash",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "quote",
+      "version": "1.0.47",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/dtolnay/quote",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "r-efi",
+      "version": "6.0.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf",
+      "notices": [
+        {
+          "path": "AUTHORS",
+          "sha256": "d027e91dbc9cdbb2f1190068e498bd6b61cff022b6a032b191021ba658d96111",
+          "bytes": 3733
+        }
+      ],
+      "license": "MIT OR Apache-2.0 OR LGPL-2.1-or-later",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/r-efi/r-efi",
+      "homepage": "https://github.com/r-efi/r-efi/wiki",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "rustversion",
+      "version": "1.0.23",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/dtolnay/rustversion",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "same-file",
+      "version": "1.0.6",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "bytes": 126
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14",
+          "bytes": 1081
+        },
+        {
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "bytes": 1211
+        }
+      ],
+      "license": "Unlicense/MIT",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/same-file",
+      "homepage": "https://github.com/BurntSushi/same-file",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "serde",
+      "version": "1.0.229",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Erick Tryzelaar <erick.tryzelaar@gmail.com>",
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/serde-rs/serde",
+      "homepage": "https://serde.rs",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "serde_core",
+      "version": "1.0.229",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "67dca2c9c51e58a4791a4b1ed58308b39c64224d349a935ab5039aa360942a48",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Erick Tryzelaar <erick.tryzelaar@gmail.com>",
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/serde-rs/serde",
+      "homepage": "https://serde.rs",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "serde_derive",
+      "version": "1.0.229",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Erick Tryzelaar <erick.tryzelaar@gmail.com>",
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/serde-rs/serde",
+      "homepage": "https://serde.rs",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "sha1dc",
+      "version": "0.1.5",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "c5b0ebf6537e3e8db8bb7d21ecb6d7399738c953c757945c6b95e46c4e95df7b",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+          "bytes": 10849
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "f1e3e65d8df616a4cb0a9b669c0c6d4df37a7e3cd4d582be4d5bb433b61199cc",
+          "bytes": 1187
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/srijs/sha1dc",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "sha2",
+      "version": "0.11.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "47d7069beb7d6ac7b9acd1039986e73443f24234f41074da099d6f994ac9ad19",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a9040321c3712d8fd0b09cf52b17445de04a23a10165049ae187cd39e5c86be5",
+          "bytes": 10849
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "831e0f43ad0bf014c1c4fec5767aae470434c1d66d6e671be2d823e729063e25",
+          "bytes": 1196
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "RustCrypto Developers"
+      ],
+      "repository": "https://github.com/RustCrypto/hashes",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "simdutf8",
+      "version": "0.1.5",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e",
+      "notices": [
+        {
+          "path": "LICENSE-Apache",
+          "sha256": "0cec06e0e55fbc3dc5cee4fca9b607f66cb8f4e4dbcf3b3c013594dd156732e9",
+          "bytes": 10173
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "1847e0e0698142ed4347c1441a9fa81c8fbddd44b1d8bbcd5e3647f991759d7f",
+          "bytes": 1035
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Hans Kratz <hans@appfour.com>"
+      ],
+      "repository": "https://github.com/rusticstuff/simdutf8",
+      "homepage": "https://github.com/rusticstuff/simdutf8",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "stable_deref_trait",
+      "version": "1.2.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "5e05b024f653a5ce199e77cbbbd42fb5553562ec714b819421ed0c3e552a75d7",
+          "bytes": 1056
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Robert Grosse <n210241048576@gmail.com>"
+      ],
+      "repository": "https://github.com/storyyeller/stable_deref_trait",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "syn",
+      "version": "2.0.119",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/dtolnay/syn",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "syn",
+      "version": "3.0.9",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/dtolnay/syn",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "tempfile",
+      "version": "3.27.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "8b427f5bc501764575e52ba4f9d95673cf8f6d80a86d0d06599852e1a9a20a36",
+          "bytes": 1056
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Steven Allen <steven@stebalien.com>",
+        "The Rust Project Developers",
+        "Ashley Mannix <ashleymannix@live.com.au>",
+        "Jason White <me@jasonwhite.io>"
+      ],
+      "repository": "https://github.com/Stebalien/tempfile",
+      "homepage": "https://stebalien.com/projects/tempfile-rs/",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "thiserror",
+      "version": "2.0.21",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/dtolnay/thiserror",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "thiserror-impl",
+      "version": "2.0.21",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/dtolnay/thiserror",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "tinyvec",
+      "version": "1.13.3",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE.md",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "bytes": 11358
+        },
+        {
+          "path": "LICENSE-MIT.md",
+          "sha256": "fd80a26fbb3f644af1fa994134446702932968519797227e07a1368dea80f0bc",
+          "bytes": 1023
+        },
+        {
+          "path": "LICENSE-ZLIB.md",
+          "sha256": "84b34dd7608f7fb9b17bd588a6bf392bf7de504e2716f024a77d89f1b145a151",
+          "bytes": 851
+        }
+      ],
+      "license": "Zlib OR Apache-2.0 OR MIT",
+      "license-file": null,
+      "authors": [
+        "Lokathor <zefria@gmail.com>"
+      ],
+      "repository": "https://github.com/Lokathor/tinyvec",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "typenum",
+      "version": "1.20.1",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "db11fec9946737df39ca3898d9cd8c10ec6f6c3a884a6802b0ad0b81b4e8f23a",
+          "bytes": 17
+        },
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "516b24e051bf5630880ebbd55c40a25ce9552ebaf8970a53e8976eb70e522406",
+          "bytes": 10835
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "a825bd853ab71619a4923d7b4311221427848070ff44d990da39b0b274c1683f",
+          "bytes": 1083
+        }
+      ],
+      "license": "MIT OR Apache-2.0",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/paholg/typenum",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "unicode-bom",
+      "version": "2.0.3",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "7eec5d1121208364f6793f7d2e222bf75a915c19557537745b195b253dd64217",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "34cb75d73943f10a7f9a3b0e3e7bf8ef271065eedcb0d47481e7c831b637aeae",
+          "bytes": 11326
+        }
+      ],
+      "license": "Apache-2.0",
+      "license-file": null,
+      "authors": [
+        "Phil Booth <pmbooth@gmail.com>"
+      ],
+      "repository": "https://gitlab.com/philbooth/unicode-bom",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "unicode-ident",
+      "version": "1.0.27",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563",
+      "notices": [
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "bytes": 9723
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "bytes": 1023
+        },
+        {
+          "path": "LICENSE-UNICODE",
+          "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1",
+          "bytes": 1995
+        }
+      ],
+      "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "license-file": null,
+      "authors": [
+        "David Tolnay <dtolnay@gmail.com>"
+      ],
+      "repository": "https://github.com/dtolnay/unicode-ident",
+      "homepage": null,
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "unicode-normalization",
+      "version": "0.1.26",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d",
+      "notices": [
+        {
+          "path": "COPYRIGHT",
+          "sha256": "23860c2a7b5d96b21569afedf033469bab9fe14a1b24a35068b8641c578ce24d",
+          "bytes": 321
+        },
+        {
+          "path": "LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "bytes": 10847
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "7b63ecd5f1902af1b63729947373683c32745c16a10e8e6292e2e2dcd7e90ae0",
+          "bytes": 1071
+        },
+        {
+          "path": "LICENSE-UNICODE",
+          "sha256": "f7db81051789b729fea528a63ec4c938fdcb93d9d61d97dc8cc2e9df6d47f2a1",
+          "bytes": 1995
+        }
+      ],
+      "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
+      "license-file": null,
+      "authors": [
+        "kwantam <kwantam@gmail.com>",
+        "Manish Goregaokar <manishsmail@gmail.com>"
+      ],
+      "repository": "https://github.com/unicode-rs/unicode-normalization",
+      "homepage": "https://github.com/unicode-rs/unicode-normalization",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "walkdir",
+      "version": "2.5.0",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "29790946404f91d9c5d06f9874efddea1dc06c5efe94541a7d6863108e3a5e4b",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "bytes": 126
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "0f96a83840e146e43c0ec96a22ec1f392e0680e6c1226e6f3ba87e0740af850f",
+          "bytes": 1081
+        },
+        {
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "bytes": 1211
+        }
+      ],
+      "license": "Unlicense/MIT",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/walkdir",
+      "homepage": "https://github.com/BurntSushi/walkdir",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "winapi-util",
+      "version": "0.1.11",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22",
+      "notices": [
+        {
+          "path": "COPYING",
+          "sha256": "01c266bced4a434da0051174d6bee16a4c82cf634e2679b6155d40d75012390f",
+          "bytes": 126
+        },
+        {
+          "path": "LICENSE-MIT",
+          "sha256": "cb3c929a05e6cbc9de9ab06a4c57eeb60ca8c724bef6c138c87d3a577e27aa14",
+          "bytes": 1081
+        },
+        {
+          "path": "UNLICENSE",
+          "sha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+          "bytes": 1211
+        }
+      ],
+      "license": "Unlicense OR MIT",
+      "license-file": null,
+      "authors": [
+        "Andrew Gallant <jamslam@gmail.com>"
+      ],
+      "repository": "https://github.com/BurntSushi/winapi-util",
+      "homepage": "https://github.com/BurntSushi/winapi-util",
+      "archive_checksum_verified": true
+    },
+    {
+      "name": "zlib-rs",
+      "version": "0.6.8",
+      "registry_source": "registry+https://github.com/rust-lang/crates.io-index",
+      "package_checksum": "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112",
+      "notices": [
+        {
+          "path": "LICENSE",
+          "sha256": "e72111c52b7d96ebe25348dee19f0744f444d3c95ae6b1ecb6ccaecc5bce05ba",
+          "bytes": 856
+        }
+      ],
+      "license": "Zlib",
+      "license-file": null,
+      "authors": null,
+      "repository": "https://github.com/trifectatechfoundation/zlib-rs",
+      "homepage": "https://github.com/trifectatechfoundation/zlib-rs",
+      "archive_checksum_verified": true
+    }
+  ]
+}

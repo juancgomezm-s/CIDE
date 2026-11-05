@@ -4,6 +4,7 @@ use std::{fmt, mem::size_of, path::Path, time::Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitStatusFormat {
+    Embedded,
     PorcelainV1,
     PorcelainV2,
 }
@@ -255,54 +256,70 @@ pub fn read_status(
     reader: &GitReader,
     repository_root: &Path,
     limits: GitStatusReadOptions,
-    mut cancelled: impl FnMut() -> bool,
+    cancelled: impl FnMut() -> bool + Send,
 ) -> Result<GitStatusSnapshot, GitStatusError> {
     if !limits.valid() {
         return Err(GitStatusError::InvalidLimits);
     }
-    let deadline = Instant::now()
-        .checked_add(limits.git.timeout)
-        .ok_or(GitStatusError::InvalidLimits)?;
-    let mut deadline_hit = false;
-    let captured = {
-        let mut cancel_or_deadline = || {
-            if cancelled() {
-                return true;
-            }
-            if Instant::now() >= deadline {
-                deadline_hit = true;
-                true
+    let raw = reader.read_status(repository_root, limits, cancelled)?;
+    let repository = GitRepositoryIdentity {
+        root: raw.repository.root,
+        git_dir: raw.repository.git_dir,
+    };
+    let entries = raw
+        .entries
+        .into_iter()
+        .map(|entry| GitStatusEntry {
+            path: StatusPath(entry.path.into_boxed_slice()),
+            original_path: None,
+            similarity: None,
+            state: match entry.kind {
+                jc_git::Kind::Untracked => GitStatusState::Untracked,
+                jc_git::Kind::Tracked => GitStatusState::Tracked {
+                    index: embedded_change(entry.index),
+                    worktree: embedded_change(entry.worktree),
+                },
+                jc_git::Kind::Conflict(mask) => GitStatusState::Conflict(match mask {
+                    1 => GitConflict::BothDeleted,
+                    2 => GitConflict::AddedByUs,
+                    3 => GitConflict::DeletedByThem,
+                    4 => GitConflict::AddedByThem,
+                    5 => GitConflict::DeletedByUs,
+                    6 => GitConflict::BothAdded,
+                    _ => GitConflict::BothModified,
+                }),
+            },
+            submodule: if entry.submodule {
+                GitSubmoduleState::Submodule {
+                    commit_changed: false,
+                    tracked_changes: false,
+                    untracked_changes: false,
+                }
             } else {
-                false
-            }
-        };
-        reader.read_status_porcelain_v2(repository_root, limits.git, &mut cancel_or_deadline)
-    };
-    let (repository, raw) = match captured {
-        Err(GitReadError::Cancelled) if deadline_hit => return Err(GitStatusError::TimedOut),
-        result => result?,
-    };
-    // Preserve one deadline from before discovery, including the parser. Charge
-    // repository/root metadata before assigning the remaining owned budget.
-    let extra = size_of::<GitStatusSnapshot>() - size_of::<GitStatus>()
-        + repository.root.capacity()
-        + repository.git_dir.capacity();
-    let mut parse_limits = limits.parse;
-    parse_limits.max_owned_bytes = parse_limits
-        .max_owned_bytes
-        .checked_sub(extra)
-        .filter(|&n| n >= size_of::<GitStatus>())
-        .ok_or(GitStatusError::Limited(GitStatusLimit::OwnedBytes))?;
-    let status = parse(
-        &raw,
-        GitStatusFormat::PorcelainV2,
-        parse_limits,
-        &mut cancelled,
-        Some(deadline),
-    )?;
-    let snapshot = GitStatusSnapshot::from_parts(repository, status);
-    debug_assert!(snapshot.memory_bytes() <= limits.parse.max_owned_bytes);
+                GitSubmoduleState::NotSubmodule
+            },
+        })
+        .collect();
+    let snapshot = GitStatusSnapshot::from_parts(
+        repository,
+        GitStatus {
+            format: GitStatusFormat::Embedded,
+            entries,
+        },
+    );
+    if snapshot.memory_bytes() > limits.parse.max_owned_bytes {
+        return Err(GitStatusError::Limited(GitStatusLimit::OwnedBytes));
+    }
     Ok(snapshot)
+}
+fn embedded_change(change: jc_git::Change) -> GitStatusChange {
+    match change {
+        jc_git::Change::Unchanged => GitStatusChange::Unchanged,
+        jc_git::Change::Modified => GitStatusChange::Modified,
+        jc_git::Change::Added => GitStatusChange::Added,
+        jc_git::Change::Deleted => GitStatusChange::Deleted,
+        jc_git::Change::TypeChanged => GitStatusChange::TypeChanged,
+    }
 }
 pub fn parse_porcelain_v2(
     input: &[u8],
@@ -423,6 +440,7 @@ fn parse(
         let parsed = match format {
             GitStatusFormat::PorcelainV1 => parse_v1(record, &mut cursor, &mut control)?,
             GitStatusFormat::PorcelainV2 => parse_v2(record, &mut cursor, &mut control)?,
+            GitStatusFormat::Embedded => return Err(GitStatusError::Protocol),
         };
         let directory = matches!(
             parsed.state,

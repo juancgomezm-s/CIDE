@@ -23,7 +23,6 @@ impl TuiApp {
         self.git_status.clear();
         self.quick_open.clear();
         self.quick_open_root = None;
-        self.git_configuration_target = None;
         self.project_root = Some(root);
         self.panels.show_sidebar(SidebarView::Explorer);
         Ok(())

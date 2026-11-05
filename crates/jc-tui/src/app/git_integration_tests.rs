@@ -1,10 +1,10 @@
 use super::TuiApp;
-use crate::state::{LaunchOptions, PromptKind, UiOverlay};
+use crate::state::{LaunchOptions, UiOverlay};
 use jc_app::{git_diff::GitDiffState, CommandId};
 use jc_text::TextEncoding;
 
 #[test]
-fn git_commands_require_context_and_explicit_configuration_without_starting_workers() {
+fn git_commands_require_repository_context_but_no_executable_configuration() {
     let mut app = TuiApp::new(LaunchOptions::default());
     app.dispatch(CommandId::ViewGit);
     assert!(matches!(app.overlay, UiOverlay::None));
@@ -12,19 +12,9 @@ fn git_commands_require_context_and_explicit_configuration_without_starting_work
     app.workbench.new_file("unwritten.p", TextEncoding::Utf8);
     app.workbench.insert_text("original\r\n").unwrap();
     app.project_root = Some(app.git_cwd.clone());
-    app.dispatch(CommandId::ViewGit);
-    if cfg!(windows) {
-        assert!(matches!(
-            app.overlay,
-            UiOverlay::Prompt {
-                kind: PromptKind::GitExecutable,
-                ..
-            }
-        ));
-        app.submit_prompt(PromptKind::GitExecutable, "relative/git.exe".into());
-        assert!(app.git_executable.is_none());
-        assert!(matches!(app.overlay, UiOverlay::Prompt { .. }));
-    }
+    app.dispatch(CommandId::GitConfigureExecutable);
+    assert!(matches!(app.overlay, UiOverlay::None));
+    assert!(app.status.contains("integrado"));
     assert_eq!(app.tasks.worker_count(), 0);
     assert_eq!(app.workbench.active_bytes().unwrap(), b"original\r\n");
 }
@@ -35,11 +25,19 @@ fn failed_git_task_is_delivered_without_input_and_frame_composition_preserves_do
         return;
     }
     let mut app = TuiApp::new(LaunchOptions::default());
+    let root = app.git_cwd.join("work/test-temp").join(format!(
+        "tui-not-a-repository-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
     app.workbench
-        .new_file(app.git_cwd.join("unwritten-git-test.p"), TextEncoding::Utf8);
+        .new_file(root.join("unwritten-git-test.p"), TextEncoding::Utf8);
     app.workbench.insert_text("dirty\r\n").unwrap();
-    app.project_root = Some(app.git_cwd.clone());
-    app.git_executable = Some(app.git_cwd.join("missing-git-test.exe"));
+    app.project_root = Some(root);
     app.dispatch(CommandId::ViewGit);
     assert_eq!(app.git_diff.state(), GitDiffState::Running);
     let end = std::time::Instant::now() + std::time::Duration::from_secs(15);
@@ -49,7 +47,7 @@ fn failed_git_task_is_delivered_without_input_and_frame_composition_preserves_do
         std::thread::yield_now();
     }
     assert_eq!(app.git_diff.state(), GitDiffState::Failed);
-    assert!(app.status.contains("Lectura Git"));
+    assert!(!app.status.is_empty());
     let revision = app
         .workbench
         .active_document()

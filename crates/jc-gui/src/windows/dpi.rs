@@ -5,6 +5,25 @@ use std::{ffi::c_void, ptr::null_mut};
 
 pub(super) const CHANGED: u32 = 0x02e0;
 
+pub(super) unsafe fn ui_font(dpi: Dpi) -> Handle {
+    CreateFontW(
+        -dpi.pixels(14),
+        0,
+        0,
+        0,
+        400,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        5,
+        0,
+        wide("Segoe UI").as_ptr(),
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Dpi(i32);
 
@@ -122,7 +141,7 @@ impl State {
                 )
             };
             let editor = create(17, "Consolas", 0x31);
-            let ui = create(14, "Segoe UI", 0);
+            let ui = ui_font(dpi);
             if !editor.is_null() && !ui.is_null() {
                 if self.owned_font {
                     DeleteObject(self.font);

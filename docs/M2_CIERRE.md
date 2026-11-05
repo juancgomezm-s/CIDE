@@ -1,5 +1,186 @@
 # M2 — Matriz de cierre
 
+## Prioridad vigente de M2
+
+[Motor Git embebido](GIT_EMBEDDED_ENGINE.md): estado y blobs HEAD/índice ya
+usan gix 0.90.0 dentro de GUI/TUI, sin instalar ni buscar Git. Sesiones v4
+con lectura de las anteriores y licencias conservadas. 533 pruebas por suites,
+135 checks nativos GUI con PATH vacío, formato, Clippy todos los destinos y
+release workspace aprobaron. Binarios en `target/embedded-git-next/release`.
+El proveedor externo anterior queda sustituido; sus informes siguientes son
+históricos. Cuotas y cancelación cooperativa no cierran RAM/plazos duros
+globales. Submódulos y formatos especiales requieren otro bloque; escrituras
+y red siguen en M5. Narrador/accesibilidad avanzada permanecen aplazados.
+
+[Git integrado con el flujo de OmniCore/OmniCoder](M2_GIT_INTEGRADO_OMNI.md):
+detección automática del Git instalado, sin selector GUI, conservando runner
+Rust y lectura acotada. Pasaron 135 checks nativos integrales con Git real,
+75+6 pruebas GUI y prueba del resolver; Clippy y release GUI/TUI aprobaron.
+Ejecutables actuales en `target/git-integrated-next/release`.
+
+La [corrección de estado Git GUI](M2_GIT_GUI_STATUS_UX.md) reemplaza el indicador
+decorativo por configuración/consulta accesible, conserva la elección de Git,
+actualiza después de guardar y al volver a CIDE, y corrige el uso de la señal
+de entrega pendiente como si fuera estado aceptado. La leyenda de F6 se retira
+solo en GUI. Pasaron 75+6 pruebas GUI y 134 comprobaciones nativas integrales,
+con fuente e índice sintéticos intactos. Ejecutable: `target/git-ux-next/release`.
+
+El [bloque de marco, pestañas y paneles](M2_SHELL_PANELS_MENUS.md) coloca las
+dos flechas a la izquierda, Nuevo/lista de abiertos a la derecha y añade
+delimitadores. Código tiene panel derecho independiente con símbolos y consultas
+léxicas explícitas; Archivos permanece a la izquierda. La barra inferior permite
+ocultar ambos y resume lenguaje/Git sin activar proveedores durante el dibujo.
+Los [menús auditados](M2_MENU_AUDIT.md) pasan de 109 a 73 entradas compartidas,
+sin duplicados ni títulos vacíos de Compilar/Ayuda en TUI.
+
+El escritorio reprodujo y corrigió el fallo de redimensionado: la limpieza de
+captura del editor cancelaba la captura nativa al recibir WM_SIZE. Se registra
+la propiedad de la captura y se liberan solo las adquiridas por el editor.
+El arrastre de esquina cambió realmente 800×560 a 700×500; maximizar mostró
+ambos laterales correctamente. La misma inspección detectó que los símbolos
+ignoraban la apertura lateral: el controlador compartido ahora usa una segunda
+vista del mismo documento, conservando cursor de origen y deshacer único.
+
+La validación GUI observó 73 nombres de pruebas aprobados entre corrida amplia
+y cierre dirigido; seis pruebas de entrada aprobaron en la corrida anterior.
+TUI pasó sus 152 pruebas en ejecución serial con acceso normal a sus fixtures.
+La ejecución restringida anterior falló en procesos Git/enlaces y se interrumpió
+con 0xc0000409; no se presenta como aprobación global. La regresión de menú
+compartido y dos de integración de interacción aprobaron. Pasaron 16 checks
+nativos de marco y 16 de interacción, incluida captura nativa conservada.
+Clippy de todos los destinos de las tres capas pasó. Informes en
+`work/m2-panels-*.log`; capturas nativas en
+`work/native-gui-smoke/20261105T180402Z-8981a99fa4f4` y
+`work/native-gui-smoke/20261105T181020Z-7b2a34ac9edd`.
+
+Ejecutables de este bloque: `target/m2-panels-next/release`, con los anteriores
+conservados. La recuperación gráfica v2 guarda visibilidad de Código y admite
+metadatos v1. Las pruebas usan depósitos y documentos sintéticos.
+
+El cierre final release GUI/TUI y formato aprobaron. En la instancia aislada
+`work/m2-panels-visual-dr4umpp4` se confirmó Ctrl+Intro sobre un procedimiento:
+dos grupos visibles del mismo documento, con cursor de origen conservado.
+Los botones inferiores ocultaron Código y Archivos de forma independiente,
+y el desplegable de pestañas abrió la lista filtrable de los tres documentos.
+Se salió normalmente. Las 23 pruebas TUI seleccionadas por fuente pasaron tras
+el ajuste compartido de apertura lateral, sin repetir toda la suite.
+
+El bloque de avisos y borradores integra una confirmación modal propia
+con colores y tipografía compartidos con CIDE. Cancelar recibe el foco
+inicial y el descarte conserva la validación del documento y su revisión.
+La numeración de «Sin título» elige el primer número libre del catálogo
+abierto. Una sesión vacía vuelve a 1, incluso si el contador histórico
+persistido era mayor. Se conservan los nombres y los cambios de borradores
+recuperados, así como la compatibilidad del formato de sesión.
+
+La revisión inicial se interrumpió por acceso denegado y capturas negras.
+Al recuperar el escritorio se observó que el aviso era demasiado grande,
+sin separación suficiente del editor y centrado en pantalla, no en su dueño.
+El ajuste usa 420 × 176 píxeles de diseño, escala por DPI, centra sobre CIDE
+y limita la posición al área útil del monitor. El cuerpo usa el tono elevado,
+el encabezado un tono más claro y el borde otro contraste del tema.
+Escape conservó la edición sintética y la ventana de prueba salió normalmente
+después de deshacerla. La ventana anterior ya no estaba abierta.
+
+El cierre de este ajuste pasó 65 pruebas de biblioteca GUI y seis de entrada,
+incluida la posición con coordenadas negativas y límites de monitor a
+96/144/192 DPI, y Clippy de todos los destinos GUI. La composición real con IME,
+el traslado entre monitores y la latencia física siguen abiertos; Narrador
+y accesibilidad avanzada continúan diferidos por Juan.
+
+La revisión de escritorio del ejecutable `target/m2-dialog-compact/release`
+confirmó el aviso compacto centrado, encabezado y cuerpo elevados y borde claro.
+Intro canceló conservando el carácter sintético. Un Deshacer, cierre de la última
+pestaña y Nuevo volvieron a «Sin título 1.txt». La instancia salió mediante
+Alt+F4 sin terminación forzada. Fixture aislado `work/m2-dialog-visual-0z1x3exa`,
+recuperación desactivada, sin documentos personales. Fmt, Clippy y release
+aprobaron. La apariencia ya no queda bloqueada por el fallo anterior de captura.
+
+Pasaron 63 pruebas de biblioteca GUI y seis de entrada en el cierre
+amplio. Después pasaron las regresiones dirigidas del botón por defecto,
+tipografía y estilo de controles al cambiar foco, y sesión vacía con
+contador histórico 5. Clippy y release aprobaron. El binario de
+`target/m2-dialog-final/release` pasó el recorrido nativo integral y
+tres procesos de recuperación. Informes en
+`work/native-gui-smoke/20261105T060642Z-c610acd8dd1c` y
+`work/recovery-gui/20261105T060645Z-1459102e/report.json`.
+
+Juan dejó Narrador y la accesibilidad avanzada como pendientes para
+concentrar M2 en interfaz, desplazamiento y edición. El diagnóstico
+histórico se conserva abajo. IME real y cambio entre monitores quedan
+pendientes por las características del equipo disponible.
+
+El bloque de pulido usa `target/m2-polish-next/release/cide-gui.exe`.
+La pestaña activa vuelve a quedar visible al estrechar la ventana o
+cambiar el catálogo. El desplazamiento manual de pestañas se conserva
+mientras la geometría permanece estable. Las franjas demasiado pequeñas
+se omiten. Barras, márgenes y minimapa se ajustan al DPI de la ventana.
+
+Las fracciones de rueda y los movimientos de barra que conservan el mismo
+origen ya no reconstruyen el frame. El recorrido integral nativo aprobó
+los flujos de selección, edición, undo, guardado, búsqueda, paneles y
+pestañas. La primera ejecución restringida falló en la preparación de
+fixtures de guardado. El mismo ejecutable aprobó el recorrido completo
+con acceso normal a sus archivos sintéticos.
+
+Se añadieron regresiones de pestaña activa al reducir ancho, geometría de
+barras a 96/144/192 DPI y reutilización del frame con media muesca de rueda.
+Pasaron 57 pruebas de biblioteca GUI y seis de entrada, Clippy de todos
+los destinos GUI y compilación release offline.
+
+El cierre siguiente corrigió AvPág/RePág para usar las filas visibles
+del grupo activo. La regresión dirigida pasó en ambos grupos, con y
+sin panel inferior, selección mediante Mayús y bytes conservados.
+Clippy, release y las 15 comprobaciones nativas de interacción volvieron
+a pasar con ese cambio. Los informes nativos están en
+`work/native-gui-smoke/20261105T050507Z-1fff631fb47c` (integral)
+y `work/native-gui-smoke/20261105T050850Z-99c8e20148a3` (interacción).
+
+`scripts/measure-m2-gui-scroll.py` ejecutó 360 pasos sintéticos de rueda
+a una frecuencia solicitada de 60 Hz, con ventana visible y un documento
+de 4 400 000 bytes y 100 000 líneas. En 5987,35 ms, la confirmación
+de entrada y pintura dio mediana de 3,35 ms, p95 de 4,79 ms y máximo de
+6,40 ms. Ninguna muestra superó 16,67 ms. El retraso de programación
+del generador tuvo p95 de 0,58 ms. La fuente de prueba quedó intacta.
+El informe y las 360 muestras están en
+`work/m2-visible-scroll-sls88g85/report.json`.
+
+El punto de medida es el retorno de WM_PAINT después de procesar la
+rueda en el HWND propio. La prueba no incluye la presentación física del
+compositor ni mide interacción con otras aplicaciones. Se conserva la
+puerta de latencia física de M2.
+
+El ajuste posterior del borde de pestañas reemplazó el relleno compuesto
+por un único contorno con curvas superiores. Se inspeccionó el bitmap
+`work/native-gui-smoke/20261105T053008Z-1635151be0ef/native-shell.bmp`.
+Pasaron las 16 comprobaciones del marco, Clippy y release. Binario de
+este ajuste en `target/m2-tabs-next/release/cide-gui.exe`.
+
+Ante el aviso de pérdida de cambios informado por Juan, se repitieron
+las tres regresiones de recuperación GUI y un recorrido real de cierre
+y reapertura con tres procesos aislados. Se restauraron cambios sin
+guardar, cursor y deshacer, y el original permaneció intacto. Informe
+en `work/recovery-gui/20261105T053010Z-c919eda6/report.json`.
+El código de cerrar una pestaña conserva una confirmación de descarte,
+mientras cerrar la ventana confirma la sesión cuando la recuperación
+está habilitada. Se solicitó identificar cuál cierre produjo el aviso
+reportado; el recorrido del usuario sigue sin aislarse.
+
+Juan precisó que el aviso apareció al cerrar la ventana completa y después
+indicó que no pudo reproducirlo. La revisión encontró una ruta de descarte
+global cuando `checkpoint_session` devolvía recuperación desactivada.
+Se retiró esa confirmación global. La salida prepara primero la copia de
+sesión y conserva la ventana ante errores o cambios pendientes con la
+recuperación desactivada. No se atribuye el aviso original a una causa
+reproducida.
+
+La protección de salida pasó cuatro regresiones de recuperación GUI,
+Clippy y release. El binario final de `target/m2-exit-next/release`
+pasó tres procesos de cierre/reapertura conservando cambios, cursor y
+undo, además de 16 comprobaciones del marco. Informes en
+`work/recovery-gui/20261105T055007Z-9ec566ea/report.json` y
+`work/native-gui-smoke/20261105T055008Z-d49fb4b8c96b/native-report.json`.
+
 La aceptación distingue los resultados automatizados en Windows de la
 interacción en un escritorio. La TUI y la GUI comparten el documento, las
 transacciones, los grupos y las tareas. La validación de OpenEdge y los
@@ -10,10 +191,137 @@ proveedores de lenguaje avanzados pertenecen a M3–M4.
 | Regresión del workspace | 654 pruebas aprobadas en la ejecución serial final. Los tres auxiliares marcados como ignorados se invocan desde sus pruebas padre. Pasaron la creación del enlace de prueba y la integración Git que fallaron en el entorno restringido. |
 | TUI en terminal privada | 23 comprobaciones entre explorador, ratón, español/Markdown y recuperación periódica. Se usa ConPTY propio y archivos sintéticos. |
 | GUI en Windows | 131 comprobaciones integrales con ventana propia, entre ellas cambios de DPI simulados a 96/144/192. Dos recorridos adicionales de 16 comprobaciones cada uno cubren herramientas de código y marco. Recuperación periódica confirmada en siete comprobaciones con tres procesos aislados. |
-| Interoperabilidad | Pendiente probar portapapeles entre aplicaciones, IME instalado y cambio real de monitor en un escritorio de referencia. |
-| Accesibilidad | El editor nativo ya expone el grupo activo mediante UI Automation. Un cliente de Windows en otro proceso verificó lectura de rangos, foco, cursor, selección y rechazo de revisiones obsoletas. Sigue pendiente comprobarlo con un lector de pantalla. |
-| Rendimiento | GUI oculta, archivo UTF-8 de 4095 bytes, Windows 10.0.26300, siete muestras tras una de calentamiento. Arranque hasta respuesta del marco p95 de 31,10 ms y máximo de 2,15 MiB privados en ese punto. Faltan la medición con ventana visible, las cargas amplias y la latencia hasta pantalla física. |
+| Interoperabilidad | CIDE y Notepad++ intercambiaron texto Unicode en ambos sentidos en el escritorio. Un solo Deshacer restauró el documento de CIDE. La sesión solo expuso un monitor y no presentó un IME de composición identificable. |
+| Accesibilidad | UI Automation verificó rangos, foco, cursor y selección. El Resumen de voz de Narrador confirmó el nombre del archivo y la lectura de una línea. La lectura de la selección con Narrador sigue abierta. |
+| Rendimiento | GUI visible hasta el bucle de mensajes en espera. Para 4095 bytes, mediana de 39,39 ms, p95 de 46,36 ms y máximo de 5,09 MiB privados. Para 4 MiB, 56,64 ms, 60,57 ms y 10,05 MiB privados. La rueda avanzó y retrocedió correctamente en un documento de 100 000 líneas. Quedan por medir los intervalos entre cuadros y la latencia física. |
 | Archivos de varios GB | La prueba aislada de lectura paginada sigue vigente. La instantánea privada y el documento editable de varios GB conservan su plan separado. |
+
+## Resultados de escritorio del 4 de noviembre de 2026
+
+Windows 10.0.26300, GUI de `target/uia-next/release`, recuperación
+desactivada y archivos sintéticos. Se observó el documento abierto y su
+selección de 4463 unidades UTF-16 mediante un cliente de UI Automation con
+la ventana visible. La prueba posterior con Narrador se registra abajo.
+
+Windows enumeró un monitor de 1536 × 864 en coordenadas de escritorio.
+Los perfiles de teclado cargados fueron español de México e inglés de
+Estados Unidos. Ninguno devolvió descripción o archivo de IME por IMM.
+La composición real y el traslado entre monitores de distinta escala
+siguen abiertos. La evidencia simulada de 96/144/192 DPI se conserva.
+
+El diagnóstico posterior confirmó que el avance de la secuencia y el cambio
+de propietario no bastan para demostrar que se publicó texto. En la
+ejecución restringida, `SetClipboardData` devolvió acceso denegado (error 5)
+y Pegar quedó deshabilitado en Notepad++. Al repetir con el mismo binario
+fuera de esa ejecución, CIDE transfirió dos líneas con acentos, eñe y emoji.
+Notepad++ devolvió las tres líneas resultantes, incluidos los caracteres
+japoneses. CIDE recibió el texto y un solo Ctrl+Z restauró las dos líneas
+originales. Se usaron instancias y documentos sintéticos, sin modificar el
+transporte de producción.
+
+En la misma ventana visible se comprobó el ajuste de una pestaña con nombre
+largo junto a otra normal. El fondo redondeado se dibuja una vez dentro de
+los límites de la pestaña, y el título y el cierre tienen áreas separadas.
+El título usa puntos suspensivos según el espacio real de la fuente.
+
+La medición de arranque visible tomó siete muestras después de una de
+calentamiento. El punto de medición exige un marco visible del proceso
+propio y el retorno de `WaitForInputIdle`. Es una medición de arranque
+y memoria privada en ese punto. El informe local con las muestras está
+en `work/m2-gui-startup-d393e881744e4636bf3531e8d3c25810/report.json`.
+Se reproduce con
+`scripts/measure-m2-gui-startup.py --exe target/uia-next/release/cide-gui.exe --visible`.
+El tiempo hasta el primer cuadro físico y el desplazamiento sostenido
+quedan fuera de esa medición.
+
+Se repitió la medición visible con `target/desktop-next/release/cide-gui.exe`
+y `--lines 322639`, un archivo de 4 194 307 bytes. En siete muestras
+medidas la mediana fue de 56,64 ms, el p95 de 60,57 ms y el máximo de
+10,05 MiB privados. Informe local en
+`work/m2-gui-startup-e25aa5daea704d5ba6a25d0fc4220207/report.json`.
+El mismo binario pasó 16 comprobaciones del marco y 13 de UI Automation.
+También pasaron las tres pruebas dirigidas de pestañas.
+
+## Narrador, desplazamiento y tipografía de menú
+
+En una ventana visible con un documento sintético de 100 000 líneas,
+el Resumen de voz de Narrador mostró `CIDE-M2-NARRADOR.txt` y «Prueba
+de lectura: la brújula azul.». Se verificó la transcripción de Narrador.
+La salida por altavoces no se midió. Al pedirle leer la selección,
+Narrador registró «Nothing Selected» aunque un cliente independiente de
+UI Automation leyó el texto seleccionado. Se corrigió el proveedor para
+anunciar selección simple en lugar de múltiple, de acuerdo con su soporte
+lineal. La discrepancia persistió en la repetición.
+
+Con Narrador desactivado, tres ráfagas de rueda movieron la primera fila
+visible de 1 a 91, luego a 391 y de regreso a 1. Cada captura mostró
+el texto de la fila correspondiente y el cursor se conservó en la primera
+línea. Los recorridos de automatización y captura duraron 242, 195 y 264 ms.
+Estos tiempos incluyen la herramienta de escritorio y quedan fuera de
+una medición de cuadros o de latencia física.
+
+La barra y los desplegables comparten Segoe UI de 14 píxeles a 96 DPI.
+El menú ajusta altura y márgenes con la escala, con espacio separado para
+la etiqueta y el atajo. Se inspeccionó Archivo en escritorio y se
+repitieron 16 comprobaciones del marco y 13 de UI Automation con
+`target/m2-font-next/release`.
+
+### Diagnóstico posterior de selección y arrastre
+
+La compilación temporal registró consultas de UI Automation sin contenido
+de fuente. Narrador recibió una selección no vacía de bytes 0–36 con foco
+activo. Su Resumen de voz mostró «Prueba de lectura: la brújula azul.
+selected». Esto confirma el anuncio de selección al modificarla. El comando
+explícito Narrador+Mayús+Abajo siguió produciendo «Nothing Selected»,
+incluso en una instancia abierta fuera de la ejecución restringida.
+Cambiar a modo de exploración produjo una selección virtual distinta
+(«new line»). El diagnóstico separa la selección del editor del cursor
+virtual del lector. La causa del comando explícito sigue abierta.
+El control con Notepad++ no produjo una lectura explícita concluyente.
+
+La prueba de arrastre encontró un fallo independiente. La liberación
+automática de captura contemplaba selección lineal y rectangular, pero
+omitía el arrastre de barras. Al capturar el ratón, CIDE lo liberaba
+inmediatamente y cancelaba el arrastre. Se corrigió la condición y se
+añadió una comprobación de captura, recorrido y cursor en el smoke de
+interacción. En escritorio, minimapa y barra vertical recorrieron desde
+la primera línea hasta la 96 313 y de regreso conservando el cursor.
+
+La instrumentación temporal midió nueve composiciones en tres ráfagas
+con al menos tres muestras consecutivas. Preparación y envío GDI dieron
+mediana de 2,635 ms y p95 de 3,601 ms. Los seis intervalos entre entradas
+de pintura dentro de esas ráfagas dieron mediana de 10,042 ms y máximo
+de 17,075 ms. No hubo errores de dibujo. El informe local está en
+`work/m2-scroll-8hhpijof/metrics.json` y las marcas en `probe.log`
+de esa carpeta. Es una muestra corta de arrastre y excluye la espera
+hasta presentación del compositor. Quedan pendientes una carga sostenida
+de mayor duración y la latencia física. La instrumentación se retiró
+del código de producción después de la captura.
+
+La sesión sigue mostrando un solo monitor y los perfiles de teclado
+español de México e inglés de Estados Unidos, sin descripción ni archivo
+de IME de composición por IMM. Se mantienen abiertos el cambio real
+entre monitores y la composición/confirmación/cancelación con IME.
+
+La repetición final de Narrador no fue válida. El proceso de Narrador
+dejó de aparecer antes de ejecutar el comando. El lanzamiento directo
+en la sesión normal devolvió WinError 740 (requiere elevación). Se pidió
+abrir Narrador manualmente para repetir con el lector activo. No se
+atribuyó el resultado de esa repetición al proveedor ni se implementaron
+atributos de texto sin evidencia de que Narrador los solicite. El binario
+sin instrumentación pasó 15 comprobaciones de interacción (incluida la
+nueva regresión de captura) y 13 de UI Automation. Clippy del paquete GUI
+con todos sus destinos pasó sin advertencias.
+
+Juan abrió Narrador manualmente y se repitió el recorrido con la compilación
+sin instrumentación, en una instancia de escritorio con recuperación
+desactivada. Se confirmó que Narrador permaneció activo durante el comando
+y que UI Automation conservó «Prueba de lectura: la brújula azul.» como
+selección. El Resumen de voz registró la frase seguida de «selected» y,
+al ejecutar Narrador+Mayús+Abajo, «Nothing Selected». Esta repetición es
+válida y confirma que el inicio automático fallido no explica por sí
+solo la discrepancia. Se mantiene abierta la relectura explícita.
+La carpeta sintética utilizada fue `work/m2-scroll-o_cx9859`.
 
 ## Recorrido de escritorio pendiente
 
@@ -30,9 +338,8 @@ IME empleado.
 3. En la GUI, componer texto en un IME instalado. Probar confirmación en
    un paso de deshacer, cancelación, cambio de vista y rechazo de caracteres
    incompatibles con la codificación.
-4. Verificar portapapeles entre aplicaciones y restauración de un borrador
-   tras reiniciar. Para automatización, mantener aislado el depósito de sesión
-   y usar una memoria de portapapeles inyectada.
+4. Verificar la restauración de un borrador tras reiniciar. Mantener aislado
+   el depósito de sesión en las pruebas automatizadas.
 5. Registrar lectura de nombres y estados, foco, cursor y selección con
    un lector de pantalla, tanto al editar como al cambiar de grupo.
 
@@ -51,8 +358,8 @@ deshabilitada y sin garantizar el tiempo hasta el primer cuadro visible.
 
 - La ventana actualiza fuentes y geometría al recibir un cambio de DPI.
   Se vuelven a preparar las áreas de interacción y se aplica el marco
-  sugerido por Windows. Algunos detalles fijos, incluida la tipografía de
-  los menús emergentes nativos, quedan por revisar a escala alta.
+  sugerido por Windows. El menú nativo comparte la configuración tipográfica
+  de la interfaz. Queda pendiente validar su geometría al cambiar de monitor.
 - IME utiliza la composición nativa y coloca la ventana de candidatos cerca
   del cursor. Se aplica el texto confirmado como una edición y se comprueba
   que destino, revisión y codificación sigan vigentes. Las pruebas cubren
@@ -84,10 +391,6 @@ otras ventanas. La prueba distingue un evento de foco enviado al marco
 de una verificación real con Narrador o NVDA.
 
 [Patrones Text y TextRange de Windows](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-implementingtextandtextrange).
-
-La siguiente puerta es la aceptación en un escritorio con lector de
-pantalla e IME instalados, portapapeles entre aplicaciones y monitores de
-distinta escala. Las mediciones visibles se registrarán con ese entorno.
 
 Con UI Automation integrado, el recorrido de arranque oculto de siete
 muestras dio p95 de 36,38 ms y un máximo de 2,39 MiB privados hasta respuesta

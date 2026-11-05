@@ -9,7 +9,6 @@ pub struct GuiOptions {
     pub project_root: Option<PathBuf>,
     pub encoding: Option<TextEncoding>,
     pub search_workers: Option<usize>,
-    pub git_executable: Option<PathBuf>,
     pub smoke: Option<SmokeOptions>,
 }
 

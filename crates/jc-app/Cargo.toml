@@ -2,7 +2,7 @@
 name = "jc-app"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 publish = false
 description = "UI-independent command, keymap, focus, menu and tab model for CIDE"
 
@@ -11,4 +11,5 @@ jc-core = { path = "../jc-core" }
 jc-files = { path = "../jc-files" }
 jc-languages = { path = "../jc-languages" }
 jc-text = { path = "../jc-text" }
+jc-git = { path = "../jc-git" }
 regex-automata = { version = "=0.4.18", default-features = false, features = ["std", "syntax", "dfa-build", "unicode"] }

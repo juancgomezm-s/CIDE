@@ -27,12 +27,12 @@ pub(super) struct Geometry {
     map: Option<Rect>,
 }
 impl Geometry {
-    pub fn new(pane: Rect) -> Self {
-        let top = (pane.top + shell::HEADER).min(pane.bottom);
-        let bottom = (pane.bottom - RAIL).max(top);
-        let right = (pane.right - RAIL).max(pane.left);
-        let map = (right - pane.left >= 320).then_some(Rect {
-            left: right - MAP_WIDTH,
+    pub fn new(pane: Rect, dpi: super::dpi::Dpi) -> Self {
+        let top = (pane.top + dpi.pixels(shell::HEADER)).min(pane.bottom);
+        let bottom = (pane.bottom - dpi.pixels(RAIL)).max(top);
+        let right = (pane.right - dpi.pixels(RAIL)).max(pane.left);
+        let map = (right - pane.left >= dpi.pixels(320)).then_some(Rect {
+            left: right - dpi.pixels(MAP_WIDTH),
             right,
             top,
             bottom,
@@ -69,6 +69,7 @@ struct Track {
     offset: usize,
     limit: usize,
     page: usize,
+    minimum_thumb: i32,
 }
 impl Track {
     fn start(self) -> i32 {
@@ -87,7 +88,7 @@ impl Track {
     fn thumb(self) -> (i32, i32) {
         let length = self.length();
         let size = scale(self.page, self.limit.saturating_add(self.page), length)
-            .clamp(length.min(12), length);
+            .clamp(length.min(self.minimum_thumb), length);
         (
             self.start() + scale(self.offset, self.limit, length - size),
             size,
@@ -207,6 +208,7 @@ pub(super) struct Frame {
     vertical: Track,
     horizontal: Track,
     overview: Option<(Track, Arc<[Mark]>)>,
+    dpi: super::dpi::Dpi,
 }
 impl Frame {
     pub fn prepare(state: &mut State, area: &paint::TextArea) -> Self {
@@ -219,6 +221,7 @@ impl Frame {
             offset: area.first,
             limit: area.count.saturating_sub(page),
             page,
+            minimum_thumb: state.dpi.pixels(12),
         };
         let horizontal = Track {
             axis: Axis::Horizontal,
@@ -234,6 +237,7 @@ impl Frame {
                 )
                 .max(area.scroll),
             page: area.columns.max(1),
+            minimum_thumb: state.dpi.pixels(12),
         };
         let overview = geometry.map.map(|rect| {
             let cache = &mut state.editor_maps[usize::from(area.pane == PaneId::Secondary)];
@@ -244,6 +248,7 @@ impl Frame {
             vertical,
             horizontal,
             overview,
+            dpi: state.dpi,
         }
     }
 
@@ -254,12 +259,12 @@ impl Frame {
                 let mut thumb = track.thumb_rect();
                 match track.axis {
                     Axis::Vertical => {
-                        thumb.left += 2;
-                        thumb.right -= 2;
+                        thumb.left += self.dpi.pixels(2);
+                        thumb.right -= self.dpi.pixels(2);
                     }
                     Axis::Horizontal => {
-                        thumb.top += 2;
-                        thumb.bottom -= 2;
+                        thumb.top += self.dpi.pixels(2);
+                        thumb.bottom -= self.dpi.pixels(2);
                     }
                 }
                 paint::fill(dc, thumb, shell::MUTED)?;
@@ -269,8 +274,8 @@ impl Frame {
             paint::fill(dc, map.rect, shell::SIDEBAR)?;
             let window = map.thumb_rect();
             paint::fill(dc, window, shell::SELECTED)?;
-            let left = map.rect.left + 5;
-            let width = map.rect.right - left - 4;
+            let left = map.rect.left + self.dpi.pixels(5);
+            let width = map.rect.right - left - self.dpi.pixels(4);
             let marks = samples
                 .iter()
                 .enumerate()
@@ -337,15 +342,15 @@ impl State {
         self.update_editor_scroll(x, y);
         true
     }
-    pub(super) fn update_editor_scroll(&mut self, x: i32, y: i32) {
+    pub(super) fn update_editor_scroll(&mut self, x: i32, y: i32) -> bool {
         let Some(drag) = &self.editor_scroll_drag else {
-            return;
+            return false;
         };
         if !self.pointer_source_available()
             || self.pointer_context(drag.pane).as_ref() != Some(&drag.context)
         {
             self.editor_scroll_drag = None;
-            return;
+            return false;
         }
         let track = drag.track;
         let pixel = track.position(x, y);
@@ -355,7 +360,7 @@ impl State {
             track.target(pixel, drag.grab)
         };
         let Some(view) = self.workbench.panes().view(drag.pane) else {
-            return;
+            return false;
         };
         let old = match track.axis {
             Axis::Vertical => view.scroll_line(),
@@ -378,6 +383,7 @@ impl State {
                     .scroll_view_horizontal(drag.pane, delta, track.limit)
             }
         };
+        delta != 0
     }
 }
 
@@ -405,16 +411,55 @@ mod tests {
         let y = horizontal.top + 1;
         assert!(state.begin_editor_scroll(horizontal.right - 1, y));
         assert!(state.workbench.horizontal_scroll_for_pane(pane).unwrap() > 0);
-        state.update_editor_scroll(horizontal.left - 1, y);
+        assert!(state.update_editor_scroll(horizontal.left - 1, y));
+        assert!(!state.update_editor_scroll(horizontal.left - 1, y));
         assert_eq!(state.workbench.horizontal_scroll_for_pane(pane), Some(0));
         state.cancel_pointer();
         let overview = frame.overview.unwrap().0.rect;
         let x = overview.left + 1;
         assert!(state.begin_editor_scroll(x, overview.bottom - 1));
         assert!(state.workbench.panes().view(pane).unwrap().scroll_line() > 0);
-        state.update_editor_scroll(x, overview.top - 1);
+        assert!(state.update_editor_scroll(x, overview.top - 1));
+        assert!(!state.update_editor_scroll(x, overview.top - 1));
         assert_eq!(state.workbench.panes().view(pane).unwrap().scroll_line(), 0);
         assert_eq!(state.workbench.active_editor().unwrap().cursor, caret);
         assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+    }
+
+    #[test]
+    fn native_scroll_geometry_scales_and_remains_inside_compact_panes() {
+        for raw in [96, 144, 192] {
+            let dpi = super::super::dpi::Dpi::from_raw(raw);
+            let pane = Rect {
+                left: 40,
+                top: 80,
+                right: 40 + dpi.pixels(600),
+                bottom: 80 + dpi.pixels(400),
+            };
+            let geometry = Geometry::new(pane, dpi);
+            assert_eq!(
+                geometry.vertical.right - geometry.vertical.left,
+                dpi.pixels(RAIL)
+            );
+            assert_eq!(
+                geometry.horizontal.bottom - geometry.horizontal.top,
+                dpi.pixels(RAIL)
+            );
+            assert_eq!(
+                geometry.map.unwrap().right - geometry.map.unwrap().left,
+                dpi.pixels(MAP_WIDTH)
+            );
+            let compact = Geometry::new(
+                Rect {
+                    right: 42,
+                    bottom: 82,
+                    ..pane
+                },
+                dpi,
+            );
+            assert!(compact.map.is_none());
+            assert!(compact.text.left <= compact.text.right);
+            assert!(compact.text.top <= compact.text.bottom);
+        }
     }
 }

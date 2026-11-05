@@ -237,7 +237,10 @@ unsafe fn scrolls(hwnd: Hwnd) -> (usize, usize) {
 }
 unsafe fn no_capture(hwnd: Hwnd) -> bool {
     let state = owner(hwnd).unwrap().state.borrow();
-    state.linear_drag.is_none() && state.rectangle_drag.is_none() && GetCapture() != hwnd
+    state.linear_drag.is_none()
+        && state.rectangle_drag.is_none()
+        && state.editor_scroll_drag.is_none()
+        && GetCapture() != hwnd
 }
 unsafe fn own_bytes(hwnd: Hwnd, value: &[u8]) -> Result<(), String> {
     if value.len() > 4096 {
@@ -365,6 +368,16 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     position(hwnd, 0, 0)?;
     let baseline = snapshot(hwnd)?;
     let mut checks = Vec::new();
+    // A system move/size loop owns capture independently of editor drags.
+    // WM_SIZE and client cleanup must not terminate that native capture.
+    SetCapture(hwnd);
+    SendMessageW(hwnd, WM_SIZE, 0, 0);
+    let system_capture_preserved = GetCapture() == hwnd;
+    ReleaseCapture();
+    if !system_capture_preserved {
+        return Err("Client pointer cleanup released system resize capture".into());
+    }
+    checks.push("interaction_system_resize_capture_survives_client_cleanup");
     for encoding in [
         TextEncoding::Utf8,
         TextEncoding::Windows1252,
@@ -686,6 +699,29 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     });
     memory(hwnd, options, &rows, TextEncoding::Utf8)?;
     command(hwnd, CommandId::EditorSplitRight)?;
+    let (rail_top, rail_bottom) = {
+        let state = owner(hwnd).unwrap().state.borrow();
+        let area = paint::text_areas(&state)
+            .into_iter()
+            .next()
+            .ok_or("Sin geometría de desplazamiento")?;
+        let text = area.geometry.text;
+        (
+            (text.right + 5, text.top + 2),
+            (text.right + 5, text.bottom - 2),
+        )
+    };
+    let caret_before_scroll = carets(hwnd);
+    mouse(hwnd, WM_LBUTTONDOWN, rail_top, Modifiers::NONE);
+    mouse(hwnd, WM_MOUSEMOVE, rail_bottom, Modifiers::NONE);
+    if GetCapture() != hwnd || scrolls(hwnd).0 == 0 {
+        return Err("El arrastre del editor perdió la captura o no desplazó la vista".into());
+    }
+    mouse(hwnd, WM_LBUTTONUP, rail_top, Modifiers::NONE);
+    if !no_capture(hwnd) || scrolls(hwnd).0 != 0 || carets(hwnd) != caret_before_scroll {
+        return Err("El arrastre no restauró la vista o movió el cursor".into());
+    }
+    checks.push("interaction_scroll_drag_keeps_capture_until_release");
     command(hwnd, CommandId::EditorFocusSecondary)?;
     position(hwnd, 20, 0)?;
     command(hwnd, CommandId::EditorTogglePin)?;
@@ -693,9 +729,15 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     let before_carets = carets(hwnd);
     let rev = revision(hwnd);
     let before = scrolls(hwnd);
+    SendMessageW(hwnd, WM_PAINT, 0, 0);
+    let prepared_before_fraction = owner(hwnd).unwrap().frame_preparations.get();
     wheel(hwnd, PaneId::Secondary, -60, Modifiers::NONE)?;
     if scrolls(hwnd) != before {
         return Err("Half wheel notch scrolled a full step".into());
+    }
+    SendMessageW(hwnd, WM_PAINT, 0, 0);
+    if owner(hwnd).unwrap().frame_preparations.get() != prepared_before_fraction {
+        return Err("La fracción de rueda reconstruyó una vista sin desplazamiento".into());
     }
     wheel(hwnd, PaneId::Secondary, -60, Modifiers::NONE)?;
     if scrolls(hwnd) != (before.0, before.1 + 3) {

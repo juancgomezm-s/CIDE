@@ -570,15 +570,16 @@ impl SourceController {
     pub fn side_ready(&self, app: &Workbench, root: Option<&Path>) -> bool {
         self.ready(app, root)
             && self
-                .accepted
-                .as_ref()
-                .is_some_and(|request| reference_root(root, request).is_ok())
-            && self.items.get(self.selected).is_some_and(|item| {
-                matches!(
-                    item.action,
-                    SourceAction::RelativeFile(_) | SourceAction::Caller { .. }
-                )
-            })
+                .items
+                .get(self.selected)
+                .is_some_and(|item| match item.action {
+                    SourceAction::Navigate => true,
+                    SourceAction::RelativeFile(_) | SourceAction::Caller { .. } => self
+                        .accepted
+                        .as_ref()
+                        .is_some_and(|request| reference_root(root, request).is_ok()),
+                    _ => false,
+                })
     }
     pub fn present(&self, max_rows: usize, columns: usize) -> SourcePresentation {
         let count = max_rows.min(64);
@@ -689,8 +690,8 @@ impl SourceController {
         if mode == SourceMode::Rename && rename.is_none() {
             return Err("Escribe primero el nombre nuevo".into());
         }
-        if self.outline && mode != SourceMode::Symbols {
-            return Err("El esquema solo admite símbolos".into());
+        if self.outline && matches!(mode, SourceMode::Completion | SourceMode::Rename) {
+            return Err("El panel de código solo admite consultas de lectura".into());
         }
         if self.generation == u64::MAX {
             return Err("Se agotó la generación de código".into());
@@ -1031,7 +1032,15 @@ impl SourceController {
                     .document_by_id(request.origin.stamp.document)
                     .unwrap()
                     .tab_id;
-                if !app.jump_to_pane_location(request.origin.pane, tab, item.range.start) {
+                let pane = if to_side {
+                    if !app.open_active_to_side() {
+                        return Err("No se pudo abrir el símbolo al lado".into());
+                    }
+                    app.panes().active()
+                } else {
+                    request.origin.pane
+                };
+                if !app.jump_to_pane_location(pane, tab, item.range.start) {
                     return Err("Destino de código inválido".into());
                 }
                 Ok(None)
@@ -1308,7 +1317,7 @@ fn local_words(
         if word.starts_with(&prefix) && *word != prefix && seen.insert(word.clone()) {
             out.push(TaskItem::Source(SourceItem {
                 range: range.clone(),
-                label: format!("{} (palabra local)", word),
+                label: format!("{word} (palabra local)"),
                 action: SourceAction::Replace(word.clone()),
             }))?;
         }

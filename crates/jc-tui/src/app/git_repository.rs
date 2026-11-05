@@ -1,14 +1,7 @@
 //! Explicit repository-status actions. No file opening from opaque Git paths.
 use super::TuiApp;
-use crate::state::PromptKind;
 use crossterm::event::{KeyCode, KeyEvent};
 use jc_app::{PrimaryFocus, SidebarView};
-
-#[derive(Clone, Copy)]
-pub(crate) enum GitConfigurationTarget {
-    Diff,
-    Status,
-}
 
 impl TuiApp {
     pub(crate) fn open_git_repository_status(&mut self) {
@@ -23,27 +16,14 @@ impl TuiApp {
             self.status = "Abre primero la carpeta raíz del repositorio".into();
             return;
         };
-        let Some(executable) = self.git_executable.as_deref() else {
-            self.git_status.clear();
-            self.git_configuration_target = Some(GitConfigurationTarget::Status);
-            self.status = "Elige una ruta absoluta al ejecutable Git".into();
-            self.open_prompt(PromptKind::GitExecutable);
-            return;
-        };
-        self.git_configuration_target = None;
-        self.status = match self.git_status.request(root, executable) {
+        self.status = match self.git_status.request(root) {
             Ok(()) => self.git_status.message().to_owned(),
             Err(error) => error,
         };
     }
 
     pub(crate) fn configure_git_executable(&mut self) {
-        self.git_configuration_target = match self.panels.sidebar() {
-            SidebarView::Git => Some(GitConfigurationTarget::Diff),
-            SidebarView::GitStatus => Some(GitConfigurationTarget::Status),
-            _ => None,
-        };
-        self.open_prompt(PromptKind::GitExecutable);
+        self.status = "Git está integrado en CIDE; no requiere un ejecutable externo".into();
     }
 
     pub(crate) fn handle_git_status_sidebar_key(&mut self, key: KeyEvent) {

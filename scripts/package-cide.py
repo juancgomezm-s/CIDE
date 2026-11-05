@@ -27,6 +27,7 @@ FIXED = [
     "assets/branding/cide-tui.ico", "assets/branding/cide-gui.ico",
     "assets/branding/cide-tui-256.png", "assets/branding/cide-gui-256.png",
     "assets/branding/provenance.json", "README.md", "LICENSE", "LICENSING.md",
+    "docs/GIT_EMBEDDED_ENGINE.md", "docs/GIT_EMBEDDED_LICENSES.md",
     "third_party/limetext-text-LICENSE", "third_party/unicode-17/LICENSE.txt",
 ]
 DEVELOPMENT = """CIDE 0.1.0 - Windows MSVC x64 development package
@@ -35,6 +36,8 @@ Run bin/cide-gui.exe for the native GUI, bin/cide-tui.exe for the TUI,
 or bin/cide.exe --help for the headless CLI.
 Legacy aliases: jc-ide-gui.exe, jc-ide-tui.exe and jc-ide.exe respectively.
 Canonical and legacy commands use the same implementation.
+Git status and HEAD/index comparisons use the embedded Rust engine; git.exe
+is not required. Git writes and network operations remain outside this block.
 
 Use --encoding utf8 explicitly for UTF-8 source when appropriate. Legacy
 encodings are explicit choices; the owner's actual legacy page is unconfirmed.
@@ -82,7 +85,7 @@ def checked(path: Path, workspace: Path, *, directory: bool = False) -> Path:
     return current
 
 
-def notice_sources(workspace: Path) -> tuple[list[tuple[Path, str]], list[dict]]:
+def notice_sources(workspace: Path, preserved: set[str]) -> tuple[list[tuple[Path, str]], list[dict]]:
     if tomllib is None:
         # Do not silently omit notices on old Python; no output is created.
         raise PackagingError("Python 3.11+ with tomllib is required for offline notice inventory")
@@ -117,6 +120,8 @@ def notice_sources(workspace: Path) -> tuple[list[tuple[Path, str]], list[dict]]
         if not isinstance(name, str) or not isinstance(version, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", name) or not re.fullmatch(r"[A-Za-z0-9.+-]+", version):
             raise PackagingError("invalid registry package identity")
         identity = name + "-" + version
+        if identity in preserved:
+            continue  # Exact notices already included from the checked Git inventory.
         if identity in seen:
             continue
         seen.add(identity)
@@ -176,7 +181,7 @@ def notice_sources(workspace: Path) -> tuple[list[tuple[Path, str]], list[dict]]
 def copy_member(archive: zipfile.ZipFile, source: Path, name: str, workspace: Path) -> dict:
     source = checked(source, workspace)
     before = source.stat()
-    limit = MAX_NOTICE if name.startswith("third_party/registry/") else MAX_PAYLOAD
+    limit = MAX_NOTICE if name.startswith("third_party/") else MAX_PAYLOAD
     if before.st_size > limit:
         raise PackagingError("payload exceeds per-file size budget")
     digest = hashlib.sha256()
@@ -192,6 +197,38 @@ def copy_member(archive: zipfile.ZipFile, source: Path, name: str, workspace: Pa
     if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino) or length != before.st_size:
         raise PackagingError("source changed during packaging")
     return {"path": name, "bytes": length, "sha256": digest.hexdigest()}
+
+
+def embedded_git_notices(workspace: Path) -> tuple[list[tuple[Path, str]], set[str]]:
+    root = checked(workspace / "third_party/gitoxide", workspace, directory=True)
+    inventory_path = checked(root / "DEPENDENCIES.json", workspace)
+    if inventory_path.stat().st_size > MAX_NOTICE:
+        raise PackagingError("embedded Git inventory exceeds budget")
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    if inventory.get("cargo_lock_sha256") != hashlib.sha256((workspace / "Cargo.lock").read_bytes()).hexdigest():
+        raise PackagingError("embedded Git notices do not match Cargo.lock")
+    preserved = set()
+    for package in inventory["packages"]:
+        identity = package["name"] + "-" + package["version"]
+        if not re.fullmatch(r"[A-Za-z0-9_.+-]+", identity) or not package["notices"]:
+            raise PackagingError("invalid embedded Git license identity")
+        for notice in package["notices"]:
+            path = checked(root / "dependencies" / identity / notice["path"], workspace)
+            if path.stat().st_size > MAX_NOTICE or path.stat().st_size != notice["bytes"] or hashlib.sha256(path.read_bytes()).hexdigest() != notice["sha256"]:
+                raise PackagingError("embedded Git license differs from inventory")
+        preserved.add(identity)
+    result = []
+    total = 0
+    for path in sorted(root.rglob("*")):
+        if path.is_dir():
+            checked(path, workspace, directory=True)
+            continue
+        path = checked(path, workspace)
+        total += path.stat().st_size
+        if len(result) >= 1024 or path.stat().st_size > MAX_NOTICE or total > MAX_NOTICE_TOTAL:
+            raise PackagingError("embedded Git notices exceed budget")
+        result.append((path, path.relative_to(workspace).as_posix()))
+    return result, preserved
 
 
 def main() -> int:
@@ -215,7 +252,9 @@ def main() -> int:
         checked(binary_directory, workspace, directory=True)
         payload = [(checked(binary_directory / name, workspace), "bin/" + name) for name in BINARIES]
         payload += [(checked(workspace / relative, workspace), relative) for relative in FIXED]
-        notices, missing = notice_sources(workspace)
+        embedded, preserved = embedded_git_notices(workspace)
+        payload += embedded
+        notices, missing = notice_sources(workspace, preserved)
         payload += notices
         if len({name for _, name in payload}) != len(payload):
             raise PackagingError("duplicate archive member")

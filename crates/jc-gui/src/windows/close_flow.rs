@@ -1,6 +1,6 @@
 //! Closing one view delegates to F1. Discard of a last dirty view requires the
 //! exact source intention still to be current after the native confirmation.
-use super::{ffi::*, line_edit::EditTarget, owner, wide, State};
+use super::{ffi::*, line_edit::EditTarget, owner, State};
 
 pub(super) fn commit(
     state: &mut State,
@@ -59,12 +59,20 @@ pub(super) unsafe fn perform(hwnd: Hwnd) {
                 .unwrap_or(false)
         })
     } else {
-        MessageBoxW(
+        match super::message_dialog::confirm(
             hwnd,
-            wide("¿Descartar los cambios sin guardar de esta pestaña? Guarda antes para conservarlos.").as_ptr(),
-            wide("CIDE").as_ptr(),
-            0x134,
-        ) == 6
+            "Cerrar pestaña",
+            "Esta pestaña tiene cambios sin guardar.\r\n¿Quieres descartarlos y cerrar la pestaña?",
+            "Descartar",
+        ) {
+            Ok(confirmed) => confirmed,
+            Err(error) => {
+                if let Some(model) = owner(hwnd) {
+                    model.state.borrow_mut().error(error);
+                }
+                return;
+            }
+        }
     };
     if let Some(model) = owner(hwnd) {
         let mut state = model.state.borrow_mut();

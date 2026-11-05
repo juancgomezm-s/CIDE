@@ -6,7 +6,10 @@
 local. Fondo elegido `#2E3440`; título y menús GUI comparten el tema. Ambas interfaces
 conservan cambios sin guardar, historial y vistas al salir y reabrir.
 Recuperación periódica y limpieza segura de copias: [contrato y evidencia](docs/PERIODIC_RECOVERY_RETENTION.md).
-Ejecutables actuales en `target/recovery-next/release/`; anteriores conservados.
+GUI/TUI actuales en `target/embedded-git-next/release/`, con
+[motor Git embebido en Rust](docs/GIT_EMBEDDED_ENGINE.md), sin `git.exe`.
+Ejecutables anteriores conservados. [Estado Git GUI](docs/M2_GIT_GUI_STATUS_UX.md).
+[Pestañas, panel Código derecho y menús depurados](docs/M2_SHELL_PANELS_MENUS.md).
 Archivos de varios GB: fuente paginada aislada probada, integración al editor pendiente.
 Aceptación física/global y proveedores AVM/semánticos siguen abiertos.
 
@@ -48,7 +51,7 @@ El núcleo usa la biblioteca estándar de Rust; el frontend terminal usa crosste
 ## Empezar
 
 Instala [Rust](https://rustup.rs/), clona el repositorio y abre su carpeta. Se fija el
-toolchain 1.85.1; en Windows, usa el entorno de compilación MSVC requerido por Rust.
+toolchain 1.88.0; en Windows, usa el entorno de compilación MSVC requerido por Rust.
 
 ```console
 cargo test --workspace --locked --offline
@@ -77,7 +80,7 @@ La TUI dibuja dos grupos Primary/Secondary con cursor, selección y viewport ind
 
 F1 retiró los campos espejo de cursor/selección/scroll del documento. Los grupos poseen vistas persistentes con ViewId y comparten el documento/undo. Replace-all publica una sola transacción; cerrar una vista preserva otras referencias. F2 ya sustituyó la decodificación completa de navegación/render por proyección compartida y rangos visibles; F3 separa preparación/render, emite diferencias y entrega trabajos internos sin otra tecla. Véanse [avance F3](docs/F3_PRESENTATION_TASKS.md), [avance F1](docs/F1_DOCUMENT_VIEWS_TRANSACTIONS.md), [arquitectura](docs/ARQUITECTURA.md) y [plan](docs/PLAN.md).
 
-En este equipo se preparó Rust 1.85.1 dentro de `work/toolchain`, sin cambiar el PATH del usuario. El wrapper PowerShell también admite un Cargo ya instalado:
+En este equipo se preparó Rust 1.88.0 dentro de `work/toolchain`, sin cambiar el PATH del usuario. El wrapper PowerShell también admite un Cargo ya instalado:
 
 ```powershell
 .\scripts\cargo-local.ps1 run -p jc-tui --locked --offline
@@ -280,8 +283,9 @@ La GUI también ofrece reemplazo de proyecto con preview y confirmación explíc
 (Ctrl+Shift+H después de una búsqueda completa): abiertos con un undo sin guardar,
 cerrados por archivo con conflictos y cancelación de los pendientes. Git/Palette
 ya muestran estado de repositorio y diff HEAD/índice frente al buffer sucio;
-ejecutable Git elegido para la sesión o `--git-executable ABS`, refresh/cancel,
-sin escrituras Git. [Uso y evidencia del bloque integrado](docs/M2B_PROJECT_REPLACE_GIT.md):
+motor Rust embebido, actualización/cancelación y ninguna escritura Git.
+La opción antigua `--git-executable ABS` solo se consume por compatibilidad.
+[Uso y evidencia del bloque anterior](docs/M2B_PROJECT_REPLACE_GIT.md):
 53 pruebas Rust dirigidas y58 controles nativos; pruebas físicas de usuario al final.
 
 La TUI ya compara los **dos documentos abiertos sin Git**, incluidos cambios sin

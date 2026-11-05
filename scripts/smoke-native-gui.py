@@ -37,7 +37,8 @@ REQUIRED = {
     "git_hunk_enter_navigation_without_edit",
     "git_shared_undo_stale_enter_denied_explicit_refresh",
     "git_cancel_late_notifications_no_result_revival",
-    "git_executable_and_root_reconfiguration_clear_accepted_state",
+    "git_root_reconfiguration_clears_embedded_accepted_state",
+    "git_embedded_runtime_requires_no_executable",
     "explorer_root_native_delivery_no_input_git_excluded",
     "explorer_lazy_disclosure_expand_right_child_native_delivery",
     "explorer_focus_cycle_tab_do_not_edit_source",
@@ -217,7 +218,7 @@ def main():
     git_before = git_metadata(output)
     with (output / "stdout.txt").open("xb") as stdout, (output / "stderr.txt").open("xb") as stderr:
         result = subprocess.run(
-            [str(exe), "--git-executable", str(git_executable), "--smoke-fixture", str(fixture), "--smoke-report", str(report), "--smoke-bitmap", str(bitmap)]
+            [str(exe), "--smoke-fixture", str(fixture), "--smoke-report", str(report), "--smoke-bitmap", str(bitmap)]
                 + (["--smoke-navigation-only"] if args.section == "navigation" else
                    ["--smoke-line-edit-only"] if args.section == "line-edit" else
                    ["--smoke-selection-reopen-only"] if args.section == "selection-reopen" else
@@ -232,6 +233,7 @@ def main():
                    ["--smoke-shell-only"] if args.section == "shell" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
+            env={**os.environ, "PATH": "", "JC_GIT_TEST_EXE": ""},
         )
     if result.returncode:
         raise RuntimeError(f"native smoke exit {result.returncode}; evidence retained at {output}")
@@ -278,7 +280,7 @@ def main():
         "native_report": payload, "bitmap_width": width, "bitmap_height": abs(height),
         "bitmap_colors": len(colors), "physical_display_verified": False,
         "git_fixture":git_identity,"git_metadata_unchanged":True,"git_metadata_sha256":git_before,
-        "git_executable":str(git_executable),
+        "git_oracle_executable":str(git_executable), "gui_child_path_empty":True,
     }
     with (output / "summary.json").open("x", encoding="utf-8") as stream:
         json.dump(summary, stream, ensure_ascii=False, indent=2)

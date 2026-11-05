@@ -151,17 +151,34 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or("Git smoke needs Unicode fixture filename")?;
-    let executable = owner(hwnd)
-        .ok_or("Git smoke lost HWND")?
-        .state
-        .borrow()
-        .git_executable
-        .clone()
-        .ok_or("Git smoke requires an explicitly configured trusted executable")?;
-    if !executable.is_absolute() {
-        return Err("Git smoke executable must be absolute".into());
-    }
     let mut checks = Vec::new();
+    checks.push("git_embedded_runtime_requires_no_executable");
+    {
+        let mut state = owner(hwnd).unwrap().state.borrow_mut();
+        state.close_selector();
+        state.schedule_git_status();
+    }
+    one_task(hwnd)?;
+    status_ready(hwnd)?;
+    {
+        let state = owner(hwnd).unwrap().state.borrow();
+        let count = state
+            .git_status
+            .result()
+            .ok_or("Automatic Git status omitted snapshot")?
+            .status()
+            .entries()
+            .len();
+        if state.git_panel.is_some()
+            || state.git_status.ready()
+            || state.git_summary() != format!("Git: {count} cambios")
+        {
+            return Err(
+                "Git summary lost its accepted result or automatic status opened a modal".into(),
+            );
+        }
+    }
+    checks.push("git_background_status_summary_survives_completion_poll_without_modal");
     position(hwnd, 0, 0)?;
     SendMessageW(hwnd, WM_CHAR, 'Q' as usize, 0);
     expected(hwnd, DIRTY)?;
@@ -205,6 +222,16 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         .map(|path| path.with_file_name("native-git-status.bmp"));
     readonly_frame(hwnd, status_bitmap.as_deref())?;
     key(hwnd, 0x1b, Modifiers::NONE)?;
+    if owner(hwnd)
+        .unwrap()
+        .state
+        .borrow()
+        .git_status
+        .result()
+        .is_none()
+    {
+        return Err("Closing an accepted Git status discarded its status-bar summary".into());
+    }
     checks.push("git_status_native_delivery_typed_disk_index_no_enter_navigation");
 
     command(hwnd, CommandId::GitDiffHead)?;
@@ -286,16 +313,6 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     command(hwnd, CommandId::GitDiffHead)?;
     diff_ready(hwnd)?;
     accepted(hwnd, GitBlobSource::Head, SOURCE)?;
-    {
-        let mut state = owner(hwnd).unwrap().state.borrow_mut();
-        state.set_git_executable(executable)?;
-        if state.git_panel.is_some()
-            || state.git_diff.result().is_some()
-            || state.git_status_options.is_some()
-        {
-            return Err("Git executable reconfiguration retained accepted state".into());
-        }
-    }
     command(hwnd, CommandId::GitRepositoryStatus)?;
     status_ready(hwnd)?;
     {
@@ -314,6 +331,6 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     if fs::read(&options.fixture).map_err(|e| e.to_string())? != SOURCE {
         return Err("Git smoke changed fixture bytes on disk".into());
     }
-    checks.push("git_executable_and_root_reconfiguration_clear_accepted_state");
+    checks.push("git_root_reconfiguration_clears_embedded_accepted_state");
     Ok(checks)
 }

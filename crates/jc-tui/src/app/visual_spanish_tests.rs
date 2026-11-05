@@ -65,10 +65,8 @@ fn spanish_menu_accelerators_open_the_underlined_visible_choice_and_f10_keeps_ke
         ('e', MenuId::Edit),
         ('b', MenuId::Search),
         ('p', MenuId::Project),
-        ('c', MenuId::Build),
         ('h', MenuId::Tools),
         ('v', MenuId::View),
-        ('y', MenuId::Help),
     ] {
         key(&mut app, KeyCode::Char(letter), KeyModifiers::ALT);
         assert!(matches!(app.overlay,UiOverlay::Menu {menu:active,..} if active==menu));
@@ -103,6 +101,26 @@ fn spanish_menu_accelerators_open_the_underlined_visible_choice_and_f10_keeps_ke
         }
     ));
     assert_eq!(app.workbench.active_bytes().unwrap(), original);
+}
+
+#[test]
+fn unavailable_build_and_help_menus_do_not_open_empty_overlays_or_change_source() {
+    let mut app = editor("pendientes.p", "DISPLAY 'fuente'.\r\n");
+    let before = app.workbench.active_bytes().unwrap();
+    let before_revision = revision(&app);
+    assert!(app.menus.get(MenuId::Build).is_none());
+    assert!(app.menus.get(MenuId::Help).is_none());
+    for (command, explanation) in [
+        (CommandId::MenuBuild, "AVM"),
+        (CommandId::MenuHelp, "ayuda"),
+    ] {
+        assert!(app.palette_commands("").contains(&command));
+        app.dispatch(command);
+        assert!(matches!(app.overlay, UiOverlay::None));
+        assert!(app.status.contains(explanation));
+    }
+    assert_eq!(app.workbench.active_bytes().unwrap(), before);
+    assert_eq!(revision(&app), before_revision);
 }
 
 #[test]

@@ -485,6 +485,12 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         return Err("Explorer Tab edited the source or moved an editor caret".into());
     }
     key(hwnd, 0x75, Modifiers::NONE)?;
+    if super::outline_panel::region(&owner(hwnd).unwrap().state.borrow()).is_some() {
+        if !owner(hwnd).unwrap().state.borrow().outline_focused() {
+            return Err("F6 did not visit the visible right code panel".into());
+        }
+        key(hwnd, 0x75, Modifiers::NONE)?;
+    }
     if owner(hwnd).unwrap().state.borrow().explorer_focused {
         return Err("F6 did not return focus to Editor".into());
     }

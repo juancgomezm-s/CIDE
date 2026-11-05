@@ -556,12 +556,7 @@ impl JobSystem {
         if doc.session.path() != work.document_path || !app.task_stamp_is_current(work.stamp) {
             return Err(SubmitError::InvalidView);
         }
-        for path in [
-            &work.document_path,
-            &work.options.root,
-            &work.options.cwd,
-            &work.options.git_executable,
-        ] {
+        for path in [&work.document_path, &work.options.root, &work.options.cwd] {
             if path.as_os_str().len() > 4096 {
                 return Err(SubmitError::SnapshotLimit);
             }

@@ -58,11 +58,12 @@ struct ViewState {
     scroll: usize,
 }
 impl ViewState {
-    fn validate_context(&mut self, root: Option<&Path>, executable: Option<&Path>) -> bool {
-        if self.options.as_ref().is_some_and(|options| {
-            Some(options.root.as_path()) != root
-                || Some(options.git_executable.as_path()) != executable
-        }) {
+    fn validate_context(&mut self, root: Option<&Path>) -> bool {
+        if self
+            .options
+            .as_ref()
+            .is_some_and(|options| Some(options.root.as_path()) != root)
+        {
             self.options = None;
             self.mode = Mode::Stale;
             self.reset_viewport();
@@ -123,7 +124,7 @@ impl ViewState {
             })
             .collect();
         GitStatusPresentation {
-            title: plain_prefix("Estado Git [aislado]", width),
+            title: plain_prefix("Estado Git [integrado]", width),
             message: plain_prefix(&format!("{message} | {POLICY}"), width),
             rows,
             total,
@@ -144,22 +145,17 @@ impl GitStatusView {
             view: ViewState::default(),
         }
     }
-    pub(crate) fn request(&mut self, root: &Path, executable: &Path) -> Result<(), String> {
+    pub(crate) fn request(&mut self, root: &Path) -> Result<(), String> {
         self.view.reset_viewport();
-        if !root.is_absolute()
-            || !executable.is_absolute()
-            || root.as_os_str().len() > PATH_LIMIT
-            || executable.as_os_str().len() > PATH_LIMIT
-        {
+        if !root.is_absolute() || root.as_os_str().len() > PATH_LIMIT {
             self.controller.cancel();
             self.view.options = None;
-            let message = "Elige rutas absolutas del repositorio y de Git";
+            let message = "Elige una raíz absoluta del repositorio";
             self.view.mode = Mode::Rejected(message);
             return Err(message.into());
         }
         let options = GitStatusOptions {
             root: root.to_path_buf(),
-            git_executable: executable.to_path_buf(),
             limits: Default::default(),
         };
         self.view.options = Some(options.clone());
@@ -183,20 +179,16 @@ impl GitStatusView {
     }
     /// Metadata-only invalidation, also safe immediately before prepare_frame.
     /// Never consumes a completion or bypasses poll_tasks panic recovery.
-    pub(crate) fn validate_context(
-        &mut self,
-        root: Option<&Path>,
-        executable: Option<&Path>,
-    ) -> bool {
-        if self.view.validate_context(root, executable) {
+    pub(crate) fn validate_context(&mut self, root: Option<&Path>) -> bool {
+        if self.view.validate_context(root) {
             self.controller.cancel();
             true
         } else {
             false
         }
     }
-    pub(crate) fn poll(&mut self, root: Option<&Path>, executable: Option<&Path>) -> bool {
-        if self.validate_context(root, executable) {
+    pub(crate) fn poll(&mut self, root: Option<&Path>) -> bool {
+        if self.validate_context(root) {
             return true;
         }
         let Some(options) = self.view.options.as_ref() else {
@@ -267,7 +259,7 @@ impl GitStatusView {
 fn request_error(error: GitStatusRequestError) -> &'static str {
     match error {
         GitStatusRequestError::InvalidOptions => "Configuración de estado Git inválida",
-        GitStatusRequestError::NoConfiguration => "Configura primero el repositorio y Git",
+        GitStatusRequestError::NoConfiguration => "Abre primero una carpeta de repositorio",
         GitStatusRequestError::GenerationExhausted => "Se agotó la generación del estado Git",
         GitStatusRequestError::WorkerUnavailable => "El lector de estado Git no está disponible",
     }
@@ -403,10 +395,9 @@ mod tests {
         git_status::{parse_porcelain_v1, GitStatusLimits},
     };
     use std::path::PathBuf;
-    fn options(root: &str, executable: &str) -> GitStatusOptions {
+    fn options(root: &str) -> GitStatusOptions {
         GitStatusOptions {
             root: PathBuf::from(root),
-            git_executable: PathBuf::from(executable),
             limits: Default::default(),
         }
     }
@@ -451,7 +442,7 @@ mod tests {
         }
         let snapshot = snapshot(&input);
         let mut view = ViewState {
-            options: Some(options("repo", "git")),
+            options: Some(options("repo")),
             mode: Mode::Current,
             ..ViewState::default()
         };
@@ -483,15 +474,15 @@ mod tests {
     #[test]
     fn accepted_rows_are_hidden_after_context_change_or_cancel_without_reinterpreting_paths() {
         let snapshot = snapshot(b"?? name\xff\n\0");
-        let configured = options("root-a", "git-a");
+        let configured = options("root-a");
         let mut state = ViewState {
             options: Some(configured.clone()),
             mode: Mode::Current,
             ..ViewState::default()
         };
         assert_eq!(state.prepare(Some(&snapshot), "Listo", 40, 3).rows.len(), 1);
-        assert!(!state.validate_context(Some(&configured.root), Some(&configured.git_executable)));
-        assert!(state.validate_context(Some(Path::new("root-b")), Some(&configured.git_executable)));
+        assert!(!state.validate_context(Some(&configured.root)));
+        assert!(state.validate_context(Some(Path::new("root-b"))));
         assert_eq!(state.mode, Mode::Stale);
         assert!(state.options.is_none());
         assert!(state
@@ -504,19 +495,15 @@ mod tests {
             .prepare(Some(&snapshot), "Cancelado", 40, 3)
             .rows
             .is_empty());
-        assert!(state.validate_context(None, None));
-        let configured = options("root-a", "git-a");
-        for (root, executable) in [
-            (Some(Path::new("root-a")), Some(Path::new("git-b"))),
-            (None, Some(Path::new("git-a"))),
-            (Some(Path::new("root-a")), None),
-        ] {
+        assert!(state.validate_context(None));
+        let configured = options("root-a");
+        for root in [Some(Path::new("root-b")), None] {
             let mut state = ViewState {
                 options: Some(configured.clone()),
                 mode: Mode::Current,
                 ..ViewState::default()
             };
-            assert!(state.validate_context(root, executable));
+            assert!(state.validate_context(root));
             assert!(state
                 .prepare(Some(&snapshot), "Stale", 40, 3)
                 .rows
@@ -528,15 +515,13 @@ mod tests {
         let mut view = GitStatusView::new(Wakeup::default());
         assert_eq!(view.state(), GitStatusTaskState::Idle);
         assert!(!view.ready());
-        assert!(!view.poll(None, None));
+        assert!(!view.poll(None));
         assert!(view.prepare(20, 5).rows.is_empty());
         view.cancel();
         assert_eq!(view.state(), GitStatusTaskState::Cancelled);
         view.clear();
         assert_eq!(view.state(), GitStatusTaskState::Idle);
-        assert!(view
-            .request(Path::new("relative-root"), Path::new("relative-git"))
-            .is_err());
+        assert!(view.request(Path::new("relative-root")).is_err());
         assert_eq!(view.state(), GitStatusTaskState::Failed);
         assert!(!view.worker_panicked());
         assert!(!view.move_selection(isize::MAX));
@@ -569,7 +554,7 @@ mod tests {
         );
         let mut view = ViewState::default();
         let frame = view.prepare(None, "Filtros no admitidos", 64, 4);
-        assert!(frame.title.contains("aislado"));
+        assert!(frame.title.contains("integrado"));
         assert!(frame.message.contains(POLICY));
         assert!(frame.rows.is_empty());
     }

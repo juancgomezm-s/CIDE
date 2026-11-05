@@ -145,7 +145,6 @@ impl Fixture {
     }
     fn options(&self, source: GitBlobSource) -> GitDiffOptions {
         GitDiffOptions {
-            git_executable: self.git.clone(),
             root: self.root.clone(),
             cwd: self.container.clone(),
             source,
@@ -427,7 +426,6 @@ fn byte_and_artifact_quotas_fail_before_copy_or_worker_creation() {
     app.new_file("C:/unused/large.p", TextEncoding::Utf8);
     app.insert_text(&"x".repeat(2 * 1024 * 1024 + 1)).unwrap();
     let options = GitDiffOptions {
-        git_executable: "C:/unused/git.exe".into(),
         root: "C:/unused".into(),
         cwd: "C:/unused".into(),
         source: GitBlobSource::Head,
@@ -525,7 +523,7 @@ fn temporary_shared_snapshot_pressure_keeps_git_queued_until_plain_completion_is
 }
 
 #[test]
-fn root_escape_and_missing_executable_are_worker_failures_without_source_writes() {
+fn root_escape_and_non_repository_are_worker_failures_without_source_writes() {
     let _serial = SERIAL.lock().unwrap();
     let fixture = Fixture::new(b"source\n", b"index\n");
     let outside = fixture.container.join("outside.p");
@@ -544,7 +542,8 @@ fn root_escape_and_missing_executable_are_worker_failures_without_source_writes(
     assert_eq!(fs::read(&outside).unwrap(), b"outside\r\n");
     let app = fixture.app();
     let mut options = fixture.options(GitBlobSource::Head);
-    options.git_executable = fixture.container.join("missing-git.exe");
+    options.root = fixture.container.clone();
+    options.cwd = fixture.container.clone();
     assert!(controller.request(&app, &mut jobs, options).is_ok()); // filesystem work is not in request
     assert_eq!(controller.state(), GitDiffState::Running);
     pump(&app, &mut jobs, &mut controller);

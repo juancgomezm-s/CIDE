@@ -6,7 +6,6 @@ use jc_text::TextPosition;
 use std::ptr::{null, null_mut};
 
 const BACKGROUND: u32 = super::shell::BACKGROUND;
-const HEADER: u32 = super::shell::SURFACE;
 const FOREGROUND: u32 = super::shell::TEXT;
 const DIM: u32 = super::shell::MUTED;
 const SELECTED: u32 = super::shell::SELECTED;
@@ -125,6 +124,7 @@ pub(super) struct Frame {
     tabs: super::tab_bar::Bars,
     chrome: super::chrome::Frame,
     status: Vec<u16>,
+    status_bar: super::status_bar::Frame,
     panes: Vec<Pane>,
     selector: Option<super::selector::SelectorPresentation>,
     search: Option<super::search_panel::SearchPresentation>,
@@ -212,7 +212,8 @@ impl Frame {
 }
 
 pub(super) fn areas(state: &State) -> Vec<(PaneId, Rect)> {
-    let width = state.width.clamp(1, 8192);
+    let width =
+        super::outline_panel::region(state).map_or(state.width.clamp(1, 8192), |r| r.left - 1);
     let height = state.height.clamp(1, 8192);
     let bottom = super::bottom_panel::region(state)
         .map_or((height - state.cell_height - 8).max(0), |r| r.top);
@@ -278,7 +279,7 @@ pub(super) fn text_areas(state: &State) -> Vec<TextArea> {
             let view = state.workbench.panes().view(pane)?;
             let tab = view.location()?.tab;
             let count = state.workbench.line_count_for_tab(tab)?;
-            let geometry = editor_scroll::Geometry::new(rect);
+            let geometry = editor_scroll::Geometry::new(rect, state.dpi);
             let rect = geometry.text;
             let digits = count.max(1).to_string().len().clamp(3, 7);
             let x = rect.left + (digits as i32 + 2) * cw + 8;
@@ -308,7 +309,7 @@ pub(super) fn text_areas(state: &State) -> Vec<TextArea> {
 
 pub(super) fn source_pane_at(state: &State, x: i32, y: i32) -> Option<(PaneId, usize)> {
     for (pane, rect) in areas(state) {
-        let text = editor_scroll::Geometry::new(rect).text;
+        let text = editor_scroll::Geometry::new(rect, state.dpi).text;
         let top = text.top;
         let rows = ((text.bottom - top) / state.cell_height.clamp(1, 8192)).clamp(0, 128) as usize;
         if rows > 0
@@ -751,6 +752,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             state.chrome_hover,
         ),
         status,
+        status_bar: super::status_bar::prepare(state),
         panes,
         search: state.search_presentation(),
         navigation: state.navigation_presentation(),
@@ -993,19 +995,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
     if let Some(bottom) = &frame.bottom {
         super::bottom_paint::draw(dc, bottom, frame.cell_height)?;
     }
-    let top = (frame.height - frame.cell_height - 6).max(0);
-    text(
-        dc,
-        Rect {
-            left: 8,
-            top,
-            right: frame.width,
-            bottom: frame.height,
-        },
-        &frame.status,
-        DIM,
-        HEADER,
-    )?;
+    super::status_bar::draw(dc, &frame.status_bar, &frame.status)?;
     if let Some(presentation) = &frame.selector {
         super::selector_paint::draw(
             dc,

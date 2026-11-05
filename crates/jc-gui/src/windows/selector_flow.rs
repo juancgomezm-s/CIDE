@@ -25,6 +25,7 @@ impl State {
         self.project_panel = None;
         self.project_options = None;
         self.project_root = Some(root);
+        self.schedule_git_status();
         self.status = "Carpeta de proyecto elegida · Ctrl+P apertura rápida".into();
         Ok(())
     }

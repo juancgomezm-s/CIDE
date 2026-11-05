@@ -657,7 +657,7 @@ fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
         screen.text_styled(
             screen.width() - status_width,
             y,
-            &format!(" {} ", status),
+            &format!(" {status} "),
             CellStyle::Status,
         );
     }

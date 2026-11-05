@@ -11,63 +11,6 @@ use jc_app::{
     git_status_tasks::GitStatusOptions,
     Modifiers, TaskStatus,
 };
-use std::path::PathBuf;
-
-fn document_target(
-    state: &State,
-) -> Option<(
-    jc_app::DocumentId,
-    u64,
-    Option<jc_text::TextEncoding>,
-    Option<jc_app::ViewId>,
-)> {
-    let document = state.workbench.active_document()?;
-    Some((
-        document.id,
-        document.session.document().revision(),
-        document.session.encoding(),
-        state
-            .workbench
-            .panes()
-            .view(state.workbench.panes().active())
-            .and_then(|view| view.view_id()),
-    ))
-}
-pub(super) unsafe fn configure(hwnd: super::ffi::Hwnd, intent: GitIntent) {
-    let captured = super::owner(hwnd).map(|model| {
-        let state = model.state.borrow();
-        (state.project_root.clone(), document_target(&state))
-    });
-    let selected = super::file_dialog_named(
-        hwnd,
-        false,
-        Some("Elige tu ejecutable Git de confianza (solo esta sesión)"),
-    );
-    if let Some(model) = super::owner(hwnd) {
-        let mut state = model.state.borrow_mut();
-        match selected {
-            Ok(Some(path)) => {
-                let current = (state.project_root.clone(), document_target(&state));
-                if captured.as_ref().is_none_or(|(root, document)| {
-                    root != &current.0
-                        || (matches!(intent, GitIntent::Diff(_)) && document != &current.1)
-                }) {
-                    state.error(
-                        "Cambió el contexto de destino Git durante la configuración; reintenta",
-                    );
-                } else if let Err(error) = state.set_git_executable(path) {
-                    state.error(error);
-                } else {
-                    state.request_git(intent);
-                }
-            }
-            Ok(None) => {
-                state.status = "Configuración Git cancelada; no se inició ninguna lectura".into()
-            }
-            Err(error) => state.error(error),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum GitIntent {
@@ -80,6 +23,7 @@ pub(super) struct GitFrame {
 }
 impl State {
     pub(super) fn clear_git(&mut self) {
+        self.git_status_due = false;
         self.git_diff.clear(&mut self.jobs);
         self.git_status.cancel();
         self.git_status_options = None;
@@ -87,34 +31,43 @@ impl State {
         self.git_panel = None;
         self.git_view = Default::default();
     }
-    pub(super) fn set_git_executable(&mut self, path: PathBuf) -> Result<(), String> {
-        if !path.is_absolute() || path.as_os_str().len() > 4096 {
-            return Err(
-                "Elige una ruta absoluta del ejecutable Git de hasta4096 unidades nativas".into(),
-            );
+    pub(super) fn schedule_git_status(&mut self) {
+        if self.project_root.is_some() {
+            self.git_status_due = true;
+            self.bridge.signal();
         }
-        self.clear_git();
-        self.git_executable = Some(path);
-        Ok(())
+    }
+    pub(super) fn git_summary(&self) -> String {
+        use jc_app::git_status_tasks::GitStatusTaskState as S;
+        if self.project_root.is_none() {
+            return "Git: abre carpeta".into();
+        }
+        match self.git_status.state() {
+            S::Ready if self.git_status.root() == self.project_root.as_deref() => {
+                match self.git_status.result() {
+                    Some(result) if result.status().entries().is_empty() => "Git: limpio".into(),
+                    Some(result) => format!("Git: {} cambios", result.status().entries().len()),
+                    None => "Git: consultar".into(),
+                }
+            }
+            S::Running | S::Queued => "Git: leyendo…".into(),
+            S::Failed | S::TimedOut | S::Limited => "Git: error · consultar".into(),
+            _ => "Git: consultar".into(),
+        }
     }
     pub(super) fn request_git(&mut self, intent: GitIntent) -> Action {
         self.close_selector();
-        self.git_last_intent = intent;
         let Some(root) = self.project_root.clone() else {
             self.error("Abre primero la carpeta raíz del repositorio");
             return Action::None;
         };
-        let Some(executable) = self.git_executable.clone() else {
-            self.status = "Elige tu ejecutable Git de confianza para esta sesión".into();
-            return Action::ConfigureGit(intent);
-        };
         self.git_panel = Some(intent);
-        self.git_context = Some((root.clone(), executable.clone()));
+        self.git_context = Some(root.clone());
         match intent {
             GitIntent::Status => {
+                self.git_status_due = false;
                 let options = GitStatusOptions {
                     root,
-                    git_executable: executable,
                     limits: Default::default(),
                 };
                 self.git_status_options = Some(options.clone());
@@ -130,7 +83,6 @@ impl State {
                 let options = GitDiffOptions {
                     root: root.clone(),
                     cwd: root,
-                    git_executable: executable,
                     source,
                 };
                 match self
@@ -147,10 +99,11 @@ impl State {
     /// Drop mismatching context and invalidate document stamps without admitting
     /// snapshots or consuming completions. Painting calls this route only.
     pub(super) fn validate_git_context(&mut self) -> bool {
-        if self.git_context.as_ref().is_some_and(|(root, executable)| {
-            self.project_root.as_ref() != Some(root)
-                || self.git_executable.as_ref() != Some(executable)
-        }) {
+        if self
+            .git_context
+            .as_ref()
+            .is_some_and(|root| self.project_root.as_ref() != Some(root))
+        {
             self.clear_git();
             return true;
         }
@@ -192,6 +145,27 @@ impl State {
             status_changed = self.git_status.poll(options);
             changed |= status_changed;
         }
+        if self.git_status_due
+            && !matches!(
+                self.git_status.state(),
+                jc_app::git_status_tasks::GitStatusTaskState::Queued
+                    | jc_app::git_status_tasks::GitStatusTaskState::Running
+            )
+        {
+            self.git_status_due = false;
+            if let Some(root) = self.project_root.clone() {
+                let options = GitStatusOptions {
+                    root: root.clone(),
+                    limits: Default::default(),
+                };
+                self.git_context = Some(root);
+                self.git_status_options = Some(options.clone());
+                if let Err(error) = self.git_status.request(options) {
+                    self.error(error);
+                }
+                changed = true;
+            }
+        }
         match self.git_panel {
             Some(GitIntent::Status) if status_changed => {
                 self.status = self.git_status.message().into()
@@ -200,6 +174,16 @@ impl State {
                 self.status = self.git_diff.message().into()
             }
             _ => {}
+        }
+        if status_changed
+            && self.git_status.state() == jc_app::git_status_tasks::GitStatusTaskState::Failed
+        {
+            if let Some(jc_app::git_status_tasks::GitStatusFailure::Provider(error)) =
+                self.git_status.failure()
+            {
+                let message = format!("Git: {error}");
+                self.error(message);
+            }
         }
         if self.git_status.take_recovery() {
             self.status =
@@ -224,7 +208,11 @@ impl State {
         };
         self.validate_git_context();
         if code == 0x1b {
-            self.cancel_git(intent);
+            if intent != GitIntent::Status
+                || self.git_status.state() != jc_app::git_status_tasks::GitStatusTaskState::Ready
+            {
+                self.cancel_git(intent);
+            }
             self.git_panel = None;
             return Action::None;
         }

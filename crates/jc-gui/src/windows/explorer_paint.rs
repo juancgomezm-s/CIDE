@@ -20,18 +20,6 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &ExplorerFrame, _ch: i32) -> Result<()
         shell::TEXT,
         shell::SIDEBAR,
     )?;
-    paint::text(
-        dc,
-        Rect {
-            left: r.left + px(18),
-            top: r.top + px(38),
-            right: r.right - px(10),
-            bottom: r.top + px(57),
-        },
-        &wide("F6 · cambiar de panel"),
-        shell::MUTED,
-        shell::SIDEBAR,
-    )?;
     for (i, row) in frame.presentation.rows.iter().take(128).enumerate() {
         let top = r.top + px(shell::TREE_HEAD) + i as i32 * px(shell::TREE_ROW);
         if top >= r.bottom {

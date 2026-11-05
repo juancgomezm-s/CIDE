@@ -1,7 +1,7 @@
 //! Windows-only real Git fixtures. Preparation writes only their owned repository.
 #![cfg(windows)]
-use super::{git_repository::GitConfigurationTarget, TuiApp};
-use crate::state::{LaunchOptions, PromptKind, UiOverlay};
+use super::TuiApp;
+use crate::state::{LaunchOptions, UiOverlay};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{
     git_diff::GitDiffState, git_status_tasks::GitStatusTaskState, CommandId, PaneId, PrimaryFocus,
@@ -207,7 +207,6 @@ impl Fixture {
         };
         let mut app = TuiApp::with_wakeup(options, wake.clone());
         app.project_root = Some(self.root.clone());
-        app.git_executable = Some(self.git.clone());
         (app, wake)
     }
 }
@@ -281,10 +280,6 @@ fn assert_status_rows(app: &mut TuiApp) {
         ])
     );
 }
-fn submit_git(app: &mut TuiApp, git: &Path) {
-    app.submit_prompt(PromptKind::GitExecutable, git.to_str().unwrap().to_owned());
-}
-
 #[test]
 fn repository_status_without_document_or_encoding_delivers_mm_and_untracked_via_wakeup() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -407,55 +402,35 @@ fn status_selection_enter_and_repeated_composition_preserve_shared_editor_and_di
 }
 
 #[test]
-fn executable_prompt_resumes_only_its_status_or_diff_intent_and_escape_removes_it() {
+fn embedded_git_opens_status_and_diff_without_an_executable_prompt() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let fixture = Fixture::new();
     let before = fixture.disk();
     let (mut status, wake) = fixture.app(false);
-    status.git_executable = None;
     status.dispatch(CommandId::GitRepositoryStatus);
-    assert!(matches!(
-        status.git_configuration_target,
-        Some(GitConfigurationTarget::Status)
-    ));
-    assert!(matches!(
-        status.overlay,
-        UiOverlay::Prompt {
-            kind: PromptKind::GitExecutable,
-            ..
-        }
-    ));
-    submit_git(&mut status, &fixture.git);
+    assert!(matches!(status.overlay, UiOverlay::None));
     assert_eq!(wait_status(&mut status, &wake), GitStatusTaskState::Ready);
     assert_status_rows(&mut status);
     assert_eq!(status.tasks.worker_count(), 0);
     assert_eq!(status.git_diff.state(), GitDiffState::Idle);
 
-    let (mut manual, _) = fixture.app(true);
-    manual.git_executable = None;
+    let (mut manual, manual_wake) = fixture.app(true);
     manual.dispatch(CommandId::GitRepositoryStatus);
+    assert_eq!(
+        wait_status(&mut manual, &manual_wake),
+        GitStatusTaskState::Ready
+    );
     key(&mut manual, KeyCode::Esc);
-    assert!(manual.git_configuration_target.is_none());
     assert!(matches!(manual.overlay, UiOverlay::None));
     manual.dispatch(CommandId::ViewExplorer);
     manual.dispatch(CommandId::GitConfigureExecutable);
-    assert!(manual.git_configuration_target.is_none());
-    submit_git(&mut manual, &fixture.git);
     assert_eq!(manual.git_diff.state(), GitDiffState::Idle);
     assert_eq!(manual.tasks.worker_count(), 0);
-    assert!(!matches!(
-        manual.git_status.state(),
-        GitStatusTaskState::Queued | GitStatusTaskState::Running
-    ));
+    assert_eq!(manual.git_status.state(), GitStatusTaskState::Ready);
 
     let (mut diff, wake) = fixture.app(true);
-    diff.git_executable = None;
     diff.dispatch(CommandId::GitDiffHead);
-    assert!(matches!(
-        diff.git_configuration_target,
-        Some(GitConfigurationTarget::Diff)
-    ));
-    submit_git(&mut diff, &fixture.git);
+    assert!(matches!(diff.overlay, UiOverlay::None));
     let deadline = Instant::now() + Duration::from_secs(15);
     while diff.tasks.outstanding() > 0 {
         let ticket = wake.ticket();
@@ -503,13 +478,13 @@ fn cancel_refresh_and_context_changes_invalidate_before_prepare_without_consumin
         refreshed.get("second-only.txt").map(String::as_str),
         Some("??")
     );
-    app.git_executable = Some(second.root.join("not-a-git-executable.exe"));
+    app.project_root = None;
     {
         let prepared = app.prepare_frame(140, 40);
         assert!(prepared.git_status.rows.is_empty());
     }
     assert_eq!(app.git_status.state(), GitStatusTaskState::Stale);
-    app.git_executable = Some(second.git.clone());
+    app.project_root = Some(second.root.clone());
     app.dispatch(CommandId::GitStatusRefresh);
     app.dispatch(CommandId::GitStatusCancel);
     assert_eq!(app.git_status.state(), GitStatusTaskState::Cancelled);
@@ -552,4 +527,81 @@ fn configured_filter_is_a_static_ui_failure_and_never_a_partial_ready_list() {
         .starts_with("Filtros no admitidos"));
     assert!(!prepared.git_status.message.contains("jc-fixture-driver"));
     assert_eq!(fixture.disk(), before);
+}
+
+#[test]
+fn embedded_git_status_and_diff_work_in_child_with_no_git_on_path() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let before = fixture.disk();
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "app::git_status_integration_tests::embedded_git_child_without_git_on_path",
+            "--ignored",
+        ])
+        .env("PATH", "")
+        .env_remove("JC_GIT_TEST_EXE")
+        .env("CIDE_EMBEDDED_TUI_GIT_FIXTURE", &fixture.root)
+        .env("CIDE_NO_SESSION", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("Owned embedded-Git TUI child exceeded its deadline");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert!(status.success(), "Embedded-Git child failed: {status}");
+    assert_eq!(fixture.disk(), before);
+}
+
+#[test]
+#[ignore = "invoked by embedded_git_status_and_diff_work_in_child_with_no_git_on_path"]
+fn embedded_git_child_without_git_on_path() {
+    assert_eq!(std::env::var_os("PATH"), Some("".into()));
+    let root = PathBuf::from(std::env::var_os("CIDE_EMBEDDED_TUI_GIT_FIXTURE").unwrap());
+    let before = fs::read(root.join(TRACKED)).unwrap();
+    let wake = Wakeup::default();
+    let mut app = TuiApp::with_wakeup(
+        LaunchOptions {
+            files: vec![root.join(TRACKED)],
+            encoding: Some(TextEncoding::Windows1252),
+        },
+        wake.clone(),
+    );
+    app.project_root = Some(root);
+    request_ready(&mut app, &wake);
+    assert_status_rows(&mut app);
+    assert!(matches!(app.overlay, UiOverlay::None));
+    app.dispatch(CommandId::GitDiffHead);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let ticket = wake.ticket();
+        app.poll_tasks();
+        if !matches!(
+            app.git_diff.state(),
+            GitDiffState::Queued | GitDiffState::Running
+        ) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "Embedded diff did not complete");
+        wake.wait(ticket, Some(Duration::from_millis(20)));
+    }
+    assert_eq!(
+        app.git_diff.state(),
+        GitDiffState::Ready,
+        "{}",
+        app.git_diff.message()
+    );
+    assert_eq!(app.workbench.active_bytes().unwrap(), before);
+    assert!(matches!(app.overlay, UiOverlay::None));
 }

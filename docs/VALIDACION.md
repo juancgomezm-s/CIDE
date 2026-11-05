@@ -1,5 +1,168 @@
 # Validación
 
+## Git embebido Rust, GUI y TUI — 2026-11-05
+
+[Contrato y costes](GIT_EMBEDDED_ENGINE.md). Proveedor `jc-git` con gix 0.90.0;
+runner externo y descubrimiento de Git retirados de producción. Rust 1.88.0
+se preparó solo en `work/toolchain`. Sesión GUI v4 lee v1/v2/v3 sin usar la
+ruta histórica para ejecutar programas. Licencias preservadas según
+[inventario](GIT_EMBEDDED_LICENSES.md).
+
+533 pruebas aprobadas por suites: 283 aplicación, 75+6 GUI, 153+5 TUI y
+11 motor; dos helpers se ejecutan desde padres con PATH vacío. No es una
+corrida runtime global del workspace. Los intentos intermedios y correcciones
+se conservan en `work/embedded-git-integration-tests.log` y
+`work/embedded-git-final-tests.log`. El cierre corrige el oracle antiguo del
+encabezado y la pérdida del borrado staged si queda el mismo archivo untracked.
+Se verifican loose/packed, conflictos, worktree, autocrlf, ausencia de HEAD,
+cuotas, plazo vencido, OID corrupto y rechazo explícito de filtros/submódulos.
+
+Formato, Clippy workspace/all-targets con warnings denegados y release
+workspace offline aprobaron; logs `work/embedded-git-{fmt-final,clippy-final,release}.log`.
+Con Rust nuevo se ajustaron dos interpolaciones de formato, sin cambio de
+comportamiento, y un allow localizado sobre permisos de fixture solo Windows.
+135 checks nativos aprobaron con GUI hija en PATH vacío y fuentes/metadatos
+Git intactos. Informe `work/native-gui-smoke/20261105T221435Z-ebb68d461f42`.
+Ejecutables: `target/embedded-git-next/release`.
+
+Coste de binario: GUI +2 278 400 bytes; TUI +2 263 552 bytes respecto al bloque
+anterior. Arranque oculto nuevo: mediana 49,89 ms, p95 53,44 ms y máximo 2,95 MiB
+privados hasta WM_NULL; siete medidas tras calentamiento, sin consulta Git grande.
+El cierre del baseline anterior excedió el plazo del harness: comparación
+pareada incompleta, sin inferir mejora/regresión. Informes y limitaciones en el
+contrato. La cancelación es cooperativa; cuotas lógicas no garantizan pico RAM
+ni plazo duro de I/O. No es aceptación física/global de M2, SHA-256 completo,
+submódulos, red o escrituras Git M5. CI sigue sin ejecutarse.
+
+Paquete local `work/packages/CIDE-git-embebido-20261105.zip`: seis ejecutables,
+350 archivos, 11 494 559 bytes. ZIP/CRC y todos los tamaños/SHA-256 del manifest
+verificados; los avisos de los 127 paquetes nuevos coinciden con su inventario.
+SHA-256 del ZIP: `af3c09a4e5d72c9a80a12b22c4de20fe7bc01c33fb9e6bf251024fb2b21b14fa`.
+El manifest sigue indicando las dos omisiones previas de avisos de paquetes
+winapi GNU condicionales, ajenos al nuevo grafo y al destino MSVC construido;
+no se declara inventario exacto de enlazado ni certificación de distribución.
+Informe `work/embedded-git-package-verified.json`. No hubo instalación/publicación.
+
+## Git integrado sin selector — 2026-11-05
+
+[Fuentes, alcance y adaptación Rust](M2_GIT_INTEGRADO_OMNI.md). Aprobaron
+75 pruebas GUI y seis de entrada, prueba del resolver, Clippy de todos los
+destinos app/GUI/TUI, formato y release de ambos frontends. El recorrido
+nativo integral pasó 135 checks, incluida detección real sin selector y
+conservación de fuentes e índice. Informe en
+`work/native-gui-smoke/20261105T212037Z-16c19901759f`.
+Binarios en `target/git-integrated-next/release`. Sin nuevos paquetes,
+instalaciones, CI o escrituras Git. No es aceptación física global ni
+verificación nueva de la detección automática bajo ConPTY.
+
+## Estado Git GUI — 2026-11-05
+
+[Contrato y causa](M2_GIT_GUI_STATUS_UX.md). Aprobaron 75 pruebas GUI de
+biblioteca, seis de entrada, Clippy de todos los destinos GUI, formato y release.
+El recorrido integral del binario `target/git-ux-next/release` pasó 134 checks,
+incluida lectura Git real y conservación del resumen después de poll/cierre.
+Fuentes e índice de prueba intactos. Informe en
+`work/native-gui-smoke/20261105T210725Z-5946738347af`; logs `work/m2-git-ux-*`.
+No es aprobación física/global de M2 ni añade escrituras Git.
+
+## Marco, panel derecho y menús — 2026-11-05
+
+La versión release final de GUI/TUI y formato aprobaron. En escritorio,
+`work/m2-panels-visual-dr4umpp4` confirmó apertura lateral de un símbolo en
+dos grupos visibles, ocultación independiente de ambos paneles y desplegable
+de documentos abiertos. Se cerró normalmente sin editar los fixtures.
+Tras ese ajuste compartido pasaron 23 pruebas dirigidas TUI de fuente.
+
+[Contrato y alcance](M2_SHELL_PANELS_MENUS.md). GUI: 73 nombres aprobados entre
+corrida amplia y cierre dirigido, incluidos controles inferiores, posición
+de botones de pestañas, v1/v2 de sesión, consultas ABL/JavaScript y apertura
+lateral con PROPATH/rutas relativas. Seis pruebas de entrada aprobaron en la
+corrida previa. TUI: 152/152 en ejecución serial con acceso normal a fixtures.
+Menú compartido: una regresión de biblioteca y dos pruebas de integración.
+Clippy de todos los destinos app/GUI/TUI pasó, sin nuevas dependencias.
+
+Marco nativo: 16 comprobaciones en
+`work/native-gui-smoke/20261105T180402Z-8981a99fa4f4`.
+Interacción nativa: 16 comprobaciones en
+`work/native-gui-smoke/20261105T181020Z-7b2a34ac9edd`, incluida captura del
+sistema conservada al procesar WM_SIZE y captura de editor liberada al terminar.
+Las fuentes y metadatos Git sintéticos permanecieron intactos.
+
+En escritorio se reprodujo la imposibilidad de redimensionar por arrastre.
+Tras corregir la propiedad de captura, una esquina redujo 800×560 a 700×500;
+maximizar mostró ambos laterales. Fixture `work/m2-panels-visual-hvpqf511`,
+solo tres documentos sintéticos y recuperación desactivada. La instancia salió
+normalmente. No se interpreta como prueba de IME o segundo monitor.
+
+Las ejecuciones restringidas anteriores conservaron errores de acceso a
+fixtures/procesos Git y un aborto 0xc0000409 de la suite TUI. La repetición
+serial TUI con acceso normal aprobó; no hay nueva aprobación runtime global
+del workspace. Registros en `work/m2-panels-*.log`.
+
+## Ajuste visual de confirmaciones — 2026-11-05
+
+El aviso usa 420 × 176 píxeles de diseño, escalados por DPI, centro del
+propietario y límites del área útil del monitor, incluido origen negativo.
+Cuerpo elevado, encabezado más claro y borde visible. El escritorio confirmó
+el resultado con `target/m2-dialog-compact/release/cide-gui.exe`.
+Intro canceló conservando la edición. Tras Deshacer, cerrar la última pestaña
+y crear otra, el nombre volvió a «Sin título 1.txt». Alt+F4 cerró normalmente
+la instancia aislada `work/m2-dialog-visual-0z1x3exa`; no hubo terminación forzada.
+Pasaron 65 pruebas GUI de biblioteca y seis de entrada, fmt, Clippy de todos
+los destinos GUI y release offline. IME real, segundo monitor y latencia física
+siguen pendientes; accesibilidad avanzada permanece diferida por Juan.
+
+## Avisos con tema y numeración de borradores
+
+La confirmación de descarte usa un diálogo modal de CIDE con colores
+compartidos, controles con la fuente de interfaz y Cancelar inicialmente
+seleccionado. El descarte conserva la validación por documento/vista/revisión.
+Los nombres nuevos usan el primer número libre del catálogo y una sesión
+vacía vuelve a 1, conservando compatibilidad con los contadores históricos.
+
+Pasaron 63 pruebas GUI de biblioteca y seis de entrada. El cierre dirigido
+posterior verificó navegación de botones, tipografía/estilo y sesión vacía
+con contador antiguo 5. Pasaron Clippy, release, el recorrido nativo integral
+y tres procesos de recuperación con el binario de
+`target/m2-dialog-final/release`. Las ejecuciones dirigidas fueron separadas
+de la suite inicial. La revisión visual quedó pendiente por acceso denegado
+y captura negra del escritorio. [Evidencia](M2_CIERRE.md).
+
+## Pulido GUI de M2
+
+La prioridad indicada por Juan es interfaz, desplazamiento y edición.
+Narrador y accesibilidad avanzada permanecen pendientes.
+
+El bloque de pestañas y barras pasó 57 pruebas de biblioteca GUI, seis de
+entrada, Clippy todos los destinos GUI y release offline. El recorrido
+nativo integral pasó con acceso normal a sus fixtures, después de un fallo
+de preparación de guardado en la ejecución restringida.
+
+La ventana visible procesó 360 pasos de rueda sobre 4,4 MB en seis segundos.
+El retorno de pintura dio 3,35 ms de mediana, 4,79 ms de p95 y 6,40 ms de
+máximo. Cero muestras superaron 16,67 ms. Las muestras del generador y el
+alcance de la medición se conservan en [la matriz de cierre](M2_CIERRE.md).
+No equivale a medir presentación física.
+
+La navegación AvPág/RePág pasó una regresión dirigida adicional con ambos
+grupos, selección y panel inferior. Clippy y release pasaron con el cambio,
+seguidos de 15 comprobaciones nativas de interacción. Las suites de
+biblioteca previas y esta regresión fueron ejecuciones distintas.
+
+El contorno único de pestañas pasó 16 comprobaciones del marco y revisión
+del bitmap generado. Pasaron también las tres regresiones de recuperación
+GUI y una prueba de tres procesos con cierre y reapertura, fuente intacta,
+cambios sin guardar, cursor y undo restaurados. El aviso informado por
+Juan sigue pendiente de distinguir entre cerrar pestaña y cerrar ventana.
+
+Juan identificó el aviso al cerrar la ventana y después indicó que no
+pudo reproducirlo. Se eliminó la ruta de descarte global en esa salida:
+con recuperación desactivada y cambios pendientes, conserva la ventana.
+Pasaron cuatro regresiones de recuperación, Clippy/release, tres procesos
+de cierre/reapertura y 16 comprobaciones del marco con el binario final
+de `target/m2-exit-next/release`. La causa del aviso original sigue
+sin reproducción confirmada.
+
 ## Estado vigente — recuperación periódica y limpieza segura, 2026-11-03
 
 Recuperación automática en Rust integrada en GUI y TUI: captura cooperativa de
@@ -1604,3 +1767,35 @@ pasaron las 55 pruebas unitarias GUI, 131 comprobaciones del recorrido
 nativo integral, formato, Clippy y compilación optimizada. El cliente
 nativo se registra en `work/m2-uia-native.log`. La verificación con
 lector de pantalla sigue abierta. [Contrato y límites](M2_CIERRE.md).
+
+### Escritorio visible de M2 — 2026-11-04
+
+UI Automation leyó el documento de prueba y su selección en la ventana
+visible. El arranque visible de un archivo de 4095 bytes dio 39,39 ms de
+mediana, 46,36 ms de p95 y 5,09 MiB privados como máximo al llegar al bucle
+de mensajes en espera. Se verificó el intercambio bidireccional de texto
+Unicode con Notepad++ en el escritorio y un solo Deshacer en CIDE. La
+ejecución restringida devolvió acceso denegado en `SetClipboardData`.
+Quedaron abiertas la lectura audible, la composición IME, el traslado
+entre monitores y la latencia física. [Entorno, método y pendientes](M2_CIERRE.md).
+
+El recorrido posterior con Narrador confirmó el nombre del documento y la
+primera línea en el Resumen de voz. La lectura de la selección quedó
+pendiente incluso después de corregir el tipo de selección anunciado.
+El recorrido de rueda sobre 100 000 líneas confirmó el avance y el regreso
+en la ventana visible. El nuevo binario pasó 16 comprobaciones del marco
+y 13 de UI Automation. [Evidencia y límites](M2_CIERRE.md).
+
+El diagnóstico siguiente confirmó el anuncio automático del texto
+seleccionado por Narrador y consultas de un rango no vacío con foco.
+El comando explícito de lectura de selección sigue abierto. La prueba
+visible encontró y corrigió la liberación prematura de captura durante
+el arrastre de barras y minimapa. Una captura temporal de nueve
+composiciones dio 2,635 ms de mediana y 3,601 ms de p95 hasta envío GDI.
+La muestra corta conserva sus límites y registros en la matriz de cierre.
+
+Con Narrador abierto manualmente por Juan se confirmó que permanecía
+activo durante la prueba. Anunció la frase seleccionada seguida de
+«selected», pero Narrador+Mayús+Abajo respondió «Nothing Selected».
+UI Automation conservó la selección durante el comando. La relectura
+explícita continúa pendiente con una reproducción válida.

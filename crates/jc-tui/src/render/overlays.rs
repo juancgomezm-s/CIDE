@@ -46,7 +46,6 @@ fn draw_prompt(app: &TuiApp, screen: &mut Screen, kind: PromptKind, input: &str)
         PromptKind::ProjectExclude => "Excluir patrones (.git/target/work siempre excluidos)",
         PromptKind::ProjectReplacement => "Texto de reemplazo (vacío elimina coincidencias)",
         PromptKind::GoToPosition => "Ir a línea[:columna] (escalares desde uno)",
-        PromptKind::GitExecutable => "Ruta absoluta al ejecutable Git (esta sesión)",
         PromptKind::RenameSymbol => "Renombrar símbolo ABL · nombre nuevo",
     };
     let (x, y, width, height) = centered(screen, 64, 5);

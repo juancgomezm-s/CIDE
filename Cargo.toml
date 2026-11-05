@@ -6,6 +6,7 @@ members = [
     "crates/jc-languages",
     "crates/jc-progress",
     "crates/jc-app",
+    "crates/jc-git",
     "crates/jc-tui",
     "crates/jc-gui",
     "crates/jc-cli",

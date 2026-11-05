@@ -1,5 +1,13 @@
 # Recuperación de documentos y sesiones en Rust
 
+Los metadatos gráficos v4 eliminan la ruta del ejecutable Git: el motor es embebido.
+El lector acepta v1/v2/v3 y consume/ignora la antigua ruta de v3. v2 añadió
+visibilidad del panel Código; al leer v1 se adopta Código visible por defecto.
+Las opciones explícitas de arranque tienen prioridad.
+La recuperación de documentos, generaciones, HEAD/BACKUP y fuentes no cambia.
+La compatibilidad es de lectura hacia atrás; los ejecutables GUI antiguos
+no interpretan los metadatos gráficos de versiones posteriores a la suya.
+
 Bloque integrado y validado localmente, 2026-11-03. La evidencia final se registra
 en `VALIDACION.md` y `evidence/gui-shell-browser-2026-11-03-*`.
 
@@ -42,6 +50,11 @@ cierra la ventana. Cerrar una pestaña con descarte explícito mantiene su semá
 propia. Un crash recupera la última generación confirmada; las teclas posteriores
 a esa confirmación pueden no haberse conservado. Las pruebas de terminación abrupta
 del proceso no equivalen a una prueba de corte eléctrico o fallo del hardware.
+
+La salida general de la GUI conserva la ventana cuando existen cambios
+pendientes y la recuperación está desactivada para esa ejecución. Muestra
+el motivo en el estado. La ruta de salida ya no ofrece descartar todos
+los documentos como alternativa a la confirmación de la sesión.
 
 La admisión actual limita cada documento a256MiB de fuentes y cada sesión a512MiB
 codificados, además de cuotas explícitas de vistas, piezas e historial. Rechaza el

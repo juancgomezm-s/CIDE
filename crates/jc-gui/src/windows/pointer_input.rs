@@ -12,6 +12,7 @@ pub(super) struct PointerContext {
     invisibles: bool,
     focus: PrimaryFocus,
 }
+
 pub(super) struct LinearDrag {
     context: PointerContext,
     anchor: usize,
@@ -135,7 +136,14 @@ impl State {
             last: (x, y),
         });
     }
-    pub(super) fn pointer_wheel(&mut self, x: i32, y: i32, delta: i32, lines: u32, flags: usize) {
+    pub(super) fn pointer_wheel(
+        &mut self,
+        x: i32,
+        y: i32,
+        delta: i32,
+        lines: u32,
+        flags: usize,
+    ) -> bool {
         self.linear_drag = None;
         self.rectangle_drag = None;
         self.editor_scroll_drag = None;
@@ -147,19 +155,19 @@ impl State {
             || !self.pointer_source_available()
         {
             self.wheel = None;
-            return;
+            return false;
         }
         if self.outline_wheel(x, y, delta, lines) {
             self.wheel = None;
-            return;
+            return true;
         }
         let Some((pane, rows)) = paint::source_pane_at(self, x, y) else {
             self.wheel = None;
-            return;
+            return false;
         };
         let Some(context) = self.pointer_context(pane) else {
             self.wheel = None;
-            return;
+            return false;
         };
         let previous = self
             .wheel
@@ -178,8 +186,57 @@ impl State {
             (lines as usize).min(128)
         };
         if notches != 0 && lines != 0 {
+            let origins = |app: &jc_app::Workbench| {
+                [PaneId::Primary, PaneId::Secondary]
+                    .map(|pane| app.panes().view(pane).map(|view| view.scroll_line()))
+            };
+            let before = origins(&self.workbench);
             self.workbench
                 .scroll_view_vertical(pane, -(notches as isize * lines as isize), rows);
+            return origins(&self.workbench) != before;
+        }
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jc_text::{TextEncoding, TextPosition};
+
+    #[test]
+    fn page_navigation_uses_active_visible_rows_and_preserves_source_and_selection() {
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.width = 1200;
+        state.height = 700;
+        state.workbench.new_file("paginas.txt", TextEncoding::Utf8);
+        let source = "fila de prueba\r\n".repeat(200);
+        state.workbench.insert_text(&source).unwrap();
+        state.workbench.split_editor_right();
+        for bottom_visible in [false, true] {
+            state.bottom.visible = bottom_visible;
+            state.bottom.focused = false;
+            for pane in [PaneId::Primary, PaneId::Secondary] {
+                state.workbench.focus_editor_pane(pane);
+                state
+                    .workbench
+                    .go_to_position(TextPosition { line: 0, column: 0 })
+                    .unwrap();
+                let rows = paint::text_areas(&state)
+                    .into_iter()
+                    .find(|area| area.pane == pane)
+                    .unwrap()
+                    .capacity_rows;
+                assert!(rows > 0);
+                state.key_override = Some(Modifiers::NONE);
+                assert!(state.key(0x22).0);
+                assert_eq!(state.workbench.position_for_pane(pane).unwrap().line, rows);
+                state.key_override = Some(Modifiers::SHIFT);
+                assert!(state.key(0x21).0);
+                assert_eq!(state.workbench.position_for_pane(pane).unwrap().line, 0);
+                assert!(state.workbench.selection_for_pane(pane).is_some());
+                assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+            }
         }
     }
 }
