@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-05",
+  "binaries": "target/m2-git-ui-next/release",
+  "tests": {
+    "successful_suite_cases": 718,
+    "single_full_workspace_run": false,
+    "initial_failure": "DPI test expected 10 rows at 144 DPI; complete physical rows are 9",
+    "closing_packages": "jc-gui jc-tui jc-progress; jc-languages jc-platform jc-text",
+    "first_log": "work/m2-git-workspace-tests.log",
+    "close_log": "work/m2-git-workspace-tests-close.log",
+    "remaining_log": "work/m2-git-workspace-tests-remaining.log"
+  },
+  "native_checks": 139,
+  "native_report": "work\\native-gui-smoke\\20261106T042436Z-e1fc9ee9d6b8\\summary.json",
+  "git_metadata_unchanged": true,
+  "runtime_path_empty": true,
+  "clippy_all_targets": true,
+  "release_offline": true,
+  "desktop": {
+    "picker_theme_observed": true,
+    "picker_cancel": true,
+    "git_open_status_click": true,
+    "file_click_diff": true,
+    "commit_details_click": true,
+    "normal_exit": true,
+    "fixture_unchanged": true,
+    "personal_depot_used": false
+  },
+  "limitations": [
+    "First-parent history up to 24 commits, current branch only",
+    "No historical commit file diff, complete branch graph or Git writes",
+    "IME excluded by user; Narrator deferred; only one physical display"
+  ],
+  "sha256": {
+    "cide-gui.exe": "7daedd573bc933873f55be6a3153d48da4637210fda972b3f5a6d807147b19bd",
+    "cide-tui.exe": "badacc4a53b518dcfc96155788139598b9cc307e3aac4bc928bb61089be54fd6"
+  }
+}

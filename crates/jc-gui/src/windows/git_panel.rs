@@ -1,10 +1,6 @@
 //! Native intentions over existing read-only Git controllers. No Git command
 //! implementation, source ownership or filesystem navigation lives in this UI.
-use super::{
-    project_panel::ProjectPresentation,
-    project_results::{ProjectResultRow, ProjectResultsPresentation},
-    Action, State,
-};
+use super::{project_panel::ProjectPresentation, Action, State};
 use jc_app::{
     git_diff::{GitDiffOptions, GitDiffState},
     git_read::GitBlobSource,
@@ -24,6 +20,7 @@ pub(super) struct GitFrame {
 impl State {
     pub(super) fn clear_git(&mut self) {
         self.git_status_due = false;
+        self.git_workspace = Default::default();
         self.git_diff.clear(&mut self.jobs);
         self.git_status.cancel();
         self.git_status_options = None;
@@ -42,6 +39,9 @@ impl State {
         if self.project_root.is_none() {
             return "Git: abre carpeta".into();
         }
+        if self.git_status.is_not_repository() {
+            return "Git: sin repositorio".into();
+        }
         match self.git_status.state() {
             S::Ready if self.git_status.root() == self.project_root.as_deref() => {
                 match self.git_status.result() {
@@ -57,6 +57,8 @@ impl State {
     }
     pub(super) fn request_git(&mut self, intent: GitIntent) -> Action {
         self.close_selector();
+        self.git_workspace.invalidate();
+        self.git_workspace.commit = None;
         let Some(root) = self.project_root.clone() else {
             self.error("Abre primero la carpeta raíz del repositorio");
             return Action::None;
@@ -65,6 +67,7 @@ impl State {
         self.git_context = Some(root.clone());
         match intent {
             GitIntent::Status => {
+                self.git_workspace.focus_diff = false;
                 self.git_status_due = false;
                 let options = GitStatusOptions {
                     root,
@@ -78,8 +81,9 @@ impl State {
                 }
             }
             GitIntent::Diff(source) => {
+                self.git_workspace.focus_diff = true;
                 self.git_source = source;
-                self.git_view.first_diff();
+                self.git_workspace.diff_first = 0;
                 let options = GitDiffOptions {
                     root: root.clone(),
                     cwd: root,
@@ -175,7 +179,16 @@ impl State {
             }
             _ => {}
         }
+        if status_changed {
+            self.git_workspace.invalidate();
+        }
+        if diff_changed {
+            self.git_workspace.diff_first = 0;
+            self.git_workspace.invalidate();
+        }
         if status_changed
+            && !self.git_status.is_not_repository()
+            && self.git_panel.is_some()
             && self.git_status.state() == jc_app::git_status_tasks::GitStatusTaskState::Failed
         {
             if let Some(jc_app::git_status_tasks::GitStatusFailure::Provider(error)) =
@@ -207,6 +220,12 @@ impl State {
             return Action::None;
         };
         self.validate_git_context();
+        if code == 0x09 && modifiers == Modifiers::NONE {
+            self.git_workspace.focus_diff = !self.git_workspace.focus_diff;
+            self.git_workspace.commit = None;
+            self.git_workspace.invalidate();
+            return Action::None;
+        }
         if code == 0x1b {
             if intent != GitIntent::Status
                 || self.git_status.state() != jc_app::git_status_tasks::GitStatusTaskState::Ready
@@ -219,12 +238,9 @@ impl State {
         if code == 0x74 && modifiers == Modifiers::NONE {
             return self.request_git(intent);
         }
-        match intent {
-            GitIntent::Status => {
-                self.git_presentation(); // Normalize view against accepted rows.
-                if modifiers != Modifiers::NONE {
-                    return Action::None;
-                }
+        if !self.git_workspace.focus_diff {
+            if modifiers == Modifiers::NONE {
+                self.git_presentation();
                 match code {
                     0x26 => self.git_view.move_status(-1),
                     0x28 => self.git_view.move_status(1),
@@ -232,14 +248,15 @@ impl State {
                     0x22 => self.git_view.move_status(10),
                     0x24 => self.git_view.first_status(),
                     0x23 => self.git_view.last_status(),
-                    0x0d => {
-                        self.status =
-                            "Las rutas del estado son de solo lectura; abrir no está habilitado"
-                                .into()
-                    }
+                    0x0d => self.compare_git_status_file(),
                     _ => {}
                 }
+                self.git_workspace.invalidate();
             }
+            return Action::None;
+        }
+        match intent {
+            GitIntent::Status => {}
             GitIntent::Diff(_) => {
                 if modifiers != Modifiers::NONE {
                     return Action::None;
@@ -250,12 +267,23 @@ impl State {
                     0x26 | 0x28 => {
                         self.git_diff
                             .select_relative(if code == 0x26 { -1 } else { 1 });
-                        self.git_view.first_diff();
+                        self.git_workspace.diff_first = 0;
                     }
-                    0x21 => self.git_view.scroll_diff(-10),
-                    0x22 => self.git_view.scroll_diff(10),
-                    0x24 => self.git_view.first_diff(),
-                    0x23 => self.git_view.last_diff(),
+                    0x21 => {
+                        self.git_workspace.diff_first =
+                            self.git_workspace.diff_first.saturating_sub(10)
+                    }
+                    0x22 => {
+                        self.git_workspace.diff_first =
+                            self.git_workspace.diff_first.saturating_add(10)
+                    }
+                    0x24 => self.git_workspace.diff_first = 0,
+                    0x23 => {
+                        self.git_workspace.diff_first = self
+                            .git_workspace
+                            .diff_total
+                            .saturating_sub(self.git_workspace.diff_page)
+                    }
                     0x0d => {
                         let selected = self.git_diff.selected();
                         match self.git_diff.select_hunk(selected, &mut self.workbench) {
@@ -273,46 +301,8 @@ impl State {
         }
         Action::None
     }
-    pub(super) fn git_presentation(&mut self) -> Option<GitFrame> {
-        self.validate_git_context();
-        let intent = self.git_panel?;
-        let (columns, _) = super::project_paint::field_geometry(
-            self.width,
-            (self.height, self.dpi.pixels(super::chrome::TOP)),
-            self.cell_width,
-            self.cell_height,
-            1,
-        );
-        let rows = super::project_paint::result_capacity(
-            self.width,
-            (self.height, self.dpi.pixels(super::chrome::TOP)),
-            self.cell_width,
-            self.cell_height,
-        );
-        let presentation = match intent {
-            GitIntent::Status => self
-                .git_view
-                .prepare_status(&self.git_status, rows, columns),
-            GitIntent::Diff(_) => self.git_view.prepare_diff(
-                &self.git_diff,
-                self.workbench
-                    .active_document()
-                    .and_then(|d| d.session.encoding()),
-                rows,
-                columns,
-            ),
-        };
-        let footer = match intent {
-            GitIntent::Status => "Flechas eligen | F5 actualiza | Intro no abre rutas | Esc cancela/cierra",
-            GitIntent::Diff(_) => "Arriba/abajo bloque | RePág/AvPág contenido | Intro navega | F2 HEAD F3 índice | F5 | Esc",
-        };
-        Some(GitFrame {
-            panel: ProjectPresentation { fields: Vec::new(), active: 0, status: self.status.clone(), results: Some(ProjectResultsPresentation {
-                title: presentation.title, message: presentation.message, total: presentation.total, selected: presentation.selected,
-                rows: presentation.rows.into_iter().map(|row| ProjectResultRow {index:row.index,label:row.label,selected:row.selected,is_match:true}).collect(),
-            }) },
-            labels: super::project_paint::PanelLabels {draft:"Git de solo lectura", policy: "Capturas de solo lectura | actualización explícita | Git aislado | sin vigilancia/escrituras", footer},
-        })
+    pub(super) fn git_presentation(&mut self) -> Option<super::git_workspace::Frame> {
+        self.prepare_git_workspace()
     }
     pub(super) fn git_diff_running(&self) -> bool {
         matches!(

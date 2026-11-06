@@ -213,7 +213,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     let before = snapshot(hwnd)?;
     key(hwnd, 0x0d, Modifiers::NONE)?;
     if snapshot(hwnd)? != before {
-        return Err("Git status Enter opened a path or changed editor state".into());
+        return Err("Git status comparison failed to reuse the dirty editor state".into());
     }
     expected(hwnd, DIRTY)?;
     let status_bitmap = options
@@ -232,7 +232,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     {
         return Err("Closing an accepted Git status discarded its status-bar summary".into());
     }
-    checks.push("git_status_native_delivery_typed_disk_index_no_enter_navigation");
+    checks.push("git_status_native_delivery_comparison_reuses_dirty_document");
 
     command(hwnd, CommandId::GitDiffHead)?;
     // Request may already admit its first snapshot. Painting must not add one

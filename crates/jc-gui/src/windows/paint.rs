@@ -131,7 +131,7 @@ pub(super) struct Frame {
     navigation: Option<super::navigation_panel::NavigationPresentation>,
     project: Option<super::project_panel::ProjectPresentation>,
     replacement: Option<super::replace_panel::ReplaceFrame>,
-    git: Option<super::git_panel::GitFrame>,
+    git: Option<super::git_workspace::Frame>,
     comparison: Option<super::open_diff_panel::ComparisonFrame>,
     source: Option<super::git_panel::GitFrame>,
     snippet: Option<super::git_panel::GitFrame>,
@@ -141,6 +141,9 @@ pub(super) struct Frame {
     bottom: Option<super::bottom_panel::BottomFrame>,
 }
 impl Frame {
+    pub(super) fn git_hits(&self) -> Option<super::git_workspace::Hits> {
+        self.git.as_ref().map(|frame| frame.hits.clone())
+    }
     pub(super) fn source_draw_counts(&self) -> (usize, usize) {
         let mut cells = 0;
         let mut runs = 0;
@@ -1053,19 +1056,8 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
         )?;
     }
     if let Some(git) = &frame.git {
-        super::project_paint::draw_labeled(
-            dc,
-            &git.panel,
-            frame.width,
-            (frame.height, frame.chrome.layout.top()),
-            frame.cell_width,
-            frame.cell_height,
-            super::project_paint::PanelLabels {
-                draft: git.labels.draft,
-                policy: git.labels.policy,
-                footer: git.labels.footer,
-            },
-        )?;
+        SelectObject(dc, frame.ui_font);
+        super::git_workspace::draw(dc, git, frame.font, frame.ui_font)?;
     }
     if let Some(p) = &frame.comparison {
         SelectObject(dc, frame.font);

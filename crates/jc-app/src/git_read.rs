@@ -127,6 +127,7 @@ pub enum GitReadError {
     InvalidPath,
     UnsupportedPathEncoding,
     NotRepositoryRoot,
+    NotRepository,
     Missing,
     Unmerged,
     UnsupportedMode,
@@ -150,6 +151,7 @@ impl fmt::Display for GitReadError {
             Self::NotRepositoryRoot => {
                 f.write_str("Lectura Git: el directorio no es la raíz del repositorio")
             }
+            Self::NotRepository => f.write_str("La carpeta abierta no contiene un repositorio Git"),
             Self::Missing => f.write_str("Lectura Git: objeto o entrada no encontrado"),
             Self::Unmerged => f.write_str("Lectura Git: entrada con conflicto sin resolver"),
             Self::UnsupportedMode => f.write_str("Lectura Git: formato o capacidad no admitidos"),
@@ -249,6 +251,7 @@ fn engine_error(e: jc_git::Error, limit: GitOutputLimit) -> GitReadError {
     match e {
         jc_git::Error::Io(e) => GitReadError::Io(e),
         jc_git::Error::InvalidRoot => GitReadError::NotRepositoryRoot,
+        jc_git::Error::NotRepository => GitReadError::NotRepository,
         jc_git::Error::Missing => GitReadError::Missing,
         jc_git::Error::Unmerged => GitReadError::Unmerged,
         jc_git::Error::Unsupported => GitReadError::UnsupportedMode,
@@ -300,4 +303,35 @@ fn validate_path(path: &Path) -> Result<String, GitReadError> {
         return Err(GitReadError::InvalidPath);
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod absent_repository_tests {
+    use super::*;
+    #[test]
+    fn absent_repository_is_distinct_from_invalid_root_corruption_and_missing_blob() {
+        assert!(matches!(
+            engine_error(jc_git::Error::NotRepository, GitOutputLimit::Metadata),
+            GitReadError::NotRepository
+        ));
+        assert!(matches!(
+            engine_error(jc_git::Error::InvalidRoot, GitOutputLimit::Metadata),
+            GitReadError::NotRepositoryRoot
+        ));
+        assert!(matches!(
+            engine_error(jc_git::Error::Missing, GitOutputLimit::Blob),
+            GitReadError::Missing
+        ));
+        assert!(matches!(
+            engine_error(
+                jc_git::Error::Engine("metadatos dañados".into()),
+                GitOutputLimit::Metadata
+            ),
+            GitReadError::Io(_)
+        ));
+        assert_eq!(
+            GitReadError::NotRepository.to_string(),
+            "La carpeta abierta no contiene un repositorio Git"
+        );
+    }
 }

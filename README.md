@@ -1,12 +1,15 @@
 # CIDE
 
+[Selector con tema y espacio Git nativo](docs/M2_GIT_WORKSPACE_NATIVE.md):
+historial local, archivos y comparación en áreas independientes.
+
 [Marco GUI y pestañas](docs/M2B_GUI_TABS_BROWSER.md),
 [ratón y explorador TUI](docs/M2_TUI_MOUSE.md) y
 [recuperación de sesiones en Rust](docs/SESSION_RECOVERY.md) integrados con evidencia
 local. Fondo elegido `#2E3440`; título y menús GUI comparten el tema. Ambas interfaces
 conservan cambios sin guardar, historial y vistas al salir y reabrir.
 Recuperación periódica y limpieza segura de copias: [contrato y evidencia](docs/PERIODIC_RECOVERY_RETENTION.md).
-GUI/TUI actuales en `target/m2-selection-next/release/`, con
+GUI/TUI actuales en `target/m2-git-ui-next/release/`, con
 [motor Git embebido en Rust](docs/GIT_EMBEDDED_ENGINE.md), sin `git.exe`.
 [Rueda y barras del Explorador](docs/M2_SIDEBAR_NAVIGATION.md) conservan selección y foco.
 [Deshacer/rehacer restaura la selección](docs/M2_SELECTION_HISTORY.md), también al recuperar la sesión.

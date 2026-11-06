@@ -17,6 +17,7 @@ const TREE_PATH_BYTES: usize = 8 * 1024 * 1024;
 pub enum Error {
     Io(io::Error),
     InvalidRoot,
+    NotRepository,
     Missing,
     Unmerged,
     Unsupported,
@@ -32,6 +33,7 @@ impl std::fmt::Display for Error {
             Self::Io(e) => write!(f, "Git integrado: {e}"),
             Self::Engine(e) => write!(f, "Git integrado: {e}"),
             Self::InvalidRoot => f.write_str("Git integrado: abre la raíz del repositorio"),
+            Self::NotRepository => f.write_str("La carpeta abierta no contiene un repositorio Git"),
             Self::Missing => f.write_str("Git integrado: objeto o archivo ausente"),
             Self::Unmerged => f.write_str("Git integrado: archivo con conflicto sin resolver"),
             Self::Unsupported => f.write_str("Git integrado: formato o capacidad no admitidos"),
@@ -90,6 +92,42 @@ pub struct Entry {
 pub struct Status {
     pub repository: Identity,
     pub entries: Vec<Entry>,
+    pub info: RepositoryInfo,
+}
+#[derive(Debug, Default)]
+pub struct RepositoryInfo {
+    pub branch: Option<Vec<u8>>,
+    pub head: Option<String>,
+    pub commits: Vec<CommitInfo>,
+    pub limited: bool,
+}
+#[derive(Debug)]
+pub struct CommitInfo {
+    pub id: String,
+    pub parents: Vec<String>,
+    pub summary: Vec<u8>,
+    pub author: Vec<u8>,
+}
+impl CommitInfo {
+    fn memory_bytes(&self) -> usize {
+        self.id.capacity()
+            + self.parents.capacity() * std::mem::size_of::<String>()
+            + self.parents.iter().map(String::capacity).sum::<usize>()
+            + self.summary.capacity()
+            + self.author.capacity()
+    }
+}
+impl RepositoryInfo {
+    pub fn memory_bytes(&self) -> usize {
+        self.branch.as_ref().map_or(0, Vec::capacity)
+            + self.head.as_ref().map_or(0, String::capacity)
+            + self.commits.capacity() * std::mem::size_of::<CommitInfo>()
+            + self
+                .commits
+                .iter()
+                .map(CommitInfo::memory_bytes)
+                .sum::<usize>()
+    }
 }
 #[derive(Clone, Copy)]
 pub struct Limits {
@@ -192,6 +230,9 @@ fn open(root: &Path, ctx: &Context<'_>) -> Result<(gix::Repository, Identity), E
         return Err(Error::InvalidRoot);
     }
     let root = root.canonicalize()?;
+    if !root.is_dir() {
+        return Err(Error::InvalidRoot);
+    }
     preflight(&root)?;
     // No environment/global config, installation probing, includes or helpers.
     let mut options = gix::open::Options::isolated()
@@ -284,6 +325,29 @@ fn control_path(path: &Path, cap: u64) -> Result<Option<String>, Error> {
 }
 fn preflight(root: &Path) -> Result<(), Error> {
     let dot = root.join(".git");
+    match std::fs::symlink_metadata(&dot) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            // A bare repository is a distinct unsupported shape, not a clean
+            // worktree with absent metadata. Do not discover parent repositories.
+            let head = match std::fs::metadata(root.join("HEAD")) {
+                Ok(metadata) => metadata.is_file(),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+                Err(error) => return Err(error.into()),
+            };
+            let objects = match std::fs::metadata(root.join("objects")) {
+                Ok(metadata) => metadata.is_dir(),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+                Err(error) => return Err(error.into()),
+            };
+            return Err(if head && objects {
+                Error::Unsupported
+            } else {
+                Error::NotRepository
+            });
+        }
+        Err(error) => return Err(error.into()),
+        Ok(_) => {}
+    }
     let git_dir = if dot.is_file() {
         let text = control_path(&dot, 32768)?.ok_or(Error::InvalidRoot)?;
         let value = text
@@ -428,9 +492,268 @@ pub fn read_blob(
 }
 
 type TreeMap = BTreeMap<Vec<u8>, (gix::ObjectId, u32)>;
-fn tree_entries(repo: &gix::Repository, ctx: &Context<'_>) -> Result<TreeMap, Error> {
+const INFO_BYTES: usize = 24 * 1024;
+const INFO_COMMITS: usize = 24;
+fn clipped(bytes: &[u8], maximum: usize, limited: &mut bool) -> Vec<u8> {
+    *limited |= bytes.len() > maximum;
+    bytes[..bytes.len().min(maximum)].to_vec()
+}
+fn repository_info(
+    repo: &gix::Repository,
+    ctx: &Context<'_>,
+) -> Result<(RepositoryInfo, gix::ObjectId), Error> {
+    ctx.check()?;
+    let head = repo.head().map_err(engine)?;
+    let mut info = RepositoryInfo::default();
+    info.branch = head.referent_name().map(|name| {
+        let bytes = name.as_bstr().as_bytes();
+        clipped(
+            bytes.strip_prefix(b"refs/heads/").unwrap_or(bytes),
+            256,
+            &mut info.limited,
+        )
+    });
+    let Some(id) = head.id().map(|id| id.detach()) else {
+        return Ok((info, repo.empty_tree().id().detach()));
+    };
+    info.head = Some(id.to_string());
+    info.commits = Vec::with_capacity(INFO_COMMITS);
+    let mut next = Some(id);
+    let mut tree = None;
+    while let Some(id) = next {
+        ctx.check()?;
+        if info.commits.len() == INFO_COMMITS {
+            info.limited = true;
+            break;
+        }
+        if !info.commits.is_empty() && repo.try_find_header(id).map_err(engine)?.is_none() {
+            // Shallow or locally incomplete history stays an explicitly partial
+            // inspector. Missing/corrupt HEAD itself is still an error.
+            info.limited = true;
+            break;
+        }
+        let commit = object(repo, id, OBJECT_BYTES)?
+            .try_into_commit()
+            .map_err(engine)?;
+        if tree.is_none() {
+            tree = Some(commit.tree_id().map_err(engine)?.detach());
+        }
+        let mut parents = Vec::with_capacity(8);
+        next = None;
+        for (ordinal, parent) in commit.parent_ids().enumerate() {
+            ctx.check()?;
+            if ordinal == 8 {
+                info.limited = true;
+                break;
+            }
+            let parent = parent.detach();
+            if ordinal == 0 {
+                next = Some(parent);
+            }
+            parents.push(parent.to_string());
+        }
+        let author = commit.author().map_err(engine)?;
+        let message = commit.message_raw().map_err(engine)?;
+        let summary = message
+            .as_bytes()
+            .split(|byte| matches!(byte, b'\r' | b'\n'))
+            .next()
+            .unwrap_or_default();
+        let item = CommitInfo {
+            id: id.to_string(),
+            parents,
+            summary: clipped(summary, 256, &mut info.limited),
+            author: clipped(author.name.as_bytes(), 96, &mut info.limited),
+        };
+        if info.memory_bytes().saturating_add(item.memory_bytes()) > INFO_BYTES {
+            info.limited = true;
+            break;
+        }
+        info.commits.push(item);
+    }
+    ctx.check()?;
+    Ok((info, tree.ok_or(Error::Missing)?))
+}
+
+#[cfg(test)]
+mod repository_context_tests {
+    use super::*;
+    use std::{
+        fs,
+        sync::atomic::AtomicU64,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    struct Fixture {
+        root: PathBuf,
+        base: PathBuf,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .unwrap()
+                .canonicalize()
+                .unwrap();
+            let base = workspace.join("work/test-temp");
+            fs::create_dir_all(&base).unwrap();
+            let base = base.canonicalize().unwrap();
+            assert!(base.starts_with(&workspace) && !base.is_symlink());
+            let root = base.join(format!(
+                "embedded-repository-context-{}-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&root).unwrap();
+            Self { root, base }
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if self.root.parent() == Some(self.base.as_path())
+                && !self.root.is_symlink()
+                && self
+                    .root
+                    .canonicalize()
+                    .is_ok_and(|root| root.starts_with(&self.base))
+            {
+                let _ = fs::remove_dir_all(&self.root);
+            }
+        }
+    }
+    fn limits() -> Limits {
+        Limits {
+            max_blob: 1024,
+            max_entries: 64,
+            max_path: 4096,
+            max_bytes: 64 * 1024,
+            timeout: Duration::from_secs(5),
+        }
+    }
+    #[test]
+    fn ordinary_folder_is_typed_absent_for_status_and_diff_without_masking_invalid_roots() {
+        let fixture = Fixture::new();
+        fs::write(fixture.root.join("source.txt"), b"unchanged\r\n").unwrap();
+        assert!(matches!(
+            read_status(&fixture.root, limits(), || false),
+            Err(Error::NotRepository)
+        ));
+        assert!(matches!(
+            read_blob(&fixture.root, false, "source.txt", limits(), || false),
+            Err(Error::NotRepository)
+        ));
+        assert!(matches!(
+            read_status(Path::new("relative"), limits(), || false),
+            Err(Error::InvalidRoot)
+        ));
+        assert!(matches!(
+            read_status(&fixture.root.join("missing"), limits(), || false),
+            Err(Error::Io(_))
+        ));
+        assert!(matches!(
+            read_status(&fixture.root.join("source.txt"), limits(), || false),
+            Err(Error::InvalidRoot)
+        ));
+        assert_eq!(
+            fs::read(fixture.root.join("source.txt")).unwrap(),
+            b"unchanged\r\n"
+        );
+    }
+    #[test]
+    fn malformed_present_git_metadata_and_bare_repositories_are_not_absent_contexts() {
+        let fixture = Fixture::new();
+        let dot = fixture.root.join(".git");
+        fs::write(&dot, b"malformed git file\n").unwrap();
+        assert!(matches!(
+            read_status(&fixture.root, limits(), || false),
+            Err(Error::InvalidRoot)
+        ));
+        fs::write(&dot, b"gitdir: absent-target\n").unwrap();
+        assert!(matches!(
+            read_status(&fixture.root, limits(), || false),
+            Err(Error::Io(_))
+        ));
+        fs::remove_file(&dot).unwrap();
+        fs::create_dir(&dot).unwrap();
+        assert!(matches!(
+            read_status(&fixture.root, limits(), || false),
+            Err(Error::Engine(_))
+        ));
+        fs::remove_dir(&dot).unwrap();
+        let bare = gix::init_bare(&fixture.root).unwrap();
+        drop(bare);
+        assert!(matches!(
+            read_status(&fixture.root, limits(), || false),
+            Err(Error::Unsupported)
+        ));
+    }
+    #[test]
+    fn unborn_repository_has_branch_without_a_fabricated_head_or_history_and_charges_metadata() {
+        let fixture = Fixture::new();
+        drop(gix::init(&fixture.root).unwrap());
+        let status = read_status(&fixture.root, limits(), || false).unwrap();
+        assert!(status.info.branch.is_some());
+        assert!(status.info.head.is_none() && status.info.commits.is_empty());
+        assert!(!status.info.limited);
+        assert!(status.info.memory_bytes() <= INFO_BYTES);
+        assert!(status.entries.is_empty());
+        let mut tiny = limits();
+        tiny.max_bytes = 1;
+        assert!(matches!(
+            read_status(&fixture.root, tiny, || false),
+            Err(Error::Limited)
+        ));
+    }
+    #[test]
+    fn local_first_parent_history_is_ordered_bounded_and_preserves_raw_metadata_bytes() {
+        let fixture = Fixture::new();
+        let repo = gix::init(&fixture.root).unwrap();
+        let author = [b'A'; 120];
+        let signature = gix::actor::SignatureRef {
+            name: author.as_bstr(),
+            email: b"fixture@example.invalid".as_bstr(),
+            time: "1 +0000",
+        };
+        let tree = repo.empty_tree().id().detach();
+        let mut parent = None;
+        let mut ids = Vec::new();
+        for ordinal in 0..27 {
+            let message = format!("{ordinal:02}{}\nsecond line", "s".repeat(270));
+            let id = repo
+                .commit_as(signature, signature, "HEAD", message, tree, parent)
+                .unwrap()
+                .detach();
+            ids.push(id.to_string());
+            parent = Some(id);
+        }
+        drop(repo);
+        let status = read_status(&fixture.root, limits(), || false).unwrap();
+        assert_eq!(status.info.head.as_ref(), ids.last());
+        assert_eq!(status.info.commits.len(), INFO_COMMITS);
+        assert!(status.info.limited && status.info.memory_bytes() <= INFO_BYTES);
+        for (offset, commit) in status.info.commits.iter().enumerate() {
+            assert_eq!(commit.id, ids[26 - offset]);
+            assert_eq!(commit.parents, vec![ids[25 - offset].clone()]);
+            assert_eq!(commit.summary.len(), 256);
+            assert_eq!(commit.author, vec![b'A'; 96]);
+            assert!(!commit.summary.contains(&b'\n'));
+        }
+        let mut limited = false;
+        assert_eq!(clipped(&[0xff, 0xc3, 0xa1], 2, &mut limited), [0xff, 0xc3]);
+        assert!(limited);
+    }
+}
+fn tree_entries(
+    repo: &gix::Repository,
+    id: gix::ObjectId,
+    ctx: &Context<'_>,
+) -> Result<TreeMap, Error> {
     let mut entries = BTreeMap::new();
-    let id = repo.head_tree_id_or_empty().map_err(engine)?.detach();
     let mut todo = vec![(Vec::new(), id, 0usize)];
     let mut bytes = 0usize;
     let mut visited = 0usize;
@@ -581,12 +904,17 @@ pub fn read_status(
         {
             return Err(Error::Unsupported);
         }
-        let mut head = tree_entries(&repo, ctx)?;
+        let (info, tree) = repository_info(&repo, ctx)?;
+        let info_bytes = info.memory_bytes();
+        if info_bytes > limits.max_bytes {
+            return Err(Error::Limited);
+        }
+        let mut head = tree_entries(&repo, tree, ctx)?;
         let mut collect = Collector {
             entries: BTreeMap::new(),
             untracked: BTreeMap::new(),
             limits,
-            bytes: 0,
+            bytes: info_bytes,
             error: None,
             ctx,
         };
@@ -688,6 +1016,7 @@ pub fn read_status(
         Ok(Status {
             repository,
             entries,
+            info,
         })
     })
 }

@@ -126,11 +126,16 @@ impl GitStatus {
 pub struct GitStatusSnapshot {
     repository: GitRepositoryIdentity,
     status: GitStatus,
+    info: Option<jc_git::RepositoryInfo>,
 }
 impl GitStatusSnapshot {
     /// Compose an immutable observation; this does not certify a repository CAS.
     pub fn from_parts(repository: GitRepositoryIdentity, status: GitStatus) -> Self {
-        Self { repository, status }
+        Self {
+            repository,
+            status,
+            info: None,
+        }
     }
     pub fn repository(&self) -> &GitRepositoryIdentity {
         &self.repository
@@ -138,11 +143,15 @@ impl GitStatusSnapshot {
     pub fn status(&self) -> &GitStatus {
         &self.status
     }
+    pub fn info(&self) -> Option<&jc_git::RepositoryInfo> {
+        self.info.as_ref()
+    }
     pub fn memory_bytes(&self) -> usize {
         size_of::<Self>()
             + self.repository.root.capacity()
             + self.repository.git_dir.capacity()
             + self.status.heap_bytes()
+            + self.info.as_ref().map_or(0, |info| info.memory_bytes())
     }
 }
 
@@ -300,13 +309,14 @@ pub fn read_status(
             },
         })
         .collect();
-    let snapshot = GitStatusSnapshot::from_parts(
+    let mut snapshot = GitStatusSnapshot::from_parts(
         repository,
         GitStatus {
             format: GitStatusFormat::Embedded,
             entries,
         },
     );
+    snapshot.info = Some(raw.info);
     if snapshot.memory_bytes() > limits.parse.max_owned_bytes {
         return Err(GitStatusError::Limited(GitStatusLimit::OwnedBytes));
     }

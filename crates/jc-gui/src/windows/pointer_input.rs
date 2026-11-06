@@ -150,6 +150,9 @@ impl State {
         self.editor_scroll_drag = None;
         self.explorer_scroll.drag = None;
         let modifiers = self.modifiers();
+        if self.git_panel.is_some() && flags & 0x0c == 0 && modifiers == Modifiers::NONE {
+            return self.git_workspace_wheel(x, y, delta);
+        }
         if flags & 0x0c != 0
             || modifiers.contains(Modifiers::ALT)
             || modifiers.contains(Modifiers::CTRL)

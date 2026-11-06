@@ -116,6 +116,9 @@ unsafe fn reset(hwnd: Hwnd) {
     s.bottom_hits = None;
     s.explorer_visible = false;
     s.explorer_focused = false;
+    // This case exercises three regions; other smoke blocks may show Code.
+    s.outline.visible = false;
+    s.outline.focused = false;
 }
 pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'static str>, String> {
     expected(hwnd, SOURCE)?;

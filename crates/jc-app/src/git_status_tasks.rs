@@ -175,10 +175,22 @@ impl GitStatusController {
     pub fn failure(&self) -> Option<&GitStatusFailure> {
         self.failure.as_ref()
     }
+    /// An ordinary folder is an empty Git context, distinct from corrupt metadata.
+    pub fn is_not_repository(&self) -> bool {
+        matches!(
+            self.failure(),
+            Some(GitStatusFailure::Provider(GitStatusError::Read(
+                GitReadError::NotRepository
+            )))
+        )
+    }
 
     /// A bounded summary; provider failures remain typed, without formatting
     /// arbitrary paths, filenames, stderr or panic payload into UI-owned text.
     pub fn message(&self) -> &'static str {
+        if self.is_not_repository() {
+            return "La carpeta abierta no contiene un repositorio Git";
+        }
         match self.state {
             GitStatusTaskState::Idle => "",
             GitStatusTaskState::Queued => "Estado Git en cola",
@@ -286,7 +298,7 @@ impl GitStatusController {
         self.state = GitStatusTaskState::Cancelled;
     }
 
-    /// Pass the current root/executable/limits before exposing result(). Changes
+    /// Pass the current root/limits before exposing result(). Changes
     /// invalidate accepted and queued data even when no refresh was requested.
     /// Only locks bounded metadata and moves an already prepared completion.
     pub fn poll(&mut self, current: &GitStatusOptions) -> bool {
@@ -697,6 +709,34 @@ mod tests {
         wait_ready(&controller, &wake);
         controller.poll(&options);
         assert_eq!(controller.state(), GitStatusTaskState::Ready);
+    }
+
+    #[test]
+    fn absent_repository_remains_typed_after_worker_delivery_with_a_spanish_empty_context_summary()
+    {
+        let wake = Wakeup::default();
+        let mut controller = GitStatusController::with_provider(
+            wake.clone(),
+            Arc::new(|_, _| Err(GitStatusError::Read(GitReadError::NotRepository))),
+        );
+        let options = options("ordinary-folder");
+        controller.request(options.clone()).unwrap();
+        wait_ready(&controller, &wake);
+        controller.poll(&options);
+        assert!(controller.is_not_repository());
+        assert!(controller.result().is_none());
+        assert_eq!(
+            controller.message(),
+            "La carpeta abierta no contiene un repositorio Git"
+        );
+        assert!(matches!(
+            controller.failure(),
+            Some(GitStatusFailure::Provider(GitStatusError::Read(
+                GitReadError::NotRepository
+            )))
+        ));
+        controller.cancel();
+        assert!(!controller.is_not_repository());
     }
 
     #[test]

@@ -31,7 +31,7 @@ REQUIRED = {
     "project_replace_root_change_drops_plan_source_preserved",
     "project_replace_empty_draft_deletes_one_undo_preserves_eol_disk",
     "project_replace_identical_open_closed_no_revision_history_or_save",
-    "git_status_native_delivery_typed_disk_index_no_enter_navigation",
+    "git_status_native_delivery_comparison_reuses_dirty_document",
     "git_head_index_distinct_oid_exact_dirty_sources",
     "git_prepare_and_gdi_no_snapshot_admission_or_completion_consumption",
     "git_hunk_enter_navigation_without_edit",

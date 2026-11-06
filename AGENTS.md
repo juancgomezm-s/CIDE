@@ -1,5 +1,19 @@
 # Working on JC-IDE
 
+## Current native Git workspace / themed picker closure — 2026-11-05
+
+Read docs/M2_GIT_WORKSPACE_NATIVE.md before changing Git presentation or pickers.
+Current binaries target/m2-git-ui-next/release; preserve prior paths. Git uses an
+independent native pixel workspace, not the project-search painter. Keep one diff
+viewport and paint-published versioned hits. History is first-parent, max24 commits,
+metadata max24KiB charged against status quota; no complete branch graph or historic
+file diff claim. No Git writes/network in M2. Ordinary absent .git is NotRepository;
+invalid present metadata remains an error. Own themed folder/file modal uses the
+shared lazy explorer, no directory I/O in paint or Workbench borrow across modal.
+718 cases passed by suites/directed closure,139 native checks, visible picker/Git
+clicks/details and normal exit; no single full runtime pass. IME excluded, Narrator
+deferred, one display only; global physical latency/RAM open. CI remains dormant.
+
 ## Current selection history / M2 input closure — 2026-11-05
 
 Read docs/M2_SELECTION_HISTORY.md before changing editing/history/recovery.

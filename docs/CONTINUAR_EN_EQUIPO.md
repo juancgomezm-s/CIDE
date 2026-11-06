@@ -1,5 +1,17 @@
 # Continuación local — después del bloque de evidencia M2
 
+## Selector con tema y espacio Git nativo — 2026-11-05
+
+[Implementación y límites](M2_GIT_WORKSPACE_NATIVE.md). Historial local, archivos y
+comparación tienen áreas propias, con tema oscuro y datos reales del motor Rust.
+Abrir carpeta/archivo usa el selector de CIDE. Binarios vigentes:
+`target/m2-git-ui-next/release`; se preservan todas las rutas previas.
+718 casos aprobaron por suites/cierre dirigido, 139 checks nativos y revisión
+interactiva del selector, Git, comparación, detalles y salida normal. No fue una
+sola corrida integral. Historial de primer padre hasta 24 commits; grafo completo,
+diff de revisiones históricas y escrituras Git no se declaran implementados.
+IME excluido, Narrador aplazado y traslado entre monitores sin verificar.
+
 ## Prioridad vigente — pulido de interfaz y edición M2
 
 Juan excluyó IME real de su cierre; no instalar fuentes ni idiomas. Narrador

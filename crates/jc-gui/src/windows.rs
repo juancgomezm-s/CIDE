@@ -17,6 +17,7 @@ mod folder;
 mod git_panel;
 mod git_smoke;
 mod git_view;
+mod git_workspace;
 mod ime;
 mod interaction_smoke;
 mod line_edit;
@@ -437,6 +438,7 @@ struct State {
     git_context: Option<PathBuf>,
     git_source: jc_app::git_read::GitBlobSource,
     git_panel: Option<git_panel::GitIntent>,
+    git_workspace: git_workspace::Workspace,
     git_view: git_view::GitView,
     git_diff: jc_app::git_diff::GitDiffController,
     git_status: jc_app::git_status_tasks::GitStatusController,
@@ -567,6 +569,7 @@ impl State {
             git_context: None,
             git_source: jc_app::git_read::GitBlobSource::Head,
             git_panel: None,
+            git_workspace: Default::default(),
             git_view: Default::default(),
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_status: jc_app::git_status_tasks::GitStatusController::new(wakeup.clone()),
@@ -1538,6 +1541,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 owner.frame.borrow_mut().take();
                 let frame = std::rc::Rc::new(paint::prepare(&mut state));
                 state.explorer_hits = frame.explorer_hits();
+                state.git_workspace.hits = frame.git_hits();
                 state.outline.hits = frame.outline_hits();
                 state.bottom_hits = frame.bottom_hits();
                 state.tab_hits = Some(frame.tab_hits());
@@ -1773,6 +1777,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     action = git_action;
                 } else if state.status_click(x, y) {
                     // Status controls consume the click before source hit-testing.
+                } else if state.git_panel.is_some() {
+                    action = state.git_workspace_click(x, y);
                 } else if state.pointer_source_available()
                     && message == WM_LBUTTONDOWN
                     && state.begin_explorer_scroll(x, y)
@@ -2007,7 +2013,8 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::PasteReplacement(generation) => clipboard_flow::paste_replacement(hwnd, generation),
         Action::SaveAll => save_flow::perform(hwnd),
         Action::ChooseFolder => {
-            let selected = folder::choose(hwnd);
+            let initial = owner(hwnd).and_then(|o| o.state.borrow().project_root.clone());
+            let selected = folder::choose_folder(hwnd, initial.as_deref());
             if let Some(owner) = owner(hwnd) {
                 let mut state = owner.state.borrow_mut();
                 match selected {
@@ -2024,7 +2031,17 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             }
         }
         Action::Open(side) => {
-            let selected = file_dialog(hwnd, false);
+            let initial = owner(hwnd).and_then(|o| {
+                let state = o.state.borrow();
+                state.project_root.clone().or_else(|| {
+                    state
+                        .workbench
+                        .active_path()
+                        .and_then(|p| p.parent())
+                        .map(|p| p.to_owned())
+                })
+            });
+            let selected = folder::choose_file(hwnd, initial.as_deref());
             if let Some(owner) = owner(hwnd) {
                 let mut state = owner.state.borrow_mut();
                 match selected {
