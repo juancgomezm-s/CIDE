@@ -1,0 +1,109 @@
+{
+  "date": "2026-11-05",
+  "scope": "private analysis toolchain; not a CIDE dependency",
+  "versions": {
+    "rea": "6.8.0",
+    "ghidra": "12.1.4",
+    "jdk": "21.0.13+9",
+    "node": "24.22.2"
+  },
+  "installation": {
+    "ghidra": {
+      "directory": "C:\\Users\\juanc\\Documents\\Codex\\rea-runtime\\ghidra_12.1.4_PUBLIC",
+      "archive": "C:\\Users\\juanc\\Documents\\Codex\\rea-runtime\\downloads\\ghidra_12.1.4_PUBLIC_20260921.zip",
+      "sha256": "ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db",
+      "files": 6695
+    },
+    "java": {
+      "directory": "C:\\Users\\juanc\\Documents\\Codex\\rea-runtime\\jdk-21.0.13+9",
+      "archive": "C:\\Users\\juanc\\Documents\\Codex\\rea-runtime\\downloads\\OpenJDK21U-jdk_x64_windows_hotspot_21.0.13_9.zip",
+      "sha256": "a4dbaa05fca4bd89d84584e58c459bd732efebb1722af80ab13c6516832004f9",
+      "files": 577
+    }
+  },
+  "codex_registration_verified": true,
+  "scoped_checks_passed": 11,
+  "system_environment_changed": false,
+  "configuration_other_settings_changed": false,
+  "startup_ms": 900000,
+  "mcp_tool_timeout_sec": 1100,
+  "jvm_verified_flags": [
+    "-Xmx1G",
+    "-XX:ParallelGCThreads=2",
+    "-XX:CICompilerCount=2"
+  ],
+  "real_native_query": {
+    "provider": {
+      "id": "ghidra",
+      "name": "Ghidra",
+      "version": "12.1.4"
+    },
+    "evidence_id": "ev_678f532fd3ab1fedaf2b01d6436bd77dc1b1f1cc86311526bc3262504266db53",
+    "source_sha256": "f02ffd91ef0fdb7983c27b237888c433bd6ba9f420e57752a41755eeda08387e",
+    "result": [
+      {
+        "address": "0x1406f3257",
+        "value": "side_bar_layout"
+      }
+    ]
+  },
+  "native_decompilation": {
+    "bundle": "work/rea-merge-native-long-full-evidence.json",
+    "sha256": "d8ab8e6ce04c51aa75e01face1ef1d19714f8c067eeb1425341201bdac877ed9",
+    "record_count": 6,
+    "source_sha256": "f02ffd91ef0fdb7983c27b237888c433bd6ba9f420e57752a41755eeda08387e",
+    "provider": {
+      "id": "ghidra",
+      "version": "12.1.4"
+    },
+    "traces": [
+      {
+        "query": "side_bar_layout",
+        "evidence_id": "ev_b8928fda04b972fd2dad52f15f7eafcbe5b6783e4811dd7b048c88ea1bab3077",
+        "matches": 1,
+        "references": 11,
+        "substring_caveat": false
+      },
+      {
+        "query": "stage_file",
+        "evidence_id": "ev_f1e3cd61c9d2cf55ebfc15d9a30a933385bc46c6c0801149ab33ed81eacfe2b5",
+        "matches": 4,
+        "references": 4,
+        "substring_caveat": true
+      },
+      {
+        "query": "blame",
+        "evidence_id": "ev_5e1e6fc79fb9b82dce76d33e664d56aaa1eb1f0b8fc0d0eeebde3b578b98c96a",
+        "matches": 16,
+        "references": 14,
+        "substring_caveat": false
+      }
+    ],
+    "pseudocode": [
+      {
+        "query": "side_bar_layout",
+        "procedure": "0x140056bb8",
+        "evidence_id": "ev_879c573764f9e07944239d66d54fb7e8992132a0ed6c081f1e8e004b5fae7b52",
+        "characters": 238484,
+        "not_original_source": true
+      },
+      {
+        "query": "stage_file",
+        "procedure": "0x1400d296b",
+        "evidence_id": "ev_39b7152d2da14305e0354e661ad87a8337871818810c93e30173984ea01ad80b",
+        "characters": 8483,
+        "not_original_source": true
+      },
+      {
+        "query": "blame",
+        "procedure": "0x1400c4d24",
+        "evidence_id": "ev_903b729dc266576a542c1b69cc70e150e21ab06e52c426e4b33549dde08bd3ed",
+        "characters": 8036,
+        "not_original_source": true
+      }
+    ],
+    "session_closed": true,
+    "original_binary_unchanged": true
+  },
+  "CIDE_source_changed": false
+}

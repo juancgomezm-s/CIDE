@@ -1,5 +1,20 @@
 # Working on JC-IDE
 
+## Git expansion research / REA engine — 2026-11-05
+
+Read docs/SUBLIME_MERGE_REA_STUDY.md, docs/GIT_CAPABILITIES_CIDE_AUDIT.md and
+docs/REA_GHIDRA_SETUP.md for the admitted G1–G6 scope and installed tools.
+Juan authorized configuring Ghidra12.1.4/JDK21 for REA. Scoped doctor11 checks,
+real native search, three traces and three decompilations passed; session closed
+and source unchanged. One330s startup timeout is retained; use configured900s
+startup/1100s MCP allowance, no analyzers disabled. Their private runtime is outside
+the repo; no new editor dependency or shipped proprietary resource. Current
+editor binaries remain target/m2-git-ui-next/release. G1 requires explicit
+Buffer/Index/Worktree/Commit/Absent source identities before historical UI.
+G4–G6 writes/network stay in M5. Native query evidence is distinct from resource
+declarations; do not claim recovered original source or all-tools parity.
+Do not repeat Cargo suites for this documentation/tooling-only block.
+
 ## Current native Git workspace / themed picker closure — 2026-11-05
 
 Read docs/M2_GIT_WORKSPACE_NATIVE.md before changing Git presentation or pickers.

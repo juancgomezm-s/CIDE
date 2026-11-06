@@ -1,5 +1,20 @@
 # Validación
 
+## Investigación Git y motor REA — 2026-11-05
+
+[Estudio de artefactos y diseño](SUBLIME_MERGE_REA_STUDY.md),
+[auditoría CIDE](GIT_CAPABILITIES_CIDE_AUDIT.md) y
+[configuración Ghidra/JDK con prueba real](REA_GHIDRA_SETUP.md).
+Los recursos extraídos se contrastaron contra hashes REA; 90 recursos analizados,
+60 menús, cero errores del lector JSON con comentarios. Las 1.642 declaraciones
+no equivalen a herramientas Git independientes ni a pruebas de ejecución.
+El motor nativo pasó 11 comprobaciones de diagnóstico/configuración, búsqueda,
+tres trazas y tres decompilaciones sobre el ejecutable objetivo. El plazo de
+330 segundos falló en una primera traza; con 900 segundos la sesión terminó,
+exportó seis registros y cerró correctamente. El binario original quedó intacto.
+No cambia CIDE ni sus cifras de pruebas; no se ejecuta Cargo/CI por este bloque.
+Las evidencias nativas y sus límites quedan separados de las declaraciones de menús.
+
 ## Selector con tema y espacio Git nativo — 2026-11-05
 
 [Implementación y límites](M2_GIT_WORKSPACE_NATIVE.md). Historial local, archivos y

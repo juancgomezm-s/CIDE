@@ -1,5 +1,21 @@
 # Continuación local — después del bloque de evidencia M2
 
+## Expansión Git y estudio REA de Sublime Merge — 2026-11-05
+
+Juan pidió usar REA sobre Sublime Merge y cubrir la mayoría de sus herramientas.
+Se admite el plan [G1–G6 y propuesta GUI/TUI](SUBLIME_MERGE_REA_STUDY.md), sustentado
+por [auditoría de capacidades reales](GIT_CAPABILITIES_CIDE_AUDIT.md).
+G1 fija primero consultas históricas y pares de fuentes tipadas; G2/G3 conectan
+la interfaz y utilidades de consulta. G4–G6 mantienen escrituras/red en M5.
+No se declara paridad ni se habilitan acciones decorativas.
+
+Juan autorizó configurar el motor que faltaba: [Ghidra y JDK para REA](REA_GHIDRA_SETUP.md)
+quedan separados de las dependencias y distribución de CIDE. Pasaron diagnóstico, búsqueda real, tres trazas y tres decompilaciones
+del binario; las evidencias y sus límites se documentan allí.
+Este es un bloque de investigación/configuración: el código funcional del editor conserva la referencia
+3600948 y sus ejecutables en `target/m2-git-ui-next/release`. No se repiten sus
+suites por cambios de documentación. CI continúa aplazado.
+
 ## Selector con tema y espacio Git nativo — 2026-11-05
 
 [Implementación y límites](M2_GIT_WORKSPACE_NATIVE.md). Historial local, archivos y

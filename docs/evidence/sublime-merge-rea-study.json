@@ -1,0 +1,158 @@
+{
+  "date": "2026-11-05",
+  "status": "static resources inspected; native traces and three decompilations completed",
+  "binary": {
+    "path": "C:/Program Files/Sublime Merge/sublime_merge.exe",
+    "sha256": "f02ffd91ef0fdb7983c27b237888c433bd6ba9f420e57752a41755eeda08387e"
+  },
+  "bundles": [
+    {
+      "path": "work/rea-sublime-merge-default-merge-evidence.json",
+      "sha256": "1fca563638e2f5070a38f96381c1c6630c4c30a92184ea0b0237986febb52afd",
+      "records": [
+        {
+          "id": "ev_0f7c59ce827891e7af9ab19c407d8e68818a3983bea0c19038bc704681a1d3bc",
+          "operation": "inventory_artifact"
+        },
+        {
+          "id": "ev_78d8ae11d14fcf5912d554dfaf465308709d1309333f4542e77b24207f1f34e2",
+          "operation": "inspect_artifact"
+        },
+        {
+          "id": "ev_d83aac03d6edb9a3c36d387cb7f48cedd4c56988831c42b48bc9c46f13a096dd",
+          "operation": "inspect_analysis_view"
+        }
+      ]
+    },
+    {
+      "path": "work/rea-sublime-merge-default-evidence.json",
+      "sha256": "cad46150db5c498b641f3a628d35814e9c946fb0572c6ab7e9b5f65e5df5212d",
+      "records": [
+        {
+          "id": "ev_75af99d148efeb0c309d41c2e6bbd5ac5309299f36ebc3d608dc12433b672b96",
+          "operation": "inspect_analysis_view"
+        },
+        {
+          "id": "ev_7830f017627d2b3858c43be4068fe8e06f942de5dbcde3ec7fb4244595229219",
+          "operation": "extract_artifact"
+        },
+        {
+          "id": "ev_8408992a6a14a5f966dc5d7fcd0543978e9183d0c202a72a80d114bb3b5f8da7",
+          "operation": "inventory_artifact"
+        },
+        {
+          "id": "ev_ba6bca7dd1eeafc5f848de0a4ff137acfedf4e7150e181d890cecbb911afd155",
+          "operation": "inspect_artifact"
+        }
+      ]
+    },
+    {
+      "path": "work/rea-sublime-merge-theme-evidence.json",
+      "sha256": "10e2c88226a3644502f9d162814277d73d59d90c3fab63168f2257a115752b31",
+      "records": [
+        {
+          "id": "ev_2d26dd0a0b325dd38a6ff58bc80b38124bc6657ad22b876a4d89a6948faf1ab8",
+          "operation": "inspect_artifact"
+        },
+        {
+          "id": "ev_87360c4f14d88a0f8f0596f6c617b783036a70396a7d130b969ed1089866788d",
+          "operation": "extract_artifact"
+        },
+        {
+          "id": "ev_daf3c7605e1d72b520547572770260eb0f7af073b395efeb084b62b7d2e89ead",
+          "operation": "inventory_artifact"
+        },
+        {
+          "id": "ev_ee8831d440ea21452f25059be5e1c0b847ef64eb3975742ed3d5f085069018b2",
+          "operation": "inspect_analysis_view"
+        }
+      ]
+    },
+    {
+      "path": "work/rea-sublime-merge-pe-evidence.json",
+      "sha256": "942048a37f7ce6b9ecdec923cba3b4dd8ae58d2094387194117c214b6c6be76f",
+      "records": [
+        {
+          "id": "ev_48e9bc3ff79f3ad6e4ccb8b545bb96ad163eee6a85229968d5aadbbe620c28ee",
+          "operation": "inspect_pe_imports"
+        }
+      ]
+    }
+  ],
+  "derived_catalog": {
+    "path": "work/rea-sublime-merge-command-catalog.json",
+    "sha256": "0e5d1d0da66f0aefaac1c8b12c75b64ebd915cb8a16c0f67647dd64de526a884",
+    "parsed_files": 90,
+    "menus": 60,
+    "command_declarations": 1642,
+    "distinct_command_ids": 362,
+    "parse_errors": [],
+    "verified_extracted_files": 126
+  },
+  "limitations": [
+    "Resource declarations are not runtime verification",
+    "Counts include generic editor commands and repetitions",
+    "PE imports do not establish runtime call reachability",
+    "No complete recovered original source claim",
+    "No user repository operations"
+  ],
+  "cide_changes": "Documentation only; no repeated Cargo test runs",
+  "native_decompilation": {
+    "bundle": "work/rea-merge-native-long-full-evidence.json",
+    "sha256": "d8ab8e6ce04c51aa75e01face1ef1d19714f8c067eeb1425341201bdac877ed9",
+    "record_count": 6,
+    "source_sha256": "f02ffd91ef0fdb7983c27b237888c433bd6ba9f420e57752a41755eeda08387e",
+    "provider": {
+      "id": "ghidra",
+      "version": "12.1.4"
+    },
+    "traces": [
+      {
+        "query": "side_bar_layout",
+        "evidence_id": "ev_b8928fda04b972fd2dad52f15f7eafcbe5b6783e4811dd7b048c88ea1bab3077",
+        "matches": 1,
+        "references": 11,
+        "substring_caveat": false
+      },
+      {
+        "query": "stage_file",
+        "evidence_id": "ev_f1e3cd61c9d2cf55ebfc15d9a30a933385bc46c6c0801149ab33ed81eacfe2b5",
+        "matches": 4,
+        "references": 4,
+        "substring_caveat": true
+      },
+      {
+        "query": "blame",
+        "evidence_id": "ev_5e1e6fc79fb9b82dce76d33e664d56aaa1eb1f0b8fc0d0eeebde3b578b98c96a",
+        "matches": 16,
+        "references": 14,
+        "substring_caveat": false
+      }
+    ],
+    "pseudocode": [
+      {
+        "query": "side_bar_layout",
+        "procedure": "0x140056bb8",
+        "evidence_id": "ev_879c573764f9e07944239d66d54fb7e8992132a0ed6c081f1e8e004b5fae7b52",
+        "characters": 238484,
+        "not_original_source": true
+      },
+      {
+        "query": "stage_file",
+        "procedure": "0x1400d296b",
+        "evidence_id": "ev_39b7152d2da14305e0354e661ad87a8337871818810c93e30173984ea01ad80b",
+        "characters": 8483,
+        "not_original_source": true
+      },
+      {
+        "query": "blame",
+        "procedure": "0x1400c4d24",
+        "evidence_id": "ev_903b729dc266576a542c1b69cc70e150e21ab06e52c426e4b33549dde08bd3ed",
+        "characters": 8036,
+        "not_original_source": true
+      }
+    ],
+    "session_closed": true,
+    "original_binary_unchanged": true
+  }
+}
