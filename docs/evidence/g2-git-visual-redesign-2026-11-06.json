@@ -1,0 +1,126 @@
+{
+  "date": "2026-11-06",
+  "scope": "GUI native visual redesign; no new Git engine operations or TUI changes",
+  "binaries": "target/git-redesign-next/release",
+  "prior_release_paths_preserved": true,
+  "tests": {
+    "gui_suite": 111,
+    "subsequent_directed": 31,
+    "distinct_cases": 112,
+    "single_final_full_workspace_run": false,
+    "logs": [
+      "work/git-redesign-tests-final.log",
+      "work/git-redesign-tests-directed-final.log"
+    ]
+  },
+  "native": {
+    "ok": true,
+    "executable": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\target\\git-redesign-next\\release\\cide-gui.exe",
+    "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\native-gui-smoke\\20261106T164445Z-39842585c417",
+    "section": "git",
+    "fixture_bytes": 13,
+    "fixture_unchanged": true,
+    "native_report": {
+      "ok": true,
+      "backend": "Win32/GDI",
+      "window": "own_hidden_hwnd",
+      "native_paints": 25,
+      "native_paint_errors": 0,
+      "wall_ms": 695,
+      "checks": [
+        "startup_shared_open_bytes",
+        "cide_native_window_title",
+        "cide_native_gui_icon_resource",
+        "no_child_edit_control",
+        "native_dpi_changes_96_144_192_preserve_document",
+        "git_embedded_runtime_requires_no_executable",
+        "git_background_status_summary_survives_completion_poll_without_modal",
+        "git_status_native_delivery_comparison_reuses_dirty_document",
+        "git_history_root_listing_exact_absent_side_and_pinned_blob",
+        "git_history_delivery_gdi_preserves_dirty_document_and_editor_views",
+        "git_history_escape_cancels_without_live_source_navigation",
+        "git_local_pairs_native_keys_exact_head_index_disk_with_dirty_buffer",
+        "git_local_pairs_gdi_and_enter_preserve_sources_and_editor_geometry",
+        "git_layout_native_menu_four_arrangements_same_accepted_sources",
+        "git_parallel_native_projection_and_gdi_preserve_source_geometry",
+        "git_rails_and_divider_native_capture_move_release",
+        "git_head_index_distinct_oid_exact_dirty_sources",
+        "git_prepare_and_gdi_no_snapshot_admission_or_completion_consumption",
+        "git_hunk_enter_navigation_without_edit",
+        "git_shared_undo_stale_enter_denied_explicit_refresh",
+        "git_cancel_late_notifications_no_result_revival",
+        "git_root_reconfiguration_clears_embedded_accepted_state",
+        "actual_gdi_offscreen_bitmap",
+        "native_paint_handler",
+        "native_paint_no_errors"
+      ],
+      "error": "",
+      "physical_display_verified": false,
+      "os_clipboard_verified": false
+    },
+    "bitmap_width": 1000,
+    "bitmap_height": 650,
+    "bitmap_colors": 643,
+    "physical_display_verified": false,
+    "git_fixture": {
+      "head_blob": "6566db2cd49b38ce2f68af6cafabf9f98e6b58d1",
+      "index_blob": "17f2fc0a7500e6b218190262d5a329086ba965ff",
+      "commit": "74195a988823a3bec84f5edcad09cac050d0b316"
+    },
+    "git_metadata_unchanged": true,
+    "git_metadata_sha256": {
+      "config": "05becdb83bb897f6103c8d91439e2e9092144edf5b3955a746fce4975c12bfdc",
+      "HEAD": "28d25bf82af4c0e2b72f50959b2beb859e3e60b9630a5e8c603dad4ddb2b6e80",
+      "index": "7fd3f290e9fe9237d31d3940f89e72323ba96f283b7cf86e3969bd55363bda4e",
+      "logs/HEAD": "c5495941a5e7feae13472f3049d96c83679e4be13a234bb6c7fb8ba00d3d98e8",
+      "logs/refs/heads/main": "c5495941a5e7feae13472f3049d96c83679e4be13a234bb6c7fb8ba00d3d98e8",
+      "objects/17/f2fc0a7500e6b218190262d5a329086ba965ff": "6afd82397d32d65874bb24df4a3599bb2233f148563c82f67ac9cb0d8cbf74de",
+      "objects/65/66db2cd49b38ce2f68af6cafabf9f98e6b58d1": "452960bb518b4100510ae0734228ad93e5af740ed2b8b573c64c6c10ec5238be",
+      "objects/74/195a988823a3bec84f5edcad09cac050d0b316": "48a7b5cb1e60dca1c232ed505e8b24dabd64c0974db36cd4f7c5d3b4135e9a9e",
+      "objects/c7/e37371fef2933678c0bb186773c90b9da41ed0": "4aa8688619742bffff80353a45f3f0a25cabc1b165cea16e0c3e5ca5a2f9272d",
+      "refs/heads/main": "d727282124c3d0731730250e1629b318c5e1d7fe4d2c42d8e5dcdaceebf19714"
+    },
+    "git_oracle_executable": "C:\\Program Files\\Git\\cmd\\git.exe",
+    "gui_child_path_empty": true
+  },
+  "checks": {
+    "fmt": "work/git-redesign-fmt-check.log",
+    "clippy": "work/git-redesign-clippy-delivery.log",
+    "workspace_release": "work/git-redesign-release.log",
+    "gui_release_final": "work/git-redesign-release-verified.log"
+  },
+  "full_native_blocker": {
+    "scope": "Save All before Git",
+    "error": "access denied 5, assigned destination absent",
+    "also_reproduced_previous_binary": true,
+    "logs": [
+      "work/git-redesign-native-debug.log",
+      "work/git-redesign-baseline-save.log"
+    ]
+  },
+  "desktop": {
+    "observed": [
+      "Visible native GUI, maximize, Git menu, repository status, file comparison",
+      "Previous owned test instance exited normally with Alt+F4 and exit 0"
+    ],
+    "final_instance": "work/git-redesign-desktop-launch.json",
+    "final_capture_interrupted_by_user_escape": true,
+    "final_instance_normal_exit_confirmed": false,
+    "personal_recovery_disabled": true,
+    "further_desktop_control_deferred_user_working": true
+  },
+  "image": {
+    "path": "docs/evidence/g2-git-redesign-native.png",
+    "kind": "Actual GDI output from owned HWND fixture; not a physical screenshot",
+    "sha256": "898006fe1ec884d4c126873ace33d792ce6a7bd65a9a83570c63861831871235"
+  },
+  "remaining": [
+    "User visual review before more features",
+    "Save All access-denied diagnosis in full HWND fixture",
+    "Narrator deferred",
+    "IME excluded",
+    "Cross-monitor and global physical latency unverified"
+  ],
+  "ci_run": false,
+  "push": false
+}

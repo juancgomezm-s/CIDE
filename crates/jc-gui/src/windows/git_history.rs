@@ -113,24 +113,26 @@ impl State {
         let l = Layout::new(self);
         let p = |v| self.dpi.pixels(v);
         frame.historical = true;
-        frame.details_top = p(112);
+        frame.details_top = p(164);
         frame.rows.clear();
         frame.code.clear();
         frame.message.clear();
         frame.buttons.retain(|(r, _, _)| r.top < l.toolbar.bottom);
-        frame
-            .hits
-            .actions
-            .retain(|(_, a)| matches!(a, Intent::Refresh | Intent::Close | Intent::Commit(_)));
+        frame.hits.actions.retain(|(_, a)| {
+            matches!(
+                a,
+                Intent::Refresh | Intent::Close | Intent::Commit(_) | Intent::Local
+            )
+        });
         for (n, name, intent) in [
             (0, "Cambios locales", Intent::Local),
             (1, "Resumen", Intent::HistorySummary),
         ] {
             let r = rect(
                 l.preview.left + p(12) + n * p(130),
-                l.preview.top + p(40),
+                l.preview.top + p(2),
                 l.preview.left + p(136) + n * p(130),
-                l.preview.top + p(72),
+                l.preview.top + p(28),
             );
             if r.right < l.preview.right {
                 frame.buttons.push((r, name.into(), false));
@@ -158,17 +160,20 @@ impl State {
                 (top + l.row).min(l.files.bottom),
             );
             let path = opaque(&f.path, 256);
-            let (tag, color, kind) = if f.before.is_none() {
-                ("A", GREEN, "Agregado")
+            let (tag, color) = if f.before.is_none() {
+                ("A", GREEN)
             } else if f.after.is_none() {
-                ("D", RED, "Eliminado")
+                ("D", RED)
             } else {
-                ("M", shell::ACCENT, "Modificado")
+                ("M", shell::ACCENT)
             };
             frame.rows.push(FileRow {
                 rect: r,
                 name: path.rsplit('/').next().unwrap_or(&path).into(),
-                detail: format!("{kind} · {path}"),
+                detail: path
+                    .rsplit_once('/')
+                    .map_or("Raíz del repositorio", |(parent, _)| parent)
+                    .into(),
                 tag,
                 color,
                 selected: index == selected,
@@ -177,8 +182,18 @@ impl State {
         }
         frame.count = format!("{} archivos", files.len());
         frame.subtitle = "Archivos de la revisión · comparación con primer padre".into();
-        frame.footer="Solo lectura · Tab cambia lista/comparación · Intro compara · F5 actualiza · Esc vuelve".into();
+        frame.footer = "Solo lectura · Comparación con el primer padre".into();
         if let Some(r) = revision {
+            if frame.summary.is_empty() {
+                frame.summary = vec![
+                    "Revisión histórica".into(),
+                    format!(
+                        "{} · {} archivos modificados",
+                        &r.commit[..r.commit.len().min(8)],
+                        r.files.len()
+                    ),
+                ];
+            }
             frame.details = vec![
                 format!("Commit: {}", r.commit),
                 r.parent
@@ -201,6 +216,15 @@ impl State {
         } else {
             frame.message = self.git_revision.message().into();
             frame.details.clear();
+            if frame.summary.is_empty() {
+                frame.summary = vec![
+                    "Revisión histórica".into(),
+                    self.git_workspace
+                        .history_commit
+                        .as_deref()
+                        .map_or(String::new(), |id| id.chars().take(12).collect()),
+                ];
+            }
         }
         if self.git_workspace.history_file.is_some() {
             frame.details.clear();
@@ -209,9 +233,9 @@ impl State {
                 frame.subtitle = format!("{} · revisión histórica", opaque(&c.path, 200));
                 let r = rect(
                     l.preview.left + p(12),
-                    l.preview.top + p(76),
+                    l.preview.top + p(128),
                     l.preview.left + p(230),
-                    l.preview.top + p(102),
+                    l.preview.top + p(152),
                 );
                 let name = self
                     .git_workspace
@@ -227,9 +251,9 @@ impl State {
                 for (i, name, delta) in [(0, "Anterior", -1), (1, "Siguiente", 1)] {
                     let r = rect(
                         l.preview.left + p(240) + i * p(86),
-                        l.preview.top + p(76),
+                        l.preview.top + p(128),
                         l.preview.left + p(322) + i * p(86),
-                        l.preview.top + p(102),
+                        l.preview.top + p(152),
                     );
                     if r.right < l.preview.right {
                         frame.buttons.push((r, name.into(), false));
@@ -250,7 +274,7 @@ impl State {
                                     l.preview.right - p(12),
                                     l.preview.bottom - p(14),
                                 ),
-                                l.preview.top + p(108),
+                                l.preview.top + p(164),
                                 self.cell_height,
                             ),
                             mode: self.git_workspace.diff_mode(),
@@ -357,6 +381,19 @@ mod tests {
         let frame = state.prepare_git_workspace().unwrap();
         assert!(frame.historical);
         assert!(frame.code.is_empty());
+        assert_eq!(frame.details_top, state.dpi.pixels(164));
+        let tabs: Vec<_> = frame
+            .hits
+            .actions
+            .iter()
+            .filter(|(r, a)| {
+                matches!(a, Intent::Local | Intent::HistorySummary) && r.left >= frame.preview.left
+            })
+            .collect();
+        for (r, _) in tabs {
+            assert!(r.top >= frame.preview.top);
+            assert!(r.bottom <= frame.preview.top + state.dpi.pixels(32));
+        }
         assert_eq!(state.git_workspace.history_encoding, None);
         assert_eq!(state.jobs.outstanding(), jobs);
         assert_eq!(

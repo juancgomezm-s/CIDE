@@ -26,10 +26,16 @@ use compare_rows::DiffView;
 use controls::{GitDrag, Rail};
 use layout::{Arrangement, Column, Divider, Preferences};
 
-const ADD: u32 = 0x00364327;
-const REMOVE: u32 = 0x003c304b;
-const GREEN: u32 = 0x009dd8a3;
-const RED: u32 = 0x009fa2ef;
+const ADD: u32 = 0x003f4830;
+const REMOVE: u32 = 0x003e354a;
+const GREEN: u32 = 0x008cbea3;
+const RED: u32 = 0x00968cd5;
+const PANEL: u32 = 0x003c312b;
+const HEADER: u32 = 0x004a3d35;
+const BORDER: u32 = 0x00594b42;
+const ACCENT: u32 = 0x00d0c088;
+const MUTED: u32 = 0x00af9d92;
+const SELECTION: u32 = 0x00624e41;
 
 #[derive(Default)]
 pub(super) struct Workspace {
@@ -144,6 +150,9 @@ pub(super) struct Frame {
     rect: Rect,
     toolbar: Rect,
     history: Option<Rect>,
+    locations: Option<Rect>,
+    summary: Vec<String>,
+    unit: i32,
     files: Rect,
     preview: Rect,
     title: String,
@@ -168,6 +177,7 @@ struct Layout {
     rect: Rect,
     toolbar: Rect,
     history: Option<Rect>,
+    locations: Option<Rect>,
     files: Rect,
     preview: Rect,
     row: i32,
@@ -218,14 +228,33 @@ impl Layout {
             s.git_workspace.preferences,
             s.git_workspace.active,
         );
+        let locations = g
+            .history
+            .filter(|r| w >= s.dpi.pixels(1200) && r.right - r.left >= s.dpi.pixels(340))
+            .map(|r| {
+                rect(
+                    r.left,
+                    r.top,
+                    r.left
+                        + s.dpi
+                            .pixels(if w >= s.dpi.pixels(1400) { 185 } else { 140 }),
+                    r.bottom,
+                )
+            });
         Self {
             rect: g.rect,
             toolbar: g.toolbar,
-            history: g.history,
+            history: g.history.map(|mut r| {
+                if let Some(side) = locations {
+                    r.left = side.right + 1;
+                }
+                r
+            }),
+            locations,
             files: g.files.unwrap_or_else(|| rect(0, 0, 0, 0)),
             preview: g.preview.unwrap_or_else(|| rect(0, 0, 0, 0)),
-            row: s.dpi.pixels(46),
-            head: s.dpi.pixels(44),
+            row: s.dpi.pixels(52),
+            head: s.dpi.pixels(36),
             dividers: g.dividers,
         }
     }
@@ -325,9 +354,9 @@ impl State {
         for (r, text, intent, selected) in [
             (
                 rect(
-                    (right - p(252)).max(0),
+                    (right - p(204)).max(p(320)),
                     layout.toolbar.top + p(8),
-                    (right - p(148)).max(0),
+                    (right - p(94)).max(p(320)),
                     layout.toolbar.top + p(34),
                 ),
                 "Actualizar",
@@ -336,16 +365,19 @@ impl State {
             ),
             (
                 rect(
-                    (right - p(140)).max(0),
+                    (right - p(88)).max(p(320)),
                     layout.toolbar.top + p(8),
                     right - p(8),
                     layout.toolbar.top + p(34),
                 ),
-                "Volver al código",
+                "Código",
                 Intent::Close,
                 false,
             ),
         ] {
+            if right < p(700) {
+                continue;
+            }
             actions.push((r, intent));
             buttons.push((r, text.to_owned(), selected));
         }
@@ -390,7 +422,9 @@ impl State {
             rows.push(FileRow {
                 rect: r,
                 name,
-                detail: format!("{description} · {path}"),
+                detail: path
+                    .rsplit_once('/')
+                    .map_or_else(|| description.into(), |(dir, _)| dir.into()),
                 tag,
                 color,
                 selected: index == selected,
@@ -398,6 +432,14 @@ impl State {
             actions.push((r, Intent::File(index)));
         }
         let mut commits = Vec::new();
+        let mut summary = if self.git_workspace.history_commit.is_some() {
+            Vec::new()
+        } else {
+            vec![
+                "Cambios locales".into(),
+                format!("{} archivos · consulta de solo lectura", entries.len()),
+            ]
+        };
         let mut details = Vec::new();
         if let Some(info) = snapshot.and_then(|s| s.info()) {
             if self
@@ -408,8 +450,15 @@ impl State {
                 self.git_workspace.commit = None;
             }
             if let Some(area) = layout.history {
-                let count =
-                    ((area.bottom - area.top - layout.head) / p(53).max(1)).clamp(0, 24) as usize;
+                let local = rect(
+                    area.left,
+                    area.top + layout.head,
+                    area.right,
+                    (area.top + layout.head + p(56)).min(area.bottom),
+                );
+                actions.push((local, Intent::Local));
+                let count = ((area.bottom - area.top - layout.head - p(56)) / p(64).max(1))
+                    .clamp(0, 24) as usize;
                 let chosen = self
                     .git_workspace
                     .commit
@@ -421,8 +470,8 @@ impl State {
                     .history_first
                     .min(info.commits.len().saturating_sub(count));
                 for (index, c) in info.commits.iter().enumerate().skip(start).take(count) {
-                    let top = area.top + layout.head + (index - start) as i32 * p(53);
-                    let r = rect(area.left, top, area.right, (top + p(53)).min(area.bottom));
+                    let top = area.top + layout.head + p(56) + (index - start) as i32 * p(64);
+                    let r = rect(area.left, top, area.right, (top + p(64)).min(area.bottom));
                     commits.push(CommitRow {
                         rect: r,
                         title: opaque(&c.summary, 160),
@@ -431,13 +480,33 @@ impl State {
                             &c.id[..c.id.len().min(8)],
                             opaque(&c.author, 80)
                         ),
-                        selected: self.git_workspace.commit == Some(index),
+                        selected: self
+                            .git_workspace
+                            .history_commit
+                            .as_ref()
+                            .map_or(self.git_workspace.commit == Some(index), |id| id == &c.id),
                         merge: c.parents.len() > 1,
                     });
                     actions.push((r, Intent::Commit(index)));
                 }
             }
-            if let Some(c) = self.git_workspace.commit.and_then(|i| info.commits.get(i)) {
+            if let Some(c) = self
+                .git_workspace
+                .history_commit
+                .as_ref()
+                .and_then(|id| info.commits.iter().find(|c| &c.id == id))
+                .or_else(|| {
+                    self.git_workspace
+                        .history_commit
+                        .is_none()
+                        .then(|| self.git_workspace.commit.and_then(|i| info.commits.get(i)))
+                        .flatten()
+                })
+            {
+                summary = vec![
+                    opaque(&c.summary, 256),
+                    format!("{} · {}", opaque(&c.author, 96), &c.id[..c.id.len().min(8)]),
+                ];
                 details = vec![
                     opaque(&c.summary, 256),
                     format!("Autor: {}", opaque(&c.author, 96)),
@@ -504,7 +573,7 @@ impl State {
                                         layout.preview.right - p(12),
                                         layout.preview.bottom - p(14),
                                     ),
-                                    layout.preview.top + p(148),
+                                    layout.preview.top + p(164),
                                     self.cell_height,
                                 ),
                                 mode: self.git_workspace.diff_mode(),
@@ -513,7 +582,7 @@ impl State {
                             },
                         );
                         code = self.git_workspace.set_projection(projection);
-                        let y = layout.preview.top + p(112);
+                        let y = layout.preview.top + p(128);
                         let start = layout.preview.left + p(12);
                         for (n, text, intent) in [
                             (0, "Anterior", Intent::Hunk(-1)),
@@ -554,7 +623,36 @@ impl State {
         } else {
             "Cambios locales".into()
         };
-        Some(Frame{hits:Hits{stamp:self.git_workspace_stamp(),actions},rect:layout.rect,toolbar:layout.toolbar,history:layout.history,files:layout.files,preview:layout.preview,title,branch,count,overlays:Vec::new(),rails:Vec::new(),dividers:Vec::new(),historical:false,details_top:p(148),message,subtitle,buttons,commits,rows,code,details,footer:"Solo lectura · P preparados · T disco · comparaciones con buffer explícitas · Esc vuelve".into()})
+        Some(Frame {
+            locations: layout.locations,
+            summary,
+            unit: p(100),
+            hits: Hits {
+                stamp: self.git_workspace_stamp(),
+                actions,
+            },
+            rect: layout.rect,
+            toolbar: layout.toolbar,
+            history: layout.history,
+            files: layout.files,
+            preview: layout.preview,
+            title,
+            branch,
+            count,
+            overlays: Vec::new(),
+            rails: Vec::new(),
+            dividers: Vec::new(),
+            historical: false,
+            details_top: p(164),
+            message,
+            subtitle,
+            buttons,
+            commits,
+            rows,
+            code,
+            details,
+            footer: "Solo lectura · Comparación local · Esc vuelve al editor".into(),
+        })
     }
     pub(super) fn git_workspace_click(&mut self, x: i32, y: i32) -> Action {
         let Some(hits) = self
@@ -765,7 +863,8 @@ impl State {
                 .and_then(|r| r.info())
                 .map_or(0, |i| i.commits.len());
             let page = l.history.map_or(0, |r| {
-                ((r.bottom - r.top - l.head) / self.dpi.pixels(53).max(1)).max(0) as usize
+                ((r.bottom - r.top - l.head - self.dpi.pixels(56)) / self.dpi.pixels(64).max(1))
+                    .max(0) as usize
             });
             self.git_workspace.history_first = self
                 .git_workspace
@@ -804,215 +903,345 @@ pub(super) unsafe fn draw(
     code_font: Handle,
     ui_font: Handle,
 ) -> Result<(), String> {
+    let p = |v: i32| ((i64::from(v) * i64::from(f.unit)) / 100) as i32;
     paint::fill(dc, f.rect, shell::BACKGROUND)?;
-    paint::fill(dc, f.toolbar, shell::SURFACE)?;
+    paint::fill(dc, f.toolbar, PANEL)?;
     SelectObject(dc, ui_font);
-    text(
-        dc,
-        rect(
-            14,
-            f.toolbar.top + 6,
-            (f.toolbar.right - 266).max(14),
-            f.toolbar.top + 32,
-        ),
-        &format!("{} · {}", f.title, f.branch),
-        shell::TEXT,
-        shell::SURFACE,
-    )?;
-    if let Some(area) = f.history {
-        paint::fill(dc, area, shell::SIDEBAR)?;
+    if f.toolbar.right >= p(800) {
+        let compact = f.history.is_none()
+            || f.files.right == f.files.left
+            || f.preview.right == f.preview.left;
         text(
             dc,
-            rect(area.left + 12, area.top + 10, area.right - 8, area.top + 36),
-            "HISTORIAL LOCAL",
-            shell::MUTED,
+            rect(
+                p(if compact { 440 } else { 240 }),
+                f.toolbar.top + p(8),
+                (f.toolbar.right - p(215)).max(0),
+                f.toolbar.top + p(34),
+            ),
+            &format!("{}   /   {}", f.title, f.branch),
+            shell::TEXT,
+            PANEL,
+        )?;
+    }
+    if let Some(area) = f.locations {
+        paint::fill(dc, area, shell::SIDEBAR)?;
+        paint::fill(
+            dc,
+            rect(area.left, area.top, area.right, area.top + p(36)),
+            PANEL,
+        )?;
+        text(
+            dc,
+            rect(
+                area.left + p(14),
+                area.top + p(9),
+                area.right - p(8),
+                area.top + p(32),
+            ),
+            "UBICACIONES",
+            MUTED,
+            PANEL,
+        )?;
+        text(
+            dc,
+            rect(
+                area.left + p(14),
+                area.top + p(49),
+                area.right - p(8),
+                area.top + p(74),
+            ),
+            "RAMA ACTUAL",
+            MUTED,
             shell::SIDEBAR,
         )?;
-        for c in &f.commits {
-            let bg = if c.selected {
-                shell::SELECTED
+        let branch = rect(area.left, area.top + p(82), area.right, area.top + p(111));
+        paint::fill(dc, branch, SELECTION)?;
+        text(
+            dc,
+            rect(
+                branch.left + p(24),
+                branch.top + p(4),
+                branch.right - p(8),
+                branch.bottom,
+            ),
+            &f.branch,
+            ACCENT,
+            SELECTION,
+        )?;
+        text(
+            dc,
+            rect(
+                area.left + p(14),
+                area.top + p(145),
+                area.right - p(8),
+                area.top + p(171),
+            ),
+            "REPOSITORIO",
+            MUTED,
+            shell::SIDEBAR,
+        )?;
+        text(
+            dc,
+            rect(
+                area.left + p(24),
+                area.top + p(177),
+                area.right - p(8),
+                area.top + p(201),
+            ),
+            &f.title,
+            shell::TEXT,
+            shell::SIDEBAR,
+        )?;
+        paint::fill(
+            dc,
+            rect(area.right, area.top, area.right + 1, area.bottom),
+            BORDER,
+        )?;
+    }
+    if let Some(area) = f.history {
+        paint::fill(dc, area, PANEL)?;
+        paint::fill(
+            dc,
+            rect(area.left, area.top, area.right, area.top + p(36)),
+            HEADER,
+        )?;
+        text(
+            dc,
+            rect(
+                area.left + p(14),
+                area.top + p(9),
+                area.right - p(8),
+                area.top + p(32),
+            ),
+            "HISTORIAL",
+            MUTED,
+            HEADER,
+        )?;
+        let local = rect(
+            area.left,
+            area.top + p(36),
+            area.right,
+            (area.top + p(92)).min(area.bottom),
+        );
+        let local_bg = if !f.historical { SELECTION } else { PANEL };
+        paint::fill(dc, local, local_bg)?;
+        text(
+            dc,
+            rect(
+                local.left + p(30),
+                local.top + p(5),
+                local.right - p(10),
+                local.top + p(28),
+            ),
+            "Cambios locales",
+            shell::TEXT,
+            local_bg,
+        )?;
+        text(
+            dc,
+            rect(
+                local.left + p(30),
+                local.top + p(28),
+                local.right - p(10),
+                local.bottom,
+            ),
+            if f.historical {
+                "Ver estado del repositorio"
             } else {
-                shell::SIDEBAR
-            };
+                &f.count
+            },
+            MUTED,
+            local_bg,
+        )?;
+        for c in &f.commits {
+            let bg = if c.selected { SELECTION } else { PANEL };
             paint::fill(dc, c.rect, bg)?;
             paint::fill(
                 dc,
                 rect(
-                    c.rect.left + 11,
+                    c.rect.left + p(19),
                     c.rect.top,
-                    c.rect.left + 12,
+                    c.rect.left + p(20),
                     c.rect.bottom,
                 ),
-                shell::MUTED,
+                ACCENT,
             )?;
             paint::fill(
                 dc,
                 rect(
-                    c.rect.left + 8,
-                    c.rect.top + 16,
-                    c.rect.left + 16,
-                    c.rect.top + 24,
+                    c.rect.left + p(16),
+                    c.rect.top + p(16),
+                    c.rect.left + p(23),
+                    c.rect.top + p(23),
                 ),
-                if c.selected {
-                    shell::ACCENT
-                } else {
-                    shell::MUTED
-                },
+                ACCENT,
             )?;
             text(
                 dc,
                 rect(
-                    c.rect.left + 24,
-                    c.rect.top + 5,
-                    c.rect.right - 10,
-                    c.rect.top + 28,
+                    c.rect.left + p(34),
+                    c.rect.top + p(7),
+                    c.rect.right - p(10),
+                    c.rect.top + p(31),
                 ),
                 &c.title,
                 shell::TEXT,
                 bg,
             )?;
-            let detail = if c.merge {
-                format!("↗ {}", c.detail)
-            } else {
-                c.detail.clone()
-            };
             text(
                 dc,
                 rect(
-                    c.rect.left + 24,
-                    c.rect.top + 27,
-                    c.rect.right - 10,
-                    c.rect.bottom,
+                    c.rect.left + p(34),
+                    c.rect.top + p(33),
+                    c.rect.right - p(10),
+                    c.rect.bottom - p(5),
                 ),
-                &detail,
-                shell::MUTED,
+                &if c.merge {
+                    format!("Integración · {}", c.detail)
+                } else {
+                    c.detail.clone()
+                },
+                MUTED,
                 bg,
             )?;
         }
     }
-    paint::fill(dc, f.files, shell::SIDEBAR)?;
-    text(
-        dc,
-        rect(
-            f.files.left + 12,
-            f.files.top + 6,
-            f.files.right - 10,
-            f.files.top + 25,
-        ),
-        if f.historical {
-            "ARCHIVOS DEL COMMIT"
-        } else {
-            "CAMBIOS LOCALES"
-        },
-        shell::MUTED,
-        shell::SIDEBAR,
-    )?;
-    text(
-        dc,
-        rect(
-            f.files.left + 12,
-            f.files.top + 25,
-            f.files.right - 10,
-            f.files.top + 43,
-        ),
-        &f.count,
-        shell::MUTED,
-        shell::SIDEBAR,
-    )?;
-    for row in &f.rows {
-        let bg = if row.selected {
-            shell::SELECTED
-        } else {
-            shell::SIDEBAR
-        };
-        paint::fill(dc, row.rect, bg)?;
-        text(
+    if f.files.right > f.files.left {
+        paint::fill(dc, f.files, shell::SIDEBAR)?;
+        paint::fill(
             dc,
             rect(
-                row.rect.left + 10,
-                row.rect.top + 6,
-                row.rect.left + 30,
-                row.rect.bottom - 10,
+                f.files.left,
+                f.files.top,
+                f.files.right,
+                f.files.top + p(36),
             ),
-            row.tag,
-            row.color,
-            bg,
+            HEADER,
         )?;
         text(
             dc,
             rect(
-                row.rect.left + 35,
-                row.rect.top + 4,
-                row.rect.right - 8,
-                row.rect.top + 25,
+                f.files.left + p(12),
+                f.files.top + p(9),
+                f.files.right - p(10),
+                f.files.top + p(32),
             ),
-            &row.name,
-            shell::TEXT,
-            bg,
-        )?;
-        text(
-            dc,
-            rect(
-                row.rect.left + 35,
-                row.rect.top + 24,
-                row.rect.right - 8,
-                row.rect.bottom,
+            &format!(
+                "ARCHIVOS · {}",
+                f.count.strip_suffix(" archivos").unwrap_or(&f.count)
             ),
-            &row.detail,
-            shell::MUTED,
-            bg,
+            MUTED,
+            HEADER,
         )?;
-    }
-    if !f.message.is_empty() {
-        text(
-            dc,
-            rect(
-                f.files.left + 14,
-                f.files.top + 48,
-                f.files.right - 12,
-                f.files.top + 100,
-            ),
-            &f.message,
-            shell::MUTED,
-            shell::SIDEBAR,
-        )?;
-    }
-    paint::fill(
-        dc,
-        rect(
-            f.preview.left,
-            f.preview.top,
-            f.preview.left + 1,
-            f.preview.bottom,
-        ),
-        shell::SURFACE,
-    )?;
-    text(
-        dc,
-        rect(
-            f.preview.left + 12,
-            f.preview.top + 9,
-            f.preview.right - 10,
-            f.preview.top + 35,
-        ),
-        &f.subtitle,
-        shell::TEXT,
-        shell::BACKGROUND,
-    )?;
-    if !f.details.is_empty() {
-        for (i, line) in f.details.iter().enumerate() {
+        for row in &f.rows {
+            let bg = if row.selected {
+                SELECTION
+            } else {
+                shell::SIDEBAR
+            };
+            paint::fill(dc, row.rect, bg)?;
             text(
                 dc,
                 rect(
-                    f.preview.left + 18,
-                    f.preview.top + f.details_top + i as i32 * 34,
-                    f.preview.right - 18,
-                    f.preview.top + f.details_top + 30 + i as i32 * 34,
+                    row.rect.left + p(12),
+                    row.rect.top + p(7),
+                    row.rect.left + p(29),
+                    row.rect.bottom,
                 ),
-                line,
-                if i == 0 { shell::ACCENT } else { shell::TEXT },
+                row.tag,
+                row.color,
+                bg,
+            )?;
+            text(
+                dc,
+                rect(
+                    row.rect.left + p(34),
+                    row.rect.top + p(4),
+                    row.rect.right - p(8),
+                    row.rect.top + p(27),
+                ),
+                &row.name,
+                shell::TEXT,
+                bg,
+            )?;
+            text(
+                dc,
+                rect(
+                    row.rect.left + p(34),
+                    row.rect.top + p(27),
+                    row.rect.right - p(8),
+                    row.rect.bottom,
+                ),
+                &row.detail,
+                MUTED,
+                bg,
+            )?;
+        }
+        if !f.message.is_empty() {
+            text(
+                dc,
+                rect(
+                    f.files.left + p(14),
+                    f.files.top + p(48),
+                    f.files.right - p(12),
+                    f.files.top + p(104),
+                ),
+                &f.message,
+                MUTED,
+                shell::SIDEBAR,
+            )?;
+        }
+    }
+    if f.preview.right > f.preview.left {
+        let a = f.preview;
+        paint::fill(dc, rect(a.left, a.top, a.right, a.top + p(32)), PANEL)?;
+        text(
+            dc,
+            rect(
+                a.left + p(if f.historical { 280 } else { 14 }),
+                a.top + p(5),
+                a.right - p(10),
+                a.top + p(29),
+            ),
+            &f.subtitle,
+            MUTED,
+            PANEL,
+        )?;
+        for (i, s) in f.summary.iter().take(2).enumerate() {
+            text(
+                dc,
+                rect(
+                    a.left + p(18),
+                    a.top + p(42 + i as i32 * 26),
+                    a.right - p(16),
+                    a.top + p(66 + i as i32 * 26),
+                ),
+                s,
+                if i == 0 { shell::TEXT } else { MUTED },
                 shell::BACKGROUND,
             )?;
+        }
+        paint::fill(
+            dc,
+            rect(a.left, a.top + p(94), a.right, a.top + p(123)),
+            HEADER,
+        )?;
+        if !f.details.is_empty() {
+            for (i, s) in f.details.iter().enumerate() {
+                text(
+                    dc,
+                    rect(
+                        a.left + p(18),
+                        a.top + f.details_top + p(i as i32 * 28),
+                        a.right - p(18),
+                        a.top + f.details_top + p(26 + i as i32 * 28),
+                    ),
+                    s,
+                    MUTED,
+                    shell::BACKGROUND,
+                )?;
+            }
         }
     }
     SelectObject(dc, code_font);
@@ -1036,7 +1265,7 @@ pub(super) unsafe fn draw(
             } else {
                 &row.old
             },
-            shell::MUTED,
+            MUTED,
             bg,
         )?;
         if !row.parallel {
@@ -1049,7 +1278,7 @@ pub(super) unsafe fn draw(
                     row.rect.bottom,
                 ),
                 &row.new,
-                shell::MUTED,
+                MUTED,
                 bg,
             )?;
         }
@@ -1062,40 +1291,52 @@ pub(super) unsafe fn draw(
                 row.rect.bottom,
             ),
             &row.text,
-            match row.kind {
-                -1 => RED,
-                1 => GREEN,
-                _ => shell::TEXT,
-            },
+            shell::TEXT,
             bg,
         )?;
     }
     SelectObject(dc, ui_font);
     for (r, name, selected) in &f.buttons {
+        if r.right <= r.left {
+            continue;
+        }
         let bg = if *selected {
-            shell::SELECTED
+            SELECTION
+        } else if r.top < f.toolbar.bottom {
+            PANEL
         } else {
-            shell::RAISED
+            shell::BACKGROUND
         };
         paint::fill(dc, *r, bg)?;
         text(
             dc,
-            rect(r.left + 7, r.top + 4, r.right - 4, r.bottom),
+            rect(r.left + p(7), r.top + p(3), r.right - p(4), r.bottom),
             name,
-            shell::TEXT,
+            if *selected { ACCENT } else { shell::TEXT },
             bg,
         )?;
+        if *selected {
+            paint::fill(dc, rect(r.left, r.bottom - p(2), r.right, r.bottom), ACCENT)?;
+        }
+    }
+    for a in [f.history, Some(f.files), Some(f.preview)]
+        .into_iter()
+        .flatten()
+    {
+        if a.right > a.left {
+            paint::fill(dc, rect(a.left, a.top, a.left + 1, a.bottom), BORDER)?;
+        }
     }
     text(
         dc,
         rect(
-            f.rect.left + 12,
-            f.rect.bottom - 21,
-            f.rect.right - 12,
+            f.rect.left + p(12),
+            f.rect.bottom - p(22),
+            f.rect.right - p(12),
             f.rect.bottom,
         ),
         &f.footer,
-        shell::MUTED,
+        MUTED,
         shell::BACKGROUND,
     )?;
     controls::draw(dc, f, ui_font)?;
@@ -1105,6 +1346,56 @@ pub(super) unsafe fn draw(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn requested_historical_summary_never_falls_back_to_local_changes() {
+        let mut s = State::new(&crate::GuiOptions::default()).unwrap();
+        s.git_panel = Some(GitIntent::Status);
+        s.git_workspace.history_commit = Some("0123456789012345678901234567890123456789".into());
+        let f = s.prepare_git_workspace().unwrap();
+        assert_eq!(f.summary[0], "Revisión histórica");
+        assert_eq!(f.summary[1], "012345678901");
+        assert!(!f.summary.iter().any(|s| s.contains("Cambios locales")));
+    }
+    #[test]
+    fn redesign_locations_and_toolbar_adapt_without_overlapping_actions_or_editing() {
+        let mut s = State::new(&crate::GuiOptions::default()).unwrap();
+        s.git_panel = Some(GitIntent::Status);
+        let before = s.workbench.active_bytes().unwrap();
+        for dpi in [96, 144, 192] {
+            s.dpi = super::super::dpi::Dpi::from_raw(dpi);
+            for width in [320, 800, 1200, 1680] {
+                s.width = s.dpi.pixels(width);
+                s.height = s.dpi.pixels(960);
+                let l = Layout::new(&s);
+                assert_eq!(l.locations.is_some(), width >= 1200);
+                if let Some(r) = l.locations {
+                    assert!(r.right < l.history.unwrap().left);
+                    assert_eq!(
+                        r.right - r.left,
+                        s.dpi.pixels(if width >= 1400 { 185 } else { 140 })
+                    );
+                }
+                let f = s.prepare_git_workspace().unwrap();
+                let toolbar: Vec<_> = f
+                    .hits
+                    .actions
+                    .iter()
+                    .filter(|(r, _)| {
+                        r.top >= l.toolbar.top && r.bottom <= l.toolbar.bottom && r.right > r.left
+                    })
+                    .collect();
+                for (i, (a, _)) in toolbar.iter().enumerate() {
+                    for (b, _) in &toolbar[i + 1..] {
+                        assert!(
+                            a.right <= b.left || b.right <= a.left,
+                            "overlapping toolbar at {width}/{dpi}"
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(s.workbench.active_bytes().unwrap(), before);
+    }
     #[test]
     fn workspace_geometry_is_tiled_compact_and_bounded_without_editor_cell_layout() {
         let mut s = State::new(&crate::GuiOptions::default()).unwrap();

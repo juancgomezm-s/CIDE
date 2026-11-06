@@ -1,3 +1,28 @@
+## Rediseño visual Git — 2026-11-06
+
+[Diseño implementado y límites](G2_GIT_VISUAL_REDESIGN.md). Barra de 42 dp,
+controles planos, ubicaciones adaptables, historial con cambios locales, archivos
+en dos líneas y diff amplio con tema oscuro. Corregidos los hits ocultos de
+pestañas que interceptaban la barra Git y la identidad del resumen histórico.
+Sin nuevas operaciones Git/TUI/dependencias ni cambios de recuperación.
+
+111 casos GUI/entrada aprobaron y el cierre dirigido posterior aprobó 31;
+112 casos distintos en total, no una nueva corrida completa del workspace.
+Formato, Clippy workspace/todos los destinos offline y release aprobados.
+25 comprobaciones HWND dirigidas Git aprobaron con PATH vacío, fixture e índice/
+objetos/configuración intactos. La suite HWND completa sigue detenida antes de
+Git en Guardar todo por acceso denegado; también se reproduce con el binario previo.
+No se declara aprobada esa suite. Evidencia y fallos conservados en el JSON del bloque.
+
+Binarios actuales: `target/git-redesign-next/release`, anteriores preservados.
+[Imagen real del pintor GDI](evidence/g2-git-redesign-native.png), con datos de prueba;
+no es una captura física. Se observaron apertura visible, maximización y comparación
+por clics; la última revisión fue interrumpida por Esc. No se confirmó salida de la
+última instancia de prueba. Juan está trabajando: no tomar escritorio para cerrar
+ese pendiente. Recuperación personal deshabilitada en las pruebas.
+Mostrar el resultado antes de agregar funciones. IME excluido, Narrador aplazado,
+segundo monitor/latencia global sin verificar; CI y push no ejecutados.
+
 # Validación
 
 ## Distribución Git y comparación paralela — 2026-11-06

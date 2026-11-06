@@ -51,7 +51,7 @@ pub(in crate::windows) unsafe fn run(
             || f.code.is_empty()
             || f.code.iter().any(|r| !r.parallel)
         {
-            return Err("Parallel mode did not project both sources".into());
+            return Err(format!("Parallel projection: parallel={}, cells={}, geometry={}x{}, nonparallel={}, hunks={}", s.git_workspace.preferences.parallel, f.code.len(), s.width,s.height,f.code.iter().filter(|r|!r.parallel).count(),s.git_diff.result().map_or(0,|r|r.model.hunks().count())));
         }
     }
     if let Some(path) = bitmap {
@@ -144,6 +144,30 @@ pub(in crate::windows) unsafe fn run(
     checks.push("git_layout_native_menu_four_arrangements_same_accepted_sources");
     checks.push("git_parallel_native_projection_and_gdi_preserve_source_geometry");
     checks.push("git_rails_and_divider_native_capture_move_release");
+    // Real GDI composition at the approved desktop proportions, using only
+    // the already accepted fixture comparison. This is not a physical capture.
+    if let Some(path) = bitmap {
+        let (width, height) = {
+            let mut s = owner(hwnd).unwrap().state.borrow_mut();
+            let old = (s.width, s.height);
+            s.width = s.dpi.pixels(1280).min(2048);
+            s.height = s.dpi.pixels(800).min(2048);
+            s.git_workspace.preferences = Preferences::default();
+            s.git_workspace.diff_first = 0;
+            s.git_workspace.diff_column = 0;
+            s.git_workspace.invalidate();
+            let _ = paint::prepare(&mut s); // Settle the deliberate fixture resize.
+            old
+        };
+        git_smoke::readonly_frame(
+            hwnd,
+            Some(&path.with_file_name("native-git-redesign-wide.bmp")),
+        )?;
+        let mut s = owner(hwnd).unwrap().state.borrow_mut();
+        s.width = width;
+        s.height = height;
+        s.git_workspace.invalidate();
+    }
     owner(hwnd)
         .unwrap()
         .state

@@ -6,7 +6,8 @@ impl State {
     pub(super) fn add_git_sources(&self, frame: &mut Frame) {
         let l = Layout::new(self);
         let p = |n| self.dpi.pixels(n);
-        let width = ((l.preview.right - l.preview.left - p(28)) / 2).max(0);
+        let available = (l.preview.right - l.preview.left - p(24)).max(0);
+        let width = ((available - p(12)) / 4).clamp(p(90), p(126));
         for (i, (name, intent, selected)) in [
             (
                 "HEAD → buffer",
@@ -32,10 +33,10 @@ impl State {
         .into_iter()
         .enumerate()
         {
-            let left = l.preview.left + p(12) + (i % 2) as i32 * (width + p(4));
-            let top = l.preview.top + p(40) + (i / 2) as i32 * p(32);
-            let r = rect(left, top, left + width, top + p(28));
-            if width > p(36) && r.bottom < l.preview.bottom {
+            let left = l.preview.left + p(12) + i as i32 * (width + p(4));
+            let top = l.preview.top + p(96);
+            let r = rect(left, top, left + width, top + p(24));
+            if r.right <= l.preview.right - p(12) && r.bottom < l.preview.bottom {
                 frame.buttons.push((r, name.into(), selected));
                 frame.hits.actions.push((r, intent));
             }
@@ -84,19 +85,32 @@ impl State {
         frame.hits.actions.retain(|(_, a)| {
             matches!(
                 a,
-                Intent::Refresh | Intent::Close | Intent::File(_) | Intent::Commit(_)
+                Intent::Refresh
+                    | Intent::Close
+                    | Intent::File(_)
+                    | Intent::Commit(_)
+                    | Intent::Local
             )
         });
         self.add_git_sources(&mut frame);
+        frame.summary = vec![
+            match self.git_workspace.local_kind {
+                Some(PairKind::Prepared) => "Cambios preparados",
+                _ => "Cambios sin preparar",
+            }
+            .into(),
+            self.git_workspace.selected_path.as_ref().map_or_else(
+                || "Selecciona un archivo cambiado".into(),
+                |path| opaque(path, 200),
+            ),
+        ];
         frame.subtitle = match self.git_workspace.local_kind {
             Some(PairKind::Prepared) => "Preparados: HEAD → índice · bytes originales",
             _ => "En disco: índice → disco · bytes originales",
         }
         .into();
-        frame.footer =
-            "Solo lectura · Tab lista/comparación · Intro compara · F5 nueva captura · Esc vuelve"
-                .into();
-        frame.details_top = p(148);
+        frame.footer = "Solo lectura · Índice y archivo en disco".into();
+        frame.details_top = p(164);
         if let Some(notice) = &self.git_workspace.notice {
             frame.details.push(label(notice, 256));
         } else if let Some(c) = self.git_revision.comparison() {
@@ -107,9 +121,9 @@ impl State {
             );
             let codec = rect(
                 l.preview.left + p(12),
-                l.preview.top + p(108),
+                l.preview.top + p(128),
                 l.preview.left + p(200),
-                l.preview.top + p(138),
+                l.preview.top + p(152),
             );
             if codec.right < l.preview.right {
                 frame.buttons.push((
@@ -124,9 +138,9 @@ impl State {
             for (i, name, delta) in [(0, "Anterior", -1), (1, "Siguiente", 1)] {
                 let r = rect(
                     l.preview.left + p(204) + i * p(82),
-                    l.preview.top + p(108),
+                    l.preview.top + p(128),
                     l.preview.left + p(282) + i * p(82),
-                    l.preview.top + p(138),
+                    l.preview.top + p(152),
                 );
                 if r.right < l.preview.right {
                     frame.buttons.push((r, name.into(), false));
@@ -150,7 +164,7 @@ impl State {
                                 l.preview.right - p(12),
                                 l.preview.bottom - p(14),
                             ),
-                            l.preview.top + p(148),
+                            l.preview.top + p(164),
                             self.cell_height,
                         ),
                         mode: self.git_workspace.diff_mode(),
@@ -257,6 +271,23 @@ mod tests {
                 .count(),
             4
         );
+        let source_tabs: Vec<_> = f
+            .hits
+            .actions
+            .iter()
+            .filter(|(_, a)| matches!(a, Intent::Source(_) | Intent::Pair(_)))
+            .map(|(r, _)| *r)
+            .collect();
+        for pair in source_tabs.windows(2) {
+            assert_eq!(pair[0].top, pair[1].top);
+            assert!(pair[0].right < pair[1].left);
+        }
+        assert!(source_tabs.iter().all(|r| {
+            r.top == f.preview.top + s.dpi.pixels(96)
+                && r.bottom == f.preview.top + s.dpi.pixels(120)
+                && r.right <= f.preview.right - s.dpi.pixels(12)
+        }));
+        assert_eq!(f.details_top, s.dpi.pixels(164));
         assert!(!f
             .hits
             .actions

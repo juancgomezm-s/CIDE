@@ -160,19 +160,47 @@ impl State {
     pub(in crate::windows) fn prepare_git_controls(&mut self, frame: &mut Frame) {
         let l = Layout::new(self);
         let p = |v| self.dpi.pixels(v);
-        for (i, name, intent, selected) in [
-            (
-                0,
-                "Distribución ▾",
-                Intent::DistributionMenu,
-                self.git_workspace.menu.is_some(),
-            ),
-            (
-                1,
+        let column_count = usize::from(l.history.is_some())
+            + usize::from(l.files.right > l.files.left)
+            + usize::from(l.preview.right > l.preview.left);
+        let compact = column_count < 3;
+        let mut controls = vec![(
+            p(if compact { 92 } else { 104 }),
+            "Paneles ▾",
+            Intent::DistributionMenu,
+            self.git_workspace.menu.is_some(),
+        )];
+        if compact {
+            // Area tabs are navigation for hidden panes, not redundant controls
+            // above a full-size workspace. All three fit at 320 logical pixels.
+            controls.extend([
+                (
+                    p(70),
+                    "Historial",
+                    Intent::Column(Column::History),
+                    self.git_workspace.active == Column::History,
+                ),
+                (
+                    p(68),
+                    "Archivos",
+                    Intent::Column(Column::Files),
+                    self.git_workspace.active == Column::Files,
+                ),
+                (
+                    p(60),
+                    "Comparar",
+                    Intent::Column(Column::Comparison),
+                    self.git_workspace.active == Column::Comparison,
+                ),
+            ]);
+        }
+        if !compact || l.toolbar.right >= p(800) {
+            controls.push((
+                p(104),
                 if self.git_workspace.preferences.parallel {
-                    "Vista: paralela"
+                    "Paralela"
                 } else {
-                    "Vista: unificada"
+                    "Unificada"
                 },
                 Intent::DiffView(if self.git_workspace.preferences.parallel {
                     DiffView::Unified
@@ -180,38 +208,21 @@ impl State {
                     DiffView::Parallel
                 }),
                 false,
-            ),
-            (
-                2,
-                "Historial",
-                Intent::Column(Column::History),
-                self.git_workspace.active == Column::History,
-            ),
-            (
-                3,
-                "Archivos",
-                Intent::Column(Column::Files),
-                self.git_workspace.active == Column::Files,
-            ),
-            (
-                4,
-                "Comparación",
-                Intent::Column(Column::Comparison),
-                self.git_workspace.active == Column::Comparison,
-            ),
-        ] {
-            let widths = [p(136), p(138), p(90), p(90), p(112)];
-            let left = p(10) + widths[..i].iter().sum::<i32>() + i as i32 * p(4);
+            ));
+        }
+        let mut left = p(10);
+        for (width, name, intent, selected) in controls {
             let r = rect(
                 left,
-                l.toolbar.top + p(40),
-                left + widths[i],
-                l.toolbar.top + p(68),
+                l.toolbar.top + p(7),
+                left + width,
+                l.toolbar.top + p(35),
             );
             if r.right <= l.toolbar.right - p(6) {
                 frame.buttons.push((r, name.into(), selected));
                 frame.hits.actions.push((r, intent));
             }
+            left += width + p(4);
         }
         for (r, d) in &l.dividers {
             frame.dividers.push(*r);
@@ -521,7 +532,9 @@ impl State {
 pub(super) unsafe fn draw(dc: Hdc, frame: &Frame, font: Handle) -> Result<(), String> {
     SelectObject(dc, font);
     for r in &frame.dividers {
-        paint::fill(dc, *r, shell::RAISED)?;
+        paint::fill(dc, *r, PANEL)?;
+        let x = (r.left + r.right) / 2;
+        paint::fill(dc, rect(x, r.top, x + 1, r.bottom), BORDER)?;
     }
     for r in &frame.rails {
         paint::fill(dc, r.track, shell::SURFACE)?;
@@ -537,9 +550,11 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame, font: Handle) -> Result<(), St
     }
     for (r, name, selected) in &frame.overlays {
         let color = if *selected {
-            shell::SELECTED
+            SELECTION
+        } else if r.top < frame.toolbar.bottom {
+            PANEL
         } else {
-            shell::RAISED
+            HEADER
         };
         paint::fill(dc, *r, color)?;
         text(
@@ -569,6 +584,54 @@ mod tests {
         let f = s.prepare_git_workspace().unwrap();
         s.git_workspace.hits = Some(f.hits.clone());
         f
+    }
+    #[test]
+    fn compact_toolbar_keeps_hidden_areas_clickable_in_one_row() {
+        let mut s = state();
+        s.width = s.dpi.pixels(320);
+        let before = s.workbench.active_bytes().unwrap();
+        for expected in [Column::History, Column::Comparison, Column::Files] {
+            let frame = publish(&mut s);
+            let l = Layout::new(&s);
+            let r = frame
+                .hits
+                .actions
+                .iter()
+                .find_map(|(r, intent)| {
+                    matches!(intent, Intent::Column(c) if *c == expected).then_some(*r)
+                })
+                .unwrap();
+            assert!(r.top >= l.toolbar.top && r.bottom <= l.toolbar.bottom);
+            assert!(r.left >= 0 && r.right <= s.width);
+            s.git_workspace_click(r.left + 1, r.top + 1);
+            assert_eq!(s.git_workspace.active, expected);
+        }
+        assert_eq!(s.workbench.active_bytes().unwrap(), before);
+    }
+    #[test]
+    fn full_toolbar_omits_redundant_area_tabs() {
+        let mut s = state();
+        let frame = publish(&mut s);
+        assert!(!frame
+            .hits
+            .actions
+            .iter()
+            .any(|(_, a)| matches!(a, Intent::Column(_))));
+        let menu = frame
+            .hits
+            .actions
+            .iter()
+            .find_map(|(r, a)| matches!(a, Intent::DistributionMenu).then_some(*r))
+            .unwrap();
+        let view = frame
+            .hits
+            .actions
+            .iter()
+            .find_map(|(r, a)| matches!(a, Intent::DiffView(_)).then_some(*r))
+            .unwrap();
+        assert_eq!(menu.top, view.top);
+        assert!(menu.right < view.left);
+        assert!(view.right <= s.dpi.pixels(230));
     }
     #[test]
     fn compact_requested_three_keeps_all_columns_reachable_without_editing() {

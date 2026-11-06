@@ -389,9 +389,8 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     checks.push("git_local_pairs_gdi_and_enter_preserve_sources_and_editor_geometry");
     {
         let mut s = owner(hwnd).unwrap().state.borrow_mut();
-        let text = (0..160)
-            .map(|_| format!("{}final\n", "x".repeat(900)))
-            .collect::<String>();
+        let text = format!("\n/* Consulta de contacto: muestra propia de validación. */\nDEFINE VARIABLE cTelefono AS CHARACTER NO-UNDO.\n\nPROCEDURE obtenerTelefono:\n    DEFINE INPUT PARAMETER ipCliente AS INTEGER NO-UNDO.\n    IF orden_v_exten.udf_c[1] <> \"\" THEN DO:\n        cTelefono = orden_v_exten.udf_c[1].\n    END.\n    ELSE DO:\n        cTelefono = \"No tiene\".\n    END.\nEND PROCEDURE.\n\n{}",
+            (0..147).map(|_| format!("/* {} */\n", "Texto de prueba acotado. ".repeat(40))).collect::<String>());
         s.workbench.insert_text(&text).map_err(|e| e.to_string())?;
     }
     command(hwnd, CommandId::GitDiffHead)?;

@@ -31,6 +31,7 @@ pub struct SmokeOptions {
     pub syntax_only: bool,
     pub workflow_only: bool,
     pub shell_only: bool,
+    pub git_only: bool,
 }
 
 #[cfg(windows)]

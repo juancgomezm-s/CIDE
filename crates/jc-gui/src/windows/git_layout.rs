@@ -48,8 +48,8 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             arrangement: Arrangement::Three,
-            first: 200,
-            second: 420,
+            first: 300,
+            second: 440,
             parallel: false,
         }
     }
@@ -178,7 +178,7 @@ pub(super) fn layout(
     let bottom = bottom.clamp(top, height);
     let p = |n| dpi_pixels(n).clamp(1, 1_000_000);
     let body_bottom = bottom.saturating_sub(p(24)).max(top);
-    let body_top = top.saturating_add(p(76)).min(body_bottom);
+    let body_top = top.saturating_add(p(42)).min(body_bottom);
     let gap = p(6);
     let half = gap / 2;
     let remaining_half = gap - half;
@@ -329,7 +329,7 @@ mod tests {
                             active,
                         );
                         check_tiling(&g, w);
-                        assert_eq!(g.toolbar.bottom - g.toolbar.top, pixels(dpi, 76));
+                        assert_eq!(g.toolbar.bottom - g.toolbar.top, pixels(dpi, 42));
                         if design_width <= 320 || arrangement == Arrangement::One {
                             assert_eq!(
                                 usize::from(g.history.is_some())

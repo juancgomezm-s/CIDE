@@ -46,7 +46,9 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             );
         }
     }
-    if std::fs::read(&options.fixture).map_err(|e| e.to_string())? != b"alpha\r\nbeta\r\n" {
+    if std::fs::read(&options.fixture).map_err(|e| format!("Save fixture read: {e}"))?
+        != b"alpha\r\nbeta\r\n"
+    {
         return Err("Partial Save All changed fixture bytes".into());
     }
     expected(hwnd, "drafté\r\n".as_bytes())?;
@@ -70,7 +72,13 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         .smoke_save_paths
         .push_back(Some(destination.clone()));
     command(hwnd, CommandId::FileSaveAll)?;
-    if std::fs::read(&destination).map_err(|e| e.to_string())? != "drafté\r\n".as_bytes() {
+    if std::fs::read(&destination).map_err(|e| {
+        format!(
+            "Save assigned read: {e}; status={}",
+            owner(hwnd).unwrap().state.borrow().status
+        )
+    })? != "drafté\r\n".as_bytes()
+    {
         return Err("Save All explicit new path lost UTF8/EOL bytes".into());
     }
     {

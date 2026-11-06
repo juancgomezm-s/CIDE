@@ -1,3 +1,14 @@
+# Current Git visual redesign — 2026-11-06
+
+Read docs/G2_GIT_VISUAL_REDESIGN.md before changing Git presentation.
+Approved compact native design implemented; current binaries target/git-redesign-next/release.
+112 distinct GUI/input cases by suites/directed closure,25 directed own-HWND Git checks,
+fmt/workspace all-target Clippy/release offline passed. Full HWND suite stopped before
+Git on Save All access denied; reproduced with prior G2 binary, not a passing full run.
+Real GDI image/evidence in docs/evidence; visible final review interrupted by user Escape.
+Do not take desktop while Juan works; final owned instance normal exit unconfirmed.
+No new Git capabilities/TUI/core/dependencies/recovery changes. Show result before G3.
+
 # Working on JC-IDE
 
 ## Git layout / parallel projection closure — 2026-11-06
