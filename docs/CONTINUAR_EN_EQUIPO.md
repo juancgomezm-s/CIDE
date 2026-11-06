@@ -1,3 +1,8 @@
+> **Pausa solicitada por Juan — 2026-11-06.** Punto seguro de rediseño visual Git en
+> [prototypes/git-redesign/README.md](../prototypes/git-redesign/README.md). Hay dos
+> maquetas PNG listas para mostrar; aún no implementadas ni aprobadas. Esperar su
+> aviso para retomar. Priorizar revisión visual; no continuar G3 por ahora.
+
 # Continuación local — después del bloque de evidencia M2
 
 ## Distribución Git y comparación paralela — 2026-11-06
