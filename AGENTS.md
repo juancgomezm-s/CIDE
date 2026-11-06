@@ -1,5 +1,26 @@
 # Working on JC-IDE
 
+## Git layout / parallel projection closure — 2026-11-06
+
+Read docs/G2_GIT_LAYOUT_COMPARISON.md before extending native Git presentation.
+GUI layout supports One/TwoFilesLeft/TwoFilesRight/Three with DPI minimums,
+versioned split/rail capture and compact tabs. GUI metadata v5 appends7 validated
+preference bytes; reader retains v1–v4. Recovery sources/generations unchanged.
+One bounded row projector serves buffer/history/local; no second diff engine,
+source I/O or completion acceptance in prepare.128logicalrows/256parallelcells,
+64KiB source/cell,4096textbytes/512visiblecols,16384horizontalcols; limited row
+warns at start and drops potentially incomplete trailing grapheme. Page/extent
+metadata use visible rows; offset normalization performs at most one extra pass.
+107 GUI/input cases passed (101+6),15new;26directed closure after glyph/viewport
+fix. Fmt/Clippy all-target/release offline and147 native checks passed; no fresh
+full workspace runtime or physical/ConPTY claim. Hidden-HWND fixture settles first
+paint before comparing editor-view invariants; initial failed harness logs retained.
+Current binaries target/g2-layout-next/release; preserve all prior release paths.
+No TUI/core Git/dependency change. G2 remaining tree/file tabs and G3 tools stay
+separate from M2 physical acceptance. Prior desktop normalexit record remains
+pending until fresh Computer Use selection; do not assert window still exists
+without checking. IME excluded, Narrator deferred, crossmonitor unverified. CI dormant.
+
 ## Local Git pairs / independent filesystem closure — 2026-11-06
 
 Read docs/G1_LOCAL_SOURCE_PAIRS.md before extending Git source selection.

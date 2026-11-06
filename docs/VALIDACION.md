@@ -1,5 +1,28 @@
 # Validación
 
+## Distribución Git y comparación paralela — 2026-11-06
+
+[Alcance y evidencia](G2_GIT_LAYOUT_COMPARISON.md). La GUI ofrece una, dos
+(archivos a izquierda/derecha) o tres columnas, divisores arrastrables, adaptación
+compacta y preferencias recuperables v5 con lectura v1–v4. Un proyector acotado
+sirve comparación unificada/paralela de buffers, revisiones y pares locales;
+alinea filas, muestra huecos, barras y recorte Unicode sin editar fuentes.
+
+107 casos GUI/entrada aprobaron (101+6), quince nuevos; cierre dirigido de 26
+tras ajustes de cuotas y anchura visible. No es una nueva corrida runtime del
+workspace. Formato, Clippy todos los destinos y release offline aprobados.
+147 comprobaciones HWND verifican las cuatro distribuciones y la captura nativa
+de barras/divisores con PATH vacío y fuentes/metadatos Git intactos. El harness
+se corrigió para pintar el HWND oculto y estabilizar la primera vista del fixture
+largo antes del snapshot de invariantes; se conservan los intentos iniciales.
+Binarios: `target/g2-layout-next/release`; anteriores preservados.
+
+Este es el bloque de layout y comparación, no todo G2/G3. Siguen árbol/pestañas
+Git, historial por archivo, anotaciones y exportación de parches. Escrituras/red
+mantienen M5. No cambia la TUI ni el núcleo Git, no se añaden dependencias/CI.
+La revisión física no se repitió: queda el pendiente anterior de escritorio,
+con IME excluido, Narrador aplazado y traslado entre monitores sin verificar.
+
 ## Comparaciones locales Git y núcleo independiente — 2026-11-06
 
 [Contrato y evidencia](G1_LOCAL_SOURCE_PAIRS.md). GUI/TUI distinguen HEAD → buffer,

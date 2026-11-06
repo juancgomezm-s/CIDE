@@ -1,5 +1,6 @@
 //! Historical Git observations never borrow or replace the editable document.
 use super::*;
+#[cfg(test)]
 use jc_app::diff_model::OwnedDiffModel;
 use jc_app::Modifiers;
 
@@ -8,6 +9,8 @@ impl State {
         let Some(root) = self.project_root.clone() else {
             return;
         };
+        self.git_workspace.active = Column::Files;
+        self.git_workspace.diff_column = 0;
         self.git_workspace.local_kind = None;
         self.git_diff.clear(&mut self.jobs);
         self.git_workspace.history_commit = Some(commit.clone());
@@ -34,6 +37,8 @@ impl State {
         }) else {
             return;
         };
+        self.git_workspace.active = Column::Comparison;
+        self.git_workspace.diff_column = 0;
         self.git_workspace.focus_diff = true;
         self.git_workspace.history_selected = index;
         self.git_workspace.history_file = Some(index);
@@ -232,17 +237,29 @@ impl State {
                     }
                 }
                 if let Some(encoding) = self.git_workspace.history_encoding {
-                    let (rows, first, total) = historical_rows(
+                    let projection = controls::project(
                         &c.model,
-                        self.git_workspace.history_hunk,
-                        self.git_workspace.diff_first,
-                        self.git_workspace.diff_page,
-                        encoding,
-                        (l.preview, l.preview.top + p(108), self.cell_height),
+                        controls::ProjectionView {
+                            hunk: self.git_workspace.history_hunk,
+                            first: self.git_workspace.diff_first,
+                            encoding,
+                            geometry: (
+                                rect(
+                                    l.preview.left,
+                                    l.preview.top,
+                                    l.preview.right - p(12),
+                                    l.preview.bottom - p(14),
+                                ),
+                                l.preview.top + p(108),
+                                self.cell_height,
+                            ),
+                            mode: self.git_workspace.diff_mode(),
+                            column: self.git_workspace.diff_column,
+                            cell_width: self.cell_width,
+                        },
                     );
-                    frame.code = rows;
-                    self.git_workspace.diff_first = first;
-                    self.git_workspace.diff_total = total;
+                    let total = projection.total;
+                    frame.code = self.git_workspace.set_projection(projection);
                     if total == 0 {
                         frame
                             .details
@@ -260,7 +277,8 @@ impl State {
     }
 }
 
-pub(super) fn historical_rows(
+#[cfg(test)]
+fn historical_rows(
     model: &OwnedDiffModel,
     hunk: usize,
     first: usize,
@@ -268,77 +286,16 @@ pub(super) fn historical_rows(
     encoding: TextEncoding,
     geometry: (Rect, i32, i32),
 ) -> (Vec<CodeRow>, usize, usize) {
-    let (area, top, height) = geometry;
-    let Some(change) = model.hunks().nth(hunk) else {
-        return (Vec::new(), 0, 0);
-    };
-    let spans = model.spans();
-    let at = spans
-        .iter()
-        .position(|s| std::ptr::eq(s, change))
-        .unwrap_or(0);
-    let before = at
-        .checked_sub(1)
-        .and_then(|n| spans.get(n))
-        .map_or(0, |s| (s.left.end.0 - s.left.start.0).min(3));
-    let after = spans
-        .get(at + 1)
-        .map_or(0, |s| (s.left.end.0 - s.left.start.0).min(3));
-    let segments = [
-        (
-            0,
-            Some(change.left.start.0 - before),
-            Some(change.right.start.0 - before),
-            before,
-        ),
-        (
-            -1,
-            Some(change.left.start.0),
-            None,
-            change.left.end.0 - change.left.start.0,
-        ),
-        (
-            1,
-            None,
-            Some(change.right.start.0),
-            change.right.end.0 - change.right.start.0,
-        ),
-        (0, Some(change.left.end.0), Some(change.right.end.0), after),
-    ];
-    let total = segments.iter().map(|s| s.3).sum::<usize>();
-    let page = page.min(128);
-    let first = first.min(total.saturating_sub(page));
-    let mut rows = Vec::new();
-    for (row, n) in (first..total).take(page).enumerate() {
-        let mut offset = n;
-        for &(kind, left, right, len) in &segments {
-            if offset >= len {
-                offset -= len;
-                continue;
-            }
-            let old = left.map(|n| n + offset);
-            let new = right.map(|n| n + offset);
-            let (side, line) =
-                new.map_or((DiffSide::Left, old.unwrap_or(0)), |n| (DiffSide::Right, n));
-            if let Some(range) = model.line_byte_range(side, DiffLine(line)) {
-                let bytes = &model.source_bytes(side)[range.clone()];
-                let bytes = bytes
-                    .strip_suffix(b"\r\n")
-                    .or_else(|| bytes.strip_suffix(b"\n"))
-                    .or_else(|| bytes.strip_suffix(b"\r"))
-                    .unwrap_or(bytes);
-                let y = top + row as i32 * height;
-                rows.push(CodeRow {
-                    rect: rect(area.left, y, area.right, (y + height).min(area.bottom)),
-                    old: old.map_or(String::new(), |n| (n + 1).to_string()),
-                    new: new.map_or(String::new(), |n| (n + 1).to_string()),
-                    text: source_text(bytes, encoding, range.start),
-                    kind,
-                });
-            }
-            break;
-        }
-    }
+    let (rows, first, total, _) = compare_rows::rows(
+        model,
+        hunk,
+        first,
+        page,
+        encoding,
+        geometry,
+        DiffView::Unified,
+        0,
+    );
     (rows, first, total)
 }
 

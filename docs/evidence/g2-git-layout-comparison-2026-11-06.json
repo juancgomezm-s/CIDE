@@ -1,0 +1,81 @@
+{
+  "date": "2026-11-06",
+  "scope": "native GUI Git flexible layout and unified/parallel read-only comparison",
+  "binaries": "target/g2-layout-next/release",
+  "gui_tests": {
+    "broad_passed": 107,
+    "library": 101,
+    "entry": 6,
+    "new": 15,
+    "broad_log": "work/g2-layout-tests-close.log",
+    "directed_close_passed": 26,
+    "directed_log": "work/g2-layout-tests-directed-final.log",
+    "fresh_workspace_runtime": false
+  },
+  "format": "work/g2-layout-fmt-final.log",
+  "clippy": "work/g2-layout-clippy-close.log",
+  "release": [
+    "work/g2-layout-release.log",
+    "work/g2-layout-release-delivery.log"
+  ],
+  "native": {
+    "passed_checks": 147,
+    "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\native-gui-smoke\\20261106T131241Z-cbf3ac2a287d",
+    "report": "work/g2-layout-native-summary.json",
+    "git_metadata_unchanged": true,
+    "child_path_empty": true,
+    "physical_display_verified": false
+  },
+  "initial_failures_retained": [
+    "work/g2-layout-tests.log",
+    "work/g2-layout-tests-directed.log",
+    "work/g2-layout-native.log",
+    "work/g2-layout-native-debug.log"
+  ],
+  "initial_failure_explanations": [
+    "Mutable check list integration borrow corrected",
+    "Grapheme iterator temporary borrow ended before truncation",
+    "Hidden HWND paint explicitly dispatched instead of UpdateWindow",
+    "Initial injected long fixture paint settled before source/view invariance baseline"
+  ],
+  "metadata": {
+    "gui_version": 5,
+    "reads_versions": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "new_preference_bytes": 7,
+    "document_and_generation_formats_changed": false
+  },
+  "row_quotas": {
+    "logical_rows": 128,
+    "parallel_cells": 256,
+    "source_bytes_per_cell": 65536,
+    "text_bytes_per_cell": 4096,
+    "visible_columns": 512,
+    "horizontal_columns": 16384
+  },
+  "dependencies_changed": false,
+  "tui_behavior_changed": false,
+  "git_core_changed": false,
+  "ci_run": false,
+  "push": false,
+  "limitations": [
+    "No fresh physical desktop or ConPTY acceptance",
+    "IME excluded; Narrator deferred; cross-monitor unverified",
+    "Layout acceptance is own-HWND, not compositor latency or global RAM proof",
+    "Parallel rows align by position within selected hunk, not semantic or character matching",
+    "Full G2/G3 not complete; writes/network remain M5"
+  ],
+  "package": {
+    "archive": "work\\packages\\CIDE-G2-layout-20261106.zip",
+    "sha256": "93b6794044a76b0911d1f28691fbef67a5801b9f97220881e3da95d690072d6a",
+    "manifest_files": 356,
+    "zip_members": 357,
+    "all_hashes_verified": true,
+    "missing_notices": 2
+  }
+}

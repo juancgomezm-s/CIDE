@@ -48,6 +48,7 @@ impl State {
         })
     }
     pub(super) fn cancel_pointer(&mut self) {
+        self.git_workspace.end_drag();
         self.linear_drag = None;
         self.rectangle_drag = None;
         self.editor_scroll_drag = None;
@@ -150,7 +151,15 @@ impl State {
         self.editor_scroll_drag = None;
         self.explorer_scroll.drag = None;
         let modifiers = self.modifiers();
-        if self.git_panel.is_some() && flags & 0x0c == 0 && modifiers == Modifiers::NONE {
+        if self.git_panel.is_some()
+            && flags & 0x08 == 0
+            && !modifiers.contains(Modifiers::CTRL)
+            && !modifiers.contains(Modifiers::ALT)
+        {
+            self.git_workspace.end_drag();
+            if flags & 0x04 != 0 || modifiers.contains(Modifiers::SHIFT) {
+                return self.git_horizontal_wheel(x, y, delta);
+            }
             return self.git_workspace_wheel(x, y, delta);
         }
         if flags & 0x0c != 0

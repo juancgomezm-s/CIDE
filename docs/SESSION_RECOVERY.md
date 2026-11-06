@@ -6,6 +6,10 @@ cambian. Las vistas reasignan sus ViewId y la tabla se remapea antes de publicar
 el Workbench recuperado. Las versiones antiguas no leen APP2; usar el binario
 vigente para las sesiones nuevas. Las generaciones/HEAD/BACKUP/GC no cambian.
 
+Los metadatos gráficos v5 añaden las [preferencias Git](G2_GIT_LAYOUT_COMPARISON.md)
+en siete bytes validados: distribución, proporciones y modo de comparación.
+El lector conserva v1–v4; no cambia el formato de documentos ni de generaciones.
+
 Los metadatos gráficos v4 eliminan la ruta del ejecutable Git: el motor es embebido.
 El lector acepta v1/v2/v3 y consume/ignora la antigua ruta de v3. v2 añadió
 visibilidad del panel Código; al leer v1 se adopta Código visible por defecto.

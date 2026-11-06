@@ -127,7 +127,7 @@ unsafe fn job_metrics(hwnd: Hwnd) -> Result<(usize, usize, GitDiffState, bool), 
         state.git_diff.result().is_some(),
     ))
 }
-unsafe fn readonly_frame(hwnd: Hwnd, output: Option<&Path>) -> Result<(), String> {
+pub(super) unsafe fn readonly_frame(hwnd: Hwnd, output: Option<&Path>) -> Result<(), String> {
     let before = snapshot(hwnd)?;
     let metrics = job_metrics(hwnd)?;
     let frame = {
@@ -387,6 +387,24 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     }
     checks.push("git_local_pairs_native_keys_exact_head_index_disk_with_dirty_buffer");
     checks.push("git_local_pairs_gdi_and_enter_preserve_sources_and_editor_geometry");
+    {
+        let mut s = owner(hwnd).unwrap().state.borrow_mut();
+        let text = (0..160)
+            .map(|_| format!("{}final\n", "x".repeat(900)))
+            .collect::<String>();
+        s.workbench.insert_text(&text).map_err(|e| e.to_string())?;
+    }
+    command(hwnd, CommandId::GitDiffHead)?;
+    diff_ready(hwnd)?;
+    super::git_workspace::smoke_layout(hwnd, options.bitmap.as_deref(), &mut checks)?;
+    owner(hwnd)
+        .unwrap()
+        .state
+        .borrow_mut()
+        .workbench
+        .undo()
+        .map_err(|e| e.to_string())?;
+    expected(hwnd, DIRTY)?;
 
     command(hwnd, CommandId::GitDiffIndex)?;
     diff_ready(hwnd)?;

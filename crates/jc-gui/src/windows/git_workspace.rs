@@ -9,10 +9,22 @@ use jc_app::{
 use jc_text::{DecodedScalars, TextEncoding};
 use std::path::PathBuf;
 
+#[path = "git_compare_rows.rs"]
+mod compare_rows;
+#[path = "git_workspace_controls.rs"]
+mod controls;
+#[path = "git_workspace_smoke.rs"]
+mod layout_smoke;
+pub(super) use layout_smoke::run as smoke_layout;
 #[path = "git_history.rs"]
 mod history;
+#[path = "git_layout.rs"]
+mod layout;
 #[path = "git_local.rs"]
 mod local;
+use compare_rows::DiffView;
+use controls::{GitDrag, Rail};
+use layout::{Arrangement, Column, Divider, Preferences};
 
 const ADD: u32 = 0x00364327;
 const REMOVE: u32 = 0x003c304b;
@@ -22,6 +34,13 @@ const RED: u32 = 0x009fa2ef;
 #[derive(Default)]
 pub(super) struct Workspace {
     pub hits: Option<Hits>,
+    preferences: Preferences,
+    active: Column,
+    menu: Option<usize>,
+    drag: Option<GitDrag>,
+    pub(super) diff_column: usize,
+    diff_extent: usize,
+    diff_columns: usize,
     pub epoch: u64,
     pub commit: Option<usize>,
     pub diff_first: usize,
@@ -58,12 +77,17 @@ struct Stamp {
     root: Option<PathBuf>,
     epoch: u64,
     geometry: (i32, i32),
+    metrics: (i32, i32, i32),
     document: Option<(jc_app::DocumentId, u64, Option<TextEncoding>)>,
     selected: usize,
     commit: Option<usize>,
     first: usize,
     history: Option<HistoryStamp>,
     local: Option<jc_app::git_revision::PairKind>,
+    preferences: Preferences,
+    active: Column,
+    column: usize,
+    menu: Option<usize>,
 }
 #[derive(Clone, Copy)]
 enum Intent {
@@ -80,6 +104,12 @@ enum Intent {
     HistoryFile(usize),
     HistorySummary,
     HistoryEncoding,
+    DistributionMenu,
+    Arrange(Arrangement),
+    DiffView(DiffView),
+    Column(Column),
+    Divider(Divider),
+    Rail(Rail),
 }
 #[derive(Clone)]
 pub(super) struct Hits {
@@ -107,6 +137,7 @@ struct CodeRow {
     new: String,
     text: String,
     kind: i8,
+    parallel: bool,
 }
 pub(super) struct Frame {
     pub hits: Hits,
@@ -128,8 +159,11 @@ pub(super) struct Frame {
     code: Vec<CodeRow>,
     details: Vec<String>,
     footer: String,
+    overlays: Vec<(Rect, String, bool)>,
+    rails: Vec<Rail>,
+    dividers: Vec<Rect>,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Layout {
     rect: Rect,
     toolbar: Rect,
@@ -138,6 +172,7 @@ struct Layout {
     preview: Rect,
     row: i32,
     head: i32,
+    dividers: Vec<(Rect, Divider)>,
 }
 fn rect(left: i32, top: i32, right: i32, bottom: i32) -> Rect {
     Rect {
@@ -172,22 +207,26 @@ impl Layout {
     fn new(s: &State) -> Self {
         let w = s.width.clamp(1, 8192);
         let h = s.height.clamp(1, 8192);
-        let p = |n| s.dpi.pixels(n);
         let top = s.chrome_layout().top().min(h);
         let bottom = (h - s.cell_height - 5).max(top);
-        let content_bottom = (bottom - p(24)).max(top);
-        let bar = (top + p(48)).min(bottom);
-        let history = (w >= p(760)).then(|| rect(0, bar, p(200).min(w / 4), content_bottom));
-        let left = history.map_or(0, |r| r.right);
-        let file_width = p(220).min((w - left) / 2).max(0);
+        let g = layout::layout(
+            w,
+            h,
+            top,
+            bottom,
+            |n| s.dpi.pixels(n),
+            s.git_workspace.preferences,
+            s.git_workspace.active,
+        );
         Self {
-            rect: rect(0, top, w, bottom),
-            toolbar: rect(0, top, w, bar),
-            history,
-            files: rect(left, bar, left + file_width, content_bottom),
-            preview: rect(left + file_width, bar, w, content_bottom),
-            row: p(46),
-            head: p(44),
+            rect: g.rect,
+            toolbar: g.toolbar,
+            history: g.history,
+            files: g.files.unwrap_or_else(|| rect(0, 0, 0, 0)),
+            preview: g.preview.unwrap_or_else(|| rect(0, 0, 0, 0)),
+            row: s.dpi.pixels(46),
+            head: s.dpi.pixels(44),
+            dividers: g.dividers,
         }
     }
 }
@@ -221,40 +260,23 @@ fn status_tag(state: GitStatusState) -> (&'static str, u32, &'static str) {
         }
     }
 }
-fn source_text(bytes: &[u8], encoding: TextEncoding, start: usize) -> String {
-    let mut text = String::new();
-    let mut column = 0;
-    for scalar in DecodedScalars::new(&bytes[..bytes.len().min(2048)], encoding, start).take(512) {
-        if !scalar.valid {
-            let a = scalar.source_range.start - start;
-            let b = scalar.source_range.end - start;
-            for byte in &bytes[a..b] {
-                text.push_str(&format!("\\x{byte:02X}"));
-                column += 4;
-            }
-        } else if scalar.character == '\t' {
-            let width = 4 - column % 4;
-            text.extend(std::iter::repeat_n(' ', width));
-            column += width;
-        } else if scalar.character.is_control() {
-            text.push_str(&format!("\\u{{{:X}}}", scalar.character as u32));
-        } else {
-            text.push(scalar.character);
-            column += 1;
-        }
-        if text.len() > 4096 {
-            break;
-        }
-    }
-    text
+#[cfg(test)]
+fn source_text(bytes: &[u8], encoding: TextEncoding, _start: usize) -> String {
+    compare_rows::text(bytes, encoding, 0).0
 }
+
 impl State {
     fn git_workspace_stamp(&self) -> Stamp {
         Stamp {
+            preferences: self.git_workspace.preferences,
+            active: self.git_workspace.active,
+            column: self.git_workspace.diff_column,
+            menu: self.git_workspace.menu,
             local: self.git_workspace.local_kind,
             root: self.project_root.clone(),
             epoch: self.git_workspace.epoch,
             geometry: (self.width, self.height),
+            metrics: (self.cell_width, self.cell_height, self.dpi.pixels(100)),
             document: self
                 .workbench
                 .active_document()
@@ -280,7 +302,7 @@ impl State {
         self.git_panel?;
         let historical = self.git_workspace.history_commit.is_some();
         let frame = self.prepare_git_workspace_base()?;
-        Some(if historical {
+        let mut frame = if historical {
             self.prepare_git_history(frame)
         } else if self.git_workspace.local_kind.is_some() {
             self.prepare_git_local(frame)
@@ -288,8 +310,11 @@ impl State {
             let mut frame = frame;
             self.add_git_sources(&mut frame);
             frame
-        })
+        };
+        self.prepare_git_controls(&mut frame);
+        Some(frame)
     }
+
     fn prepare_git_workspace_base(&mut self) -> Option<Frame> {
         self.git_panel?;
         let layout = Layout::new(self);
@@ -303,7 +328,7 @@ impl State {
                     (right - p(252)).max(0),
                     layout.toolbar.top + p(8),
                     (right - p(148)).max(0),
-                    layout.toolbar.bottom - p(8),
+                    layout.toolbar.top + p(34),
                 ),
                 "Actualizar",
                 Intent::Refresh,
@@ -314,7 +339,7 @@ impl State {
                     (right - p(140)).max(0),
                     layout.toolbar.top + p(8),
                     right - p(8),
-                    layout.toolbar.bottom - p(8),
+                    layout.toolbar.top + p(34),
                 ),
                 "Volver al código",
                 Intent::Close,
@@ -452,7 +477,7 @@ impl State {
         if let Some(notice) = &self.git_workspace.notice {
             subtitle = label(notice, 256);
         }
-        let rows_visible = ((layout.preview.bottom - layout.preview.top - p(148))
+        let rows_visible = ((layout.preview.bottom - layout.preview.top - p(164))
             / self.cell_height.max(1))
         .clamp(0, 128) as usize;
         self.git_workspace.diff_page = rows_visible;
@@ -465,89 +490,29 @@ impl State {
                     .active_document()
                     .and_then(|d| d.session.encoding())
                 {
-                    if let Some(hunk) = result.model.hunks().nth(self.git_diff.selected()) {
-                        let spans = result.model.spans();
-                        let at = spans
-                            .iter()
-                            .position(|s| std::ptr::eq(s, hunk))
-                            .unwrap_or(0);
-                        let before = at
-                            .checked_sub(1)
-                            .and_then(|i| spans.get(i))
-                            .map_or(0, |s| (s.left.end.0 - s.left.start.0).min(3));
-                        let after = spans
-                            .get(at + 1)
-                            .map_or(0, |s| (s.left.end.0 - s.left.start.0).min(3));
-                        let segments = [
-                            (
-                                0,
-                                Some(hunk.left.start.0 - before),
-                                Some(hunk.right.start.0 - before),
-                                before,
-                            ),
-                            (
-                                -1,
-                                Some(hunk.left.start.0),
-                                None,
-                                hunk.left.end.0 - hunk.left.start.0,
-                            ),
-                            (
-                                1,
-                                None,
-                                Some(hunk.right.start.0),
-                                hunk.right.end.0 - hunk.right.start.0,
-                            ),
-                            (0, Some(hunk.left.end.0), Some(hunk.right.end.0), after),
-                        ];
-                        let total = segments.iter().map(|s| s.3).sum::<usize>();
-                        self.git_workspace.diff_total = total;
-                        self.git_workspace.diff_first = self
-                            .git_workspace
-                            .diff_first
-                            .min(total.saturating_sub(rows_visible));
-                        for (row, n) in (self.git_workspace.diff_first..total)
-                            .take(rows_visible)
-                            .enumerate()
-                        {
-                            let mut offset = n;
-                            for &(kind, left, right, len) in &segments {
-                                if offset >= len {
-                                    offset -= len;
-                                    continue;
-                                }
-                                let old = left.map(|n| n + offset);
-                                let new = right.map(|n| n + offset);
-                                let (side, line) = new
-                                    .map_or((DiffSide::Left, old.unwrap_or(0)), |n| {
-                                        (DiffSide::Right, n)
-                                    });
-                                if let Some(range) =
-                                    result.model.line_byte_range(side, DiffLine(line))
-                                {
-                                    let bytes = &result.model.source_bytes(side)[range.clone()];
-                                    let bytes = bytes
-                                        .strip_suffix(b"\r\n")
-                                        .or_else(|| bytes.strip_suffix(b"\n"))
-                                        .or_else(|| bytes.strip_suffix(b"\r"))
-                                        .unwrap_or(bytes);
-                                    let top =
-                                        layout.preview.top + p(148) + row as i32 * self.cell_height;
-                                    code.push(CodeRow {
-                                        rect: rect(
-                                            layout.preview.left,
-                                            top,
-                                            layout.preview.right,
-                                            (top + self.cell_height).min(layout.preview.bottom),
-                                        ),
-                                        old: old.map_or(String::new(), |n| (n + 1).to_string()),
-                                        new: new.map_or(String::new(), |n| (n + 1).to_string()),
-                                        text: source_text(bytes, encoding, range.start),
-                                        kind,
-                                    });
-                                }
-                                break;
-                            }
-                        }
+                    if result.model.hunks().nth(self.git_diff.selected()).is_some() {
+                        let projection = controls::project(
+                            &result.model,
+                            controls::ProjectionView {
+                                hunk: self.git_diff.selected(),
+                                first: self.git_workspace.diff_first,
+                                encoding,
+                                geometry: (
+                                    rect(
+                                        layout.preview.left,
+                                        layout.preview.top,
+                                        layout.preview.right - p(12),
+                                        layout.preview.bottom - p(14),
+                                    ),
+                                    layout.preview.top + p(148),
+                                    self.cell_height,
+                                ),
+                                mode: self.git_workspace.diff_mode(),
+                                column: self.git_workspace.diff_column,
+                                cell_width: self.cell_width,
+                            },
+                        );
+                        code = self.git_workspace.set_projection(projection);
                         let y = layout.preview.top + p(112);
                         let start = layout.preview.left + p(12);
                         for (n, text, intent) in [
@@ -589,7 +554,7 @@ impl State {
         } else {
             "Cambios locales".into()
         };
-        Some(Frame{hits:Hits{stamp:self.git_workspace_stamp(),actions},rect:layout.rect,toolbar:layout.toolbar,history:layout.history,files:layout.files,preview:layout.preview,title,branch,count,historical:false,details_top:p(148),message,subtitle,buttons,commits,rows,code,details,footer:"Solo lectura · P preparados · T disco · comparaciones con buffer explícitas · Esc vuelve".into()})
+        Some(Frame{hits:Hits{stamp:self.git_workspace_stamp(),actions},rect:layout.rect,toolbar:layout.toolbar,history:layout.history,files:layout.files,preview:layout.preview,title,branch,count,overlays:Vec::new(),rails:Vec::new(),dividers:Vec::new(),historical:false,details_top:p(148),message,subtitle,buttons,commits,rows,code,details,footer:"Solo lectura · P preparados · T disco · comparaciones con buffer explícitas · Esc vuelve".into()})
     }
     pub(super) fn git_workspace_click(&mut self, x: i32, y: i32) -> Action {
         let Some(hits) = self
@@ -606,7 +571,27 @@ impl State {
             .rev()
             .find(|(r, _)| inside(*r, x, y))
             .map(|(_, a)| *a);
+        if self.git_workspace.menu.is_some()
+            && !matches!(intent, Some(Intent::Arrange(_) | Intent::DistributionMenu))
+        {
+            self.git_workspace.menu = None;
+            self.git_workspace.invalidate();
+            return Action::None;
+        }
+        if let Some(intent) = intent {
+            if let Some(action) = self.git_control_action(intent, x, y) {
+                return action;
+            }
+        }
         match intent {
+            Some(
+                Intent::DistributionMenu
+                | Intent::Arrange(_)
+                | Intent::DiffView(_)
+                | Intent::Column(_)
+                | Intent::Divider(_)
+                | Intent::Rail(_),
+            ) => Action::None,
             Some(Intent::Refresh) => {
                 if let Some(kind) = self.git_workspace.local_kind {
                     self.request_git_local(kind);
@@ -694,7 +679,11 @@ impl State {
                 self.git_workspace.invalidate();
                 Action::None
             }
-            None => Action::None,
+            None => {
+                self.git_workspace.menu = None;
+                self.git_workspace.invalidate();
+                Action::None
+            }
         }
     }
     pub(super) fn compare_git_status_file(&mut self) {
@@ -715,6 +704,8 @@ impl State {
             return;
         };
         self.git_workspace.commit = None;
+        self.git_workspace.active = Column::Comparison;
+        self.git_workspace.diff_column = 0;
         self.git_workspace.diff_first = 0;
         self.git_workspace.focus_diff = true;
         self.git_workspace.selected_path = Some(path.clone());
@@ -822,22 +813,10 @@ pub(super) unsafe fn draw(
             14,
             f.toolbar.top + 6,
             (f.toolbar.right - 266).max(14),
-            f.toolbar.bottom - 22,
+            f.toolbar.top + 32,
         ),
-        &f.title,
+        &format!("{} · {}", f.title, f.branch),
         shell::TEXT,
-        shell::SURFACE,
-    )?;
-    text(
-        dc,
-        rect(
-            14,
-            f.toolbar.top + 24,
-            (f.toolbar.right - 266).max(14),
-            f.toolbar.bottom,
-        ),
-        &f.branch,
-        shell::ACCENT,
         shell::SURFACE,
     )?;
     if let Some(area) = f.history {
@@ -1049,29 +1028,35 @@ pub(super) unsafe fn draw(
             rect(
                 row.rect.left + 3,
                 row.rect.top,
-                row.rect.left + 43,
+                (row.rect.left + 43).min(row.rect.right),
                 row.rect.bottom,
             ),
-            &row.old,
+            if row.parallel && row.old.is_empty() {
+                &row.new
+            } else {
+                &row.old
+            },
             shell::MUTED,
             bg,
         )?;
+        if !row.parallel {
+            text(
+                dc,
+                rect(
+                    row.rect.left + 46,
+                    row.rect.top,
+                    row.rect.left + 86,
+                    row.rect.bottom,
+                ),
+                &row.new,
+                shell::MUTED,
+                bg,
+            )?;
+        }
         text(
             dc,
             rect(
-                row.rect.left + 46,
-                row.rect.top,
-                row.rect.left + 86,
-                row.rect.bottom,
-            ),
-            &row.new,
-            shell::MUTED,
-            bg,
-        )?;
-        text(
-            dc,
-            rect(
-                row.rect.left + 90,
+                row.rect.left + if row.parallel { 48 } else { 90 },
                 row.rect.top,
                 row.rect.right - 6,
                 row.rect.bottom,
@@ -1113,6 +1098,7 @@ pub(super) unsafe fn draw(
         shell::MUTED,
         shell::BACKGROUND,
     )?;
+    controls::draw(dc, f, ui_font)?;
     Ok(())
 }
 
@@ -1126,11 +1112,16 @@ mod tests {
             s.width = w;
             s.height = h;
             let l = Layout::new(&s);
-            assert_eq!(l.files.right, l.preview.left);
-            assert_eq!(l.preview.right, w);
-            assert!(l.preview.bottom <= h);
-            assert!(l.files.left >= 0);
-            assert_eq!(l.history.is_some(), w >= s.dpi.pixels(760));
+            assert_eq!(l.rect.right, w);
+            assert!(l.rect.bottom <= h);
+            assert!(l.files.left >= 0 && l.files.right <= w);
+            assert!(l.preview.left >= 0 && l.preview.right <= w);
+            assert_eq!(s.git_workspace.preferences.arrangement, Arrangement::Three);
+            assert_eq!(l.history.is_some(), w >= 612);
+            if w == 320 {
+                assert!(l.preview.right == l.preview.left);
+                assert_eq!(l.files.right, w);
+            }
         }
     }
     #[test]

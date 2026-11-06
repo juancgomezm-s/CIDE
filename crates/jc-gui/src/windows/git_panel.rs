@@ -21,7 +21,9 @@ impl State {
     pub(super) fn clear_git(&mut self) {
         self.git_revision.cancel();
         self.git_status_due = false;
+        let preferences = self.git_workspace.preference_bytes();
         self.git_workspace = Default::default();
+        let _ = self.git_workspace.restore_preferences(&preferences);
         self.git_diff.clear(&mut self.jobs);
         self.git_status.cancel();
         self.git_status_options = None;
@@ -71,6 +73,7 @@ impl State {
         self.git_context = Some(root.clone());
         match intent {
             GitIntent::Status => {
+                self.git_workspace.select_files();
                 self.git_workspace.focus_diff = false;
                 self.git_status_due = false;
                 let options = GitStatusOptions {
@@ -85,6 +88,8 @@ impl State {
                 }
             }
             GitIntent::Diff(source) => {
+                self.git_workspace.select_comparison();
+                self.git_workspace.diff_column = 0;
                 self.git_workspace.focus_diff = true;
                 self.git_source = source;
                 self.git_workspace.diff_first = 0;
@@ -239,6 +244,9 @@ impl State {
             return Action::None;
         };
         self.validate_git_context();
+        if self.git_controls_key(code, modifiers) {
+            return Action::None;
+        }
         if self.git_workspace.history_commit.is_some() {
             return self.git_history_key(code, modifiers);
         }

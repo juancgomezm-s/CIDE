@@ -64,7 +64,7 @@ impl State {
             let mut reader = Cursor::new(metadata.as_slice());
             let mut header = [0; 20];
             reader.read_exact(&mut header).map_err(|e| e.to_string())?;
-            if !matches!(header[0], 1..=4) || header[1..8].iter().any(|v| *v > 1) {
+            if !matches!(header[0], 1..=5) || header[1..8].iter().any(|v| *v > 1) {
                 return Err("Estado visual de la sesión inválido".into());
             }
             let width = u32::from_le_bytes(header[8..12].try_into().unwrap());
@@ -109,6 +109,15 @@ impl State {
             } else {
                 None
             };
+            let preferences = if header[0] >= 5 {
+                let mut bytes = [0; 7];
+                reader.read_exact(&mut bytes).map_err(|e| e.to_string())?;
+                let mut validation = super::git_workspace::Workspace::default();
+                validation.restore_preferences(&bytes)?;
+                Some(bytes)
+            } else {
+                None
+            };
             if reader.position() != metadata.len() as u64 {
                 return Err("Metadatos de ventana incompletos".into());
             }
@@ -130,6 +139,9 @@ impl State {
             };
             self.restore_window = Some((width as i32, height as i32, header[7] == 1));
             self.next_untitled = next as usize;
+            if let Some(bytes) = preferences {
+                self.git_workspace.restore_preferences(&bytes)?;
+            }
             self.status = if backup {
                 "Sesión recuperada desde la copia válida anterior"
             } else {
@@ -142,7 +154,7 @@ impl State {
     }
     pub(super) fn recovery_metadata(&self) -> Result<Vec<u8>, String> {
         let mut metadata = vec![
-            4,
+            5,
             u8::from(self.project_root.is_some()),
             u8::from(self.explorer_visible),
             u8::from(self.explorer_focused),
@@ -159,6 +171,7 @@ impl State {
         if let Some(root) = &self.project_root {
             jc_app::session::write_recovery_path(root, &mut metadata).map_err(|e| e.to_string())?;
         }
+        metadata.extend_from_slice(&self.git_workspace.preference_bytes());
         Ok(metadata)
     }
     pub(super) fn checkpoint_session(&mut self) -> Result<bool, String> {
@@ -312,6 +325,7 @@ mod tests {
         let fixture = Fixture::new();
         let state = State::new(&GuiOptions::default()).unwrap();
         let mut legacy = state.recovery_metadata().unwrap();
+        legacy.truncate(legacy.len() - 7);
         legacy[0] = 1;
         legacy.remove(20);
         let mut recovery = fixture.recovery();
@@ -329,7 +343,8 @@ mod tests {
         let fixture = Fixture::new();
         let state = State::new(&GuiOptions::default()).unwrap();
         let mut legacy = state.recovery_metadata().unwrap();
-        assert_eq!(legacy[0], 4);
+        assert_eq!(legacy[0], 5);
+        legacy.truncate(legacy.len() - 7);
         legacy[0] = 3;
         legacy.push(1);
         let path = fixture.root.join("obsolete-git.exe");
@@ -342,11 +357,12 @@ mod tests {
         drop(depot);
         let mut restored = State::new(&GuiOptions::default()).unwrap();
         restored.restore_from(fixture.recovery()).unwrap();
-        assert_eq!(restored.recovery_metadata().unwrap()[0], 4);
+        assert_eq!(restored.recovery_metadata().unwrap()[0], 5);
         assert!(!restored.git_status_due);
         drop(restored);
         let other = Fixture::new();
         let mut v2 = state.recovery_metadata().unwrap();
+        v2.truncate(v2.len() - 7);
         v2[0] = 2;
         let mut depot = other.recovery();
         state
@@ -356,7 +372,47 @@ mod tests {
         drop(depot);
         let mut restored = State::new(&GuiOptions::default()).unwrap();
         restored.restore_from(other.recovery()).unwrap();
-        assert_eq!(restored.recovery_metadata().unwrap()[0], 4);
+        assert_eq!(restored.recovery_metadata().unwrap()[0], 5);
+    }
+    #[test]
+    fn gui_git_layout_preferences_survive_restart_and_v4_defaults_remain_readable() {
+        let fixture = Fixture::new();
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        let prefs = [1, 2, 250, 0, 244, 1, 1];
+        state.git_workspace.restore_preferences(&prefs).unwrap();
+        state.clear_git();
+        assert_eq!(state.git_workspace.preference_bytes(), prefs);
+        let mut depot = fixture.recovery();
+        state
+            .workbench
+            .checkpoint_recovery(
+                &mut depot.store,
+                &depot.base,
+                &state.recovery_metadata().unwrap(),
+            )
+            .unwrap();
+        drop(depot);
+        let mut restored = State::new(&GuiOptions::default()).unwrap();
+        restored.restore_from(fixture.recovery()).unwrap();
+        assert_eq!(restored.git_workspace.preference_bytes(), prefs);
+        drop(restored);
+        let legacy = Fixture::new();
+        let defaults = State::new(&GuiOptions::default()).unwrap();
+        let mut metadata = defaults.recovery_metadata().unwrap();
+        metadata.truncate(metadata.len() - 7);
+        metadata[0] = 4;
+        let mut depot = legacy.recovery();
+        defaults
+            .workbench
+            .checkpoint_recovery(&mut depot.store, &depot.base, &metadata)
+            .unwrap();
+        drop(depot);
+        let mut restored = State::new(&GuiOptions::default()).unwrap();
+        restored.restore_from(legacy.recovery()).unwrap();
+        assert_eq!(
+            restored.git_workspace.preference_bytes(),
+            defaults.git_workspace.preference_bytes()
+        );
     }
     #[test]
     fn gui_recovery_restores_window_panels_project_and_dirty_editor_without_environment_or_original_writes(

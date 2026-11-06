@@ -1807,7 +1807,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             WM_MOUSEMOVE | WM_LBUTTONUP => {
-                redraw = state.explorer_scroll.drag.is_some()
+                redraw = state.git_workspace.dragging()
+                    || state.explorer_scroll.drag.is_some()
                     || state.rectangle_drag.is_some()
                     || state.linear_drag.is_some()
                     || state.editor_scroll_drag.is_some();
@@ -1824,7 +1825,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 if wparam & 1 != 0 || message == WM_LBUTTONUP {
                     let x = (lparam as u16) as i16 as i32;
                     let y = ((lparam as usize >> 16) as u16) as i16 as i32;
-                    if state.explorer_scroll.drag.is_some() {
+                    if state.git_workspace.dragging() {
+                        redraw = state.update_git_drag(x, y) || hover_changed;
+                    } else if state.explorer_scroll.drag.is_some() {
                         redraw = state.update_explorer_scroll(x, y) || hover_changed;
                     } else if state.editor_scroll_drag.is_some() {
                         redraw = state.update_editor_scroll(x, y) || hover_changed;
@@ -1957,7 +1960,8 @@ unsafe fn release_idle_capture(hwnd: Hwnd) {
             return false;
         }
         let state = m.state.borrow();
-        state.rectangle_drag.is_none()
+        !state.git_workspace.dragging()
+            && state.rectangle_drag.is_none()
             && state.linear_drag.is_none()
             && state.editor_scroll_drag.is_none()
             && state.explorer_scroll.drag.is_none()

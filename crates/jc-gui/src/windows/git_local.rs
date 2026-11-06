@@ -42,6 +42,8 @@ impl State {
         }
     }
     pub(crate) fn request_git_local(&mut self, kind: PairKind) {
+        self.git_workspace.active = Column::Comparison;
+        self.git_workspace.diff_column = 0;
         self.git_workspace.history_commit = None;
         self.git_workspace.history_file = None;
         self.git_workspace.commit = None;
@@ -135,17 +137,29 @@ impl State {
             self.git_workspace.history_hunk =
                 self.git_workspace.history_hunk.min(total.saturating_sub(1));
             if let Some(encoding) = self.git_workspace.history_encoding {
-                let (rows, first, total) = history::historical_rows(
+                let projection = controls::project(
                     &c.model,
-                    self.git_workspace.history_hunk,
-                    self.git_workspace.diff_first,
-                    self.git_workspace.diff_page,
-                    encoding,
-                    (l.preview, l.preview.top + p(148), self.cell_height),
+                    controls::ProjectionView {
+                        hunk: self.git_workspace.history_hunk,
+                        first: self.git_workspace.diff_first,
+                        encoding,
+                        geometry: (
+                            rect(
+                                l.preview.left,
+                                l.preview.top,
+                                l.preview.right - p(12),
+                                l.preview.bottom - p(14),
+                            ),
+                            l.preview.top + p(148),
+                            self.cell_height,
+                        ),
+                        mode: self.git_workspace.diff_mode(),
+                        column: self.git_workspace.diff_column,
+                        cell_width: self.cell_width,
+                    },
                 );
-                frame.code = rows;
-                self.git_workspace.diff_first = first;
-                self.git_workspace.diff_total = total;
+                let total = projection.total;
+                frame.code = self.git_workspace.set_projection(projection);
                 if total == 0 {
                     frame.details.push("Sin diferencias de contenido; revisa la presencia y el modo indicados arriba".into());
                 }
