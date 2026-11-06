@@ -12,6 +12,8 @@ mod line_index;
 pub(crate) mod rectangular;
 mod save_target;
 mod search;
+mod selection_history;
+mod selection_transactions;
 pub use save_target::SaveTarget;
 mod syntax;
 mod text;
@@ -119,6 +121,14 @@ pub struct EditorDocument {
     invisible: RefCell<invisible_layout::InvisibleLayout>,
     unicode: RefCell<crate::unicode_layout::UnicodeLayout>,
     syntax: RefCell<syntax::SyntaxCache>,
+    selection_history: selection_history::SelectionHistory,
+}
+
+impl EditorDocument {
+    /// Additional bounded selection-history metadata; no source/history clone.
+    pub fn selection_history_bytes(&self) -> usize {
+        self.selection_history.memory_bytes()
+    }
 }
 
 #[derive(Debug)]
@@ -183,6 +193,7 @@ pub enum CommandOutcome {
 
 #[derive(Debug, Default)]
 pub struct Workbench {
+    selection_transaction: Option<DocumentId>,
     show_invisibles: bool,
     pub(crate) tabs: TabManager,
     panes: PaneManager,
@@ -228,6 +239,12 @@ impl Workbench {
             .session
             .document_mut()
             .set_history_bytes_limit(bytes);
+        document
+            .selection_history
+            .prune(document.session.document());
+        if !document.session.document().can_undo() && !document.session.document().can_redo() {
+            document.selection_history = Default::default();
+        }
         Ok(())
     }
 
@@ -670,6 +687,7 @@ impl Workbench {
             invisible: RefCell::default(),
             unicode: RefCell::default(),
             syntax: RefCell::default(),
+            selection_history: Default::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, cursor), true);
         let _ = self.rebuild_search();
@@ -695,6 +713,7 @@ impl Workbench {
             invisible: RefCell::default(),
             unicode: RefCell::default(),
             syntax: RefCell::default(),
+            selection_history: Default::default(),
         });
         self.panes.navigate(NavLocation::new(tab_id, 0), true);
         let _ = self.rebuild_search();
@@ -937,6 +956,7 @@ impl Workbench {
             invisible: RefCell::default(),
             unicode: RefCell::default(),
             syntax: RefCell::default(),
+            selection_history: Default::default(),
         });
         self.panes
             .navigate(NavLocation::new(expected, cursor), false);
@@ -947,6 +967,17 @@ impl Workbench {
     /// Validate all text and byte boundaries before publishing a transaction.
     /// A provider can target any open document without switching focus.
     pub fn apply_text_edits(
+        &mut self,
+        id: DocumentId,
+        expected_revision: u64,
+        edits: Vec<TextReplacement>,
+    ) -> Result<(), WorkbenchError> {
+        self.selection_edit_document(id, |app| {
+            app.apply_text_edits_inner(id, expected_revision, edits)
+        })
+    }
+
+    fn apply_text_edits_inner(
         &mut self,
         id: DocumentId,
         expected_revision: u64,

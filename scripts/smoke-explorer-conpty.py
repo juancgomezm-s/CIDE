@@ -148,6 +148,9 @@ class Session:
             elif ch=='u':self.x,self.y=self.saved
             return
         if ch=='\x1b':self.escape='esc';return
+        # ConPTY may encode a one-cell return after erasing text as BS.
+        # Backspace moves the cursor; it neither erases nor crosses the margin.
+        if ch=='\b':self.x=max(0,self.x-1);return
         if ch=='\r':self.x=0;return
         if ch=='\n':self.y=min(self.height-1,self.y+1);return
         if ch<' ':return

@@ -213,6 +213,80 @@ mod tests {
     use jc_text::{TextEncoding, TextPosition};
 
     #[test]
+    fn document_boundary_keys_respect_bom_orientation_bytes_and_focused_fields() {
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.workbench.new_file("limites.txt", TextEncoding::Utf8);
+        let text = "\u{feff}primera\r\nsegunda\nfinal";
+        state.workbench.insert_text(text).unwrap();
+        let length = text.len();
+        let revision = state
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .revision();
+        let press = |state: &mut State, code, modifiers| {
+            state.key_override = Some(modifiers);
+            state.key(code);
+        };
+        let selection = |state: &State| {
+            let view = state.workbench.active_editor().unwrap();
+            (view.cursor, view.anchor)
+        };
+        press(&mut state, 0x24, Modifiers::CTRL);
+        assert_eq!(selection(&state), (3, None));
+        press(&mut state, 0x23, Modifiers::CTRL.union(Modifiers::SHIFT));
+        assert_eq!(selection(&state), (length, Some(3)));
+        assert_eq!(
+            state
+                .workbench
+                .selection_for_pane(state.workbench.panes().active()),
+            Some(3..length)
+        );
+        press(&mut state, 0x23, Modifiers::CTRL);
+        assert_eq!(selection(&state), (length, None));
+        press(&mut state, 0x24, Modifiers::CTRL.union(Modifiers::SHIFT));
+        assert_eq!(selection(&state), (3, Some(length)));
+
+        // All four routes are palette-capable, without introducing menu rows.
+        for command in [
+            jc_app::CommandId::EditDocumentStart,
+            jc_app::CommandId::EditDocumentEnd,
+            jc_app::CommandId::EditSelectDocumentStart,
+            jc_app::CommandId::EditSelectDocumentEnd,
+        ] {
+            assert!(super::super::supported(command));
+            assert_eq!(super::super::command_id(command), 0);
+        }
+        let before = selection(&state);
+        state.open_search_panel(false);
+        press(&mut state, 0x23, Modifiers::CTRL);
+        press(&mut state, 0x24, Modifiers::CTRL.union(Modifiers::SHIFT));
+        assert_eq!(selection(&state), before);
+        state.open_selector(super::super::selector::SelectorKind::Palette);
+        press(&mut state, 0x23, Modifiers::CTRL);
+        press(&mut state, 0x24, Modifiers::CTRL.union(Modifiers::SHIFT));
+        assert_eq!(selection(&state), before);
+        state.close_selector();
+        state.explorer_focused = true;
+        press(&mut state, 0x23, Modifiers::CTRL);
+        press(&mut state, 0x24, Modifiers::CTRL.union(Modifiers::SHIFT));
+        assert_eq!(selection(&state), before);
+        assert_eq!(state.workbench.active_bytes().unwrap(), text.as_bytes());
+        assert_eq!(
+            state
+                .workbench
+                .active_document()
+                .unwrap()
+                .session
+                .document()
+                .revision(),
+            revision
+        );
+    }
+
+    #[test]
     fn page_navigation_uses_active_visible_rows_and_preserves_source_and_selection() {
         let mut state = State::new(&crate::GuiOptions::default()).unwrap();
         state.width = 1200;

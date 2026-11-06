@@ -1,5 +1,11 @@
 # Recuperación de documentos y sesiones en Rust
 
+La [selección histórica](M2_SELECTION_HISTORY.md) usa CIDEAPP2 para los metadatos
+compartidos y conserva lectura CIDEAPP1 sin esa tabla. CIDEDOC1 y CIDEPAN1 no
+cambian. Las vistas reasignan sus ViewId y la tabla se remapea antes de publicar
+el Workbench recuperado. Las versiones antiguas no leen APP2; usar el binario
+vigente para las sesiones nuevas. Las generaciones/HEAD/BACKUP/GC no cambian.
+
 Los metadatos gráficos v4 eliminan la ruta del ejecutable Git: el motor es embebido.
 El lector acepta v1/v2/v3 y consume/ignora la antigua ruta de v3. v2 añadió
 visibilidad del panel Código; al leer v1 se adopta Código visible por defecto.

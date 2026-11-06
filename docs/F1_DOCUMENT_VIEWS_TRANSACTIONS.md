@@ -2,6 +2,10 @@
 
 **Seguimiento:** F2/F3 ya están implementados con evidencia local; consultar [rangos y memoria](F2_RANGES_INDEX_MEMORY.md) y [presentación y tareas](F3_PRESENTATION_TASKS.md). Este documento conserva el alcance/evidencia histórica de F1.
 
+La mejora posterior de [selección histórica](M2_SELECTION_HISTORY.md) conserva
+cursor/ancla/rectángulo de la vista iniciadora por transición, sin otro undo
+de contenido. Sustituye la limitación histórica de restauración exacta descrita abajo.
+
 Implementado y validado localmente el 2026-11-01 sobre la rama `m2a/dual-pane-tui`. Este incremento sustituye la sincronización de cursor entre documento y panel e introduce lotes atómicos; F2/F3 continúan pendientes.
 
 ## Propiedad real del estado

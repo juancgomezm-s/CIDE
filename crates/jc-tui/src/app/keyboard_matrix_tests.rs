@@ -217,3 +217,142 @@ fn enhanced_keyboard_release_does_not_repeat_an_edit_but_repeat_events_do() {
     app.handle_event(Event::Key(event));
     assert_eq!(app.workbench.active_bytes().unwrap(), "éé".as_bytes());
 }
+
+#[test]
+fn control_document_boundaries_preserve_bom_crlf_selection_orientation_and_history() {
+    let source = "\u{feff}uno\r\ndos\r\n";
+    let mut app = editor(source);
+    let tab = app.workbench.tabs().active_id();
+    let document = app.workbench.active_document().unwrap().id;
+    let revision = app
+        .workbench
+        .active_document()
+        .unwrap()
+        .session
+        .document()
+        .revision();
+    let history = app
+        .workbench
+        .active_document()
+        .unwrap()
+        .session
+        .document()
+        .undo_steps();
+    app.workbench
+        .go_to_position(TextPosition { line: 1, column: 1 })
+        .unwrap();
+    let origin = app.workbench.active_editor().unwrap().cursor;
+    assert_eq!(origin, 9);
+    key(
+        &mut app,
+        KeyCode::Home,
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    );
+    let state = app
+        .workbench
+        .panes()
+        .view(PaneId::Primary)
+        .unwrap()
+        .state()
+        .unwrap();
+    assert_eq!((state.cursor, state.anchor), (3, Some(origin)));
+    key(
+        &mut app,
+        KeyCode::End,
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    );
+    let state = app
+        .workbench
+        .panes()
+        .view(PaneId::Primary)
+        .unwrap()
+        .state()
+        .unwrap();
+    assert_eq!((state.cursor, state.anchor), (source.len(), Some(origin)));
+    key(&mut app, KeyCode::Home, KeyModifiers::CONTROL);
+    let state = app
+        .workbench
+        .panes()
+        .view(PaneId::Primary)
+        .unwrap()
+        .state()
+        .unwrap();
+    assert_eq!((state.cursor, state.anchor), (3, None));
+    key(&mut app, KeyCode::End, KeyModifiers::CONTROL);
+    let state = app
+        .workbench
+        .panes()
+        .view(PaneId::Primary)
+        .unwrap()
+        .state()
+        .unwrap();
+    assert_eq!((state.cursor, state.anchor), (source.len(), None));
+    assert_eq!(
+        app.workbench.active_position(),
+        Some(TextPosition { line: 2, column: 0 })
+    );
+    assert_eq!(app.workbench.tabs().active_id(), tab);
+    assert_eq!(app.workbench.tabs().tabs().len(), 1);
+    assert!(!app.workbench.panes().is_split());
+    let actual = app.workbench.active_document().unwrap();
+    assert_eq!(actual.id, document);
+    assert_eq!(actual.session.document().revision(), revision);
+    assert_eq!(actual.session.document().undo_steps(), history);
+    assert_eq!(app.workbench.active_bytes().unwrap(), source.as_bytes());
+}
+
+#[test]
+fn control_document_boundaries_keep_field_and_sidebar_focus_and_are_wired_through_palette() {
+    use jc_app::CommandId;
+    let mut app = editor("uno\r\ndos\r\n");
+    app.workbench
+        .go_to_position(TextPosition { line: 1, column: 1 })
+        .unwrap();
+    let origin = app.workbench.active_editor().unwrap().cursor;
+    key(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL);
+    app.handle_event(Event::Paste("buscar".into()));
+    for modifiers in [
+        KeyModifiers::CONTROL,
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    ] {
+        key(&mut app, KeyCode::Home, modifiers);
+        key(&mut app, KeyCode::End, modifiers);
+    }
+    assert!(matches!(&app.overlay, UiOverlay::Find { input } if input == "buscar"));
+    assert_eq!(app.workbench.active_editor().unwrap().cursor, origin);
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    key(&mut app, KeyCode::F(6), KeyModifiers::NONE);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Sidebar);
+    for modifiers in [
+        KeyModifiers::CONTROL,
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    ] {
+        key(&mut app, KeyCode::Home, modifiers);
+        key(&mut app, KeyCode::End, modifiers);
+    }
+    app.dispatch(CommandId::EditDocumentStart);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Sidebar);
+    assert_eq!(app.workbench.active_editor().unwrap().cursor, origin);
+    key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
+    key(
+        &mut app,
+        KeyCode::Char('p'),
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    );
+    let commands = app.palette_commands("");
+    let selected = commands
+        .iter()
+        .position(|command| *command == CommandId::EditDocumentStart)
+        .unwrap();
+    app.overlay = UiOverlay::Palette {
+        input: String::new(),
+        selected,
+    };
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(matches!(app.overlay, UiOverlay::None));
+    assert_eq!(app.workbench.active_editor().unwrap().cursor, 0);
+    assert_eq!(app.workbench.active_bytes().unwrap(), b"uno\r\ndos\r\n");
+    assert_eq!(app.workbench.tabs().tabs().len(), 1);
+    assert!(!app.workbench.panes().is_split());
+}

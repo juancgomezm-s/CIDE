@@ -1,5 +1,81 @@
 # Validación
 
+## Selección recuperable y navegación de documento — 2026-11-05
+
+[Contrato y límites](M2_SELECTION_HISTORY.md). La corrida final del workspace
+pasó 708 pruebas con cero fallos; tres helpers ignorados directamente se
+invocan desde padres. Son 25 casos Rust nuevos sobre el cierre anterior de 683.
+Log `work/m2-selection-workspace-final.log` y resumen JSON del mismo prefijo.
+Formato, Clippy workspace/todos los destinos con warnings denegados y release
+offline aprobaron. Logs `work/m2-selection-{fmt-final,clippy-final,release-final}.log`.
+Ejecutables vigentes: `target/m2-selection-next/release`; anteriores preservados.
+
+Se cubren cursor/ancla orientados, rectángulos, origen cerrado, dos vistas sin
+robar foco, cambio de codec, errores/no-op/redo, ramas y cuotas. APP2 lee APP1,
+remapea ViewId y rechaza corrupción/pertenencia cruzada de documentos. La
+recuperación periódica real en Rust restaura selección y Undo/Redo; un cambio
+solo de metadatos cambia RecoveryKey sin alterar los cursores ya capturados.
+La primera prueba nueva de líneas usaba un byte interior de CRLF: el rechazo
+era correcto y se corrigió la coordenada del fixture (20→19), no el editor.
+
+El test de capacidad observó geometría de 64 bytes, registro de 160 bytes y
+163 840 bytes retenidos al llenar 1024 registros; reserva geométrica antes de
+editar y publicación sin asignación. Es memoria lógica adicional, no pico RAM
+de proceso. `work/m2-selection-memory.log`.
+
+139 checks nativos GUI del binario final pasaron con PATH vacío, incluido
+Ctrl+Z/Ctrl+Y entre vistas con origen invertido, identidad y foco conservados.
+Informe `work/native-gui-smoke/20261106T004734Z-1c9bea76226a`.
+Nueve recorridos ConPTY pasaron con salida 0 y fuentes intactas, incluidos
+CSI Ctrl+Inicio/Fin y selección/cursor al deshacer/rehacer:
+`work/mouse-conpty/20261106T005428Z-8ad84bec/report.json`.
+La prueba adicional de extremos detectó una omisión del emulador del harness:
+ignoraba BS U+0008 emitido por ConPTY al borrar. Se corrigió el lector común,
+se pasó la prueba pura `scripts/test-conpty-parser.py` y se conservó el oráculo
+estricto de cursor EOF. No se cambió producción para acomodar la prueba.
+
+Recuperación GUI normal: tres procesos y cuatro checks en
+`work/recovery-gui/20261106T003201Z-b03aa715`. GUI periódica: tres procesos y
+siete checks en `work/recovery-gui/20261106T003259Z-22aaf1fa`. TUI periódica:
+tres procesos y siete checks en `work/recovery-conpty/20261106T003224Z-ff0374fe`.
+Se validó confirmación, restauración, retención y reposo sin reescritura; no se
+usó ningún depósito personal ni se alteraron fuentes originales de usuario.
+
+Desplazamiento de GUI visible: 360 pasos a 60 Hz solicitados sobre 4 400 000
+bytes; mediana 3,46 ms, p95 4,17 ms, máximo 5,39 ms, cero muestras >16,67 ms.
+Se mide rueda→EndPaint, no fotones/compositor. Informe
+`work/m2-visible-scroll-uhryviqg/report.json`.
+
+Escritorio: tras desbloquear, se verificaron por entrada real y lectura UIA
+selección invertida de «abcdef», sustitución, Ctrl+Z con selección restaurada,
+Ctrl+Y con selección colapsada, segundo Undo y Alt+F4 normal. La instancia
+inicial salió sin cambios en disco: `work/m2-selection-desktop-initial.json`.
+Esa revisión encontró Ctrl+Inicio/Fin sin binding y un ancla degenerada que
+crecía con la inserción; ambos quedaron corregidos y cubiertos en las 708 pruebas.
+
+La segunda instancia final con ShowNormal permitió observar el marco, pestaña,
+explorador y fuente nativos. Windows volvió a bloquear el control de teclado
+con `GetCursorPos failed: Acceso denegado. (0x80070005)` después de recuperar
+la captura. No se afirma la repetición física final de Ctrl+Inicio/Fin ni se
+envían entradas desde estados obsoletos. Su cierre normal queda pendiente;
+la fuente sigue intacta y la recuperación personal está deshabilitada.
+Estado en `work/m2-selection-desktop-final.json` y detalles de la instancia en
+`work/m2-selection-final-visual-launch.json`. El proceso propio era 50180;
+antes de retomarlo se debe seleccionar de nuevo la ventana real, no reutilizar
+coordenadas/handles o suponer que ese PID no fue reutilizado.
+
+Juan excluyó IME real del cierre solicitado. Narrador sigue aplazado. WMI
+informó una pantalla física activa (`work/m2-selection-displays.json`); traslado
+entre monitores no verificado. No hubo instalaciones, cambios de ajustes, CI o push.
+
+Paquete local `work/packages/CIDE-M2-seleccion-20261105.zip`: 352 archivos,
+seis ejecutables y 11 602 981 bytes. CRC, tamaños y todos los hashes del manifest
+verificados, incluidas las licencias de 127 dependencias. SHA-256:
+`4ac2560790cc778ad4511a6cd93fa5446f7054baf0bf96662a5fed60f536e237`.
+Persisten las dos omisiones históricas de avisos GNU condicionales indicadas en
+el manifest; no son el destino MSVC construido ni nuevas omisiones de este bloque.
+Informe `work/m2-selection-package-verified.json`. Sin instalación/publicación.
+
 ## Navegación lateral y atajos de foco — 2026-11-05
 
 [Contrato del bloque](M2_SIDEBAR_NAVIGATION.md), posterior al commit Git

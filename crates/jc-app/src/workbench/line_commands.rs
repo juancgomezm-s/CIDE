@@ -47,6 +47,10 @@ impl Workbench {
     /// start excludes that line; a single selected line has no internal boundary.
     /// Without a selection, join the caret's line with its next real line.
     pub fn join_lines(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.join_lines_inner())
+    }
+
+    fn join_lines_inner(&mut self) -> Result<(), WorkbenchError> {
         self.require_linear_selection()?;
         let editor = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let selection = editor.selection();

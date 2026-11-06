@@ -546,17 +546,18 @@ impl SnippetSession {
             .take()
             .ok_or("Revisa la propuesta de plantilla antes de aplicarla")?;
         let cursor = plan.range.start + plan.cursor_bytes;
-        app.apply_text_edits(
-            self.target.stamp.document,
-            self.target.stamp.revision,
-            vec![crate::TextReplacement {
-                range: plan.range,
-                text: plan.after,
-            }],
-        )
+        app.selection_edit_document(self.target.stamp.document, |app| {
+            app.apply_text_edits(
+                self.target.stamp.document,
+                self.target.stamp.revision,
+                vec![crate::TextReplacement {
+                    range: plan.range,
+                    text: plan.after,
+                }],
+            )?;
+            app.set_linear_selection_bytes(cursor, cursor)
+        })
         .map_err(|e| e.to_string())?;
-        app.set_linear_selection_bytes(cursor, cursor)
-            .map_err(|e| e.to_string())?;
         Ok(())
     }
 }

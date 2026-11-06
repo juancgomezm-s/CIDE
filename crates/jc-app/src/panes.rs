@@ -160,6 +160,22 @@ impl Default for PaneManager {
     }
 }
 impl PaneManager {
+    pub(crate) fn state_for_view(&self, id: ViewId) -> Option<&ViewState> {
+        self.primary
+            .views
+            .iter()
+            .chain(&self.secondary.views)
+            .find(|view| view.id == id)
+            .map(|view| &view.state)
+    }
+    pub(crate) fn state_for_view_mut(&mut self, id: ViewId) -> Option<&mut ViewState> {
+        self.primary
+            .views
+            .iter_mut()
+            .chain(&mut self.secondary.views)
+            .find(|view| view.id == id)
+            .map(|view| &mut view.state)
+    }
     pub(crate) fn tab_for_view(&self, id: ViewId) -> Option<TabId> {
         self.primary
             .views

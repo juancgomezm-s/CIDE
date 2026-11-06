@@ -1353,7 +1353,11 @@ fn supported(command: CommandId) -> bool {
         || COMMANDS.iter().any(|(_, value, _)| *value == command)
         || matches!(
             command,
-            CommandId::EditIndent
+            CommandId::EditDocumentStart
+                | CommandId::EditDocumentEnd
+                | CommandId::EditSelectDocumentStart
+                | CommandId::EditSelectDocumentEnd
+                | CommandId::EditIndent
                 | CommandId::EditOutdent
                 | CommandId::EditorOpenToSide
                 | CommandId::SearchCancel

@@ -71,6 +71,19 @@ impl PaneManager {
         reader: &mut dyn Read,
         tabs: &[(TabId, TabId, usize, u64)],
     ) -> io::Result<Self> {
+        Self::read_recovery_with_views(reader, tabs).map(|(panes, _)| panes)
+    }
+    pub(crate) fn recovery_view_tabs(&self) -> impl Iterator<Item = (ViewId, TabId)> + '_ {
+        self.primary
+            .views
+            .iter()
+            .chain(&self.secondary.views)
+            .map(|view| (view.id, view.tab))
+    }
+    pub(crate) fn read_recovery_with_views(
+        reader: &mut dyn Read,
+        tabs: &[(TabId, TabId, usize, u64)],
+    ) -> io::Result<(Self, Vec<(ViewId, ViewId)>)> {
         if tabs.len() > MAX_TABS {
             return Err(invalid("demasiados documentos en los grupos"));
         }
@@ -108,6 +121,7 @@ impl PaneManager {
         let old_next = next_view;
         let mut views = BTreeSet::new();
         let mut count = 0;
+        let mut view_mapping = Vec::new();
         let primary = read_group(
             reader,
             &mappings,
@@ -115,6 +129,7 @@ impl PaneManager {
             &mut count,
             &mut next_view,
             old_next,
+            &mut view_mapping,
         )?;
         let secondary = read_group(
             reader,
@@ -123,6 +138,7 @@ impl PaneManager {
             &mut count,
             &mut next_view,
             old_next,
+            &mut view_mapping,
         )?;
         let manager = Self {
             secondary_open: flags & 1 != 0,
@@ -137,7 +153,7 @@ impl PaneManager {
             next_view,
         };
         validate_manager(&manager)?;
-        Ok(manager)
+        Ok((manager, view_mapping))
     }
 }
 
@@ -148,6 +164,7 @@ fn read_group(
     total: &mut usize,
     next: &mut u64,
     old_next: u64,
+    view_mapping: &mut Vec<(ViewId, ViewId)>,
 ) -> io::Result<PaneView> {
     let flags = u32_in(reader)?;
     let count = u32_in(reader)? as usize;
@@ -221,6 +238,10 @@ fn read_group(
         };
         let id = ViewId(*next);
         *next += 1;
+        view_mapping
+            .try_reserve(1)
+            .map_err(|_| invalid("no hay memoria para las vistas recuperadas"))?;
+        view_mapping.push((old, id));
         if old.0 == active {
             group.active = Some(id);
             selected = true;
@@ -440,6 +461,24 @@ mod tests {
             assert_eq!(new_active.tab.0, old_active.tab.0 + 100);
         }
         assert_eq!(restored.primary.views[0].state.selection(), Some(1..3));
+    }
+    #[test]
+    fn panes_recovery_returns_exact_view_identity_mapping_without_changing_the_wire_format() {
+        let original = manager();
+        let mut bytes = vec![];
+        original.write_recovery(&mut bytes).unwrap();
+        assert_eq!(&bytes[..8], b"CIDEPAN1");
+        let (restored, identities) =
+            PaneManager::read_recovery_with_views(&mut Cursor::new(bytes), &mapping()).unwrap();
+        let old: Vec<_> = original.recovery_view_tabs().collect();
+        let new: Vec<_> = restored.recovery_view_tabs().collect();
+        assert_eq!(identities.len(), old.len());
+        for (((old_id, old_tab), (new_id, new_tab)), pair) in old.iter().zip(&new).zip(&identities)
+        {
+            assert_eq!(*pair, (*old_id, *new_id));
+            assert_ne!(old_id, new_id);
+            assert_eq!(new_tab.0, old_tab.0 + 100);
+        }
     }
     #[test]
     fn panes_recovery_rejects_truncation_counts_duplicate_views_unknown_refs_and_stale_rectangles()

@@ -189,6 +189,15 @@ impl ChangeSet {
     }
 }
 
+/// Borrowed history geometry for optional application metadata; contains no source bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HistoryTransition {
+    pub before_revision: u64,
+    pub after_revision: u64,
+    pub before_len: usize,
+    pub after_len: usize,
+}
+
 pub struct Document {
     recovery_identity: u64,
     recovery_epoch: u64,
@@ -310,6 +319,25 @@ impl Document {
     }
     pub fn redo_steps(&self) -> usize {
         self.redo.len()
+    }
+    /// Retained transitions in creation order, including both undo and redo.
+    /// A transition disappears here when its predecessor is evicted. Reading
+    /// does not clone history, touch source storage or invalidate recovery.
+    pub fn history_transitions(&self) -> impl Iterator<Item = HistoryTransition> + '_ {
+        self.undo
+            .iter()
+            .chain(std::iter::once(&self.state))
+            .chain(self.redo.iter().rev())
+            .scan(None, |previous: &mut Option<(u64, usize)>, next| {
+                let prior = previous.replace((next.revision, next.len));
+                Some(prior.map(|(revision, len)| HistoryTransition {
+                    before_revision: revision,
+                    after_revision: next.revision,
+                    before_len: len,
+                    after_len: next.len,
+                }))
+            })
+            .flatten()
     }
     pub fn retained_added_bytes(&self) -> usize {
         self.added.len()

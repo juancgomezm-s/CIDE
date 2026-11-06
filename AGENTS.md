@@ -1,5 +1,36 @@
 # Working on JC-IDE
 
+## Current selection history / M2 input closure — 2026-11-05
+
+Read docs/M2_SELECTION_HISTORY.md before changing editing/history/recovery.
+Juan excludes real IME from the requested M2 closure; no fonts/languages install.
+Narrator stays deferred. Windows WMI reports one active physical display.
+Selection metadata lives only in jc-app, bounded1024 records/256KiB per document,
+lazy geometric reservation before editing, allocation-free record afterward.
+One logical operation must publish one core transition; nested commands share
+the selection scope. Core history_transitions is a borrowed ordered iterator,
+not another history or a source snapshot. Undo/redo restore only the originating
+ViewId without changing focus; closed origin or changed codec uses F1 mapping.
+CIDEAPP2 reads APP1 with empty metadata; CIDEDOC1/CIDEPAN1 unchanged. Remap ViewIds
+through the pane recovery mapping and validate revision/length/view ownership.
+Preserve periodic metadata/identity/epoch, HEAD/BACKUP and handle-based GC.
+CtrlHome/End and CtrlShiftHome/End are shared editor-only commands, palette-only
+without menu clutter, endpoints after BOM/EOF without full decode. Insertion
+clears collapsed linear anchors. Current binaries: target/m2-selection-next/release.
+708 full-workspace tests passed, three helpers through parents; fmt/all-target
+Clippy/release offline passed. 139 own-HWND checks,9 private ConPTY input checks,
+GUI normal+periodic recovery and TUI periodic recovery passed. ConPTY BS parsing
+was fixed in the common test reader, not production. Do not repeat closed suites
+for docs. IME excluded, Narrator deferred, physical cross-monitor not verified;
+screen/input observations and remaining limits are in VALIDACION. CI stays dormant.
+The first desktop trial verified real typing, oriented selection Undo/Redo and
+normal AltF4. A final isolated instance with ShowNormal displayed the native UI,
+then Windows input failed again with GetCursorPos access denied. Normal close
+is pending; see work/m2-selection-desktop-final.json and launch report. Select
+fresh returned windows through Computer Use, never act from stale handles/PIDs
+or force another app/process to bypass desktop restrictions. Source is unchanged,
+personal recovery disabled. Retain the explicit IME exclusion in future closures.
+
 ## Current sidebar navigation closure — 2026-11-05
 
 Read docs/M2_SIDEBAR_NAVIGATION.md before changing sidebar input. ExplorerView

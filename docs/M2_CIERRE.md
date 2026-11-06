@@ -2,6 +2,21 @@
 
 ## Prioridad vigente de M2
 
+Juan excluyó IME real del cierre solicitado: no le interesa instalar fuentes o
+idiomas. No es un requisito pendiente que bloquee este cierre. Narrador continúa
+aplazado. Se integra [selección histórica](M2_SELECTION_HISTORY.md), compartida
+entre GUI/TUI y recuperable al reiniciar, sin segundo historial de contenido.
+La consulta WMI local informó una pantalla física activa; el traslado entre
+monitores no puede afirmarse con este equipo. Evidencia y estado final en VALIDACION.
+
+708 pruebas integrales, 139 checks nativos GUI y nueve ConPTY aprobaron; también
+los reinicios normales/periódicos y la prueba de selección con el worker real.
+Ctrl+Inicio/Fin y selección hasta extremos están conectados en ambas interfaces;
+la inserción limpia anclas degeneradas. Binarios: `target/m2-selection-next/release`.
+La prueba interactiva inicial de selección Undo/Redo y salida normal pasó; la
+ventana final se pudo observar, pero Windows volvió a denegar entrada de teclado.
+No confundir ese bloqueo con un cierre aprobado de todas las pruebas físicas.
+
 [Navegación lateral](M2_SIDEBAR_NAVIGATION.md) sustituye la rueda que movía la
 selección TUI y conecta la que faltaba en Archivos GUI. El viewport es propio
 de la vista del árbol, con barras navegables, hits por origen/generación/revisión
@@ -18,11 +33,11 @@ físicas de la tabla siguiente permanecen independientes.
 
 | Pendiente actual de aceptación | Tratamiento |
 |---|---|
-| IME de composición instalado | Pruebas nativas de contrato implementadas; falta sesión real de composición, cancelación y confirmación. No instalar/cambiar idioma del equipo por iniciativa propia. |
+| IME de composición instalado | Excluido por Juan del cierre solicitado. Se conserva el soporte existente; no se instalan fuentes ni idiomas. |
 | Traslado entre monitores | DPI 96/144/192 probado sintéticamente; falta segundo monitor activo para la aceptación física. |
 | Pantalla y terminal físicas | HWND/ConPTY y tiempos de confirmación de pintura no equivalen a latencia del compositor/panel ni a todos los terminales. |
 | Narrador/accesibilidad avanzada | Diferidos expresamente por Juan; no reabrir como prioridad. |
-| Selección exacta anterior a Undo | Mejora de UX prevista en F1; hoy contenido/posiciones se restauran con el mapa documentado. Requiere metadatos acotados y recuperables, no otro historial de contenido. |
+| Selección exacta anterior a Undo | Integrada con metadatos acotados por transición y CIDEAPP2 compatible con lectura APP1; evidencia en el bloque de selección histórica. |
 | Archivos editables de varios GB | Plan independiente; evidencia aislada paginada no implica integración al editor. No usar este cierre para anunciarla. |
 
 Las operaciones Git de escritura/red y proveedores AVM/semánticos no son

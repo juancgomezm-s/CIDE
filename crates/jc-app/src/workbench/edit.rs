@@ -44,6 +44,10 @@ impl Workbench {
     }
 
     pub fn insert_text(&mut self, text: &str) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.insert_text_inner(text))
+    }
+
+    fn insert_text_inner(&mut self, text: &str) -> Result<(), WorkbenchError> {
         if self.active_rectangle().is_some() {
             return self.insert_rectangle_text(text);
         }
@@ -69,6 +73,8 @@ impl Workbench {
                 .insert(cursor, &bytes)
                 .map_err(FileError::from)?;
             document.cursor += bytes.len();
+            // A collapsed Shift selection must not grow around newly typed text.
+            document.anchor = None;
         }
         self.after_edit()
     }
@@ -84,6 +90,10 @@ impl Workbench {
     }
 
     pub fn backspace(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.backspace_inner())
+    }
+
+    fn backspace_inner(&mut self) -> Result<(), WorkbenchError> {
         if self.active_rectangle().is_some() {
             return self.delete_rectangle(true);
         }
@@ -112,6 +122,10 @@ impl Workbench {
     }
 
     pub fn delete_forward(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.delete_forward_inner())
+    }
+
+    fn delete_forward_inner(&mut self) -> Result<(), WorkbenchError> {
         if self.active_rectangle().is_some() {
             return self.delete_rectangle(false);
         }
@@ -148,6 +162,10 @@ impl Workbench {
     }
 
     pub(super) fn delete_selection(&mut self) -> Result<bool, WorkbenchError> {
+        self.selection_edit(|app| app.delete_selection_inner())
+    }
+
+    fn delete_selection_inner(&mut self) -> Result<bool, WorkbenchError> {
         let selection = self.active_editor().and_then(|editor| editor.selection());
         let Some(selection) = selection else {
             return Ok(false);
@@ -258,6 +276,26 @@ impl Workbench {
         Ok(())
     }
 
+    /// BOF/EOF are byte endpoints, not a walk through all lines or decoded text.
+    pub fn move_document_boundary(
+        &mut self,
+        end: bool,
+        select: bool,
+    ) -> Result<(), WorkbenchError> {
+        let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        document
+            .session
+            .encoding()
+            .ok_or(FileError::EncodingRequired)?;
+        let offset = if end {
+            document.session.document().len()
+        } else {
+            super::session_content_start(&document.session)
+        };
+        self.resume_caret_tracking();
+        self.move_cursor_to(offset, select)
+    }
+
     pub fn move_home(&mut self, select: bool) -> Result<(), WorkbenchError> {
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         self.move_to_position(
@@ -341,6 +379,10 @@ impl Workbench {
     }
 
     pub fn duplicate_selection_or_line(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.duplicate_selection_or_line_inner())
+    }
+
+    fn duplicate_selection_or_line_inner(&mut self) -> Result<(), WorkbenchError> {
         self.require_linear_selection()?;
         if let Some(selection) = self.active_editor().and_then(|editor| editor.selection()) {
             let bytes = self
@@ -391,6 +433,10 @@ impl Workbench {
     }
 
     pub fn delete_line(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.delete_line_inner())
+    }
+
+    fn delete_line_inner(&mut self) -> Result<(), WorkbenchError> {
         self.require_linear_selection()?;
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let line = self.line_slice(position.line)?;
@@ -415,6 +461,10 @@ impl Workbench {
     }
 
     pub fn move_line_up(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.move_line_up_inner())
+    }
+
+    fn move_line_up_inner(&mut self) -> Result<(), WorkbenchError> {
         self.require_linear_selection()?;
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         if position.line == 0 {
@@ -431,6 +481,10 @@ impl Workbench {
     }
 
     pub fn move_line_down(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.move_line_down_inner())
+    }
+
+    fn move_line_down_inner(&mut self) -> Result<(), WorkbenchError> {
         self.require_linear_selection()?;
         let position = self.active_position().ok_or(WorkbenchError::NoDocument)?;
         let tab = self
@@ -454,6 +508,10 @@ impl Workbench {
     }
 
     pub fn toggle_line_comment(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.toggle_line_comment_inner())
+    }
+
+    fn toggle_line_comment_inner(&mut self) -> Result<(), WorkbenchError> {
         self.require_linear_selection()?;
         let path = self.active_path().ok_or(WorkbenchError::NoDocument)?;
         let language = detect(&path.to_string_lossy());
@@ -585,6 +643,10 @@ impl Workbench {
     }
 
     pub fn toggle_block_comment(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.toggle_block_comment_inner())
+    }
+
+    fn toggle_block_comment_inner(&mut self) -> Result<(), WorkbenchError> {
         self.require_linear_selection()?;
         let path = self.active_path().ok_or(WorkbenchError::NoDocument)?;
         let language = detect(&path.to_string_lossy());
@@ -691,6 +753,10 @@ impl Workbench {
     }
 
     pub fn indent_lines(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.indent_lines_inner())
+    }
+
+    fn indent_lines_inner(&mut self) -> Result<(), WorkbenchError> {
         if self.active_rectangle().is_some() {
             return self.insert_rectangle_text("    ");
         }
@@ -698,6 +764,10 @@ impl Workbench {
     }
 
     pub fn outdent_lines(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.outdent_lines_inner())
+    }
+
+    fn outdent_lines_inner(&mut self) -> Result<(), WorkbenchError> {
         self.require_linear_selection()?;
         self.adjust_indentation(false)
     }
@@ -844,6 +914,10 @@ impl Workbench {
     }
 
     pub fn cut_selection(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.cut_selection_inner())
+    }
+
+    fn cut_selection_inner(&mut self) -> Result<(), WorkbenchError> {
         if self.active_rectangle().is_some() {
             return self.cut_rectangle();
         }
@@ -853,6 +927,10 @@ impl Workbench {
     }
 
     pub fn paste(&mut self) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.paste_inner())
+    }
+
+    fn paste_inner(&mut self) -> Result<(), WorkbenchError> {
         let Some(clip) = self.clipboard.clone() else {
             return Ok(());
         };
@@ -871,6 +949,7 @@ impl Workbench {
     pub fn undo(&mut self) -> Result<(), WorkbenchError> {
         self.cancel_rectangle();
         let editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
+        let after = editor.session.document().revision();
         if editor.session.document_mut().undo() {
             let change = editor
                 .session
@@ -880,12 +959,24 @@ impl Workbench {
             editor.state.cursor = change.map_offset(editor.state.cursor);
             editor.state.anchor = editor.state.anchor.map(|n| change.map_offset(n));
         }
-        self.after_edit()
+        self.after_edit()?;
+        let before = self
+            .active_document()
+            .ok_or(WorkbenchError::NoDocument)?
+            .session
+            .document()
+            .revision();
+        if before != after {
+            self.restore_history_selection(before, after, true);
+        }
+        self.prune_active_selection_history();
+        Ok(())
     }
 
     pub fn redo(&mut self) -> Result<(), WorkbenchError> {
         self.cancel_rectangle();
         let editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
+        let before = editor.session.document().revision();
         if editor.session.document_mut().redo() {
             let change = editor
                 .session
@@ -895,6 +986,17 @@ impl Workbench {
             editor.state.cursor = change.map_offset(editor.state.cursor);
             editor.state.anchor = editor.state.anchor.map(|n| change.map_offset(n));
         }
-        self.after_edit()
+        self.after_edit()?;
+        let after = self
+            .active_document()
+            .ok_or(WorkbenchError::NoDocument)?
+            .session
+            .document()
+            .revision();
+        if before != after {
+            self.restore_history_selection(before, after, false);
+        }
+        self.prune_active_selection_history();
+        Ok(())
     }
 }

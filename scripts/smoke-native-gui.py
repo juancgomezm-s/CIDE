@@ -129,6 +129,7 @@ INTERACTION_REQUIRED = {
     "interaction_native_menu_context_macros_capabilities",
     "interaction_menu_reentry_stale_field_source",
     "interaction_readonly_compact_cleanup",
+    "interaction_native_undo_redo_restores_origin_selection_keeps_invoker_focus",
 }
 
 MENU_INVOKER_REQUIRED = {"native_menu_palette_find_invoker_roundtrip"}

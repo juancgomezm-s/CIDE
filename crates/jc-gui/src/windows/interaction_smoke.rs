@@ -275,6 +275,87 @@ unsafe fn cycle(hwnd: Hwnd, before: &[u8], after: &[u8], rev: u64) -> Result<(),
     key(hwnd, 0x5a, Modifiers::CTRL)?;
     expected(hwnd, before)
 }
+unsafe fn selection_history_messages(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
+    memory(hwnd, options, "uno dos\r\n", TextEncoding::Utf8)?;
+    command(hwnd, CommandId::EditorSplitRight)?;
+    command(hwnd, CommandId::EditorFocusSecondary)?;
+    let (origin, document, tabs, undo) = {
+        let mut state = owner(hwnd).unwrap().state.borrow_mut();
+        // A reversed source-byte selection must preserve its orientation, not
+        // merely reconstruct the sorted range after applying an inverse edit.
+        state
+            .workbench
+            .set_linear_selection_bytes(7, 4)
+            .map_err(|e| e.to_string())?;
+        let doc = state.workbench.active_document().unwrap();
+        (
+            state
+                .workbench
+                .panes()
+                .view(PaneId::Secondary)
+                .unwrap()
+                .view_id(),
+            doc.id,
+            state.workbench.tabs().tabs().len(),
+            doc.session.document().undo_steps(),
+        )
+    };
+    SendMessageW(hwnd, WM_CHAR, 'X' as usize, 0);
+    own_bytes(hwnd, b"uno X\r\n")?;
+    {
+        let state = owner(hwnd).unwrap().state.borrow();
+        let doc = state.workbench.active_document().unwrap();
+        if doc.session.document().undo_steps() != undo + 1
+            || doc.session.document().redo_steps() != 0
+        {
+            return Err("Native replacement did not create exactly one undo transition".into());
+        }
+    }
+    // Invoke undo in the other persistent view: restore the initiator's
+    // selection while preserving the invoking group's focus and shared source.
+    command(hwnd, CommandId::EditorFocusPrimary)?;
+    key(hwnd, 0x5a, Modifiers::CTRL)?;
+    own_bytes(hwnd, b"uno dos\r\n")?;
+    {
+        let state = owner(hwnd).unwrap().state.borrow();
+        let view = state.workbench.panes().view(PaneId::Secondary).unwrap();
+        let selection = view.state().unwrap();
+        let doc = state.workbench.active_document().unwrap();
+        if state.workbench.panes().active() != PaneId::Primary
+            || view.view_id() != origin
+            || (selection.cursor, selection.anchor) != (4, Some(7))
+            || doc.id != document
+            || state.workbench.tabs().tabs().len() != tabs
+            || doc.session.document().undo_steps() != undo
+            || doc.session.document().redo_steps() != 1
+        {
+            return Err("Native undo lost selection orientation, view identity, focus, or single transition".into());
+        }
+    }
+    key(hwnd, 0x59, Modifiers::CTRL)?;
+    own_bytes(hwnd, b"uno X\r\n")?;
+    {
+        let state = owner(hwnd).unwrap().state.borrow();
+        let view = state.workbench.panes().view(PaneId::Secondary).unwrap();
+        let selection = view.state().unwrap();
+        let doc = state.workbench.active_document().unwrap();
+        if state.workbench.panes().active() != PaneId::Primary
+            || view.view_id() != origin
+            || (selection.cursor, selection.anchor) != (5, None)
+            || doc.id != document
+            || doc.session.document().undo_steps() != undo + 1
+            || doc.session.document().redo_steps() != 0
+        {
+            return Err(
+                "Native redo did not restore final initiator caret without changing focus".into(),
+            );
+        }
+    }
+    key(hwnd, 0x5a, Modifiers::CTRL)?;
+    own_bytes(hwnd, b"uno dos\r\n")?;
+    command(hwnd, CommandId::EditorOneGroup)?;
+    discard(hwnd)
+}
 unsafe fn palette(hwnd: Hwnd, label: &str) -> Result<(), String> {
     command(hwnd, CommandId::PaletteOpen)?;
     paste(hwnd, label)?;
@@ -378,6 +459,8 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         return Err("Client pointer cleanup released system resize capture".into());
     }
     checks.push("interaction_system_resize_capture_survives_client_cleanup");
+    selection_history_messages(hwnd, options)?;
+    checks.push("interaction_native_undo_redo_restores_origin_selection_keeps_invoker_focus");
     for encoding in [
         TextEncoding::Utf8,
         TextEncoding::Windows1252,

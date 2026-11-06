@@ -2,6 +2,21 @@
 
 ## Estado de cierre M2 — 2026-11-04
 
+Actualización de alcance: IME real queda excluido por decisión de Juan; no se
+instalan fuentes o idiomas. Narrador continúa aplazado. La [selección histórica](M2_SELECTION_HISTORY.md)
+ya tiene implementación compartida y codec de recuperación APP2 compatible con
+APP1; 708 pruebas integrales aprobaron. Se conectaron además Ctrl+Inicio/Fin y
+sus selecciones y se corrigió la inserción tras ancla degenerada. Traslado entre monitores: no verificado,
+Windows informa una pantalla física activa. No ampliar a M3/M5 para suplir
+esta limitación de equipo ni confundir la simulación DPI con aceptación física.
+
+Cierre local actual: `target/m2-selection-next/release`, 139 checks GUI y nueve
+ConPTY aprobados; recuperación periódica real y lectura de APP1 también.
+La interacción inicial con selección Undo/Redo pasó en escritorio y la ventana
+salió normalmente. La repetición final de navegación/cierre encontró acceso
+denegado al teclado tras poder observar el marco; no es aceptación física global.
+El estado y la instancia de prueba pendiente están en VALIDACION.
+
 Actualización 2026-11-05: el Git embebido validado y los ajustes de interfaz
 anteriores están guardados en el commit local `223b050`. Se integra el siguiente
 bloque [navegación lateral](M2_SIDEBAR_NAVIGATION.md): rueda y barra del

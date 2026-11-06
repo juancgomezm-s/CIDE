@@ -112,6 +112,13 @@ impl Workbench {
         &mut self,
         export: ClipboardExport,
     ) -> Result<(), WorkbenchError> {
+        self.selection_edit(|app| app.delete_exported_selection_inner(export))
+    }
+
+    fn delete_exported_selection_inner(
+        &mut self,
+        export: ClipboardExport,
+    ) -> Result<(), WorkbenchError> {
         self.validate_clipboard_target(export.target)?;
         self.delete_selection()?;
         self.clipboard = Some(Clipboard::Text(export.text));

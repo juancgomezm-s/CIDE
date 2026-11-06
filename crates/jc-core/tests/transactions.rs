@@ -8,6 +8,25 @@ fn edit(range: std::ops::Range<usize>, bytes: &[u8]) -> Replacement {
 }
 
 #[test]
+fn borrowed_history_transitions_cover_both_branches_and_disappear_on_trim() {
+    let mut doc = Document::from_bytes(b"abc".to_vec());
+    doc.insert(1, b"X").unwrap();
+    doc.insert(2, b"YY").unwrap();
+    let original: Vec<_> = doc.history_transitions().collect();
+    assert_eq!(original.len(), 2);
+    assert_eq!((original[0].before_len, original[0].after_len), (3, 4));
+    assert!(doc.undo());
+    assert_eq!(doc.history_transitions().collect::<Vec<_>>(), original);
+    doc.insert(0, b"Z").unwrap();
+    let branch: Vec<_> = doc.history_transitions().collect();
+    assert_eq!(branch.len(), 2);
+    assert!(branch[1].after_revision > original[1].after_revision);
+    assert_eq!(branch[1].before_revision, original[0].after_revision);
+    doc.set_history_bytes_limit(0);
+    assert_eq!(doc.history_transitions().count(), 0);
+}
+
+#[test]
 fn batch_is_one_revision_and_one_undo_with_complete_inverse_mapping() {
     let mut doc = Document::from_bytes(b"abcdefghi".to_vec());
     doc.apply_batch(EditBatch {

@@ -77,6 +77,15 @@ impl Workbench {
                 self.select_all()?;
                 Ok(CommandOutcome::None)
             }
+            EditDocumentStart
+            | EditDocumentEnd
+            | EditSelectDocumentStart
+            | EditSelectDocumentEnd => {
+                let end = matches!(command, EditDocumentEnd | EditSelectDocumentEnd);
+                let select = matches!(command, EditSelectDocumentStart | EditSelectDocumentEnd);
+                self.move_document_boundary(end, select)?;
+                Ok(CommandOutcome::None)
+            }
             EditDuplicate => {
                 self.duplicate_selection_or_line()?;
                 Ok(CommandOutcome::None)

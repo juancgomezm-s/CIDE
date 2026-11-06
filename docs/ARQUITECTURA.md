@@ -44,7 +44,7 @@ Un commit publica una revisión nueva y un `ChangeSet` completo: rangos anterior
 
 No exponer `document_mut()` a widgets o proveedores. Ningún consumidor puede cambiar contenido evitando la transacción. Multi-cursor, replace-all, formato y acciones de código usan el mismo camino; no se implementa atomicidad copiando todo el archivo para cada comando ni llamando a N undos desde la UI.
 
-El historial de contenido pertenece al documento. F1 reubica las selecciones mediante mapas, con afinidad a la derecha y ajuste a límites válidos. Restaurar exactamente la selección previa de la vista iniciadora es una mejora de UX todavía pendiente; se añadirá con metadatos acotados, sin otro undo de contenido. En la política de destino, la selección que restaurará undo se define para la vista iniciadora; las demás vistas se reubican. Si esa vista ya cerró, el cambio de contenido sigue siendo válido y la política de selección debe ser determinista. Se cubre en pruebas, no mediante sincronización implícita de caret global.
+El historial de contenido pertenece al documento. F1 reubica las selecciones mediante mapas, con afinidad a la derecha y ajuste a límites válidos. La [selección histórica](M2_SELECTION_HISTORY.md) añade metadatos acotados por transición para restaurar la vista iniciadora al deshacer/rehacer; las demás vistas siguen reubicándose y el foco no cambia. Si la vista cerró o cambió su codec, se usa el mapeo F1 sin transferir la selección a otra identidad. No hay otro undo de contenido ni una copia editable por vista.
 
 ## Acceso textual y memoria
 

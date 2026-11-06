@@ -35,6 +35,10 @@ pub enum CommandId {
     EditCopy,
     EditPaste,
     EditSelectAll,
+    EditDocumentStart,
+    EditDocumentEnd,
+    EditSelectDocumentStart,
+    EditSelectDocumentEnd,
     EditDuplicate,
     EditDeleteLine,
     EditMoveLineUp,
@@ -568,6 +572,30 @@ pub fn default_registry() -> CommandRegistry {
         spec!(EditCopy, Edit, "Copiar", source_clipboard_selection),
         spec!(EditPaste, Edit, "Pegar", paste),
         spec!(EditSelectAll, Edit, "Seleccionar todo", select_all),
+        spec!(
+            EditDocumentStart,
+            Navigation,
+            "Ir al inicio del documento",
+            rectangle_editor
+        ),
+        spec!(
+            EditDocumentEnd,
+            Navigation,
+            "Ir al final del documento",
+            rectangle_editor
+        ),
+        spec!(
+            EditSelectDocumentStart,
+            Navigation,
+            "Seleccionar hasta el inicio del documento",
+            rectangle_editor
+        ),
+        spec!(
+            EditSelectDocumentEnd,
+            Navigation,
+            "Seleccionar hasta el final del documento",
+            rectangle_editor
+        ),
         spec!(
             EditDuplicate,
             Edit,

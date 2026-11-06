@@ -234,6 +234,10 @@ impl Workbench {
         Ok(stamp)
     }
     pub fn replace_current(&mut self, replacement: &str) -> Result<bool, WorkbenchError> {
+        self.selection_edit(|app| app.replace_current_inner(replacement))
+    }
+
+    fn replace_current_inner(&mut self, replacement: &str) -> Result<bool, WorkbenchError> {
         let stamp = self.valid_search(true)?;
         if self.search.matches.is_empty() {
             return Ok(false);
@@ -277,6 +281,10 @@ impl Workbench {
         Ok(true)
     }
     pub fn replace_all(&mut self, replacement: &str) -> Result<usize, WorkbenchError> {
+        self.selection_edit(|app| app.replace_all_inner(replacement))
+    }
+
+    fn replace_all_inner(&mut self, replacement: &str) -> Result<usize, WorkbenchError> {
         let stamp = self.valid_search(true)?;
         let count = self.search.matches.len();
         if replacement.len() > 4096 || replacement.len().saturating_mul(count) > 2 * 1024 * 1024 {

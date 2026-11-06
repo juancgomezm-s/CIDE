@@ -2,6 +2,26 @@
 
 ## Prioridad vigente — pulido de interfaz y edición M2
 
+Juan excluyó IME real de su cierre; no instalar fuentes ni idiomas. Narrador
+sigue aplazado. El bloque siguiente integra [selección histórica](M2_SELECTION_HISTORY.md):
+historial de geometría acotado en jc-app, iterador prestado de transiciones del
+core y recuperación CIDEAPP2 que lee APP1 y remapea ViewId. Las operaciones
+completas agrupan el cursor final; no se usa otro motor ni otro undo de contenido.
+708 pruebas del workspace aprobaron con Rust1.88. WMI informa un monitor físico
+activo; el traslado entre pantallas queda pendiente de equipo, sin simularlo.
+Los binarios anteriores y sus evidencias se conservan abajo como históricos.
+Paquete verificado actual: `work/packages/CIDE-M2-seleccion-20261105.zip`,
+con seis ejecutables y licencias preservadas. IME no se vuelve a solicitar.
+
+Binarios vigentes: `target/m2-selection-next/release`. Pasaron 139 checks GUI,
+nueve ConPTY y reinicios GUI normales/periódicos y TUI periódicos. La revisión
+interactiva inicial confirmó selección Undo/Redo y salió normalmente. La final
+permitió ver la interfaz pero el teclado volvió a devolver acceso denegado;
+queda una instancia propia sin cambios para cierre normal cuando sea posible.
+Ver `work/m2-selection-desktop-final.json` y su launch report; renovar selección
+de ventana con Computer Use antes de actuar. No usar otros programas ni forzar
+terminación para suplir el fallo del escritorio.
+
 Último bloque: [navegación lateral](M2_SIDEBAR_NAVIGATION.md). GUI/TUI vigentes
 en `target/m2-sidebar-next/release`, conservando todas las rutas anteriores.
 El motor Git y el pulido previo están en commit local `223b050`; el nuevo bloque

@@ -300,6 +300,108 @@ fn periodic_checkpoint_restores_binary_documents_views_and_frontend_without_unch
 }
 
 #[test]
+fn periodic_checkpoint_restores_origin_selection_through_remapped_views_and_undo_redo() {
+    let fixture = Fixture::new();
+    let path = fixture.path("seleccion.txt");
+    let original = b"abcdef\r\n";
+    fs::write(&path, original).unwrap();
+    let mut bench = Workbench::default();
+    bench
+        .open_file(path.clone(), Some(TextEncoding::Utf8))
+        .unwrap();
+    assert!(bench.split_editor_right());
+    assert!(bench.focus_editor_pane(PaneId::Primary));
+    // Backward selection: orientation must survive the metadata codec.
+    bench.set_linear_selection_bytes(5, 1).unwrap();
+    let old_primary = bench
+        .panes()
+        .view(PaneId::Primary)
+        .unwrap()
+        .view_id()
+        .unwrap();
+    let mut superseded = bench
+        .begin_recovery_capture(&fixture.root, b"seleccion")
+        .unwrap();
+    bench.insert_text("X").unwrap();
+    assert!(matches!(
+        superseded.next_chunk(&bench),
+        Err(jc_app::CaptureError::Stale)
+    ));
+    assert_eq!(bench.active_bytes().unwrap(), b"aXf\r\n");
+    assert!(bench.focus_editor_pane(PaneId::Secondary));
+    bench.set_linear_selection_bytes(0, 0).unwrap();
+    let old_secondary = bench
+        .panes()
+        .view(PaneId::Secondary)
+        .unwrap()
+        .view_id()
+        .unwrap();
+    let frontend = b"panel=codigo";
+    let wake = Wakeup::default();
+    let now = Instant::now();
+    let due = now + policy().idle;
+    let mut controller = PeriodicRecovery::new(policy(), now).unwrap();
+    let mut recovery = fixture.recovery();
+    start(&mut controller, &mut recovery, &bench, frontend, due, &wake);
+    assert!(drain(&mut controller, &mut recovery, &bench, frontend, due, &wake).is_empty());
+    assert_eq!(controller.statistics().confirmed, 1);
+    assert!(controller.statistics().max_chunk_bytes <= 65536);
+    let (mut restored, opaque, backup) =
+        Workbench::restore_recovery(&mut recovery.as_mut().unwrap().store)
+            .unwrap()
+            .unwrap();
+    assert!(!backup);
+    assert_eq!(opaque, frontend);
+    assert_ne!(
+        restored
+            .panes()
+            .view(PaneId::Primary)
+            .unwrap()
+            .view_id()
+            .unwrap(),
+        old_primary
+    );
+    assert_ne!(
+        restored
+            .panes()
+            .view(PaneId::Secondary)
+            .unwrap()
+            .view_id()
+            .unwrap(),
+        old_secondary
+    );
+    assert_eq!(restored.panes().active(), PaneId::Secondary);
+    restored.undo().unwrap();
+    assert_eq!(restored.active_bytes().unwrap(), original);
+    let origin = restored
+        .panes()
+        .view(PaneId::Primary)
+        .unwrap()
+        .state()
+        .unwrap();
+    assert_eq!((origin.cursor, origin.anchor), (1, Some(5)));
+    assert_eq!(restored.panes().active(), PaneId::Secondary);
+    let observer = restored
+        .panes()
+        .view(PaneId::Secondary)
+        .unwrap()
+        .state()
+        .unwrap();
+    assert_eq!((observer.cursor, observer.anchor), (0, None));
+    restored.redo().unwrap();
+    assert_eq!(restored.active_bytes().unwrap(), b"aXf\r\n");
+    let origin = restored
+        .panes()
+        .view(PaneId::Primary)
+        .unwrap()
+        .state()
+        .unwrap();
+    assert_eq!((origin.cursor, origin.anchor), (2, None));
+    assert_eq!(restored.panes().active(), PaneId::Secondary);
+    assert_eq!(fs::read(path).unwrap(), original);
+}
+
+#[test]
 fn periodic_stale_partial_capture_never_publishes_and_retry_captures_latest() {
     let fixture = Fixture::new();
     fs::write(fixture.path("grande.txt"), vec![b'a'; 256 * 1024]).unwrap();

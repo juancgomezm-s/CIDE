@@ -25,6 +25,19 @@ base = load('mouse_owned_conpty', 'smoke-explorer-conpty.py')
 visual = load('mouse_owned_visual', 'smoke-spanish-conpty.py')
 
 
+class CursorSession(base.Session):
+    def __init__(self, *args, **kwargs):
+        self.cursor_visible = False
+        self.vt_tail = ''
+        super().__init__(*args, **kwargs)
+
+    def feed(self, ch):
+        self.vt_tail = (self.vt_tail + ch)[-2048:]
+        if self.escape == 'csi' and self.sequence == '?25' and ch in ('h', 'l'):
+            self.cursor_visible = ch == 'h'
+        super().feed(ch)
+
+
 def point(session, text, sidebar=False):
     with session.sync:
         for y, row in enumerate(session.cells):
@@ -59,6 +72,15 @@ def ordinary(path, root):
     assert not path.is_symlink() and not getattr(metadata, 'st_file_attributes', 0) & 0x400
 
 
+def eof_cursor_row(session, source_x, value):
+    row = ''.join(session.cells[session.y])
+    # Forty-eight source lines plus a final CRLF produce blank line 49.
+    # Undo restores source selection, not the previous viewport's screen row.
+    gutter = row[:source_x].rsplit('│', 1)[-1].strip()
+    return (session.contains('MOUSE_LINE_47') and gutter == '49'
+            and row[source_x:session.width - 1].strip() == value)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--exe', type=Path, required=True)
@@ -91,6 +113,7 @@ def main():
     session = None
     checks = []
     stage = 'inicio'
+    source_x = source_y = end_y = None
     report = {
         'ok': False, 'physical_display_verified': False, 'physical_mouse_verified': False,
         'os_clipboard_verified': False, 'avm_started': False,
@@ -100,8 +123,29 @@ def main():
     try:
         environment = os.environ.copy()
         environment.pop('NO_COLOR', None)
-        session = base.Session(root, exe, host, source, environment=environment)
+        session = CursorSession(root, exe, host, source, environment=environment)
         session.wait(lambda: session.contains('MOUSE_LINE_00') and session.contains('Listo'))
+        stage = 'limites_documento_control'
+        source_x, source_y = point(session, 'MOUSE_LINE_00')
+        session.send('\x1b[1;5F')  # CSI Ctrl+End, not End of the current line.
+        session.wait(lambda: session.x == source_x and session.y > source_y
+                     and eof_cursor_row(session, source_x, ''))
+        end_y = session.y
+        session.send('E')
+        session.wait(lambda: session.x == source_x + 1
+                     and eof_cursor_row(session, source_x, 'E'))
+        session.send('\x1a')
+        session.wait(lambda: session.x == source_x and eof_cursor_row(session, source_x, ''))
+        session.send('\x1b[1;5H')  # CSI Ctrl+Home returns from the trailing CRLF's empty line.
+        session.wait(lambda: session.contains('MOUSE_LINE_00')
+                     and session.x == source_x and session.y == source_y)
+        session.send('B')
+        session.wait(lambda: session.contains('BMOUSE_LINE_00')
+                     and session.x == source_x + 1 and session.y == source_y)
+        session.send('\x1a')
+        session.wait(lambda: session.contains('MOUSE_LINE_00') and not session.contains('BMOUSE_LINE_00')
+                     and session.x == source_x and session.y == source_y)
+        checks.append('tui_control_document_boundaries_use_real_csi_and_preserve_final_crlf_after_undo')
         stage = 'clic_fuente'
         x, y = point(session, 'MOUSE_LINE_00')
         click(session, x + 6, y)
@@ -133,8 +177,23 @@ def main():
         session.send('S')
         session.wait(lambda: session.contains('MSLINE_00') and not session.contains('MOUSE_LINE_00'))
         session.send('\x1a')
-        session.wait(lambda: session.contains('MOUSE_LINE_00') and not session.contains('MSLINE_00'))
+        session.wait(lambda: session.contains('MOUSE_LINE_00') and not session.contains('MSLINE_00')
+                     and all(session.styles[y][x + 1:x + 6])
+                     and session.x == x + 6 and session.y == y)
         checks.append('tui_mouse_shift_click_extends_the_existing_source_anchor')
+        stage = 'seleccion_deshacer_rehacer'
+        # No new click or focus change: the restored endpoint distinguishes the
+        # original forward selection from the same highlighted bytes backwards.
+        session.send('\x19')
+        session.wait(lambda: session.contains('MSLINE_00') and not session.contains('MOUSE_LINE_00')
+                     and not any(session.styles[y][x + 1:x + 6])
+                     and session.x == x + 2 and session.y == y)
+        session.send('\x1a')
+        session.wait(lambda: session.contains('MOUSE_LINE_00') and not session.contains('MSLINE_00')
+                     and all(session.styles[y][x + 1:x + 6])
+                     and session.x == x + 6 and session.y == y)
+        visual.snapshot(session, output / 'mouse-selection-undo-vt.png')
+        checks.append('tui_mouse_undo_redo_restores_selection_orientation_and_caret_without_refocusing')
         stage = 'rueda'
         x, y = point(session, 'MOUSE_LINE_00')
         before = session.bytes
@@ -196,13 +255,19 @@ def main():
         report.update(ok=True, checks=checks, exit_code=code.value, fixtures_unchanged=True, vt_bytes=session.bytes)
     except BaseException as error:
         report.update(error=str(error), stage=stage, checks=checks, screen=session.text() if session else '')
+        if session:
+            report['cursor_diagnostics'] = {'x': session.x, 'y': session.y, 'end_y': end_y,
+                                            'source_x': source_x, 'source_y': source_y,
+                                            'visible': session.cursor_visible,
+                                            'vt_tail': session.vt_tail,
+                                            'cursor_row': ''.join(session.cells[session.y])}
         raise
     finally:
         if session:
             session.close()
         with (output / 'report.json').open('x', encoding='utf8', newline='\n') as stream:
             json.dump(report, stream, ensure_ascii=False, indent=2)
-        print(json.dumps({key: value for key, value in report.items() if key != 'screen'}, ensure_ascii=False))
+        print(json.dumps({key: value for key, value in report.items() if key != 'screen'}, ensure_ascii=True))
 
 
 if __name__ == '__main__':
