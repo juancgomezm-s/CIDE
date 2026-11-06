@@ -139,6 +139,13 @@ pub(crate) struct GitStatusView {
     view: ViewState,
 }
 impl GitStatusView {
+    pub(crate) fn history_info(&self) -> Option<&jc_app::git_revision::RepositoryInfo> {
+        if self.state() == GitStatusTaskState::Ready {
+            self.controller.result().and_then(|s| s.info())
+        } else {
+            None
+        }
+    }
     pub(crate) fn new(wake: Wakeup) -> Self {
         Self {
             controller: GitStatusController::new(wake),

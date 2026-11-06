@@ -221,14 +221,24 @@ impl TuiApp {
             }
             GitDiffRefresh => self.open_git_diff(),
             GitDiffCancel => {
-                self.git_diff.cancel(&mut self.tasks);
-                self.status = self.git_diff.message().to_owned();
+                if self.git_history.active {
+                    self.git_revision.cancel();
+                    self.status = self.git_revision.message().into();
+                } else {
+                    self.git_diff.cancel(&mut self.tasks);
+                    self.status = self.git_diff.message().to_owned();
+                }
             }
             GitConfigureExecutable => self.configure_git_executable(),
             GitRepositoryStatus | GitStatusRefresh => self.open_git_repository_status(),
             GitStatusCancel => {
-                self.git_status.cancel();
-                self.status = self.git_status.message().to_owned();
+                if self.git_history.active {
+                    self.git_revision.cancel();
+                    self.status = self.git_revision.message().into();
+                } else {
+                    self.git_status.cancel();
+                    self.status = self.git_status.message().to_owned();
+                }
             }
             ViewSymbols => self.show_sidebar(SidebarView::Symbols),
             ViewToggleBottomPanel => {

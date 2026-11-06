@@ -834,11 +834,20 @@ impl TuiApp {
                     true
                 }
                 Some(Wheel::GitStatus) => {
-                    self.git_status.move_selection(delta);
+                    if self.git_history.active {
+                        self.git_history.selected =
+                            self.git_history.selected.saturating_add_signed(delta);
+                    } else {
+                        self.git_status.move_selection(delta);
+                    }
                     true
                 }
                 Some(Wheel::GitHunks) => {
-                    self.git_diff.select_relative(delta);
+                    if self.git_history.active {
+                        self.git_history.hunk = self.git_history.hunk.saturating_add_signed(delta);
+                    } else {
+                        self.git_diff.select_relative(delta);
+                    }
                     self.git_diff_scroll = 0;
                     true
                 }
@@ -937,15 +946,24 @@ impl TuiApp {
                 true
             }
             Some(Action::GitStatus(index)) => {
-                self.git_status.first();
-                self.git_status.move_selection(index as isize);
+                if self.git_history.active {
+                    self.git_history.selected = index;
+                } else {
+                    self.git_status.first();
+                    self.git_status.move_selection(index as isize);
+                }
                 let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
                 true
             }
             Some(Action::GitHunk(index)) => {
-                self.git_diff
-                    .select_relative(index as isize - self.git_diff.selected() as isize);
-                self.navigate_git_hunk();
+                if self.git_history.active {
+                    self.git_history.hunk = index;
+                    self.git_diff_scroll = 0;
+                } else {
+                    self.git_diff
+                        .select_relative(index as isize - self.git_diff.selected() as isize);
+                    self.navigate_git_hunk();
+                }
                 true
             }
             Some(Action::Focus(focus)) => {

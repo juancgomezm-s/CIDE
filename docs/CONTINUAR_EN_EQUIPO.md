@@ -1,5 +1,19 @@
 # Continuación local — después del bloque de evidencia M2
 
+## Consulta histórica básica y núcleo reutilizable — 2026-11-06
+
+[Contrato y evidencia](G1_HISTORICAL_READS.md). Commit → archivos → comparación
+con primer padre está conectado en GUI/TUI, sin sustituir el buffer. jc-git ofrece
+lecturas históricas y el único modelo de comparación, con consumidor externo probado.
+Binarios vigentes: `target/m2-history-next/release`; anteriores preservados.
+734 pruebas integrales iniciales y cierre dirigido cubren 736 casos distintos;
+tras el traslado del modelo se revalidaron core/adaptador. Pasaron Clippy/release,
+142 checks HWND y siete ConPTY. No hay corrida integral final de 736 ni aceptación
+física: escritorio denegó entrada y captura negra, con instancia propia pendiente
+de salida normal. IME excluido, Narrador aplazado y CI dormido.
+Siguiente bloque de M2: pares explícitos HEAD/índice/disco/buffer. No se habilitan
+escrituras ni se amplía el cierre a todo G1–G3.
+
 ## Prioridad: núcleo Git compartido y alcance de cierre M2
 
 Juan fija un [núcleo Git independiente](GIT_SHARED_CORE.md), integrado en CIDE

@@ -1,5 +1,24 @@
 # Working on JC-IDE
 
+## Historical Git / reusable diff closure — 2026-11-06
+
+Read docs/G1_HISTORICAL_READS.md. jc-git::revision reads pinned first-parent
+revision lists/pairs; absence is typed, missing/corrupt advertised objects are
+errors. read_file_pair never reads worktree sources. Tree bytes cumulative8MiB,
+depth128,entries65536,parentmetadata8; host source2MiB/side and4MiBcombined.
+The single diff model now lives in jc-git::diff_model; jc-app only reexports.
+GitRevisionController owns one lazy bounded worker/latestmetadata/completion;
+only poll accepts, prepare does no I/O/admission. GUI commit/file selection and
+TUI H/Intro/E/Esc show historical sources without editable-buffer navigation.
+No historical side tab, complete DAG, refs or correct HEAD/index/disk pairs yet.
+Current binaries target/m2-history-next/release. 734 initial workspace cases,
+335 revalidation after modelmove +2 additional cases =>736 distinct closure,
+not one final736 run. Clippy/release,142 HWND and7 ConPTY passed. Visible test
+blocked by GetCursorPos accessdenied/black capture; own instance normalexit pending.
+See work/g1-history-desktop-result.json and fresh Computer Use selection before
+closing. Source/Git fixture unchanged; personal recovery off. IME excluded,
+Narrator deferred, physical/global gates open. CI dormant; no new dependencies.
+
 ## Shared Git core boundary — decision by Juan
 
 Read docs/GIT_SHARED_CORE.md and D63. The embedded Rust Git core is reusable by

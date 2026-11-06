@@ -1,4 +1,6 @@
-//! CIDE's embedded Git provider. No Git executable, UI or editable buffers.
+//! Embedded Git provider independent of editor hosts and frontends.
+pub mod diff_model;
+pub mod revision;
 use gix::bstr::ByteSlice;
 use std::{
     collections::BTreeMap,

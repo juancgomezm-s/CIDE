@@ -1,0 +1,43 @@
+{
+  "date": "2026-11-06",
+  "binaries": "target/m2-history-next/release",
+  "tests": {
+    "initial_workspace_passed": 734,
+    "shared_model_move_revalidation_passed": 335,
+    "additional_tui_real_keys_passed": 1,
+    "external_core_consumer_passed": 1,
+    "distinct_closure_cases": 736,
+    "single_final_workspace_pass": false
+  },
+  "native": {
+    "checks": 142,
+    "summary": "work\\native-gui-smoke\\20261106T060246Z-7009d3a2192c\\summary.json",
+    "git_metadata_unchanged": true,
+    "gui_runtime_PATH_empty": true
+  },
+  "conpty": {
+    "checks": 7,
+    "ok": true,
+    "report": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\sidebar-conpty\\20261106T060356Z-03ff6165"
+  },
+  "desktop": {
+    "physical_verified": false,
+    "error": "GetCursorPos failed: Acceso denegado. (0x80070005); capture black after fresh window selection retry",
+    "source_and_git_unchanged": true,
+    "normal_exit_pending": true,
+    "launch_report": "work/g1-history-visual-launch.json",
+    "no_personal_depot": true,
+    "no_forced_close": true
+  },
+  "checks": {
+    "fmt": true,
+    "clippy_workspace_all_targets": true,
+    "release_workspace_offline": true,
+    "new_dependencies": false,
+    "CI_run": false
+  },
+  "sha256": {
+    "cide-gui.exe": "03c22985d8d8d4bc652aaa19a1ea5c4e6b6d26d69742a6e469f8fc2fc17851d9",
+    "cide-tui.exe": "af736fd7001d6447a6e269f7ef1729c7867db5b2e932fc86e8c327ec532f4868"
+  }
+}

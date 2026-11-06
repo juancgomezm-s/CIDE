@@ -9,6 +9,9 @@ use jc_app::{
 use jc_text::{DecodedScalars, TextEncoding};
 use std::path::PathBuf;
 
+#[path = "git_history.rs"]
+mod history;
+
 const ADD: u32 = 0x00364327;
 const REMOVE: u32 = 0x003c304b;
 const GREEN: u32 = 0x009dd8a3;
@@ -25,6 +28,12 @@ pub(super) struct Workspace {
     pub notice: Option<String>,
     pub selected_path: Option<Vec<u8>>,
     pub focus_diff: bool,
+    pub history_commit: Option<String>,
+    pub history_selected: usize,
+    pub history_first: usize,
+    pub history_file: Option<usize>,
+    pub history_hunk: usize,
+    pub history_encoding: Option<TextEncoding>,
     wheel: i32,
 }
 impl Workspace {
@@ -32,6 +41,14 @@ impl Workspace {
         self.epoch = self.epoch.saturating_add(1);
         self.hits = None;
     }
+}
+#[derive(Clone, PartialEq, Eq)]
+struct HistoryStamp {
+    commit: String,
+    selected: usize,
+    file: Option<usize>,
+    hunk: usize,
+    encoding: Option<TextEncoding>,
 }
 #[derive(Clone, PartialEq, Eq)]
 struct Stamp {
@@ -42,6 +59,7 @@ struct Stamp {
     selected: usize,
     commit: Option<usize>,
     first: usize,
+    history: Option<HistoryStamp>,
 }
 #[derive(Clone, Copy)]
 enum Intent {
@@ -53,6 +71,10 @@ enum Intent {
     Source(GitBlobSource),
     Hunk(isize),
     Navigate,
+    Local,
+    HistoryFile(usize),
+    HistorySummary,
+    HistoryEncoding,
 }
 #[derive(Clone)]
 pub(super) struct Hits {
@@ -91,6 +113,7 @@ pub(super) struct Frame {
     title: String,
     branch: String,
     count: String,
+    historical: bool,
     message: String,
     subtitle: String,
     buttons: Vec<(Rect, String, bool)>,
@@ -232,10 +255,31 @@ impl State {
             selected: self.git_view.selected_status(),
             commit: self.git_workspace.commit,
             first: self.git_workspace.diff_first,
+            history: self
+                .git_workspace
+                .history_commit
+                .as_ref()
+                .map(|c| HistoryStamp {
+                    commit: c.clone(),
+                    selected: self.git_workspace.history_selected,
+                    file: self.git_workspace.history_file,
+                    hunk: self.git_workspace.history_hunk,
+                    encoding: self.git_workspace.history_encoding,
+                }),
         }
     }
     pub(super) fn prepare_git_workspace(&mut self) -> Option<Frame> {
         self.validate_git_context();
+        self.git_panel?;
+        let historical = self.git_workspace.history_commit.is_some();
+        let frame = self.prepare_git_workspace_base()?;
+        Some(if historical {
+            self.prepare_git_history(frame)
+        } else {
+            frame
+        })
+    }
+    fn prepare_git_workspace_base(&mut self) -> Option<Frame> {
         self.git_panel?;
         let layout = Layout::new(self);
         let p = |n| self.dpi.pixels(n);
@@ -335,8 +379,10 @@ impl State {
                     .commit
                     .unwrap_or(0)
                     .min(info.commits.len().saturating_sub(1));
-                let start = chosen
-                    .saturating_sub(count.saturating_sub(1))
+                let _ = chosen;
+                let start = self
+                    .git_workspace
+                    .history_first
                     .min(info.commits.len().saturating_sub(count));
                 for (index, c) in info.commits.iter().enumerate().skip(start).take(count) {
                     let top = area.top + layout.head + (index - start) as i32 * p(53);
@@ -550,7 +596,7 @@ impl State {
         } else {
             "Cambios locales".into()
         };
-        Some(Frame{hits:Hits{stamp:self.git_workspace_stamp(),actions},rect:layout.rect,toolbar:layout.toolbar,history:layout.history,files:layout.files,preview:layout.preview,title,branch,count,message,subtitle,buttons,commits,rows,code,details,footer:"Solo lectura · archivos comparados con la captura del editor · Esc vuelve al código".into()})
+        Some(Frame{hits:Hits{stamp:self.git_workspace_stamp(),actions},rect:layout.rect,toolbar:layout.toolbar,history:layout.history,files:layout.files,preview:layout.preview,title,branch,count,historical:false,message,subtitle,buttons,commits,rows,code,details,footer:"Solo lectura · archivos comparados con la captura del editor · Esc vuelve al código".into()})
     }
     pub(super) fn git_workspace_click(&mut self, x: i32, y: i32) -> Action {
         let Some(hits) = self
@@ -568,9 +614,18 @@ impl State {
             .find(|(r, _)| inside(*r, x, y))
             .map(|(_, a)| *a);
         match intent {
-            Some(Intent::Refresh) => self.request_git(self.git_panel.unwrap_or(GitIntent::Status)),
+            Some(Intent::Refresh) => {
+                if let Some(commit) = self.git_workspace.history_commit.clone() {
+                    self.request_git_history(commit);
+                    Action::None
+                } else {
+                    self.request_git(self.git_panel.unwrap_or(GitIntent::Status))
+                }
+            }
             Some(Intent::Close) => {
                 self.git_panel = None;
+                self.git_revision.cancel();
+                self.git_workspace.history_commit = None;
                 self.git_workspace.invalidate();
                 Action::None
             }
@@ -582,7 +637,15 @@ impl State {
             }
             Some(Intent::Commit(index)) => {
                 self.git_workspace.commit = Some(index);
-                self.git_workspace.invalidate();
+                if let Some(commit) = self
+                    .git_status
+                    .result()
+                    .and_then(|s| s.info())
+                    .and_then(|i| i.commits.get(index))
+                    .map(|c| c.id.clone())
+                {
+                    self.request_git_history(commit);
+                }
                 Action::None
             }
             Some(Intent::Source(source)) => {
@@ -590,7 +653,12 @@ impl State {
                 self.request_git(GitIntent::Diff(source))
             }
             Some(Intent::Hunk(delta)) => {
-                self.git_diff.select_relative(delta);
+                if self.git_workspace.history_commit.is_some() {
+                    self.git_workspace.history_hunk =
+                        self.git_workspace.history_hunk.saturating_add_signed(delta);
+                } else {
+                    self.git_diff.select_relative(delta);
+                }
                 self.git_workspace.diff_first = 0;
                 self.git_workspace.invalidate();
                 Action::None
@@ -601,6 +669,27 @@ impl State {
                     Ok(()) => self.git_panel = None,
                     Err(e) => self.git_workspace.notice = Some(e.to_string()),
                 };
+                Action::None
+            }
+            Some(Intent::Local) => self.request_git(GitIntent::Status),
+            Some(Intent::HistoryFile(index)) => {
+                self.request_git_history_file(index);
+                Action::None
+            }
+            Some(Intent::HistorySummary) => {
+                self.git_workspace.history_file = None;
+                self.git_workspace.invalidate();
+                Action::None
+            }
+            Some(Intent::HistoryEncoding) => {
+                self.git_workspace.history_encoding =
+                    Some(match self.git_workspace.history_encoding {
+                        None | Some(TextEncoding::Ibm850) => TextEncoding::Utf8,
+                        Some(TextEncoding::Utf8) => TextEncoding::Windows1252,
+                        Some(TextEncoding::Windows1252) => TextEncoding::Iso8859_1,
+                        Some(TextEncoding::Iso8859_1) => TextEncoding::Ibm850,
+                    });
+                self.git_workspace.invalidate();
                 Action::None
             }
             None => Action::None,
@@ -678,15 +767,25 @@ impl State {
                 .result()
                 .and_then(|r| r.info())
                 .map_or(0, |i| i.commits.len());
-            self.git_workspace.commit = Some(
-                self.git_workspace
-                    .commit
-                    .unwrap_or(0)
-                    .saturating_add_signed(steps)
-                    .min(total.saturating_sub(1)),
-            );
+            let page = l.history.map_or(0, |r| {
+                ((r.bottom - r.top - l.head) / self.dpi.pixels(53).max(1)).max(0) as usize
+            });
+            self.git_workspace.history_first = self
+                .git_workspace
+                .history_first
+                .saturating_add_signed(steps)
+                .min(total.saturating_sub(page));
         } else if inside(l.files, x, y) {
-            self.git_view.move_status(steps);
+            if self.git_workspace.history_commit.is_some() {
+                let total = self.git_revision.revision().map_or(0, |r| r.files.len());
+                self.git_workspace.history_selected = self
+                    .git_workspace
+                    .history_selected
+                    .saturating_add_signed(steps)
+                    .min(total.saturating_sub(1));
+            } else {
+                self.git_view.move_status(steps);
+            }
             self.git_workspace.focus_diff = false;
         } else {
             return false;
@@ -811,11 +910,27 @@ pub(super) unsafe fn draw(
         dc,
         rect(
             f.files.left + 12,
-            f.files.top + 9,
+            f.files.top + 6,
             f.files.right - 10,
-            f.files.top + 34,
+            f.files.top + 25,
         ),
-        &format!("CAMBIOS LOCALES · {}", f.count),
+        if f.historical {
+            "ARCHIVOS DEL COMMIT"
+        } else {
+            "CAMBIOS LOCALES"
+        },
+        shell::MUTED,
+        shell::SIDEBAR,
+    )?;
+    text(
+        dc,
+        rect(
+            f.files.left + 12,
+            f.files.top + 25,
+            f.files.right - 10,
+            f.files.top + 43,
+        ),
+        &f.count,
         shell::MUTED,
         shell::SIDEBAR,
     )?;
@@ -905,9 +1020,9 @@ pub(super) unsafe fn draw(
                 dc,
                 rect(
                     f.preview.left + 18,
-                    f.preview.top + 62 + i as i32 * 34,
+                    f.preview.top + if f.historical { 112 } else { 62 } + i as i32 * 34,
                     f.preview.right - 18,
-                    f.preview.top + 92 + i as i32 * 34,
+                    f.preview.top + if f.historical { 142 } else { 92 } + i as i32 * 34,
                 ),
                 line,
                 if i == 0 { shell::ACCENT } else { shell::TEXT },

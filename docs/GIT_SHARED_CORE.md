@@ -29,6 +29,10 @@ será opcional y separada del motor.
 
 ## Punto de partida real
 
+Actualización: [consulta histórica implementada](G1_HISTORICAL_READS.md). El modelo
+de comparación ya reside en jc-git, con una reexportación compatible desde jc-app
+y una prueba de consumo público independiente del editor.
+
 `crates/jc-git` ya es una biblioteca Rust independiente de los crates del editor:
 su manifiesto solo declara gix 0.90.0 como dependencia directa. Sus operaciones
 actuales son lectura de blobs y estado, con metadatos de historial acotado.

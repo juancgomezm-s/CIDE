@@ -1,5 +1,8 @@
 # CIDE
 
+[Consulta histórica Git compartida](docs/G1_HISTORICAL_READS.md): revisión, archivos
+y comparación de solo lectura en GUI/TUI, con núcleo consumible sin el editor.
+
 [Selector con tema y espacio Git nativo](docs/M2_GIT_WORKSPACE_NATIVE.md):
 historial local, archivos y comparación en áreas independientes.
 
@@ -9,7 +12,7 @@ historial local, archivos y comparación en áreas independientes.
 local. Fondo elegido `#2E3440`; título y menús GUI comparten el tema. Ambas interfaces
 conservan cambios sin guardar, historial y vistas al salir y reabrir.
 Recuperación periódica y limpieza segura de copias: [contrato y evidencia](docs/PERIODIC_RECOVERY_RETENTION.md).
-GUI/TUI actuales en `target/m2-git-ui-next/release/`, con
+GUI/TUI actuales en `target/m2-history-next/release/`, con
 [motor Git embebido en Rust](docs/GIT_EMBEDDED_ENGINE.md), sin `git.exe`.
 [Rueda y barras del Explorador](docs/M2_SIDEBAR_NAVIGATION.md) conservan selección y foco.
 [Deshacer/rehacer restaura la selección](docs/M2_SELECTION_HISTORY.md), también al recuperar la sesión.

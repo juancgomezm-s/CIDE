@@ -30,6 +30,7 @@ pub use navigation_input::parse_text_position;
 mod focus;
 pub mod git_diff;
 pub mod git_read;
+pub mod git_revision;
 pub mod git_status;
 pub mod git_status_tasks;
 mod jobs;

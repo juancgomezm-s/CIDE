@@ -75,6 +75,37 @@ unsafe fn diff_ready(hwnd: Hwnd) -> Result<(), String> {
         one_task(hwnd)?;
     }
 }
+unsafe fn history_ready(hwnd: Hwnd, file: bool) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        {
+            let state = owner(hwnd)
+                .ok_or("Historical smoke lost HWND")?
+                .state
+                .borrow();
+            match state.git_revision.state() {
+                jc_app::git_revision::GitRevisionState::Ready
+                    if (!file && state.git_revision.revision().is_some())
+                        || (file && state.git_revision.comparison().is_some()) =>
+                {
+                    return Ok(())
+                }
+                jc_app::git_revision::GitRevisionState::Queued
+                | jc_app::git_revision::GitRevisionState::Running => {}
+                other => {
+                    return Err(format!(
+                        "Historical Git not ready: {other:?}: {}",
+                        state.git_revision.message()
+                    ))
+                }
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err("Historical Git delivery exceeded deadline".into());
+        }
+        one_task(hwnd)?;
+    }
+}
 unsafe fn drain_cancelled(hwnd: Hwnd) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_millis(100);
     while Instant::now() < deadline {
@@ -251,6 +282,71 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     if head == index {
         return Err("HEAD and index blob identities unexpectedly coincide".into());
     }
+    let unchanged = snapshot(hwnd)?;
+    {
+        let mut s = owner(hwnd).unwrap().state.borrow_mut();
+        let commit = s
+            .git_status
+            .result()
+            .and_then(|r| r.info())
+            .and_then(|i| i.commits.first())
+            .ok_or("No real historical commit")?
+            .id
+            .clone();
+        s.git_workspace.commit = Some(0);
+        s.request_git_history(commit);
+    }
+    history_ready(hwnd, false)?;
+    let index = {
+        let s = owner(hwnd).unwrap().state.borrow();
+        let r = s.git_revision.revision().ok_or("No historical listing")?;
+        if r.parent.is_some() {
+            return Err("Fixture root unexpectedly has a parent".into());
+        }
+        r.files
+            .iter()
+            .position(|f| f.path == filename.as_bytes() && f.before.is_none() && f.after.is_some())
+            .ok_or("Historical root omitted actual added file")?
+    };
+    {
+        let mut s = owner(hwnd).unwrap().state.borrow_mut();
+        s.git_workspace.history_encoding = Some(jc_text::TextEncoding::Utf8);
+        s.request_git_history_file(index);
+    }
+    history_ready(hwnd, true)?;
+    {
+        let s = owner(hwnd).unwrap().state.borrow();
+        let c = s
+            .git_revision
+            .comparison()
+            .ok_or("No historical comparison")?;
+        if c.before_oid.is_some()
+            || c.after_oid.is_none()
+            || !c.model.source_bytes(DiffSide::Left).is_empty()
+            || c.model.source_bytes(DiffSide::Right) != HEAD
+        {
+            return Err(
+                "Historical comparison mixed root absence and mutable editor/index sources".into(),
+            );
+        }
+    }
+    let history_bitmap = options
+        .bitmap
+        .as_ref()
+        .map(|p| p.with_file_name("native-git-history.bmp"));
+    readonly_frame(hwnd, history_bitmap.as_deref())?;
+    if snapshot(hwnd)? != unchanged {
+        return Err("Historical read changed document/view/undo geometry".into());
+    }
+    checks.push("git_history_root_listing_exact_absent_side_and_pinned_blob");
+    checks.push("git_history_delivery_gdi_preserves_dirty_document_and_editor_views");
+    key(hwnd, 0x1b, Modifiers::NONE)?;
+    if owner(hwnd).unwrap().state.borrow().git_panel.is_some() {
+        return Err("Historical Escape left modal open".into());
+    }
+    checks.push("git_history_escape_cancels_without_live_source_navigation");
+    command(hwnd, CommandId::GitDiffIndex)?;
+    diff_ready(hwnd)?;
     checks.push("git_head_index_distinct_oid_exact_dirty_sources");
     checks.push("git_prepare_and_gdi_no_snapshot_admission_or_completion_consumption");
 

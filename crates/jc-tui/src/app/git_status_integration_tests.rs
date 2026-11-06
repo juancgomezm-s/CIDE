@@ -280,6 +280,85 @@ fn assert_status_rows(app: &mut TuiApp) {
         ])
     );
 }
+
+#[test]
+fn historical_keys_deliver_root_file_and_diff_without_editing_dirty_buffer_or_git() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let disk = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    app.workbench.insert_text("sin guardar ").unwrap();
+    let original = app.workbench.active_bytes().unwrap();
+    let revision = app
+        .workbench
+        .active_document()
+        .unwrap()
+        .session
+        .document()
+        .revision();
+    request_ready(&mut app, &wake);
+    key(&mut app, KeyCode::Char('h'));
+    assert!(app.git_history.active);
+    key(&mut app, KeyCode::Enter);
+    assert!(app.git_history.files);
+    let wait = |app: &mut TuiApp| {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            match app.git_revision.state() {
+                jc_app::git_revision::GitRevisionState::Ready => break,
+                jc_app::git_revision::GitRevisionState::Queued
+                | jc_app::git_revision::GitRevisionState::Running => {}
+                other => panic!(
+                    "Historical delivery failed: {other:?}: {}",
+                    app.git_revision.message()
+                ),
+            }
+            assert!(Instant::now() < deadline);
+            wake.wait(ticket, Some(Duration::from_millis(20)));
+        }
+    };
+    wait(&mut app);
+    let r = app.git_revision.revision().unwrap();
+    assert!(r.parent.is_none());
+    app.git_history.selected = r
+        .files
+        .iter()
+        .position(|f| f.path == TRACKED.as_bytes())
+        .unwrap();
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app);
+    assert_eq!(app.focus.primary(), PrimaryFocus::BottomPanel);
+    let c = app.git_revision.comparison().unwrap();
+    assert!(c.before_oid.is_none());
+    assert!(c.after_oid.is_some());
+    assert_eq!(
+        c.model.source_bytes(jc_app::diff_model::DiffSide::Right),
+        b"head \xff\r\nend"
+    );
+    let frame = app.prepare_frame(120, 35);
+    assert!(frame.git_status.title.contains("Archivos"));
+    drop(frame);
+    key(&mut app, KeyCode::Char('e'));
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Sidebar);
+    key(&mut app, KeyCode::Esc);
+    assert!(!app.git_history.files);
+    key(&mut app, KeyCode::Char('h'));
+    assert!(!app.git_history.active);
+    assert_eq!(app.workbench.active_bytes().unwrap(), original);
+    assert_eq!(
+        app.workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .revision(),
+        revision
+    );
+    assert_eq!(fixture.disk(), disk);
+}
 #[test]
 fn repository_status_without_document_or_encoding_delivers_mm_and_untracked_via_wakeup() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());

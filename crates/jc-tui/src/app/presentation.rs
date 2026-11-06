@@ -227,6 +227,12 @@ impl TuiApp {
         self.git_diff.tick(&self.workbench, &mut self.tasks);
         self.git_status
             .validate_context(self.project_root.as_deref());
+        if self
+            .git_revision
+            .invalidate_context(self.project_root.as_deref())
+        {
+            self.git_history = Default::default();
+        }
         self.validate_quick_open_context();
         self.syntax_pending = false;
         self.syntax_targets = [None, None];
@@ -418,7 +424,13 @@ impl TuiApp {
         let git = if self.panels.sidebar() == jc_app::SidebarView::Git
             || self.panels.bottom() == BottomPanel::Diff
         {
-            self.prepare_git_diff(
+            let prepare = if self.git_history.active {
+                Self::prepare_historical_diff
+            } else {
+                Self::prepare_git_diff
+            };
+            prepare(
+                self,
                 layout.width,
                 usize::from(layout.bottom_height.saturating_sub(3)),
                 if self.panels.sidebar_visible() {
@@ -433,7 +445,13 @@ impl TuiApp {
         let git_status = if self.panels.sidebar_visible()
             && self.panels.sidebar() == jc_app::SidebarView::GitStatus
         {
-            self.git_status.prepare(
+            let prepare = if self.git_history.active {
+                Self::prepare_git_history
+            } else {
+                Self::prepare_local_git_status
+            };
+            prepare(
+                self,
                 layout.sidebar_width,
                 super::git_status_list_height(layout.content_height),
             )

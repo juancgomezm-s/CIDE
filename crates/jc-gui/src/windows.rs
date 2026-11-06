@@ -442,6 +442,7 @@ struct State {
     git_view: git_view::GitView,
     git_diff: jc_app::git_diff::GitDiffController,
     git_status: jc_app::git_status_tasks::GitStatusController,
+    git_revision: jc_app::git_revision::GitRevisionController,
     git_status_options: Option<jc_app::git_status_tasks::GitStatusOptions>,
     jobs: jc_app::JobSystem,
     encoding_target: Option<(jc_app::DocumentId, u64, Option<TextEncoding>)>,
@@ -573,6 +574,7 @@ impl State {
             git_view: Default::default(),
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_status: jc_app::git_status_tasks::GitStatusController::new(wakeup.clone()),
+            git_revision: jc_app::git_revision::GitRevisionController::new(wakeup.clone()),
             git_status_options: None,
             jobs: jc_app::JobSystem::new(Default::default(), wakeup.clone())
                 .map_err(|e| format!("Admisión de tarea nativa: {e:?}"))?,

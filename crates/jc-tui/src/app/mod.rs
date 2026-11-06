@@ -10,6 +10,7 @@ pub(crate) mod file_browser;
 #[cfg(test)]
 mod file_browser_tests;
 mod git_diff;
+mod git_history;
 mod git_repository;
 mod git_status;
 mod markdown;
@@ -111,6 +112,8 @@ pub struct TuiApp {
     pub(crate) syntax_targets: [Option<(jc_app::PaneId, jc_app::TabId)>; 2],
     pub(crate) syntax_wakeup: jc_app::Wakeup,
     pub(crate) git_diff: jc_app::git_diff::GitDiffController,
+    pub(crate) git_revision: jc_app::git_revision::GitRevisionController,
+    pub(crate) git_history: git_history::HistoryView,
     pub(crate) open_diff: jc_app::open_diff::OpenDiffController,
     pub(crate) open_diff_view: jc_app::open_diff_view::OpenDiffView,
     pub(crate) open_diff_visible: bool,
@@ -192,6 +195,8 @@ impl TuiApp {
             syntax_targets: [None, None],
             syntax_wakeup: wakeup.clone(),
             git_diff: jc_app::git_diff::GitDiffController::new(),
+            git_revision: jc_app::git_revision::GitRevisionController::new(wakeup.clone()),
+            git_history: Default::default(),
             open_diff: Default::default(),
             open_diff_view: Default::default(),
             open_diff_visible: false,
@@ -323,10 +328,16 @@ impl TuiApp {
         );
         update.changed |= self.open_diff.tick(&self.workbench, &mut self.tasks);
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
+        let revision_changed = self.git_revision.poll(self.project_root.as_deref());
+        update.changed |= revision_changed;
+        update.recover |= self.git_revision.take_recovery();
+        if revision_changed && self.git_history.active {
+            self.status = self.git_revision.message().into();
+        }
         let status_changed = self.git_status.poll(self.project_root.as_deref());
         update.changed |= status_changed;
         update.recover |= self.git_status.take_recovery();
-        if status_changed {
+        if status_changed && !self.git_history.active {
             update.recover |= self.git_status.worker_panicked();
             if self.panels.sidebar_visible()
                 && self.panels.sidebar() == jc_app::SidebarView::GitStatus
@@ -394,6 +405,9 @@ impl TuiApp {
         self.snippet_context(&mut context);
         if self.markdown_ui.is_some() {
             context.editor_input = false;
+        }
+        if self.git_history.active && context.focus != jc_app::PrimaryFocus::Editor {
+            context.can_open_to_side = false;
         }
         if self.clipboard_transport.is_some() {
             context.field_paste = self.clipboard_field_budget().is_some();

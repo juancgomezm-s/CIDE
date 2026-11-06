@@ -16,6 +16,8 @@ const CONTEXT_LINES: usize = 3;
 
 impl TuiApp {
     pub(crate) fn request_git_diff(&mut self, source: GitBlobSource) {
+        self.git_revision.cancel();
+        self.git_history = Default::default();
         self.git_source = source;
         self.git_diff_scroll = 0;
         let Some(root) = self.project_root.clone() else {
@@ -188,6 +190,9 @@ impl TuiApp {
     }
 
     pub(crate) fn handle_git_diff_key(&mut self, key: KeyEvent) -> bool {
+        if self.git_history.active {
+            return self.handle_git_history_key(key);
+        }
         if key.modifiers != KeyModifiers::NONE {
             return false;
         }
@@ -219,7 +224,7 @@ fn plain_prefix(text: &str, width: u16) -> String {
     result
 }
 
-fn hunk_label(hunk: &DiffSpan) -> String {
+pub(super) fn hunk_label(hunk: &DiffSpan) -> String {
     let left_count = hunk.left.end.0 - hunk.left.start.0;
     let right_count = hunk.right.end.0 - hunk.right.start.0;
     let left_start = hunk.left.start.0 + usize::from(left_count != 0);
@@ -235,7 +240,7 @@ struct Segment {
     len: usize,
 }
 
-fn model_rows(
+pub(super) fn model_rows(
     model: &OwnedDiffModel,
     selected: usize,
     scroll: usize,

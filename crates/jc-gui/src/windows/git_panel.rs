@@ -19,6 +19,7 @@ pub(super) struct GitFrame {
 }
 impl State {
     pub(super) fn clear_git(&mut self) {
+        self.git_revision.cancel();
         self.git_status_due = false;
         self.git_workspace = Default::default();
         self.git_diff.clear(&mut self.jobs);
@@ -57,6 +58,8 @@ impl State {
     }
     pub(super) fn request_git(&mut self, intent: GitIntent) -> Action {
         self.close_selector();
+        self.git_revision.cancel();
+        self.git_workspace.history_commit = None;
         self.git_workspace.invalidate();
         self.git_workspace.commit = None;
         let Some(root) = self.project_root.clone() else {
@@ -119,6 +122,16 @@ impl State {
     pub(super) fn poll_git(&mut self) -> bool {
         let mut changed =
             self.validate_git_context() | self.validate_open_diff() | self.validate_source();
+        let revision_changed = self.git_revision.poll(self.project_root.as_deref());
+        if revision_changed {
+            self.git_workspace.invalidate();
+            self.status = self.git_revision.message().into();
+        }
+        changed |= revision_changed;
+        if self.git_revision.take_recovery() {
+            changed = true;
+            self.status = "La consulta histórica se recuperó de un fallo; actualiza".into();
+        }
         let mut diff_changed = false;
         for mut completion in self.jobs.poll(&self.workbench, 4) {
             if completion.status == TaskStatus::Panicked {
@@ -203,7 +216,7 @@ impl State {
                 "La tarea de estado Git se recuperó de un fallo; actualiza explícitamente".into();
             changed = true;
         }
-        if self.jobs.has_completed() || self.git_status.ready() {
+        if self.jobs.has_completed() || self.git_status.ready() || self.git_revision.ready() {
             self.bridge.signal();
         }
         changed
@@ -220,6 +233,9 @@ impl State {
             return Action::None;
         };
         self.validate_git_context();
+        if self.git_workspace.history_commit.is_some() {
+            return self.git_history_key(code, modifiers);
+        }
         if code == 0x09 && modifiers == Modifiers::NONE {
             self.git_workspace.focus_diff = !self.git_workspace.focus_diff;
             self.git_workspace.commit = None;

@@ -31,6 +31,8 @@ FIXED = [
     "docs/M2_SIDEBAR_NAVIGATION.md",
     "docs/M2_SELECTION_HISTORY.md",
     "docs/M2_GIT_WORKSPACE_NATIVE.md",
+    "docs/G1_HISTORICAL_READS.md",
+    "docs/GIT_SHARED_CORE.md",
     "third_party/limetext-text-LICENSE", "third_party/unicode-17/LICENSE.txt",
 ]
 DEVELOPMENT = """CIDE 0.1.0 - Windows MSVC x64 development package

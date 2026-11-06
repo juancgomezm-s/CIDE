@@ -130,6 +130,16 @@ impl TuiApp {
             self.open_diff_key(key);
             return;
         }
+        let history_context = self.panels.sidebar_visible()
+            && self.panels.sidebar() == SidebarView::GitStatus
+            && self.focus.primary() == PrimaryFocus::Sidebar
+            || self.git_history.active
+                && self.panels.bottom_visible()
+                && self.panels.bottom() == BottomPanel::Diff
+                && self.focus.primary() == PrimaryFocus::BottomPanel;
+        if history_context && self.handle_git_history_key(key) {
+            return;
+        }
         if let Some(stroke) = to_stroke(key) {
             let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
             let context = self.command_context();

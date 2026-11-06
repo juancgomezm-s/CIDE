@@ -4,7 +4,20 @@ use crossterm::event::{KeyCode, KeyEvent};
 use jc_app::{PrimaryFocus, SidebarView};
 
 impl TuiApp {
+    pub(crate) fn prepare_local_git_status(
+        &mut self,
+        width: u16,
+        height: u16,
+    ) -> super::GitStatusPresentation {
+        let mut p = self.git_status.prepare(width, height);
+        if self.git_status.history_info().is_some() {
+            p.message = format!("{} · H historial", p.message);
+        }
+        p
+    }
     pub(crate) fn open_git_repository_status(&mut self) {
+        self.git_history = Default::default();
+        self.git_revision.cancel();
         self.panels.show_sidebar(SidebarView::GitStatus);
         let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
         self.request_git_repository_status();
@@ -27,6 +40,9 @@ impl TuiApp {
     }
 
     pub(crate) fn handle_git_status_sidebar_key(&mut self, key: KeyEvent) {
+        if self.handle_git_history_key(key) {
+            return;
+        }
         if !key.modifiers.is_empty() {
             return;
         }
