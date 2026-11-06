@@ -1,3 +1,17 @@
+# Current per-file history / outline closure — 2026-11-06
+
+Read docs/G3_PATH_HISTORY_OUTLINE.md before extending per-path Git or outline.
+Independent jc-git path_history:24matches/128walked, private repository/start/path
+cursor, explicit shallow/metadata clipping, no HEAD resolution/worktree/blob reads
+for listing or rename-following. One existing revision worker and poll-only acceptance.
+GUI/TUI connected; accepted page retained only for same-path membercommit comparison.
+GUI summary stays pinned to compared commit while browsing; failed comparison visible.
+Outline has explicit close, bottom Esquema reopen and navigation; cancels only own jobs.
+13 new directed cases passed by suites, fmt/selective all-target Clippy/workspace release
+offline passed. Binaries target/path-history-next/release; preserve previous release paths.
+No new full tests/HWND/ConPTY/desktop, dependencies/lock, CI or push. User is working:
+do not take desktop. Physical M2 gates unchanged; IME excluded, Narrator deferred.
+
 # Current Save All correction — 2026-11-06
 
 Read docs/SAVE_ALL_NEW_PUBLICATION.md before changing new-file saving.

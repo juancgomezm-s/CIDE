@@ -97,10 +97,7 @@ impl State {
             self.explorer_focused = false;
             self.explorer_hits = None;
         } else if x >= frame.right.left {
-            self.outline.visible = !self.outline.visible;
-            self.exit_outline();
-            self.outline.hits = None;
-            self.schedule_outline();
+            self.set_outline_visible(!self.outline.visible);
         }
         self.tab_hits = None;
         true
@@ -110,7 +107,7 @@ pub(super) unsafe fn draw(dc: Hdc, f: &Frame, status: &[u16]) -> Result<(), Stri
     paint::fill(dc, f.rect, shell::SURFACE)?;
     for (r, label, active) in [
         (f.left, "Archivos", f.explorer),
-        (f.right, "Código", f.code),
+        (f.right, "Esquema", f.code),
     ] {
         let background = if active {
             shell::RAISED

@@ -1,0 +1,68 @@
+{
+  "date": "2026-11-06",
+  "scope": "Per-file first-parent history GUI/TUI; explicit GUI outline hide/reopen",
+  "core_api": "jc_git::path_history::read_path_history",
+  "independent_of_editor": true,
+  "budgets": {
+    "matches_per_page": 24,
+    "walked_per_page": 128,
+    "commit_bytes": 65536,
+    "summary_bytes": 256,
+    "author_bytes": 96,
+    "tree_cumulative_bytes": 8388608
+  },
+  "tests": {
+    "core": 5,
+    "delivery": 2,
+    "gui_git": 2,
+    "tui": 2,
+    "outline": 2,
+    "distinct_new": 13,
+    "logs": {
+      "core_delivery": "work/path-history-lib-tests.log",
+      "gui_flow": "work/path-history-gui-tests-final.log",
+      "gui_geometry": "work/path-history-header-tests.log",
+      "tui": "work/path-history-tui-tests-close.log",
+      "outline": "work/path-history-outline-tests.log"
+    }
+  },
+  "checks": {
+    "fmt": "work/path-history-fmt-check.log",
+    "clippy": "work/path-history-clippy-close.log",
+    "release": "work/path-history-release.log"
+  },
+  "retained_initial_failures": [
+    "work/path-history-tests.log",
+    "work/path-history-clippy.log",
+    "work/path-history-gui-tests.log",
+    "work/path-history-tui-lib-tests.log"
+  ],
+  "binaries": "target/path-history-next/release",
+  "previous_release_paths_preserved": true,
+  "binary_sha256": {
+    "cide-gui.exe": "8a6e9e5846fd7664e679ea24e13a9f8c88ba7eab59ff8d086a6f9c77ee4b2b17",
+    "cide-tui.exe": "e80d4067ce1b2b03967dc2b16ab2a77e159c41e1d6e77362d9c9207830027369",
+    "cide.exe": "9df27c06bb32962c1b30fae5b87fc2fd252891e89befceb8841085c94d99e9ec",
+    "jc-ide-gui.exe": "c96f728eaddf77b1957c8ce67728720966e06fd1b12d1bfd222a209fb393ad23",
+    "jc-ide-tui.exe": "547036412a5f6746a3343c97b8a301d881c54b0c292528c31b2738c4b3a6c5aa",
+    "jc-ide.exe": "400e883b646fe9533d93bda8c61975c710a0b387d9f34aaea90c01c2f98502f3"
+  },
+  "no_desktop_control": true,
+  "physical_display_verified": false,
+  "hwnd_suite_rerun": false,
+  "conpty_rerun": false,
+  "personal_recovery_used": false,
+  "personal_clipboard_used": false,
+  "full_workspace_tests_rerun": false,
+  "dependencies_added": false,
+  "lock_changed": false,
+  "ci": false,
+  "push": false,
+  "limits": [
+    "Exact path only; no rename following",
+    "First parent only; no all-branches graph",
+    "Explicit shallow boundary; no fabricated change",
+    "Optional lexical outline; no new semantic providers",
+    "IME excluded; Narrator deferred; cross-monitor/global physical performance unverified"
+  ]
+}

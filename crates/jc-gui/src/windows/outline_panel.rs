@@ -42,11 +42,13 @@ pub(super) struct OutlineFrame {
     focused: bool,
     mode: SourceMode,
     tools: Vec<(Rect, SourceMode, bool)>,
+    close: Rect,
 }
 
 pub(super) struct OutlineHits {
     rect: Rect,
     rows: Vec<usize>,
+    close: Rect,
 }
 
 impl OutlineFrame {
@@ -54,6 +56,7 @@ impl OutlineFrame {
         OutlineHits {
             rect: self.rect,
             rows: self.rows.iter().map(|row| row.index).collect(),
+            close: self.close,
         }
     }
 }
@@ -124,7 +127,38 @@ fn contains(rect: Rect, x: i32, y: i32) -> bool {
     x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
 }
 
+fn close_rect(rect: Rect, dpi: super::dpi::Dpi) -> Rect {
+    Rect {
+        left: rect.right - dpi.pixels(32),
+        right: rect.right - dpi.pixels(8),
+        top: rect.top + dpi.pixels(4),
+        bottom: rect.top + dpi.pixels(28),
+    }
+}
+
+fn same_rect(a: Rect, b: Rect) -> bool {
+    (a.left, a.top, a.right, a.bottom) == (b.left, b.top, b.right, b.bottom)
+}
+
 impl State {
+    pub(super) fn set_outline_visible(&mut self, visible: bool) {
+        self.outline.visible = visible;
+        self.exit_outline();
+        self.outline.hits = None;
+        self.tab_hits = None;
+        self.outline.candidates = None;
+        self.outline.first = 0;
+        self.outline.wheel = 0;
+        if visible {
+            self.outline.mode = SourceMode::Symbols;
+            self.schedule_outline();
+            self.status = "Esquema visible · selecciona un símbolo y pulsa Intro".into();
+        } else {
+            self.outline.controller.cancel(&mut self.jobs);
+            self.status =
+                "Esquema oculto · pulsa Esquema en la barra inferior para mostrarlo".into();
+        }
+    }
     pub(super) fn schedule_outline(&self) {
         let wanted = region(self).is_some() && provider(self);
         let controller = &self.outline.controller;
@@ -264,6 +298,7 @@ impl State {
                     (r, mode, enabled)
                 })
                 .collect(),
+            close: close_rect(rect, self.dpi),
         })
     }
 
@@ -311,12 +346,12 @@ impl State {
                 self.outline.candidates = Some((paths, 0));
                 self.outline.first = 0;
                 self.outline.hits = None;
-                self.status = "Referencia ambigua: elige un candidato en el panel Código".into();
+                self.status = "Referencia ambigua: elige un candidato en el panel Esquema".into();
             }
             Ok(None) => {
                 self.exit_outline();
                 self.ensure_encoding_selector();
-                self.status = "Destino léxico abierto desde Código".into();
+                self.status = "Destino léxico abierto desde Esquema".into();
             }
             Err(error) => self.error(error),
         }
@@ -386,6 +421,14 @@ impl State {
         let Some(rect) = region(self).filter(|r| contains(*r, x, y)) else {
             return false;
         };
+        if self.outline.hits.as_ref().is_some_and(|hits| {
+            same_rect(hits.rect, rect)
+                && same_rect(hits.close, close_rect(rect, self.dpi))
+                && contains(hits.close, x, y)
+        }) {
+            self.set_outline_visible(false);
+            return true;
+        }
         if let Some((_, mode)) = tools(rect, self.dpi)
             .into_iter()
             .find(|(r, _)| contains(*r, x, y))
@@ -512,15 +555,29 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
     };
     paint::text(
         dc,
-        label(rect.top + px(6), rect.top + px(25)),
-        &wide("CÓDIGO"),
+        Rect {
+            right: frame.close.left - px(6),
+            ..label(rect.top + px(6), rect.top + px(25))
+        },
+        &wide("ESQUEMA"),
         shell::TEXT,
         shell::SIDEBAR,
     )?;
     paint::text(
         dc,
+        Rect {
+            left: frame.close.left + px(7),
+            top: frame.close.top + px(2),
+            ..frame.close
+        },
+        &wide("×"),
+        shell::MUTED,
+        shell::SIDEBAR,
+    )?;
+    paint::text(
+        dc,
         label(rect.top + px(90), rect.top + px(HEAD)),
-        &wide("Intro · abrir   Ctrl+Intro · al lado"),
+        &wide("Doble clic / Intro · Ctrl: al lado"),
         shell::MUTED,
         shell::SIDEBAR,
     )?;
@@ -610,6 +667,89 @@ mod tests {
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
         }
+    }
+
+    #[test]
+    fn outline_close_reopen_and_enter_navigation_keep_document_and_undo() {
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.width = 1200;
+        state.height = 800;
+        state.workbench.new_file("esquema.p", TextEncoding::Utf8);
+        let source = "PROCEDURE uno:\nEND PROCEDURE.\nPROCEDURE dos:\nEND PROCEDURE.\n";
+        state.workbench.insert_text(source).unwrap();
+        let revision = state
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .revision();
+        let cursor = state.workbench.active_editor().unwrap().cursor;
+        finish(&mut state);
+        let frame = state.outline_presentation().unwrap();
+        assert_eq!(frame.rows.len(), 2);
+        let close = frame.close;
+        state.outline.hits = Some(frame.hits());
+        state.outline.focused = true;
+        state.explorer_focused = true;
+        assert!(state.explorer_click(close.left + 2, close.top + 2, false));
+        assert!(!state.outline.visible);
+        assert!(!state.outline.focused && !state.explorer_focused);
+        assert!(state.outline.hits.is_none());
+        assert_eq!(state.outline.controller.state(), SourceState::Cancelled);
+        assert!(state.outline_presentation().is_none());
+        assert!(!state.outline_click(close.left + 2, close.top + 2, false));
+        assert_eq!(state.workbench.active_editor().unwrap().cursor, cursor);
+
+        assert!(state.status_click(state.width - 2, state.height - 2));
+        assert!(state.outline.visible);
+        assert!(state.status.contains("Esquema visible"));
+        finish(&mut state);
+        let frame = state.outline_presentation().unwrap();
+        assert_eq!(frame.rows.len(), 2);
+        let row_x = frame.rect.left + 24;
+        let row_y = frame.rect.top + state.dpi.pixels(HEAD) + 2;
+        state.outline.hits = Some(frame.hits());
+        assert!(state.explorer_click(row_x, row_y, false));
+        assert!(state.outline_focused());
+        state.outline_key(0x0d, Modifiers::NONE);
+        assert_eq!(
+            state.workbench.active_editor().unwrap().cursor,
+            source.find("uno").unwrap()
+        );
+        assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+        assert_eq!(
+            state
+                .workbench
+                .active_document()
+                .unwrap()
+                .session
+                .document()
+                .revision(),
+            revision
+        );
+        state.workbench.undo().unwrap();
+        assert!(state.workbench.active_bytes().unwrap().is_empty());
+    }
+
+    #[test]
+    fn outline_close_hit_expires_when_geometry_changes() {
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.width = 1200;
+        state.height = 800;
+        state.workbench.new_file("esquema.js", TextEncoding::Utf8);
+        state
+            .workbench
+            .insert_text("function ejemplo() {}\n")
+            .unwrap();
+        let original = state.workbench.active_bytes().unwrap();
+        let frame = state.outline_presentation().unwrap();
+        let close = frame.close;
+        state.outline.hits = Some(frame.hits());
+        state.width += 100;
+        state.outline_click(close.left + 2, close.top + 2, false);
+        assert!(state.outline.visible);
+        assert_eq!(state.workbench.active_bytes().unwrap(), original);
     }
 
     #[test]

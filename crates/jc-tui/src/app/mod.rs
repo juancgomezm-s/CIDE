@@ -343,7 +343,7 @@ impl TuiApp {
                 && self.panels.sidebar() == jc_app::SidebarView::GitStatus
             {
                 self.status = format!(
-                    "{} · P preparados · T disco · H historial",
+                    "{} · P preparados · T disco · H historial · A archivo",
                     self.git_status.message()
                 );
             }

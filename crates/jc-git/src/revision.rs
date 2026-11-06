@@ -221,7 +221,7 @@ pub(crate) fn verified<'a>(
 pub(crate) struct Commit {
     pub(crate) id: gix::ObjectId,
     pub(crate) tree: gix::ObjectId,
-    parents: Vec<gix::ObjectId>,
+    pub(crate) parents: Vec<gix::ObjectId>,
     limited: bool,
 }
 pub(crate) fn commit(

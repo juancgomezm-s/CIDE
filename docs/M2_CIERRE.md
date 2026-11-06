@@ -1,3 +1,24 @@
+## Historial por archivo y Esquema ocultable — 2026-11-06
+
+[Contrato y evidencia](G3_PATH_HISTORY_OUTLINE.md). GUI/TUI consultan el historial
+de una ruta exacta mediante el núcleo Git independiente: primer padre, inicio
+fijado, 24 coincidencias/128 commits por página, cursor ligado y fronteras shallow
+explícitas. Listado sin blobs/worktree; comparación mediante el modelo existente.
+Un solo worker/controlador, aceptación únicamente en poll y una página retenida.
+GUI: Historial del archivo/A, Más antiguos/N, revisión para comparar y regreso.
+TUI: A, Intro, N, R/F5 y Esc/B/H. Archivo limpio activo admitido dentro del proyecto.
+
+Esquema GUI: × para ocultar; botón Esquema inferior para recuperar. Cancela tareas
+propias y conserva bytes/undo; doble clic/Intro navega y Ctrl abre lateralmente.
+No hay nuevos proveedores semánticos ni escrituras/red Git. Trece casos nuevos
+dirigidos aprobaron por suites (5 core,2 entrega,2 GUI Git,2 TUI,2 Esquema).
+Formato, Clippy selectivo all-targets y release workspace offline aprobaron.
+Sin nueva corrida completa de tests, HWND, ConPTY o escritorio: Juan sigue trabajando.
+Binarios actuales: `target/path-history-next/release`, anteriores preservados.
+No hay dependencias/lock/CI/push nuevos. IME excluido, Narrador aplazado y aceptación
+física/global M2 sin ampliar. Próximas herramientas G3: anotaciones y búsqueda,
+separadas de la revisión visual del bloque actual.
+
 ## Guardar todo corregido — 2026-11-06
 
 [Publicación nueva en Windows](SAVE_ALL_NEW_PUBLICATION.md). Se reprodujo el

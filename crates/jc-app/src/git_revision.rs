@@ -7,6 +7,8 @@ use crate::{
 };
 pub use jc_git::local_pair::PairKind;
 use jc_git::local_pair::{read_local_pair, HeadState, IndexToken, SourceIdentity};
+use jc_git::path_history::read_path_history;
+pub use jc_git::path_history::{PathHistoryCursor, PathHistoryEntry, PathHistoryPage};
 use jc_git::revision::{read_file_pair, read_revision, RevisionFilePair};
 pub use jc_git::revision::{Revision, RevisionEntry, RevisionFile};
 pub use jc_git::{Change, CommitInfo, RepositoryInfo};
@@ -120,20 +122,36 @@ impl ComparisonOrigin {
 }
 #[derive(Clone, PartialEq, Eq)]
 enum Query {
-    Revision { commit: String },
-    HistoricalFile { commit: String, path: Vec<u8> },
-    LocalFile { kind: PairKind, path: Vec<u8> },
+    PathHistory {
+        start: String,
+        path: Vec<u8>,
+        cursor: Option<PathHistoryCursor>,
+    },
+    Revision {
+        commit: String,
+    },
+    HistoricalFile {
+        commit: String,
+        path: Vec<u8>,
+    },
+    LocalFile {
+        kind: PairKind,
+        path: Vec<u8>,
+    },
 }
 impl Query {
     fn commit(&self) -> Option<&str> {
         match self {
+            Self::PathHistory { start, .. } => Some(start),
             Self::Revision { commit } | Self::HistoricalFile { commit, .. } => Some(commit),
             _ => None,
         }
     }
     fn path(&self) -> Option<&[u8]> {
         match self {
-            Self::HistoricalFile { path, .. } | Self::LocalFile { path, .. } => Some(path),
+            Self::HistoricalFile { path, .. }
+            | Self::LocalFile { path, .. }
+            | Self::PathHistory { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -146,6 +164,17 @@ struct Selection {
 impl Selection {
     fn valid(&self) -> bool {
         let bounded = match &self.query {
+            Query::PathHistory {
+                start,
+                path,
+                cursor,
+            } => {
+                start.capacity() <= 64
+                    && path.capacity() <= PATH_BYTES
+                    && cursor
+                        .as_ref()
+                        .is_none_or(|c| c.memory_bytes() <= PATH_BYTES * 4)
+            }
             Query::Revision { commit } => commit.capacity() <= 64,
             Query::HistoricalFile { commit, path } => {
                 commit.capacity() <= 64 && path.capacity() <= PATH_BYTES
@@ -174,6 +203,7 @@ fn valid_oid(oid: &str) -> bool {
 }
 
 enum Outcome {
+    PathHistory(PathHistoryPage),
     Revision(Revision),
     Comparison(RevisionComparison),
 }
@@ -221,6 +251,7 @@ pub struct GitRevisionController {
     generation: u64,
     selection: Option<Selection>,
     revision: Option<Revision>,
+    path_history: Option<PathHistoryPage>,
     comparison: Option<RevisionComparison>,
     state: GitRevisionState,
 }
@@ -242,6 +273,7 @@ impl GitRevisionController {
             generation: 0,
             selection: None,
             revision: None,
+            path_history: None,
             comparison: None,
             state: GitRevisionState::Idle,
         }
@@ -251,6 +283,41 @@ impl GitRevisionController {
     }
     pub fn revision(&self) -> Option<&Revision> {
         self.revision.as_ref()
+    }
+    pub fn path_history(&self) -> Option<&PathHistoryPage> {
+        self.path_history.as_ref()
+    }
+    pub fn request_path_history(
+        &mut self,
+        root: PathBuf,
+        start: String,
+        path: Vec<u8>,
+    ) -> Result<(), String> {
+        self.request(Selection {
+            root,
+            query: Query::PathHistory {
+                start,
+                path,
+                cursor: None,
+            },
+        })
+    }
+    pub fn request_path_history_next(&mut self, root: PathBuf) -> Result<(), String> {
+        let page = self
+            .path_history
+            .as_ref()
+            .ok_or("No hay historial de archivo aceptado")?;
+        let cursor = page.next.clone().ok_or("No hay otra página de historial")?;
+        let start = page.start.clone();
+        let path = page.path.clone();
+        self.request(Selection {
+            root,
+            query: Query::PathHistory {
+                start,
+                path,
+                cursor: Some(cursor),
+            },
+        })
     }
     pub fn comparison(&self) -> Option<&RevisionComparison> {
         self.comparison.as_ref()
@@ -325,6 +392,15 @@ impl GitRevisionController {
     }
     fn request(&mut self, mut selection: Selection) -> Result<(), String> {
         self.invalidate_work();
+        let retain_path_history = self
+            .selection
+            .as_ref()
+            .is_some_and(|current| current.root == selection.root)
+            && matches!(&selection.query,Query::HistoricalFile{commit,path}
+                if self.path_history.as_ref().is_some_and(|page|page.path==*path &&page.entries.iter().any(|e|e.commit.eq_ignore_ascii_case(commit))));
+        if !retain_path_history {
+            self.path_history = None;
+        }
         let retain_revision = matches!(selection.query, Query::HistoricalFile { .. })
             && self.selection.as_ref().is_some_and(|current| {
                 current.root == selection.root
@@ -349,9 +425,9 @@ impl GitRevisionController {
             return Err("La consulta necesita raíz absoluta, revisión y ruta Git válidas".into());
         }
         match &mut selection.query {
-            Query::Revision { commit } | Query::HistoricalFile { commit, .. } => {
-                commit.make_ascii_lowercase()
-            }
+            Query::Revision { commit }
+            | Query::HistoricalFile { commit, .. }
+            | Query::PathHistory { start: commit, .. } => commit.make_ascii_lowercase(),
             Query::LocalFile { .. } => {}
         }
         if self.worker.is_none() {
@@ -395,6 +471,7 @@ impl GitRevisionController {
             self.invalidate_work();
             self.selection = None;
             self.revision = None;
+            self.path_history = None;
             self.state = GitRevisionState::Stale;
             return true;
         }
@@ -403,6 +480,7 @@ impl GitRevisionController {
     pub fn cancel(&mut self) {
         self.invalidate_work();
         self.revision = None;
+        self.path_history = None;
         self.selection = None;
         self.state = GitRevisionState::Cancelled;
     }
@@ -432,6 +510,14 @@ impl GitRevisionController {
                 return false;
             }
             match completion.result {
+                Ok(Outcome::PathHistory(page))
+                    if matches!(&completion.selection.query,
+                    Query::PathHistory{start,path,..} if page.start==*start &&page.path==*path)
+                        && page.memory_bytes() <= PAIR_BYTES =>
+                {
+                    self.path_history = Some(page);
+                    self.state = GitRevisionState::Ready;
+                }
                 Ok(Outcome::Revision(revision))
                     if matches!(completion.selection.query, Query::Revision { .. })
                         && Some(revision.commit.as_str())
@@ -503,6 +589,20 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
     }
     let started = Instant::now();
     match &selection.query {
+        Query::PathHistory {
+            start,
+            path,
+            cursor,
+        } => read_path_history(
+            &selection.root,
+            start,
+            path,
+            cursor.as_ref(),
+            limits(),
+            || cancel.is_cancelled(),
+        )
+        .map(Outcome::PathHistory)
+        .map_err(Failure::Provider),
         Query::Revision { commit } => {
             read_revision(&selection.root, commit, limits(), || cancel.is_cancelled())
                 .map(Outcome::Revision)
@@ -692,6 +792,97 @@ mod tests {
     use crate::diff_model::DiffSide;
     use jc_git::revision::RevisionBlob;
     use std::sync::{atomic::AtomicUsize, mpsc};
+    fn history_page(selection: &Selection) -> PathHistoryPage {
+        PathHistoryPage {
+            repository: jc_git::Identity {
+                root: selection.root.clone(),
+                git_dir: selection.root.join(".git"),
+            },
+            start: selection.query.commit().unwrap().into(),
+            path: selection.query.path().unwrap().to_vec(),
+            entries: vec![PathHistoryEntry {
+                commit: selection.query.commit().unwrap().into(),
+                parent: None,
+                summary: b"Creacion".to_vec(),
+                author: b"Fixture".to_vec(),
+                change: Change::Added,
+            }],
+            next: None,
+            scanned: 1,
+            shallow: false,
+            metadata_limited: false,
+        }
+    }
+    #[test]
+    fn path_history_only_poll_accepts_and_selected_pair_retains_bounded_page() {
+        let wake = Wakeup::default();
+        let mut c = GitRevisionController::with_provider(
+            wake.clone(),
+            Arc::new(|s, cancel| match &s.query {
+                Query::PathHistory { .. } => Ok(Outcome::PathHistory(history_page(s))),
+                Query::HistoricalFile { commit, path } => comparison(
+                    RevisionFilePair {
+                        repository: jc_git::Identity {
+                            root: s.root.clone(),
+                            git_dir: s.root.join(".git"),
+                        },
+                        commit: commit.clone(),
+                        parent: None,
+                        path: path.clone(),
+                        before: None,
+                        after: None,
+                    },
+                    cancel,
+                    Instant::now(),
+                )
+                .map(Outcome::Comparison),
+                _ => Err(Failure::Identity),
+            }),
+        );
+        c.request_path_history(root("path"), oid('a'), b"src/archivo.p".to_vec())
+            .unwrap();
+        wait_ready(&c, &wake);
+        assert!(c.path_history().is_none());
+        c.poll(Some(&root("path")));
+        assert_eq!(c.path_history().unwrap().entries.len(), 1);
+        assert!(c.request_path_history_next(root("path")).is_err());
+        c.request_file(root("path"), oid('a'), b"src/archivo.p".to_vec())
+            .unwrap();
+        assert!(c.path_history().is_some());
+        wait_ready(&c, &wake);
+        c.poll(Some(&root("path")));
+        assert!(c.comparison().is_some());
+        assert!(c.path_history().is_some());
+        assert!(c.invalidate_context(Some(&root("different"))));
+        assert!(c.path_history().is_none());
+        assert!(c.comparison().is_none());
+    }
+    #[test]
+    fn path_history_rejects_wrong_delivered_path_and_cancel_drops_page() {
+        let wake = Wakeup::default();
+        let mut c = GitRevisionController::with_provider(
+            wake.clone(),
+            Arc::new(|s, _| {
+                let mut p = history_page(s);
+                if p.start == oid('b') {
+                    p.path = b"wrong.p".to_vec();
+                }
+                Ok(Outcome::PathHistory(p))
+            }),
+        );
+        c.request_path_history(root("path"), oid('b'), b"file.p".to_vec())
+            .unwrap();
+        wait_ready(&c, &wake);
+        c.poll(Some(&root("path")));
+        assert_eq!(c.state(), GitRevisionState::Failed);
+        assert!(c.path_history().is_none());
+        c.request_path_history(root("path"), oid('a'), b"file.p".to_vec())
+            .unwrap();
+        wait_ready(&c, &wake);
+        c.cancel();
+        assert!(!c.poll(Some(&root("path"))));
+        assert!(c.path_history().is_none());
+    }
 
     fn root(name: &str) -> PathBuf {
         std::env::temp_dir()

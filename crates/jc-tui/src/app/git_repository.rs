@@ -11,7 +11,10 @@ impl TuiApp {
     ) -> super::GitStatusPresentation {
         let mut p = self.git_status.prepare(width, height);
         if self.git_status.history_info().is_some() {
-            p.message = format!("{} · H historial", p.message);
+            p.message = jc_app::source_services::display_ui_label(
+                &format!("H historial · A archivo · {}", p.message),
+                usize::from(width).min(256),
+            );
         }
         p
     }

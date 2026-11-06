@@ -20,6 +20,8 @@ pub(crate) struct HistoryView {
     pub(super) hunk: usize,
     pub(super) encoding: Option<TextEncoding>,
     pub(super) local: Option<(jc_app::git_revision::PairKind, Vec<u8>)>,
+    /// Pinned start and opaque path only. The controller owns the accepted page.
+    path: Option<(String, Vec<u8>)>,
     commit: Option<String>,
     commit_selected: usize,
 }
@@ -45,6 +47,9 @@ impl HistoryView {
 
 impl TuiApp {
     pub(crate) fn prepare_git_history(&mut self, width: u16, height: u16) -> GitStatusPresentation {
+        if self.git_history.path.is_some() {
+            return self.prepare_git_path_history(width, height);
+        }
         let height = usize::from(height).min(ROWS);
         let total = if self.git_history.files {
             self.git_revision.revision().map_or(0, |r| r.files.len())
@@ -122,6 +127,74 @@ impl TuiApp {
     pub(crate) fn handle_git_history_key(&mut self, key: KeyEvent) -> bool {
         if key.modifiers != KeyModifiers::NONE {
             return false;
+        }
+        if matches!(key.code, KeyCode::Char('a' | 'A'))
+            && !self.git_history.active
+            && self.git_history.local.is_none()
+            && self.focus.primary() == PrimaryFocus::Sidebar
+        {
+            let pinned = self
+                .git_status
+                .history_info()
+                .and_then(|info| info.commits.first())
+                .map(|commit| commit.id.clone());
+            let path = self.git_status.selected_path().or_else(|| {
+                let root = self.project_root.as_deref()?;
+                let relative = self
+                    .workbench
+                    .active_document()?
+                    .session
+                    .path()
+                    .strip_prefix(root)
+                    .ok()?;
+                if relative.as_os_str().len() > 4096 {
+                    return None;
+                }
+                let parts = relative
+                    .components()
+                    .map(|component| match component {
+                        std::path::Component::Normal(part) => part.to_str(),
+                        _ => None,
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                if parts.is_empty() {
+                    return None;
+                }
+                let path = parts.join("/").into_bytes();
+                (path.len() <= 4096).then_some(path)
+            });
+            if let (Some(root), Some(path), Some(start)) = (self.project_root.clone(), path, pinned)
+            {
+                match self
+                    .git_revision
+                    .request_path_history(root, start.clone(), path.clone())
+                {
+                    Ok(()) => {
+                        self.git_diff.clear(&mut self.tasks);
+                        self.git_history = HistoryView {
+                            active: true,
+                            path: Some((start, path)),
+                            encoding: self.default_encoding,
+                            ..HistoryView::default()
+                        };
+                        self.git_diff_scroll = 0;
+                        self.panels.hide_bottom();
+                        self.status = format!(
+                            "Historial: {} · Intro compara · N más · R relee · H general",
+                            opaque(self.git_history.path.as_ref().unwrap().1.as_slice(), 120)
+                        );
+                    }
+                    Err(error) => self.status = error,
+                }
+            } else {
+                self.status =
+                    "Selecciona un archivo y actualiza el estado; se necesita un commit inicial"
+                        .into();
+            }
+            return true;
+        }
+        if self.git_history.path.is_some() {
+            return self.handle_git_path_history_key(key);
         }
         if matches!(key.code, KeyCode::Char('p' | 'P' | 't' | 'T'))
             && !self.git_history.active
@@ -338,6 +411,199 @@ impl TuiApp {
             _ => false,
         }
     }
+    fn prepare_git_path_history(&mut self, width: u16, height: u16) -> GitStatusPresentation {
+        let height = usize::from(height).min(ROWS);
+        let total = self
+            .git_revision
+            .path_history()
+            .map_or(0, |page| page.entries.len());
+        let scroll = self.git_history.viewport(total, height);
+        let page = self.git_revision.path_history();
+        let rows = page
+            .into_iter()
+            .flat_map(|page| page.entries.iter())
+            .enumerate()
+            .skip(scroll)
+            .take(height)
+            .map(|(ordinal, entry)| GitStatusRow {
+                ordinal,
+                flags: change(entry.change).into(),
+                path: label(
+                    &format!(
+                        "{} {}",
+                        short_oid(&entry.commit),
+                        opaque(&entry.summary, width)
+                    ),
+                    width.saturating_sub(3),
+                ),
+                selected: ordinal == self.git_history.selected,
+            })
+            .collect();
+        let path = self
+            .git_history
+            .path
+            .as_ref()
+            .map_or(&[][..], |(_, path)| path.as_slice());
+        let state = if let Some(page) = page {
+            if page.shallow {
+                "Historial superficial"
+            } else if page.entries.is_empty() && page.next.is_some() {
+                "Sin coincidencias en esta página"
+            } else if page.next.is_none() {
+                "Última página"
+            } else {
+                "Página de historial"
+            }
+        } else {
+            self.git_revision.message()
+        };
+        let more = if page.is_some_and(|page| page.next.is_some()) {
+            " · N más"
+        } else {
+            ""
+        };
+        let metadata = if page.is_some_and(|page| page.metadata_limited) {
+            " · metadatos recortados"
+        } else {
+            ""
+        };
+        GitStatusPresentation {
+            title: label(
+                &format!("Historial del archivo: {}", opaque(path, width)),
+                width,
+            ),
+            message: label(
+                &format!("{state}{metadata} · Intro compara{more} · R relee · H general"),
+                width,
+            ),
+            rows,
+            total,
+            selected: self.git_history.selected,
+            scroll,
+        }
+    }
+
+    fn handle_git_path_history_key(&mut self, key: KeyEvent) -> bool {
+        if matches!(key.code, KeyCode::Char('h' | 'H')) {
+            self.git_revision.cancel();
+            self.git_history.path = None;
+            self.git_history.files = false;
+            self.git_history.selected = 0;
+            self.git_history.commit = None;
+            self.panels.hide_bottom();
+            let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
+            self.status = "Historial Git general · Intro archivos · H estado".into();
+            return true;
+        }
+        if matches!(key.code, KeyCode::Esc | KeyCode::Char('b' | 'B')) {
+            if self.focus.primary() == PrimaryFocus::BottomPanel {
+                self.panels.hide_bottom();
+                let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
+                self.status = "Historial del archivo · Intro compara · N más · H general".into();
+            } else {
+                self.git_revision.cancel();
+                self.git_history.path = None;
+                self.git_history.selected = 0;
+                self.git_history.commit = None;
+                self.status = "Historial Git general · Intro archivos · H estado".into();
+            }
+            return true;
+        }
+        if matches!(key.code, KeyCode::Char('e' | 'E')) {
+            self.git_history.cycle_encoding();
+            return true;
+        }
+        if matches!(key.code, KeyCode::F(5) | KeyCode::Char('r' | 'R')) {
+            if let (Some(root), Some((start, path))) =
+                (self.project_root.clone(), self.git_history.path.clone())
+            {
+                self.status = self
+                    .git_revision
+                    .request_path_history(root, start, path)
+                    .err()
+                    .unwrap_or_else(|| "Releyendo el historial fijado del archivo".into());
+                self.git_history.selected = 0;
+                self.git_history.hunk = 0;
+                self.git_diff_scroll = 0;
+                self.panels.hide_bottom();
+                let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
+            }
+            return true;
+        }
+        if self.focus.primary() == PrimaryFocus::BottomPanel {
+            return self.historical_diff_key(key.code);
+        }
+        if matches!(key.code, KeyCode::Char('n' | 'N')) {
+            if self
+                .git_revision
+                .path_history()
+                .is_some_and(|page| page.next.is_some())
+            {
+                if let Some(root) = self.project_root.clone() {
+                    self.status = self
+                        .git_revision
+                        .request_path_history_next(root)
+                        .err()
+                        .unwrap_or_else(|| "Leyendo la siguiente página del archivo".into());
+                    self.git_history.selected = 0;
+                    self.git_history.hunk = 0;
+                    self.git_diff_scroll = 0;
+                }
+            } else {
+                self.status = "No hay otra página disponible del historial del archivo".into();
+            }
+            return true;
+        }
+        match key.code {
+            KeyCode::Up
+            | KeyCode::Down
+            | KeyCode::PageUp
+            | KeyCode::PageDown
+            | KeyCode::Home
+            | KeyCode::End => {
+                let total = self
+                    .git_revision
+                    .path_history()
+                    .map_or(0, |page| page.entries.len());
+                let delta = match key.code {
+                    KeyCode::Up => -1,
+                    KeyCode::Down => 1,
+                    KeyCode::PageUp => -10,
+                    KeyCode::PageDown => 10,
+                    KeyCode::Home => isize::MIN,
+                    _ => isize::MAX,
+                };
+                self.git_history.selected = self
+                    .git_history
+                    .selected
+                    .saturating_add_signed(delta)
+                    .min(total.saturating_sub(1));
+                true
+            }
+            KeyCode::Enter => {
+                let file = self.git_revision.path_history().and_then(|page| {
+                    page.entries
+                        .get(self.git_history.selected)
+                        .map(|entry| (entry.commit.clone(), page.path.clone()))
+                });
+                if let (Some(root), Some((commit, path))) = (self.project_root.clone(), file) {
+                    self.status = match self.git_revision.request_file(root, commit, path) {
+                        Ok(()) => {
+                            self.git_history.hunk = 0;
+                            self.git_diff_scroll = 0;
+                            self.panels.show_bottom(BottomPanel::Diff);
+                            let _ = self.focus.focus(PrimaryFocus::BottomPanel, &self.panels);
+                            "Comparando el archivo con el primer padre · E codificación · Esc historial".into()
+                        }
+                        Err(error) => error,
+                    };
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn historical_diff_key(&mut self, code: KeyCode) -> bool {
         match code {
             KeyCode::Up => self.git_diff_scroll = self.git_diff_scroll.saturating_sub(1),
@@ -496,6 +762,27 @@ mod tests {
     use super::*;
     use crate::LaunchOptions;
     use jc_app::git_revision::GitRevisionState;
+
+    #[test]
+    fn path_history_preparation_is_bounded_without_admitting_queries() {
+        let mut app = TuiApp::new(LaunchOptions::default());
+        app.workbench
+            .new_file("path-history-fixture.txt", TextEncoding::Utf8);
+        app.workbench.insert_text("sin guardar\r\n").unwrap();
+        let original = app.workbench.active_bytes().unwrap();
+        app.git_history.active = true;
+        app.git_history.path = Some(("a".repeat(40), b"raw\xff\x1b.p".to_vec()));
+        for width in [0, 18, 80, u16::MAX] {
+            let prepared = app.prepare_git_history(width, u16::MAX);
+            assert!(prepared.rows.is_empty());
+            assert!(prepared.title.chars().count() <= usize::from(width).min(COLS));
+            assert!(prepared.message.chars().count() <= usize::from(width).min(COLS));
+            assert!(!prepared.title.contains('\x1b'));
+        }
+        assert_eq!(app.git_revision.state(), GitRevisionState::Idle);
+        assert!(!app.git_revision.ready());
+        assert_eq!(app.workbench.active_bytes().unwrap(), original);
+    }
 
     #[test]
     fn historical_viewport_and_opaque_labels_stay_bounded() {

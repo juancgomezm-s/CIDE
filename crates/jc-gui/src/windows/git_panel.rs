@@ -59,6 +59,7 @@ impl State {
         }
     }
     pub(super) fn request_git(&mut self, intent: GitIntent) -> Action {
+        self.git_workspace.path_query = None;
         self.close_selector();
         self.git_revision.cancel();
         self.git_workspace.history_commit = None;

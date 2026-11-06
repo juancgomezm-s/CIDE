@@ -1,3 +1,5 @@
+Actualización 2026-11-06: `jc_git::path_history` publica historial por ruta paginado y cancelable, sin depender del editor. [Contrato](G3_PATH_HISTORY_OUTLINE.md). Los adaptadores GUI/TUI usan el mismo controlador y diff; no se afirma integración nueva con OmniCore/OmniCoder ni una ABI estable.
+
 # Núcleo Git reutilizable: CIDE, OmniCore y OmniCoder
 
 Decisión aceptada por Juan: el módulo Git se integra en CIDE y conserva un núcleo

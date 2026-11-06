@@ -223,6 +223,42 @@ impl Drop for Fixture {
             .to_str()
             .unwrap()
             .starts_with("jc git status tui "));
+        // Git's own fixture setup can mark loose objects read-only. Inspect the
+        // complete private tree without following reparse points before changing
+        // only that attribute on ordinary files; production Git stays read-only.
+        use std::os::windows::fs::MetadataExt;
+        let mut directories = vec![target.clone()];
+        let mut files = Vec::new();
+        let mut visited = 0usize;
+        while let Some(directory) = directories.pop() {
+            assert!(directory.starts_with(&target));
+            let metadata = fs::symlink_metadata(&directory).unwrap();
+            assert_eq!(metadata.file_attributes() & 0x400, 0);
+            assert!(metadata.is_dir());
+            for entry in fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                assert!(path.starts_with(&target));
+                visited += 1;
+                assert!(visited <= 16_384, "owned fixture cleanup quota");
+                let metadata = fs::symlink_metadata(&path).unwrap();
+                assert!(!metadata.file_type().is_symlink());
+                assert_eq!(metadata.file_attributes() & 0x400, 0);
+                if metadata.is_dir() {
+                    directories.push(path);
+                } else {
+                    assert!(metadata.is_file());
+                    files.push((path, metadata.permissions()));
+                }
+            }
+        }
+        for (path, mut permissions) in files {
+            if permissions.readonly() {
+                #[allow(clippy::permissions_set_readonly_false)]
+                // Windows readonly bit; fixture only.
+                permissions.set_readonly(false);
+                fs::set_permissions(path, permissions).unwrap();
+            }
+        }
         fs::remove_dir_all(target).unwrap();
     }
 }
@@ -279,6 +315,143 @@ fn assert_status_rows(app: &mut TuiApp) {
             (UNTRACKED.into(), "??".into())
         ])
     );
+}
+
+#[test]
+fn path_history_keys_page_compare_and_return_without_mutating_buffer_or_git() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let fixture = Fixture::new();
+    let head_blob = fixture.oid(&["rev-parse", "HEAD:tracked.txt"]);
+    let index_blob = fixture.oid(&["rev-parse", ":tracked.txt"]);
+    let mut parent = fixture.oid(&["rev-parse", "HEAD"]);
+    // CLI plumbing prepares only this owned repository; all subsequent history
+    // and comparison requests go through the embedded Rust provider.
+    for number in 0..27 {
+        fixture.cache(if number % 2 == 0 {
+            &index_blob
+        } else {
+            &head_blob
+        });
+        let tree = fixture.oid(&["write-tree"]);
+        let summary = format!("Cambio del archivo {number}");
+        parent = fixture.oid(&["commit-tree", &tree, "-p", &parent, "-m", &summary]);
+    }
+    fixture.git(&["update-ref", "HEAD", &parent]);
+    let disk = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    app.workbench.insert_text("sin guardar ").unwrap();
+    let original = app.workbench.active_bytes().unwrap();
+    let before_panes = format!("{:?}", app.workbench.panes());
+    request_ready(&mut app, &wake);
+    let tracked = app
+        .git_status
+        .prepare(256, 256)
+        .rows
+        .iter()
+        .find(|row| row.path == TRACKED)
+        .unwrap()
+        .ordinal;
+    app.git_status.first();
+    app.git_status.move_selection(tracked as isize);
+    key(&mut app, KeyCode::Char('a'));
+    assert!(app.git_history.active);
+    let wait = |app: &mut TuiApp| {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            match app.git_revision.state() {
+                jc_app::git_revision::GitRevisionState::Ready => break,
+                jc_app::git_revision::GitRevisionState::Queued
+                | jc_app::git_revision::GitRevisionState::Running => {}
+                other => panic!(
+                    "Path history delivery failed: {other:?}: {}",
+                    app.git_revision.message()
+                ),
+            }
+            assert!(Instant::now() < deadline);
+            wake.wait(ticket, Some(Duration::from_millis(20)));
+        }
+    };
+    wait(&mut app);
+    let page = app.git_revision.path_history().unwrap();
+    assert_eq!(page.start, parent);
+    assert_eq!(page.path, TRACKED.as_bytes());
+    assert_eq!(page.entries.len(), 24);
+    assert!(page.next.is_some());
+    let first_page_commits = page
+        .entries
+        .iter()
+        .map(|entry| entry.commit.clone())
+        .collect::<Vec<_>>();
+    let presentation = app.prepare_git_history(100, 10);
+    assert!(presentation.title.contains("Historial del archivo"));
+    assert!(presentation.message.contains("N más"));
+    assert_eq!(presentation.rows.len(), 10);
+    assert_eq!(presentation.total, 24);
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app);
+    assert_eq!(app.focus.primary(), PrimaryFocus::BottomPanel);
+    assert_eq!(
+        app.git_revision.comparison().unwrap().path,
+        TRACKED.as_bytes()
+    );
+    assert_eq!(
+        app.git_revision
+            .comparison()
+            .unwrap()
+            .model
+            .source_bytes(jc_app::diff_model::DiffSide::Right),
+        b"index content \x81\r\n"
+    );
+    assert!(app.git_revision.path_history().is_some());
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Sidebar);
+    key(&mut app, KeyCode::Char('n'));
+    wait(&mut app);
+    let page = app.git_revision.path_history().unwrap();
+    assert_eq!(page.entries.len(), 4);
+    assert!(page.next.is_none());
+    assert!(page
+        .entries
+        .iter()
+        .all(|entry| !first_page_commits.contains(&entry.commit)));
+    let last = page.entries.last().unwrap();
+    assert!(last.parent.is_none());
+    key(&mut app, KeyCode::End);
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app);
+    assert!(app.git_revision.comparison().unwrap().before_oid.is_none());
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Char('r'));
+    wait(&mut app);
+    assert_eq!(
+        app.git_revision.path_history().unwrap().entries[0].commit,
+        parent
+    );
+    key(&mut app, KeyCode::Char('h'));
+    assert!(app.git_history.active);
+    key(&mut app, KeyCode::Char('h'));
+    assert!(!app.git_history.active);
+    assert_eq!(app.workbench.active_bytes().unwrap(), original);
+    assert_eq!(format!("{:?}", app.workbench.panes()), before_panes);
+    assert_eq!(fixture.disk(), disk);
+
+    // With a genuinely clean status, A uses the open file only as a fallback.
+    fixture.rewrite(TRACKED, b"index content \x81\r\n");
+    fs::create_dir_all(fixture.path(".git/info")).unwrap();
+    fs::write(fixture.path(".git/info/exclude"), b"*\n").unwrap();
+    let clean_disk = fixture.disk();
+    request_ready(&mut app, &wake);
+    assert!(app.git_status.selected_path().is_none());
+    key(&mut app, KeyCode::Char('a'));
+    wait(&mut app);
+    assert_eq!(
+        app.git_revision.path_history().unwrap().path,
+        TRACKED.as_bytes()
+    );
+    assert_eq!(app.workbench.active_bytes().unwrap(), original);
+    assert_eq!(fixture.disk(), clean_disk);
 }
 
 #[test]

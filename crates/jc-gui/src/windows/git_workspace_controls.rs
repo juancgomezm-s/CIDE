@@ -445,6 +445,9 @@ impl State {
         if modifiers != Modifiers::NONE {
             return false;
         }
+        if self.git_workspace.menu.is_none() && self.git_path_history_key(code) {
+            return true;
+        }
         if let Some(selected) = self.git_workspace.menu {
             match code {
                 0x1b => self.git_workspace.menu = None,

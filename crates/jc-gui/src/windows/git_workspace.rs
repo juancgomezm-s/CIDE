@@ -22,6 +22,8 @@ mod history;
 mod layout;
 #[path = "git_local.rs"]
 mod local;
+#[path = "git_path_history.rs"]
+mod path_history;
 use compare_rows::DiffView;
 use controls::{GitDrag, Rail};
 use layout::{Arrangement, Column, Divider, Preferences};
@@ -62,6 +64,8 @@ pub(super) struct Workspace {
     pub history_file: Option<usize>,
     pub history_hunk: usize,
     pub history_encoding: Option<TextEncoding>,
+    pub(super) path_query: Option<(String, Vec<u8>)>,
+    path_selected: usize,
     wheel: i32,
 }
 impl Workspace {
@@ -94,9 +98,16 @@ struct Stamp {
     active: Column,
     column: usize,
     menu: Option<usize>,
+    path_query: Option<(String, Vec<u8>)>,
+    path_selected: usize,
 }
 #[derive(Clone, Copy)]
 enum Intent {
+    PathHistory,
+    PathCommit(usize),
+    PathNext,
+    PathBack,
+    PathAll,
     Refresh,
     Close,
     Folder,
@@ -297,6 +308,8 @@ fn source_text(bytes: &[u8], encoding: TextEncoding, _start: usize) -> String {
 impl State {
     fn git_workspace_stamp(&self) -> Stamp {
         Stamp {
+            path_query: self.git_workspace.path_query.clone(),
+            path_selected: self.git_workspace.path_selected,
             preferences: self.git_workspace.preferences,
             active: self.git_workspace.active,
             column: self.git_workspace.diff_column,
@@ -331,7 +344,9 @@ impl State {
         self.git_panel?;
         let historical = self.git_workspace.history_commit.is_some();
         let frame = self.prepare_git_workspace_base()?;
-        let mut frame = if historical {
+        let mut frame = if self.git_workspace.path_query.is_some() {
+            self.prepare_git_path_history(frame)
+        } else if historical {
             self.prepare_git_history(frame)
         } else if self.git_workspace.local_kind.is_some() {
             self.prepare_git_local(frame)
@@ -340,6 +355,7 @@ impl State {
             self.add_git_sources(&mut frame);
             frame
         };
+        self.add_git_path_history_button(&mut frame);
         self.prepare_git_controls(&mut frame);
         Some(frame)
     }
@@ -682,6 +698,26 @@ impl State {
             }
         }
         match intent {
+            Some(Intent::PathHistory) => {
+                self.request_git_path_history();
+                Action::None
+            }
+            Some(Intent::PathCommit(index)) => {
+                self.open_git_path_commit(index);
+                Action::None
+            }
+            Some(Intent::PathNext) => {
+                self.next_git_path_history();
+                Action::None
+            }
+            Some(Intent::PathBack) => {
+                self.back_git_path_history();
+                Action::None
+            }
+            Some(Intent::PathAll) => {
+                self.git_workspace.path_query = None;
+                self.request_git(GitIntent::Status)
+            }
             Some(
                 Intent::DistributionMenu
                 | Intent::Arrange(_)
@@ -691,7 +727,10 @@ impl State {
                 | Intent::Rail(_),
             ) => Action::None,
             Some(Intent::Refresh) => {
-                if let Some(kind) = self.git_workspace.local_kind {
+                if self.git_workspace.path_query.is_some() {
+                    self.refresh_git_path_history();
+                    Action::None
+                } else if let Some(kind) = self.git_workspace.local_kind {
                     self.request_git_local(kind);
                     Action::None
                 } else if let Some(commit) = self.git_workspace.history_commit.clone() {
@@ -857,11 +896,16 @@ impl State {
                     .saturating_sub(self.git_workspace.diff_page),
             );
         } else if l.history.is_some_and(|r| inside(r, x, y)) {
-            let total = self
-                .git_status
-                .result()
-                .and_then(|r| r.info())
-                .map_or(0, |i| i.commits.len());
+            let total = if self.git_workspace.path_query.is_some() {
+                self.git_revision
+                    .path_history()
+                    .map_or(0, |p| p.entries.len())
+            } else {
+                self.git_status
+                    .result()
+                    .and_then(|r| r.info())
+                    .map_or(0, |i| i.commits.len())
+            };
             let page = l.history.map_or(0, |r| {
                 ((r.bottom - r.top - l.head - self.dpi.pixels(56)) / self.dpi.pixels(64).max(1))
                     .max(0) as usize
