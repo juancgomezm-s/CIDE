@@ -14,6 +14,7 @@ pub(super) struct SearchPanel {
     pub replacement_active: bool,
     pub generation: u64,
 }
+
 pub(super) struct SearchPresentation {
     pub find: FieldPresentation,
     pub replacement: Option<FieldPresentation>,
@@ -268,5 +269,43 @@ impl State {
                 self.status
             ),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_menu_paste_matches_keyboard_without_closing_find_or_replace() {
+        let mut s = State::new(&crate::GuiOptions::default()).unwrap();
+        s.workbench.insert_text("sin guardar\r\n").unwrap();
+        let before = s.workbench.active_bytes().unwrap();
+        let panes = format!("{:?}", s.workbench.panes());
+        for replace in [false, true] {
+            s.open_search_panel(replace);
+            s.edit_search_input(FieldEdit::Clear);
+            s.edit_search_input(FieldEdit::Insert("consulta"));
+            for replacement_active in [false, true] {
+                if replacement_active && !replace {
+                    continue;
+                }
+                s.search_panel.as_mut().unwrap().replacement_active = replacement_active;
+                let generation = s.search_panel.as_ref().unwrap().generation;
+                assert!(
+                    matches!(s.search_key(0x56, Modifiers::CTRL), Action::PasteSearch(g) if g == generation)
+                );
+                assert!(
+                    matches!(s.execute_menu(CommandId::EditPaste), Action::PasteSearch(g) if g == generation)
+                );
+                let panel = s.search_panel.as_ref().unwrap();
+                assert_eq!(panel.query, "consulta");
+                assert_eq!(panel.replace, replace);
+                assert_eq!(panel.replacement_active, replacement_active);
+                assert_eq!(panel.generation, generation);
+                assert_eq!(s.workbench.active_bytes().unwrap(), before);
+                assert_eq!(format!("{:?}", s.workbench.panes()), panes);
+            }
+        }
     }
 }

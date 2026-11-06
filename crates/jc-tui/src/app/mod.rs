@@ -415,7 +415,13 @@ impl TuiApp {
             context.can_open_to_side = false;
         }
         if self.clipboard_transport.is_some() {
-            context.field_paste = self.clipboard_field_budget().is_some();
+            // Menus display commands for their underlying destination. Keep
+            // transport/input routing modal: only executing the item after
+            // closing the menu exposes that field to a paste operation.
+            context.field_paste = self.clipboard_field_budget().is_some()
+                || matches!(self.overlay, UiOverlay::Menu { .. })
+                    && (self.commit_search_paste_budget().is_some()
+                        || self.snippet_clipboard_budget().is_some());
             if context.field_paste
                 || !context.rectangular_selection && !self.workbench.clipboard_is_rectangular()
             {

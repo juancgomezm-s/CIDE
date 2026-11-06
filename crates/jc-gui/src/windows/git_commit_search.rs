@@ -526,6 +526,33 @@ pub(in crate::windows) unsafe fn paste_query(hwnd: Hwnd, token: Arc<()>) {
 mod tests {
     use super::*;
     #[test]
+    fn commit_search_menu_paste_preserves_the_visible_field_and_dirty_editor() {
+        let mut s = State::new(&crate::GuiOptions::default()).unwrap();
+        s.width = 1280;
+        s.height = 800;
+        s.workbench.insert_text("sin guardar\n").unwrap();
+        let before = s.workbench.active_bytes().unwrap();
+        let panes = format!("{:?}", s.workbench.panes());
+        s.git_panel = Some(GitIntent::Status);
+        s.git_workspace.history_commit = Some("a".repeat(40));
+        s.open_git_commit_search();
+        s.edit_git_search_query(FieldEdit::Insert("consulta"));
+        let token = s.git_search_input_token().unwrap();
+        let action = s.execute_menu(jc_app::CommandId::EditPaste);
+        let Action::PasteGitSearch(received) = action else {
+            panic!("El menú Pegar debe conservar el campo Git como destino");
+        };
+        assert!(Arc::ptr_eq(&token, &received));
+        assert!(s.git_panel.is_some());
+        assert_eq!(
+            s.git_workspace.commit_search.as_ref().unwrap().query,
+            "consulta"
+        );
+        assert_eq!(s.workbench.active_bytes().unwrap(), before);
+        assert_eq!(format!("{:?}", s.workbench.panes()), panes);
+    }
+
+    #[test]
     fn commit_search_field_graphemes_budget_stale_tokens_and_prepare_are_inert() {
         let mut s = State::new(&crate::GuiOptions::default()).unwrap();
         s.width = 1280;

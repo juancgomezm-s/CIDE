@@ -764,11 +764,8 @@ impl State {
             return self.selector_field_action(command);
         }
         if self.selector.is_none() && command == CommandId::EditPaste {
-            if let Some(token) = self.git_search_input_token() {
-                return Action::PasteGitSearch(token);
-            }
-            if let Some(target) = self.snippet_input_target() {
-                return Action::PasteSnippet(target);
+            if let Some(action) = self.field_paste_action() {
+                return action;
             }
         }
         if open_diff_panel::is_command(command) {
@@ -1058,6 +1055,9 @@ impl State {
             return self.execute(command);
         }
         if self.selector.is_some() && selector_input::field_command(command) {
+            return self.execute(command);
+        }
+        if command == CommandId::EditPaste && self.field_paste_action().is_some() {
             return self.execute(command);
         }
         let explorer_focus = self.explorer_focused || self.selector_explorer_focus;

@@ -413,3 +413,42 @@ impl State {
         } })
     }
 }
+
+#[cfg(test)]
+mod menu_paste_tests {
+    use super::*;
+    use jc_app::CommandId;
+    #[test]
+    fn replacement_menu_paste_preserves_draft_and_rejects_read_only_stages() {
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.workbench.insert_text("sin guardar").unwrap();
+        let before = state.workbench.active_bytes().unwrap();
+        state.replace_panel = Some(ReplacePanel::new(42));
+        assert!(state.registry.is_enabled(
+            CommandId::EditPaste,
+            &state.entry_context(CommandId::EditPaste)
+        ));
+        assert!(matches!(
+            state.execute_menu(CommandId::EditPaste),
+            Action::PasteReplacement(42)
+        ));
+        assert_eq!(state.replace_panel.as_ref().unwrap().generation, 42);
+        for stage in [
+            ReplaceStage::Preview,
+            ReplaceStage::Applying,
+            ReplaceStage::Finished,
+        ] {
+            state.replace_panel.as_mut().unwrap().stage = stage;
+            assert!(!state.registry.is_enabled(
+                CommandId::EditPaste,
+                &state.entry_context(CommandId::EditPaste)
+            ));
+            assert!(matches!(
+                state.execute_menu(CommandId::EditPaste),
+                Action::None
+            ));
+            assert_eq!(state.replace_panel.as_ref().unwrap().stage, stage);
+        }
+        assert_eq!(state.workbench.active_bytes().unwrap(), before);
+    }
+}

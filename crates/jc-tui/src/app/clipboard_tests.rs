@@ -206,3 +206,58 @@ fn clipboard_tui_headless_model_retains_internal_transport_by_default() {
     paste(&mut a);
     assert_eq!(a.workbench.active_bytes().unwrap(), b"abc");
 }
+
+#[test]
+fn clipboard_tui_menu_paste_targets_snippet_without_bypassing_modal_input() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    use jc_app::MenuId;
+    let (mut a, m) = editor("fuente\r\n", TextEncoding::Utf8);
+    let before = a.workbench.active_bytes().unwrap();
+    a.dispatch(CommandId::EditInsertSnippet);
+    a.open_menu(CommandId::MenuEdit);
+    assert!(a
+        .registry
+        .is_enabled(CommandId::EditPaste, &a.command_context()));
+    assert!(a.clipboard_field_budget().is_none());
+    paste(&mut a);
+    a.handle_event(Event::Paste("texto ignorado".into()));
+    assert!(m.borrow().reads.is_empty());
+    assert!(matches!(a.overlay, UiOverlay::Menu { .. }));
+    let selected = a
+        .menu_commands(MenuId::Edit)
+        .iter()
+        .position(|c| *c == Some(CommandId::EditPaste))
+        .unwrap();
+    a.overlay = UiOverlay::Menu {
+        menu: MenuId::Edit,
+        selected,
+    };
+    let screen = a.frame(100, 30);
+    assert!(m.borrow().reads.is_empty());
+    let (x, y) = (0..screen.height())
+        .find_map(|y| {
+            let row = screen.row_text(y);
+            row.find("Pegar")
+                .map(|at| (jc_text::grapheme::width(&row[..at]) as u16, y))
+        })
+        .unwrap();
+    m.borrow_mut().text = Some("Procedimiento".into());
+    a.handle_event(Event::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: x,
+        row: y,
+        modifiers: KeyModifiers::NONE,
+    }));
+    assert!(matches!(a.overlay, UiOverlay::None));
+    assert_eq!(m.borrow().reads, [256]);
+    key(&mut a, KeyCode::Enter);
+    key(&mut a, KeyCode::Enter);
+    assert!(a
+        .prepare_frame(100, 30)
+        .snippet
+        .unwrap()
+        .rows
+        .iter()
+        .any(|(r, _)| r.contains("PROCEDURE newProcedure:")));
+    assert_eq!(a.workbench.active_bytes().unwrap(), before);
+}

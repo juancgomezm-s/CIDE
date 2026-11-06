@@ -492,4 +492,76 @@ mod tests {
         app.handle_git_history_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert!(app.git_history.search.is_none());
     }
+    #[test]
+    fn clipboard_tui_menu_paste_targets_commit_query_and_keeps_sidebar_focus() {
+        use crate::state::UiOverlay;
+        use crossterm::event::Event;
+        use jc_app::{CommandId, MenuId};
+        use std::{cell::Cell, rc::Rc};
+        struct Transport(Rc<Cell<usize>>);
+        impl super::super::clipboard::ClipboardTransport for Transport {
+            fn read(&mut self, limit: usize) -> Result<Option<String>, String> {
+                assert_eq!(limit, 256);
+                self.0.set(self.0.get() + 1);
+                Ok(Some("consulta".into()))
+            }
+            fn write(&mut self, _: &str) -> Result<(), String> {
+                panic!("query paste must not write")
+            }
+        }
+        let mut app = TuiApp::new(LaunchOptions::default());
+        app.workbench
+            .new_file("fuente.txt", jc_text::TextEncoding::Utf8);
+        app.workbench.insert_text("sin guardar\r\n").unwrap();
+        let before = app.workbench.active_bytes().unwrap();
+        app.panels.show_sidebar(SidebarView::GitStatus);
+        let _ = app.focus.focus(PrimaryFocus::Sidebar, &app.panels);
+        app.git_history.active = true;
+        app.git_history.search = Some(CommitSearchView {
+            start: "a".repeat(40),
+            query: String::new(),
+            cursor: 0,
+            field: SearchField::All,
+            editing: true,
+            browsing: false,
+            result_selected: 0,
+            return_active: false,
+            return_selected: 0,
+        });
+        let reads = Rc::new(Cell::new(0));
+        app.clipboard_transport = Some(Box::new(Transport(reads.clone())));
+        app.open_menu(CommandId::MenuEdit);
+        assert!(app
+            .registry
+            .is_enabled(CommandId::EditPaste, &app.command_context()));
+        app.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('v'),
+            KeyModifiers::CONTROL,
+        )));
+        app.handle_event(Event::Paste("ignorado".into()));
+        assert_eq!(reads.get(), 0);
+        assert!(app.git_history.search.as_ref().unwrap().query.is_empty());
+        let selected = app
+            .menu_commands(MenuId::Edit)
+            .iter()
+            .position(|c| *c == Some(CommandId::EditPaste))
+            .unwrap();
+        app.overlay = UiOverlay::Menu {
+            menu: MenuId::Edit,
+            selected,
+        };
+        app.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        assert!(matches!(app.overlay, UiOverlay::None));
+        assert_eq!(reads.get(), 1);
+        assert_eq!(app.git_history.search.as_ref().unwrap().query, "consulta");
+        assert_eq!(app.focus.primary(), PrimaryFocus::Sidebar);
+        assert!(!matches!(
+            app.git_revision.state(),
+            GitRevisionState::Queued | GitRevisionState::Running
+        ));
+        assert_eq!(app.workbench.active_bytes().unwrap(), before);
+    }
 }

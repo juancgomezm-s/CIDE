@@ -11,6 +11,7 @@ pub(super) struct NavigationPanel {
     pub pane: PaneId,
     pub generation: u64,
 }
+
 pub(super) struct NavigationPresentation {
     pub field: FieldPresentation,
     pub message: String,
@@ -158,5 +159,32 @@ impl State {
                 "Cambió el destino; vuelve a abrir Ir a posición".into()
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn navigation_menu_paste_preserves_keyboard_target_draft_and_editor() {
+        let mut s = State::new(&crate::GuiOptions::default()).unwrap();
+        s.workbench.insert_text("uno\r\ndos\r\n").unwrap();
+        let before = s.workbench.active_bytes().unwrap();
+        let panes = format!("{:?}", s.workbench.panes());
+        s.open_navigation_panel();
+        s.edit_navigation_input(FieldEdit::Insert("2:3"));
+        let generation = s.navigation_panel.as_ref().unwrap().generation;
+        assert!(
+            matches!(s.navigation_key(0x56, Modifiers::CTRL), Action::PasteNavigation(g) if g == generation)
+        );
+        assert!(
+            matches!(s.execute_menu(jc_app::CommandId::EditPaste), Action::PasteNavigation(g) if g == generation)
+        );
+        assert!(s.navigation_target_current());
+        assert_eq!(s.navigation_panel.as_ref().unwrap().input, "2:3");
+        assert_eq!(s.navigation_panel.as_ref().unwrap().generation, generation);
+        assert_eq!(s.workbench.active_bytes().unwrap(), before);
+        assert_eq!(format!("{:?}", s.workbench.panes()), panes);
     }
 }

@@ -1,3 +1,21 @@
+## Estado vigente: cierre funcional de menús — 2026-11-06
+
+[Pegado al campo correcto](M2_MENU_FIELD_PASTE.md): GUI y TUI conservan el destino
+visible al ejecutar Editar → Pegar; borradores admiten la misma intención que
+Ctrl+V y resultados/previews mantienen solo lectura. Ocho regresiones nuevas,
+20 casos dirigidos distintos aprobados por suites; formato, Clippy GUI/TUI
+all-targets y release workspace offline aprobados. Sin escritorio ni portapapeles
+personal. Cachés existentes reutilizadas. Binarios: target/m2-field-paste-next/release.
+
+**M2 no se declara cerrado físicamente.** Lo que resta de aceptación no puede
+certificarse bajo la restricción actual de no usar escritorio: revisión visual
+final/salida normal de la instancia anterior, latencia física y traslado entre
+monitores. No se actuó sobre ventanas o procesos antiguos. RAM global sigue sin
+aceptación general; mediciones locales anteriores conservan sus límites.
+IME está excluido por Juan y Narrador/accesibilidad avanzada siguen aplazados.
+Los bloques G2/G3 adicionales, edición de varios GB y proveedores M3–M5 conservan
+sus planes separados; no se inventan funciones para sustituir pruebas físicas.
+
 ## Búsqueda de commits y limpieza local — 2026-11-06
 
 [Contrato](G3_COMMIT_SEARCH.md). GUI/TUI usan el núcleo Rust compartido para

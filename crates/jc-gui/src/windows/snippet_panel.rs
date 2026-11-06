@@ -599,6 +599,38 @@ mod tests {
         app
     }
     #[test]
+    fn snippet_menu_paste_keeps_parameter_target_and_editor_unchanged() {
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.workbench = editor("source\r\n");
+        let target = SnippetTarget::capture(&state.workbench).unwrap();
+        state.snippet_gui = Some(SnippetGui::new(target, vec![&INSERT], 7));
+        state.snippet_command(CommandId::SnippetNext);
+        let input = state.snippet_input_target().unwrap();
+        let before = state.workbench.active_bytes().unwrap();
+        let panes = format!("{:?}", state.workbench.panes());
+        let generation = state.selector_generation;
+        assert!(
+            matches!(state.snippet_key(0x56, Modifiers::CTRL), Action::PasteSnippet(t) if t == input)
+        );
+        assert!(
+            matches!(state.execute_menu(CommandId::EditPaste), Action::PasteSnippet(t) if t == input)
+        );
+        assert_eq!(state.selector_generation, generation);
+        assert_eq!(state.snippet_input_target(), Some(input));
+        assert_eq!(state.workbench.active_bytes().unwrap(), before);
+        assert_eq!(format!("{:?}", state.workbench.panes()), panes);
+        state.snippet_command(CommandId::SnippetNext);
+        assert!(state.snippet_gui.as_ref().unwrap().ready(&state.workbench));
+        assert!(state.field_paste_action().is_none());
+        assert!(matches!(
+            state.execute_menu(CommandId::EditPaste),
+            Action::None
+        ));
+        assert!(state.snippet_gui.as_ref().unwrap().ready(&state.workbench));
+        assert_eq!(state.workbench.active_bytes().unwrap(), before);
+        assert_eq!(format!("{:?}", state.workbench.panes()), panes);
+    }
+    #[test]
     fn gui_snippet_wizard_review_cancel_and_apply_preserve_source_until_one_undo() {
         let source = "\u{feff}before\r\nafter\n";
         let mut app = editor(source);

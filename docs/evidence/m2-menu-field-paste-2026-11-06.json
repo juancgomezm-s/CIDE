@@ -1,0 +1,88 @@
+{
+  "date": "2026-11-06",
+  "scope": "M2 GUI/TUI visible-field Paste from menus; parallel agents, serial cached validation",
+  "base": "a03bf5d",
+  "tests": {
+    "distinct_passed": 20,
+    "new": 8,
+    "gui_new": 6,
+    "tui_new": 2,
+    "runs": [
+      {
+        "filter": "paste",
+        "packages": [
+          "jc-gui",
+          "jc-tui"
+        ],
+        "passed": 19
+      },
+      {
+        "filter": "replacement_menu_paste",
+        "packages": [
+          "jc-gui"
+        ],
+        "passed": 1
+      }
+    ],
+    "not_a_full_workspace_run": true
+  },
+  "fmt": "passed",
+  "clippy": "GUI/TUI all-targets offline locked passed",
+  "logs": {
+    "work/m2-menu-paste-tests.log": "777352d2955a680437c40c71552884d9329b6a5e244f71bcdf0bcb8bb820578a",
+    "work/m2-menu-paste-replacement.log": "65d7b5f59da657f857b40045ede12fa8a88d5e783cc88a55f5d2c8a01822c63e",
+    "work/m2-menu-paste-clippy.log": "71b460fe4511b5e8e20a36ebf225dbc7da32a75fe6b8263a91a0713c36309ee0",
+    "work/m2-menu-paste-fmt-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/m2-menu-paste-release.log": "7600db106e86ae60829091eb118b62ab5cf8803eaee2812f8c8b7751df8ea671"
+  },
+  "debug_cache": "target/embedded-git-next",
+  "release_cache": "target/build-cache",
+  "delivery": "target/m2-field-paste-next/release",
+  "observations": {
+    "no_desktop": true,
+    "no_OS_clipboard": true,
+    "no_personal_recovery": true,
+    "no_native_HWND_or_ConPTY_claim": true,
+    "no_ci_or_push": true,
+    "core_and_dependencies_unchanged": true
+  },
+  "acceptance_limits": [
+    "IME excluded by Juan",
+    "Narrator deferred",
+    "physical/global M2 acceptance remains open",
+    "cross-monitor unverified",
+    "no action on stale desktop window identities"
+  ],
+  "branches_at_start": {
+    "worktrees": 1,
+    "branch": "m2a/dual-pane-tui",
+    "main": "ae16816",
+    "main_only_commits": 0,
+    "topic_only_commits": 74
+  },
+  "release": {
+    "status": "passed",
+    "workspace": true,
+    "offline_locked": true,
+    "seconds": 154,
+    "dependencies_rebuilt": false,
+    "exported_files": 12
+  },
+  "delivery_manifest": {
+    "cache": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\target\\build-cache",
+    "files": {
+      "cide-gui.exe": "395f674c01652c6ed0f74f0e7809cacf0f8fbc77b459f917414a0f4b44a9805e",
+      "cide-tui.exe": "070dac708321b017a4cd2016328c0f58b83d51386602b215d0d00edfe81cf52a",
+      "cide.exe": "714fecc1f2e6881d1fc7df9d58aa3e8822011b39b1889f2819d66b16062e3f62",
+      "cide.pdb": "1e26394db1b80ebb44e8560413349f1b5fff54aa3253680fc07046e89901cf20",
+      "cide_gui.pdb": "47b33c04f45453d3e8f5c68d4c71ff76d04ec845d7e275b4317a83b923aed570",
+      "cide_tui.pdb": "a96a05ec4f4e52489600522c6f4f899248f9775b3d9766b74bd8c3e39a82eadd",
+      "jc-ide-gui.exe": "273941a27bee803ebd969038d608ac7dfa84bc740a89050f343b7e686fe1dbfd",
+      "jc-ide-tui.exe": "e26586448f46af8fdde96f302b33a05817ab3bafcc2b3e38363146887445c35f",
+      "jc-ide.exe": "9b77f9042316867207e350543d3d0ced908997a84b6f73832b3632e67e5903ae",
+      "jc_ide.pdb": "aeae00c704282f5e664b5355448895abfff288cb0646f36c3cdc36a0cdc3607e",
+      "jc_ide_gui.pdb": "e2d66629f72137737c5e2e1a722c593bf7eebba4ecdb818f3928592961db921f",
+      "jc_ide_tui.pdb": "ca49af1b984e8c64d7f5c3d9f7d5eced3575fcd262aa373557fe4d2262f55ba3"
+    }
+  }
+}

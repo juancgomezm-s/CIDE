@@ -49,6 +49,21 @@ No new Git capabilities/TUI/core/dependencies/recovery changes. Show result befo
 
 # Working on JC-IDE
 
+## M2 menu field paste closure — 2026-11-06
+
+Read docs/M2_MENU_FIELD_PASTE.md. GUI field_paste_action is the shared visible-field
+intention for command availability/execution/menu; do not close that field first.
+Selector clipboard remains separate; readonly results/previews never redirect to
+the editor behind them. TUI menu availability may consult underlying Git/snippet
+budgets, but CtrlV/Event::Paste cannot cross the menu or access transport.
+20 directed cases passed by suites,8 new (6 GUI,2 TUI); fmt, GUI/TUI all-target
+Clippy and workspace offline release passed. No desktop/clipboard or
+recovery personal/CI/push. Current binaries target/m2-field-paste-next/release;
+reuse existing caches and preserve earlier deliveries. Physical/global M2 gates
+remain open; IME excluded/Narrator deferred. User authorized local integration
+of completed branches into main; only one worktree existed at start of this block.
+
+
 ## Commit search / build cache closure — 2026-11-06
 
 Read docs/G3_COMMIT_SEARCH.md and docs/LOCAL_BUILD_CACHE_CLEANUP.md.
