@@ -12,7 +12,10 @@ impl TuiApp {
         let mut p = self.git_status.prepare(width, height);
         if self.git_status.history_info().is_some() {
             p.message = jc_app::source_services::display_ui_label(
-                &format!("H historial · A archivo · L anotar · {}", p.message),
+                &format!(
+                    "F buscar commits · H historial · A archivo · L anotar · {}",
+                    p.message
+                ),
                 usize::from(width).min(256),
             );
         }

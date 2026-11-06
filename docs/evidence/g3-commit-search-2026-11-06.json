@@ -1,0 +1,58 @@
+{
+  "date": "2026-11-06",
+  "scope": "Shared Rust commit search in GUI/TUI; local Cargo cache and cleanup",
+  "semantic_cases": {
+    "distinct_passed": 11,
+    "core": 5,
+    "controller": 2,
+    "gui": 2,
+    "tui": 2
+  },
+  "tests": "Directed suites only; no fresh whole-workspace runtime run",
+  "retained_initial_failures": [
+    "GUI method/field visibility compilation errors",
+    "GUI harness expected Idle after explicit cancellation; corrected to Cancelled",
+    "UTF-8 text accidentally reencoded in new GUI file; repaired",
+    "TUI test module placement rejected by Clippy; moved to EOF"
+  ],
+  "logs": {
+    "work/commit-search-tests.log": "c362e3bc6b252760cd3fa19064569f067d7a9be9c9a1c6b9fd281bb09417256b",
+    "work/commit-search-tests-2.log": "a22dd20abc932cbc6bc690aff59c74c49a76c1f2ba1d8bc220f97741cf194b3c",
+    "work/commit-search-ui-tests.log": "12bd69a1da9dd2ee01d51be47c64cdf70dbd47cfac451514b4a56edc47f2ee04",
+    "work/commit-search-clippy.log": "0cf210227c7f90b7aee79184d1c6842cdf6e6d432117f69f9aa87ae94ba0bb0c",
+    "work/commit-search-clippy-2.log": "361ea48c75f3f8ecdca0144c78ac5990aa435b7d7b446fa184c147a28f5f1d86",
+    "work/commit-search-clippy-final.log": "4114b0cfa561a2ff5046f443a5a5ced43c6a39f4857090a8d0515b6314f01464",
+    "work/commit-search-fmt-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/commit-search-release.log": "01c4c5ab71a7d0ba183155873218250379603ff3e54ad5b979f425b1443af741",
+    "work/commit-search-field-final.log": "f8b7b331f6e94c7beb9b27e4cc473b85850ff67e09bcc6a1e48da08004e9cb4e",
+    "work/commit-search-clippy-guard-final.log": "1ec55dbfebba1910f15654e4911742050d718a151cc7578743b571b8a030d9b4"
+  },
+  "no_desktop": true,
+  "no_personal_clipboard_or_recovery": true,
+  "no_ci_or_push": true,
+  "physical_acceptance": "unchanged: global M2 latency/RAM/cross-monitor unverified; IME excluded; Narrator deferred",
+  "dependencies": "unchanged",
+  "binaries": "target/commit-search-next/release",
+  "cleanup_evidence": "docs/evidence/local-cleanup-2026-11-06.json",
+  "fmt": "passed",
+  "clippy": "selected crates all-targets passed; GUI guard rechecked",
+  "release": "workspace release offline passed; initial stable-cache population 247s",
+  "directed_recheck": "one GUI field test passed after hidden-workspace guard",
+  "delivery_manifest": {
+    "cache": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\target\\build-cache",
+    "files": {
+      "cide-gui.exe": "1f9195d6df94e8e944e37841bf905ce2fc512a3fc246a94033439f712b099300",
+      "cide-tui.exe": "7ec9c31e12095b705d89e3017191e1e0ee165ed7b28725e47b9ef479e8116e1c",
+      "cide.exe": "714fecc1f2e6881d1fc7df9d58aa3e8822011b39b1889f2819d66b16062e3f62",
+      "cide.pdb": "1e26394db1b80ebb44e8560413349f1b5fff54aa3253680fc07046e89901cf20",
+      "cide_gui.pdb": "87820137e981cc40ce6d73a1537dd3d3d344e44664fa051e823437775b2d78ce",
+      "cide_tui.pdb": "c06d2cd31016902bccdc2834ed607dce454492807ebdcfd21ff24c4747d6228c",
+      "jc-ide-gui.exe": "6bc9a8db592d15d174b618260f2f2da9950cfecf95c983e1d1acd0537ca18610",
+      "jc-ide-tui.exe": "2267424df60c2db63d63830f981d944b79ac048b6ee24b976079b3e4fa406d3e",
+      "jc-ide.exe": "9b77f9042316867207e350543d3d0ced908997a84b6f73832b3632e67e5903ae",
+      "jc_ide.pdb": "aeae00c704282f5e664b5355448895abfff288cb0646f36c3cdc36a0cdc3607e",
+      "jc_ide_gui.pdb": "1eb1d8f9b63cf77214ad1706a68f71ffc45d77aed321db3ef7ab2e2e379292cb",
+      "jc_ide_tui.pdb": "4b51b99d16cb5ce3fc43ecd046c78189e4a48f8a7d514ee56f80799fa8ed6e46"
+    }
+  }
+}

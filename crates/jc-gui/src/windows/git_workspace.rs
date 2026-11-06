@@ -18,6 +18,9 @@ mod layout_smoke;
 pub(super) use layout_smoke::run as smoke_layout;
 #[path = "git_blame.rs"]
 mod blame;
+#[path = "git_commit_search.rs"]
+mod commit_search;
+pub(super) use commit_search::paste_query as paste_commit_query;
 #[path = "git_history.rs"]
 mod history;
 #[path = "git_layout.rs"]
@@ -43,6 +46,7 @@ const SELECTION: u32 = 0x00624e41;
 
 #[derive(Default)]
 pub(super) struct Workspace {
+    pub(super) commit_search: Option<commit_search::CommitSearchView>,
     pub hits: Option<Hits>,
     preferences: Preferences,
     active: Column,
@@ -90,6 +94,15 @@ struct HistoryStamp {
 }
 #[derive(Clone, PartialEq, Eq)]
 struct Stamp {
+    search: Option<(
+        String,
+        String,
+        usize,
+        jc_app::git_revision::SearchField,
+        bool,
+        bool,
+        usize,
+    )>,
     root: Option<PathBuf>,
     epoch: u64,
     geometry: (i32, i32),
@@ -112,6 +125,14 @@ struct Stamp {
 }
 #[derive(Clone, Copy)]
 enum Intent {
+    SearchOpen,
+    SearchRun,
+    SearchScope,
+    SearchFocus,
+    SearchResult(usize),
+    SearchNext,
+    SearchBack,
+    SearchExit,
     Blame,
     BlameLine(usize),
     BlamePage(isize),
@@ -180,7 +201,13 @@ struct BlameRow {
     selected: bool,
     unresolved: bool,
 }
+struct QueryRow {
+    rect: Rect,
+    text: String,
+    caret: Option<i32>,
+}
 pub(super) struct Frame {
+    query: Option<QueryRow>,
     pub hits: Hits,
     rect: Rect,
     toolbar: Rect,
@@ -334,6 +361,17 @@ fn source_text(bytes: &[u8], encoding: TextEncoding, _start: usize) -> String {
 impl State {
     fn git_workspace_stamp(&self) -> Stamp {
         Stamp {
+            search: self.git_workspace.commit_search.as_ref().map(|s| {
+                (
+                    s.start.clone(),
+                    s.query.clone(),
+                    s.cursor,
+                    s.field,
+                    s.editing,
+                    s.opened,
+                    s.selected,
+                )
+            }),
             blame_query: self.git_workspace.blame_query.clone(),
             blame_selected: self.git_workspace.blame_selected,
             blame_comparing: self.git_workspace.blame_comparing,
@@ -373,7 +411,9 @@ impl State {
         self.git_panel?;
         let historical = self.git_workspace.history_commit.is_some();
         let frame = self.prepare_git_workspace_base()?;
-        let mut frame = if self.git_workspace.blame_query.is_some() {
+        let mut frame = if self.git_workspace.commit_search.is_some() {
+            self.prepare_git_commit_search(frame)
+        } else if self.git_workspace.blame_query.is_some() {
             self.prepare_git_blame(frame)
         } else if self.git_workspace.path_query.is_some() {
             self.prepare_git_path_history(frame)
@@ -388,6 +428,7 @@ impl State {
         };
         self.add_git_path_history_button(&mut frame);
         self.add_git_blame_button(&mut frame);
+        self.add_git_commit_search_button(&mut frame);
         self.prepare_git_controls(&mut frame);
         Some(frame)
     }
@@ -672,6 +713,7 @@ impl State {
             "Cambios locales".into()
         };
         Some(Frame {
+            query: None,
             locations: layout.locations,
             summary,
             unit: p(100),
@@ -732,6 +774,35 @@ impl State {
             }
         }
         match intent {
+            Some(Intent::SearchOpen) => {
+                self.open_git_commit_search();
+                Action::None
+            }
+            Some(Intent::SearchRun) => {
+                self.run_git_commit_search();
+                Action::None
+            }
+            Some(Intent::SearchScope) => {
+                self.cycle_git_search_scope();
+                Action::None
+            }
+            Some(Intent::SearchFocus) => {
+                self.focus_git_search_input();
+                Action::None
+            }
+            Some(Intent::SearchResult(i)) => {
+                self.open_git_search_result(i);
+                Action::None
+            }
+            Some(Intent::SearchNext) => {
+                self.next_git_commit_search();
+                Action::None
+            }
+            Some(Intent::SearchBack) => {
+                self.back_git_commit_search();
+                Action::None
+            }
+            Some(Intent::SearchExit) => self.request_git(GitIntent::Status),
             Some(Intent::Blame) => {
                 self.request_git_blame();
                 Action::None
@@ -778,7 +849,10 @@ impl State {
                 | Intent::Rail(_),
             ) => Action::None,
             Some(Intent::Refresh) => {
-                if self.git_workspace.blame_query.is_some() {
+                if self.git_workspace.commit_search.is_some() {
+                    self.run_git_commit_search();
+                    Action::None
+                } else if self.git_workspace.blame_query.is_some() {
                     self.refresh_git_blame();
                     Action::None
                 } else if self.git_workspace.path_query.is_some() {
@@ -1014,7 +1088,7 @@ pub(super) unsafe fn draw(
             rect(
                 p(if compact { 440 } else { 240 }),
                 f.toolbar.top + p(8),
-                (f.toolbar.right - p(215)).max(0),
+                (f.toolbar.right - p(if f.toolbar.right >= p(900) { 410 } else { 215 })).max(0),
                 f.toolbar.top + p(34),
             ),
             &format!("{}   /   {}", f.title, f.branch),
@@ -1462,6 +1536,34 @@ pub(super) unsafe fn draw(
             shell::TEXT,
             bg,
         )?;
+    }
+    if let Some(query) = &f.query {
+        paint::fill(dc, query.rect, SELECTION)?;
+        SelectObject(dc, code_font);
+        text(
+            dc,
+            rect(
+                query.rect.left + p(8),
+                query.rect.top + p(3),
+                query.rect.right - p(8),
+                query.rect.bottom,
+            ),
+            &query.text,
+            shell::TEXT,
+            SELECTION,
+        )?;
+        if let Some(x) = query.caret {
+            paint::fill(
+                dc,
+                rect(
+                    query.rect.left + p(8) + x,
+                    query.rect.top + p(4),
+                    query.rect.left + p(9) + x,
+                    query.rect.bottom - p(4),
+                ),
+                ACCENT,
+            )?;
+        }
     }
     SelectObject(dc, ui_font);
     for (r, name, selected) in &f.buttons {

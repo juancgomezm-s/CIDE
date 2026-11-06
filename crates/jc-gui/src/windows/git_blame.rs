@@ -3,7 +3,7 @@ use super::*;
 
 impl State {
     pub(super) fn add_git_blame_button(&self, f: &mut Frame) {
-        if self.git_workspace.blame_query.is_some() {
+        if self.git_workspace.commit_search.is_some() || self.git_workspace.blame_query.is_some() {
             return;
         }
         f.footer = format!("L anotaciones · {}", f.footer);

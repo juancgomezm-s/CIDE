@@ -285,6 +285,9 @@ impl TuiApp {
             self.append_overlay_text(text);
             return;
         }
+        if self.paste_commit_search(text) {
+            return;
+        }
         if self.showing_markdown() {
             return;
         }

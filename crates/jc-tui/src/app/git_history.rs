@@ -21,6 +21,7 @@ pub(crate) struct HistoryView {
     pub(super) encoding: Option<TextEncoding>,
     pub(super) local: Option<(jc_app::git_revision::PairKind, Vec<u8>)>,
     pub(super) blame: Option<super::git_blame::BlameView>,
+    pub(super) search: Option<super::git_commit_search::CommitSearchView>,
     /// Pinned start and opaque path only. The controller owns the accepted page.
     pub(super) path: Option<(String, Vec<u8>)>,
     pub(super) commit: Option<String>,
@@ -48,6 +49,14 @@ impl HistoryView {
 
 impl TuiApp {
     pub(crate) fn prepare_git_history(&mut self, width: u16, height: u16) -> GitStatusPresentation {
+        if self
+            .git_history
+            .search
+            .as_ref()
+            .is_some_and(|s| !s.browsing)
+        {
+            return self.prepare_commit_search(width, height);
+        }
         if self.git_history.blame.is_some() {
             return self.prepare_git_blame_list(width, height);
         }
@@ -129,6 +138,9 @@ impl TuiApp {
 
     /// Called only in the Git sidebar / historical diff focus, not globally.
     pub(crate) fn handle_git_history_key(&mut self, key: KeyEvent) -> bool {
+        if self.handle_commit_search_key(key) {
+            return true;
+        }
         if key.modifiers != KeyModifiers::NONE {
             return false;
         }

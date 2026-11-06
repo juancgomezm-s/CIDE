@@ -49,6 +49,26 @@ No new Git capabilities/TUI/core/dependencies/recovery changes. Show result befo
 
 # Working on JC-IDE
 
+## Commit search / build cache closure — 2026-11-06
+
+Read docs/G3_COMMIT_SEARCH.md and docs/LOCAL_BUILD_CACHE_CLEANUP.md.
+Shared jc-git literal query covers full messages, author/email, SHA prefix;
+first-parent only, pinned start,24 matches/128 walked per page, bound cursor.
+Use existing one revision worker; poll alone accepts. Empty pages may continue.
+GUI CtrlF/TUI F inside Git opens bounded256B grapheme field; edits cancel stale
+results. Opening member revisions retains one result page; no editor-source writes.
+11 directed new cases passed by suites (5 core,2 app,2 GUI,2 TUI). Fmt, selected
+all-target Clippy and workspace offline release passed; no desktop,
+HWND/ConPTY/personal clipboard or recovery/CI/push. No new dependencies.
+Current deliveries target/commit-search-next/release; preserve earlier binaries.
+User authorized cleanup:244 Cargo intermediate directories removed,15.74GiB logical;
+340 protected binaries verified unchanged. Sources/evidence/toolchain/recovery safe.
+Use scripts/build-cide-local.py --output target/<new-delivery>/release for release;
+stable target/build-cache, export only verified binaries. Reuse embedded-git-next
+for directed debug checks; serialize heavy validation. Do not create fresh dependency
+caches per block. IME excluded/Narrator deferred; global M2 acceptance unchanged.
+
+
 ## Git layout / parallel projection closure — 2026-11-06
 
 Read docs/G2_GIT_LAYOUT_COMPARISON.md before extending native Git presentation.

@@ -61,6 +61,7 @@ impl State {
     pub(super) fn request_git(&mut self, intent: GitIntent) -> Action {
         self.git_workspace.path_query = None;
         self.git_workspace.blame_query = None;
+        self.git_workspace.commit_search = None;
         self.close_selector();
         self.git_revision.cancel();
         self.git_workspace.history_commit = None;
@@ -246,8 +247,22 @@ impl State {
             return Action::None;
         };
         self.validate_git_context();
+        if let Some(action) = self.git_commit_search_key(code, modifiers) {
+            return action;
+        }
         if self.git_controls_key(code, modifiers) {
             return Action::None;
+        }
+        if self
+            .git_workspace
+            .commit_search
+            .as_ref()
+            .is_some_and(|s| !s.opened)
+        {
+            return Action::None;
+        }
+        if self.git_workspace.commit_search.is_some() {
+            return self.git_history_key(code, modifiers);
         }
         if self.git_workspace.blame_query.is_some() {
             return if self.git_workspace.history_commit.is_some() {

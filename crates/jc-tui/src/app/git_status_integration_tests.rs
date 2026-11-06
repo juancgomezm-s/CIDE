@@ -1049,3 +1049,122 @@ fn local_pair_keys_keep_head_index_disk_and_dirty_buffer_separate() {
     );
     assert_eq!(fixture.disk(), disk);
 }
+
+#[test]
+fn commit_search_keys_page_open_compare_back_and_edit_preserve_sources() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let mut parent = fixture.oid(&["rev-parse", "HEAD"]);
+    for n in 0..27 {
+        fixture.rewrite(TRACKED, format!("revisión {n}\r\n").as_bytes());
+        let blob = fixture.oid(&["hash-object", "-w", "--no-filters", "--", TRACKED]);
+        fixture.cache(&blob);
+        let tree = fixture.oid(&["write-tree"]);
+        parent = fixture.oid(&[
+            "commit-tree",
+            &tree,
+            "-p",
+            &parent,
+            "-m",
+            &format!("Resumen {n}"),
+            "-m",
+            "ENCONTRAR Ñ en el cuerpo",
+        ]);
+    }
+    fixture.git(&["update-ref", "HEAD", &parent]);
+    let disk = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    app.workbench.insert_text("sin guardar ").unwrap();
+    let source = app.workbench.active_bytes().unwrap();
+    let panes = format!("{:?}", app.workbench.panes());
+    request_ready(&mut app, &wake);
+    let wait = |app: &mut TuiApp| {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            match app.git_revision.state() {
+                jc_app::git_revision::GitRevisionState::Ready => break,
+                jc_app::git_revision::GitRevisionState::Queued
+                | jc_app::git_revision::GitRevisionState::Running => {}
+                state => panic!(
+                    "commit search failed: {state:?}: {}",
+                    app.git_revision.message()
+                ),
+            }
+            assert!(Instant::now() < deadline);
+            wake.wait(ticket, Some(Duration::from_millis(20)));
+        }
+    };
+    key(&mut app, KeyCode::Char('f'));
+    app.handle_event(Event::Paste("encontrar ñ".into()));
+    assert!(!matches!(
+        app.git_revision.state(),
+        jc_app::git_revision::GitRevisionState::Queued
+            | jc_app::git_revision::GitRevisionState::Running
+    ));
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app);
+    assert_eq!(app.git_revision.commit_search().unwrap().entries.len(), 24);
+    assert!(app
+        .prepare_git_history(120, 20)
+        .title
+        .contains("encontrar ñ"));
+    key(&mut app, KeyCode::Char('n'));
+    wait(&mut app);
+    assert_eq!(app.git_revision.commit_search().unwrap().entries.len(), 3);
+    let selected = app.git_revision.commit_search().unwrap().entries[0]
+        .commit
+        .clone();
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app);
+    assert!(app.git_history.files);
+    assert_eq!(app.git_revision.revision().unwrap().commit, selected);
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app);
+    assert!(app.git_revision.comparison().is_some());
+    assert_eq!(app.focus.primary(), PrimaryFocus::BottomPanel);
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Esc);
+    assert!(!app.git_history.files);
+    assert_eq!(app.prepare_git_history(120, 20).total, 3);
+    key(&mut app, KeyCode::Tab);
+    key(&mut app, KeyCode::Char('x'));
+    assert_eq!(app.prepare_git_history(120, 20).total, 0);
+    assert!(!matches!(
+        app.git_revision.state(),
+        jc_app::git_revision::GitRevisionState::Queued
+            | jc_app::git_revision::GitRevisionState::Running
+    ));
+    key(&mut app, KeyCode::F(2)); // Todo -> Mensaje -> Autor.
+    key(&mut app, KeyCode::F(2));
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('u'),
+        KeyModifiers::CONTROL,
+    )));
+    app.handle_event(Event::Paste("FIXTURE@EXAMPLE.INVALID".into()));
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app);
+    assert_eq!(
+        app.git_revision.commit_search().unwrap().field,
+        jc_app::git_revision::SearchField::Author
+    );
+    assert_eq!(app.git_revision.commit_search().unwrap().entries.len(), 24);
+    key(&mut app, KeyCode::F(2));
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('u'),
+        KeyModifiers::CONTROL,
+    )));
+    app.handle_event(Event::Paste(parent[..12].into()));
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app);
+    let page = app.git_revision.commit_search().unwrap();
+    assert_eq!(page.field, jc_app::git_revision::SearchField::Commit);
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(page.entries[0].commit, parent);
+    key(&mut app, KeyCode::Esc);
+    assert!(app.git_history.search.is_none());
+    assert_eq!(app.workbench.active_bytes().unwrap(), source);
+    assert_eq!(format!("{:?}", app.workbench.panes()), panes);
+    assert_eq!(fixture.disk(), disk);
+}

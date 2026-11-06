@@ -449,6 +449,7 @@ impl State {
             return false;
         }
         if self.git_workspace.menu.is_none()
+            && self.git_workspace.commit_search.is_none()
             && (self.git_blame_key(code)
                 || (self.git_workspace.blame_query.is_none() && self.git_path_history_key(code)))
         {
@@ -498,7 +499,8 @@ impl State {
                     Column::Comparison => Column::History,
                 });
             }
-            _ if self.git_workspace.blame_query.is_none()
+            _ if self.git_workspace.commit_search.is_none()
+                && self.git_workspace.blame_query.is_none()
                 && self.git_workspace.active == Column::History
                 && !self.git_workspace.focus_diff =>
             {

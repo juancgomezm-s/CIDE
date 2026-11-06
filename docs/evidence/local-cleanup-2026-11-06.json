@@ -1,0 +1,18 @@
+{
+  "skipped": [
+    {
+      "path": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\target\\release\\examples",
+      "reason": "contains preserved/reparse/unreviewed entries"
+    }
+  ],
+  "logical_bytes_removed": 16896172139,
+  "deleted_files": 28224,
+  "preserved_binaries_verified": 340,
+  "changed_or_missing_binaries": [],
+  "deleted_directories": 244,
+  "scope": "Only validated old Cargo intermediate directories; sources/evidence/releases/toolchain/recovery preserved",
+  "inventory_reports": {
+    "work/cleanup-plan.json": "d8d2a3e404d1060956e64218d821e99858bd78d0cf9d77151331ce6f1c7d9b50",
+    "work/cleanup-result.json": "d13af937e09c83463cdd4a1eec35d507ba11e92d3d9d8679a8806a8f68c567f4"
+  }
+}

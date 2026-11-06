@@ -370,6 +370,7 @@ enum Action {
     NativeMenu(native_menu::NativeMenuGroup),
     Clipboard(CommandId),
     PasteSearch(u64),
+    PasteGitSearch(std::sync::Arc<()>),
     PasteNavigation(u64),
     PasteSnippet(snippet_panel::SnippetInputTarget),
     SelectorClipboard(CommandId, Box<selector_input::SelectorInputTarget>),
@@ -763,6 +764,9 @@ impl State {
             return self.selector_field_action(command);
         }
         if self.selector.is_none() && command == CommandId::EditPaste {
+            if let Some(token) = self.git_search_input_token() {
+                return Action::PasteGitSearch(token);
+            }
             if let Some(target) = self.snippet_input_target() {
                 return Action::PasteSnippet(target);
             }
@@ -1319,6 +1323,7 @@ impl State {
             return;
         }
         if self.git_panel.is_some() {
+            self.git_commit_search_character(ch);
             return;
         }
         if self.replace_panel.is_some() {
@@ -2013,6 +2018,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::None => {}
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
+        Action::PasteGitSearch(token) => git_workspace::paste_commit_query(hwnd, token),
         Action::PasteNavigation(generation) => clipboard_flow::paste_navigation(hwnd, generation),
         Action::PasteSnippet(target) => clipboard_flow::paste_snippet(hwnd, target),
         Action::SelectorClipboard(command, target) => {

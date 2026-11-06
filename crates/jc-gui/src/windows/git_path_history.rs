@@ -3,7 +3,8 @@ use super::*;
 
 impl State {
     pub(super) fn add_git_path_history_button(&self, f: &mut Frame) {
-        if self.git_workspace.blame_query.is_some()
+        if self.git_workspace.commit_search.is_some()
+            || self.git_workspace.blame_query.is_some()
             || self.git_workspace.path_query.is_some()
             || f.preview.right - f.preview.left
                 < self.dpi.pixels(if f.historical { 440 } else { 320 })

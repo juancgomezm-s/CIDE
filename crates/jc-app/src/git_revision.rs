@@ -7,6 +7,10 @@ use crate::{
 };
 use jc_git::blame::read_blame;
 pub use jc_git::blame::{BlameBoundary, BlameCommit, BlameLine, BlamePage};
+use jc_git::commit_search::search_commits;
+pub use jc_git::commit_search::{
+    CommitSearchCursor, CommitSearchEntry, CommitSearchPage, SearchField,
+};
 pub use jc_git::local_pair::PairKind;
 use jc_git::local_pair::{read_local_pair, HeadState, IndexToken, SourceIdentity};
 use jc_git::path_history::read_path_history;
@@ -124,6 +128,12 @@ impl ComparisonOrigin {
 }
 #[derive(Clone, PartialEq, Eq)]
 enum Query {
+    CommitSearch {
+        start: String,
+        text: String,
+        field: SearchField,
+        cursor: Option<CommitSearchCursor>,
+    },
     Blame {
         start: String,
         path: Vec<u8>,
@@ -149,6 +159,7 @@ enum Query {
 impl Query {
     fn commit(&self) -> Option<&str> {
         match self {
+            Self::CommitSearch { start, .. } => Some(start),
             Self::Blame { start, .. } => Some(start),
             Self::PathHistory { start, .. } => Some(start),
             Self::Revision { commit } | Self::HistoricalFile { commit, .. } => Some(commit),
@@ -173,6 +184,20 @@ struct Selection {
 impl Selection {
     fn valid(&self) -> bool {
         let bounded = match &self.query {
+            Query::CommitSearch {
+                start,
+                text,
+                cursor,
+                ..
+            } => {
+                start.capacity() <= 64
+                    && text.capacity() <= 256
+                    && !text.trim().is_empty()
+                    && !text.chars().any(char::is_control)
+                    && cursor
+                        .as_ref()
+                        .is_none_or(|c| c.memory_bytes() <= PATH_BYTES * 4)
+            }
             Query::Blame { start, path, first } => {
                 start.capacity() <= 64 && path.capacity() <= PATH_BYTES && *first <= 200_000
             }
@@ -215,6 +240,7 @@ fn valid_oid(oid: &str) -> bool {
 }
 
 enum Outcome {
+    CommitSearch(CommitSearchPage),
     Blame(BlamePage),
     PathHistory(PathHistoryPage),
     Revision(Revision),
@@ -266,6 +292,7 @@ pub struct GitRevisionController {
     revision: Option<Revision>,
     path_history: Option<PathHistoryPage>,
     blame: Option<BlamePage>,
+    commit_search: Option<CommitSearchPage>,
     comparison: Option<RevisionComparison>,
     state: GitRevisionState,
 }
@@ -289,6 +316,7 @@ impl GitRevisionController {
             revision: None,
             path_history: None,
             blame: None,
+            commit_search: None,
             comparison: None,
             state: GitRevisionState::Idle,
         }
@@ -304,6 +332,53 @@ impl GitRevisionController {
     }
     pub fn blame(&self) -> Option<&BlamePage> {
         self.blame.as_ref()
+    }
+    pub fn commit_search(&self) -> Option<&CommitSearchPage> {
+        self.commit_search.as_ref()
+    }
+    pub fn request_commit_search(
+        &mut self,
+        root: PathBuf,
+        start: String,
+        text: String,
+        field: SearchField,
+    ) -> Result<(), String> {
+        let text = if text.len() <= 256 {
+            text.into_boxed_str().into_string()
+        } else {
+            text
+        };
+        self.request(Selection {
+            root,
+            query: Query::CommitSearch {
+                start,
+                text,
+                field,
+                cursor: None,
+            },
+        })
+    }
+    pub fn request_commit_search_next(&mut self, root: PathBuf) -> Result<(), String> {
+        let page = self
+            .commit_search
+            .as_ref()
+            .ok_or("No hay búsqueda de commits aceptada")?;
+        let cursor = page
+            .next
+            .clone()
+            .ok_or("No hay otra página de resultados")?;
+        let start = page.start.clone();
+        let text = page.query.clone();
+        let field = page.field;
+        self.request(Selection {
+            root,
+            query: Query::CommitSearch {
+                start,
+                text,
+                field,
+                cursor: Some(cursor),
+            },
+        })
     }
     pub fn request_blame(
         &mut self,
@@ -422,6 +497,23 @@ impl GitRevisionController {
     }
     fn request(&mut self, mut selection: Selection) -> Result<(), String> {
         self.invalidate_work();
+        let retain_search = self
+            .selection
+            .as_ref()
+            .is_some_and(|current| current.root == selection.root)
+            && match &selection.query {
+                Query::Revision { commit } | Query::HistoricalFile { commit, .. } => {
+                    self.commit_search.as_ref().is_some_and(|p| {
+                        p.entries
+                            .iter()
+                            .any(|e| e.commit.eq_ignore_ascii_case(commit))
+                    })
+                }
+                _ => false,
+            };
+        if !retain_search {
+            self.commit_search = None;
+        }
         let retain_blame = self
             .selection
             .as_ref()
@@ -487,7 +579,8 @@ impl GitRevisionController {
             Query::Revision { commit }
             | Query::HistoricalFile { commit, .. }
             | Query::PathHistory { start: commit, .. }
-            | Query::Blame { start: commit, .. } => commit.make_ascii_lowercase(),
+            | Query::Blame { start: commit, .. }
+            | Query::CommitSearch { start: commit, .. } => commit.make_ascii_lowercase(),
             Query::LocalFile { .. } => {}
         }
         if self.worker.is_none() {
@@ -533,6 +626,7 @@ impl GitRevisionController {
             self.revision = None;
             self.path_history = None;
             self.blame = None;
+            self.commit_search = None;
             self.state = GitRevisionState::Stale;
             return true;
         }
@@ -543,6 +637,7 @@ impl GitRevisionController {
         self.revision = None;
         self.path_history = None;
         self.blame = None;
+        self.commit_search = None;
         self.selection = None;
         self.state = GitRevisionState::Cancelled;
     }
@@ -572,6 +667,15 @@ impl GitRevisionController {
                 return false;
             }
             match completion.result {
+                Ok(Outcome::CommitSearch(page))
+                    if matches!(&completion.selection.query,Query::CommitSearch{start,text,field,..}
+                    if page.start==*start &&page.query==*text &&page.field==*field)
+                        && page.memory_bytes() <= PAIR_BYTES
+                        && page.entries.len() <= 24 =>
+                {
+                    self.commit_search = Some(page);
+                    self.state = GitRevisionState::Ready;
+                }
                 Ok(Outcome::Blame(page)) if blame_matches(&page, &completion.selection.query) => {
                     self.blame = Some(page);
                     self.state = GitRevisionState::Ready;
@@ -655,6 +759,22 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
     }
     let started = Instant::now();
     match &selection.query {
+        Query::CommitSearch {
+            start,
+            text,
+            field,
+            cursor,
+        } => search_commits(
+            &selection.root,
+            start,
+            text,
+            *field,
+            cursor.as_ref(),
+            limits(),
+            || cancel.is_cancelled(),
+        )
+        .map(Outcome::CommitSearch)
+        .map_err(Failure::Provider),
         Query::Blame { start, path, first } => {
             read_blame(&selection.root, start, path, *first, 128, limits(), || {
                 cancel.is_cancelled()
@@ -895,6 +1015,91 @@ mod tests {
     use crate::diff_model::DiffSide;
     use jc_git::revision::RevisionBlob;
     use std::sync::{atomic::AtomicUsize, mpsc};
+    fn search_page(s: &Selection) -> CommitSearchPage {
+        let Query::CommitSearch {
+            start, text, field, ..
+        } = &s.query
+        else {
+            panic!("search query")
+        };
+        CommitSearchPage {
+            repository: jc_git::Identity {
+                root: s.root.clone(),
+                git_dir: s.root.join(".git"),
+            },
+            start: start.clone(),
+            query: text.clone(),
+            field: *field,
+            entries: vec![CommitSearchEntry {
+                commit: oid('a'),
+                parent: None,
+                summary: b"Resumen".to_vec(),
+                author: b"Autor".to_vec(),
+                matched: SearchField::Message,
+            }],
+            next: None,
+            scanned: 1,
+            shallow: false,
+            metadata_limited: false,
+        }
+    }
+    #[test]
+    fn commit_search_poll_only_member_revision_retention_and_edit_cancel_are_bounded() {
+        let wake = Wakeup::default();
+        let mut c = GitRevisionController::with_provider(
+            wake.clone(),
+            Arc::new(|s, _| match &s.query {
+                Query::CommitSearch { .. } => Ok(Outcome::CommitSearch(search_page(s))),
+                Query::Revision { .. } => Ok(revision(s)),
+                _ => Err(Failure::Identity),
+            }),
+        );
+        let mut query = String::with_capacity(500);
+        query.push_str("señal");
+        c.request_commit_search(root("search"), oid('b'), query, SearchField::All)
+            .unwrap();
+        wait_ready(&c, &wake);
+        assert!(c.commit_search().is_none());
+        c.poll(Some(&root("search")));
+        assert_eq!(c.commit_search().unwrap().query, "señal");
+        assert!(c.request_commit_search_next(root("search")).is_err());
+        c.request_revision(root("search"), oid('a')).unwrap();
+        assert!(c.commit_search().is_some());
+        wait_ready(&c, &wake);
+        c.poll(Some(&root("search")));
+        assert!(c.revision().is_some() && c.commit_search().is_some());
+        c.cancel();
+        assert!(c.commit_search().is_none());
+        assert!(c
+            .request_commit_search(root("search"), oid('a'), " ".into(), SearchField::All)
+            .is_err());
+    }
+    #[test]
+    fn commit_search_rejects_wrong_query_and_root_change_before_delivery() {
+        let wake = Wakeup::default();
+        let mut c = GitRevisionController::with_provider(
+            wake.clone(),
+            Arc::new(|s, _| {
+                let mut p = search_page(s);
+                if p.query == "bad" {
+                    p.query = "wrong".into();
+                }
+                Ok(Outcome::CommitSearch(p))
+            }),
+        );
+        c.request_commit_search(root("search"), oid('a'), "bad".into(), SearchField::All)
+            .unwrap();
+        wait_ready(&c, &wake);
+        c.poll(Some(&root("search")));
+        assert_eq!(c.state(), GitRevisionState::Failed);
+        assert!(c.commit_search().is_none());
+        c.request_commit_search(root("search"), oid('a'), "ok".into(), SearchField::All)
+            .unwrap();
+        wait_ready(&c, &wake);
+        assert!(c.invalidate_context(Some(&root("other"))));
+        assert!(!c.poll(Some(&root("other"))));
+        assert!(c.commit_search().is_none());
+    }
     fn blame_page(s: &Selection) -> BlamePage {
         BlamePage {
             repository: jc_git::Identity {

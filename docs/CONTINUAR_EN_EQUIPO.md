@@ -1,3 +1,23 @@
+## Búsqueda de commits y limpieza local — 2026-11-06
+
+[Contrato](G3_COMMIT_SEARCH.md). GUI/TUI usan el núcleo Rust compartido para
+buscar mensaje completo, autor/correo o prefijo SHA. Primer padre, inicio fijado,
+24 coincidencias/128 commits por página y cursor ligado. Un único worker existente,
+aceptación solo en poll y ninguna lectura en prepare. GUI Ctrl+F, TUI F dentro de
+Git; Intro ejecuta/abre, F2 campo, Tab foco, N continúa y Esc/B regresa.
+Once casos dirigidos aprobaron por suites (5 núcleo,2 entrega,2 GUI,2 TUI).
+Fmt, Clippy selectivo all-targets y release workspace offline aprobaron.
+[Evidencia del bloque](evidence/g3-commit-search-2026-11-06.json).
+Sin escritorio, HWND, ConPTY, portapapeles/recuperación personal, CI o push nuevos.
+Binarios actuales: `target/commit-search-next/release`; anteriores preservados.
+IME excluido, Narrador aplazado y aceptación física/global M2 sin ampliar.
+
+[Limpieza y caché](LOCAL_BUILD_CACHE_CLEANUP.md): retirados 15,74 GiB lógicos de
+intermedios antiguos;340 binarios protegidos verificados sin cambios. Las entregas
+se exportan desde target/build-cache con scripts/build-cide-local.py; las pruebas
+reutilizan target/embedded-git-next. No repetir suites cerradas por documentación.
+G3 sigue limitado a lecturas; operaciones de escritura/red permanecen en M5.
+
 ## Anotaciones por línea — 2026-11-06
 
 [Contrato y evidencia](G3_BLAME.md). GUI/TUI usan `jc_git::blame` sobre un commit

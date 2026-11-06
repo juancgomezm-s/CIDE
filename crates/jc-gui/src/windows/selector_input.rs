@@ -25,6 +25,10 @@ pub(super) fn field_command(command: CommandId) -> bool {
 impl State {
     pub(super) fn entry_context(&self, command: CommandId) -> CommandContext {
         let mut context = self.context();
+        if command == CommandId::EditPaste && self.git_search_input_token().is_some() {
+            context.field_paste = true;
+            context.clipboard_has_text = true;
+        }
         if let Some(selector) = self.selector.as_ref().filter(|_| field_command(command)) {
             context.editor_input = false;
             context.field_input = true;
