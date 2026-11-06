@@ -3,7 +3,8 @@ use super::*;
 
 impl State {
     pub(super) fn add_git_path_history_button(&self, f: &mut Frame) {
-        if self.git_workspace.path_query.is_some()
+        if self.git_workspace.blame_query.is_some()
+            || self.git_workspace.path_query.is_some()
             || f.preview.right - f.preview.left
                 < self.dpi.pixels(if f.historical { 440 } else { 320 })
         {
@@ -18,7 +19,17 @@ impl State {
         f.buttons.push((r, "Historial del archivo".into(), false));
         f.hits.actions.push((r, Intent::PathHistory));
     }
-    pub(super) fn request_git_path_history(&mut self) {
+    pub(super) fn git_selected_history_target(&self) -> Option<(String, Vec<u8>)> {
+        if self.git_workspace.path_query.is_some() && self.git_workspace.history_commit.is_none() {
+            if let Some(page) = self.git_revision.path_history() {
+                return Some((
+                    page.entries
+                        .get(self.git_workspace.path_selected)
+                        .map_or_else(|| page.start.clone(), |e| e.commit.clone()),
+                    page.path.clone(),
+                ));
+            }
+        }
         let path = self
             .git_revision
             .comparison()
@@ -56,7 +67,11 @@ impl State {
                 .and_then(|i| i.commits.first())
                 .map(|c| c.id.clone())
         });
-        if let (Some(path), Some(start)) = (path, start) {
+        start.zip(path)
+    }
+    pub(super) fn request_git_path_history(&mut self) {
+        self.git_workspace.blame_query = None;
+        if let Some((start, path)) = self.git_selected_history_target() {
             self.git_workspace.path_query = Some((start, path));
             self.refresh_git_path_history();
         } else {

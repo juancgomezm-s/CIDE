@@ -318,6 +318,116 @@ fn assert_status_rows(app: &mut TuiApp) {
 }
 
 #[test]
+fn blame_keys_page_owner_revision_return_and_raw_sources_preserve_editor_and_git() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let mut original = Vec::new();
+    for n in 0..140 {
+        original.extend_from_slice(format!("fila {n}\r\n").as_bytes());
+        if n == 1 {
+            original.extend_from_slice(b"byte \xff\r\n");
+        }
+    }
+    fixture.rewrite(TRACKED, &original);
+    let old = fixture.oid(&["rev-parse", "HEAD"]);
+    let blob = fixture.oid(&["hash-object", "-w", "--no-filters", "--", TRACKED]);
+    fixture.cache(&blob);
+    let tree = fixture.oid(&["write-tree"]);
+    let base = fixture.oid(&[
+        "commit-tree",
+        &tree,
+        "-p",
+        &old,
+        "-m",
+        "Origen de las lineas",
+    ]);
+    let mut changed = b"agregada\r\n".to_vec();
+    changed.extend_from_slice(&original);
+    fixture.rewrite(TRACKED, &changed);
+    let blob = fixture.oid(&["hash-object", "-w", "--no-filters", "--", TRACKED]);
+    fixture.cache(&blob);
+    let tree = fixture.oid(&["write-tree"]);
+    let latest = fixture.oid(&["commit-tree", &tree, "-p", &base, "-m", "Inserta cabecera"]);
+    fixture.git(&["update-ref", "HEAD", &latest]);
+    fixture.rewrite(TRACKED, b"disco independiente\r\n");
+    let disk = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    app.workbench.insert_text("sin guardar ").unwrap();
+    let editor = app.workbench.active_bytes().unwrap();
+    let panes = format!("{:?}", app.workbench.panes());
+    request_ready(&mut app, &wake);
+    let tracked = app
+        .git_status
+        .prepare(256, 256)
+        .rows
+        .iter()
+        .find(|r| r.path == TRACKED)
+        .unwrap()
+        .ordinal;
+    app.git_status.first();
+    app.git_status.move_selection(tracked as isize);
+    app.git_history.encoding = Some(TextEncoding::Utf8);
+    let wait = |app: &mut TuiApp| {
+        let until = Instant::now() + Duration::from_secs(15);
+        loop {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            match app.git_revision.state() {
+                jc_app::git_revision::GitRevisionState::Ready => break,
+                jc_app::git_revision::GitRevisionState::Queued
+                | jc_app::git_revision::GitRevisionState::Running => {}
+                s => panic!("blame delivery: {s:?}"),
+            };
+            assert!(Instant::now() < until);
+            wake.wait(ticket, Some(Duration::from_millis(20)));
+        }
+    };
+    key(&mut app, KeyCode::Char('l'));
+    wait(&mut app);
+    let page = app.git_revision.blame().unwrap();
+    assert_eq!(page.start, latest);
+    assert_eq!(page.rows.len(), 128);
+    assert_eq!(page.source.as_slice(), changed);
+    assert_eq!(page.commits[page.rows[0].commit.unwrap()].commit, latest);
+    assert_eq!(page.commits[page.rows[1].commit.unwrap()].commit, base);
+    assert_eq!(page.rows[1].original_line, 0);
+    let list = app.prepare_git_history(100, 10);
+    assert_eq!(list.rows.len(), 10);
+    assert!(list.title.contains("Anotaciones"));
+    let detail = app.prepare_historical_diff(120, 6, 10);
+    assert!(detail.rows.iter().any(|r| r.text.contains("agregada")));
+    assert!(detail.rows.iter().any(|r| r.text.contains("\\xFF")));
+    assert!(!app.git_revision.ready());
+    key(&mut app, KeyCode::Down);
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app);
+    assert!(
+        matches!(&app.git_revision.comparison().unwrap().origin,jc_app::git_revision::ComparisonOrigin::Historical{commit,..}if commit==&base)
+    );
+    assert!(app.git_revision.blame().is_some());
+    assert_eq!(app.focus.primary(), PrimaryFocus::BottomPanel);
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Sidebar);
+    key(&mut app, KeyCode::Char('n'));
+    wait(&mut app);
+    let page = app.git_revision.blame().unwrap();
+    assert_eq!(page.first, 128);
+    assert_eq!(page.rows.len(), 14);
+    key(&mut app, KeyCode::Char('p'));
+    wait(&mut app);
+    assert_eq!(app.git_revision.blame().unwrap().first, 0);
+    key(&mut app, KeyCode::Char('r'));
+    wait(&mut app);
+    assert_eq!(app.git_revision.blame().unwrap().start, latest);
+    key(&mut app, KeyCode::Esc);
+    assert!(!app.git_history.active);
+    assert!(app.git_revision.blame().is_none());
+    assert_eq!(app.workbench.active_bytes().unwrap(), editor);
+    assert_eq!(format!("{:?}", app.workbench.panes()), panes);
+    assert_eq!(fixture.disk(), disk);
+}
+
+#[test]
 fn path_history_keys_page_compare_and_return_without_mutating_buffer_or_git() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let fixture = Fixture::new();

@@ -9,6 +9,7 @@ mod explorer_integration_tests;
 pub(crate) mod file_browser;
 #[cfg(test)]
 mod file_browser_tests;
+mod git_blame;
 mod git_diff;
 mod git_history;
 mod git_repository;
@@ -343,7 +344,7 @@ impl TuiApp {
                 && self.panels.sidebar() == jc_app::SidebarView::GitStatus
             {
                 self.status = format!(
-                    "{} · P preparados · T disco · H historial · A archivo",
+                    "{} · P preparados · T disco · H historial · A archivo · L anotar",
                     self.git_status.message()
                 );
             }

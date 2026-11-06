@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-06",
+  "scope": "Read-only first-parent line attribution GUI/TUI through independent Rust core",
+  "api": "jc_git::blame::read_blame",
+  "tests": {
+    "new_distinct": 11,
+    "core": 5,
+    "delivery": 2,
+    "gui": 2,
+    "tui": 2,
+    "logs": [
+      "work/blame-core-app-tests.log",
+      "work/blame-frontends-tests-close.log",
+      "work/blame-core-quota-close.log"
+    ]
+  },
+  "checks": {
+    "fmt": "work/blame-fmt-check.log",
+    "clippy": "work/blame-clippy.log",
+    "release": "work/blame-release.log"
+  },
+  "retained_initial_failure": "work/blame-frontends-tests.log",
+  "budgets": {
+    "page_rows": 128,
+    "walked": 128,
+    "blob_bytes": 2097152,
+    "pair_bytes": 4194304,
+    "source_payload_transient": 6291456,
+    "blob_read_bytes": 16777216,
+    "commit_bytes": 65536,
+    "tree_read_bytes": 8388608,
+    "diff_work_units": 67108864,
+    "combined_line_records": 200000
+  },
+  "binaries": "target/blame-next/release",
+  "previous_release_paths_preserved": true,
+  "binary_sha256": {
+    "cide-gui.exe": "90cfad71da48038e8ee1746ab2e180ef6943ab7117930991cbf6d9e41b42f8b8",
+    "cide-tui.exe": "b923bc3f044a27129ab7866502d09f1ad624a30cce7cbd212e974a8c1de27e23",
+    "cide.exe": "d49be8335d3cd22cbf1f2e443036a48874612eb9f16f23ac9df7dc43d083a182",
+    "jc-ide-gui.exe": "ef57909b533777c2a27f1b268e558fc6def8b4a76edc0327153f3ac4acb535d1",
+    "jc-ide-tui.exe": "692f942f4aced8f55b0cab7da2ed54357f1b166ddd36fbecdcab73fffbb1e9a9",
+    "jc-ide.exe": "8ca796ef805c4ba35f81e890e3b7fd1b7c38b31bfacb0cde2dfa8a7f01927c78"
+  },
+  "desktop_control": false,
+  "hwnd_rerun": false,
+  "conpty_rerun": false,
+  "full_workspace_tests_rerun": false,
+  "personal_recovery_used": false,
+  "personal_clipboard_used": false,
+  "new_dependencies": false,
+  "lock_changed": false,
+  "ci": false,
+  "push": false,
+  "limitations": [
+    "First parent and exact path only; no rename/copy/all-parent following",
+    "Complete means requested range; unresolved lines have no author at a declared boundary",
+    "Committed sources only; unsaved buffer not attributed",
+    "No new physical/global M2 acceptance"
+  ]
+}

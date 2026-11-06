@@ -60,6 +60,7 @@ impl State {
     }
     pub(super) fn request_git(&mut self, intent: GitIntent) -> Action {
         self.git_workspace.path_query = None;
+        self.git_workspace.blame_query = None;
         self.close_selector();
         self.git_revision.cancel();
         self.git_workspace.history_commit = None;
@@ -247,6 +248,13 @@ impl State {
         self.validate_git_context();
         if self.git_controls_key(code, modifiers) {
             return Action::None;
+        }
+        if self.git_workspace.blame_query.is_some() {
+            return if self.git_workspace.history_commit.is_some() {
+                self.git_history_key(code, modifiers)
+            } else {
+                Action::None
+            };
         }
         if self.git_workspace.history_commit.is_some() {
             return self.git_history_key(code, modifiers);

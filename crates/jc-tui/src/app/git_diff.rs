@@ -363,7 +363,7 @@ pub(super) fn model_rows(
 
 /// EOL is read from the end of the borrowed line; only a bounded prefix is
 /// interpreted. Invalid bytes are explicit escapes, never lossy source text.
-fn source_prefix(
+pub(super) fn source_prefix(
     bytes: &[u8],
     source_start: usize,
     encoding: TextEncoding,

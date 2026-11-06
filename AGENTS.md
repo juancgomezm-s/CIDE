@@ -1,3 +1,16 @@
+# Current blame closure — 2026-11-06
+
+Read docs/G3_BLAME.md before extending line attribution. Independent Rust core,
+one existing DiffModel, first-parent/exact-path pinned sources; no live-buffer blame.
+128rows/page,128walked,2MiB/blob,4MiB/pair,16MiB cumulative blob reads; retained base
+plus pair can total6MiB source payload. Explicit unknown origins at shallow/work/read
+boundaries; missing/corrupt advertised objects remain errors. One revision worker,
+poll-only acceptance; same-path responsible comparison retains page for return.
+GUI/TUI connected.11 new directed cases passed by suites; fmt/selective all-target
+Clippy/workspace release offline passed. Binaries target/blame-next/release; preserve prior.
+No new full tests/HWND/ConPTY/desktop, dependencies/lock, CI or push. User is working:
+do not take desktop. Physical M2 unchanged; IME excluded, Narrator deferred.
+
 # Current per-file history / outline closure — 2026-11-06
 
 Read docs/G3_PATH_HISTORY_OUTLINE.md before extending per-path Git or outline.

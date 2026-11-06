@@ -103,7 +103,7 @@ fn oid(value: &str) -> Result<gix::ObjectId, Error> {
     Ok(id)
 }
 
-fn charge_commit(
+pub(crate) fn charge_commit(
     repo: &gix::Repository,
     id: gix::ObjectId,
     budget: &mut Budget,
@@ -122,7 +122,7 @@ fn charge_commit(
     Ok(())
 }
 
-fn shallow(
+pub(crate) fn shallow(
     repo: &gix::Repository,
     limits: Limits,
     budget: &mut Budget,

@@ -228,11 +228,14 @@ impl State {
             frame.dividers.push(*r);
             frame.hits.actions.push((*r, Intent::Divider(*d)));
         }
-        if l.preview.right > l.preview.left && !frame.code.is_empty() {
+        if l.preview.right > l.preview.left
+            && (!frame.code.is_empty() || !frame.annotations.is_empty())
+        {
             let start = frame
                 .code
                 .iter()
                 .map(|r| r.rect.top)
+                .chain(frame.annotations.iter().map(|r| r.rect.top))
                 .min()
                 .unwrap_or(l.preview.bottom);
             let v = rect(
@@ -445,7 +448,10 @@ impl State {
         if modifiers != Modifiers::NONE {
             return false;
         }
-        if self.git_workspace.menu.is_none() && self.git_path_history_key(code) {
+        if self.git_workspace.menu.is_none()
+            && (self.git_blame_key(code)
+                || (self.git_workspace.blame_query.is_none() && self.git_path_history_key(code)))
+        {
             return true;
         }
         if let Some(selected) = self.git_workspace.menu {
@@ -492,7 +498,10 @@ impl State {
                     Column::Comparison => Column::History,
                 });
             }
-            _ if self.git_workspace.active == Column::History && !self.git_workspace.focus_diff => {
+            _ if self.git_workspace.blame_query.is_none()
+                && self.git_workspace.active == Column::History
+                && !self.git_workspace.focus_diff =>
+            {
                 let total = self
                     .git_status
                     .result()

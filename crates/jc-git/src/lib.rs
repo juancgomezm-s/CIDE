@@ -1,4 +1,5 @@
 //! Embedded Git provider independent of editor hosts and frontends.
+pub mod blame;
 pub mod diff_model;
 pub mod local_pair;
 pub mod path_history;

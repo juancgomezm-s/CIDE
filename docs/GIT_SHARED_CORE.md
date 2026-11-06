@@ -1,3 +1,5 @@
+Actualización 2026-11-06: `jc_git::blame` ofrece atribución acotada por primer padre reutilizando el único modelo de diff. [Contrato](G3_BLAME.md). La integración comprobada es GUI/TUI de CIDE; no se declaran integrados otros hosts ni una ABI estable.
+
 Actualización 2026-11-06: `jc_git::path_history` publica historial por ruta paginado y cancelable, sin depender del editor. [Contrato](G3_PATH_HISTORY_OUTLINE.md). Los adaptadores GUI/TUI usan el mismo controlador y diff; no se afirma integración nueva con OmniCore/OmniCoder ni una ABI estable.
 
 # Núcleo Git reutilizable: CIDE, OmniCore y OmniCoder

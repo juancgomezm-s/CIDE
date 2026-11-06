@@ -16,6 +16,8 @@ mod controls;
 #[path = "git_workspace_smoke.rs"]
 mod layout_smoke;
 pub(super) use layout_smoke::run as smoke_layout;
+#[path = "git_blame.rs"]
+mod blame;
 #[path = "git_history.rs"]
 mod history;
 #[path = "git_layout.rs"]
@@ -65,6 +67,10 @@ pub(super) struct Workspace {
     pub history_hunk: usize,
     pub history_encoding: Option<TextEncoding>,
     pub(super) path_query: Option<(String, Vec<u8>)>,
+    pub(super) blame_query: Option<(String, Vec<u8>, usize)>,
+    blame_selected: usize,
+    blame_comparing: bool,
+    blame_viewport: (usize, usize),
     path_selected: usize,
     wheel: i32,
 }
@@ -100,9 +106,17 @@ struct Stamp {
     menu: Option<usize>,
     path_query: Option<(String, Vec<u8>)>,
     path_selected: usize,
+    blame_query: Option<(String, Vec<u8>, usize)>,
+    blame_selected: usize,
+    blame_comparing: bool,
 }
 #[derive(Clone, Copy)]
 enum Intent {
+    Blame,
+    BlameLine(usize),
+    BlamePage(isize),
+    BlameBack,
+    BlameExit,
     PathHistory,
     PathCommit(usize),
     PathNext,
@@ -156,12 +170,23 @@ struct CodeRow {
     kind: i8,
     parallel: bool,
 }
+struct BlameRow {
+    rect: Rect,
+    code_left: i32,
+    number: String,
+    origin: String,
+    author: String,
+    text: String,
+    selected: bool,
+    unresolved: bool,
+}
 pub(super) struct Frame {
     pub hits: Hits,
     rect: Rect,
     toolbar: Rect,
     history: Option<Rect>,
     locations: Option<Rect>,
+    history_heading: &'static str,
     summary: Vec<String>,
     unit: i32,
     files: Rect,
@@ -177,6 +202,7 @@ pub(super) struct Frame {
     commits: Vec<CommitRow>,
     rows: Vec<FileRow>,
     code: Vec<CodeRow>,
+    annotations: Vec<BlameRow>,
     details: Vec<String>,
     footer: String,
     overlays: Vec<(Rect, String, bool)>,
@@ -308,6 +334,9 @@ fn source_text(bytes: &[u8], encoding: TextEncoding, _start: usize) -> String {
 impl State {
     fn git_workspace_stamp(&self) -> Stamp {
         Stamp {
+            blame_query: self.git_workspace.blame_query.clone(),
+            blame_selected: self.git_workspace.blame_selected,
+            blame_comparing: self.git_workspace.blame_comparing,
             path_query: self.git_workspace.path_query.clone(),
             path_selected: self.git_workspace.path_selected,
             preferences: self.git_workspace.preferences,
@@ -344,7 +373,9 @@ impl State {
         self.git_panel?;
         let historical = self.git_workspace.history_commit.is_some();
         let frame = self.prepare_git_workspace_base()?;
-        let mut frame = if self.git_workspace.path_query.is_some() {
+        let mut frame = if self.git_workspace.blame_query.is_some() {
+            self.prepare_git_blame(frame)
+        } else if self.git_workspace.path_query.is_some() {
             self.prepare_git_path_history(frame)
         } else if historical {
             self.prepare_git_history(frame)
@@ -356,6 +387,7 @@ impl State {
             frame
         };
         self.add_git_path_history_button(&mut frame);
+        self.add_git_blame_button(&mut frame);
         self.prepare_git_controls(&mut frame);
         Some(frame)
     }
@@ -650,6 +682,7 @@ impl State {
             rect: layout.rect,
             toolbar: layout.toolbar,
             history: layout.history,
+            history_heading: "HISTORIAL",
             files: layout.files,
             preview: layout.preview,
             title,
@@ -666,6 +699,7 @@ impl State {
             commits,
             rows,
             code,
+            annotations: Vec::new(),
             details,
             footer: "Solo lectura · Comparación local · Esc vuelve al editor".into(),
         })
@@ -698,6 +732,23 @@ impl State {
             }
         }
         match intent {
+            Some(Intent::Blame) => {
+                self.request_git_blame();
+                Action::None
+            }
+            Some(Intent::BlameLine(index)) => {
+                self.open_git_blame_line(index);
+                Action::None
+            }
+            Some(Intent::BlamePage(delta)) => {
+                self.page_git_blame(delta);
+                Action::None
+            }
+            Some(Intent::BlameBack) => {
+                self.back_git_blame();
+                Action::None
+            }
+            Some(Intent::BlameExit) => self.request_git(GitIntent::Status),
             Some(Intent::PathHistory) => {
                 self.request_git_path_history();
                 Action::None
@@ -727,7 +778,10 @@ impl State {
                 | Intent::Rail(_),
             ) => Action::None,
             Some(Intent::Refresh) => {
-                if self.git_workspace.path_query.is_some() {
+                if self.git_workspace.blame_query.is_some() {
+                    self.refresh_git_blame();
+                    Action::None
+                } else if self.git_workspace.path_query.is_some() {
                     self.refresh_git_path_history();
                     Action::None
                 } else if let Some(kind) = self.git_workspace.local_kind {
@@ -1058,7 +1112,7 @@ pub(super) unsafe fn draw(
                 area.right - p(8),
                 area.top + p(32),
             ),
-            "HISTORIAL",
+            f.history_heading,
             MUTED,
             HEADER,
         )?;
@@ -1332,6 +1386,76 @@ pub(super) unsafe fn draw(
                 row.rect.left + if row.parallel { 48 } else { 90 },
                 row.rect.top,
                 row.rect.right - 6,
+                row.rect.bottom,
+            ),
+            &row.text,
+            shell::TEXT,
+            bg,
+        )?;
+    }
+    for row in &f.annotations {
+        let bg = if row.selected {
+            SELECTION
+        } else {
+            shell::BACKGROUND
+        };
+        paint::fill(dc, row.rect, bg)?;
+        SelectObject(dc, ui_font);
+        text(
+            dc,
+            rect(
+                row.rect.left + p(5),
+                row.rect.top,
+                row.rect.left + p(52),
+                row.rect.bottom,
+            ),
+            &row.number,
+            MUTED,
+            bg,
+        )?;
+        text(
+            dc,
+            rect(
+                row.rect.left + p(56),
+                row.rect.top,
+                (row.rect.left + p(138)).min(row.code_left - p(5)),
+                row.rect.bottom,
+            ),
+            &row.origin,
+            if row.unresolved { MUTED } else { ACCENT },
+            bg,
+        )?;
+        if row.code_left - row.rect.left >= p(240) {
+            text(
+                dc,
+                rect(
+                    row.rect.left + p(142),
+                    row.rect.top,
+                    row.code_left - p(8),
+                    row.rect.bottom,
+                ),
+                &row.author,
+                MUTED,
+                bg,
+            )?;
+        }
+        paint::fill(
+            dc,
+            rect(
+                row.code_left - p(4),
+                row.rect.top,
+                row.code_left - p(3),
+                row.rect.bottom,
+            ),
+            BORDER,
+        )?;
+        SelectObject(dc, code_font);
+        text(
+            dc,
+            rect(
+                row.code_left,
+                row.rect.top,
+                row.rect.right - p(6),
                 row.rect.bottom,
             ),
             &row.text,

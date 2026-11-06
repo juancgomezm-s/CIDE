@@ -5,6 +5,8 @@ use crate::{
     diff_model::{DiffLimits, DiffStatus, OwnedDiffModel},
     Cancellation, Wakeup,
 };
+use jc_git::blame::read_blame;
+pub use jc_git::blame::{BlameBoundary, BlameCommit, BlameLine, BlamePage};
 pub use jc_git::local_pair::PairKind;
 use jc_git::local_pair::{read_local_pair, HeadState, IndexToken, SourceIdentity};
 use jc_git::path_history::read_path_history;
@@ -122,6 +124,11 @@ impl ComparisonOrigin {
 }
 #[derive(Clone, PartialEq, Eq)]
 enum Query {
+    Blame {
+        start: String,
+        path: Vec<u8>,
+        first: usize,
+    },
     PathHistory {
         start: String,
         path: Vec<u8>,
@@ -142,6 +149,7 @@ enum Query {
 impl Query {
     fn commit(&self) -> Option<&str> {
         match self {
+            Self::Blame { start, .. } => Some(start),
             Self::PathHistory { start, .. } => Some(start),
             Self::Revision { commit } | Self::HistoricalFile { commit, .. } => Some(commit),
             _ => None,
@@ -151,7 +159,8 @@ impl Query {
         match self {
             Self::HistoricalFile { path, .. }
             | Self::LocalFile { path, .. }
-            | Self::PathHistory { path, .. } => Some(path),
+            | Self::PathHistory { path, .. }
+            | Self::Blame { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -164,6 +173,9 @@ struct Selection {
 impl Selection {
     fn valid(&self) -> bool {
         let bounded = match &self.query {
+            Query::Blame { start, path, first } => {
+                start.capacity() <= 64 && path.capacity() <= PATH_BYTES && *first <= 200_000
+            }
             Query::PathHistory {
                 start,
                 path,
@@ -203,6 +215,7 @@ fn valid_oid(oid: &str) -> bool {
 }
 
 enum Outcome {
+    Blame(BlamePage),
     PathHistory(PathHistoryPage),
     Revision(Revision),
     Comparison(RevisionComparison),
@@ -252,6 +265,7 @@ pub struct GitRevisionController {
     selection: Option<Selection>,
     revision: Option<Revision>,
     path_history: Option<PathHistoryPage>,
+    blame: Option<BlamePage>,
     comparison: Option<RevisionComparison>,
     state: GitRevisionState,
 }
@@ -274,6 +288,7 @@ impl GitRevisionController {
             selection: None,
             revision: None,
             path_history: None,
+            blame: None,
             comparison: None,
             state: GitRevisionState::Idle,
         }
@@ -286,6 +301,21 @@ impl GitRevisionController {
     }
     pub fn path_history(&self) -> Option<&PathHistoryPage> {
         self.path_history.as_ref()
+    }
+    pub fn blame(&self) -> Option<&BlamePage> {
+        self.blame.as_ref()
+    }
+    pub fn request_blame(
+        &mut self,
+        root: PathBuf,
+        start: String,
+        path: Vec<u8>,
+        first: usize,
+    ) -> Result<(), String> {
+        self.request(Selection {
+            root,
+            query: Query::Blame { start, path, first },
+        })
     }
     pub fn request_path_history(
         &mut self,
@@ -392,12 +422,41 @@ impl GitRevisionController {
     }
     fn request(&mut self, mut selection: Selection) -> Result<(), String> {
         self.invalidate_work();
+        let retain_blame = self
+            .selection
+            .as_ref()
+            .is_some_and(|current| current.root == selection.root)
+            && matches!(&selection.query,Query::HistoricalFile{commit,path} if self.blame.as_ref().is_some_and(|p|
+                p.path==*path &&p.commits.iter().any(|c|c.commit.eq_ignore_ascii_case(commit))));
+        if !retain_blame {
+            self.blame = None;
+        }
         let retain_path_history = self
             .selection
             .as_ref()
             .is_some_and(|current| current.root == selection.root)
-            && matches!(&selection.query,Query::HistoricalFile{commit,path}
-                if self.path_history.as_ref().is_some_and(|page|page.path==*path &&page.entries.iter().any(|e|e.commit.eq_ignore_ascii_case(commit))));
+            && match &selection.query {
+                Query::HistoricalFile { commit, path } => {
+                    self.path_history.as_ref().is_some_and(|page| {
+                        page.path == *path
+                            && page
+                                .entries
+                                .iter()
+                                .any(|e| e.commit.eq_ignore_ascii_case(commit))
+                    })
+                }
+                Query::Blame { start, path, .. } => {
+                    self.path_history.as_ref().is_some_and(|page| {
+                        page.path == *path
+                            && (page.start.eq_ignore_ascii_case(start)
+                                || page
+                                    .entries
+                                    .iter()
+                                    .any(|e| e.commit.eq_ignore_ascii_case(start)))
+                    })
+                }
+                _ => false,
+            };
         if !retain_path_history {
             self.path_history = None;
         }
@@ -427,7 +486,8 @@ impl GitRevisionController {
         match &mut selection.query {
             Query::Revision { commit }
             | Query::HistoricalFile { commit, .. }
-            | Query::PathHistory { start: commit, .. } => commit.make_ascii_lowercase(),
+            | Query::PathHistory { start: commit, .. }
+            | Query::Blame { start: commit, .. } => commit.make_ascii_lowercase(),
             Query::LocalFile { .. } => {}
         }
         if self.worker.is_none() {
@@ -472,6 +532,7 @@ impl GitRevisionController {
             self.selection = None;
             self.revision = None;
             self.path_history = None;
+            self.blame = None;
             self.state = GitRevisionState::Stale;
             return true;
         }
@@ -481,6 +542,7 @@ impl GitRevisionController {
         self.invalidate_work();
         self.revision = None;
         self.path_history = None;
+        self.blame = None;
         self.selection = None;
         self.state = GitRevisionState::Cancelled;
     }
@@ -510,6 +572,10 @@ impl GitRevisionController {
                 return false;
             }
             match completion.result {
+                Ok(Outcome::Blame(page)) if blame_matches(&page, &completion.selection.query) => {
+                    self.blame = Some(page);
+                    self.state = GitRevisionState::Ready;
+                }
                 Ok(Outcome::PathHistory(page))
                     if matches!(&completion.selection.query,
                     Query::PathHistory{start,path,..} if page.start==*start &&page.path==*path)
@@ -589,6 +655,13 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
     }
     let started = Instant::now();
     match &selection.query {
+        Query::Blame { start, path, first } => {
+            read_blame(&selection.root, start, path, *first, 128, limits(), || {
+                cancel.is_cancelled()
+            })
+            .map(Outcome::Blame)
+            .map_err(Failure::Provider)
+        }
         Query::PathHistory {
             start,
             path,
@@ -658,6 +731,36 @@ fn comparison_matches(c: &RevisionComparison, query: &Query) -> bool {
             }
             _ => false,
         }
+}
+
+fn blame_matches(page: &BlamePage, query: &Query) -> bool {
+    let Query::Blame { start, path, first } = query else {
+        return false;
+    };
+    page.start == *start
+        && page.path == *path
+        && page.first == (*first).min(page.total_lines)
+        && page.source.len() <= SOURCE_BYTES
+        && page.total_lines <= 200_000
+        && page.rows.len() <= 128
+        && page.commits.len() <= 128
+        && page.memory_bytes() <= PAIR_BYTES
+        && valid_oid(&page.blob_oid)
+        && page.commits.iter().all(|c| {
+            valid_oid(&c.commit)
+                && c.parent.as_deref().is_none_or(valid_oid)
+                && c.author.len() <= 96
+                && c.summary.len() <= 256
+        })
+        && page.rows.iter().enumerate().all(|(i, row)| {
+            row.line == page.first + i
+                && row.line < page.total_lines
+                && row.original_line < 200_000
+                && row.range.start <= row.range.end
+                && row.range.end <= page.source.len()
+                && row.commit.is_none_or(|index| index < page.commits.len())
+                && (!matches!(page.boundary, BlameBoundary::Complete) || row.commit.is_some())
+        })
 }
 
 fn comparison(
@@ -792,6 +895,107 @@ mod tests {
     use crate::diff_model::DiffSide;
     use jc_git::revision::RevisionBlob;
     use std::sync::{atomic::AtomicUsize, mpsc};
+    fn blame_page(s: &Selection) -> BlamePage {
+        BlamePage {
+            repository: jc_git::Identity {
+                root: s.root.clone(),
+                git_dir: s.root.join(".git"),
+            },
+            start: s.query.commit().unwrap().into(),
+            path: s.query.path().unwrap().to_vec(),
+            blob_oid: oid('c'),
+            source: Arc::new(b"old\r\n".to_vec()),
+            first: 0,
+            total_lines: 1,
+            rows: vec![BlameLine {
+                line: 0,
+                original_line: 0,
+                range: 0..5,
+                commit: Some(0),
+            }],
+            commits: vec![BlameCommit {
+                commit: oid('a'),
+                parent: None,
+                author: b"Autor".to_vec(),
+                summary: b"Creacion".to_vec(),
+            }],
+            boundary: BlameBoundary::Complete,
+            metadata_limited: false,
+            scanned: 1,
+        }
+    }
+    #[test]
+    fn blame_only_poll_accepts_and_owning_pair_retains_immutable_page_until_cancel() {
+        let wake = Wakeup::default();
+        let mut c = GitRevisionController::with_provider(
+            wake.clone(),
+            Arc::new(|s, cancel| match &s.query {
+                Query::Blame { .. } => Ok(Outcome::Blame(blame_page(s))),
+                Query::HistoricalFile { commit, path } => comparison(
+                    RevisionFilePair {
+                        repository: jc_git::Identity {
+                            root: s.root.clone(),
+                            git_dir: s.root.join(".git"),
+                        },
+                        commit: commit.clone(),
+                        parent: None,
+                        path: path.clone(),
+                        before: None,
+                        after: Some(RevisionBlob {
+                            oid: oid('c'),
+                            mode: 0o100644,
+                            bytes: b"old\r\n".to_vec(),
+                        }),
+                    },
+                    cancel,
+                    Instant::now(),
+                )
+                .map(Outcome::Comparison),
+                _ => Err(Failure::Identity),
+            }),
+        );
+        c.request_blame(root("blame"), oid('b'), b"file.p".to_vec(), 0)
+            .unwrap();
+        wait_ready(&c, &wake);
+        assert!(c.blame().is_none());
+        c.poll(Some(&root("blame")));
+        assert_eq!(c.blame().unwrap().rows[0].commit, Some(0));
+        c.request_file(root("blame"), oid('a'), b"file.p".to_vec())
+            .unwrap();
+        assert!(c.blame().is_some());
+        wait_ready(&c, &wake);
+        c.poll(Some(&root("blame")));
+        assert!(c.comparison().is_some());
+        assert_eq!(c.blame().unwrap().source.as_slice(), b"old\r\n");
+        c.cancel();
+        assert!(c.blame().is_none() && c.comparison().is_none());
+    }
+    #[test]
+    fn blame_wrong_source_range_and_changed_root_cannot_publish_a_page() {
+        let wake = Wakeup::default();
+        let mut c = GitRevisionController::with_provider(
+            wake.clone(),
+            Arc::new(|s, _| {
+                let mut p = blame_page(s);
+                if s.query.commit() == Some(oid('b').as_str()) {
+                    p.rows[0].range.end = 100;
+                }
+                Ok(Outcome::Blame(p))
+            }),
+        );
+        c.request_blame(root("blame"), oid('b'), b"file.p".to_vec(), 0)
+            .unwrap();
+        wait_ready(&c, &wake);
+        c.poll(Some(&root("blame")));
+        assert_eq!(c.state(), GitRevisionState::Failed);
+        assert!(c.blame().is_none());
+        c.request_blame(root("blame"), oid('a'), b"file.p".to_vec(), 0)
+            .unwrap();
+        wait_ready(&c, &wake);
+        assert!(c.invalidate_context(Some(&root("other"))));
+        assert!(!c.poll(Some(&root("other"))));
+        assert!(c.blame().is_none());
+    }
     fn history_page(selection: &Selection) -> PathHistoryPage {
         PathHistoryPage {
             repository: jc_git::Identity {

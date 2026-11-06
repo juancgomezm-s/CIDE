@@ -36,6 +36,7 @@ FIXED = [
     "docs/G2_GIT_LAYOUT_COMPARISON.md",
     "docs/G2_GIT_VISUAL_REDESIGN.md",
     "docs/G3_PATH_HISTORY_OUTLINE.md",
+    "docs/G3_BLAME.md",
     "docs/GIT_SHARED_CORE.md",
     "third_party/limetext-text-LICENSE", "third_party/unicode-17/LICENSE.txt",
 ]

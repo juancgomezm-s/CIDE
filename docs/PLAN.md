@@ -1,3 +1,22 @@
+## Anotaciones por línea — 2026-11-06
+
+[Contrato y evidencia](G3_BLAME.md). GUI/TUI usan `jc_git::blame` sobre un commit
+fijado, primer padre y ruta exacta, con el único motor de diff existente.
+Página de 128 líneas, recorrido de 128 commits, límites explícitos y filas sin
+autor inventado al alcanzar frontera shallow/cuotas. El snapshot confirmado
+permanece separado del buffer sucio. Un solo worker y aceptación en poll.
+GUI: Anotaciones/L, N/P páginas, Intro/clic en atribución abre el commit responsable,
+Volver a anotaciones/Esc recupera viewport/foco. TUI: L, N/P, E, Intro, Esc/B y H.
+No se siguen renombrados/copias/todos los padres, ni se añaden escrituras Git.
+
+Once casos nuevos dirigidos aprobaron por suites:5 core,2 entrega,2 GUI,2 TUI;
+un cierre adicional revalidó solo el caso de cuota afectado. Fmt, Clippy selectivo
+all-targets y release workspace offline aprobaron. Sin suites completas nuevas,
+HWND, ConPTY, escritorio, CI o push. Sin dependencias ni cambio al lock.
+Binarios actuales: `target/blame-next/release`, anteriores preservados.
+Los límites físicos/globales de M2 siguen abiertos; IME excluido y Narrador aplazado.
+Juan está trabajando: no tomar escritorio ni reiniciar su instancia para revisar.
+
 ## Historial por archivo y Esquema ocultable — 2026-11-06
 
 [Contrato y evidencia](G3_PATH_HISTORY_OUTLINE.md). GUI/TUI consultan el historial

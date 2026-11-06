@@ -20,9 +20,10 @@ pub(crate) struct HistoryView {
     pub(super) hunk: usize,
     pub(super) encoding: Option<TextEncoding>,
     pub(super) local: Option<(jc_app::git_revision::PairKind, Vec<u8>)>,
+    pub(super) blame: Option<super::git_blame::BlameView>,
     /// Pinned start and opaque path only. The controller owns the accepted page.
-    path: Option<(String, Vec<u8>)>,
-    commit: Option<String>,
+    pub(super) path: Option<(String, Vec<u8>)>,
+    pub(super) commit: Option<String>,
     commit_selected: usize,
 }
 impl HistoryView {
@@ -35,7 +36,7 @@ impl HistoryView {
             .saturating_sub(height.saturating_sub(1))
             .min(total.saturating_sub(height))
     }
-    fn cycle_encoding(&mut self) {
+    pub(super) fn cycle_encoding(&mut self) {
         self.encoding = Some(match self.encoding {
             None | Some(TextEncoding::Ibm850) => TextEncoding::Utf8,
             Some(TextEncoding::Utf8) => TextEncoding::Windows1252,
@@ -47,6 +48,9 @@ impl HistoryView {
 
 impl TuiApp {
     pub(crate) fn prepare_git_history(&mut self, width: u16, height: u16) -> GitStatusPresentation {
+        if self.git_history.blame.is_some() {
+            return self.prepare_git_blame_list(width, height);
+        }
         if self.git_history.path.is_some() {
             return self.prepare_git_path_history(width, height);
         }
@@ -127,6 +131,9 @@ impl TuiApp {
     pub(crate) fn handle_git_history_key(&mut self, key: KeyEvent) -> bool {
         if key.modifiers != KeyModifiers::NONE {
             return false;
+        }
+        if self.handle_git_blame_key(key) {
+            return true;
         }
         if matches!(key.code, KeyCode::Char('a' | 'A'))
             && !self.git_history.active
@@ -639,6 +646,14 @@ impl TuiApp {
         rows: usize,
         hunk_rows: usize,
     ) -> GitPresentation {
+        if self
+            .git_history
+            .blame
+            .as_ref()
+            .is_some_and(|b| !b.comparing)
+        {
+            return self.prepare_git_blame(width, rows);
+        }
         let mut prepared = GitPresentation {
             status: label(self.git_revision.message(), width),
             ..GitPresentation::default()
@@ -722,17 +737,17 @@ impl TuiApp {
     }
 }
 
-fn short_oid(oid: &str) -> &str {
+pub(super) fn short_oid(oid: &str) -> &str {
     let mut end = oid.len().min(8);
     while !oid.is_char_boundary(end) {
         end -= 1;
     }
     &oid[..end]
 }
-fn label(text: &str, width: u16) -> String {
+pub(super) fn label(text: &str, width: u16) -> String {
     jc_app::source_services::display_ui_label(text, usize::from(width).min(COLS))
 }
-fn opaque(bytes: &[u8], width: u16) -> String {
+pub(super) fn opaque(bytes: &[u8], width: u16) -> String {
     let mut output = String::new();
     for scalar in
         DecodedScalars::new(&bytes[..bytes.len().min(1024)], TextEncoding::Utf8, 0).take(COLS)
