@@ -190,7 +190,7 @@ impl TuiApp {
     }
 
     pub(crate) fn handle_git_diff_key(&mut self, key: KeyEvent) -> bool {
-        if self.git_history.active {
+        if self.git_history.immutable() {
             return self.handle_git_history_key(key);
         }
         if key.modifiers != KeyModifiers::NONE {

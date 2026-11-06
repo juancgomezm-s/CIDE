@@ -60,6 +60,7 @@ impl State {
         self.close_selector();
         self.git_revision.cancel();
         self.git_workspace.history_commit = None;
+        self.git_workspace.local_kind = None;
         self.git_workspace.invalidate();
         self.git_workspace.commit = None;
         let Some(root) = self.project_root.clone() else {
@@ -183,7 +184,9 @@ impl State {
                 changed = true;
             }
         }
-        match self.git_panel {
+        match self.git_panel.filter(|_| {
+            self.git_workspace.history_commit.is_none() && self.git_workspace.local_kind.is_none()
+        }) {
             Some(GitIntent::Status) if status_changed => {
                 self.status = self.git_status.message().into()
             }
@@ -195,7 +198,10 @@ impl State {
         if status_changed {
             self.git_workspace.invalidate();
         }
-        if diff_changed {
+        if diff_changed
+            && self.git_workspace.history_commit.is_none()
+            && self.git_workspace.local_kind.is_none()
+        {
             self.git_workspace.diff_first = 0;
             self.git_workspace.invalidate();
         }
@@ -235,6 +241,17 @@ impl State {
         self.validate_git_context();
         if self.git_workspace.history_commit.is_some() {
             return self.git_history_key(code, modifiers);
+        }
+        if modifiers == Modifiers::NONE && matches!(code, 0x50 | 0x54) {
+            self.request_git_local(if code == 0x50 {
+                jc_app::git_revision::PairKind::Prepared
+            } else {
+                jc_app::git_revision::PairKind::Worktree
+            });
+            return Action::None;
+        }
+        if self.git_workspace.local_kind.is_some() {
+            return self.git_local_key(code, modifiers);
         }
         if code == 0x09 && modifiers == Modifiers::NONE {
             self.git_workspace.focus_diff = !self.git_workspace.focus_diff;

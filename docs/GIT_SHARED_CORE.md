@@ -34,7 +34,8 @@ de comparación ya reside en jc-git, con una reexportación compatible desde jc-
 y una prueba de consumo público independiente del editor.
 
 `crates/jc-git` ya es una biblioteca Rust independiente de los crates del editor:
-su manifiesto solo declara gix 0.90.0 como dependencia directa. Sus operaciones
+su manifiesto declara gix 0.90.0 y el crate interno std-only jc-fs para
+compartir lecturas confinadas, sin depender de los crates del editor. Sus operaciones
 actuales son lectura de blobs y estado, con metadatos de historial acotado.
 `jc-app::git_read`, los controladores y el workspace GUI son consumidores.
 
@@ -43,6 +44,10 @@ ni de integración ya probada con OmniCore/OmniCoder. Los tipos públicos todav�
 son iniciales; algunos identificadores validados y modelos de comparación viven
 en jc-app, y el motor incluye mensajes Display en español. Su revisión forma parte
 de estabilizar el contrato. No se duplica el código para extraerlo más adelante.
+
+Las [comparaciones locales](G1_LOCAL_SOURCE_PAIRS.md) añaden HEAD ↔ índice e
+índice ↔ disco con presencia, tokens y bytes originales. Los buffers continúan
+siendo responsabilidad del adaptador; no hay un Document dentro del motor.
 
 ## Contrato del núcleo
 

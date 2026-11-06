@@ -1,10 +1,12 @@
-//! Repository-scoped historical reads. Workers never borrow editor documents.
+//! Repository-scoped immutable Git reads. Workers never borrow editor documents.
 //! One active operation, one latest metadata request and one completion; only
 //! poll accepts results. Rendering may borrow accepted immutable read models.
 use crate::{
     diff_model::{DiffLimits, DiffStatus, OwnedDiffModel},
     Cancellation, Wakeup,
 };
+pub use jc_git::local_pair::PairKind;
+use jc_git::local_pair::{read_local_pair, HeadState, IndexToken, SourceIdentity};
 use jc_git::revision::{read_file_pair, read_revision, RevisionFilePair};
 pub use jc_git::revision::{Revision, RevisionEntry, RevisionFile};
 pub use jc_git::{Change, CommitInfo, RepositoryInfo};
@@ -56,31 +58,108 @@ impl GitRevisionState {
 /// Missing entries keep None identities even though alignment consumes zero bytes.
 #[derive(Debug)]
 pub struct RevisionComparison {
-    pub commit: String,
-    pub parent: Option<String>,
+    pub origin: ComparisonOrigin,
     pub path: Vec<u8>,
     pub before_oid: Option<String>,
     pub after_oid: Option<String>,
     pub model: OwnedDiffModel,
 }
 
+#[derive(Debug)]
+pub enum ComparisonOrigin {
+    Historical {
+        commit: String,
+        parent: Option<String>,
+    },
+    Local(Box<LocalComparisonOrigin>),
+}
+#[derive(Debug)]
+pub struct LocalComparisonOrigin {
+    pub kind: PairKind,
+    pub index: IndexToken,
+    pub head: Option<HeadState>,
+    pub before: SourceIdentity,
+    pub after: SourceIdentity,
+}
+
+impl ComparisonOrigin {
+    pub fn sources_label(&self) -> Option<String> {
+        fn source(s: &SourceIdentity) -> String {
+            let name = match s.origin() {
+                jc_git::local_pair::SourceOrigin::Head => "HEAD",
+                jc_git::local_pair::SourceOrigin::Index => "Índice",
+                jc_git::local_pair::SourceOrigin::Worktree => "Disco",
+            };
+            match s {
+                SourceIdentity::Present { mode, .. } => format!("{name}: presente ({mode:o})"),
+                SourceIdentity::Absent { .. } => format!("{name}: ausente"),
+            }
+        }
+        match self {
+            Self::Local(local) => Some(format!(
+                "{} → {}",
+                source(&local.before),
+                source(&local.after)
+            )),
+            _ => None,
+        }
+    }
+    pub fn label(&self) -> String {
+        match self {
+            Self::Historical { commit, parent } => format!(
+                "{} → {}",
+                parent.as_deref().unwrap_or("árbol vacío"),
+                commit
+            ),
+            Self::Local(local) if local.kind == PairKind::Prepared => {
+                "Preparados: HEAD → índice · bytes originales".into()
+            }
+            Self::Local(_) => "En disco: índice → disco · bytes originales".into(),
+        }
+    }
+}
+#[derive(Clone, PartialEq, Eq)]
+enum Query {
+    Revision { commit: String },
+    HistoricalFile { commit: String, path: Vec<u8> },
+    LocalFile { kind: PairKind, path: Vec<u8> },
+}
+impl Query {
+    fn commit(&self) -> Option<&str> {
+        match self {
+            Self::Revision { commit } | Self::HistoricalFile { commit, .. } => Some(commit),
+            _ => None,
+        }
+    }
+    fn path(&self) -> Option<&[u8]> {
+        match self {
+            Self::HistoricalFile { path, .. } | Self::LocalFile { path, .. } => Some(path),
+            _ => None,
+        }
+    }
+}
 #[derive(Clone, PartialEq, Eq)]
 struct Selection {
     root: PathBuf,
-    commit: String,
-    path: Option<Vec<u8>>,
+    query: Query,
 }
 impl Selection {
     fn valid(&self) -> bool {
-        self.root.is_absolute()
+        let bounded = match &self.query {
+            Query::Revision { commit } => commit.capacity() <= 64,
+            Query::HistoricalFile { commit, path } => {
+                commit.capacity() <= 64 && path.capacity() <= PATH_BYTES
+            }
+            Query::LocalFile { path, .. } => path.capacity() <= PATH_BYTES,
+        };
+        bounded
+            && self.root.is_absolute()
             && self.root.as_os_str().len() <= PATH_BYTES
             && self.root.capacity() <= PATH_BYTES
-            && valid_oid(&self.commit)
-            && self.commit.capacity() <= 64
-            && self.path.as_ref().is_none_or(|path| {
+            && self.query.commit().is_none_or(valid_oid)
+            && self.query.path().is_none_or(|path| {
                 !path.is_empty()
                     && path.len() <= PATH_BYTES
-                    && path.capacity() <= PATH_BYTES
                     && !path.contains(&0)
                     && path
                         .split(|byte| *byte == b'/')
@@ -179,14 +258,14 @@ impl GitRevisionController {
     pub fn message(&self) -> &'static str {
         match self.state {
             GitRevisionState::Idle => "",
-            GitRevisionState::Queued => "Consulta histórica Git en cola",
-            GitRevisionState::Running => "Consultando revisión Git",
-            GitRevisionState::Ready => "Consulta histórica Git lista",
-            GitRevisionState::Limited => "La consulta histórica excedió sus límites",
-            GitRevisionState::Cancelled => "Consulta histórica Git cancelada",
-            GitRevisionState::Failed => "No se pudo consultar esta revisión Git",
-            GitRevisionState::TimedOut => "Se agotó el tiempo de consulta histórica Git",
-            GitRevisionState::Stale => "Cambió el repositorio; actualiza la consulta histórica",
+            GitRevisionState::Queued => "Consulta Git en cola",
+            GitRevisionState::Running => "Consultando fuentes Git",
+            GitRevisionState::Ready => "Consulta Git lista",
+            GitRevisionState::Limited => "La consulta Git excedió sus límites",
+            GitRevisionState::Cancelled => "Consulta Git cancelada",
+            GitRevisionState::Failed => "No se pudieron comparar estas fuentes Git",
+            GitRevisionState::TimedOut => "Se agotó el tiempo de consulta Git",
+            GitRevisionState::Stale => "Cambiaron las fuentes; actualiza la consulta Git",
         }
     }
     pub fn ready(&self) -> bool {
@@ -219,8 +298,7 @@ impl GitRevisionController {
     pub fn request_revision(&mut self, root: PathBuf, commit: String) -> Result<(), String> {
         self.request(Selection {
             root,
-            commit,
-            path: None,
+            query: Query::Revision { commit },
         })
     }
     pub fn request_file(
@@ -231,16 +309,30 @@ impl GitRevisionController {
     ) -> Result<(), String> {
         self.request(Selection {
             root,
-            commit,
-            path: Some(path),
+            query: Query::HistoricalFile { commit, path },
+        })
+    }
+    pub fn request_local_file(
+        &mut self,
+        root: PathBuf,
+        path: Vec<u8>,
+        kind: PairKind,
+    ) -> Result<(), String> {
+        self.request(Selection {
+            root,
+            query: Query::LocalFile { kind, path },
         })
     }
     fn request(&mut self, mut selection: Selection) -> Result<(), String> {
         self.invalidate_work();
-        let retain_revision = selection.path.is_some()
+        let retain_revision = matches!(selection.query, Query::HistoricalFile { .. })
             && self.selection.as_ref().is_some_and(|current| {
                 current.root == selection.root
-                    && current.commit.eq_ignore_ascii_case(&selection.commit)
+                    && current
+                        .query
+                        .commit()
+                        .zip(selection.query.commit())
+                        .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
             });
         if !retain_revision {
             self.revision = None;
@@ -248,7 +340,7 @@ impl GitRevisionController {
         self.selection = None;
         let Some(generation) = self.generation.checked_add(1) else {
             self.state = GitRevisionState::Failed;
-            return Err("Se agotó la generación de consulta histórica Git".into());
+            return Err("Se agotó la generación de consulta Git".into());
         };
         self.generation = generation;
         if !selection.valid() {
@@ -256,7 +348,12 @@ impl GitRevisionController {
             self.state = GitRevisionState::Failed;
             return Err("La consulta necesita raíz absoluta, revisión y ruta Git válidas".into());
         }
-        selection.commit.make_ascii_lowercase();
+        match &mut selection.query {
+            Query::Revision { commit } | Query::HistoricalFile { commit, .. } => {
+                commit.make_ascii_lowercase()
+            }
+            Query::LocalFile { .. } => {}
+        }
         if self.worker.is_none() {
             let shared = self.shared.clone();
             let provider = self.provider.clone();
@@ -268,7 +365,7 @@ impl GitRevisionController {
                 Err(_) => {
                     self.revision = None;
                     self.state = GitRevisionState::Failed;
-                    return Err("No se pudo iniciar la consulta histórica Git".into());
+                    return Err("No se pudo iniciar la consulta Git".into());
                 }
             }
         }
@@ -336,16 +433,15 @@ impl GitRevisionController {
             }
             match completion.result {
                 Ok(Outcome::Revision(revision))
-                    if completion.selection.path.is_none()
-                        && revision.commit == completion.selection.commit =>
+                    if matches!(completion.selection.query, Query::Revision { .. })
+                        && Some(revision.commit.as_str())
+                            == completion.selection.query.commit() =>
                 {
                     self.revision = Some(revision);
                     self.state = GitRevisionState::Ready;
                 }
                 Ok(Outcome::Comparison(comparison))
-                    if comparison.commit == completion.selection.commit
-                        && completion.selection.path.as_deref()
-                            == Some(comparison.path.as_slice()) =>
+                    if comparison_matches(&comparison, &completion.selection.query) =>
                 {
                     self.comparison = Some(comparison);
                     self.state = GitRevisionState::Ready;
@@ -387,6 +483,7 @@ fn failure_state(failure: Failure) -> GitRevisionState {
         Failure::Provider(jc_git::Error::TimedOut) | Failure::TimedOut => {
             GitRevisionState::TimedOut
         }
+        Failure::Provider(jc_git::Error::Stale) => GitRevisionState::Stale,
         Failure::Provider(jc_git::Error::Limited) | Failure::Limited => GitRevisionState::Limited,
         _ => GitRevisionState::Failed,
     }
@@ -404,23 +501,65 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
     if cancel.is_cancelled() {
         return Err(Failure::Cancelled);
     }
-    let Some(path) = selection.path.as_deref() else {
-        return read_revision(&selection.root, &selection.commit, limits(), || {
-            cancel.is_cancelled()
-        })
-        .map(Outcome::Revision)
-        .map_err(Failure::Provider);
-    };
     let started = Instant::now();
-    let pair = read_file_pair(&selection.root, &selection.commit, path, limits(), || {
-        cancel.is_cancelled()
-    })
-    .map_err(Failure::Provider)?;
-    if pair.commit != selection.commit || pair.path != path {
-        return Err(Failure::Identity);
+    match &selection.query {
+        Query::Revision { commit } => {
+            read_revision(&selection.root, commit, limits(), || cancel.is_cancelled())
+                .map(Outcome::Revision)
+                .map_err(Failure::Provider)
+        }
+        Query::HistoricalFile { commit, path } => {
+            let pair = read_file_pair(&selection.root, commit, path, limits(), || {
+                cancel.is_cancelled()
+            })
+            .map_err(Failure::Provider)?;
+            if pair.commit != *commit || pair.path != *path {
+                return Err(Failure::Identity);
+            }
+            comparison(pair, cancel, started).map(Outcome::Comparison)
+        }
+        Query::LocalFile { kind, path } => {
+            let pair = read_local_pair(&selection.root, path, *kind, limits(), || {
+                cancel.is_cancelled()
+            })
+            .map_err(Failure::Provider)?;
+            if pair.kind != *kind || pair.path != *path {
+                return Err(Failure::Identity);
+            }
+            let (before_id, before) = pair.before.into_parts();
+            let (after_id, after) = pair.after.into_parts();
+            let before_oid = before_id.oid().map(str::to_owned);
+            let after_oid = after_id.oid().map(str::to_owned);
+            let origin = ComparisonOrigin::Local(Box::new(LocalComparisonOrigin {
+                kind: pair.kind,
+                index: pair.index,
+                head: pair.head,
+                before: before_id,
+                after: after_id,
+            }));
+            build_comparison(
+                pair.path, origin, before_oid, before, after_oid, after, cancel, started,
+            )
+            .map(Outcome::Comparison)
+        }
     }
-    comparison(pair, cancel, started).map(Outcome::Comparison)
 }
+fn comparison_matches(c: &RevisionComparison, query: &Query) -> bool {
+    query.path() == Some(c.path.as_slice())
+        && match (&c.origin, query) {
+            (
+                ComparisonOrigin::Historical { commit, .. },
+                Query::HistoricalFile {
+                    commit: expected, ..
+                },
+            ) => commit == expected,
+            (ComparisonOrigin::Local(local), Query::LocalFile { kind: expected, .. }) => {
+                local.kind == *expected
+            }
+            _ => false,
+        }
+}
+
 fn comparison(
     pair: RevisionFilePair,
     cancel: &Cancellation,
@@ -432,6 +571,31 @@ fn comparison(
     let (after_oid, after) = pair
         .after
         .map_or((None, Vec::new()), |blob| (Some(blob.oid), blob.bytes));
+    build_comparison(
+        pair.path,
+        ComparisonOrigin::Historical {
+            commit: pair.commit,
+            parent: pair.parent,
+        },
+        before_oid,
+        before,
+        after_oid,
+        after,
+        cancel,
+        started,
+    )
+}
+#[allow(clippy::too_many_arguments)]
+fn build_comparison(
+    path: Vec<u8>,
+    origin: ComparisonOrigin,
+    before_oid: Option<String>,
+    before: Vec<u8>,
+    after_oid: Option<String>,
+    after: Vec<u8>,
+    cancel: &Cancellation,
+    started: Instant,
+) -> Result<RevisionComparison, Failure> {
     if before.len() > SOURCE_BYTES
         || after.len() > SOURCE_BYTES
         || before.capacity().saturating_add(after.capacity()) > PAIR_BYTES
@@ -456,9 +620,8 @@ fn comparison(
     );
     match model.status() {
         DiffStatus::Exact => Ok(RevisionComparison {
-            commit: pair.commit,
-            parent: pair.parent,
-            path: pair.path,
+            origin,
+            path,
             before_oid,
             after_oid,
             model,
@@ -544,7 +707,7 @@ mod tests {
                 root: selection.root.clone(),
                 git_dir: selection.root.join(".git"),
             },
-            commit: selection.commit.clone(),
+            commit: selection.query.commit().expect("historical query").into(),
             parents: Vec::new(),
             parent: None,
             files: Vec::new(),
@@ -711,7 +874,7 @@ mod tests {
         let mut controller = GitRevisionController::with_provider(
             wake.clone(),
             Arc::new(|s, _| {
-                if s.path.is_none() {
+                if s.query.path().is_none() {
                     Ok(revision(s))
                 } else {
                     Err(Failure::Limited)
@@ -740,7 +903,7 @@ mod tests {
         let mut controller = GitRevisionController::with_provider(
             wake.clone(),
             Arc::new(|s, _| {
-                if s.commit == oid('a') {
+                if s.query.commit() == Some(oid('a').as_str()) {
                     panic!("owned fixture panic");
                 }
                 Ok(revision(s))
@@ -756,5 +919,43 @@ mod tests {
         wait_ready(&controller, &wake);
         controller.poll(Some(&root("one")));
         assert_eq!(controller.state(), GitRevisionState::Ready);
+    }
+    #[test]
+    fn switching_to_local_query_drops_history_and_surfaces_changed_sources() {
+        let wake = Wakeup::default();
+        let mut controller = GitRevisionController::with_provider(
+            wake.clone(),
+            Arc::new(|s, _| match s.query {
+                Query::LocalFile {
+                    kind: PairKind::Prepared,
+                    ..
+                } => Err(Failure::Provider(jc_git::Error::Stale)),
+                Query::LocalFile {
+                    kind: PairKind::Worktree,
+                    ..
+                } => Err(Failure::Provider(jc_git::Error::Unmerged)),
+                _ => Ok(revision(s)),
+            }),
+        );
+        let root = root("local-swap");
+        controller.request_revision(root.clone(), oid('a')).unwrap();
+        wait_ready(&controller, &wake);
+        controller.poll(Some(&root));
+        assert!(controller.revision().is_some());
+        controller
+            .request_local_file(root.clone(), b"file.p".to_vec(), PairKind::Prepared)
+            .unwrap();
+        assert!(controller.revision().is_none());
+        assert!(controller.comparison().is_none());
+        wait_ready(&controller, &wake);
+        controller.poll(Some(&root));
+        assert_eq!(controller.state(), GitRevisionState::Stale);
+        controller
+            .request_local_file(root.clone(), b"file.p".to_vec(), PairKind::Worktree)
+            .unwrap();
+        wait_ready(&controller, &wake);
+        controller.poll(Some(&root));
+        assert_eq!(controller.state(), GitRevisionState::Failed);
+        assert!(controller.comparison().is_none());
     }
 }

@@ -42,6 +42,8 @@ REQUIRED = {
     "git_history_root_listing_exact_absent_side_and_pinned_blob",
     "git_history_delivery_gdi_preserves_dirty_document_and_editor_views",
     "git_history_escape_cancels_without_live_source_navigation",
+    "git_local_pairs_native_keys_exact_head_index_disk_with_dirty_buffer",
+    "git_local_pairs_gdi_and_enter_preserve_sources_and_editor_geometry",
     "explorer_root_native_delivery_no_input_git_excluded",
     "explorer_lazy_disclosure_expand_right_child_native_delivery",
     "explorer_focus_cycle_tab_do_not_edit_source",

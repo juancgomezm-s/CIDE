@@ -7,5 +7,6 @@ publish = false
 description = "Safe file sessions, external-change detection and atomic save for CIDE"
 
 [dependencies]
+jc-fs = { path = "../jc-fs" }
 jc-core = { path = "../jc-core" }
 jc-text = { path = "../jc-text" }

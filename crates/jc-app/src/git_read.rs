@@ -259,6 +259,9 @@ fn engine_error(e: jc_git::Error, limit: GitOutputLimit) -> GitReadError {
         jc_git::Error::Limited => GitReadError::OutputLimit(limit),
         jc_git::Error::Cancelled => GitReadError::Cancelled,
         jc_git::Error::TimedOut => GitReadError::TimedOut,
+        jc_git::Error::Stale => {
+            GitReadError::Io(io::Error::other("Las fuentes Git cambiaron; actualiza"))
+        }
         jc_git::Error::Engine(e) => GitReadError::Io(io::Error::other(e)),
     }
 }

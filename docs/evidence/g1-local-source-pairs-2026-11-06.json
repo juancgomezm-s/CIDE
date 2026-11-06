@@ -1,0 +1,70 @@
+{
+  "date": "2026-11-06",
+  "scope": "read-only HEAD/index and index/raw-worktree pairs; independent Rust core; GUI/TUI",
+  "binaries": "target/m2-git-pairs-next/release",
+  "distinct_passed_test_names": 744,
+  "new_test_names": 8,
+  "single_final_workspace_pass": false,
+  "tests": {
+    "distinct_passed_names": 744,
+    "logs": [
+      "g1-local-pairs-tests.log",
+      "g1-local-pairs-consumer-final.log",
+      "g1-local-pairs-frontends.log",
+      "g1-local-pairs-tui-final.log",
+      "g1-local-pairs-tui-cli.log",
+      "g1-local-pairs-delivery-final.log"
+    ],
+    "single_final_workspace_pass": false
+  },
+  "format": "work/g1-local-pairs-fmt-check.log",
+  "clippy": "work/g1-local-pairs-clippy-close.log",
+  "release": "work/g1-local-pairs-release.log",
+  "native": {
+    "checks": 144,
+    "report": "work/g1-local-pairs-native-summary.json",
+    "child_path_empty": true,
+    "git_metadata_unchanged": true,
+    "new_local_pair_checks": 2
+  },
+  "source_fixture_failures_retained": [
+    "work/g1-local-pairs-tests.log",
+    "work/g1-local-pairs-consumer.log",
+    "work/g1-local-pairs-frontends.log"
+  ],
+  "corrected_issues": [
+    "fixture INTENT_TO_ADD lacked EXTENDED serialization flag",
+    "concurrent fixtures needed atomic unique suffix",
+    "TUI hints truncated policy at 64 columns; moved hints to status bar"
+  ],
+  "package": {
+    "archive": "work\\packages\\CIDE-M2-pares-git-20261106.zip",
+    "sha256": "2769717dd5c5306c8e8101724ac699b6e21112456124d1a187034d9eb8b93285",
+    "files": 355,
+    "zip_members": 356,
+    "all_hashes_verified": true
+  },
+  "desktop": {
+    "report": "work/g1-local-pairs-desktop.json",
+    "black_capture": true,
+    "input_sent": false,
+    "previous_own_instance_normal_exit_pending": true
+  },
+  "limits": [
+    "No new physical-display/latency/RAM acceptance",
+    "No new ConPTY run",
+    "No junction/symlink fixture added",
+    "IME excluded by user",
+    "Narrator deferred",
+    "Second monitor not verified",
+    "No Git writes/network",
+    "Other hosts not integrated or bound yet"
+  ],
+  "dependencies": {
+    "new_internal_crate": "jc-fs",
+    "external_registry_package_records_changed": false,
+    "license_notice_bytes_changed": false
+  },
+  "ci_run": false,
+  "push": false
+}

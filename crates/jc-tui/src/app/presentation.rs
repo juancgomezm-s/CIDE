@@ -424,7 +424,7 @@ impl TuiApp {
         let git = if self.panels.sidebar() == jc_app::SidebarView::Git
             || self.panels.bottom() == BottomPanel::Diff
         {
-            let prepare = if self.git_history.active {
+            let prepare = if self.git_history.immutable() {
                 Self::prepare_historical_diff
             } else {
                 Self::prepare_git_diff

@@ -8,6 +8,7 @@ impl State {
         let Some(root) = self.project_root.clone() else {
             return;
         };
+        self.git_workspace.local_kind = None;
         self.git_diff.clear(&mut self.jobs);
         self.git_workspace.history_commit = Some(commit.clone());
         self.git_workspace.focus_diff = false;
@@ -107,6 +108,7 @@ impl State {
         let l = Layout::new(self);
         let p = |v| self.dpi.pixels(v);
         frame.historical = true;
+        frame.details_top = p(112);
         frame.rows.clear();
         frame.code.clear();
         frame.message.clear();
@@ -258,7 +260,7 @@ impl State {
     }
 }
 
-fn historical_rows(
+pub(super) fn historical_rows(
     model: &OwnedDiffModel,
     hunk: usize,
     first: usize,

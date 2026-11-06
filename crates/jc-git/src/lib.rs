@@ -1,5 +1,6 @@
 //! Embedded Git provider independent of editor hosts and frontends.
 pub mod diff_model;
+pub mod local_pair;
 pub mod revision;
 use gix::bstr::ByteSlice;
 use std::{
@@ -27,6 +28,7 @@ pub enum Error {
     Limited,
     Cancelled,
     TimedOut,
+    Stale,
     Engine(String),
 }
 impl std::fmt::Display for Error {
@@ -44,6 +46,9 @@ impl std::fmt::Display for Error {
             }
             Self::Limited => f.write_str("Git integrado: se excedió la cuota de lectura"),
             Self::Cancelled => f.write_str("Git integrado: lectura cancelada"),
+            Self::Stale => {
+                f.write_str("Git integrado: las fuentes cambiaron; actualiza la comparación")
+            }
             Self::TimedOut => f.write_str("Git integrado: se agotó el tiempo de lectura"),
         }
     }

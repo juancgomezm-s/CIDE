@@ -115,14 +115,14 @@ impl fmt::Debug for RevisionBlob {
     }
 }
 
-struct Budget {
+pub(crate) struct Budget {
     used: usize,
     maximum: usize,
     visited: usize,
     tree_bytes: usize,
 }
 impl Budget {
-    fn new(limits: Limits) -> Self {
+    pub(crate) fn new(limits: Limits) -> Self {
         Self {
             used: 0,
             maximum: limits.max_bytes,
@@ -130,7 +130,7 @@ impl Budget {
             tree_bytes: 0,
         }
     }
-    fn charge(&mut self, bytes: usize) -> Result<(), Error> {
+    pub(crate) fn charge(&mut self, bytes: usize) -> Result<(), Error> {
         self.used = self.used.checked_add(bytes).ok_or(Error::Limited)?;
         if self.used > self.maximum {
             return Err(Error::Limited);
@@ -188,7 +188,7 @@ fn commit_id(commit: &str) -> Result<gix::ObjectId, Error> {
     }
     Ok(id)
 }
-fn path_valid(path: &[u8], maximum: usize) -> Result<(), Error> {
+pub(crate) fn path_valid(path: &[u8], maximum: usize) -> Result<(), Error> {
     if path.len() > maximum {
         return Err(Error::Limited);
     }
@@ -202,7 +202,7 @@ fn path_valid(path: &[u8], maximum: usize) -> Result<(), Error> {
     }
     Ok(())
 }
-fn verified<'a>(
+pub(crate) fn verified<'a>(
     repo: &'a gix::Repository,
     id: gix::ObjectId,
     cap: usize,
@@ -218,13 +218,13 @@ fn verified<'a>(
     ctx.check()?;
     Ok(value)
 }
-struct Commit {
-    id: gix::ObjectId,
-    tree: gix::ObjectId,
+pub(crate) struct Commit {
+    pub(crate) id: gix::ObjectId,
+    pub(crate) tree: gix::ObjectId,
     parents: Vec<gix::ObjectId>,
     limited: bool,
 }
-fn commit(
+pub(crate) fn commit(
     repo: &gix::Repository,
     id: gix::ObjectId,
     limits: Limits,
@@ -263,9 +263,9 @@ fn commit(
     })
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct Entry {
-    id: gix::ObjectId,
-    mode: u32,
+pub(crate) struct Entry {
+    pub(crate) id: gix::ObjectId,
+    pub(crate) mode: u32,
 }
 type Entries = BTreeMap<Vec<u8>, Entry>;
 
@@ -431,7 +431,7 @@ fn push_file(
     Ok(())
 }
 
-fn tree_entry(
+pub(crate) fn tree_entry(
     repo: &gix::Repository,
     mut id: gix::ObjectId,
     path: &[u8],
@@ -480,7 +480,7 @@ fn tree_entry(
     }
     Ok(None)
 }
-fn blob(
+pub(crate) fn blob(
     repo: &gix::Repository,
     entry: Option<Entry>,
     limits: Limits,

@@ -345,6 +345,49 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         return Err("Historical Escape left modal open".into());
     }
     checks.push("git_history_escape_cancels_without_live_source_navigation");
+    for (code, kind, left, right) in [
+        (0x50, jc_app::git_revision::PairKind::Prepared, HEAD, SOURCE),
+        (
+            0x54,
+            jc_app::git_revision::PairKind::Worktree,
+            SOURCE,
+            SOURCE,
+        ),
+    ] {
+        command(hwnd, CommandId::GitRepositoryStatus)?;
+        status_ready(hwnd)?;
+        key(hwnd, code, Modifiers::NONE)?;
+        history_ready(hwnd, true)?;
+        {
+            let s = owner(hwnd).unwrap().state.borrow();
+            let c = s
+                .git_revision
+                .comparison()
+                .ok_or("No local pair comparison")?;
+            if !matches!(c.origin,jc_app::git_revision::ComparisonOrigin::Local(ref local) if local.kind==kind)
+                || c.model.source_bytes(DiffSide::Left) != left
+                || c.model.source_bytes(DiffSide::Right) != right
+            {
+                return Err("Local pair confused HEAD, index, disk or dirty buffer".into());
+            }
+        }
+        let local_bitmap = options.bitmap.as_ref().map(|p| {
+            p.with_file_name(if code == 0x50 {
+                "native-git-prepared.bmp"
+            } else {
+                "native-git-worktree.bmp"
+            })
+        });
+        readonly_frame(hwnd, local_bitmap.as_deref())?;
+        key(hwnd, 0x0d, Modifiers::NONE)?;
+        if snapshot(hwnd)? != unchanged {
+            return Err("Local pair changed dirty document or view geometry".into());
+        }
+        key(hwnd, 0x1b, Modifiers::NONE)?;
+    }
+    checks.push("git_local_pairs_native_keys_exact_head_index_disk_with_dirty_buffer");
+    checks.push("git_local_pairs_gdi_and_enter_preserve_sources_and_editor_geometry");
+
     command(hwnd, CommandId::GitDiffIndex)?;
     diff_ready(hwnd)?;
     checks.push("git_head_index_distinct_oid_exact_dirty_sources");

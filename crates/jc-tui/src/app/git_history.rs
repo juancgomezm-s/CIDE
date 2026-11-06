@@ -19,10 +19,14 @@ pub(crate) struct HistoryView {
     pub(super) selected: usize,
     pub(super) hunk: usize,
     pub(super) encoding: Option<TextEncoding>,
+    pub(super) local: Option<(jc_app::git_revision::PairKind, Vec<u8>)>,
     commit: Option<String>,
     commit_selected: usize,
 }
 impl HistoryView {
+    pub(super) fn immutable(&self) -> bool {
+        self.active || self.local.is_some()
+    }
     fn viewport(&mut self, total: usize, height: usize) -> usize {
         self.selected = self.selected.min(total.saturating_sub(1));
         self.selected
@@ -119,7 +123,69 @@ impl TuiApp {
         if key.modifiers != KeyModifiers::NONE {
             return false;
         }
+        if matches!(key.code, KeyCode::Char('p' | 'P' | 't' | 'T'))
+            && !self.git_history.active
+            && self.focus.primary() == PrimaryFocus::Sidebar
+        {
+            let kind = if matches!(key.code, KeyCode::Char('p' | 'P')) {
+                jc_app::git_revision::PairKind::Prepared
+            } else {
+                jc_app::git_revision::PairKind::Worktree
+            };
+            if let (Some(root), Some(path)) =
+                (self.project_root.clone(), self.git_status.selected_path())
+            {
+                self.git_diff.clear(&mut self.tasks);
+                self.git_history.local = Some((kind, path.clone()));
+                self.git_history.encoding = self.git_history.encoding.or(self.default_encoding);
+                self.git_history.hunk = 0;
+                self.git_diff_scroll = 0;
+                match self.git_revision.request_local_file(root, path, kind) {
+                    Ok(()) => {
+                        self.panels.show_bottom(BottomPanel::Diff);
+                        let _ = self.focus.focus(PrimaryFocus::BottomPanel, &self.panels);
+                        self.status =
+                            "Comparación de disco · bytes originales · E codificación · Esc estado"
+                                .into();
+                    }
+                    Err(e) => self.status = e,
+                }
+            } else {
+                self.status = "Selecciona un archivo del estado Git actualizado".into();
+            }
+            return true;
+        }
+        if self.git_history.local.is_some() {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('b' | 'B') => {
+                    self.git_revision.cancel();
+                    self.git_history.local = None;
+                    self.panels.hide_bottom();
+                    let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
+                    return true;
+                }
+                KeyCode::Char('e' | 'E') => {
+                    self.git_history.cycle_encoding();
+                    return true;
+                }
+                KeyCode::F(5) => {
+                    if let (Some(root), Some((kind, path))) =
+                        (self.project_root.clone(), self.git_history.local.clone())
+                    {
+                        if let Err(e) = self.git_revision.request_local_file(root, path, kind) {
+                            self.status = e;
+                        }
+                    }
+                    return true;
+                }
+                _ if self.focus.primary() == PrimaryFocus::BottomPanel => {
+                    return self.historical_diff_key(key.code)
+                }
+                _ => {}
+            }
+        }
         if matches!(key.code, KeyCode::Char('h' | 'H')) {
+            self.git_history.local = None;
             if self.git_history.active {
                 self.git_revision.cancel();
                 self.git_history.active = false;
@@ -295,8 +361,7 @@ impl TuiApp {
             }
             KeyCode::Enter => {
                 self.status =
-                    "Revisión inmutable · Esc vuelve a los archivos; el buffer sigue intacto"
-                        .into();
+                    "Fuentes inmutables · Esc vuelve a la lista; el buffer sigue intacto".into();
             }
             _ => return false,
         }
@@ -313,11 +378,15 @@ impl TuiApp {
             ..GitPresentation::default()
         };
         prepared.details.push(label(
-            "Histórico · comparación con el primer padre · solo lectura",
+            if self.git_history.local.is_some() {
+                "Fuentes Git y disco · bytes originales · solo lectura"
+            } else {
+                "Histórico · comparación con el primer padre · solo lectura"
+            },
             width,
         ));
         prepared.details.push(label(
-            "↑↓ desplazar · ←→ bloque · E codificación · Esc archivos",
+            "↑↓ desplazar · ←→ bloque · E codificación · Esc volver",
             width,
         ));
         let Some(result) = self.git_revision.comparison() else {
@@ -337,14 +406,10 @@ impl TuiApp {
             return prepared;
         };
         prepared.details.push(opaque(&result.path, width));
-        prepared.details.push(label(
-            &format!(
-                "{} → {}",
-                result.parent.as_deref().map_or("árbol vacío", short_oid),
-                short_oid(&result.commit)
-            ),
-            width,
-        ));
+        if let Some(sources) = result.origin.sources_label() {
+            prepared.details.push(label(&sources, width));
+        }
+        prepared.details.push(label(&result.origin.label(), width));
         let Some(encoding) = self.git_history.encoding else {
             prepared.details.push(label(
                 "Pulsa E para elegir la codificación de esta vista histórica",

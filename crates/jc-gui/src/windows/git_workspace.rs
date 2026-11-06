@@ -11,6 +11,8 @@ use std::path::PathBuf;
 
 #[path = "git_history.rs"]
 mod history;
+#[path = "git_local.rs"]
+mod local;
 
 const ADD: u32 = 0x00364327;
 const REMOVE: u32 = 0x003c304b;
@@ -29,6 +31,7 @@ pub(super) struct Workspace {
     pub selected_path: Option<Vec<u8>>,
     pub focus_diff: bool,
     pub history_commit: Option<String>,
+    pub local_kind: Option<jc_app::git_revision::PairKind>,
     pub history_selected: usize,
     pub history_first: usize,
     pub history_file: Option<usize>,
@@ -60,6 +63,7 @@ struct Stamp {
     commit: Option<usize>,
     first: usize,
     history: Option<HistoryStamp>,
+    local: Option<jc_app::git_revision::PairKind>,
 }
 #[derive(Clone, Copy)]
 enum Intent {
@@ -69,6 +73,7 @@ enum Intent {
     File(usize),
     Commit(usize),
     Source(GitBlobSource),
+    Pair(jc_app::git_revision::PairKind),
     Hunk(isize),
     Navigate,
     Local,
@@ -114,6 +119,7 @@ pub(super) struct Frame {
     branch: String,
     count: String,
     historical: bool,
+    details_top: i32,
     message: String,
     subtitle: String,
     buttons: Vec<(Rect, String, bool)>,
@@ -245,6 +251,7 @@ fn source_text(bytes: &[u8], encoding: TextEncoding, start: usize) -> String {
 impl State {
     fn git_workspace_stamp(&self) -> Stamp {
         Stamp {
+            local: self.git_workspace.local_kind,
             root: self.project_root.clone(),
             epoch: self.git_workspace.epoch,
             geometry: (self.width, self.height),
@@ -275,7 +282,11 @@ impl State {
         let frame = self.prepare_git_workspace_base()?;
         Some(if historical {
             self.prepare_git_history(frame)
+        } else if self.git_workspace.local_kind.is_some() {
+            self.prepare_git_local(frame)
         } else {
+            let mut frame = frame;
+            self.add_git_sources(&mut frame);
             frame
         })
     }
@@ -441,30 +452,12 @@ impl State {
         if let Some(notice) = &self.git_workspace.notice {
             subtitle = label(notice, 256);
         }
-        let rows_visible = ((layout.preview.bottom - layout.preview.top - p(112))
+        let rows_visible = ((layout.preview.bottom - layout.preview.top - p(148))
             / self.cell_height.max(1))
         .clamp(0, 128) as usize;
         self.git_workspace.diff_page = rows_visible;
         self.git_workspace.diff_total = 0;
         if self.git_workspace.commit.is_none() {
-            for (i, (name, source)) in [
-                ("Último commit", GitBlobSource::Head),
-                ("Índice", GitBlobSource::Index),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let r = rect(
-                    layout.preview.left + p(12) + i as i32 * p(124),
-                    layout.preview.top + p(40),
-                    layout.preview.left + p(128) + i as i32 * p(124),
-                    layout.preview.top + p(72),
-                );
-                if r.right < layout.preview.right {
-                    buttons.push((r, name.into(), self.git_source == source));
-                    actions.push((r, Intent::Source(source)));
-                }
-            }
             if let Some(result) = self.git_diff.result() {
                 subtitle = label(&result.identity.path, 256);
                 if let Some(encoding) = self
@@ -538,7 +531,7 @@ impl State {
                                         .or_else(|| bytes.strip_suffix(b"\r"))
                                         .unwrap_or(bytes);
                                     let top =
-                                        layout.preview.top + p(108) + row as i32 * self.cell_height;
+                                        layout.preview.top + p(148) + row as i32 * self.cell_height;
                                     code.push(CodeRow {
                                         rect: rect(
                                             layout.preview.left,
@@ -555,7 +548,7 @@ impl State {
                                 break;
                             }
                         }
-                        let y = layout.preview.top + p(77);
+                        let y = layout.preview.top + p(112);
                         let start = layout.preview.left + p(12);
                         for (n, text, intent) in [
                             (0, "Anterior", Intent::Hunk(-1)),
@@ -596,7 +589,7 @@ impl State {
         } else {
             "Cambios locales".into()
         };
-        Some(Frame{hits:Hits{stamp:self.git_workspace_stamp(),actions},rect:layout.rect,toolbar:layout.toolbar,history:layout.history,files:layout.files,preview:layout.preview,title,branch,count,historical:false,message,subtitle,buttons,commits,rows,code,details,footer:"Solo lectura · archivos comparados con la captura del editor · Esc vuelve al código".into()})
+        Some(Frame{hits:Hits{stamp:self.git_workspace_stamp(),actions},rect:layout.rect,toolbar:layout.toolbar,history:layout.history,files:layout.files,preview:layout.preview,title,branch,count,historical:false,details_top:p(148),message,subtitle,buttons,commits,rows,code,details,footer:"Solo lectura · P preparados · T disco · comparaciones con buffer explícitas · Esc vuelve".into()})
     }
     pub(super) fn git_workspace_click(&mut self, x: i32, y: i32) -> Action {
         let Some(hits) = self
@@ -615,7 +608,10 @@ impl State {
             .map(|(_, a)| *a);
         match intent {
             Some(Intent::Refresh) => {
-                if let Some(commit) = self.git_workspace.history_commit.clone() {
+                if let Some(kind) = self.git_workspace.local_kind {
+                    self.request_git_local(kind);
+                    Action::None
+                } else if let Some(commit) = self.git_workspace.history_commit.clone() {
                     self.request_git_history(commit);
                     Action::None
                 } else {
@@ -648,12 +644,18 @@ impl State {
                 }
                 Action::None
             }
+            Some(Intent::Pair(kind)) => {
+                self.request_git_local(kind);
+                Action::None
+            }
             Some(Intent::Source(source)) => {
                 self.git_workspace.commit = None;
                 self.request_git(GitIntent::Diff(source))
             }
             Some(Intent::Hunk(delta)) => {
-                if self.git_workspace.history_commit.is_some() {
+                if self.git_workspace.history_commit.is_some()
+                    || self.git_workspace.local_kind.is_some()
+                {
                     self.git_workspace.history_hunk =
                         self.git_workspace.history_hunk.saturating_add_signed(delta);
                 } else {
@@ -696,6 +698,10 @@ impl State {
         }
     }
     pub(super) fn compare_git_status_file(&mut self) {
+        if let Some(kind) = self.git_workspace.local_kind {
+            self.request_git_local(kind);
+            return;
+        }
         let selected = self.git_view.selected_status();
         let path = if self.git_status.state() == GitStatusTaskState::Ready {
             self.git_status
@@ -1020,9 +1026,9 @@ pub(super) unsafe fn draw(
                 dc,
                 rect(
                     f.preview.left + 18,
-                    f.preview.top + if f.historical { 112 } else { 62 } + i as i32 * 34,
+                    f.preview.top + f.details_top + i as i32 * 34,
                     f.preview.right - 18,
-                    f.preview.top + if f.historical { 142 } else { 92 } + i as i32 * 34,
+                    f.preview.top + f.details_top + 30 + i as i32 * 34,
                 ),
                 line,
                 if i == 0 { shell::ACCENT } else { shell::TEXT },

@@ -684,3 +684,85 @@ fn embedded_git_child_without_git_on_path() {
     assert_eq!(app.workbench.active_bytes().unwrap(), before);
     assert!(matches!(app.overlay, UiOverlay::None));
 }
+
+#[test]
+fn local_pair_keys_keep_head_index_disk_and_dirty_buffer_separate() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let disk = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    app.workbench.insert_text("sin guardar ").unwrap();
+    let original = app.workbench.active_bytes().unwrap();
+    let revision = app
+        .workbench
+        .active_document()
+        .unwrap()
+        .session
+        .document()
+        .revision();
+    request_ready(&mut app, &wake);
+    let selected = app
+        .git_status
+        .prepare(256, 256)
+        .rows
+        .iter()
+        .find(|r| r.path == TRACKED)
+        .unwrap()
+        .ordinal;
+    app.git_status.first();
+    app.git_status.move_selection(selected as isize);
+    for (keycode, left, right) in [
+        (
+            'p',
+            b"head \xff\r\nend".as_slice(),
+            b"index content \x81\r\n".as_slice(),
+        ),
+        (
+            't',
+            b"index content \x81\r\n".as_slice(),
+            b"work \xfe\r\nlast\n".as_slice(),
+        ),
+    ] {
+        key(&mut app, KeyCode::Char(keycode));
+        let deadline = Instant::now() + Duration::from_secs(15);
+        loop {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            match app.git_revision.state() {
+                jc_app::git_revision::GitRevisionState::Ready => break,
+                jc_app::git_revision::GitRevisionState::Queued
+                | jc_app::git_revision::GitRevisionState::Running => {}
+                state => panic!("local pair failed: {state:?}"),
+            }
+            assert!(Instant::now() < deadline);
+            wake.wait(ticket, Some(Duration::from_millis(20)));
+        }
+        let c = app.git_revision.comparison().unwrap();
+        assert_eq!(
+            c.model.source_bytes(jc_app::diff_model::DiffSide::Left),
+            left
+        );
+        assert_eq!(
+            c.model.source_bytes(jc_app::diff_model::DiffSide::Right),
+            right
+        );
+        assert_eq!(app.focus.primary(), PrimaryFocus::BottomPanel);
+        let frame = app.prepare_frame(120, 35);
+        assert!(!frame.git.details.is_empty());
+        drop(frame);
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.workbench.active_bytes().unwrap(), original);
+        key(&mut app, KeyCode::Esc);
+        assert_eq!(app.focus.primary(), PrimaryFocus::Sidebar);
+    }
+    assert_eq!(
+        app.workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .revision(),
+        revision
+    );
+    assert_eq!(fixture.disk(), disk);
+}

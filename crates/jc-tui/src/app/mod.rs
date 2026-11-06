@@ -331,18 +331,21 @@ impl TuiApp {
         let revision_changed = self.git_revision.poll(self.project_root.as_deref());
         update.changed |= revision_changed;
         update.recover |= self.git_revision.take_recovery();
-        if revision_changed && self.git_history.active {
+        if revision_changed && self.git_history.immutable() {
             self.status = self.git_revision.message().into();
         }
         let status_changed = self.git_status.poll(self.project_root.as_deref());
         update.changed |= status_changed;
         update.recover |= self.git_status.take_recovery();
-        if status_changed && !self.git_history.active {
+        if status_changed && !self.git_history.immutable() {
             update.recover |= self.git_status.worker_panicked();
             if self.panels.sidebar_visible()
                 && self.panels.sidebar() == jc_app::SidebarView::GitStatus
             {
-                self.status = self.git_status.message().to_owned();
+                self.status = format!(
+                    "{} · P preparados · T disco · H historial",
+                    self.git_status.message()
+                );
             }
         }
         update.changed |= self.poll_quick_open();
@@ -406,7 +409,7 @@ impl TuiApp {
         if self.markdown_ui.is_some() {
             context.editor_input = false;
         }
-        if self.git_history.active && context.focus != jc_app::PrimaryFocus::Editor {
+        if self.git_history.immutable() && context.focus != jc_app::PrimaryFocus::Editor {
             context.can_open_to_side = false;
         }
         if self.clipboard_transport.is_some() {

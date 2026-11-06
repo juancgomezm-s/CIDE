@@ -29,3 +29,10 @@ La recolección se reproduce localmente con `work/collect_gitoxide_licenses.py`
 mientras estén disponibles los paquetes del cache usado para compilar. El
 SHA-256 de Cargo.lock en el inventario permite detectar cuándo hay que revisar
 y regenerar estos avisos.
+
+La revisión de 2026-11-06 añadió solo el crate interno std-only jc-fs.
+Se compararon todos los registros registry del lock anterior y del actual y los
+hashes de cada aviso retenido: permanecen idénticos. DEPENDENCIES.json conserva
+el inventario original y añade lock_revalidations; solo actualiza su vínculo
+con el lock vigente después de esa comprobación, sin recolocar ni reescribir
+los textos de licencia.

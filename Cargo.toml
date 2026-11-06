@@ -3,6 +3,7 @@ members = [
     "crates/jc-core",
     "crates/jc-text",
     "crates/jc-files",
+    "crates/jc-fs",
     "crates/jc-languages",
     "crates/jc-progress",
     "crates/jc-app",

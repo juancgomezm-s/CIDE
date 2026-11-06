@@ -1,5 +1,25 @@
 # Working on JC-IDE
 
+## Local Git pairs / independent filesystem closure — 2026-11-06
+
+Read docs/G1_LOCAL_SOURCE_PAIRS.md before extending Git source selection.
+jc-git::local_pair reads HEAD/index and index/raw-disk sources with typed absence,
+exact parsed-index SHA256/checksum, bounded handle captures and final revalidation.
+jc-fs is internal std-only; jc-files retains compatibility exports. No editor
+crate dependency in Git, no duplicate confined reader, no external package added.
+GitRevisionController shares one worker/queue for historical/local queries; only
+poll accepts. Source mode is explicit, buffer comparisons retain their own route.
+GUI/TUI show presence/mode; no live-buffer hunk navigation for local/history.
+744 distinct semantic cases passed by suites/directed closure,8new, not a final
+single744 workspace run. Original fixture/message failures retained and corrected.
+Fmt/Clippy all-target/release offline and144 HWND checks passed; no new physical
+or ConPTY claim. Current binaries target/m2-git-pairs-next/release; preserve prior.
+Fresh desktop capture remained black, no input; previous owned history GUI still
+needs normalexit. See work/g1-local-pairs-desktop.json. No forceclose or personal
+recovery/clipboard use. M2 final interactive acceptance waits usable desktop;
+IME excluded, Narrator deferred, secondmonitor unverified. G2/G3 stay separate
+expansion, writes/network M5. Do not repeat closed suites for documentation.
+
 ## Historical Git / reusable diff closure — 2026-11-06
 
 Read docs/G1_HISTORICAL_READS.md. jc-git::revision reads pinned first-parent

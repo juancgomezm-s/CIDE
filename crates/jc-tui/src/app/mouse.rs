@@ -843,7 +843,7 @@ impl TuiApp {
                     true
                 }
                 Some(Wheel::GitHunks) => {
-                    if self.git_history.active {
+                    if self.git_history.immutable() {
                         self.git_history.hunk = self.git_history.hunk.saturating_add_signed(delta);
                     } else {
                         self.git_diff.select_relative(delta);
@@ -956,7 +956,7 @@ impl TuiApp {
                 true
             }
             Some(Action::GitHunk(index)) => {
-                if self.git_history.active {
+                if self.git_history.immutable() {
                     self.git_history.hunk = index;
                     self.git_diff_scroll = 0;
                 } else {

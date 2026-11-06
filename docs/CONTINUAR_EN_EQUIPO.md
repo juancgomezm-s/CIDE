@@ -1,5 +1,29 @@
 # Continuación local — después del bloque de evidencia M2
 
+## Comparaciones locales Git y núcleo independiente — 2026-11-06
+
+[Contrato y evidencia](G1_LOCAL_SOURCE_PAIRS.md). GUI/TUI distinguen HEAD → buffer,
+índice → buffer, preparados HEAD → índice y cambios en disco índice → disco.
+Presencia/ausencia y modo son visibles incluso sin cambios de contenido. jc-git
+comparte el lector std-only jc-fs con jc-files, sin depender del editor; el
+consumidor público Rust/gix funciona sin host ni git.exe. Un solo controlador
+versionado sirve consultas históricas/locales; pintar no lee fuentes ni acepta
+entregas. Los buffers sucios, su revisión y los metadatos Git quedan intactos.
+
+744 nombres distintos aprobaron por suites/cierre dirigido, ocho nuevos; no hubo
+una corrida integral final única. Se conservan los intentos fallidos de fixtures
+y del mensaje TUI, corregidos y revalidados en las suites afectadas. Pasaron
+formato, Clippy todos los destinos, release offline y 144 comprobaciones HWND,
+con PATH vacío. Binarios actuales: `target/m2-git-pairs-next/release`; anteriores
+preservados. No hay nueva afirmación ConPTY, pantalla física o rendimiento global.
+La captura de escritorio siguió negra; no se envió entrada y la instancia previa
+sigue pendiente de salida normal. IME excluido, Narrador aplazado y segundo
+monitor sin verificar. CI dormido; escrituras/red Git permanecen en M5.
+
+Siguiente cierre M2: revisión interactiva final del espacio Git y salida normal
+cuando el escritorio permita entrada/captura. La expansión G2/G3 y reutilización
+en OmniCore/OmniCoder conservan su plan separado; no se declaran ya integradas.
+
 ## Consulta histórica básica y núcleo reutilizable — 2026-11-06
 
 [Contrato y evidencia](G1_HISTORICAL_READS.md). Commit → archivos → comparación

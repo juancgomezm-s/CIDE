@@ -133,7 +133,7 @@ impl TuiApp {
         let history_context = self.panels.sidebar_visible()
             && self.panels.sidebar() == SidebarView::GitStatus
             && self.focus.primary() == PrimaryFocus::Sidebar
-            || self.git_history.active
+            || self.git_history.immutable()
                 && self.panels.bottom_visible()
                 && self.panels.bottom() == BottomPanel::Diff
                 && self.focus.primary() == PrimaryFocus::BottomPanel;

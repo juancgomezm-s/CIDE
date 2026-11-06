@@ -15,6 +15,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 mod scoped_read;
+pub use jc_fs::{capture_in_root, Capture, FileToken, MissingToken};
 pub use scoped_read::{read_in_root, verify_file_in_root};
 mod directory;
 pub use directory::{list_directory_in_root, DirectoryEntry, DirectoryListing};

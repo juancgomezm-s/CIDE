@@ -1241,14 +1241,20 @@ name = "jc-files"
 version = "0.1.0"
 dependencies = [
  "jc-core",
+ "jc-fs",
  "jc-text",
 ]
+
+[[package]]
+name = "jc-fs"
+version = "0.1.0"
 
 [[package]]
 name = "jc-git"
 version = "0.1.0"
 dependencies = [
  "gix",
+ "jc-fs",
 ]
 
 [[package]]

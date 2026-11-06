@@ -8,4 +8,5 @@ description = "Embedded Rust Git engine for CIDE"
 license = "MIT"
 
 [dependencies]
+jc-fs = { path = "../jc-fs" }
 gix = { version = "=0.90.0", default-features = false, features = ["status", "revision", "sha1", "sha256"] }

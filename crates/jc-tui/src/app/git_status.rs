@@ -139,6 +139,17 @@ pub(crate) struct GitStatusView {
     view: ViewState,
 }
 impl GitStatusView {
+    pub(crate) fn selected_path(&self) -> Option<Vec<u8>> {
+        if self.state() != GitStatusTaskState::Ready || self.view.mode != Mode::Current {
+            return None;
+        }
+        self.controller
+            .result()?
+            .status()
+            .entries()
+            .get(self.view.selected)
+            .map(|e| e.path().to_vec())
+    }
     pub(crate) fn history_info(&self) -> Option<&jc_app::git_revision::RepositoryInfo> {
         if self.state() == GitStatusTaskState::Ready {
             self.controller.result().and_then(|s| s.info())

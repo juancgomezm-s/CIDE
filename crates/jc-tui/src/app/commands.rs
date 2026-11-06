@@ -221,7 +221,7 @@ impl TuiApp {
             }
             GitDiffRefresh => self.open_git_diff(),
             GitDiffCancel => {
-                if self.git_history.active {
+                if self.git_history.immutable() {
                     self.git_revision.cancel();
                     self.status = self.git_revision.message().into();
                 } else {
@@ -232,7 +232,7 @@ impl TuiApp {
             GitConfigureExecutable => self.configure_git_executable(),
             GitRepositoryStatus | GitStatusRefresh => self.open_git_repository_status(),
             GitStatusCancel => {
-                if self.git_history.active {
+                if self.git_history.immutable() {
                     self.git_revision.cancel();
                     self.status = self.git_revision.message().into();
                 } else {
