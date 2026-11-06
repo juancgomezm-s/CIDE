@@ -1,0 +1,96 @@
+{
+  "date": "2026-11-06",
+  "scope": "Windows create-only save publication and directed Save All validation",
+  "cause_probe": {
+    "fixture": "work\\save-new-probe-4105d806",
+    "hardlink": {
+      "error": "[WinError 5] Acceso denegado: 'work\\\\save-new-probe-4105d806\\\\temporal.txt' -> 'work\\\\save-new-probe-4105d806\\\\nuevo.txt'",
+      "winerror": 5
+    },
+    "rename_exact_bytes": true,
+    "existing_destination": {
+      "winerror": 183,
+      "existing_unchanged": true,
+      "temporary_retained": true
+    }
+  },
+  "publication": "MoveFileExW WRITE_THROUGH, without REPLACE_EXISTING/COPY_ALLOWED",
+  "new_tests": {
+    "file_regressions": 3,
+    "parser": 1
+  },
+  "native": {
+    "ok": true,
+    "executable": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\target\\embedded-git-next\\debug\\cide-gui.exe",
+    "output": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\work\\native-gui-smoke\\20261106T171407Z-46374467a118",
+    "section": "save",
+    "fixture_bytes": 13,
+    "fixture_unchanged": true,
+    "native_report": {
+      "ok": true,
+      "backend": "Win32/GDI",
+      "window": "own_hidden_hwnd",
+      "native_paints": 1,
+      "native_paint_errors": 0,
+      "wall_ms": 45,
+      "checks": [
+        "startup_shared_open_bytes",
+        "cide_native_window_title",
+        "cide_native_gui_icon_resource",
+        "no_child_edit_control",
+        "native_dpi_changes_96_144_192_preserve_document",
+        "save_all_cancel_keeps_pending_new_document",
+        "save_all_explicit_path_preserves_views_and_undo",
+        "save_all_conflict_stops_without_overwriting_disk",
+        "actual_gdi_offscreen_bitmap",
+        "native_paint_handler",
+        "native_paint_no_errors"
+      ],
+      "error": "",
+      "physical_display_verified": false,
+      "os_clipboard_verified": false
+    },
+    "bitmap_width": 1000,
+    "bitmap_height": 650,
+    "bitmap_colors": 643,
+    "physical_display_verified": false,
+    "git_fixture": {
+      "head_blob": "6566db2cd49b38ce2f68af6cafabf9f98e6b58d1",
+      "index_blob": "17f2fc0a7500e6b218190262d5a329086ba965ff",
+      "commit": "7a2d1da7537e6ccc6ad2484181cc139ee0f74a86"
+    },
+    "git_metadata_unchanged": true,
+    "git_metadata_sha256": {
+      "config": "05becdb83bb897f6103c8d91439e2e9092144edf5b3955a746fce4975c12bfdc",
+      "HEAD": "28d25bf82af4c0e2b72f50959b2beb859e3e60b9630a5e8c603dad4ddb2b6e80",
+      "index": "7fd3f290e9fe9237d31d3940f89e72323ba96f283b7cf86e3969bd55363bda4e",
+      "logs/HEAD": "f4e6fdfa147357b2ae5432efe89f5ada004223a03365e77be488bb69de45a50e",
+      "logs/refs/heads/main": "f4e6fdfa147357b2ae5432efe89f5ada004223a03365e77be488bb69de45a50e",
+      "objects/17/f2fc0a7500e6b218190262d5a329086ba965ff": "6afd82397d32d65874bb24df4a3599bb2233f148563c82f67ac9cb0d8cbf74de",
+      "objects/65/66db2cd49b38ce2f68af6cafabf9f98e6b58d1": "452960bb518b4100510ae0734228ad93e5af740ed2b8b573c64c6c10ec5238be",
+      "objects/7a/2d1da7537e6ccc6ad2484181cc139ee0f74a86": "2dfebce8a88a45f1bfe2e47ac341aa960582ee70e7bd0e4f09ec8a7f17e5bf55",
+      "objects/c7/e37371fef2933678c0bb186773c90b9da41ed0": "4aa8688619742bffff80353a45f3f0a25cabc1b165cea16e0c3e5ca5a2f9272d",
+      "refs/heads/main": "0e2e20d17d95e3a3b0df7ff9b2d66cb8c0cb5e5b5260506c5ceb1440f0abc351"
+    },
+    "git_oracle_executable": "C:\\Program Files\\Git\\cmd\\git.exe",
+    "gui_child_path_empty": true
+  },
+  "logs": [
+    "work/save-all-files-tests-close.log",
+    "work/save-all-parser-tests.log",
+    "work/save-all-fmt-check.log",
+    "work/save-all-clippy.log",
+    "work/save-all-release.log"
+  ],
+  "build": "target/save-all-next/release",
+  "prior_release_paths_preserved": true,
+  "desktop_input": false,
+  "personal_recovery_used": false,
+  "personal_clipboard_used": false,
+  "full_workspace_tests_repeated": false,
+  "git_tests_repeated": false,
+  "ci": false,
+  "push": false,
+  "retained_initial_compile_failure": "work/save-all-files-tests.log",
+  "gui_sha256": "9659a2f1df7516afaad523a70ceff46293b70ada26ed590b27a5249b76ed1ef7"
+}

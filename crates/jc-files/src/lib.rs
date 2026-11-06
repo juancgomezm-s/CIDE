@@ -450,6 +450,12 @@ fn atomic_replace_with_commit(
     operation
 }
 
+#[cfg(windows)]
+fn commit_new_path(temporary: &Path, target: &Path) -> io::Result<()> {
+    windows::commit_new_path(temporary, target)
+}
+
+#[cfg(not(windows))]
 fn commit_new_path(temporary: &Path, target: &Path) -> io::Result<()> {
     fs::hard_link(temporary, target)?;
     fs::remove_file(temporary)?;

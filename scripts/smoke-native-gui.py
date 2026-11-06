@@ -86,6 +86,13 @@ GIT_REQUIRED |= {
     "native_dpi_changes_96_144_192_preserve_document",
     "actual_gdi_offscreen_bitmap", "native_paint_handler", "native_paint_no_errors",
 }
+SAVE_REQUIRED = {name for name in REQUIRED if name.startswith("save_all_")}
+SAVE_REQUIRED |= {
+    "startup_shared_open_bytes", "cide_native_window_title",
+    "cide_native_gui_icon_resource", "no_child_edit_control",
+    "native_dpi_changes_96_144_192_preserve_document",
+    "actual_gdi_offscreen_bitmap", "native_paint_handler", "native_paint_no_errors",
+}
 NAVIGATION_REQUIRED = {
     "navigation_menu_palette_shortcut_source_scalars_bom_crlf_invisibles",
     "navigation_invalid_cancel_atomic_field_limit_no_live_preview",
@@ -214,7 +221,7 @@ def git_metadata(output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", type=Path)
-    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity", "bottom", "selector-input", "interaction", "menu-invoker", "syntax", "workflow", "shell", "git"), default="all")
+    parser.add_argument("--section", choices=("all", "navigation", "line-edit", "selection-reopen", "rectangle", "parity", "bottom", "selector-input", "interaction", "menu-invoker", "syntax", "workflow", "shell", "git", "save"), default="all")
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("native Win32 smoke requires Windows; no validation inferred")
@@ -250,7 +257,8 @@ def main():
                    ["--smoke-syntax-only"] if args.section == "syntax" else
                    ["--smoke-workflow-only"] if args.section == "workflow" else
                    ["--smoke-shell-only"] if args.section == "shell" else
-                   ["--smoke-git-only"] if args.section == "git" else []),
+                   ["--smoke-git-only"] if args.section == "git" else
+                   ["--smoke-save-only"] if args.section == "save" else []),
             cwd=workspace, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             timeout=45, creationflags=subprocess.CREATE_NO_WINDOW,
             env={**os.environ, "PATH": "", "JC_GIT_TEST_EXE": ""},
@@ -273,6 +281,7 @@ def main():
                 INTERACTION_REQUIRED if args.section == "interaction" else
                 SELECTOR_INPUT_REQUIRED if args.section == "selector-input" else
                 GIT_REQUIRED if args.section == "git" else
+                SAVE_REQUIRED if args.section == "save" else
                 REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED | PARITY_REQUIRED | BOTTOM_REQUIRED | SELECTOR_INPUT_REQUIRED | INTERACTION_REQUIRED | MENU_INVOKER_REQUIRED | SYNTAX_REQUIRED)
     if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")

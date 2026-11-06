@@ -1,3 +1,17 @@
+## Guardar todo corregido — 2026-11-06
+
+[Publicación nueva en Windows](SAVE_ALL_NEW_PUBLICATION.md). Se reprodujo el
+rechazo WinError5 de enlaces duros; create-only ahora publica el temporal cerrado
+con MoveFileExW sin reemplazo ni copia entre volúmenes. Destino concurrente,
+bytes originales, undo y rutas largas conservados; ReplaceFileW existente intacto.
+Tres regresiones nuevas de archivos y un test del parser aprobaron. Los tres
+flujos dirigidos de Guardar todo aprobaron en HWND oculto, más ocho controles
+comunes del fixture. No se repitieron Git, suites completas ni escritorio.
+Fmt, Clippy selectivo all-targets y release offline aprobaron. Binarios actuales:
+`target/save-all-next/release`, rutas anteriores preservadas. El fallo puntual
+anterior está corregido; no se infiere una aprobación de toda la suite HWND/M2.
+Evidencia: `docs/evidence/save-all-new-publication-2026-11-06.json`.
+
 ## Rediseño visual Git — 2026-11-06
 
 [Diseño implementado y límites](G2_GIT_VISUAL_REDESIGN.md). Barra de 42 dp,

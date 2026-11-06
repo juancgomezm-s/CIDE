@@ -1,3 +1,14 @@
+# Current Save All correction — 2026-11-06
+
+Read docs/SAVE_ALL_NEW_PUBLICATION.md before changing new-file saving.
+Windows create-only uses MoveFileExW WRITE_THROUGH without REPLACE_EXISTING/COPY_ALLOWED,
+after existing flush/sync/close. Hardlink WinError5 reproduced in owned workspace probe.
+Existing-file ReplaceFileW/conflict/recovery paths unchanged; no overwrite/copy fallback.
+3 new file regressions +1 parser test and3 directed SaveAll HWND flows passed (8 common
+fixture checks also passed). No desktop/Git/full suites repeated. Fmt/selective all-target
+Clippy/workspace release offline passed; binaries target/save-all-next/release, prior paths
+preserved. The previous specific SaveAll blocker is fixed, not full M2 acceptance.
+
 # Current Git visual redesign — 2026-11-06
 
 Read docs/G2_GIT_VISUAL_REDESIGN.md before changing Git presentation.

@@ -23,6 +23,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut workflow_only = false;
     let mut shell_only = false;
     let mut git_only = false;
+    let mut save_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -81,6 +82,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("Opción --smoke-git-only duplicada".into());
                 }
                 git_only = true;
+            }
+            Some("--smoke-save-only") => {
+                if save_only {
+                    return Err("Opción --smoke-save-only duplicada".into());
+                }
+                save_only = true;
             }
             Some("--smoke-workflow-only") => {
                 if workflow_only {
@@ -185,6 +192,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(workflow_only)
         + usize::from(shell_only)
         + usize::from(git_only)
+        + usize::from(save_only)
         > 1
     {
         return Err("Elige una sola sección de prueba".into());
@@ -205,6 +213,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || workflow_only
         || shell_only
         || git_only
+        || save_only
     {
         if !options.paths.is_empty() || options.project_root.is_some() {
             return Err("La prueba usa únicamente su archivo de muestra explícito".into());
@@ -235,6 +244,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             workflow_only,
             shell_only,
             git_only,
+            save_only,
         });
     }
     Ok(Some(options))
@@ -472,6 +482,38 @@ mod tests {
 mod interaction_options_tests {
     use super::parse;
     use std::ffi::OsString;
+    #[test]
+    fn save_section_requires_explicit_paths_and_exclusive_selection() {
+        let parse_args = |words: &[&str]| parse(words.iter().map(OsString::from));
+        assert!(parse_args(&["--smoke-save-only"]).is_err());
+        assert!(parse_args(&["--smoke-save-only", "--smoke-git-only"]).is_err());
+        assert!(parse_args(&["--smoke-save-only", "--smoke-save-only"]).is_err());
+        let root = std::env::current_dir().unwrap();
+        let fixture = root.join("fixture.txt").into_os_string();
+        let report = root.join("report.json").into_os_string();
+        assert!(parse([
+            OsString::from("--smoke-save-only"),
+            OsString::from("--smoke-fixture"),
+            fixture.clone(),
+        ])
+        .is_err());
+        assert!(parse([
+            OsString::from("--smoke-save-only"),
+            OsString::from("--smoke-report"),
+            report.clone(),
+        ])
+        .is_err());
+        let options = parse([
+            OsString::from("--smoke-save-only"),
+            OsString::from("--smoke-fixture"),
+            fixture,
+            OsString::from("--smoke-report"),
+            report,
+        ])
+        .unwrap()
+        .unwrap();
+        assert!(options.smoke.unwrap().save_only);
+    }
     #[test]
     fn git_section_requires_fixture_report_and_exclusive_selection() {
         let parse_args = |words: &[&str]| parse(words.iter().map(OsString::from));

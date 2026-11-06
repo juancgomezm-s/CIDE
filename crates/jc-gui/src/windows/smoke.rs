@@ -286,8 +286,11 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
             || options.workflow_only
             || options.shell_only
             || options.git_only
+            || options.save_only
         {
-            if options.git_only {
+            if options.save_only {
+                checks.extend(super::save_smoke::run(hwnd, options)?);
+            } else if options.git_only {
                 checks.extend(super::git_smoke::run(hwnd, options)?);
             } else if options.shell_only {
                 checks.extend(super::shell_smoke::run(hwnd, options)?);

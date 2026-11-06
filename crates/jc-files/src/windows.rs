@@ -5,6 +5,7 @@ use std::{ffi::c_void, fs, io, os::windows::ffi::OsStrExt, path::Path, ptr, time
 
 #[link(name = "kernel32")]
 extern "system" {
+    fn MoveFileExW(existing: *const u16, destination: *const u16, flags: u32) -> i32;
     fn ReplaceFileW(
         target: *const u16,
         replacement: *const u16,
@@ -13,6 +14,53 @@ extern "system" {
         exclude: *mut c_void,
         reserved: *mut c_void,
     ) -> i32;
+}
+
+/// Publish an already flushed sibling without requiring hard-link support.
+/// No REPLACE_EXISTING or COPY_ALLOWED: a competing destination must win, and
+/// publication must not fall back to a partially visible cross-volume copy.
+pub(super) fn commit_new_path(temporary: &Path, target: &Path) -> io::Result<()> {
+    fn native(path: &Path) -> io::Result<Vec<u16>> {
+        if path.as_os_str().encode_wide().any(|unit| unit == 0) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "La ruta contiene NUL",
+            ));
+        }
+        let name = path.file_name().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "El destino no tiene nombre de archivo",
+            )
+        })?;
+        // canonicalize the existing parent, not the absent destination. Windows
+        // returns an absolute verbatim path, retaining support beyond MAX_PATH.
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        Ok(parent
+            .canonicalize()?
+            .join(name)
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect())
+    }
+    let source = native(temporary)?;
+    let destination = native(target)?;
+    let ok = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            8, /* WRITE_THROUGH */
+        )
+    };
+    if ok == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
 }
 fn native_replace(temporary: &Path, target: &Path) -> io::Result<()> {
     let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
@@ -117,6 +165,64 @@ fn guarded_expected(
 mod tests {
     use super::*;
     use crate::tests::test_dir;
+    #[test]
+    fn create_new_save_publishes_complete_bytes_and_keeps_undo() {
+        let dir = test_dir();
+        let path = dir.join("nuevo-é.p");
+        let bytes = b"\xef\xbb\xbfDEFINE VARIABLE x AS INTEGER.\r\n\xff";
+        let mut session =
+            crate::FileSession::new(dir.join("borrador.p"), jc_text::TextEncoding::Utf8);
+        session.document_mut().insert(0, bytes).unwrap();
+        session.save_as(&path).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert!(!session.document().is_modified());
+        assert_eq!(session.path(), path);
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        assert!(session.document_mut().undo());
+        assert!(session.document().is_empty());
+        assert!(session.document().is_modified());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn create_new_publication_race_never_replaces_competing_file() {
+        let dir = test_dir();
+        let target = dir.join("competidor.p");
+        let result = crate::atomic_replace_with_commit(
+            &target,
+            true,
+            |file| {
+                use std::io::Write;
+                file.write_all(b"mine\r\n")?;
+                fs::write(&target, b"external\r\n")
+            },
+            |_, _| panic!("create-only must not call replacement"),
+        );
+        assert!(result.is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"external\r\n");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_file(target).unwrap();
+        fs::remove_dir(dir).unwrap();
+    }
+
+    #[test]
+    fn create_new_save_keeps_long_unicode_path_support() {
+        let dir = test_dir();
+        let nested = dir
+            .join("á".repeat(90))
+            .join("b".repeat(90))
+            .join("c".repeat(90));
+        fs::create_dir_all(&nested).unwrap();
+        let target = nested.join("nuevo.p");
+        assert!(target.as_os_str().encode_wide().count() > 260);
+        let mut session = crate::FileSession::new(&target, jc_text::TextEncoding::Utf8);
+        session.insert_text(0, "contenido\r\n").unwrap();
+        session.save().unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"contenido\r\n");
+        fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn transient_1175_retries_same_commit_and_persistent_lock_is_bounded() {
         let dir = test_dir();
