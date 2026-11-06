@@ -6,6 +6,10 @@ implementación de lectura y su cierre local. No declara terminadas las escritur
 
 ## Motor y distribución
 
+La evolución se rige por [núcleo Git compartido](GIT_SHARED_CORE.md): una biblioteca
+independiente reutilizable por CIDE, OmniCore y OmniCoder. La integración de otros
+hosts y los bindings aún no están implementados ni validados.
+
 `jc-git` es el proveedor independiente de interfaz y del núcleo de bytes.
 Utiliza `gix = 0.90.0`, fijado con `default-features = false` y las capacidades
 `status`, `revision`, `sha1` y `sha256`. El workspace fija Rust 1.88.0.

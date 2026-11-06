@@ -1,5 +1,10 @@
 # Estudio de Sublime Merge para CIDE
 
+**Decisión posterior de Juan:** el motor será un [núcleo compartido independiente](GIT_SHARED_CORE.md)
+para CIDE, OmniCore y OmniCoder. G1–G3 describen la expansión de consulta; no todo
+ese alcance es requisito para cerrar M2. Las referencias M2 siguientes indican
+operaciones de lectura y su orden, no un bloqueo de cierre por paridad completa.
+
 Estado: investigación de artefactos distribuidos y diseño; no es implementación
 de las capacidades que faltan. Solicitud de Juan del 5 de noviembre de 2026.
 Complementa [la auditoría del motor actual](GIT_CAPABILITIES_CIDE_AUDIT.md).

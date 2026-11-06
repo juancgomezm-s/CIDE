@@ -1,5 +1,10 @@
 # Auditoría de capacidades Git de CIDE y expansión prevista
 
+**Decisión posterior de Juan:** el motor será un [núcleo compartido independiente](GIT_SHARED_CORE.md)
+para CIDE, OmniCore y OmniCoder. G1–G3 describen la expansión de consulta; no todo
+ese alcance es requisito para cerrar M2. Las referencias M2 siguientes indican
+operaciones de lectura y su orden, no un bloqueo de cierre por paridad completa.
+
 Fecha: 2026-11-05. Auditoría estática del código local, sin ejecutar pruebas,
 consultas de red ni operaciones Git. Complementa el estudio REA de Sublime Merge
 realizado por el integrador en [Estudio de Sublime Merge](SUBLIME_MERGE_REA_STUDY.md);

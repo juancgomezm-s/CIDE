@@ -660,3 +660,13 @@ Revalidar el commit previo impide arrastrar una corrupción de HEAD a un BACKUP 
 La limpieza aplazada tiene reintento independiente y no genera otra copia documental.
 Se preservan original/encoding/undo/vistas y cuotas actuales. No certifica fallos
 eléctricos, RAM o latencia física ni integra todavía documentos de varios GB.
+
+## D63 — Núcleo Git independiente y reutilizable
+
+**Aceptada por Juan.** Git se integra en CIDE como biblioteca Rust, pero su núcleo
+se mantiene independiente para reutilizarse en OmniCore y OmniCoder. Los adaptadores
+poseen la integración con documentos/tareas/credenciales y cada frontend su interfaz.
+Una sola implementación de operaciones Git, sin dependencia del núcleo de edición
+ni de git.exe. Contrato, consumo y alcance: [GIT_SHARED_CORE.md](GIT_SHARED_CORE.md).
+No exige bindings ni toda la expansión Git para cerrar M2; escrituras/red siguen en M5.
+Esta decisión no fusiona los historiales ni los núcleos de edición de D08.

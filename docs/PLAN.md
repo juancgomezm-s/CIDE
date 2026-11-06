@@ -1,12 +1,23 @@
 # Plan de desarrollo
 
+## Prioridad: núcleo Git compartido y alcance de cierre M2
+
+Juan fija un [núcleo Git independiente](GIT_SHARED_CORE.md), integrado en CIDE
+y reutilizable por OmniCore/OmniCoder mediante adaptadores. jc-git ya tiene una
+base sin dependencias del editor; no hay bindings ni integración de otros hosts
+validados todavía. El cierre M2 comprende consulta básica/comparaciones y pulido;
+la expansión completa G1–G3 se organiza por separado y no bloquea todo M2.
+G4–G6 conservan sus puertas M5. Reutilizar no requiere rediseñar la UI de cada host
+ni extraer ahora un repositorio o tres copias del motor.
+
 ## Expansión Git y estudio REA de Sublime Merge — 2026-11-05
 
 Juan pidió usar REA sobre Sublime Merge y cubrir la mayoría de sus herramientas.
 Se admite el plan [G1–G6 y propuesta GUI/TUI](SUBLIME_MERGE_REA_STUDY.md), sustentado
 por [auditoría de capacidades reales](GIT_CAPABILITIES_CIDE_AUDIT.md).
-G1 fija primero consultas históricas y pares de fuentes tipadas; G2/G3 conectan
-la interfaz y utilidades de consulta. G4–G6 mantienen escrituras/red en M5.
+G1 fija consultas históricas y pares de fuentes tipadas; G2/G3 conectan
+interfaz y utilidades de la expansión. Solo el subconjunto descrito arriba
+pertenece al cierre M2; G4–G6 mantienen escrituras/red en M5.
 No se declara paridad ni se habilitan acciones decorativas.
 
 Juan autorizó configurar el motor que faltaba: [Ghidra y JDK para REA](REA_GHIDRA_SETUP.md)

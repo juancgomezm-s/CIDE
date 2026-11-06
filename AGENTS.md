@@ -1,5 +1,14 @@
 # Working on JC-IDE
 
+## Shared Git core boundary — decision by Juan
+
+Read docs/GIT_SHARED_CORE.md and D63. The embedded Rust Git core is reusable by
+CIDE, OmniCore and OmniCoder. Keep one implementation, independent of jc-app,
+editor types and GUI/TUI. Host adapters own document/task/UI integration.
+Do not create bindings or assume the other hosts are integrated without inspecting
+and validating them. Full G1–G3 expansion does not all block M2 closure; writes
+and network stay in M5. No repo split/rename needed for this documentation decision.
+
 ## Git expansion research / REA engine — 2026-11-05
 
 Read docs/SUBLIME_MERGE_REA_STUDY.md, docs/GIT_CAPABILITIES_CIDE_AUDIT.md and

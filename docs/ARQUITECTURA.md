@@ -6,6 +6,10 @@ F1 ya separó documento y vistas, retiró campos espejo e introdujo transaccione
 
 ## Capas
 
+Git tiene un [núcleo compartido independiente](GIT_SHARED_CORE.md) para CIDE,
+OmniCore y OmniCoder. El motor Rust no depende del editor ni de los frontends;
+los adaptadores de cada producto coordinan documentos, tareas y presentación.
+
 - **jc-core**: documento byte-preserving, piece table, revisiones, undo/redo acotado, compactación y regiones.
 - **jc-text**: interpretación explícita de encoding, line endings y coordenadas sin poseer los bytes canónicos.
 - **jc-files**: ciclo de vida de archivo, conflictos externos, creación segura y reemplazo atómico.
