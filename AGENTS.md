@@ -49,6 +49,23 @@ No new Git capabilities/TUI/core/dependencies/recovery changes. Show result befo
 
 # Working on JC-IDE
 
+## Markdown images / targets / nesting — 2026-11-06
+
+Read docs/M2_MARKDOWN_MEDIA_LINKS.md. Shared span targets and hanging indent
+retain source ranges/bytes. AnchorScan uses64lines/256KiB perstep,4MiB/65536lines
+total, revision/view/codec validated; no permanent index or direct edit. GUI
+links publish after paint and require current scene/stamp/root/DPI/viewport.
+Local links open through Workbench; web HTTP/S only by explicit action. GUI
+image controller has one lazy worker and poll-only accepted batch. Local reads
+reuse jc-fs; remote load explicit with WinHTTP, no automatic downloads. Preserve
+encoded8MiB/decoded16MiB/4096dim/4Mpixel/16resources bounds and64extent metadata
+to prevent reflow/reload loops. TUI keeps alt text and keyboard link navigation.
+33 directed cases passed by affected suites,20new; no full workspace runtime run.
+Loopback WinHTTP final passed outside restricted environment; no Internet test.
+No desktop/clipboard/personal recovery/CI/push; prior physical gates unchanged.
+Deliveries target/markdown-media-next/release; preserve earlier paths and caches.
+
+
 ## Native Markdown presentation — 2026-11-06
 
 Read docs/M2_MARKDOWN_RENDERED_VIEW.md. Shared MarkdownRow block/continuation and

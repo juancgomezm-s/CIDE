@@ -174,6 +174,7 @@ impl State {
         changed |= self.apply_project_replace_step();
         changed |= self.poll_git();
         changed |= self.poll_explorer();
+        changed |= self.poll_markdown();
         if self.project_search.take_recovery() {
             self.status =
                 "Falló la tarea de búsqueda del proyecto; actualiza para reintentar".into();

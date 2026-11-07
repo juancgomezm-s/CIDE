@@ -8,6 +8,7 @@ default-run = "cide-gui"
 description = "Native Windows frontend sharing the CIDE application model"
 
 [dependencies]
+jc-fs = { path = "../jc-fs" }
 jc-platform = { path = "../jc-platform" }
 jc-app = { path = "../jc-app" }
 jc-text = { path = "../jc-text" }

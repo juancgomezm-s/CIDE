@@ -1,0 +1,73 @@
+{
+  "date": "2026-11-06",
+  "base": "a576b40",
+  "scope": "Markdown native images, nested indentation, explicit links and cooperative anchors",
+  "tests": {
+    "distinct_passed": 33,
+    "new": 20,
+    "jc_app": 13,
+    "jc_gui": 13,
+    "jc_platform": 1,
+    "jc_tui": 6,
+    "not_a_single_full_runtime_run": true
+  },
+  "checks": {
+    "fmt": "passed",
+    "clippy": "jc-app/jc-platform/jc-gui/jc-tui all-targets passed",
+    "release": "workspace offline locked passed using reusable cache; 176s"
+  },
+  "logs": {
+    "work/markdown-media-shared-tests.log": "630febd339d1d0a4e4ce96d61433d9ed34b22f31ec942b8d259ece3f4cf270d8",
+    "work/markdown-media-anchor-recheck.log": "ccfb94480c2e9f89ed5fd9991691d3dfe67d5d7123d16715f4731a373a2716c6",
+    "work/markdown-media-gui-check.log": "478e09ce17cf65657b5e1bb18cc0b4251214fe4f4250a2882bcb37381580cab1",
+    "work/markdown-media-frontends-tests.log": "b063a44041b8deeeb57f8da2f0014aaed95d5ff26e2cd2c2f00cf7baf5232972",
+    "work/markdown-media-gui-directed.log": "89c3915050044bce0515438d661e3b322933640aeb947246688c70371743ebd4",
+    "work/markdown-media-gui-final.log": "f66c679ef6e19c3eef09c85900e83c98ffe67223eff2a1c3783fbd1f00a4d16c",
+    "work/markdown-media-http-fixed.log": "f2fc24a4c147d14a341a59d7dc470abef76a9b948c4e874c882c4b4f8bf59e28",
+    "work/markdown-media-http-unrestricted.log": "299968b164e9abca3ac79166c039792c002ac664d4987645aeaa3119dffe5383",
+    "work/markdown-media-http-final.log": "b5bd4e881d6120a132ed192406fe836fb9d24d2f00a637b1b7c89496a139769a",
+    "work/markdown-media-tui-platform.log": "25df74276ac9575d062ea1bc5a58cc2d8e124f04d0e8f855aabcdb0cea50b51e",
+    "work/markdown-media-tui-label-recheck.log": "862457dd526cfb15391afcc06d7680f25868b31aab0d6308b4fe3b81d8d9172c",
+    "work/markdown-media-clippy.log": "10211c21a82d04accde3e2414bc5be0d12e49de770b0752af2df3729723a7e1f",
+    "work/markdown-media-clippy-final.log": "9ef36a1f9a74aa76bf763683e56556e87d4b228684cdda3b7b1a4c13c87eadfe",
+    "work/markdown-media-fmt-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/markdown-media-release.log": "fa0b6731e7fc6db79cbc7da9a44d26d1e5214f56e7c0728211b260062c6c53ec"
+  },
+  "retained_initial_failures": [
+    "anchor quota fixture expected Pending one call too long",
+    "GUI RefMut receiver needed modifiers evaluated before mutable call",
+    "compact fixture expected exactly one row, but trailing blank also fits",
+    "WinHTTP loopback 12029 in restricted runs; unconfined retry exposed accepted socket inheriting nonblocking",
+    "old TUI assertion expected raw URL displayed; new rendering retains target metadata and draws label",
+    "Clippy identified test-only method and nine-argument image layout helper"
+  ],
+  "http_validation": "Owned 127.0.0.1 fixtures only, final three cases passed without the restricted process environment; no Internet/HTTPS handshake tested",
+  "native_raster": {
+    "path": "docs/evidence/markdown-media-native.png",
+    "sha256": "7a2ca996dd1ab1d5183c2080cf9c271f0b239a5f6d368101730bfadcadc24214",
+    "type": "Real GUI GDI painter on an owned DIB with synthetic BMP and Markdown; not physical capture"
+  },
+  "desktop": "not used for this block; previous Computer Use access error and prior fixture exit still pending",
+  "source_integrity": "directed dirty original/file/encoding/undo checks; no user recovery or clipboard touched",
+  "dependencies": "Only existing internal jc-fs added to jc-gui; no external dependencies or programs",
+  "delivery": "target/markdown-media-next/release",
+  "ci": "not run",
+  "push": false,
+  "delivery_manifest": {
+    "cache": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\target\\build-cache",
+    "files": {
+      "cide-gui.exe": "ba5708e9b52dc61595d825b2783c82a81627783e880e9ca388422eeb46c9fb6d",
+      "cide-tui.exe": "003c11736c27c998f87883deb7607b77f1ff5286a0b8955e0d6d3bd9de9cf9f4",
+      "cide.exe": "91c80c57e8a32afd356fbf05c9f632bfd7b4cdbd35fb7fa70b6f5aa046de4372",
+      "cide.pdb": "fcf9f4f7090592dd9818dd3fe569e16a9c3bac07165e5e6b8263d4f10209ac05",
+      "cide_gui.pdb": "0f074e0d2e856185f62eecaf05909be09874780a9752e09588f5eee9eb45d3b0",
+      "cide_tui.pdb": "1bcf9e3897b37bbaa4bb4639b21bf121aeb6cf26cc4acd2b385d59b7c0a02a92",
+      "jc-ide-gui.exe": "61017b189d595ef24daac49e09c8a2f4d54c58c6d4cd825ef39125494e162fac",
+      "jc-ide-tui.exe": "4b6736c6d7556b02e3ab09f118f527e1127460e5259117138eac88115638ccd8",
+      "jc-ide.exe": "03bf787f7152719569ffaffd1ebffc5735a635b0fd6d1de9ad28085da7cdd60c",
+      "jc_ide.pdb": "619b3f00cdb517321cfd8b2ff11707726c0a94ad69b9976aecde6b9e69b8213c",
+      "jc_ide_gui.pdb": "b9bd1ad438a923f161f076986532e4070ebcc8c8a4628bda1df93a9a0b070a6e",
+      "jc_ide_tui.pdb": "46b6e91cebda6a42cfc0620de4d5778682107dd15bd2eadcb5300e4157ab8db5"
+    }
+  }
+}

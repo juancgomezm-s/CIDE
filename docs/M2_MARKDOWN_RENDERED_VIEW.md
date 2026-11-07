@@ -1,5 +1,8 @@
 # Markdown renderizado y opción marcada — 2026-11-06
 
+[Incremento posterior: imágenes, sangrías y enlaces](M2_MARKDOWN_MEDIA_LINKS.md).
+Este documento conserva la evidencia del pintor y menú iniciales.
+
 Ver → Vista previa de Markdown alterna entre fuente y lectura, también con
 Ctrl+Alt+M. La opción muestra una marca al estar activa y solo está habilitada
 cuando el perfil del documento es Markdown; un .txt que comienza con # no basta.

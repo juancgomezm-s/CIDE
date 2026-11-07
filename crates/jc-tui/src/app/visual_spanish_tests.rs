@@ -150,7 +150,15 @@ fn markdown_reading_formats_source_blocks_input_and_leaves_the_original_undo_ste
     assert!(screen.cursor().is_none());
     let text = reading(&mut app, 120, 32);
     assert!(text.contains("fuerte") && !text.contains("**fuerte**"));
-    assert!(text.contains("javascript:inerte") && text.contains("☑ Listo"));
+    assert!(
+        text.contains("sitio") && !text.contains("javascript:inerte") && text.contains("☑ Listo")
+    );
+    assert!(preview
+        .rows
+        .iter()
+        .flat_map(|row| &row.spans)
+        .filter_map(|span| span.target.as_ref())
+        .any(|target| target.destination == "javascript:inerte"));
     for (code, modifiers) in [
         (KeyCode::Char('Z'), KeyModifiers::NONE),
         (KeyCode::Backspace, KeyModifiers::NONE),

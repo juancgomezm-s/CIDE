@@ -6,7 +6,12 @@ use jc_app::{
     },
     CommandId, Modifiers, TaskStamp,
 };
-use std::{ptr::null_mut, rc::Rc};
+use std::{ptr::null_mut, rc::Rc, sync::Arc};
+#[path = "markdown_interaction.rs"]
+mod interaction;
+use super::markdown_images::{DecodedImage, ImageContext, ImageSource};
+pub(super) use interaction::MarkdownHits;
+use jc_app::markdown_preview::{MarkdownAnchorScan, MarkdownTarget};
 #[link(name = "user32")]
 extern "system" {
     fn DrawTextW(dc: Hdc, text: *const u16, count: i32, rect: *mut Rect, flags: u32) -> i32;
@@ -28,19 +33,35 @@ pub(super) struct MarkdownGui {
     fonts: Option<Rc<Fonts>>,
     page_rows: usize,
     wheel: i32,
+    token: Rc<()>,
+    hits: Option<MarkdownHits>,
+    selected: usize,
+    keyboard_focus: bool,
+    context: ImageContext,
+    wanted: Vec<ImageSource>,
+    sent: Vec<ImageSource>,
+    remote_allowed: Vec<String>,
+    anchor: Option<MarkdownAnchorScan>,
+    project: Option<std::path::PathBuf>,
+    extents: Vec<(ImageSource, u32, u32)>,
 }
 pub(super) struct MarkdownFrame {
     pub presentation: MarkdownPresentation,
     width: i32,
+    viewport_left: i32,
     height: i32,
     top: i32,
     ch: i32,
     dpi: super::dpi::Dpi,
     fonts: Rc<Fonts>,
+    pub(super) hits: MarkdownHits,
+    images: Vec<interaction::RowImage>,
+    selected: Option<Arc<MarkdownTarget>>,
 }
 impl State {
     pub(super) fn toggle_markdown(&mut self) -> Action {
         if self.markdown_gui.take().is_some() {
+            self.markdown_images.cancel();
             self.status = "Vista de fuente; documento sin cambios".into();
             return Action::None;
         }
@@ -71,19 +92,62 @@ impl State {
                 .view(self.workbench.panes().active())
                 .and_then(|v| v.view_id()),
         };
+        let path = doc.session.path();
+        let root = self
+            .project_root
+            .as_ref()
+            .filter(|root| path.starts_with(root))
+            .cloned()
+            .or_else(|| {
+                path.parent()
+                    .filter(|p| p.is_absolute())
+                    .map(|p| p.to_path_buf())
+            })
+            .or_else(|| std::env::current_dir().ok())
+            .and_then(|p| p.canonicalize().ok());
+        let Some(root) = root else {
+            self.error("No se pudo fijar la carpeta del Markdown");
+            return Action::None;
+        };
+        let color = super::shell::BACKGROUND;
+        let context = ImageContext {
+            stamp,
+            root,
+            background: [color as u8, (color >> 8) as u8, (color >> 16) as u8],
+        };
+        self.markdown_images.cancel();
         self.markdown_gui = Some(MarkdownGui {
             stamp,
             fonts: None,
             page_rows: 1,
             wheel: 0,
+            token: Rc::new(()),
+            hits: None,
+            selected: 0,
+            keyboard_focus: false,
+            context,
+            wanted: Vec::new(),
+            sent: Vec::new(),
+            remote_allowed: Vec::new(),
+            anchor: None,
+            project: self.project_root.clone(),
+            extents: Vec::new(),
             view: MarkdownView::at_line(self.workbench.active_position().map_or(0, |p| p.line)),
         });
         self.status = "Markdown · lectura · Ctrl+Alt+M o Esc vuelve a la fuente".into();
         Action::None
     }
-    pub(super) fn markdown_key(&mut self, code: usize, _mods: Modifiers) -> Action {
+    pub(super) fn markdown_key(&mut self, code: usize, mods: Modifiers) -> Action {
+        if code == 0x09 && (mods == Modifiers::NONE || mods == Modifiers::SHIFT) {
+            self.markdown_select_link(mods == Modifiers::SHIFT);
+            return Action::None;
+        }
+        if code == 0x0d && (mods == Modifiers::NONE || mods == Modifiers::CTRL) {
+            return self.markdown_activate_selected(mods == Modifiers::CTRL);
+        }
         if code == 0x1b {
             self.markdown_gui = None;
+            self.markdown_images.cancel();
             return Action::None;
         }
         if code == 0x74 {
@@ -98,6 +162,11 @@ impl State {
         };
         let tab = doc.tab_id;
         let page = ui.page_rows.clamp(1, 96) as isize;
+        if matches!(code, 0x26 | 0x28 | 0x21 | 0x22 | 0x24 | 0x23) {
+            ui.token = Rc::new(());
+            ui.hits = None;
+            ui.keyboard_focus = false;
+        }
         match code {
             0x26 => ui.view.scroll(-1, &self.workbench, tab),
             0x28 => ui.view.scroll(1, &self.workbench, tab),
@@ -110,6 +179,15 @@ impl State {
         Action::None
     }
     pub(super) fn markdown_presentation(&mut self) -> Option<MarkdownFrame> {
+        if self
+            .markdown_gui
+            .as_ref()
+            .is_some_and(|ui| ui.project != self.project_root)
+        {
+            self.markdown_gui = None;
+            self.markdown_images.cancel();
+            return None;
+        }
         if self.markdown_gui.as_ref().is_some_and(|ui| {
             self.workbench
                 .active_document()
@@ -118,6 +196,7 @@ impl State {
             self.markdown_gui = None;
             return None;
         }
+        let viewport_left = super::explorer_panel::region(self).map_or(0, |r| r.right + 1);
         let ui = self.markdown_gui.as_mut()?;
         let tab = self.workbench.document_by_id(ui.stamp.document)?.tab_id;
         let current = self.workbench.task_stamp_is_current(ui.stamp)
@@ -145,7 +224,7 @@ impl State {
                 &self.workbench,
                 tab,
                 (((height - top).max(0) / ch).saturating_sub(5)).clamp(0, 96) as usize,
-                ((width.min(self.dpi.pixels(1000)) - self.dpi.pixels(96)).max(0)
+                (((width - viewport_left).min(self.dpi.pixels(1000)) - self.dpi.pixels(96)).max(0)
                     / cw.max(self.dpi.pixels(12)))
                 .clamp(12, 256) as usize,
             )
@@ -155,32 +234,89 @@ impl State {
                 ..Default::default()
             }
         };
+        if !presentation.pending && !presentation.limited && current {
+            presentation.message="Tab selecciona enlaces · Intro abre · Ctrl+Intro al lado · Clic carga imágenes remotas".into();
+        }
         if presentation.pending {
             self.syntax_pending = true;
             self.syntax_targets[0] = Some((self.workbench.panes().active(), tab));
             self.wakeup.signal();
         }
+        let images = interaction::prepare_images(
+            &presentation,
+            interaction::ImageLayout {
+                cache: &self.markdown_images,
+                context: &ui.context,
+                document: self.workbench.active_document()?.session.path(),
+                remote_allowed: &ui.remote_allowed,
+                extents: &ui.extents,
+                width: width - viewport_left,
+                dpi: self.dpi,
+                max_group_height: (height - top - self.dpi.pixels(144)).max(1),
+            },
+        );
         let mut used = self.dpi.pixels(48);
         let available = height - top - self.dpi.pixels(30);
         let keep = presentation
             .rows
             .iter()
-            .take_while(|row| {
-                used += row_height(row, self.dpi);
+            .enumerate()
+            .take_while(|(index, row)| {
+                used += row_height(row, self.dpi)
+                    + images
+                        .iter()
+                        .filter(|image| image.row == *index)
+                        .map(|image| image.height)
+                        .sum::<i32>();
                 used <= available
             })
             .count();
+        let keep = if available > self.dpi.pixels(48) && !presentation.rows.is_empty() {
+            keep.max(1)
+        } else {
+            keep
+        };
         presentation.rows.truncate(keep);
+        let images: Vec<_> = images
+            .into_iter()
+            .filter(|image| image.row < keep)
+            .collect();
+        let wanted: Vec<_> = images
+            .iter()
+            .filter(|image| image.allowed)
+            .filter_map(|image| image.source.clone())
+            .take(16)
+            .collect();
+        if ui.wanted != wanted {
+            ui.wanted = wanted;
+            self.wakeup.signal();
+        }
         ui.page_rows = keep.max(1);
-        Some(MarkdownFrame {
+        let mut frame = MarkdownFrame {
             presentation,
             width,
+            viewport_left,
             height,
             top,
             ch,
             dpi: self.dpi,
             fonts: ui.fonts.as_ref().unwrap().clone(),
-        })
+            hits: MarkdownHits::new(
+                ui.token.clone(),
+                ui.stamp,
+                width,
+                height,
+                self.dpi,
+                viewport_left,
+            ),
+            images,
+            selected: None,
+        };
+        frame.prepare_hits();
+        if ui.keyboard_focus {
+            frame.selected = frame.hits.targets().get(ui.selected).cloned();
+        }
+        Some(frame)
     }
     pub(super) fn markdown_wheel(&mut self, delta: i32, lines: u32) -> bool {
         let Some(ui) = &mut self.markdown_gui else {
@@ -195,6 +331,9 @@ impl State {
         };
         let steps = (total / 120).saturating_mul(rows as i32).clamp(-96, 96);
         if steps != 0 {
+            ui.token = Rc::new(());
+            ui.hits = None;
+            ui.keyboard_focus = false;
             if let Some(doc) = self.workbench.document_by_id(ui.stamp.document) {
                 ui.view
                     .scroll(-(steps as isize), &self.workbench, doc.tab_id);
@@ -317,6 +456,47 @@ fn area(left: i32, top: i32, right: i32, bottom: i32) -> Rect {
         bottom,
     }
 }
+fn span_font(
+    fonts: &Fonts,
+    row: &MarkdownRow,
+    span: &jc_app::markdown_preview::MarkdownSpan,
+) -> Handle {
+    if let MarkdownBlock::Heading(level) = row.block {
+        return fonts.headings[level.clamp(1, 6) as usize - 1];
+    }
+    if matches!(row.block, MarkdownBlock::Code { .. }) || span.kind == jc_app::SyntaxKind::Code {
+        return fonts.code;
+    }
+    match span.style {
+        MarkdownInlineStyle::Emphasis => fonts.italic,
+        MarkdownInlineStyle::Strike => fonts.strike,
+        _ => match span.kind {
+            jc_app::SyntaxKind::Emphasis => fonts.bold,
+            jc_app::SyntaxKind::Link => fonts.link,
+            _ => fonts.body,
+        },
+    }
+}
+fn span_text<'a>(
+    row: &MarkdownRow,
+    index: usize,
+    span: &'a jc_app::markdown_preview::MarkdownSpan,
+) -> &'a str {
+    if row.block == MarkdownBlock::Quote && index == 0 {
+        span.text.strip_prefix("│ ").unwrap_or(&span.text)
+    } else if matches!(row.block, MarkdownBlock::Code { fence: true }) {
+        span.text
+            .trim_start()
+            .strip_prefix("Código")
+            .unwrap_or(&span.text)
+            .trim()
+    } else if matches!(row.block, MarkdownBlock::Code { fence: false }) && index == 0 {
+        span.text.strip_prefix("  ").unwrap_or(&span.text)
+    } else {
+        &span.text
+    }
+}
+
 /// The painter consumes only bounded immutable presentation, never document bytes.
 pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> {
     let bg = super::shell::BACKGROUND;
@@ -326,10 +506,12 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> 
     let accent = super::shell::ACCENT;
     let p = |v| frame.dpi.pixels(v);
     let bottom = (frame.height - frame.ch - p(6)).max(frame.top);
-    paint::fill(dc, area(0, frame.top, frame.width, bottom), bg)?;
-    let width = frame.width.min(p(1000));
-    let left = ((frame.width - width) / 2 + p(40)).min(frame.width);
-    let right = (frame.width - left).max(left);
+    paint::fill(
+        dc,
+        area(frame.viewport_left, frame.top, frame.width, bottom),
+        bg,
+    )?;
+    let (left, right) = frame.content_bounds();
     let old = SelectObject(dc, frame.fonts.body);
     let old_mode = SetBkMode(dc, 1);
     let result = (|| {
@@ -342,7 +524,13 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> 
         )?;
         let mut y = frame.top + p(48);
         for (row_index, row) in frame.presentation.rows.iter().enumerate() {
-            let height = row_height(row, frame.dpi);
+            let height = row_height(row, frame.dpi)
+                + frame
+                    .images
+                    .iter()
+                    .filter(|image| image.row == row_index)
+                    .map(|image| image.height)
+                    .sum::<i32>();
             let box_rect = area(left, y, right, (y + height).min(bottom));
             let mut x = left;
             let mut row_bg = bg;
@@ -423,37 +611,9 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> 
                 } else {
                     None
                 };
-                let font = if let Some(level) = heading {
-                    frame.fonts.headings[level]
-                } else if matches!(row.block, MarkdownBlock::Code { .. })
-                    || span.kind == jc_app::SyntaxKind::Code
-                {
-                    frame.fonts.code
-                } else if span.style == MarkdownInlineStyle::Emphasis {
-                    frame.fonts.italic
-                } else if span.style == MarkdownInlineStyle::Strike {
-                    frame.fonts.strike
-                } else {
-                    match span.kind {
-                        jc_app::SyntaxKind::Emphasis => frame.fonts.bold,
-                        jc_app::SyntaxKind::Link => frame.fonts.link,
-                        _ => frame.fonts.body,
-                    }
-                };
+                let font = span_font(&frame.fonts, row, span);
                 SelectObject(dc, font);
-                let text = if row.block == MarkdownBlock::Quote && index == 0 {
-                    span.text.strip_prefix("│ ").unwrap_or(&span.text)
-                } else if matches!(row.block, MarkdownBlock::Code { fence: true }) {
-                    span.text
-                        .trim_start()
-                        .strip_prefix("Código")
-                        .unwrap_or(&span.text)
-                        .trim()
-                } else if matches!(row.block, MarkdownBlock::Code { fence: false }) && index == 0 {
-                    span.text.strip_prefix("  ").unwrap_or(&span.text)
-                } else {
-                    &span.text
-                };
+                let text = span_text(row, index, span);
                 if text.is_empty() {
                     continue;
                 }
@@ -508,7 +668,23 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> 
                 }
                 x = (x + measured.width).min(right);
             }
+            let mut image_top = y + row_height(row, frame.dpi);
+            for image in frame.images.iter().filter(|image| image.row == row_index) {
+                interaction::draw_image(dc, frame, image, left, right, image_top)?;
+                image_top += image.height;
+            }
             y += height;
+        }
+        if let Some(selected) = &frame.selected {
+            for (rect, target) in &frame.hits.actions {
+                if Arc::ptr_eq(target, selected) {
+                    paint::fill(
+                        dc,
+                        area(rect.left, rect.bottom - p(1), rect.right, rect.bottom),
+                        accent,
+                    )?;
+                }
+            }
         }
         SelectObject(dc, frame.fonts.body);
         paint::text(
@@ -574,3 +750,7 @@ mod tests {
         println!("Native Markdown raster: {}", path.display());
     }
 }
+
+#[cfg(test)]
+#[path = "markdown_media_tests.rs"]
+mod media_tests;

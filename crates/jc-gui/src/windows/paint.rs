@@ -141,6 +141,9 @@ pub(super) struct Frame {
     bottom: Option<super::bottom_panel::BottomFrame>,
 }
 impl Frame {
+    pub(super) fn markdown_hits(&self) -> Option<super::markdown_panel::MarkdownHits> {
+        self.markdown.as_ref().map(|frame| frame.hits.clone())
+    }
     pub(super) fn git_hits(&self) -> Option<super::git_workspace::Hits> {
         self.git.as_ref().map(|frame| frame.hits.clone())
     }

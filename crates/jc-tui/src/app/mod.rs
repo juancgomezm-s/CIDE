@@ -350,6 +350,7 @@ impl TuiApp {
                 );
             }
         }
+        update.changed |= self.poll_markdown_anchor();
         update.changed |= self.poll_quick_open();
         update.recover |= self.quick_open.take_recovery();
         update.changed |= update.recover;

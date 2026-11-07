@@ -1262,6 +1262,7 @@ name = "jc-gui"
 version = "0.1.0"
 dependencies = [
  "jc-app",
+ "jc-fs",
  "jc-platform",
  "jc-progress",
  "jc-text",

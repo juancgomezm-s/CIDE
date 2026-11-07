@@ -1,3 +1,16 @@
+## Imágenes, sangrías y enlaces Markdown — 2026-11-06
+
+[Contrato y vista nativa](M2_MARKDOWN_MEDIA_LINKS.md). GUI dibuja imágenes
+PNG/JPEG/BMP/GIF; las locales cargan en segundo plano y las web requieren clic/Intro.
+Listas anidadas conservan niveles y sangría colgante. Enlaces explícitos locales,
+al lado, HTTP/HTTPS y anclas con búsqueda cooperativa. TUI usa texto alternativo
+y Tab/Intro para destinos, sin píxeles. Ver mantiene check solo para Markdown.
+33 casos dirigidos distintos,20 nuevos; fmt y Clippy selectivo aprobados.
+HTTP se validó con fixtures privados 127.0.0.1, sin navegador ni Internet.
+Entrega target/markdown-media-next/release; rutas anteriores preservadas.
+Sin escritorio, portapapeles/recuperación personal, CI o push nuevos.
+El bloqueo previo de Computer Use y la aceptación física/global siguen aparte.
+
 ## Vista Markdown renderizada — 2026-11-06
 
 [Contrato e imagen nativa](M2_MARKDOWN_RENDERED_VIEW.md). Ver → Vista previa de

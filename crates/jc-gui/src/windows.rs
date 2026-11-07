@@ -22,6 +22,8 @@ mod ime;
 mod interaction_smoke;
 mod line_edit;
 mod line_edit_smoke;
+mod markdown_image_http;
+mod markdown_images;
 mod markdown_panel;
 mod menu_input;
 mod menu_invoker_smoke;
@@ -376,6 +378,7 @@ enum Action {
     SelectorClipboard(CommandId, Box<selector_input::SelectorInputTarget>),
     PasteProject(u64),
     PasteReplacement(u64),
+    OpenWeb(String),
     ChooseFolder,
     Open(bool),
     SaveAs,
@@ -395,6 +398,7 @@ struct State {
     source_gui: source_panel::SourceGui,
     snippet_gui: Option<snippet_panel::SnippetGui>,
     markdown_gui: Option<markdown_panel::MarkdownGui>,
+    markdown_images: markdown_images::ImageController,
     pub workbench: Workbench,
     registry: CommandRegistry,
     keymap: KeyMap,
@@ -525,6 +529,7 @@ impl State {
             source_gui: source_panel::SourceGui::new(),
             snippet_gui: None,
             markdown_gui: None,
+            markdown_images: markdown_images::ImageController::new(wakeup.clone()),
             workbench: Workbench::default(),
             recovery: None,
             periodic_recovery: Default::default(),
@@ -1566,15 +1571,25 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         };
         let dc = BeginPaint(hwnd, &mut paint.paint);
         if !dc.is_null() {
+            let mut composed = false;
             let result = owner
                 .buffer
                 .try_borrow_mut()
                 .map_err(|_| "La superficie GUI ya está en uso".to_owned())
                 .and_then(|mut buffer| {
                     buffer.paint(dc, frame.width, frame.height, |memory| {
-                        paint::draw(memory, &frame)
+                        let result = paint::draw(memory, &frame);
+                        composed = result.is_ok();
+                        result
                     })
                 });
+            if let Ok(mut state) = owner.state.try_borrow_mut() {
+                state.publish_markdown_hits(if result.is_ok() && composed {
+                    frame.markdown_hits()
+                } else {
+                    None
+                });
+            }
             if let Err(error) = result {
                 if let Ok(mut state) = owner.state.try_borrow_mut() {
                     state.paint_errors += 1;
@@ -1789,6 +1804,13 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     // Status controls consume the click before source hit-testing.
                 } else if state.git_panel.is_some() {
                     action = state.git_workspace_click(x, y);
+                } else if state.markdown_gui.is_some() {
+                    if !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK)
+                        && message == WM_LBUTTONDOWN
+                    {
+                        let to_side = state.modifiers().contains(Modifiers::CTRL);
+                        action = state.markdown_click(x, y, to_side);
+                    }
                 } else if state.pointer_source_available()
                     && message == WM_LBUTTONDOWN
                     && state.begin_explorer_scroll(x, y)
@@ -2016,6 +2038,13 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             }
         }
         Action::None => {}
+        Action::OpenWeb(url) => {
+            if let Err(error) = jc_platform::web_link::open(&url) {
+                if let Some(owner) = owner(hwnd) {
+                    owner.state.borrow_mut().error(error);
+                }
+            }
+        }
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
         Action::PasteGitSearch(token) => git_workspace::paste_commit_query(hwnd, token),

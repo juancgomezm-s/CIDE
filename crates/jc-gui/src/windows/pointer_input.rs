@@ -153,6 +153,17 @@ impl State {
         let modifiers = self.modifiers();
         if self.markdown_gui.is_some()
             && self.selector.is_none()
+            && modifiers == Modifiers::NONE
+            && flags & 0x0c == 0
+        {
+            if let Some(region) = super::explorer_panel::region(self) {
+                if x < region.right {
+                    return self.explorer_wheel(x, y, delta, lines).unwrap_or(false);
+                }
+            }
+        }
+        if self.markdown_gui.is_some()
+            && self.selector.is_none()
             && flags & 0x0c == 0
             && modifiers == Modifiers::NONE
             && x >= 0

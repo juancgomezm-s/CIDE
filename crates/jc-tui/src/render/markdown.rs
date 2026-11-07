@@ -19,7 +19,7 @@ pub(super) fn draw(frame: &Presentation<'_>, screen: &mut Screen) {
         2,
         3,
         &super::clip(
-            "↑↓ desplazar · RePág/AvPág · Inicio/Fin · Esc fuente",
+            "↑↓ desplazar · Tab enlaces · Intro abrir · Ctrl+Intro al lado · Esc fuente",
             width - 4,
         ),
         CellStyle::Accent,
@@ -37,7 +37,15 @@ pub(super) fn draw(frame: &Presentation<'_>, screen: &mut Screen) {
                 5 + i as u16,
                 width.saturating_sub(3 + x),
                 &span.text,
-                if span.kind == jc_app::SyntaxKind::Plain {
+                if span.target.as_ref().is_some_and(|target| {
+                    frame.app.markdown_ui.as_ref().is_some_and(|ui| {
+                        ui.selected
+                            .and_then(|index| ui.targets.get(index))
+                            .is_some_and(|selected| std::sync::Arc::ptr_eq(target, selected))
+                    })
+                }) {
+                    CellStyle::Reverse
+                } else if span.kind == jc_app::SyntaxKind::Plain {
                     CellStyle::Normal
                 } else {
                     CellStyle::Syntax(span.kind)

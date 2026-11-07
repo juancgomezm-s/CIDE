@@ -6,3 +6,5 @@ pub mod clipboard;
 mod clipboard_owner;
 #[cfg(windows)]
 pub use clipboard_owner::WindowsClipboard;
+
+pub mod web_link;
