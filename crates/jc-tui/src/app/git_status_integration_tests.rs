@@ -339,6 +339,25 @@ fn tui_create_commit_reviews_only_the_index_and_requires_f2_confirmation() {
     assert_eq!(after.index, before.index);
     assert_eq!(after.tracked, before.tracked);
     assert_eq!(after.untracked, before.untracked);
+    request_ready(&mut app, &wake);
+    key(&mut app, KeyCode::Char('m'));
+    app.handle_event(Event::Paste("Mensaje corregido".into()));
+    key(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    let commit = app.prepare_frame(96, 24).commit.unwrap();
+    assert_eq!(commit.title, "Modificar último commit");
+    assert!(commit
+        .rows
+        .iter()
+        .any(|row| row == &format!("Reemplaza {id}")));
+    let replacement = app.git_commit.view().unwrap().review().unwrap().id();
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(fixture.disk(), after);
+    key(&mut app, KeyCode::F(2));
+    settle(&mut app);
+    let amended = fixture.disk();
+    assert_eq!(amended.branch, format!("{replacement}\n").as_bytes());
+    assert_eq!(amended.index, before.index);
 }
 
 #[test]

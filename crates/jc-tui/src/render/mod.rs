@@ -33,7 +33,7 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
         for y in 0..height {
             screen.fill_row_styled(y, ' ', CellStyle::Panel);
         }
-        screen.text_styled(2, 1, "Crear commit", CellStyle::PanelTitle);
+        screen.text_styled(2, 1, commit.title, CellStyle::PanelTitle);
         for (i, row) in commit.rows.iter().take(usize::from(height - 4)).enumerate() {
             screen.text_styled(
                 2,

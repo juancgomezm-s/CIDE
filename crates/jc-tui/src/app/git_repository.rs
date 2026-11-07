@@ -10,7 +10,12 @@ impl TuiApp {
         height: u16,
     ) -> super::GitStatusPresentation {
         let mut p = self.git_status.prepare(width, height);
-        p.title = "Estado Git · C crear commit".into();
+        p.title = if self.git_amend_head().is_some() {
+            "Estado Git · C crear · M modificar"
+        } else {
+            "Estado Git · C crear commit"
+        }
+        .into();
         if self.git_status.history_info().is_some() {
             p.message = jc_app::source_services::display_ui_label(
                 &format!(
@@ -57,9 +62,9 @@ impl TuiApp {
         if !self.git_history.active
             && key.modifiers.is_empty()
             && key.kind == crossterm::event::KeyEventKind::Press
-            && matches!(key.code, KeyCode::Char('c' | 'C'))
+            && matches!(key.code, KeyCode::Char('c' | 'C' | 'm' | 'M'))
         {
-            self.open_git_create_commit();
+            self.open_git_create_commit(matches!(key.code, KeyCode::Char('m' | 'M')));
             return;
         }
         if self.handle_git_history_key(key) {

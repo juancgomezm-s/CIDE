@@ -46,3 +46,24 @@ Git de la GUI pasó 25 comprobaciones con ventana oculta y PATH vacío.
 Esa prueba conservó las fuentes y los metadatos del repositorio de prueba.
 La escritura se verificó en los recorridos dirigidos.
 Entrega en `target/git-create-commit-next/release/`.
+
+## Modificar último commit
+
+En la GUI elige **Modificar último commit** o pulsa **Ctrl+Mayús+A** en
+Git. En la TUI pulsa **M** en **Estado Git**. Escribe un mensaje nuevo o
+deja el campo vacío para conservar el anterior. **Intro** abre la revisión.
+La vista muestra el identificador que se reemplazará, el candidato y los
+archivos que el índice cambia respecto al commit anterior. Una revisión
+sin archivos indica que se modificará únicamente el mensaje.
+
+En la GUI usa **Confirmar reemplazo** o **Ctrl+Intro**. En la TUI usa
+**F2**. El reemplazo conserva el autor y los padres. La rama y su commit
+de partida se fijan al abrir la acción y vuelven a comprobarse antes de
+publicar junto con el índice. La revisión rechaza commits firmados o con
+metadatos especiales que requieren un flujo propio.
+
+Las pruebas en segundo plano comprobaron el reemplazo del mensaje en
+GUI y TUI, y el reemplazo con bytes preparados conservando el mensaje en
+el núcleo. También verificaron el autor, los padres, el reflog y el
+rechazo al cambiar de rama aunque las dos ramas apunten al mismo commit.
+Pasaron Clippy y formato.

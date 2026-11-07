@@ -129,6 +129,7 @@ struct Stamp {
 #[derive(Clone, Copy)]
 enum Intent {
     CreateCommit,
+    AmendCommit,
     SubmitCommit,
     CancelCommit,
     Index,
@@ -845,7 +846,11 @@ impl State {
         }
         match intent {
             Some(Intent::CreateCommit) => {
-                self.open_git_create_commit();
+                self.open_git_create_commit(false);
+                Action::None
+            }
+            Some(Intent::AmendCommit) => {
+                self.open_git_create_commit(true);
                 Action::None
             }
             Some(Intent::SubmitCommit) => {

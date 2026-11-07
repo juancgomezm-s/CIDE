@@ -1,7 +1,8 @@
 //! Shared draft, review and background publication for the two frontends.
 use crate::{edit_field, FieldEdit, Wakeup, Workbench};
+pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
-use jc_git::commit_write::{apply_commit, prepare_commit, CommitPlan, Publication};
+use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan, Publication};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -35,6 +36,7 @@ struct Job {
 
 pub struct CommitView {
     root: PathBuf,
+    pub replaces: Option<AmendTarget>,
     pub message: String,
     pub cursor: usize,
     pub first: usize,
@@ -44,6 +46,13 @@ pub struct CommitView {
 }
 
 impl CommitView {
+    pub fn title(&self) -> &'static str {
+        if self.replaces.is_some() {
+            "Modificar último commit"
+        } else {
+            "Crear commit"
+        }
+    }
     pub fn review(&self) -> Option<&CommitPlan> {
         self.review.as_deref()
     }
@@ -87,10 +96,11 @@ impl CommitController {
             .is_some_and(|job| job.result.lock().unwrap().is_some())
     }
 
-    pub fn open(&mut self, root: PathBuf) {
+    pub fn open(&mut self, root: PathBuf, replaces: Option<AmendTarget>) {
         if self.job.is_none() && self.view.is_none() {
             self.view = Some(CommitView {
                 root,
+                replaces,
                 message: String::new(),
                 cursor: 0,
                 first: 0,
@@ -183,6 +193,7 @@ impl CommitController {
         let applying = plan.is_some();
         let root = view.root.clone();
         let message = view.message.clone();
+        let replaces = view.replaces.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let stop = cancelled.clone();
         let result = Arc::new(Mutex::new(None));
@@ -196,7 +207,13 @@ impl CommitController {
                     match plan {
                         Some(plan) => Completion::Applied(apply_commit(*plan, cancelled)),
                         None => Completion::Review(
-                            prepare_commit(&root, &message, LIMITS, cancelled).map(Box::new),
+                            match replaces {
+                                Some(head) => {
+                                    prepare_amend(&root, &message, &head, LIMITS, cancelled)
+                                }
+                                None => prepare_commit(&root, &message, LIMITS, cancelled),
+                            }
+                            .map(Box::new),
                         ),
                     }
                 }))
@@ -243,10 +260,17 @@ impl CommitController {
                 if let Ok(publication) = &result {
                     self.notice = Some((
                         root.clone(),
-                        publication
-                            .reflog_warning
-                            .clone()
-                            .unwrap_or_else(|| format!("Commit creado · {}", publication.id)),
+                        publication.reflog_warning.clone().unwrap_or_else(|| {
+                            format!(
+                                "{} · {}",
+                                if view.replaces.is_some() {
+                                    "Commit modificado"
+                                } else {
+                                    "Commit creado"
+                                },
+                                publication.id
+                            )
+                        }),
                     ));
                     self.view = None;
                 } else {

@@ -42,7 +42,7 @@ pub(in crate::windows) unsafe fn paste_message(hwnd: Hwnd, token: Arc<()>) {
 }
 
 impl State {
-    pub(in crate::windows) fn open_git_create_commit(&mut self) {
+    pub(in crate::windows) fn open_git_create_commit(&mut self, amend: bool) {
         if matches!(
             self.git_index.state(),
             jc_app::git_index::IndexState::Applying
@@ -51,11 +51,31 @@ impl State {
             return;
         }
         if let Some(root) = self.project_root.clone() {
+            let replaces = if amend {
+                let Some((branch, head)) = self.git_amend_head() else {
+                    self.status = "Actualiza Estado Git y selecciona una rama con commits".into();
+                    return;
+                };
+                Some(jc_app::git_commit::AmendTarget {
+                    branch: branch.to_vec(),
+                    head: head.to_owned(),
+                })
+            } else {
+                None
+            };
             let _ = self.git_index.discard_review();
-            self.git_commit.open(root);
+            self.git_commit.open(root, replaces);
             self.git_workspace.menu = None;
             self.git_workspace.invalidate();
         }
+    }
+
+    fn git_amend_head(&self) -> Option<(&[u8], &str)> {
+        (self.git_status.state() == GitStatusTaskState::Ready
+            && self.git_status.root() == self.project_root.as_deref())
+        .then_some(())?;
+        let info = self.git_status.result()?.info()?;
+        Some((info.branch.as_deref()?, info.head.as_deref()?))
     }
 
     pub(in crate::windows) fn git_create_commit_key(
@@ -64,8 +84,8 @@ impl State {
         mods: Modifiers,
     ) -> bool {
         let Some(view) = self.git_commit.view() else {
-            if mods == Modifiers::CTRL.union(Modifiers::SHIFT) && code == b'M' as usize {
-                self.open_git_create_commit();
+            if mods == Modifiers::CTRL.union(Modifiers::SHIFT) && matches!(code, 0x4d | 0x41) {
+                self.open_git_create_commit(code == b'A' as usize);
                 return true;
             }
             return false;
@@ -110,9 +130,11 @@ impl State {
         let (changed, outcome) = self.git_commit.poll();
         if let Some(outcome) = outcome {
             self.status = match outcome.result {
-                Ok(publication) => publication
-                    .reflog_warning
-                    .unwrap_or_else(|| format!("Commit creado · {}", publication.id)),
+                Ok(_) => self
+                    .git_commit
+                    .notice(Some(&outcome.root))
+                    .unwrap_or_default()
+                    .into(),
                 Err(error) => error,
             };
             if self.project_root.as_ref() == Some(&outcome.root) {
@@ -130,6 +152,9 @@ impl State {
         let ready = self.git_status.state() == GitStatusTaskState::Ready;
         if ready {
             frame.footer = format!("Ctrl+Mayús+M crear commit · {}", frame.footer);
+        }
+        if self.git_amend_head().is_some() {
+            frame.footer = format!("Ctrl+Mayús+A modificar último commit · {}", frame.footer);
         }
         if let Some(notice) = self.git_commit.notice(self.project_root.as_deref()) {
             frame.footer = format!("{notice} · {}", frame.footer);
@@ -160,6 +185,23 @@ impl State {
                 break;
             }
         }
+        if self.git_amend_head().is_some() {
+            let area = frame.preview;
+            let left = area.right - p(192);
+            let top = area.top + p(32);
+            let r = rect(left, top, left + p(185), top + p(25));
+            if r.left >= area.left
+                && r.bottom <= area.bottom
+                && frame.buttons.iter().all(|(b, _, _)| {
+                    r.left >= b.right || r.right <= b.left || r.top >= b.bottom || r.bottom <= b.top
+                })
+            {
+                frame
+                    .buttons
+                    .push((r, "Modificar último commit".into(), false));
+                frame.hits.actions.push((r, Intent::AmendCommit));
+            }
+        }
     }
 
     pub(super) fn prepare_create_commit(&self, mut f: Frame) -> Frame {
@@ -183,7 +225,7 @@ impl State {
         f.dividers.clear();
         f.buttons.clear();
         f.hits.actions.clear();
-        f.subtitle = "Crear commit".into();
+        f.subtitle = view.title().into();
         f.footer = view.error.clone().unwrap_or_else(|| {
             if self.git_commit.applying() {
                 "Publicando commit…".into()
@@ -226,6 +268,15 @@ impl State {
                         .map_or_else(|| "Primer commit".into(), |p| format!("Padre {p}"))
                 ),
             ];
+            if let Some(old) = plan.replaced() {
+                f.details[1] = format!("Reemplaza {old} → {}", plan.id());
+                if view.message.is_empty() {
+                    f.query.as_mut().unwrap().text = opaque(
+                        plan.message().lines().next().unwrap_or_default().as_bytes(),
+                        width,
+                    );
+                }
+            }
             let row_height = p(23).max(1);
             let top = f.preview.top + p(194);
             let count = ((f.preview.bottom - top) / row_height).clamp(0, 128) as usize;
@@ -250,9 +301,23 @@ impl State {
                     parallel: false,
                 });
             }
-            ("Confirmar commit", 150)
+            (
+                if plan.replaced().is_some() {
+                    "Confirmar reemplazo"
+                } else {
+                    "Confirmar commit"
+                },
+                150,
+            )
         } else {
-            f.summary = vec!["Mensaje del commit".into()];
+            f.summary = vec![if let Some(old) = &view.replaces {
+                format!(
+                    "Reemplaza {} · deja vacío para conservar el mensaje",
+                    old.head
+                )
+            } else {
+                "Mensaje del commit".into()
+            }];
             ("Revisar preparados", 12)
         };
         if !self.git_commit.busy() {

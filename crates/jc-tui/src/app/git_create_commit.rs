@@ -4,13 +4,14 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use jc_app::{git_commit::file_flag, present_field, FieldEdit};
 
 pub(crate) struct CommitPresentation {
+    pub title: &'static str,
     pub rows: Vec<String>,
     pub hint: String,
     pub caret: Option<u16>,
 }
 
 impl TuiApp {
-    pub(super) fn open_git_create_commit(&mut self) {
+    pub(super) fn open_git_create_commit(&mut self, amend: bool) {
         if matches!(
             self.git_index.state(),
             jc_app::git_index::IndexState::Applying
@@ -19,9 +20,26 @@ impl TuiApp {
             return;
         }
         if let Some(root) = self.project_root.clone() {
+            let replaces = if amend {
+                let Some((branch, head)) = self.git_amend_head() else {
+                    self.status = "Actualiza Estado Git y selecciona una rama con commits".into();
+                    return;
+                };
+                Some(jc_app::git_commit::AmendTarget {
+                    branch: branch.to_vec(),
+                    head: head.to_owned(),
+                })
+            } else {
+                None
+            };
             let _ = self.git_index.discard_review();
-            self.git_commit.open(root);
+            self.git_commit.open(root, replaces);
         }
+    }
+
+    pub(super) fn git_amend_head(&self) -> Option<(&[u8], &str)> {
+        let info = self.git_status.history_info()?;
+        Some((info.branch.as_deref()?, info.head.as_deref()?))
     }
 
     pub(super) fn handle_git_create_commit_key(&mut self, key: KeyEvent) -> bool {
@@ -71,9 +89,11 @@ impl TuiApp {
         let (changed, outcome) = self.git_commit.poll();
         if let Some(outcome) = outcome {
             let notice = match outcome.result {
-                Ok(publication) => publication
-                    .reflog_warning
-                    .unwrap_or_else(|| format!("Commit creado · {}", publication.id)),
+                Ok(_) => self
+                    .git_commit
+                    .notice(Some(&outcome.root))
+                    .unwrap_or_default()
+                    .into(),
                 Err(error) => error,
             };
             if self.project_root.as_ref() == Some(&outcome.root) {
@@ -113,7 +133,16 @@ impl TuiApp {
             ));
             rows.push(format!("{} <{}>", opaque(name, 128), opaque(email, 160)));
             rows.push(format!("Commit {}", plan.id()));
-            let count = usize::from(height.saturating_sub(8)).min(128);
+            if let Some(old) = plan.replaced() {
+                if view.message.is_empty() {
+                    rows[0] = opaque(
+                        plan.message().lines().next().unwrap_or_default().as_bytes(),
+                        width,
+                    );
+                }
+                rows.push(format!("Reemplaza {old}"));
+            }
+            let count = usize::from(height.saturating_sub(4 + rows.len() as u16)).min(128);
             let first = view.first.min(plan.files().len().saturating_sub(count));
             rows.extend(plan.files().iter().skip(first).take(count).map(|file| {
                 format!(
@@ -122,14 +151,24 @@ impl TuiApp {
                     opaque(&file.path, width.saturating_sub(3))
                 )
             }));
-            "↑↓ archivos · F2 confirma · Esc cancela"
+            if plan.replaced().is_some() {
+                "↑↓ archivos · F2 reemplaza · Esc cancela"
+            } else {
+                "↑↓ archivos · F2 confirma · Esc cancela"
+            }
         } else {
             if !view.message.is_empty() {
                 caret = Some(field.cursor_column as u16);
             }
-            "Intro revisa preparados · Esc cancela"
+            if let Some(old) = &view.replaces {
+                rows.push(format!("Reemplaza {}", old.head));
+                "Vacío conserva mensaje · Intro revisa · Esc cancela"
+            } else {
+                "Intro revisa preparados · Esc cancela"
+            }
         };
         Some(CommitPresentation {
+            title: view.title(),
             rows,
             hint: view.error.clone().unwrap_or_else(|| hint.into()),
             caret,

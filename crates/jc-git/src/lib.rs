@@ -652,7 +652,7 @@ mod repository_context_tests {
     #[test]
     fn reviewed_commit_pins_staged_bytes_and_rejects_changed_index_and_head() {
         use super::{
-            commit_write::{apply_commit, prepare_commit},
+            commit_write::{AmendTarget, apply_commit, prepare_amend, prepare_commit},
             index_write::{IndexAction, apply_index_change, prepare_index_change},
         };
         let fixture = Fixture::new();
@@ -732,6 +732,48 @@ mod repository_context_tests {
         assert_eq!(
             fs::read(&branch).unwrap(),
             format!("{second_id}\n").as_bytes()
+        );
+
+        let target = AmendTarget {
+            branch: gix::path::into_bstr(branch.strip_prefix(git.join("refs/heads")).unwrap())
+                .unwrap()
+                .into_owned()
+                .to_vec(),
+            head: second_id.to_string(),
+        };
+        fs::write(&file, b"amended bytes\r\n").unwrap();
+        stage();
+        let index = fs::read(git.join("index")).unwrap();
+        let amend = || prepare_amend(root, "", &target, limits(), || false);
+        let plan = amend().unwrap();
+        assert_eq!(plan.replaced(), Some(second_id));
+        assert_eq!(plan.parent(), Some(id));
+        assert_eq!(plan.files()[0].change, Change::Modified);
+        assert_eq!(plan.message(), "Segundo\n");
+        let saved_head = fs::read(git.join("HEAD")).unwrap();
+        fs::write(git.join("refs/heads/otra"), format!("{second_id}\n")).unwrap();
+        fs::write(git.join("HEAD"), b"ref: refs/heads/otra\n").unwrap();
+        assert!(matches!(amend(), Err(Error::Stale)));
+        assert!(matches!(apply_commit(plan, || false), Err(Error::Stale)));
+        fs::write(git.join("HEAD"), saved_head).unwrap();
+        let publication = apply_commit(amend().unwrap(), || false).unwrap();
+        assert_eq!(fs::read(git.join("index")).unwrap(), index);
+        assert_eq!(
+            fs::read(&branch).unwrap(),
+            format!("{}\n", publication.id).as_bytes()
+        );
+        let repo = gix::open(root).unwrap();
+        let original = repo.find_commit(second_id).unwrap();
+        let amended = repo.find_commit(publication.id).unwrap();
+        assert_eq!(amended.author().unwrap(), original.author().unwrap());
+        assert_eq!(amended.parent_ids().next().unwrap().detach(), id);
+        assert!(
+            fs::read_to_string(git.join("logs/HEAD"))
+                .unwrap()
+                .lines()
+                .last()
+                .unwrap()
+                .starts_with(&format!("{second_id} {} ", publication.id))
         );
     }
 

@@ -223,7 +223,35 @@ mod tests {
         state.key(0x0d);
         wait(&mut state, |s| !s.git_commit.busy());
         assert!(state.git_commit.view().is_none(), "{}", state.status);
-        assert_eq!(fs::read(branch).unwrap(), format!("{id}\n").as_bytes());
+        assert_eq!(fs::read(&branch).unwrap(), format!("{id}\n").as_bytes());
+        wait(&mut state, |s| {
+            s.git_status
+                .result()
+                .and_then(|r| r.info())
+                .and_then(|info| info.head.as_deref())
+                == Some(id.to_string().as_str())
+        });
+        state.key_override = Some(Modifiers::CTRL.union(Modifiers::SHIFT));
+        state.key(b'A' as usize);
+        state.key_override = Some(Modifiers::NONE);
+        for unit in "Mensaje corregido".encode_utf16() {
+            state.character(unit);
+        }
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let plan = state.git_commit.view().unwrap().review().unwrap();
+        assert_eq!(plan.replaced(), Some(id));
+        assert!(plan.files().is_empty());
+        let replacement = plan.id();
+        state.key(0x0d);
+        assert_eq!(fs::read(&branch).unwrap(), format!("{id}\n").as_bytes());
+        state.key_override = Some(Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert_eq!(
+            fs::read(branch).unwrap(),
+            format!("{replacement}\n").as_bytes()
+        );
     }
 
     #[test]

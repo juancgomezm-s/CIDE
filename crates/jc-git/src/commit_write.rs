@@ -30,11 +30,19 @@ pub struct CommitFile {
     pub change: Change,
 }
 
+#[derive(Clone)]
+pub struct AmendTarget {
+    /// Branch name as shown by repository status, without refs/heads/.
+    pub branch: Vec<u8>,
+    pub head: String,
+}
+
 pub struct CommitPlan {
     repository: Identity,
     index: local_pair::IndexToken,
     branch: gix::refs::FullName,
-    parent: Option<gix::ObjectId>,
+    expected_head: Option<gix::ObjectId>,
+    amend: bool,
     commit: gix::objs::Commit,
     id: gix::ObjectId,
     trees: Vec<(gix::ObjectId, gix::objs::Tree)>,
@@ -47,7 +55,10 @@ impl CommitPlan {
         self.branch.as_bstr().as_bytes()
     }
     pub fn parent(&self) -> Option<gix::ObjectId> {
-        self.parent
+        self.commit.parents.first().copied()
+    }
+    pub fn replaced(&self) -> Option<gix::ObjectId> {
+        self.expected_head.filter(|_| self.amend)
     }
     pub fn id(&self) -> gix::ObjectId {
         self.id
@@ -146,22 +157,76 @@ pub fn prepare_commit(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<CommitPlan, Error> {
+    prepare(root, message, None, limits, cancelled)
+}
+
+/// Replaces the reviewed tip while preserving its author and parent list.
+/// An empty message preserves the original message bytes.
+pub fn prepare_amend(
+    root: &Path,
+    message: &str,
+    target: &AmendTarget,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<CommitPlan, Error> {
+    prepare(root, message, Some(target), limits, cancelled)
+}
+
+fn prepare(
+    root: &Path,
+    message: &str,
+    amend: Option<&AmendTarget>,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<CommitPlan, Error> {
     limits.admit()?;
     if message.len() >= MESSAGE_BYTES
-        || message.trim().is_empty()
+        || (message.trim().is_empty() && !(amend.is_some() && message.is_empty()))
         || message
             .chars()
             .any(|c| c.is_control() && !matches!(c, '\n' | '\t'))
     {
         return Err(Error::Engine("Escribe un mensaje de commit válido".into()));
     }
-    let mut message = message.trim_end_matches('\n').to_owned();
-    message.push('\n');
+    let mut message = BString::from(message.trim_end_matches('\n'));
+    if !message.is_empty() {
+        message.push(b'\n');
+    }
     controlled(limits.timeout, cancelled, |ctx| {
         let (repo, repository) = index_write::open_for_write(root, ctx)?;
         check_signing(&repo)?;
-        let (branch, parent) = branch_head(&repo)?;
+        let (branch, expected_head) = branch_head(&repo)?;
+        let original = if let Some(target) = amend {
+            let expected = gix::ObjectId::from_hex(target.head.as_bytes()).map_err(engine)?;
+            if expected_head != Some(expected)
+                || branch.as_bstr().as_bytes().strip_prefix(b"refs/heads/")
+                    != Some(target.branch.as_slice())
+            {
+                return Err(Error::Stale);
+            }
+            let original = revision::verified(&repo, expected, limits.max_bytes, ctx)?
+                .try_into_commit()
+                .map_err(engine)?
+                .decode()
+                .map_err(engine)?
+                .into_owned()
+                .map_err(engine)?;
+            if !original.extra_headers.is_empty() || original.encoding.is_some() {
+                return Err(Error::Engine(
+                    "Este commit tiene firma o metadatos que requieren otro flujo".into(),
+                ));
+            }
+            if original.parents.len() > 8 {
+                return Err(Error::Limited);
+            }
+            Some(original)
+        } else {
+            None
+        };
         let (index, bytes) = local_pair::index_capture(&repo, &repository.git_dir, ctx)?;
+        if original.is_some() && bytes.is_none() {
+            return Err(Error::Missing);
+        }
         let state = local_pair::decode_index(&repo, bytes.as_deref(), ctx)?;
         if state.entries().len() > 4096 {
             return Err(Error::Limited);
@@ -245,20 +310,28 @@ pub fn prepare_commit(
                 Ok::<_, Error>(id)
             })
             .map_err(engine)?;
-        let mut before = match parent {
+        let mut before = match expected_head {
             Some(id) => {
-                let prior = revision::commit(&repo, id, limits, &mut budget, ctx)?;
-                if prior.tree == tree {
+                let prior_tree = match &original {
+                    Some(prior) => prior.tree,
+                    None => revision::commit(&repo, id, limits, &mut budget, ctx)?.tree,
+                };
+                if prior_tree == tree && original.is_none() {
                     return Err(Error::Engine(
                         "No hay cambios preparados para el commit".into(),
                     ));
                 }
-                revision::tree_entries(&repo, prior.tree, limits, &mut budget, ctx)?
+                if prior_tree == tree {
+                    BTreeMap::new()
+                } else {
+                    revision::tree_entries(&repo, prior_tree, limits, &mut budget, ctx)?
+                }
             }
             None => BTreeMap::new(),
         };
         let mut files = Vec::new();
-        for (path, after) in entries {
+        let tree_unchanged = original.as_ref().is_some_and(|prior| prior.tree == tree);
+        for (path, after) in entries.into_iter().filter(|_| !tree_unchanged) {
             let change = match before.remove(&path) {
                 Some(prior) if prior == after => continue,
                 Some(_) => Change::Modified,
@@ -270,27 +343,48 @@ pub fn prepare_commit(
             path,
             change: Change::Deleted,
         }));
-        if files.is_empty() {
+        if files.is_empty() && original.is_none() {
             return Err(Error::Engine(
                 "No hay cambios preparados para el commit".into(),
             ));
         }
         files.sort_unstable_by(|a, b| a.path.cmp(&b.path));
-        let author = local_identity(&repo)?;
+        let committer = local_identity(&repo)?;
+        let (author, parents) = if let Some(prior) = original {
+            if message.is_empty() {
+                if prior.message.len() > MESSAGE_BYTES
+                    || prior.message.to_str().is_err()
+                    || prior.message.as_bytes().contains(&0)
+                {
+                    return Err(Error::Engine(
+                        "Escribe un mensaje nuevo para este commit".into(),
+                    ));
+                }
+                message = prior.message.clone();
+            }
+            if tree_unchanged && message == prior.message {
+                return Err(Error::Engine(
+                    "Cambia el mensaje o prepara archivos para modificar el commit".into(),
+                ));
+            }
+            (prior.author, prior.parents)
+        } else {
+            (committer.clone(), expected_head.into_iter().collect())
+        };
         let commit = gix::objs::Commit {
             tree,
-            parents: parent.into_iter().collect(),
-            committer: author.clone(),
+            parents,
+            committer,
             author,
             encoding: None,
-            message: message.into(),
+            message,
             extra_headers: Vec::new(),
         };
         let mut data = Vec::new();
         commit.write_to(&mut data)?;
         let id =
             gix::objs::compute_hash(repo.object_hash(), Kind::Commit, &data).map_err(engine)?;
-        if branch_head(&repo)? != (branch.clone(), parent)
+        if branch_head(&repo)? != (branch.clone(), expected_head)
             || local_pair::index_capture(&repo, &repository.git_dir, ctx)?.0 != index
         {
             return Err(Error::Stale);
@@ -299,7 +393,8 @@ pub fn prepare_commit(
             repository,
             index,
             branch,
-            parent,
+            expected_head,
+            amend: amend.is_some(),
             commit,
             id,
             trees,
@@ -401,7 +496,7 @@ pub fn apply_commit(
         let (fresh, identity) = index_write::open_for_write(&plan.repository.root, &ctx)?;
         index_write::same_repository(&plan.repository, &identity)?;
         check_signing(&fresh)?;
-        if branch_head(&fresh)? != (plan.branch.clone(), plan.parent)
+        if branch_head(&fresh)? != (plan.branch.clone(), plan.expected_head)
             || !local_pair::index_capture(&fresh, root, &ctx)?
                 .0
                 .matches_under_lock(&plan.index)
@@ -418,11 +513,18 @@ pub fn apply_commit(
     // appending through a hard link. A late failure is reported after the CAS.
     repo.refs.write_reflog = WriteReflog::Disable;
     let line = gix::refs::log::Line {
-        previous_oid: plan.parent.unwrap_or_else(|| repo.object_hash().null()),
+        previous_oid: plan
+            .expected_head
+            .unwrap_or_else(|| repo.object_hash().null()),
         new_oid: plan.id,
         signature: plan.commit.committer.clone(),
         message: BString::from(format!(
-            "commit: {}",
+            "{}: {}",
+            if plan.amend {
+                "commit (amend)"
+            } else {
+                "commit"
+            },
             plan.message()
                 .lines()
                 .next()
@@ -446,9 +548,11 @@ pub fn apply_commit(
         store_object(&repo, root, *id, tree)?;
     }
     store_object(&repo, root, plan.id, &plan.commit)?;
-    let expected = plan.parent.map_or(PreviousValue::MustNotExist, |id| {
-        PreviousValue::MustExistAndMatch(Target::Object(id))
-    });
+    let expected = plan
+        .expected_head
+        .map_or(PreviousValue::MustNotExist, |id| {
+            PreviousValue::MustExistAndMatch(Target::Object(id))
+        });
     let tx = repo
         .refs
         .transaction()
