@@ -127,6 +127,32 @@ fn click(state: &mut State, destination: &str, side: bool) -> Action {
     )
 }
 #[test]
+fn markdown_media_source_frame_releases_pixels_without_waiting_for_task_poll() {
+    let fixture = Fixture::new();
+    fixture.bmp("release.bmp", 320, 240);
+    for change_tab in [false, true] {
+        let mut state = fixture.state("![Carga](release.bmp)\n", 1000, 700);
+        state.toggle_markdown();
+        let frame = settle(&mut state);
+        let pixels = Arc::downgrade(frame.images[0].decoded.as_ref().unwrap());
+        drop(frame);
+        assert!(pixels.upgrade().is_some());
+        if change_tab {
+            state
+                .workbench
+                .new_file("otro.txt", jc_text::TextEncoding::Utf8);
+        } else {
+            state.execute(jc_app::CommandId::ViewToggleBottomPanel);
+            assert!(state.markdown_gui.is_none());
+        }
+        // No poll_markdown/poll_tasks between the command and replacement frame.
+        assert!(state.markdown_presentation().is_none());
+        assert!(pixels.upgrade().is_none(), "decoded pixels stayed retained");
+        assert!(!state.markdown_images.loading());
+        assert!(state.markdown_presentation().is_none());
+    }
+}
+#[test]
 fn markdown_media_reflow_retains_geometry_after_payload_eviction_without_reload_loop() {
     let fixture = Fixture::new();
     fixture.bmp("a.bmp", 80, 400);

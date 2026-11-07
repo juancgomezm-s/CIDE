@@ -179,6 +179,13 @@ impl State {
         Action::None
     }
     pub(super) fn markdown_presentation(&mut self) -> Option<MarkdownFrame> {
+        if self.markdown_gui.is_none() {
+            // Commands can close the view without a subsequent task message.
+            // Release its pixels/queued work when replacing the retained frame,
+            // rather than depending on an unrelated background completion.
+            self.markdown_images.cancel();
+            return None;
+        }
         if self
             .markdown_gui
             .as_ref()
@@ -194,6 +201,7 @@ impl State {
                 .is_none_or(|doc| doc.id != ui.stamp.document)
         }) {
             self.markdown_gui = None;
+            self.markdown_images.cancel();
             return None;
         }
         let viewport_left = super::explorer_panel::region(self).map_or(0, |r| r.right + 1);

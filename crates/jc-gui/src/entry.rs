@@ -24,10 +24,17 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut shell_only = false;
     let mut git_only = false;
     let mut save_only = false;
+    let mut performance_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("-h" | "--help") => return Ok(None),
+            Some("--smoke-performance-only") => {
+                if performance_only {
+                    return Err("Opción --smoke-performance-only duplicada".into());
+                }
+                performance_only = true;
+            }
             Some("--smoke-navigation-only") => {
                 if navigation_only {
                     return Err("Opción --smoke-navigation-only duplicada".into());
@@ -193,6 +200,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(shell_only)
         + usize::from(git_only)
         + usize::from(save_only)
+        + usize::from(performance_only)
         > 1
     {
         return Err("Elige una sola sección de prueba".into());
@@ -214,8 +222,9 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || shell_only
         || git_only
         || save_only
+        || performance_only
     {
-        if !options.paths.is_empty() || options.project_root.is_some() {
+        if (!performance_only && !options.paths.is_empty()) || options.project_root.is_some() {
             return Err("La prueba usa únicamente su archivo de muestra explícito".into());
         }
         let fixture = fixture.ok_or("--smoke-fixture requires --smoke-report")?;
@@ -245,6 +254,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             shell_only,
             git_only,
             save_only,
+            performance_only,
         });
     }
     Ok(Some(options))

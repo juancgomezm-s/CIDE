@@ -199,6 +199,11 @@ impl ImageController {
         Ok(true)
     }
     pub(super) fn cancel(&mut self) {
+        // A source frame can revisit this route while no Markdown view exists.
+        // Invalidation and queue locking are needed only for an admitted owner.
+        if self.wanted.is_none() && self.entries.is_empty() && !self.pending {
+            return;
+        }
         let _ = self
             .shared
             .generation

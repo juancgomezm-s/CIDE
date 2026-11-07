@@ -38,6 +38,7 @@ mod open_diff_panel;
 mod outline_panel;
 mod paint;
 mod parity_smoke;
+mod performance_probe;
 mod pointer_input;
 mod project_paint;
 mod project_panel;
@@ -635,10 +636,19 @@ impl State {
             state.set_project_root(root.to_owned())?;
         }
         if let Some(smoke) = &options.smoke {
-            state
-                .workbench
-                .open_file(&smoke.fixture, Some(TextEncoding::Utf8))
-                .map_err(|e| e.to_string())?;
+            if smoke.performance_only {
+                for path in &options.paths {
+                    state
+                        .workbench
+                        .open_file(path, options.encoding)
+                        .map_err(|e| e.to_string())?;
+                }
+            } else {
+                state
+                    .workbench
+                    .open_file(&smoke.fixture, Some(TextEncoding::Utf8))
+                    .map_err(|e| e.to_string())?;
+            }
         } else {
             if !cfg!(test) {
                 state.enable_recovery()?;
@@ -1536,7 +1546,15 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         }
         return DefWindowProcW(hwnd, message, wparam, lparam);
     }
-    if message == WM_PAINT {
+    // Standard client printing also supports hidden-window/native-render probes.
+    // It consumes the same immutable frame and retained DIB as ordinary paint;
+    // the caller owns its target HDC. Printing never publishes Markdown hits.
+    const WM_PRINTCLIENT: u32 = 0x0318;
+    let printing = message == WM_PRINTCLIENT;
+    if printing && (wparam == 0 || lparam & 4 == 0) {
+        return 0;
+    }
+    if message == WM_PAINT || printing {
         let frame = {
             let Ok(mut state) = owner.state.try_borrow_mut() else {
                 return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -1565,11 +1583,14 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 frame
             }
         };
-        let mut paint = NativePaint {
+        let mut native_paint = (!printing).then(|| NativePaint {
             hwnd,
             paint: std::mem::zeroed(),
+        });
+        let dc = match native_paint.as_mut() {
+            Some(paint) => BeginPaint(hwnd, &mut paint.paint),
+            None => wparam as Hdc,
         };
-        let dc = BeginPaint(hwnd, &mut paint.paint);
         if !dc.is_null() {
             let mut composed = false;
             let result = owner
@@ -1583,12 +1604,14 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                         result
                     })
                 });
-            if let Ok(mut state) = owner.state.try_borrow_mut() {
-                state.publish_markdown_hits(if result.is_ok() && composed {
-                    frame.markdown_hits()
-                } else {
-                    None
-                });
+            if !printing {
+                if let Ok(mut state) = owner.state.try_borrow_mut() {
+                    state.publish_markdown_hits(if result.is_ok() && composed {
+                        frame.markdown_hits()
+                    } else {
+                        None
+                    });
+                }
             }
             if let Err(error) = result {
                 if let Ok(mut state) = owner.state.try_borrow_mut() {
@@ -2181,11 +2204,14 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
     {
         return Err("Las tareas del proyecto requieren1..4 trabajadores".into());
     }
-    if options.smoke.is_some() && !options.paths.is_empty() {
+    if options.smoke.as_ref().is_some_and(|s| !s.performance_only) && !options.paths.is_empty() {
         return Err("El modo de prueba no admite rutas de fuente al iniciar".into());
     }
     if let Some(smoke) = &options.smoke {
         smoke::validate(smoke)?;
+        if smoke.performance_only {
+            performance_probe::validate_sources(&options.paths, &smoke.fixture)?;
+        }
     }
     // The HWND adopts this thread context when it is created.
     let _dpi_context = unsafe { dpi::ThreadContext::enter() };

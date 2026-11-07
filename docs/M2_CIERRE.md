@@ -1,3 +1,17 @@
+## Memoria y rendimiento del editor completo — 2026-11-06
+
+[Protocolo y límites](M2_EDITOR_PROCESS_PERFORMANCE.md). Procesos reales ocultos:
+GUI pico privado 46,00 MiB con ocho documentos de 4 MiB visitados, incluyendo
+2,48 MiB del probe; después de cerrar/liberar probe 6,04 MiB. TUI pico17,95 MiB
+con fuente16 MiB. 949 composiciones nativas sin errores,160 ciclos editar/deshacer
+GUI y24 TUI; fuentes intactas. Corregida retención de píxeles al abandonar Markdown.
+Seis pruebas GUI dirigidas, fmt, Clippy GUI all-targets y release workspace offline
+aprobados. Cachés reutilizadas, entrega target/m2-process-next/release. Sin escritorio,
+clipboard/recuperación personal, dependencias, CI o push. <50 MiB queda acreditado
+localmente para estos corpus base/1000×650, no como límite global; siguen pendientes
+servicios simultáneos/geometrías extremas y aceptación física. IME excluido/Narrador
+aplazado; no se accionaron instancias antiguas.
+
 ## Imágenes, sangrías y enlaces Markdown — 2026-11-06
 
 [Contrato y vista nativa](M2_MARKDOWN_MEDIA_LINKS.md). GUI dibuja imágenes

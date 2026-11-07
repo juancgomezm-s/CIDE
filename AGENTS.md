@@ -1,3 +1,22 @@
+# Complete-editor process performance — 2026-11-06
+
+Read docs/M2_EDITOR_PROCESS_PERFORMANCE.md before extending performance probes.
+Owned hidden GUI mode --smoke-performance-only uses in-process WM_PRINTCLIENT,
+one retained production DIB and a separately reported2,600,000B probe DIB.
+949 native compositions/160edit-undo cycles passed; five real GUI processes.
+Peak private46.00MiB for8x4MiB visited docs,6.04MiB afterclose/probe release;
+working set57.91MiB is a different metric. Three owned TUI ConPTY processes,
+189statusVT samples/24edit-undo cycles; peak17.95MiB. TUI edits ASCII marker,
+not long/Unicode line; parser corpus excludes wide/combining. No physical claim.
+Markdown scene replacement cancels accepted pixels without waiting for taskpoll;
+empty cancellation is idempotent, worker stays lazy/asleep without UIjoin.
+Six directed GUI cases passed, one new; fmt/GUI all-target Clippy/workspace
+release offline passed. Reuse both caches, current binaries target/m2-process-next/release.
+No full runtime/HWND suites, desktop/clipboard/personal recovery, dependencies,
+CI orpush. Preserve prior deliveries. Base50MiB goal observed locally at1000x650,
+not global acceptance: combined optional services/extreme geometry/physical gates
+remain open. IME excluded, Narrator deferred. Do not act on old window IDs.
+
 # Current blame closure — 2026-11-06
 
 Read docs/G3_BLAME.md before extending line attribution. Independent Rust core,
