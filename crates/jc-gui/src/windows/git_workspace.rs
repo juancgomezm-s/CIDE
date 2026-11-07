@@ -20,7 +20,10 @@ pub(super) use layout_smoke::run as smoke_layout;
 mod blame;
 #[path = "git_commit_search.rs"]
 mod commit_search;
+#[path = "git_create_commit.rs"]
+mod create_commit;
 pub(super) use commit_search::paste_query as paste_commit_query;
+pub(super) use create_commit::paste_message as paste_commit_message;
 #[path = "git_history.rs"]
 mod history;
 #[path = "git_layout.rs"]
@@ -125,6 +128,9 @@ struct Stamp {
 }
 #[derive(Clone, Copy)]
 enum Intent {
+    CreateCommit,
+    SubmitCommit,
+    CancelCommit,
     Index,
     Patch,
     SearchOpen,
@@ -413,6 +419,9 @@ impl State {
         self.git_panel?;
         let historical = self.git_workspace.history_commit.is_some();
         let frame = self.prepare_git_workspace_base()?;
+        if self.git_commit.view().is_some() {
+            return Some(self.prepare_create_commit(frame));
+        }
         let mut frame = if self.git_workspace.commit_search.is_some() {
             self.prepare_git_commit_search(frame)
         } else if self.git_workspace.blame_query.is_some() {
@@ -452,6 +461,7 @@ impl State {
                 frame.hits.actions.push((candidate, Intent::Index));
             }
         }
+        self.add_create_commit_button(&mut frame);
         Some(frame)
     }
 
@@ -834,6 +844,19 @@ impl State {
             }
         }
         match intent {
+            Some(Intent::CreateCommit) => {
+                self.open_git_create_commit();
+                Action::None
+            }
+            Some(Intent::SubmitCommit) => {
+                self.submit_git_create_commit();
+                Action::None
+            }
+            Some(Intent::CancelCommit) => {
+                self.git_commit.cancel();
+                self.git_workspace.invalidate();
+                Action::None
+            }
             Some(Intent::Index) => {
                 self.git_index_action();
                 Action::None
@@ -1081,6 +1104,11 @@ impl State {
         if steps == 0 {
             return false;
         }
+        if self.git_commit.view().is_some() {
+            self.git_commit.scroll(steps);
+            self.git_workspace.invalidate();
+            return true;
+        }
         if inside(l.preview, x, y) {
             let old = self.git_workspace.diff_first;
             self.git_workspace.diff_first = old.saturating_add_signed(steps).min(
@@ -1148,10 +1176,20 @@ pub(super) unsafe fn draw(
         let compact = f.history.is_none()
             || f.files.right == f.files.left
             || f.preview.right == f.preview.left;
+        let title_left = f
+            .hits
+            .actions
+            .iter()
+            .find_map(|(r, intent)| {
+                (matches!(intent, Intent::CreateCommit) && r.top < f.toolbar.bottom)
+                    .then_some(r.right + p(12))
+            })
+            .unwrap_or(0)
+            .max(p(if compact { 440 } else { 240 }));
         text(
             dc,
             rect(
-                p(if compact { 440 } else { 240 }),
+                title_left,
                 f.toolbar.top + p(8),
                 (f.toolbar.right - p(if f.toolbar.right >= p(900) { 410 } else { 215 })).max(0),
                 f.toolbar.top + p(34),

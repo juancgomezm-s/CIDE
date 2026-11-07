@@ -138,7 +138,7 @@ fn head_marker(repo: &gix::Repository) -> Result<HeadMarker, Error> {
     ))
 }
 
-fn exists(path: &Path) -> Result<bool, Error> {
+pub(super) fn exists(path: &Path) -> Result<bool, Error> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
@@ -146,7 +146,7 @@ fn exists(path: &Path) -> Result<bool, Error> {
     }
 }
 
-fn ordinary(path: &Path, directory: bool) -> Result<(), Error> {
+pub(super) fn ordinary(path: &Path, directory: bool) -> Result<(), Error> {
     let meta = fs::symlink_metadata(path)?;
     #[cfg(windows)]
     {
@@ -167,7 +167,10 @@ fn ordinary(path: &Path, directory: bool) -> Result<(), Error> {
     Ok(())
 }
 
-fn open_for_write(root: &Path, ctx: &Context<'_>) -> Result<(gix::Repository, Identity), Error> {
+pub(super) fn open_for_write(
+    root: &Path,
+    ctx: &Context<'_>,
+) -> Result<(gix::Repository, Identity), Error> {
     if !root.is_absolute() {
         return Err(Error::InvalidRoot);
     }
@@ -294,7 +297,7 @@ pub fn prepare_index_change(
     })
 }
 
-fn same_repository(a: &Identity, b: &Identity) -> Result<(), Error> {
+pub(super) fn same_repository(a: &Identity, b: &Identity) -> Result<(), Error> {
     if a.root != b.root || a.git_dir != b.git_dir {
         return Err(Error::Stale);
     }

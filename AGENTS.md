@@ -1,3 +1,16 @@
+# Reviewed local commits in GUI/TUI — 2026-11-07
+
+Read docs/G4_CREATE_COMMIT.md. The independent Git core previews exact
+staged paths and builds the candidate tree without writes. Confirmation pins
+index and symbolic HEAD under Git locks, then publishes through a branch CAS.
+Keep reflog failure distinct from reference publication and guard dirty
+editor buffers. Local author config, ordinary branches and bounded indexes
+are required. GUI/TUI share one controller. Core and both input flows passed,
+as did fmt, selected all-target Clippy, workspace release offline and 25 hidden
+native regression checks. Delivery target/git-create-commit-next/release.
+The previous TUI whole-file index delivery is target/git-tui-index-next/release
+at 5237f67. Preserve both deliveries and caches. Amend and hunk UI remain open.
+
 # Git advanced foundations — 2026-11-07
 
 Read docs/GIT_ADVANCED_FOUNDATIONS.md. jc-git owns bounded refs/ancestry pages,

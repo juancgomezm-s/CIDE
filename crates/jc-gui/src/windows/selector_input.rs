@@ -37,6 +37,9 @@ impl State {
             return None;
         }
         if self.git_panel.is_some() {
+            if self.git_commit.view().is_some() {
+                return self.git_commit.input_token().map(Action::PasteGitCommit);
+            }
             return self.git_search_input_token().map(Action::PasteGitSearch);
         }
         if let Some(panel) = &self.replace_panel {

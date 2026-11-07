@@ -376,6 +376,7 @@ enum Action {
     Clipboard(CommandId),
     PasteSearch(u64),
     PasteGitSearch(std::sync::Arc<()>),
+    PasteGitCommit(std::sync::Arc<()>),
     PasteNavigation(u64),
     PasteSnippet(snippet_panel::SnippetInputTarget),
     SelectorClipboard(CommandId, Box<selector_input::SelectorInputTarget>),
@@ -450,6 +451,7 @@ struct State {
     git_workspace: git_workspace::Workspace,
     git_patch: git_patch::Controller,
     git_index: jc_app::git_index::GitIndexController,
+    git_commit: jc_app::git_commit::CommitController,
     git_view: git_view::GitView,
     git_diff: jc_app::git_diff::GitDiffController,
     git_status: jc_app::git_status_tasks::GitStatusController,
@@ -585,6 +587,7 @@ impl State {
             git_workspace: Default::default(),
             git_patch: Default::default(),
             git_index: jc_app::git_index::GitIndexController::new(wakeup.clone()),
+            git_commit: jc_app::git_commit::CommitController::new(wakeup.clone()),
             git_view: Default::default(),
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_status: jc_app::git_status_tasks::GitStatusController::new(wakeup.clone()),
@@ -1136,6 +1139,19 @@ impl State {
         }
         self.pending_surrogate = None;
         let modifiers = self.modifiers();
+        if self.git_panel.is_some() && self.git_commit.view().is_some() {
+            if code == b'V' as usize && modifiers == Modifiers::CTRL {
+                return (
+                    true,
+                    self.git_commit
+                        .input_token()
+                        .map_or(Action::None, Action::PasteGitCommit),
+                );
+            }
+            if self.git_create_commit_key(code, modifiers) {
+                return (true, Action::None);
+            }
+        }
         if let Some(group) = native_menu::mnemonic(code, modifiers) {
             return (true, Action::NativeMenu(group));
         }
@@ -1345,7 +1361,13 @@ impl State {
             return;
         }
         if self.git_panel.is_some() {
-            self.git_commit_search_character(ch);
+            if self.git_commit.view().is_some() {
+                self.git_commit
+                    .edit(jc_app::FieldEdit::Insert(ch.encode_utf8(&mut bytes)));
+                self.git_workspace.invalidate();
+            } else {
+                self.git_commit_search_character(ch);
+            }
             return;
         }
         if self.replace_panel.is_some() {
@@ -2099,6 +2121,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::Clipboard(command) => clipboard_flow::perform(hwnd, command),
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
         Action::PasteGitSearch(token) => git_workspace::paste_commit_query(hwnd, token),
+        Action::PasteGitCommit(token) => git_workspace::paste_commit_message(hwnd, token),
         Action::PasteNavigation(generation) => clipboard_flow::paste_navigation(hwnd, generation),
         Action::PasteSnippet(target) => clipboard_flow::paste_snippet(hwnd, target),
         Action::SelectorClipboard(command, target) => {

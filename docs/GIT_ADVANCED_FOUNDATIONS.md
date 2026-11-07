@@ -66,4 +66,6 @@ de la TUI y compilación release offline. Entrega en
 
 Quedan pendientes el visor del grafo, el historial a través de renombrados,
 la selección de bloques en la interfaz, exportar parches desde la TUI,
-commit/amend, refs de escritura, integración de ramas y remotos.
+amend, refs de escritura, integración de ramas y remotos.
+El commit local tiene su propio recorrido de
+[revisión y publicación](G4_CREATE_COMMIT.md).

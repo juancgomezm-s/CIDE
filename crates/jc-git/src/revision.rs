@@ -137,7 +137,7 @@ impl Budget {
         }
         Ok(())
     }
-    fn visit(&mut self) -> Result<(), Error> {
+    pub(super) fn visit(&mut self) -> Result<(), Error> {
         self.visited += 1;
         if self.visited > super::INDEX_ENTRIES {
             return Err(Error::Limited);
@@ -269,7 +269,7 @@ pub(crate) struct Entry {
 }
 type Entries = BTreeMap<Vec<u8>, Entry>;
 
-fn tree_entries(
+pub(super) fn tree_entries(
     repo: &gix::Repository,
     id: gix::ObjectId,
     limits: Limits,

@@ -176,6 +176,57 @@ mod tests {
     }
 
     #[test]
+    fn gui_create_commit_reviews_staged_paths_before_advancing_branch() {
+        let fixture = Fixture::new();
+        let path = fixture.root.join("new.txt");
+        fs::write(&path, b"preparado\n").unwrap();
+        let config = fixture.root.join(".git/config");
+        let mut content = fs::read(&config).unwrap();
+        content.extend_from_slice(b"\n[user]\nname = CIDE\nemail = cide@example.test\n");
+        fs::write(config, content).unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![path],
+            project_root: Some(fixture.root.clone()),
+            encoding: Some(jc_text::TextEncoding::Utf8),
+            ..Default::default()
+        })
+        .unwrap();
+        state.request_git(GitIntent::Status);
+        wait(&mut state, |s| {
+            s.git_status.state() == GitStatusTaskState::Ready
+        });
+        state.request_git_local(PairKind::Worktree);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        state.git_index_action();
+        wait(&mut state, |s| s.git_index.state() == IndexState::Reviewing);
+        state.git_index_action();
+        wait(&mut state, |s| s.git_index.state() == IndexState::Published);
+        use jc_app::Modifiers;
+        state.key_override = Some(Modifiers::CTRL.union(Modifiers::SHIFT));
+        state.key(b'M' as usize);
+        state.key_override = Some(Modifiers::NONE);
+        for unit in "Commit desde GUI".encode_utf16() {
+            state.character(unit);
+        }
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let plan = view.review().unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(plan.files()[0].path, b"new.txt");
+        let id = plan.id();
+        let branch = fixture.root.join(".git/refs/heads/main");
+        state.key(0x0d);
+        assert!(!branch.exists());
+        state.key_override = Some(Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert_eq!(fs::read(branch).unwrap(), format!("{id}\n").as_bytes());
+    }
+
+    #[test]
     fn gui_git_index_reviews_the_visible_comparison_then_publishes() {
         let fixture = Fixture::new();
         let path = fixture.root.join("new.txt");

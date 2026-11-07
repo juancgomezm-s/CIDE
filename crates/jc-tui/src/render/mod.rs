@@ -29,6 +29,34 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
         screen.text(0, 0, "CIDE: terminal pequeño (mínimo 40x10)");
         return screen;
     }
+    if let Some(commit) = &frame.commit {
+        for y in 0..height {
+            screen.fill_row_styled(y, ' ', CellStyle::Panel);
+        }
+        screen.text_styled(2, 1, "Crear commit", CellStyle::PanelTitle);
+        for (i, row) in commit.rows.iter().take(usize::from(height - 4)).enumerate() {
+            screen.text_styled(
+                2,
+                2 + i as u16,
+                &clip(row, width - 4),
+                if i == 0 {
+                    CellStyle::Reverse
+                } else {
+                    CellStyle::Panel
+                },
+            );
+        }
+        if let Some(caret) = commit.caret {
+            screen.set_cursor(2 + caret.min(width - 4), 2);
+        }
+        screen.text_styled(
+            2,
+            height - 1,
+            &clip(&commit.hint, width - 4),
+            CellStyle::Accent,
+        );
+        return screen;
+    }
 
     draw_menu_bar(app, &mut screen);
     draw_tabs(app, &mut screen);

@@ -1,3 +1,14 @@
+## Git · Crear commit en GUI y TUI — 2026-11-07
+
+Pasaron el recorrido del núcleo y los dos recorridos de interfaz en
+repositorios aislados. Se verificaron los bytes preparados, el primer commit
+y el siguiente, los reflogs, los bloqueos y la revalidación del índice y
+de la rama. La confirmación se distingue de Intro en ambas interfaces.
+Formato, Clippy de los cuatro crates afectados y release offline aprobados.
+La regresión Git pasó 25 comprobaciones con ventana nativa oculta y PATH
+vacío. Entrega en `target/git-create-commit-next/release/`.
+[Uso y alcance](G4_CREATE_COMMIT.md)
+
 ## Git avanzado · Índice, grafo y parches — 2026-11-07
 
 Cuatro casos nuevos de grafo, seis de parche y tres de índice pasaron en `jc-git`.

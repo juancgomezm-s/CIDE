@@ -301,6 +301,47 @@ fn request_ready(app: &mut TuiApp, wake: &Wakeup) {
 }
 
 #[test]
+fn tui_create_commit_reviews_only_the_index_and_requires_f2_confirmation() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    fixture.git(&["config", "--local", "user.name", "CIDE Fixture"]);
+    fixture.git(&["config", "--local", "user.email", "cide@example.test"]);
+    let before = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    request_ready(&mut app, &wake);
+    key(&mut app, KeyCode::Char('c'));
+    app.handle_event(Event::Paste("Commit desde TUI".into()));
+    let settle = |app: &mut TuiApp| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while app.git_commit.busy() {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            assert!(Instant::now() < deadline, "{}", app.status);
+            wake.wait(ticket, Some(Duration::from_millis(10)));
+        }
+    };
+    key(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    let presentation = app.prepare_frame(96, 24);
+    let commit = presentation.commit.unwrap();
+    assert!(commit.rows.iter().any(|row| row.contains(TRACKED)));
+    assert!(!commit.rows.iter().any(|row| row.contains(UNTRACKED)));
+    assert!(commit.hint.contains("F2 confirma"), "{}", commit.hint);
+    let id = app.git_commit.view().unwrap().review().unwrap().id();
+    key(&mut app, KeyCode::Enter);
+    assert!(!app.git_commit.busy());
+    assert_eq!(fixture.disk(), before);
+    key(&mut app, KeyCode::F(2));
+    settle(&mut app);
+    assert!(app.git_commit.view().is_none(), "{}", app.status);
+    let after = fixture.disk();
+    assert_eq!(after.branch, format!("{id}\n").as_bytes());
+    assert_eq!(after.index, before.index);
+    assert_eq!(after.tracked, before.tracked);
+    assert_eq!(after.untracked, before.untracked);
+}
+
+#[test]
 fn tui_index_reviews_then_stages_and_unstages_the_original_file() {
     use jc_app::{
         git_index::{IndexAction, IndexState},

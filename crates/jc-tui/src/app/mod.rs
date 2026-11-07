@@ -11,6 +11,7 @@ pub(crate) mod file_browser;
 mod file_browser_tests;
 mod git_blame;
 mod git_commit_search;
+mod git_create_commit;
 mod git_diff;
 mod git_history;
 mod git_index;
@@ -117,6 +118,7 @@ pub struct TuiApp {
     pub(crate) git_diff: jc_app::git_diff::GitDiffController,
     pub(crate) git_revision: jc_app::git_revision::GitRevisionController,
     pub(crate) git_index: jc_app::git_index::GitIndexController,
+    pub(crate) git_commit: jc_app::git_commit::CommitController,
     pub(crate) git_history: git_history::HistoryView,
     pub(crate) open_diff: jc_app::open_diff::OpenDiffController,
     pub(crate) open_diff_view: jc_app::open_diff_view::OpenDiffView,
@@ -201,6 +203,7 @@ impl TuiApp {
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_revision: jc_app::git_revision::GitRevisionController::new(wakeup.clone()),
             git_index: jc_app::git_index::GitIndexController::new(wakeup.clone()),
+            git_commit: jc_app::git_commit::CommitController::new(wakeup.clone()),
             git_history: Default::default(),
             open_diff: Default::default(),
             open_diff_view: Default::default(),
@@ -354,6 +357,7 @@ impl TuiApp {
             }
         }
         update.changed |= self.poll_git_index();
+        update.changed |= self.poll_git_create_commit();
         update.changed |= self.poll_markdown_anchor();
         update.changed |= self.poll_quick_open();
         update.recover |= self.quick_open.take_recovery();

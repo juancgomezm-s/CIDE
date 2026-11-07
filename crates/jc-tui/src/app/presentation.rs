@@ -199,6 +199,7 @@ pub(crate) struct Presentation<'a> {
     pub source: jc_app::source_services::SourcePresentation,
     pub snippet: Option<super::snippets::SnippetPresentation>,
     pub git_status: super::GitStatusPresentation,
+    pub commit: Option<super::git_create_commit::CommitPresentation>,
     pub explorer: jc_app::explorer::ExplorerPresentation,
 }
 impl Presentation<'_> {
@@ -507,6 +508,7 @@ impl TuiApp {
             &explorer,
             (&source, &git_status, &git),
         );
+        let commit = self.prepare_git_create_commit(layout.width, layout.height);
         Presentation {
             markdown,
             snippet,
@@ -520,6 +522,7 @@ impl TuiApp {
             search_positions,
             git,
             git_status,
+            commit,
             explorer,
         }
     }

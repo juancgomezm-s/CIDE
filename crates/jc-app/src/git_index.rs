@@ -219,7 +219,7 @@ fn run_worker<T>(run: impl FnOnce() -> Result<T, jc_git::Error>) -> Result<T, In
         .map_err(IndexFailure::Git)
 }
 
-fn require_clean(bench: &Workbench) -> Result<(), IndexRequestError> {
+pub(super) fn require_clean(bench: &Workbench) -> Result<(), IndexRequestError> {
     // Conservative across all open documents. Aliases or hardlinks must not
     // bypass the host guard and checking it must not read files on the UI thread.
     if bench

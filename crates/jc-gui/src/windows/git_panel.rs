@@ -20,6 +20,7 @@ pub(super) struct GitFrame {
 impl State {
     pub(super) fn clear_git(&mut self) {
         let _ = self.git_index.discard_review();
+        self.git_commit.cancel();
         self.git_revision.cancel();
         self.git_status_due = false;
         let preferences = self.git_workspace.preference_bytes();
@@ -235,10 +236,11 @@ impl State {
             || self.git_status.ready()
             || self.git_revision.ready()
             || self.git_index.ready()
+            || self.git_commit.ready()
         {
             self.bridge.signal();
         }
-        changed | self.poll_git_patch() | self.poll_git_index()
+        changed | self.poll_git_patch() | self.poll_git_index() | self.poll_git_create_commit()
     }
     pub(super) fn cancel_git(&mut self, intent: GitIntent) {
         match intent {
@@ -252,6 +254,9 @@ impl State {
             return Action::None;
         };
         self.validate_git_context();
+        if self.git_create_commit_key(code, modifiers) {
+            return Action::None;
+        }
         if code == b'I' as usize && modifiers == Modifiers::CTRL.union(Modifiers::SHIFT) {
             self.git_index_action();
             return Action::None;

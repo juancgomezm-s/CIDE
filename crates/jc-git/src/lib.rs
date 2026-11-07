@@ -1,6 +1,7 @@
 //! Embedded Git provider independent of editor hosts and frontends.
 pub mod blame;
 pub mod commit_search;
+pub mod commit_write;
 pub mod diff_model;
 pub mod graph;
 pub mod index_write;
@@ -648,6 +649,92 @@ mod repository_context_tests {
             timeout: Duration::from_secs(5),
         }
     }
+    #[test]
+    fn reviewed_commit_pins_staged_bytes_and_rejects_changed_index_and_head() {
+        use super::{
+            commit_write::{apply_commit, prepare_commit},
+            index_write::{IndexAction, apply_index_change, prepare_index_change},
+        };
+        let fixture = Fixture::new();
+        let root = &fixture.root;
+        drop(gix::init(root).unwrap());
+        let git = root.join(".git");
+        let mut config = fs::read(git.join("config")).unwrap();
+        config.extend_from_slice(b"\n[user]\nname = CIDE\nemail = cide@example.test\n");
+        fs::write(git.join("config"), config).unwrap();
+        fs::create_dir(root.join("src")).unwrap();
+        let file = root.join("src/code.txt");
+        let stage = || {
+            let plan =
+                prepare_index_change(root, b"src/code.txt", IndexAction::Stage, limits(), || {
+                    false
+                })
+                .unwrap();
+            apply_index_change(plan, || false).unwrap();
+        };
+        fs::write(&file, b"prepared\r\n").unwrap();
+        stage();
+        let original_head = fs::read(git.join("HEAD")).unwrap();
+        let index = fs::read(git.join("index")).unwrap();
+        let make = |message| prepare_commit(root, message, limits(), || false).unwrap();
+        let first = make("Primero");
+        assert_eq!(first.parent(), None);
+        assert_eq!(first.files().len(), 1);
+        assert_eq!(first.files()[0].path, b"src/code.txt");
+        assert_eq!(first.files()[0].change, Change::Added);
+        assert!(!git.join("logs/HEAD").exists());
+        let branch = git.join(gix::path::from_bstr(first.branch().as_bstr()).unwrap());
+        assert!(!branch.exists());
+        fs::write(&file, b"on disk\n").unwrap();
+        let id = first.id();
+        assert_eq!(apply_commit(first, || false).unwrap().id, id);
+        assert_eq!(fs::read(&branch).unwrap(), format!("{id}\n").as_bytes());
+        assert_eq!(fs::read(git.join("HEAD")).unwrap(), original_head);
+        assert_eq!(fs::read(git.join("index")).unwrap(), index);
+        assert_eq!(fs::read(&file).unwrap(), b"on disk\n");
+        let log = fs::read(git.join("logs/HEAD")).unwrap();
+        assert_eq!(
+            log,
+            fs::read(git.join("logs").join(branch.strip_prefix(&git).unwrap())).unwrap()
+        );
+        assert!(log.starts_with(format!("{} {id} ", id.kind().null()).as_bytes()));
+        assert_eq!(
+            read_blob(root, false, "src/code.txt", limits(), || false)
+                .unwrap()
+                .bytes,
+            b"prepared\r\n"
+        );
+        assert!(prepare_commit(root, "Vacío", limits(), || false).is_err());
+
+        stage();
+        let stale = make("Se invalida por índice");
+        fs::write(&file, b"new index\n").unwrap();
+        stage();
+        assert!(matches!(apply_commit(stale, || false), Err(Error::Stale)));
+        let stale = make("Se invalida por rama");
+        fs::write(git.join("refs/heads/otra"), format!("{id}\n")).unwrap();
+        fs::write(git.join("HEAD"), b"ref: refs/heads/otra\n").unwrap();
+        assert!(matches!(apply_commit(stale, || false), Err(Error::Stale)));
+        assert_eq!(fs::read(&branch).unwrap(), format!("{id}\n").as_bytes());
+        assert_eq!(fs::read(git.join("logs/HEAD")).unwrap(), log);
+
+        fs::write(git.join("HEAD"), original_head).unwrap();
+        let locked = make("Se respeta el lock ajeno");
+        let log_lock = git.join("logs/HEAD.lock");
+        fs::write(&log_lock, b"other writer").unwrap();
+        assert!(apply_commit(locked, || false).is_err());
+        assert_eq!(fs::read(&log_lock).unwrap(), b"other writer");
+        fs::remove_file(log_lock).unwrap();
+        let second = make("Segundo");
+        assert_eq!(second.parent(), Some(id));
+        assert_eq!(second.files()[0].change, Change::Modified);
+        let second_id = apply_commit(second, || false).unwrap().id;
+        assert_eq!(
+            fs::read(&branch).unwrap(),
+            format!("{second_id}\n").as_bytes()
+        );
+    }
+
     #[test]
     fn index_write_add_then_unstage_preserves_raw_disk_and_unborn_head() {
         use super::index_write::{IndexAction, apply_index_change, prepare_index_change};

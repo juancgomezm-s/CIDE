@@ -46,6 +46,7 @@ impl TuiApp {
             UiOverlay::Palette { input, .. } | UiOverlay::QuickOpen { input, .. } => {
                 Some(256usize.saturating_sub(input.len()).max(1))
             }
+            UiOverlay::None if self.git_commit.view().is_some() => self.git_commit.paste_budget(),
             UiOverlay::None => self
                 .commit_search_paste_budget()
                 .or_else(|| self.snippet_clipboard_budget()),
