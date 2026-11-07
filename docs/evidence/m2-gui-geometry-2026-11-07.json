@@ -1,0 +1,1682 @@
+{
+  "baseline_debug": {
+    "executable": "target/embedded-git-next/debug/cide-gui.exe",
+    "executable_sha256": "dade90ffd52dc35a88edb46267ea75ed7b6e6b08f84f69aa6d4992daf4b82a3f",
+    "exit_code": 1,
+    "source_bytes": 262144,
+    "sources_unchanged": true,
+    "native": {
+      "ok": false,
+      "desktop_used": false,
+      "physical_display_verified": false,
+      "synthetic_dpi": true,
+      "tile_dib_bytes": 16384,
+      "gdi_objects_before": 19,
+      "gdi_objects_after": 26,
+      "dpi_cells_scaled": true,
+      "source_preserved": true,
+      "memory": [
+        {
+          "phase": "before_probe_dib",
+          "private": 2809856,
+          "working": 16556032,
+          "peak_working": 16556032,
+          "peak_pagefile": 2809856
+        },
+        {
+          "phase": "after_probe_dib_released",
+          "private": 5779456,
+          "working": 20602880,
+          "peak_working": 96022528,
+          "peak_pagefile": 81326080
+        }
+      ],
+      "cases": [
+        {
+          "case": "base",
+          "ok": true,
+          "requested_pixels": [
+            1000,
+            650
+          ],
+          "client_pixels": [
+            1000,
+            650
+          ],
+          "state_pixels": [
+            1000,
+            650
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 15.625,
+          "clipped": {
+            "elapsed_ms": 6.7693,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 2600000,
+            "allocations": 1,
+            "frame_pixels": [
+              1000,
+              650
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 2600000,
+          "full_prints": [
+            {
+              "elapsed_ms": 6.8032,
+              "compositions": 1,
+              "blits": 1,
+              "paint_errors": 0,
+              "editor_dib_bytes": 2600000,
+              "allocations": 0,
+              "frame_pixels": [
+                1000,
+                650
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [
+            100,
+            640,
+            649
+          ],
+          "full_pixels": [
+            4207662,
+            4281739,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 2826240,
+              "working": 16617472,
+              "peak_working": 16617472,
+              "peak_pagefile": 2826240
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 2826240,
+              "working": 16646144,
+              "peak_working": 16646144,
+              "peak_pagefile": 2826240
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 5533696,
+              "working": 17977344,
+              "peak_working": 17977344,
+              "peak_pagefile": 5533696
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 8138752,
+              "working": 20594688,
+              "peak_working": 20594688,
+              "peak_pagefile": 8138752
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 8138752,
+              "working": 22937600,
+              "peak_working": 22937600,
+              "peak_pagefile": 8138752
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 5533696,
+              "working": 20336640,
+              "peak_working": 22937600,
+              "peak_pagefile": 8138752
+            }
+          ]
+        },
+        {
+          "case": "4k",
+          "ok": true,
+          "requested_pixels": [
+            3840,
+            2160
+          ],
+          "client_pixels": [
+            3840,
+            2160
+          ],
+          "state_pixels": [
+            3840,
+            2160
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 828.125,
+          "clipped": {
+            "elapsed_ms": 21.9543,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33177600,
+            "allocations": 1,
+            "frame_pixels": [
+              3840,
+              2160
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 33177600,
+          "full_prints": [
+            {
+              "elapsed_ms": 37.9503,
+              "compositions": 1,
+              "blits": 1,
+              "paint_errors": 0,
+              "editor_dib_bytes": 33177600,
+              "allocations": 0,
+              "frame_pixels": [
+                3840,
+                2160
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [
+            34.3383,
+            34.9938,
+            34.541,
+            34.4009,
+            34.2544,
+            35.2668,
+            35.4375,
+            36.1647,
+            35.2866,
+            34.9872,
+            34.1511,
+            33.9698,
+            34.0949,
+            34.911,
+            35.6581,
+            34.3897,
+            34.9152,
+            34.698,
+            35.0704,
+            34.6061,
+            34.9817
+          ],
+          "full_pixel_rows": [
+            100,
+            2150,
+            2159
+          ],
+          "full_pixels": [
+            4207662,
+            4207662,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 5533696,
+              "working": 20377600,
+              "peak_working": 22937600,
+              "peak_pagefile": 8138752
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 5472256,
+              "working": 20320256,
+              "peak_working": 22937600,
+              "peak_pagefile": 8138752
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36483072,
+              "working": 18386944,
+              "peak_working": 22937600,
+              "peak_pagefile": 36483072
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 69722112,
+              "working": 51564544,
+              "peak_working": 51564544,
+              "peak_pagefile": 69722112
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 69836800,
+              "working": 84529152,
+              "peak_working": 84533248,
+              "peak_pagefile": 69865472
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 36597760,
+              "working": 51351552,
+              "peak_working": 84533248,
+              "peak_pagefile": 69865472
+            }
+          ]
+        },
+        {
+          "case": "exact_limit",
+          "ok": true,
+          "requested_pixels": [
+            4096,
+            2048
+          ],
+          "client_pixels": [
+            4096,
+            2048
+          ],
+          "state_pixels": [
+            4096,
+            2048
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 78.125,
+          "clipped": {
+            "elapsed_ms": 24.1501,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33554432,
+            "allocations": 1,
+            "frame_pixels": [
+              4096,
+              2048
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 33554432,
+          "full_prints": [
+            {
+              "elapsed_ms": 36.9946,
+              "compositions": 1,
+              "blits": 1,
+              "paint_errors": 0,
+              "editor_dib_bytes": 33554432,
+              "allocations": 0,
+              "frame_pixels": [
+                4096,
+                2048
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [
+            100,
+            2038,
+            2047
+          ],
+          "full_pixels": [
+            4207662,
+            4207662,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36597760,
+              "working": 51355648,
+              "peak_working": 84533248,
+              "peak_pagefile": 69865472
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36503552,
+              "working": 51097600,
+              "peak_working": 84533248,
+              "peak_pagefile": 69865472
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36962304,
+              "working": 18440192,
+              "peak_working": 84533248,
+              "peak_pagefile": 69865472
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 70582272,
+              "working": 51994624,
+              "peak_working": 84533248,
+              "peak_pagefile": 70582272
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 70594560,
+              "working": 85282816,
+              "peak_working": 85282816,
+              "peak_pagefile": 70623232
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 36974592,
+              "working": 51728384,
+              "peak_working": 85282816,
+              "peak_pagefile": 70623232
+            }
+          ]
+        },
+        {
+          "case": "one_row_over",
+          "ok": false,
+          "requested_pixels": [
+            4096,
+            2049
+          ],
+          "client_pixels": [
+            4096,
+            2049
+          ],
+          "state_pixels": [
+            4096,
+            2049
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 15.625,
+          "clipped": {
+            "elapsed_ms": 10.4694,
+            "compositions": 0,
+            "blits": 0,
+            "paint_errors": 1,
+            "editor_dib_bytes": 33554432,
+            "allocations": 0,
+            "frame_pixels": [
+              4096,
+              2049
+            ]
+          },
+          "tile_pixel": 16711935,
+          "expected_full_bands": 2,
+          "full_probe_dib_bytes": 33570816,
+          "full_prints": [
+            {
+              "elapsed_ms": 10.6245,
+              "compositions": 0,
+              "blits": 0,
+              "paint_errors": 1,
+              "editor_dib_bytes": 33554432,
+              "allocations": 0,
+              "frame_pixels": [
+                4096,
+                2049
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [
+            100,
+            2039,
+            2047,
+            2048
+          ],
+          "full_pixels": [
+            16711935,
+            16711935,
+            16711935,
+            16711935
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36974592,
+              "working": 51728384,
+              "peak_working": 85282816,
+              "peak_pagefile": 70623232
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36651008,
+              "working": 51470336,
+              "peak_working": 85282816,
+              "peak_pagefile": 70623232
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 37003264,
+              "working": 51765248,
+              "peak_working": 85282816,
+              "peak_pagefile": 70623232
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 70639616,
+              "working": 85336064,
+              "peak_working": 85336064,
+              "peak_pagefile": 70639616
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 70557696,
+              "working": 85348352,
+              "peak_working": 85348352,
+              "peak_pagefile": 70639616
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 36921344,
+              "working": 51777536,
+              "peak_working": 85348352,
+              "peak_pagefile": 70639616
+            }
+          ]
+        },
+        {
+          "case": "ultrawide",
+          "ok": false,
+          "requested_pixels": [
+            5120,
+            2160
+          ],
+          "client_pixels": [
+            5120,
+            2160
+          ],
+          "state_pixels": [
+            5120,
+            2160
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 31.25,
+          "clipped": {
+            "elapsed_ms": 11.5111,
+            "compositions": 0,
+            "blits": 0,
+            "paint_errors": 1,
+            "editor_dib_bytes": 33554432,
+            "allocations": 0,
+            "frame_pixels": [
+              5120,
+              2160
+            ]
+          },
+          "tile_pixel": 16711935,
+          "expected_full_bands": 2,
+          "full_probe_dib_bytes": 44236800,
+          "full_prints": [
+            {
+              "elapsed_ms": 11.403,
+              "compositions": 0,
+              "blits": 0,
+              "paint_errors": 1,
+              "editor_dib_bytes": 33554432,
+              "allocations": 0,
+              "frame_pixels": [
+                5120,
+                2160
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [
+            100,
+            1637,
+            1638,
+            2150,
+            2159
+          ],
+          "full_pixels": [
+            16711935,
+            16711935,
+            16711935,
+            16711935,
+            16711935
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36921344,
+              "working": 51777536,
+              "peak_working": 85348352,
+              "peak_pagefile": 70639616
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36663296,
+              "working": 51519488,
+              "peak_working": 85348352,
+              "peak_pagefile": 70639616
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 37003264,
+              "working": 51781632,
+              "peak_working": 85348352,
+              "peak_pagefile": 70639616
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 81326080,
+              "working": 96018432,
+              "peak_working": 96018432,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 81272832,
+              "working": 96022528,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 36950016,
+              "working": 51785728,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            }
+          ]
+        },
+        {
+          "case": "4k_dpi_144",
+          "ok": true,
+          "requested_pixels": [
+            3840,
+            2160
+          ],
+          "client_pixels": [
+            3840,
+            2160
+          ],
+          "state_pixels": [
+            3840,
+            2160
+          ],
+          "dpi": 144,
+          "cell_pixels": [
+            16,
+            31
+          ],
+          "cpu_ms": 15.625,
+          "clipped": {
+            "elapsed_ms": 12.0384,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33177600,
+            "allocations": 1,
+            "frame_pixels": [
+              3840,
+              2160
+            ]
+          },
+          "tile_pixel": 9079692,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 0,
+          "full_prints": [],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [],
+          "full_pixels": [],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36950016,
+              "working": 51785728,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36663296,
+              "working": 51523584,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36442112,
+              "working": 18382848,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            }
+          ]
+        },
+        {
+          "case": "4k_dpi_192",
+          "ok": true,
+          "requested_pixels": [
+            3840,
+            2160
+          ],
+          "client_pixels": [
+            3840,
+            2160
+          ],
+          "state_pixels": [
+            3840,
+            2160
+          ],
+          "dpi": 192,
+          "cell_pixels": [
+            21,
+            40
+          ],
+          "cpu_ms": 15.625,
+          "clipped": {
+            "elapsed_ms": 5.8929,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33177600,
+            "allocations": 0,
+            "frame_pixels": [
+              3840,
+              2160
+            ]
+          },
+          "tile_pixel": 65800,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 0,
+          "full_prints": [],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [],
+          "full_pixels": [],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36442112,
+              "working": 18382848,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36319232,
+              "working": 18259968,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36380672,
+              "working": 18321408,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            }
+          ]
+        },
+        {
+          "case": "back_to_base",
+          "ok": true,
+          "requested_pixels": [
+            1000,
+            650
+          ],
+          "client_pixels": [
+            1000,
+            650
+          ],
+          "state_pixels": [
+            1000,
+            650
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 15.625,
+          "clipped": {
+            "elapsed_ms": 4.5571,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 2600000,
+            "allocations": 1,
+            "frame_pixels": [
+              1000,
+              650
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 2600000,
+          "full_prints": [
+            {
+              "elapsed_ms": 7.1519,
+              "compositions": 1,
+              "blits": 1,
+              "paint_errors": 0,
+              "editor_dib_bytes": 2600000,
+              "allocations": 0,
+              "frame_pixels": [
+                1000,
+                650
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [
+            100,
+            640,
+            649
+          ],
+          "full_pixels": [
+            4207662,
+            8039131,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36380672,
+              "working": 18321408,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36306944,
+              "working": 18186240,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 5795840,
+              "working": 18268160,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 8404992,
+              "working": 20869120,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 8404992,
+              "working": 23207936,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 5795840,
+              "working": 20606976,
+              "peak_working": 96022528,
+              "peak_pagefile": 81326080
+            }
+          ]
+        }
+      ]
+    },
+    "raw_report": "work/m2-geometry-55f9c51d09dc4a679731bdd205621fc2/report.json"
+  },
+  "corrected_release": {
+    "executable": "target/m2-geometry-next/release/cide-gui.exe",
+    "executable_sha256": "67cee3f19b2cfcd4c87ea68eb05e682007e750b60c3df679cc5a75eab954a7b4",
+    "exit_code": 0,
+    "source_bytes": 262144,
+    "sources_unchanged": true,
+    "native": {
+      "ok": true,
+      "desktop_used": false,
+      "physical_display_verified": false,
+      "synthetic_dpi": true,
+      "tile_dib_bytes": 16384,
+      "gdi_objects_before": 19,
+      "gdi_objects_after": 26,
+      "dpi_cells_scaled": true,
+      "source_preserved": true,
+      "memory": [
+        {
+          "phase": "before_probe_dib",
+          "private": 2781184,
+          "working": 14360576,
+          "peak_working": 14360576,
+          "peak_pagefile": 2781184
+        },
+        {
+          "phase": "after_probe_dib_released",
+          "private": 5947392,
+          "working": 23179264,
+          "peak_working": 98586624,
+          "peak_pagefile": 81264640
+        }
+      ],
+      "cases": [
+        {
+          "case": "base",
+          "ok": true,
+          "requested_pixels": [
+            1000,
+            650
+          ],
+          "client_pixels": [
+            1000,
+            650
+          ],
+          "state_pixels": [
+            1000,
+            650
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 0.0,
+          "clipped": {
+            "elapsed_ms": 2.011,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 2600000,
+            "allocations": 1,
+            "frame_pixels": [
+              1000,
+              650
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 2600000,
+          "full_prints": [
+            {
+              "elapsed_ms": 5.3456,
+              "compositions": 1,
+              "blits": 1,
+              "paint_errors": 0,
+              "editor_dib_bytes": 2600000,
+              "allocations": 0,
+              "frame_pixels": [
+                1000,
+                650
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [
+            100,
+            640,
+            649
+          ],
+          "full_pixels": [
+            4207662,
+            4281739,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 2797568,
+              "working": 14397440,
+              "peak_working": 14397440,
+              "peak_pagefile": 2797568
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 2801664,
+              "working": 14413824,
+              "peak_working": 14413824,
+              "peak_pagefile": 2822144
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 5513216,
+              "working": 15290368,
+              "peak_working": 15290368,
+              "peak_pagefile": 5513216
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 8118272,
+              "working": 17899520,
+              "peak_working": 17899520,
+              "peak_pagefile": 8118272
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 8118272,
+              "working": 20254720,
+              "peak_working": 20254720,
+              "peak_pagefile": 8118272
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 5513216,
+              "working": 17657856,
+              "peak_working": 20258816,
+              "peak_pagefile": 8118272
+            }
+          ]
+        },
+        {
+          "case": "4k",
+          "ok": true,
+          "requested_pixels": [
+            3840,
+            2160
+          ],
+          "client_pixels": [
+            3840,
+            2160
+          ],
+          "state_pixels": [
+            3840,
+            2160
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 531.25,
+          "clipped": {
+            "elapsed_ms": 2.4848,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33177600,
+            "allocations": 1,
+            "frame_pixels": [
+              3840,
+              2160
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 33177600,
+          "full_prints": [
+            {
+              "elapsed_ms": 29.2027,
+              "compositions": 1,
+              "blits": 1,
+              "paint_errors": 0,
+              "editor_dib_bytes": 33177600,
+              "allocations": 0,
+              "frame_pixels": [
+                3840,
+                2160
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [
+            22.9752,
+            22.2838,
+            22.5318,
+            22.3863,
+            21.881,
+            22.6927,
+            23.3523,
+            22.4952,
+            22.2268,
+            21.927,
+            23.0299,
+            25.0186,
+            21.4274,
+            21.4936,
+            22.0018,
+            21.6903,
+            21.7232,
+            21.6672,
+            22.2959,
+            21.9422,
+            21.583
+          ],
+          "full_pixel_rows": [
+            100,
+            2150,
+            2159
+          ],
+          "full_pixels": [
+            4207662,
+            4207662,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 5513216,
+              "working": 17686528,
+              "peak_working": 20258816,
+              "peak_pagefile": 8118272
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 5459968,
+              "working": 17633280,
+              "peak_working": 20258816,
+              "peak_pagefile": 8118272
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36458496,
+              "working": 15691776,
+              "peak_working": 20258816,
+              "peak_pagefile": 36458496
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 69701632,
+              "working": 48869376,
+              "peak_working": 48869376,
+              "peak_pagefile": 69701632
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 69754880,
+              "working": 87142400,
+              "peak_working": 87146496,
+              "peak_pagefile": 69844992
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 36511744,
+              "working": 53964800,
+              "peak_working": 87146496,
+              "peak_pagefile": 69844992
+            }
+          ]
+        },
+        {
+          "case": "exact_limit",
+          "ok": true,
+          "requested_pixels": [
+            4096,
+            2048
+          ],
+          "client_pixels": [
+            4096,
+            2048
+          ],
+          "state_pixels": [
+            4096,
+            2048
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 46.875,
+          "clipped": {
+            "elapsed_ms": 3.9587,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33554432,
+            "allocations": 1,
+            "frame_pixels": [
+              4096,
+              2048
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 33554432,
+          "full_prints": [
+            {
+              "elapsed_ms": 24.8955,
+              "compositions": 1,
+              "blits": 1,
+              "paint_errors": 0,
+              "editor_dib_bytes": 33554432,
+              "allocations": 0,
+              "frame_pixels": [
+                4096,
+                2048
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [
+            100,
+            2038,
+            2047
+          ],
+          "full_pixels": [
+            4207662,
+            4207662,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36511744,
+              "working": 53964800,
+              "peak_working": 87146496,
+              "peak_pagefile": 69844992
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36253696,
+              "working": 53706752,
+              "peak_working": 87146496,
+              "peak_pagefile": 69844992
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36978688,
+              "working": 21057536,
+              "peak_working": 87146496,
+              "peak_pagefile": 69844992
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 70598656,
+              "working": 54611968,
+              "peak_working": 87146496,
+              "peak_pagefile": 70598656
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 70512640,
+              "working": 87900160,
+              "peak_working": 87900160,
+              "peak_pagefile": 70598656
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 36892672,
+              "working": 54345728,
+              "peak_working": 87900160,
+              "peak_pagefile": 70598656
+            }
+          ]
+        },
+        {
+          "case": "one_row_over",
+          "ok": true,
+          "requested_pixels": [
+            4096,
+            2049
+          ],
+          "client_pixels": [
+            4096,
+            2049
+          ],
+          "state_pixels": [
+            4096,
+            2049
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 31.25,
+          "clipped": {
+            "elapsed_ms": 1.9475,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33554432,
+            "allocations": 0,
+            "frame_pixels": [
+              4096,
+              2049
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 2,
+          "full_probe_dib_bytes": 33570816,
+          "full_prints": [
+            {
+              "elapsed_ms": 29.906,
+              "compositions": 2,
+              "blits": 2,
+              "paint_errors": 0,
+              "editor_dib_bytes": 33554432,
+              "allocations": 0,
+              "frame_pixels": [
+                4096,
+                2049
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [
+            100,
+            2039,
+            2047,
+            2048
+          ],
+          "full_pixels": [
+            4207662,
+            4207662,
+            4207662,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36892672,
+              "working": 54345728,
+              "peak_working": 87900160,
+              "peak_pagefile": 70598656
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36630528,
+              "working": 54083584,
+              "peak_working": 87900160,
+              "peak_pagefile": 70598656
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36978688,
+              "working": 54349824,
+              "peak_working": 87900160,
+              "peak_pagefile": 70598656
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 70615040,
+              "working": 87920640,
+              "peak_working": 87920640,
+              "peak_pagefile": 70615040
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 70565888,
+              "working": 87924736,
+              "peak_working": 87924736,
+              "peak_pagefile": 70615040
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 36929536,
+              "working": 54353920,
+              "peak_working": 87924736,
+              "peak_pagefile": 70615040
+            }
+          ]
+        },
+        {
+          "case": "ultrawide",
+          "ok": true,
+          "requested_pixels": [
+            5120,
+            2160
+          ],
+          "client_pixels": [
+            5120,
+            2160
+          ],
+          "state_pixels": [
+            5120,
+            2160
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 578.125,
+          "clipped": {
+            "elapsed_ms": 4.4606,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33546240,
+            "allocations": 1,
+            "frame_pixels": [
+              5120,
+              2160
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 2,
+          "full_probe_dib_bytes": 44236800,
+          "full_prints": [
+            {
+              "elapsed_ms": 32.3664,
+              "compositions": 2,
+              "blits": 2,
+              "paint_errors": 0,
+              "editor_dib_bytes": 33546240,
+              "allocations": 0,
+              "frame_pixels": [
+                5120,
+                2160
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [
+            23.7493,
+            23.6474,
+            23.7644,
+            23.6958,
+            23.8117,
+            23.7707,
+            23.8975,
+            23.8075,
+            23.6532,
+            23.5608,
+            23.5803,
+            23.8609,
+            23.6701,
+            23.2384,
+            25.2749,
+            23.5749,
+            24.122,
+            22.993,
+            22.9844,
+            23.1781,
+            22.9415
+          ],
+          "full_pixel_rows": [
+            100,
+            1637,
+            1638,
+            2150,
+            2159
+          ],
+          "full_pixels": [
+            4207662,
+            4207662,
+            4207662,
+            4207662,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36929536,
+              "working": 54353920,
+              "peak_working": 87924736,
+              "peak_pagefile": 70615040
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36646912,
+              "working": 54099968,
+              "peak_working": 87924736,
+              "peak_pagefile": 70615040
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36941824,
+              "working": 21065728,
+              "peak_working": 87924736,
+              "peak_pagefile": 70615040
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 81264640,
+              "working": 65302528,
+              "peak_working": 87924736,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 81264640,
+              "working": 98586624,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 36941824,
+              "working": 54349824,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            }
+          ]
+        },
+        {
+          "case": "4k_dpi_144",
+          "ok": true,
+          "requested_pixels": [
+            3840,
+            2160
+          ],
+          "client_pixels": [
+            3840,
+            2160
+          ],
+          "state_pixels": [
+            3840,
+            2160
+          ],
+          "dpi": 144,
+          "cell_pixels": [
+            16,
+            31
+          ],
+          "cpu_ms": 0.0,
+          "clipped": {
+            "elapsed_ms": 3.678,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33177600,
+            "allocations": 1,
+            "frame_pixels": [
+              3840,
+              2160
+            ]
+          },
+          "tile_pixel": 9079692,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 0,
+          "full_prints": [],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [],
+          "full_pixels": [],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36941824,
+              "working": 54349824,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36638720,
+              "working": 54091776,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36552704,
+              "working": 20963328,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            }
+          ]
+        },
+        {
+          "case": "4k_dpi_192",
+          "ok": true,
+          "requested_pixels": [
+            3840,
+            2160
+          ],
+          "client_pixels": [
+            3840,
+            2160
+          ],
+          "state_pixels": [
+            3840,
+            2160
+          ],
+          "dpi": 192,
+          "cell_pixels": [
+            21,
+            40
+          ],
+          "cpu_ms": 0.0,
+          "clipped": {
+            "elapsed_ms": 0.9042,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 33177600,
+            "allocations": 0,
+            "frame_pixels": [
+              3840,
+              2160
+            ]
+          },
+          "tile_pixel": 65800,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 0,
+          "full_prints": [],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [],
+          "full_pixels": [],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36552704,
+              "working": 20963328,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36294656,
+              "working": 20832256,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 36356096,
+              "working": 20897792,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            }
+          ]
+        },
+        {
+          "case": "back_to_base",
+          "ok": true,
+          "requested_pixels": [
+            1000,
+            650
+          ],
+          "client_pixels": [
+            1000,
+            650
+          ],
+          "state_pixels": [
+            1000,
+            650
+          ],
+          "dpi": 96,
+          "cell_pixels": [
+            10,
+            20
+          ],
+          "cpu_ms": 15.625,
+          "clipped": {
+            "elapsed_ms": 0.8844,
+            "compositions": 1,
+            "blits": 1,
+            "paint_errors": 0,
+            "editor_dib_bytes": 2600000,
+            "allocations": 1,
+            "frame_pixels": [
+              1000,
+              650
+            ]
+          },
+          "tile_pixel": 4207662,
+          "expected_full_bands": 1,
+          "full_probe_dib_bytes": 2600000,
+          "full_prints": [
+            {
+              "elapsed_ms": 6.8147,
+              "compositions": 1,
+              "blits": 1,
+              "paint_errors": 0,
+              "editor_dib_bytes": 2600000,
+              "allocations": 0,
+              "frame_pixels": [
+                1000,
+                650
+              ]
+            }
+          ],
+          "hot_full_samples_ms": [],
+          "full_pixel_rows": [
+            100,
+            640,
+            649
+          ],
+          "full_pixels": [
+            4207662,
+            4281739,
+            4207662
+          ],
+          "memory": [
+            {
+              "phase": "before_resize",
+              "private": 36356096,
+              "working": 20897792,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_resize_before_composition",
+              "private": 36229120,
+              "working": 20770816,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_clipped_composition",
+              "private": 5963776,
+              "working": 20832256,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "full_probe_allocated",
+              "private": 8568832,
+              "working": 23433216,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_full_composition",
+              "private": 8265728,
+              "working": 25772032,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            },
+            {
+              "phase": "after_full_probe_released",
+              "private": 5660672,
+              "working": 23171072,
+              "peak_working": 98586624,
+              "peak_pagefile": 81264640
+            }
+          ]
+        }
+      ]
+    },
+    "raw_report": "work/m2-geometry-1e067412f783488eb8a5940293b2ceb0/report.json"
+  }
+}

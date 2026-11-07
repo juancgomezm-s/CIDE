@@ -903,6 +903,12 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
         SelectObject(dc, frame.font);
         for (row, line) in pane.rows.iter().enumerate() {
             let y = pane.text_y + row as i32 * frame.cell_height;
+            if y >= clip.bottom {
+                break;
+            }
+            if y + frame.cell_height <= clip.top {
+                continue;
+            }
             text(
                 dc,
                 Rect {

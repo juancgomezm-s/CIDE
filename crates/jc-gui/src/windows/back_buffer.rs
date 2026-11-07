@@ -1,5 +1,5 @@
 //! One retained, bounded DIB owned by the UI thread. The renderer receives only
-//! its memory DC; publication copies the target's invalid rectangle in one blit.
+//! its memory DC. Large clients reuse the same DIB across horizontal bands.
 //! No model, source, window dispatch or file access belongs to this module.
 use super::ffi::*;
 use std::ptr::null_mut;
@@ -23,6 +23,7 @@ extern "system" {
     ) -> i32;
     fn SaveDC(dc: Hdc) -> i32;
     fn RestoreDC(dc: Hdc, saved: i32) -> i32;
+    fn SetViewportOrgEx(dc: Hdc, x: i32, y: i32, old: *mut Point) -> i32;
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -166,12 +167,14 @@ impl Buffer {
         target: Hdc,
         width: i32,
         height: i32,
-        draw: impl FnOnce(Hdc) -> Result<(), String>,
+        mut draw: impl FnMut(Hdc) -> Result<(), String>,
     ) -> Result<(), String> {
         if target.is_null() {
             return Err("La composición GUI no recibió un contexto de destino".into());
         }
-        byte_count(width, height)?;
+        if !(1..=MAX_DIMENSION).contains(&width) || !(1..=MAX_DIMENSION).contains(&height) {
+            return Err("Dimensiones de superficie GUI fuera del límite (1–8192 píxeles)".into());
+        }
         let mut update = Rect::default();
         match GetClipBox(target, &mut update) {
             0 => return Err("No se pudo consultar la región de repintado GUI".into()),
@@ -181,25 +184,51 @@ impl Buffer {
         let Some(update) = clipped(update, width, height) else {
             return Ok(());
         };
-        self.ensure(target, width, height)?;
+        let buffer_height = height.min((MAX_BYTES / (width as usize * 4)) as i32);
+        self.ensure(target, width, buffer_height)?;
+        if buffer_height == height {
+            return self.paint_band(target, update, 0, &mut draw);
+        }
+        // Anchor the bands at the start of the invalid area. A small update
+        // needs only one pass even when it crosses a full-frame band boundary.
+        let mut band = update;
+        while band.top < update.bottom {
+            band.bottom = (band.top + buffer_height).min(update.bottom);
+            self.paint_band(target, band, band.top, &mut draw)?;
+            band.top = band.bottom;
+        }
+        Ok(())
+    }
+
+    unsafe fn paint_band(
+        &mut self,
+        target: Hdc,
+        update: Rect,
+        origin_y: i32,
+        draw: &mut impl FnMut(Hdc) -> Result<(), String>,
+    ) -> Result<(), String> {
         let saved = SaveDC(self.dc);
         if saved == 0 {
             return Err("No se pudo preservar el contexto de composición GUI".into());
         }
-        let clip = IntersectClipRect(
-            self.dc,
-            update.left,
-            update.top,
-            update.right,
-            update.bottom,
-        );
-        let result = if clip == 0 {
-            Err("No se pudo limitar la región de composición GUI".into())
-        } else {
+        let result = (|| {
+            if origin_y != 0 && SetViewportOrgEx(self.dc, 0, -origin_y, null_mut()) == 0 {
+                return Err("No se pudo situar la banda de composición GUI".into());
+            }
+            if IntersectClipRect(
+                self.dc,
+                update.left,
+                update.top,
+                update.right,
+                update.bottom,
+            ) == 0
+            {
+                return Err("No se pudo limitar la región de composición GUI".into());
+            }
             draw(self.dc)
-        };
+        })();
         // Restore selected fonts, colors, clipping and other DC state even when
-        // drawing fails. Failed compositions are not published to the HWND.
+        // drawing fails. Only completed bands are published to the HWND.
         let restored = RestoreDC(self.dc, saved);
         if restored == 0 {
             self.release_bitmap();
@@ -219,7 +248,7 @@ impl Buffer {
             update.bottom - update.top,
             self.dc,
             update.left,
-            update.top,
+            update.top - origin_y,
             SRCCOPY,
         ) == 0
         {
@@ -252,18 +281,18 @@ mod tests {
         bits: *mut u32,
     }
     impl Canvas {
-        unsafe fn new() -> Self {
+        unsafe fn new(height: i32) -> Self {
             let dc = CreateCompatibleDC(null_mut());
             assert!(!dc.is_null());
             let info = BitmapInfo {
                 header: BitmapHeader {
                     size: std::mem::size_of::<BitmapHeader>() as u32,
                     width: 32,
-                    height: -32,
+                    height: -height,
                     planes: 1,
                     bit_count: 32,
                     compression: 0,
-                    image_size: 4096,
+                    image_size: 32 * height as u32 * 4,
                     x_meter: 0,
                     y_meter: 0,
                     used: 0,
@@ -276,7 +305,7 @@ mod tests {
             assert!(!bitmap.is_null() && !bits.is_null());
             let previous = SelectObject(dc, bitmap);
             assert!(!invalid_object(previous));
-            std::ptr::write_bytes(bits, 0, 4096);
+            std::ptr::write_bytes(bits, 0, 32 * height as usize * 4);
             Self {
                 dc,
                 bitmap,
@@ -303,7 +332,7 @@ mod tests {
     fn retained_surface_publishes_only_valid_update_and_reuses_allocation() {
         // Own memory DCs only; no window, display interaction or personal data.
         unsafe {
-            let target = Canvas::new();
+            let target = Canvas::new(32);
             let mut buffer = Buffer::default();
             assert_ne!(IntersectClipRect(target.dc, 8, 8, 16, 16), 0);
             buffer
@@ -353,11 +382,54 @@ mod tests {
             assert_eq!(buffer.statistics(), before);
             assert_eq!(target.pixel(10, 10), 0x00ff_0000);
             assert!(buffer
-                .paint(target.dc, 8192, 8192, |_| panic!(
-                    "excessive allocation admitted"
+                .paint(target.dc, 8193, 8192, |_| panic!(
+                    "invalid dimensions admitted"
                 ))
                 .is_err());
             assert_eq!(buffer.statistics().allocated_bytes, 4096);
+        }
+    }
+
+    #[test]
+    fn oversized_surface_composes_at_original_coordinates_across_band_seam() {
+        unsafe {
+            // Narrow destination with a nonzero origin for the invalid area.
+            let target = Canvas::new(1026);
+            let mut buffer = Buffer::default();
+            assert_ne!(IntersectClipRect(target.dc, 8, 1, 16, 1026), 0);
+            let draw = |dc| {
+                for (top, bottom, color) in [(0, 1025, 0x0000_00ff), (1025, 1026, 0x0000_ff00)] {
+                    let brush = CreateSolidBrush(color);
+                    assert!(!brush.is_null());
+                    let filled = FillRect(
+                        dc,
+                        &Rect {
+                            left: 0,
+                            top,
+                            right: 8192,
+                            bottom,
+                        },
+                        brush,
+                    );
+                    DeleteObject(brush);
+                    assert_ne!(filled, 0);
+                }
+                Ok(())
+            };
+            buffer.paint(target.dc, 8192, 1026, draw).unwrap();
+            assert_eq!(target.pixel(10, 1024), 0x00ff_0000);
+            assert_eq!(target.pixel(10, 1025), 0x0000_ff00);
+            assert_eq!(target.pixel(10, 0), 0);
+            assert_eq!(target.pixel(7, 1025), 0);
+            assert_eq!(buffer.statistics().allocated_bytes, MAX_BYTES);
+            assert_eq!(buffer.statistics().allocations, 1);
+            assert_eq!(buffer.statistics().blits, 2);
+
+            assert_ne!(IntersectClipRect(target.dc, 8, 1000, 16, 1026), 0);
+            buffer.paint(target.dc, 8192, 1026, draw).unwrap();
+            assert_eq!(target.pixel(10, 1025), 0x0000_ff00);
+            assert_eq!(buffer.statistics().allocations, 1);
+            assert_eq!(buffer.statistics().blits, 3);
         }
     }
 

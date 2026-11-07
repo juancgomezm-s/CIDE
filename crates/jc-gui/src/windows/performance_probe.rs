@@ -11,6 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod geometry;
 mod services;
 
 #[repr(C)]
@@ -102,9 +103,9 @@ impl Surface {
         let bytes = (width as usize)
             .checked_mul(height as usize)
             .and_then(|v| v.checked_mul(4))
-            .filter(|v| *v <= 32 * 1024 * 1024)
-            .ok_or("Probe DIB exceeds32MiB")?;
-        if width < 8 || height < 8 || width > 4096 || height > 4096 {
+            .filter(|v| *v <= 64 * 1024 * 1024)
+            .ok_or("Probe DIB exceeds 64 MiB")?;
+        if !(8..=8192).contains(&width) || !(8..=8192).contains(&height) {
             return Err("Invalid probe geometry".into());
         }
         let dc = CreateCompatibleDC(null_mut());
@@ -219,6 +220,9 @@ fn samples(values: &[f64]) -> String {
 }
 
 pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
+    if options.performance_geometry_only {
+        return geometry::run(hwnd, options);
+    }
     if options.performance_services_only {
         return services::run(hwnd, options);
     }

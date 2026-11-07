@@ -26,6 +26,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut save_only = false;
     let mut performance_only = false;
     let mut performance_services_only = false;
+    let mut performance_geometry_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -41,6 +42,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("Opción --smoke-performance-services-only duplicada".into());
                 }
                 performance_services_only = true;
+            }
+            Some("--smoke-performance-geometry-only") => {
+                if performance_geometry_only {
+                    return Err("Opción --smoke-performance-geometry-only duplicada".into());
+                }
+                performance_geometry_only = true;
             }
             Some("--smoke-navigation-only") => {
                 if navigation_only {
@@ -209,6 +216,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(save_only)
         + usize::from(performance_only)
         + usize::from(performance_services_only)
+        + usize::from(performance_geometry_only)
         > 1
     {
         return Err("Elige una sola sección de prueba".into());
@@ -232,8 +240,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || save_only
         || performance_only
         || performance_services_only
+        || performance_geometry_only
     {
-        if !(performance_only || performance_services_only || options.paths.is_empty())
+        if !(performance_only
+            || performance_services_only
+            || performance_geometry_only
+            || options.paths.is_empty())
             || options.project_root.is_some()
         {
             return Err("La prueba usa únicamente su archivo de muestra explícito".into());
@@ -267,6 +279,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             save_only,
             performance_only,
             performance_services_only,
+            performance_geometry_only,
         });
     }
     Ok(Some(options))

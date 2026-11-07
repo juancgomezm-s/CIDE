@@ -1,3 +1,15 @@
+# Extreme GUI geometry — 2026-11-07
+
+Read docs/M2_GUI_EXTREME_GEOMETRY.md. The prior buffer rejected 4096×2049 and
+5120×2160 on an owned hidden HWND. Oversized frames now share one DIB capped at
+32 MiB across horizontal bands. Keep client coordinates, invalid-region clipping,
+reuse across bands and only publish a band after its draw completes. Eight hidden
+release cases passed, including synthetic DPI 96/144/192, seams and return to base.
+35.23 MiB private at 5120×2160 with a 16 KiB probe target. Full-frame p95 24.12 ms
+with a separate full-size probe DIB. Four directed buffer tests, fmt, GUI all-target
+Clippy and workspace release offline passed. Delivery target/m2-geometry-next/release.
+Physical acceptance remains open. Preserve prior releases and caches.
+
 # Combined editor services performance — 2026-11-06
 
 Read docs/M2_EDITOR_SERVICES_PERFORMANCE.md. Three serial release runs of one

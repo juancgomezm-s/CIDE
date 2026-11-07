@@ -1,3 +1,12 @@
+## Geometrías grandes de la GUI — 2026-11-07
+
+El caso anterior rechazaba 4096×2049 y 5120×2160. La solución conserva un DIB de
+hasta 32 MiB y pinta el cliente grande por bandas. Ocho casos ocultos release,
+42 muestras completas calientes, cuatro pruebas de búfer, formato, Clippy GUI
+all-targets y release offline aprobados. Memoria privada de 35,23 MiB a 5120×2160
+con destino de 64×64. p95 completo de 24,12 ms con destino completo separado.
+Fuente intacta y posición preservada. [Protocolo, datos y límites](M2_GUI_EXTREME_GEOMETRY.md)
+
 ## Servicios simultáneos del editor — 2026-11-06
 
 Tres corridas release del mismo escenario oculto verificaron 64 coincidencias,
