@@ -1,3 +1,12 @@
+## Servicios simultáneos — 2026-11-06
+
+Validado el escenario combinado de búsqueda, Git, imagen Markdown y recuperación
+periódica en tres procesos GUI ocultos. Pico privado 27,08 MiB con el DIB de
+medición. p95 de composición 3,72–4,05 ms. Se corrigió la carga de imágenes y
+enlaces relativos para documentos abiertos por CLI. Entrega
+`target/m2-services-next/release`. Siguen pendientes geometrías extremas y la
+aceptación física. [Medición y alcance](M2_EDITOR_SERVICES_PERFORMANCE.md).
+
 ## Memoria y rendimiento del editor completo — 2026-11-06
 
 [Protocolo y límites](M2_EDITOR_PROCESS_PERFORMANCE.md). Procesos reales ocultos:

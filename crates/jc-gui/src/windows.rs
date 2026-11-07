@@ -636,7 +636,7 @@ impl State {
             state.set_project_root(root.to_owned())?;
         }
         if let Some(smoke) = &options.smoke {
-            if smoke.performance_only {
+            if smoke.measures_performance() {
                 for path in &options.paths {
                     state
                         .workbench
@@ -2204,12 +2204,17 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
     {
         return Err("Las tareas del proyecto requieren1..4 trabajadores".into());
     }
-    if options.smoke.as_ref().is_some_and(|s| !s.performance_only) && !options.paths.is_empty() {
+    if options
+        .smoke
+        .as_ref()
+        .is_some_and(|s| !s.measures_performance())
+        && !options.paths.is_empty()
+    {
         return Err("El modo de prueba no admite rutas de fuente al iniciar".into());
     }
     if let Some(smoke) = &options.smoke {
         smoke::validate(smoke)?;
-        if smoke.performance_only {
+        if smoke.measures_performance() {
             performance_probe::validate_sources(&options.paths, &smoke.fixture)?;
         }
     }

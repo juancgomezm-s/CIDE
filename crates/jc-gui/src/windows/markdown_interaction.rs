@@ -431,10 +431,7 @@ impl State {
             return Action::None;
         }
         let root = ui.context.root.clone();
-        let Some(document) = self.workbench.active_document() else {
-            return Action::None;
-        };
-        match resolve_destination(document.session.path(), &target.destination) {
+        match resolve_destination(&ui.document_path, &target.destination) {
             Ok(MarkdownDestination::External(url)) => {
                 if let Err(error) = jc_platform::web_link::validate(&url) {
                     self.error(error);

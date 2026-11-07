@@ -243,7 +243,7 @@ unsafe fn dpi_transition(hwnd: Hwnd) -> Result<(), String> {
 }
 
 pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
-    if options.performance_only {
+    if options.measures_performance() {
         return super::performance_probe::run(hwnd, options);
     }
     let mut report = fs::OpenOptions::new()

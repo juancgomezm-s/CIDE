@@ -236,6 +236,47 @@ fn markdown_media_web_hits_return_intentions_and_reject_stale_geometry_without_l
     assert_eq!(state.workbench.active_bytes().unwrap(), before);
 }
 #[test]
+fn markdown_media_cli_path_loads_image_and_opens_relative_link() {
+    let fixture = Fixture::new();
+    fixture.bmp("sample.bmp", 24, 24);
+    fs::write(fixture.root.join("target.md"), b"# Destino\n").unwrap();
+    let source = "[Otro](target.md)\n\n![Imagen](sample.bmp)\n";
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .unwrap();
+    let path = workspace
+        .join("work/test-temp")
+        .join(fixture.root.file_name().unwrap())
+        .join("source.md");
+    fs::write(&path, source).unwrap();
+    let mut state = State::new(&crate::GuiOptions {
+        paths: vec![path],
+        project_root: Some(fixture.root.clone()),
+        encoding: Some(jc_text::TextEncoding::Utf8),
+        ..Default::default()
+    })
+    .unwrap();
+    state.toggle_markdown();
+    let frame = settle(&mut state);
+    assert_eq!(
+        frame
+            .images
+            .iter()
+            .filter(|image| image.decoded.is_some())
+            .count(),
+        1
+    );
+    assert!(matches!(click(&mut state, "target.md", true), Action::None));
+    assert_eq!(state.workbench.panes().active(), jc_app::PaneId::Secondary);
+    assert_eq!(state.workbench.active_bytes().unwrap(), b"# Destino\n");
+    assert_eq!(
+        fs::read(fixture.root.join("source.md")).unwrap(),
+        source.as_bytes()
+    );
+}
+
+#[test]
 fn markdown_media_local_side_link_and_anchor_preserve_dirty_source_and_original_files() {
     use jc_app::PaneId;
     let fixture = Fixture::new();

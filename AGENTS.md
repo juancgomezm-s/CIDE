@@ -1,3 +1,16 @@
+# Combined editor services performance — 2026-11-06
+
+Read docs/M2_EDITOR_SERVICES_PERFORMANCE.md. Three serial release runs of one
+owned hidden GUI exercised Search Plus, embedded Git status, Markdown image and
+private periodic recovery. 360 native compositions, 128 during active recovery
+and 29 with both queries pending and pixels retained. Peak private 27.08 MiB
+includes 2.48 MiB probe DIB. p95 3.72–4.05 ms. Three byte-exact checkpoint restores
+and unchanged source/Git hashes. CLI Markdown paths now resolve against the
+canonical document directory fixed at preview admission. Seven directed media
+tests, fmt, GUI all-target Clippy and workspace release offline passed. Current
+delivery target/m2-services-next/release. Keep prior deliveries and caches.
+Extreme geometry and physical acceptance remain open. No desktop or personal depot.
+
 # Complete-editor process performance — 2026-11-06
 
 Read docs/M2_EDITOR_PROCESS_PERFORMANCE.md before extending performance probes.

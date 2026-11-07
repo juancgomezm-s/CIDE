@@ -11,6 +11,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod services;
+
 #[repr(C)]
 #[derive(Default)]
 struct Memory {
@@ -217,6 +219,9 @@ fn samples(values: &[f64]) -> String {
 }
 
 pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
+    if options.performance_services_only {
+        return services::run(hwnd, options);
+    }
     let mut report = fs::OpenOptions::new()
         .create_new(true)
         .write(true)

@@ -25,6 +25,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut git_only = false;
     let mut save_only = false;
     let mut performance_only = false;
+    let mut performance_services_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -34,6 +35,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("Opción --smoke-performance-only duplicada".into());
                 }
                 performance_only = true;
+            }
+            Some("--smoke-performance-services-only") => {
+                if performance_services_only {
+                    return Err("Opción --smoke-performance-services-only duplicada".into());
+                }
+                performance_services_only = true;
             }
             Some("--smoke-navigation-only") => {
                 if navigation_only {
@@ -201,6 +208,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(git_only)
         + usize::from(save_only)
         + usize::from(performance_only)
+        + usize::from(performance_services_only)
         > 1
     {
         return Err("Elige una sola sección de prueba".into());
@@ -223,8 +231,11 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || git_only
         || save_only
         || performance_only
+        || performance_services_only
     {
-        if (!performance_only && !options.paths.is_empty()) || options.project_root.is_some() {
+        if !(performance_only || performance_services_only || options.paths.is_empty())
+            || options.project_root.is_some()
+        {
             return Err("La prueba usa únicamente su archivo de muestra explícito".into());
         }
         let fixture = fixture.ok_or("--smoke-fixture requires --smoke-report")?;
@@ -255,6 +266,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             git_only,
             save_only,
             performance_only,
+            performance_services_only,
         });
     }
     Ok(Some(options))

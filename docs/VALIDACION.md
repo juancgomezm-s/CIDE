@@ -1,3 +1,14 @@
+## Servicios simultáneos del editor — 2026-11-06
+
+Tres corridas release del mismo escenario oculto verificaron 64 coincidencias,
+tres cambios Git, imagen Markdown de 4 MiB y recuperación periódica privada.
+Pico privado de 27,08 MiB incluido el DIB de medición. p95 de composición entre
+3,72 y 4,05 ms en 360 muestras, 29 con recuperación activa, búsqueda y Git
+pendientes e imagen retenida. Restauración exacta y hashes intactos en las tres.
+La carga inicial de la imagen falló por prefijos de ruta distintos en Windows.
+El arreglo pasó siete pruebas dirigidas, fmt, Clippy GUI all-targets y release
+offline. [Protocolo, datos y límites](M2_EDITOR_SERVICES_PERFORMANCE.md).
+
 ## Memoria y rendimiento del editor completo — 2026-11-06
 
 [Protocolo y límites](M2_EDITOR_PROCESS_PERFORMANCE.md). Procesos reales ocultos:

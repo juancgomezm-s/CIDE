@@ -126,9 +126,10 @@ puede mantener hasta 16 MiB aceptados más 16 MiB de entrega, además de fuentes
 frames y memoria nativa. Las cuotas lógicas no son un límite RSS. Este corpus
 no activa simultáneamente búsquedas, Git, imágenes, recuperación ni proveedores.
 
-La memoria/rendimiento con esos servicios simultáneos y geometrías extremas,
-la latencia física y el traslado real entre monitores conservan su aceptación
-pendiente. IME excluido por Juan; Narrador/accesibilidad avanzada aplazados.
+La [medición posterior con servicios simultáneos](M2_EDITOR_SERVICES_PERFORMANCE.md)
+publica el escenario combinado y sus límites. Geometrías extremas, latencia física
+y traslado real entre monitores conservan su aceptación pendiente. IME excluido
+por Juan. Narrador y accesibilidad avanzada siguen aplazados.
 Ninguna observación de este bloque cierra por sí sola M2 físico/global.
 
 ## Validación y reproducción

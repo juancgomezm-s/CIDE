@@ -12,6 +12,7 @@ mod interaction;
 use super::markdown_images::{DecodedImage, ImageContext, ImageSource};
 pub(super) use interaction::MarkdownHits;
 use jc_app::markdown_preview::{MarkdownAnchorScan, MarkdownTarget};
+use std::path::{Path, PathBuf};
 #[link(name = "user32")]
 extern "system" {
     fn DrawTextW(dc: Hdc, text: *const u16, count: i32, rect: *mut Rect, flags: u32) -> i32;
@@ -38,6 +39,7 @@ pub(super) struct MarkdownGui {
     selected: usize,
     keyboard_focus: bool,
     context: ImageContext,
+    document_path: PathBuf,
     wanted: Vec<ImageSource>,
     sent: Vec<ImageSource>,
     remote_allowed: Vec<String>,
@@ -92,14 +94,29 @@ impl State {
                 .view(self.workbench.panes().active())
                 .and_then(|v| v.view_id()),
         };
-        let path = doc.session.path();
+        let mut document_path = doc.session.path().to_owned();
+        // Match the canonical project root before resolving links or images.
+        // Keep the filename as opened and do no filesystem work during paint.
+        if document_path.is_absolute() || !doc.session.is_new() {
+            if let Some((parent, name)) = document_path.parent().zip(document_path.file_name()) {
+                let parent = if parent.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    parent
+                };
+                if let Ok(parent) = parent.canonicalize() {
+                    document_path = parent.join(name);
+                }
+            }
+        }
         let root = self
             .project_root
             .as_ref()
-            .filter(|root| path.starts_with(root))
+            .filter(|root| doc.session.path().starts_with(root) || document_path.starts_with(root))
             .cloned()
             .or_else(|| {
-                path.parent()
+                document_path
+                    .parent()
                     .filter(|p| p.is_absolute())
                     .map(|p| p.to_path_buf())
             })
@@ -126,6 +143,7 @@ impl State {
             selected: 0,
             keyboard_focus: false,
             context,
+            document_path,
             wanted: Vec::new(),
             sent: Vec::new(),
             remote_allowed: Vec::new(),
@@ -255,7 +273,7 @@ impl State {
             interaction::ImageLayout {
                 cache: &self.markdown_images,
                 context: &ui.context,
-                document: self.workbench.active_document()?.session.path(),
+                document: &ui.document_path,
                 remote_allowed: &ui.remote_allowed,
                 extents: &ui.extents,
                 width: width - viewport_left,

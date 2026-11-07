@@ -34,6 +34,13 @@ pub struct SmokeOptions {
     pub git_only: bool,
     pub save_only: bool,
     pub performance_only: bool,
+    pub performance_services_only: bool,
+}
+
+impl SmokeOptions {
+    pub fn measures_performance(&self) -> bool {
+        self.performance_only || self.performance_services_only
+    }
 }
 
 #[cfg(windows)]
