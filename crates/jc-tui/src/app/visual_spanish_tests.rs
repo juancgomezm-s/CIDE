@@ -233,3 +233,69 @@ fn sidebar_keeps_spanish_key_guidance_visible_across_focus_and_compact_resize() 
     assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
     assert_eq!(app.workbench.active_bytes().unwrap(), bytes);
 }
+
+#[test]
+fn markdown_view_menu_check_tracks_rendered_mode_and_rejects_plain_text() {
+    fn select_markdown(app: &mut TuiApp) {
+        app.open_menu(CommandId::MenuView);
+        let selected = app
+            .menu_commands(MenuId::View)
+            .iter()
+            .position(|entry| *entry == Some(CommandId::ViewMarkdownPreview))
+            .unwrap();
+        app.overlay = UiOverlay::Menu {
+            menu: MenuId::View,
+            selected,
+        };
+    }
+    fn menu_row(app: &mut TuiApp) -> String {
+        let frame = app.prepare_frame(120, 40);
+        let screen = render::render(&frame);
+        (0..screen.height())
+            .map(|y| screen.row_text(y))
+            .find(|row| row.contains("Vista previa de Markdown"))
+            .unwrap()
+    }
+    let mut app = editor("vista.md", "# Título\r\nTexto **fuerte**\r\n");
+    let _ = app.prepare_frame(120, 40);
+    let bytes = app.workbench.active_bytes().unwrap();
+    let views = format!("{:?}", app.workbench.panes());
+    let before_revision = revision(&app);
+    select_markdown(&mut app);
+    assert!(menu_row(&mut app).contains("[ ] Vista previa de Markdown"));
+    assert!(app
+        .registry
+        .is_enabled(CommandId::ViewMarkdownPreview, &app.command_context()));
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(app.showing_markdown());
+    select_markdown(&mut app);
+    assert!(menu_row(&mut app).contains("[x] Vista previa de Markdown"));
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(!app.showing_markdown());
+    assert_eq!(app.workbench.active_bytes().unwrap(), bytes);
+    assert_eq!(revision(&app), before_revision);
+    assert_eq!(format!("{:?}", app.workbench.panes()), views);
+
+    app.workbench.new_file("normal.txt", TextEncoding::Utf8);
+    app.workbench
+        .insert_text("# No se interpreta por parecer Markdown")
+        .unwrap();
+    let bytes = app.workbench.active_bytes().unwrap();
+    select_markdown(&mut app);
+    assert!(!app
+        .registry
+        .is_enabled(CommandId::ViewMarkdownPreview, &app.command_context()));
+    assert!(menu_row(&mut app).contains("[ ] Vista previa de Markdown"));
+    app.toggle_markdown(); // direct internal callers also keep the same gate
+    assert!(matches!(
+        app.overlay,
+        UiOverlay::Menu {
+            menu: MenuId::View,
+            ..
+        }
+    ));
+    assert!(app.markdown_ui.is_none());
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(app.markdown_ui.is_none());
+    assert_eq!(app.workbench.active_bytes().unwrap(), bytes);
+}

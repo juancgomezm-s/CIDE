@@ -1,0 +1,72 @@
+{
+  "date": "2026-11-06",
+  "tests": {
+    "distinct_passed": 13,
+    "new": 6,
+    "core": 8,
+    "gui": 2,
+    "tui": 3,
+    "not_full_workspace": true
+  },
+  "fmt": "passed",
+  "clippy": "selected all-targets passed; final GUI painter rechecked",
+  "logs": {
+    "work/markdown-render-tests-final.log": "e00043e3bdd033c5a94411011d9eb93d31f4564be3ee10e84ead2f0e67192654",
+    "work/markdown-native-final.log": "baf528c206f73bd932464aa67614d097fdb8f8941697cdb3fd8b96ee59ddac0f",
+    "work/markdown-render-clippy-final.log": "b6508cf8cb12a088acffda95c41a406d59981b8da71e94f3c0a4fef696fc8548",
+    "work/markdown-native-final-clippy.log": "38b66ec32c24a6c546892e222d402bd452b1e905feaad60ff26bb38aa3df3312",
+    "work/markdown-render-fmt-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "work/markdown-render-release.log": "6765fd06fbb3d0641bd887044856f3ba04ac36b714c2f7efe5b2c402b6f6d728",
+    "work/markdown-render-final-release.log": "946772651cb06f152ed34ef9a96741626cd5e22994dbcfadb03cd24fcfefbdae"
+  },
+  "native_raster": {
+    "path": "docs/evidence/markdown-render-native.png",
+    "sha256": "0b3f3d7861a062065756fc504ece470f847e15086d67ce962e5eaea8f246c642",
+    "type": "Own GDI painter with synthetic fixture; not a physical desktop screenshot"
+  },
+  "computer_use": {
+    "requested_by_user": true,
+    "target": "owned markdown-render-next cide-gui fixture instance",
+    "accessibility_read": "source fixture text observed",
+    "screenshot": "black",
+    "activation": "GetCursorPos failed: Acceso denegado. (0x80070005)",
+    "fresh_selection_retry": "same error",
+    "input_sent": false,
+    "visual_acceptance": "pending usable desktop",
+    "normal_exit": "pending; do not operate from stored identifiers"
+  },
+  "source_files_unchanged": true,
+  "personal_recovery_disabled": true,
+  "dependencies_unchanged": true,
+  "ci": "not run",
+  "push": false,
+  "delivery": "target/markdown-render-final/release",
+  "release": {
+    "status": "passed",
+    "workspace_offline_locked": true,
+    "final_gui_relink_seconds": 85,
+    "manifest": {
+      "cache": "C:\\Users\\juanc\\OneDrive\\Documentos\\JC-IDE\\target\\build-cache",
+      "files": {
+        "cide-gui.exe": "49084f20d8325063ea377ea4fca946815acc87f625206646441fa7f78d2741cc",
+        "cide-tui.exe": "f2c1eff7468aaeaaaad6d8bfa05088f95d3f0b5fe897129fb2031b7aed7e91f5",
+        "cide.exe": "b1f3f2777212274e9d01f7e4ab21cd0da30f611e4d4b3e06c99adb762dea1001",
+        "cide.pdb": "fac53e48d44fcc5efe50f14bc58974b4e9d146c7baf30ae08846e57849948caf",
+        "cide_gui.pdb": "0e405de286d44e20e310c4d597ef0cdf2c1fb85ff75d6679ee4d3e53f8c11ed6",
+        "cide_tui.pdb": "968f93496d9534057df5764f87ef6c892f53a5d334e2418d288e932797779da4",
+        "jc-ide-gui.exe": "5d4bd77daf5c22d3cf6274555aaee1d9af6b5df4ab04b1d03a34828064626aea",
+        "jc-ide-tui.exe": "16be13520c4589a043d04a7fa01486808bbafa70d0fe6f40f9d8a1731893486f",
+        "jc-ide.exe": "3c1791e314fb0aa3fce37bf490ba81b139ed1787f07cdcadb08aaf6aff32fb33",
+        "jc_ide.pdb": "20b4309bd1b0a72917dfdfab8d0745d59caf8df28ddda9d0cb2bc16868339958",
+        "jc_ide_gui.pdb": "6676edfd745f83fb5027c93ea32d439acc0914d7aaa76c8013ae3d321b1be24e",
+        "jc_ide_tui.pdb": "ce38c09330d66b28dc4551121f225a7f636e92f06773aa1592a04c24b165d6b4"
+      }
+    }
+  },
+  "retained_attempts": {
+    "work/markdown-render-tests.log": "missing scoped DrawTextW declaration compile error",
+    "work/markdown-render-tests-2.log": "missing scoped SetBkMode declaration compile error",
+    "work/markdown-render-tests-3.log": "GUI test started at EOF after insertion; moved caret to first line before preview",
+    "work/markdown-render-clippy.log": "integer-comparison lint corrected"
+  }
+}

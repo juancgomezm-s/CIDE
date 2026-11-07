@@ -347,7 +347,7 @@ pub(crate) fn menu_bounds(
         .flatten()
         .map(|entry| {
             jc_text::grapheme::width(entry.label)
-                + usize::from(entry.command == jc_app::CommandId::ViewToggleInvisibles) * 4
+                + usize::from(menu_check(app, entry.command).is_some()) * 4
                 + entry.shortcut.map_or(0, |s| s.to_string().len())
                 + 5
         })
@@ -393,16 +393,8 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
             None => screen.hline(x + 1, row, width - 2, '─'),
             Some(entry) => {
                 let shortcut = entry.shortcut.map(|s| s.to_string()).unwrap_or_default();
-                let checked_label = if entry.command == jc_app::CommandId::ViewToggleInvisibles {
-                    format!(
-                        "[{}] {}",
-                        if app.workbench.invisibles_visible() {
-                            "x"
-                        } else {
-                            " "
-                        },
-                        entry.label
-                    )
+                let checked_label = if let Some(checked) = menu_check(app, entry.command) {
+                    format!("[{}] {}", if checked { "x" } else { " " }, entry.label)
                 } else {
                     entry.label.to_owned()
                 };
@@ -427,6 +419,20 @@ fn draw_menu(app: &TuiApp, screen: &mut Screen, menu: MenuId, selected: usize) {
         }
     }
     screen.hide_cursor();
+}
+
+fn menu_check(app: &TuiApp, command: jc_app::CommandId) -> Option<bool> {
+    match command {
+        jc_app::CommandId::ViewToggleInvisibles => Some(app.workbench.invisibles_visible()),
+        jc_app::CommandId::ViewMarkdownPreview => {
+            Some(app.markdown_ui.as_ref().is_some_and(|ui| {
+                app.workbench
+                    .active_document()
+                    .is_some_and(|doc| doc.id == ui.stamp.document)
+            }))
+        }
+        _ => None,
+    }
 }
 
 fn draw_close(screen: &mut Screen) {

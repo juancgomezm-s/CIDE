@@ -151,6 +151,17 @@ impl State {
         self.editor_scroll_drag = None;
         self.explorer_scroll.drag = None;
         let modifiers = self.modifiers();
+        if self.markdown_gui.is_some()
+            && self.selector.is_none()
+            && flags & 0x0c == 0
+            && modifiers == Modifiers::NONE
+            && x >= 0
+            && x < self.width
+            && y >= self.dpi.pixels(super::shell::TABS)
+            && y < self.height
+        {
+            return self.markdown_wheel(delta, lines);
+        }
         if self.git_panel.is_some()
             && flags & 0x08 == 0
             && !modifiers.contains(Modifiers::CTRL)

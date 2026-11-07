@@ -4,14 +4,39 @@ use crate::{SyntaxKind, TabId, Workbench};
 use jc_text::{grapheme, DecodedScalars, TextEncoding};
 const LINE_BYTES: usize = 16 * 1024;
 const WORK_BYTES: usize = 256 * 1024;
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum MarkdownInlineStyle {
+    #[default]
+    Plain,
+    Strong,
+    Emphasis,
+    Strike,
+}
 #[derive(Debug, Clone)]
 pub struct MarkdownSpan {
     pub text: String,
     pub kind: SyntaxKind,
+    pub style: MarkdownInlineStyle,
+}
+/// Semantic block information, independent of terminal decorations and pixel fonts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkdownBlock {
+    Paragraph,
+    Blank,
+    Heading(u8),
+    Quote,
+    Rule,
+    Code { fence: bool },
+    List { ordered: bool, task: Option<bool> },
+    Table { columns: u8, separator: bool },
+    Notice,
 }
 #[derive(Debug, Clone)]
 pub struct MarkdownRow {
     pub source_line: usize,
+    pub block: MarkdownBlock,
+    /// True only after the first visual row of this source line.
+    pub continuation: bool,
     pub spans: Vec<MarkdownSpan>,
 }
 #[derive(Debug, Default)]
@@ -82,7 +107,7 @@ impl MarkdownView {
         }
         Some(
             wrap(
-                line_spans(doc, content, encoding, &syntax, self.columns.clamp(12, 256))?,
+                line_spans(doc, content, encoding, &syntax, self.columns.clamp(12, 256))?.spans,
                 self.columns.clamp(12, 256),
             )
             .len()
@@ -227,10 +252,10 @@ impl MarkdownView {
                 p.message = "Límite de lectura de la vista previa; continúa con AvPág".into();
                 break;
             }
-            let Some(spans) = line_spans(doc, content, encoding, &syntax, columns) else {
+            let Some(rendered) = line_spans(doc, content, encoding, &syntax, columns) else {
                 break;
             };
-            let wrapped = wrap(spans, columns);
+            let wrapped = wrap(rendered.spans, columns);
             let skip = if line == self.position.line {
                 self.position.wrapped.min(wrapped.len().saturating_sub(1))
             } else {
@@ -253,6 +278,8 @@ impl MarkdownView {
                 });
                 p.rows.push(MarkdownRow {
                     source_line: line,
+                    block: rendered.block,
+                    continuation: part > 0,
                     spans,
                 });
                 self.next = Position {
@@ -270,40 +297,125 @@ impl MarkdownView {
         p
     }
 }
+struct RenderedLine {
+    spans: Vec<MarkdownSpan>,
+    block: MarkdownBlock,
+}
 fn line_spans(
     doc: &crate::EditorDocument,
     content: std::ops::Range<usize>,
     encoding: TextEncoding,
     syntax: &crate::SyntaxRows,
     columns: usize,
-) -> Option<Vec<MarkdownSpan>> {
+) -> Option<RenderedLine> {
     if content.len() > LINE_BYTES {
-        return Some(vec![MarkdownSpan {
-            text: "[Línea mayor de 16 KiB: consulta la fuente]".into(),
-            kind: SyntaxKind::Comment,
-        }]);
+        return Some(RenderedLine {
+            spans: vec![MarkdownSpan {
+                text: "[Línea mayor de 16 KiB: consulta la fuente]".into(),
+                kind: SyntaxKind::Comment,
+                style: MarkdownInlineStyle::Plain,
+            }],
+            block: MarkdownBlock::Notice,
+        });
     }
     let bytes = doc.session.document().read_range(content.clone()).ok()?;
     let mut text = String::with_capacity(bytes.len());
     for scalar in DecodedScalars::new(&bytes, encoding, content.start) {
         if !scalar.valid {
-            return Some(vec![MarkdownSpan {
-                text: "[Codificación inválida: consulta los bytes de fuente]".into(),
-                kind: SyntaxKind::Comment,
-            }]);
+            return Some(RenderedLine {
+                spans: vec![MarkdownSpan {
+                    text: "[Codificación inválida: consulta los bytes de fuente]".into(),
+                    kind: SyntaxKind::Comment,
+                    style: MarkdownInlineStyle::Plain,
+                }],
+                block: MarkdownBlock::Notice,
+            });
         }
         text.push(scalar.character);
     }
     // The lexer deliberately leaves at most three leading indentation spaces
     // uncolored. Classify the first meaningful byte, not that default Plain gap.
     let indent = bytes.iter().take(3).take_while(|&&b| b == b' ').count();
-    Some(
-        if syntax.kind_at(content.start + indent) == SyntaxKind::Code {
+    let code = syntax.kind_at(content.start + indent) == SyntaxKind::Code;
+    Some(RenderedLine {
+        block: block_kind(&text, code, columns),
+        spans: if code {
             code_line(&text)
         } else {
             format_line(&text, columns)
         },
-    )
+    })
+}
+fn block_kind(text: &str, code: bool, columns: usize) -> MarkdownBlock {
+    let body = text.trim_start();
+    if code {
+        let (marker, count) = body.as_bytes().first().map_or((0, 0), |&m| {
+            (m, body.bytes().take_while(|&b| b == m).count())
+        });
+        return MarkdownBlock::Code {
+            fence: matches!(marker, b'`' | b'~') && count >= 3,
+        };
+    }
+    if body.is_empty() {
+        return MarkdownBlock::Blank;
+    }
+    if let Some((cells, separator)) = table_shape(body, columns) {
+        return MarkdownBlock::Table {
+            columns: cells as u8,
+            separator,
+        };
+    }
+    let heading = body.bytes().take_while(|&b| b == b'#').count();
+    if (1..=6).contains(&heading)
+        && body
+            .as_bytes()
+            .get(heading)
+            .is_some_and(u8::is_ascii_whitespace)
+    {
+        return MarkdownBlock::Heading(heading as u8);
+    }
+    if body.starts_with('>') {
+        return MarkdownBlock::Quote;
+    }
+    if body.len() >= 3
+        && body
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .all(|c| matches!(c, '-' | '_' | '*'))
+    {
+        return MarkdownBlock::Rule;
+    }
+    if ["- ", "* ", "+ "]
+        .iter()
+        .any(|prefix| body.starts_with(prefix))
+    {
+        let item = &body[2..];
+        let task = if item.starts_with("[ ] ") {
+            Some(false)
+        } else if item.starts_with("[x] ") || item.starts_with("[X] ") {
+            Some(true)
+        } else {
+            None
+        };
+        return MarkdownBlock::List {
+            ordered: false,
+            task,
+        };
+    }
+    let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+    if (1..=9).contains(&digits)
+        && matches!(body.as_bytes().get(digits), Some(b'.' | b')'))
+        && body
+            .as_bytes()
+            .get(digits + 1)
+            .is_some_and(u8::is_ascii_whitespace)
+    {
+        return MarkdownBlock::List {
+            ordered: true,
+            task: None,
+        };
+    }
+    MarkdownBlock::Paragraph
 }
 fn code_line(text: &str) -> Vec<MarkdownSpan> {
     let trim = text.trim_start();
@@ -318,18 +430,31 @@ fn code_line(text: &str) -> Vec<MarkdownSpan> {
     vec![MarkdownSpan {
         text,
         kind: SyntaxKind::Code,
+        style: MarkdownInlineStyle::Plain,
     }]
 }
 fn push(spans: &mut Vec<MarkdownSpan>, text: &str, kind: SyntaxKind) {
+    push_style(spans, text, kind, MarkdownInlineStyle::Plain);
+}
+fn push_style(
+    spans: &mut Vec<MarkdownSpan>,
+    text: &str,
+    kind: SyntaxKind,
+    style: MarkdownInlineStyle,
+) {
     if text.is_empty() {
         return;
     }
-    if let Some(last) = spans.last_mut().filter(|s| s.kind == kind) {
+    if let Some(last) = spans
+        .last_mut()
+        .filter(|s| s.kind == kind && s.style == style)
+    {
         last.text.push_str(text);
     } else {
         spans.push(MarkdownSpan {
             text: text.into(),
             kind,
+            style,
         });
     }
 }
@@ -363,6 +488,7 @@ fn format_line(text: &str, columns: usize) -> Vec<MarkdownSpan> {
         return vec![MarkdownSpan {
             text: "─".repeat(columns),
             kind: SyntaxKind::Comment,
+            style: MarkdownInlineStyle::Plain,
         }];
     } else if ["- ", "* ", "+ "]
         .iter()
@@ -403,17 +529,17 @@ fn format_line(text: &str, columns: usize) -> Vec<MarkdownSpan> {
             }
         }
         let mut matched = false;
-        for (delimiter, kind) in [
-            ("**", SyntaxKind::Emphasis),
-            ("__", SyntaxKind::Emphasis),
-            ("~~", SyntaxKind::Comment),
-            ("`", SyntaxKind::Code),
-            ("*", SyntaxKind::Emphasis),
-            ("_", SyntaxKind::Emphasis),
+        for (delimiter, kind, style) in [
+            ("**", SyntaxKind::Emphasis, MarkdownInlineStyle::Strong),
+            ("__", SyntaxKind::Emphasis, MarkdownInlineStyle::Strong),
+            ("~~", SyntaxKind::Comment, MarkdownInlineStyle::Strike),
+            ("`", SyntaxKind::Code, MarkdownInlineStyle::Plain),
+            ("*", SyntaxKind::Emphasis, MarkdownInlineStyle::Emphasis),
+            ("_", SyntaxKind::Emphasis, MarkdownInlineStyle::Emphasis),
         ] {
             if let Some(tail) = rest.strip_prefix(delimiter) {
                 if let Some(end) = find_bounded(tail, delimiter, &mut work).filter(|&end| end > 0) {
-                    push(&mut out, &tail[..end], kind);
+                    push_style(&mut out, &tail[..end], kind, style);
                     at += delimiter.len() * 2 + end;
                     matched = true;
                     break;
@@ -458,17 +584,24 @@ fn format_line(text: &str, columns: usize) -> Vec<MarkdownSpan> {
     }
     out
 }
-fn table_line(text: &str, columns: usize) -> Option<Vec<MarkdownSpan>> {
+fn table_shape(text: &str, columns: usize) -> Option<(usize, bool)> {
     let inner = text.strip_prefix('|')?.strip_suffix('|')?;
-    let cells = inner.split('|').map(str::trim).take(33).collect::<Vec<_>>();
-    if cells.len() < 2 || cells.len() > 8 || columns < cells.len() * 5 + 1 {
-        return None;
+    let mut count = 0;
+    let mut separator = true;
+    for cell in inner.split('|').take(9) {
+        count += 1;
+        let body = cell.trim().trim_matches(':');
+        separator &= body.len() >= 3 && body.bytes().all(|b| b == b'-');
     }
-    let width = (columns - 1) / cells.len() - 1;
-    let separator = cells.iter().all(|cell| {
-        let body = cell.trim_matches(':');
-        body.len() >= 3 && body.bytes().all(|b| b == b'-')
-    });
+    ((2..=8).contains(&count) && columns > count * 5).then_some((count, separator))
+}
+fn table_line(text: &str, columns: usize) -> Option<Vec<MarkdownSpan>> {
+    let (count, separator) = table_shape(text, columns)?;
+    let cells = text[1..text.len() - 1]
+        .split('|')
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    let width = (columns - 1) / count - 1;
     let mut result = Vec::new();
     push(
         &mut result,
@@ -539,13 +672,13 @@ fn wrap(spans: Vec<MarkdownSpan>, columns: usize) -> Vec<Vec<MarkdownSpan>> {
                 push(row, &marker, SyntaxKind::Comment);
                 column += grapheme::width(&marker);
             } else if cluster == "\t" {
-                push(row, &" ".repeat(width), span.kind);
+                push_style(row, &" ".repeat(width), span.kind, span.style);
                 column += width;
             } else if cluster.chars().any(char::is_control) || grapheme::width(cluster) == 0 {
                 push(row, "·", SyntaxKind::Comment);
                 column += 1;
             } else {
-                push(row, cluster, span.kind);
+                push_style(row, cluster, span.kind, span.style);
                 column += width;
             }
         }
@@ -682,5 +815,132 @@ mod tests {
                 .collect::<String>()
         ) <= 40));
         assert_eq!(app.active_bytes().unwrap(), source.as_bytes());
+    }
+    #[test]
+    fn markdown_semantic_blocks_preserve_structure_and_wrap_continuations_without_edits() {
+        let mut app = Workbench::default();
+        let tab = app.new_file("blocks.md", TextEncoding::Utf8);
+        let source = "## Título\r\nUn párrafo suficientemente largo para ocupar varias filas con Unicode: café 😀.\r\n\r\n> Una cita\r\n---\r\n- Elemento\r\n- [x] Tarea\r\n1. Numerado\r\n| Campo | Valor |\r\n|---|---|\r\n```md\r\n# literal\r\n```\r\n### Final";
+        app.insert_text(source).unwrap();
+        let revision = app.active_document().unwrap().session.document().revision();
+        let panes = format!("{:?}", app.panes());
+        let p = MarkdownView::default().prepare(&app, tab, 128, 40);
+        let first = |line| p.rows.iter().find(|row| row.source_line == line).unwrap();
+        assert_eq!(first(0).block, MarkdownBlock::Heading(2));
+        assert_eq!(first(1).block, MarkdownBlock::Paragraph);
+        assert_eq!(first(2).block, MarkdownBlock::Blank);
+        assert_eq!(first(3).block, MarkdownBlock::Quote);
+        assert_eq!(first(4).block, MarkdownBlock::Rule);
+        assert_eq!(
+            first(5).block,
+            MarkdownBlock::List {
+                ordered: false,
+                task: None
+            }
+        );
+        assert_eq!(
+            first(6).block,
+            MarkdownBlock::List {
+                ordered: false,
+                task: Some(true)
+            }
+        );
+        assert_eq!(
+            first(7).block,
+            MarkdownBlock::List {
+                ordered: true,
+                task: None
+            }
+        );
+        assert_eq!(
+            first(8).block,
+            MarkdownBlock::Table {
+                columns: 2,
+                separator: false
+            }
+        );
+        assert_eq!(
+            first(9).block,
+            MarkdownBlock::Table {
+                columns: 2,
+                separator: true
+            }
+        );
+        assert_eq!(first(10).block, MarkdownBlock::Code { fence: true });
+        assert_eq!(first(11).block, MarkdownBlock::Code { fence: false });
+        assert_eq!(first(12).block, MarkdownBlock::Code { fence: true });
+        assert_eq!(first(13).block, MarkdownBlock::Heading(3));
+        assert!(!first(1).continuation);
+        assert!(p
+            .rows
+            .iter()
+            .filter(|row| row.source_line == 1)
+            .skip(1)
+            .all(|row| row.continuation));
+        assert!(p.rows.iter().filter(|row| row.source_line == 1).count() > 1);
+        assert_eq!(app.active_bytes().unwrap(), source.as_bytes());
+        assert_eq!(
+            app.active_document().unwrap().session.document().revision(),
+            revision
+        );
+        assert_eq!(format!("{:?}", app.panes()), panes);
+    }
+    #[test]
+    fn markdown_semantic_notice_and_scrolled_heading_keep_source_and_continuation_identity() {
+        let mut app = Workbench::default();
+        let tab = app.new_file("limited.md", TextEncoding::Utf8);
+        app.insert_text(&format!(
+            "{}\n# {}",
+            "a".repeat(LINE_BYTES + 1),
+            "título ".repeat(20)
+        ))
+        .unwrap();
+        let before = app.active_bytes().unwrap();
+        let mut view = MarkdownView::default();
+        let notice = view.prepare(&app, tab, 1, 20);
+        assert_eq!(notice.rows[0].block, MarkdownBlock::Notice);
+        view.last(&app, tab);
+        let end = view.prepare(&app, tab, 1, 20);
+        assert_eq!(end.rows[0].block, MarkdownBlock::Heading(1));
+        assert!(end.rows[0].continuation);
+        view.scroll(-1, &app, tab);
+        let previous = view.prepare(&app, tab, 1, 20);
+        assert_eq!(previous.rows[0].block, MarkdownBlock::Heading(1));
+        assert!(previous.rows[0].continuation);
+        assert_eq!(app.active_bytes().unwrap(), before);
+    }
+    #[test]
+    fn markdown_semantic_inline_styles_survive_wrapping_without_source_edits() {
+        let mut app = Workbench::default();
+        let tab = app.new_file("styles.md", TextEncoding::Utf8);
+        let source = "Texto **negrita larga café** *cursiva larga 😀* ~~tachado largo~~ __fuerte__ _énfasis_";
+        app.insert_text(source).unwrap();
+        let revision = app.active_document().unwrap().session.document().revision();
+        let p = MarkdownView::default().prepare(&app, tab, 128, 12);
+        assert!(p.rows.len() > 1);
+        let styled = |style| {
+            p.rows
+                .iter()
+                .flat_map(|r| &r.spans)
+                .filter(|s| s.style == style)
+                .map(|s| s.text.as_str())
+                .collect::<String>()
+        };
+        assert_eq!(
+            styled(MarkdownInlineStyle::Strong),
+            "negrita larga caféfuerte"
+        );
+        assert_eq!(
+            styled(MarkdownInlineStyle::Emphasis),
+            "cursiva larga 😀énfasis"
+        );
+        assert_eq!(styled(MarkdownInlineStyle::Strike), "tachado largo");
+        assert_eq!(styled(MarkdownInlineStyle::Plain), "Texto     ");
+        assert!(!text(&p).contains("**") && !text(&p).contains("~~"));
+        assert_eq!(app.active_bytes().unwrap(), source.as_bytes());
+        assert_eq!(
+            app.active_document().unwrap().session.document().revision(),
+            revision
+        );
     }
 }

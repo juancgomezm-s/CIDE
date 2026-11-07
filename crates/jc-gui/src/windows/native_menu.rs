@@ -309,6 +309,9 @@ pub(super) unsafe fn create(
 }
 fn checked(command: CommandId, state: &State) -> bool {
     match command {
+        CommandId::ViewMarkdownPreview => {
+            state.markdown_gui.is_some() && state.registry.is_enabled(command, &state.context())
+        }
         CommandId::ViewToggleInvisibles => state.workbench.invisibles_visible(),
         CommandId::EditorToggleScrollLink => state.workbench.panes().scroll_linked(),
         CommandId::EditorTogglePin => state
@@ -477,6 +480,72 @@ pub(super) unsafe fn open(hwnd: Hwnd, group: NativeMenuGroup) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn markdown_view_check_and_document_switch_preserve_source() {
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.width = 1200;
+        state.height = 800;
+        state
+            .workbench
+            .new_file("lectura.md", jc_text::TextEncoding::Utf8);
+        state
+            .workbench
+            .insert_text("# Título\n\n> Cita\n\n| A | B |\n| --- | --- |\n| uno | dos |\n")
+            .unwrap();
+        let before = state.workbench.active_bytes().unwrap();
+        state
+            .workbench
+            .go_to_position(jc_text::TextPosition { line: 0, column: 0 })
+            .unwrap();
+        let revision = state
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .revision();
+        assert!(state
+            .registry
+            .is_enabled(CommandId::ViewMarkdownPreview, &state.context()));
+        assert!(!checked(CommandId::ViewMarkdownPreview, &state));
+        state.execute_menu(CommandId::ViewMarkdownPreview);
+        assert!(checked(CommandId::ViewMarkdownPreview, &state));
+        let tab = state.workbench.active_document().unwrap().tab_id;
+        let _ = state.workbench.syntax_rows(tab, 0, 32);
+        for _ in 0..16 {
+            state.workbench.continue_syntax(tab);
+        }
+        let frame = state.markdown_presentation().unwrap();
+        assert!(frame
+            .presentation
+            .rows
+            .iter()
+            .any(|r| matches!(r.block, jc_app::markdown_preview::MarkdownBlock::Heading(1))));
+        state.markdown_wheel(-120, 3);
+        state.execute_menu(CommandId::ViewMarkdownPreview);
+        assert!(!checked(CommandId::ViewMarkdownPreview, &state));
+        assert_eq!(state.workbench.active_bytes().unwrap(), before);
+        assert_eq!(
+            state
+                .workbench
+                .active_document()
+                .unwrap()
+                .session
+                .document()
+                .revision(),
+            revision
+        );
+        state.toggle_markdown();
+        state
+            .workbench
+            .new_file("texto.txt", jc_text::TextEncoding::Utf8);
+        assert!(state.markdown_presentation().is_none());
+        assert!(!state
+            .registry
+            .is_enabled(CommandId::ViewMarkdownPreview, &state.context()));
+        state.toggle_markdown();
+        assert!(state.markdown_gui.is_none());
+    }
     #[test]
     fn definitions_expose_curated_implemented_entries_once_and_have_clean_separators() {
         let specs = definitions();

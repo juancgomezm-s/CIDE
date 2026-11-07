@@ -18,6 +18,13 @@ impl TuiApp {
             self.status = "Vista de fuente; documento sin cambios".into();
             return;
         }
+        if !self.registry.is_enabled(
+            jc_app::CommandId::ViewMarkdownPreview,
+            &self.command_context(),
+        ) {
+            self.status = "La vista renderizada solo está disponible para Markdown".into();
+            return;
+        }
         self.close_overlay();
         self.snippet_ui = None;
         self.source_popup = false;

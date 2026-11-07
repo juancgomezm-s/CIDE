@@ -767,7 +767,11 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         snippet: state.snippet_presentation(),
         markdown: state.markdown_presentation(),
         explorer: state.explorer_presentation(),
-        outline: state.outline_presentation(),
+        outline: if state.markdown_gui.is_some() {
+            None
+        } else {
+            state.outline_presentation()
+        },
         bottom: state.bottom_presentation(),
         selector: state.selector_presentation(super::selector_paint::list_capacity(
             state.width,

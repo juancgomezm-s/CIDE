@@ -1,25 +1,53 @@
 //! Read-only native Markdown surface over the same bounded range presenter.
 use super::{ffi::*, paint, wide, Action, State};
 use jc_app::{
-    markdown_preview::{MarkdownPresentation, MarkdownView},
+    markdown_preview::{
+        MarkdownBlock, MarkdownInlineStyle, MarkdownPresentation, MarkdownRow, MarkdownView,
+    },
     CommandId, Modifiers, TaskStamp,
 };
+use std::{ptr::null_mut, rc::Rc};
+#[link(name = "user32")]
+extern "system" {
+    fn DrawTextW(dc: Hdc, text: *const u16, count: i32, rect: *mut Rect, flags: u32) -> i32;
+}
+#[link(name = "gdi32")]
+extern "system" {
+    fn SetBkMode(dc: Hdc, mode: i32) -> i32;
+    fn GetTextExtentPoint32W(dc: Hdc, text: *const u16, count: i32, size: *mut TextSize) -> i32;
+}
+#[repr(C)]
+#[derive(Default)]
+struct TextSize {
+    width: i32,
+    height: i32,
+}
 pub(super) struct MarkdownGui {
     stamp: TaskStamp,
     view: MarkdownView,
+    fonts: Option<Rc<Fonts>>,
+    page_rows: usize,
+    wheel: i32,
 }
 pub(super) struct MarkdownFrame {
     pub presentation: MarkdownPresentation,
     width: i32,
     height: i32,
     top: i32,
-    cw: i32,
     ch: i32,
+    dpi: super::dpi::Dpi,
+    fonts: Rc<Fonts>,
 }
 impl State {
     pub(super) fn toggle_markdown(&mut self) -> Action {
         if self.markdown_gui.take().is_some() {
             self.status = "Vista de fuente; documento sin cambios".into();
+            return Action::None;
+        }
+        if !self
+            .registry
+            .is_enabled(CommandId::ViewMarkdownPreview, &self.context())
+        {
             return Action::None;
         }
         self.close_selector();
@@ -45,6 +73,9 @@ impl State {
         };
         self.markdown_gui = Some(MarkdownGui {
             stamp,
+            fonts: None,
+            page_rows: 1,
+            wheel: 0,
             view: MarkdownView::at_line(self.workbench.active_position().map_or(0, |p| p.line)),
         });
         self.status = "Markdown · lectura · Ctrl+Alt+M o Esc vuelve a la fuente".into();
@@ -66,8 +97,7 @@ impl State {
             return Action::None;
         };
         let tab = doc.tab_id;
-        let page =
-            ((self.height / self.cell_height.max(1)).saturating_sub(6)).clamp(1, 96) as isize;
+        let page = ui.page_rows.clamp(1, 96) as isize;
         match code {
             0x26 => ui.view.scroll(-1, &self.workbench, tab),
             0x28 => ui.view.scroll(1, &self.workbench, tab),
@@ -80,6 +110,14 @@ impl State {
         Action::None
     }
     pub(super) fn markdown_presentation(&mut self) -> Option<MarkdownFrame> {
+        if self.markdown_gui.as_ref().is_some_and(|ui| {
+            self.workbench
+                .active_document()
+                .is_none_or(|doc| doc.id != ui.stamp.document)
+        }) {
+            self.markdown_gui = None;
+            return None;
+        }
         let ui = self.markdown_gui.as_mut()?;
         let tab = self.workbench.document_by_id(ui.stamp.document)?.tab_id;
         let current = self.workbench.task_stamp_is_current(ui.stamp)
@@ -93,12 +131,23 @@ impl State {
             self.cell_width.clamp(1, 8192),
             self.cell_height.clamp(1, 8192),
         );
-        let presentation = if current {
+        if ui.fonts.as_ref().is_none_or(|fonts| fonts.dpi != self.dpi) {
+            match unsafe { Fonts::new(self.dpi) } {
+                Ok(fonts) => ui.fonts = Some(Rc::new(fonts)),
+                Err(error) => {
+                    self.status = error;
+                    return None;
+                }
+            }
+        }
+        let mut presentation = if current {
             ui.view.prepare(
                 &self.workbench,
                 tab,
                 (((height - top).max(0) / ch).saturating_sub(5)).clamp(0, 96) as usize,
-                ((width - 32).max(0) / cw).clamp(12, 256) as usize,
+                ((width.min(self.dpi.pixels(1000)) - self.dpi.pixels(96)).max(0)
+                    / cw.max(self.dpi.pixels(12)))
+                .clamp(12, 256) as usize,
             )
         } else {
             MarkdownPresentation {
@@ -111,87 +160,417 @@ impl State {
             self.syntax_targets[0] = Some((self.workbench.panes().active(), tab));
             self.wakeup.signal();
         }
+        let mut used = self.dpi.pixels(48);
+        let available = height - top - self.dpi.pixels(30);
+        let keep = presentation
+            .rows
+            .iter()
+            .take_while(|row| {
+                used += row_height(row, self.dpi);
+                used <= available
+            })
+            .count();
+        presentation.rows.truncate(keep);
+        ui.page_rows = keep.max(1);
         Some(MarkdownFrame {
             presentation,
             width,
             height,
             top,
-            cw,
             ch,
+            dpi: self.dpi,
+            fonts: ui.fonts.as_ref().unwrap().clone(),
         })
     }
-}
-pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> {
-    let bg = super::shell::BACKGROUND;
-    let panel = super::shell::SURFACE;
-    let fg = 0x00d5d7d8;
-    let accent = 0x00d0d467;
-    let top = frame.top;
-    let bottom = (frame.height - frame.ch - 6).max(top);
-    paint::fill(
-        dc,
-        Rect {
-            left: 0,
-            top,
-            right: frame.width,
-            bottom,
-        },
-        bg,
-    )?;
-    for (i, text) in [
-        "Markdown · vista previa",
-        "Flechas desplazar · RePág/AvPág · Inicio/Fin · Esc fuente",
-    ]
-    .iter()
-    .enumerate()
-    {
-        let y = top + i as i32 * frame.ch;
-        paint::text(
-            dc,
-            Rect {
-                left: 16.min(frame.width),
-                top: y,
-                right: frame.width,
-                bottom: (y + frame.ch).min(bottom),
-            },
-            &wide(text),
-            accent,
-            panel,
-        )?;
+    pub(super) fn markdown_wheel(&mut self, delta: i32, lines: u32) -> bool {
+        let Some(ui) = &mut self.markdown_gui else {
+            return false;
+        };
+        let total = ui.wheel.saturating_add(delta);
+        ui.wheel = total % 120;
+        let rows = if lines == u32::MAX {
+            ui.page_rows
+        } else {
+            (lines as usize).min(96)
+        };
+        let steps = (total / 120).saturating_mul(rows as i32).clamp(-96, 96);
+        if steps != 0 {
+            if let Some(doc) = self.workbench.document_by_id(ui.stamp.document) {
+                ui.view
+                    .scroll(-(steps as isize), &self.workbench, doc.tab_id);
+            }
+        }
+        true
     }
-    for (i, row) in frame.presentation.rows.iter().enumerate() {
-        let y = top + (i as i32 + 3) * frame.ch;
-        let mut x = 16;
-        for span in &row.spans {
-            let cells = jc_text::grapheme::width(&span.text);
-            let end = (x + cells as i32 * frame.cw).min(frame.width);
-            let color = jc_app::syntax_theme::foreground(span.kind);
-            let color = u32::from(color.r) | (u32::from(color.g) << 8) | (u32::from(color.b) << 16);
-            paint::text(
-                dc,
-                Rect {
-                    left: x,
-                    top: y,
-                    right: end,
-                    bottom: (y + frame.ch).min(bottom),
-                },
-                &wide(&span.text),
-                color,
-                bg,
-            )?;
-            x = end;
+}
+
+struct Fonts {
+    dpi: super::dpi::Dpi,
+    body: Handle,
+    bold: Handle,
+    italic: Handle,
+    strike: Handle,
+    code: Handle,
+    link: Handle,
+    headings: [Handle; 6],
+}
+impl Fonts {
+    unsafe fn new(dpi: super::dpi::Dpi) -> Result<Self, String> {
+        let mut fonts = Self {
+            dpi,
+            body: null_mut(),
+            bold: null_mut(),
+            italic: null_mut(),
+            strike: null_mut(),
+            code: null_mut(),
+            link: null_mut(),
+            headings: [null_mut(); 6],
+        };
+        let create = |size, weight, italic, underline, strike, face: &str| {
+            CreateFontW(
+                -dpi.pixels(size),
+                0,
+                0,
+                0,
+                weight,
+                italic,
+                underline,
+                strike,
+                1,
+                0,
+                0,
+                5,
+                0,
+                wide(face).as_ptr(),
+            )
+        };
+        fonts.body = create(16, 400, 0, 0, 0, "Segoe UI");
+        fonts.bold = create(16, 700, 0, 0, 0, "Segoe UI");
+        fonts.italic = create(16, 400, 1, 0, 0, "Segoe UI");
+        fonts.strike = create(16, 400, 0, 0, 1, "Segoe UI");
+        fonts.code = create(14, 400, 0, 0, 0, "Consolas");
+        fonts.link = create(16, 400, 0, 1, 0, "Segoe UI");
+        for (i, size) in [28, 24, 21, 19, 17, 16].into_iter().enumerate() {
+            fonts.headings[i] = create(size, 700, 0, 0, 0, "Segoe UI");
+        }
+        if [
+            fonts.body,
+            fonts.bold,
+            fonts.italic,
+            fonts.strike,
+            fonts.code,
+            fonts.link,
+        ]
+        .into_iter()
+        .chain(fonts.headings)
+        .any(|h| h.is_null())
+        {
+            return Err("No se pudieron preparar las fuentes de Markdown".into());
+        }
+        Ok(fonts)
+    }
+}
+impl Drop for Fonts {
+    fn drop(&mut self) {
+        unsafe {
+            for font in [
+                self.body,
+                self.bold,
+                self.italic,
+                self.strike,
+                self.code,
+                self.link,
+            ]
+            .into_iter()
+            .chain(self.headings)
+            {
+                if !font.is_null() {
+                    DeleteObject(font);
+                }
+            }
         }
     }
-    paint::text(
-        dc,
-        Rect {
-            left: 8.min(frame.width),
-            top: (bottom - frame.ch).max(top),
-            right: frame.width,
-            bottom,
-        },
-        &wide(&frame.presentation.message),
-        fg,
-        panel,
-    )
+}
+fn row_height(row: &MarkdownRow, dpi: super::dpi::Dpi) -> i32 {
+    dpi.pixels(match row.block {
+        MarkdownBlock::Heading(level) => {
+            if level <= 2 {
+                66
+            } else {
+                50
+            }
+        }
+        MarkdownBlock::Blank => 14,
+        MarkdownBlock::Rule => 20,
+        MarkdownBlock::Code { fence: true } => 24,
+        MarkdownBlock::Table {
+            separator: true, ..
+        } => 4,
+        _ => 28,
+    })
+}
+fn area(left: i32, top: i32, right: i32, bottom: i32) -> Rect {
+    Rect {
+        left,
+        top,
+        right,
+        bottom,
+    }
+}
+/// The painter consumes only bounded immutable presentation, never document bytes.
+pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> {
+    let bg = super::shell::BACKGROUND;
+    let surface = super::shell::SIDEBAR;
+    let fg = super::shell::TEXT;
+    let muted = super::shell::MUTED;
+    let accent = super::shell::ACCENT;
+    let p = |v| frame.dpi.pixels(v);
+    let bottom = (frame.height - frame.ch - p(6)).max(frame.top);
+    paint::fill(dc, area(0, frame.top, frame.width, bottom), bg)?;
+    let width = frame.width.min(p(1000));
+    let left = ((frame.width - width) / 2 + p(40)).min(frame.width);
+    let right = (frame.width - left).max(left);
+    let old = SelectObject(dc, frame.fonts.body);
+    let old_mode = SetBkMode(dc, 1);
+    let result = (|| {
+        paint::text(
+            dc,
+            area(left, frame.top + p(10), right, frame.top + p(35)),
+            &wide("Markdown · vista renderizada"),
+            muted,
+            bg,
+        )?;
+        let mut y = frame.top + p(48);
+        for (row_index, row) in frame.presentation.rows.iter().enumerate() {
+            let height = row_height(row, frame.dpi);
+            let box_rect = area(left, y, right, (y + height).min(bottom));
+            let mut x = left;
+            let mut row_bg = bg;
+            match row.block {
+                MarkdownBlock::Blank => {
+                    y += height;
+                    continue;
+                }
+                MarkdownBlock::Rule => {
+                    paint::fill(dc, area(left, y + p(9), right, y + p(10)), muted)?;
+                    y += height;
+                    continue;
+                }
+                MarkdownBlock::Code { .. } => {
+                    row_bg = surface;
+                    paint::fill(dc, box_rect, row_bg)?;
+                    x += p(12);
+                }
+                MarkdownBlock::Quote => {
+                    row_bg = surface;
+                    paint::fill(dc, box_rect, row_bg)?;
+                    paint::fill(dc, area(left, y, left + p(3), y + height), accent)?;
+                    x += p(16);
+                }
+                MarkdownBlock::Table { columns, separator } => {
+                    if separator {
+                        paint::fill(dc, area(left, y, right, y + p(1)), muted)?;
+                        y += height;
+                        continue;
+                    }
+                    let text: String = row.spans.iter().map(|s| s.text.as_str()).collect();
+                    let cells: Vec<_> = text.trim().trim_matches('│').split('│').take(8).collect();
+                    let count = usize::from(columns).max(1);
+                    let cell_width = (right - left) / count as i32;
+                    let header = frame
+                        .presentation
+                        .rows
+                        .get(row_index + 1)
+                        .is_some_and(|next| {
+                            matches!(
+                                next.block,
+                                MarkdownBlock::Table {
+                                    separator: true,
+                                    ..
+                                }
+                            )
+                        });
+                    SelectObject(
+                        dc,
+                        if header {
+                            frame.fonts.bold
+                        } else {
+                            frame.fonts.body
+                        },
+                    );
+                    for (n, cell) in cells.iter().take(count).enumerate() {
+                        let a = left + n as i32 * cell_width;
+                        paint::fill(dc, area(a, y, a + cell_width, y + height), surface)?;
+                        paint::fill(dc, area(a, y, a + p(1), y + height), muted)?;
+                        paint::text(
+                            dc,
+                            area(a + p(8), y + p(3), a + cell_width - p(5), y + height - p(2)),
+                            &wide(cell.trim()),
+                            fg,
+                            surface,
+                        )?;
+                    }
+                    paint::fill(dc, area(left, y + height - p(1), right, y + height), muted)?;
+                    paint::fill(dc, area(right - p(1), y, right, y + height), muted)?;
+                    y += height;
+                    continue;
+                }
+                _ => {}
+            }
+            for (index, span) in row.spans.iter().enumerate() {
+                let heading = if let MarkdownBlock::Heading(level) = row.block {
+                    Some(level.clamp(1, 6) as usize - 1)
+                } else {
+                    None
+                };
+                let font = if let Some(level) = heading {
+                    frame.fonts.headings[level]
+                } else if matches!(row.block, MarkdownBlock::Code { .. })
+                    || span.kind == jc_app::SyntaxKind::Code
+                {
+                    frame.fonts.code
+                } else if span.style == MarkdownInlineStyle::Emphasis {
+                    frame.fonts.italic
+                } else if span.style == MarkdownInlineStyle::Strike {
+                    frame.fonts.strike
+                } else {
+                    match span.kind {
+                        jc_app::SyntaxKind::Emphasis => frame.fonts.bold,
+                        jc_app::SyntaxKind::Link => frame.fonts.link,
+                        _ => frame.fonts.body,
+                    }
+                };
+                SelectObject(dc, font);
+                let text = if row.block == MarkdownBlock::Quote && index == 0 {
+                    span.text.strip_prefix("│ ").unwrap_or(&span.text)
+                } else if matches!(row.block, MarkdownBlock::Code { fence: true }) {
+                    span.text
+                        .trim_start()
+                        .strip_prefix("Código")
+                        .unwrap_or(&span.text)
+                        .trim()
+                } else if matches!(row.block, MarkdownBlock::Code { fence: false }) && index == 0 {
+                    span.text.strip_prefix("  ").unwrap_or(&span.text)
+                } else {
+                    &span.text
+                };
+                if text.is_empty() {
+                    continue;
+                }
+                let value = wide(text);
+                let mut measured = TextSize::default();
+                if GetTextExtentPoint32W(
+                    dc,
+                    value.as_ptr(),
+                    (value.len() - 1) as i32,
+                    &mut measured,
+                ) == 0
+                {
+                    return Err("No se pudo medir el texto Markdown".into());
+                }
+                let color = if span.kind == jc_app::SyntaxKind::Link {
+                    0x00e5c28a
+                } else if heading.is_some() {
+                    fg
+                } else if matches!(row.block, MarkdownBlock::Code { .. }) {
+                    0x00ded4c5
+                } else {
+                    fg
+                };
+                let inline_code = span.kind == jc_app::SyntaxKind::Code
+                    && !matches!(row.block, MarkdownBlock::Code { .. });
+                let ink = if inline_code { surface } else { row_bg };
+                SetTextColor(dc, color);
+                SetBkColor(dc, ink);
+                SetBkMode(dc, 2);
+                let mut target = area(x, y + p(3), right - p(4), box_rect.bottom - p(2));
+                if heading.is_some() {
+                    DrawTextW(
+                        dc,
+                        value.as_ptr(),
+                        (value.len() - 1) as i32,
+                        &mut target,
+                        0x10 | 0x800,
+                    );
+                } else {
+                    paint::text(
+                        dc,
+                        area(
+                            x,
+                            y + p(3),
+                            (x + measured.width + p(4)).min(right),
+                            box_rect.bottom - p(2),
+                        ),
+                        &value,
+                        color,
+                        ink,
+                    )?;
+                }
+                x = (x + measured.width).min(right);
+            }
+            y += height;
+        }
+        SelectObject(dc, frame.fonts.body);
+        paint::text(
+            dc,
+            area(left, (bottom - p(24)).max(frame.top), right, bottom),
+            &wide(&frame.presentation.message),
+            muted,
+            bg,
+        )
+    })();
+    SelectObject(dc, old);
+    SetBkMode(dc, old_mode);
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn markdown_native_painter_draws_blocks_styles_and_grid_without_editing_source() {
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.width = 1100;
+        state.height = 900;
+        state
+            .workbench
+            .new_file("markdown-native.md", jc_text::TextEncoding::Utf8);
+        state.workbench.insert_text("# Markdown en CIDE\n\nTexto con **negrita**, *cursiva*, ~~tachado~~ y `código`.\n\n> Una cita con franja propia.\n\n- Primer elemento\n- [x] Tarea completa\n\n| Elemento | Estado |\n| --- | --- |\n| Vista nativa | Lista |\n\n---\n\n```rust\nfn main() {}\n```\n").unwrap();
+        state
+            .workbench
+            .go_to_position(jc_text::TextPosition { line: 0, column: 0 })
+            .unwrap();
+        let before = state.workbench.active_bytes().unwrap();
+        state.toggle_markdown();
+        let tab = state.workbench.active_document().unwrap().tab_id;
+        let _ = state.workbench.syntax_rows(tab, 0, 64);
+        for _ in 0..16 {
+            state.workbench.continue_syntax(tab);
+        }
+        let preview = state.markdown_presentation().unwrap();
+        assert!(preview.presentation.rows.iter().any(|row| matches!(
+            row.block,
+            MarkdownBlock::Table {
+                separator: false,
+                ..
+            }
+        )));
+        assert!(preview
+            .presentation
+            .rows
+            .iter()
+            .flat_map(|row| &row.spans)
+            .any(|span| span.style == MarkdownInlineStyle::Emphasis));
+        let frame = super::super::paint::prepare(&mut state);
+        let folder = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../work/markdown-review-20261106");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join(format!("native-raster-{}.bmp", std::process::id()));
+        unsafe {
+            super::super::paint::bitmap(null_mut(), &frame, &path).unwrap();
+        }
+        assert!(std::fs::metadata(&path).unwrap().len() > 54);
+        assert_eq!(state.workbench.active_bytes().unwrap(), before);
+        println!("Native Markdown raster: {}", path.display());
+    }
 }

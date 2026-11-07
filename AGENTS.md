@@ -49,6 +49,22 @@ No new Git capabilities/TUI/core/dependencies/recovery changes. Show result befo
 
 # Working on JC-IDE
 
+## Native Markdown presentation — 2026-11-06
+
+Read docs/M2_MARKDOWN_RENDERED_VIEW.md. Shared MarkdownRow block/continuation and
+MarkdownSpan style preserve source/range quotas; GUI consumes native fonts and
+geometry, TUI keeps spans and menu check. ViewMarkdownPreview is gated by detected
+Markdown profile, not source starting with #. No second document or web renderer.
+13 directed distinct cases passed,6 new; selected all-target Clippy passed. Current
+binaries target/markdown-render-final/release; preserve older deliveries/caches.
+Native raster in docs/evidence is own GDI painter output, not physical screenshot.
+User requested Computer Use; fresh target selection/source accessibility worked,
+but black capture and GetCursorPos accessdenied repeated after fresh selection.
+No input sent; physical review and own fixture instance normalexit pending until
+usable desktop. Never reuse recorded window IDs/PIDs or forceclose. Personal
+recovery disabled and fixture bytes unchanged. CI/push remain dormant.
+
+
 ## M2 menu field paste closure — 2026-11-06
 
 Read docs/M2_MENU_FIELD_PASTE.md. GUI field_paste_action is the shared visible-field

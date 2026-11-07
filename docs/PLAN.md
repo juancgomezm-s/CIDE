@@ -1,3 +1,17 @@
+## Vista Markdown renderizada — 2026-11-06
+
+[Contrato e imagen nativa](M2_MARKDOWN_RENDERED_VIEW.md). Ver → Vista previa de
+Markdown muestra check al activarse y solo admite documentos Markdown. GUI dibuja
+jerarquía de encabezados, énfasis real, código, citas, reglas y tablas; TUI comparte
+metadata y marca de menú. Solo lectura, bytes/undo intactos y sin dependencias.
+13 casos dirigidos distintos aprobados (6 nuevos); Clippy selectivo all-targets
+aprobado. Binarios: target/markdown-render-final/release; anteriores preservados.
+Computer Use se intentó con instancia aislada: fuente accesible, captura negra,
+GetCursorPos acceso denegado al activar y mismo resultado tras selección nueva.
+Sin entrada enviada ni aceptación física; se pidió disponibilidad del escritorio.
+La instancia propia sigue pendiente de salida normal; no actuar con IDs antiguos.
+CI/push no ejecutados; recuperación personal deshabilitada.
+
 ## Estado vigente: cierre funcional de menús — 2026-11-06
 
 [Pegado al campo correcto](M2_MENU_FIELD_PASTE.md): GUI y TUI conservan el destino
