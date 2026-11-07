@@ -1,7 +1,10 @@
 //! Reviewed index writes for GUI and TUI. The controller owns at most one
 //! request, one review, and the last publication outcome. Workers see Git
 //! plans and bounded metadata, never a Workbench or editable buffers.
-use crate::{Wakeup, Workbench};
+use crate::{
+    git_revision::{ComparisonOrigin, PairKind, RevisionComparison},
+    Wakeup, Workbench,
+};
 use jc_git::index_write::{apply_index_change, prepare_index_change};
 pub use jc_git::index_write::{IndexAction, IndexPlan};
 use std::{
@@ -96,6 +99,7 @@ pub struct IndexTarget {
     pub root: PathBuf,
     pub path: Vec<u8>,
     pub action: IndexAction,
+    pub hunk: Option<usize>,
 }
 
 pub struct IndexReview {
@@ -108,6 +112,31 @@ impl IndexReview {
     pub fn plan(&self) -> &IndexPlan {
         &self.plan
     }
+    pub fn matches(
+        &self,
+        root: &Path,
+        comparison: &RevisionComparison,
+        visible_hunk: usize,
+    ) -> bool {
+        self.target.root == root
+            && self.target.path == comparison.path
+            && self.target.hunk.is_none_or(|hunk| hunk == visible_hunk)
+            && pair_matches(self.plan(), comparison)
+    }
+}
+
+fn pair_matches(plan: &IndexPlan, comparison: &RevisionComparison) -> bool {
+    let ComparisonOrigin::Local(local) = &comparison.origin else {
+        return false;
+    };
+    let pair = plan.pair();
+    pair.repository.root == comparison.repository_root
+        && pair.path == comparison.path
+        && pair.kind == local.kind
+        && pair.index == local.index
+        && pair.head == local.head
+        && pair.before.identity() == &local.before
+        && pair.after.identity() == &local.after
 }
 
 #[derive(Debug)]
@@ -136,7 +165,11 @@ struct Active {
 }
 
 enum Request {
-    Prepare(IndexTarget, Arc<AtomicBool>),
+    Prepare(
+        IndexTarget,
+        Arc<AtomicBool>,
+        Option<Arc<RevisionComparison>>,
+    ),
     Apply(Box<IndexPlan>),
 }
 
@@ -161,15 +194,26 @@ impl Worker {
             .spawn(move || {
                 while let Ok(request) = receiver.recv() {
                     let result = match request {
-                        Request::Prepare(target, cancel) => Completion::Prepared(
+                        Request::Prepare(target, cancel, comparison) => Completion::Prepared(
                             run_worker(|| {
-                                prepare_index_change(
+                                let plan = prepare_index_change(
                                     &target.root,
                                     &target.path,
                                     target.action,
                                     LIMITS,
                                     || cancel.load(Ordering::Acquire),
-                                )
+                                )?;
+                                if let Some(comparison) = comparison {
+                                    if !pair_matches(&plan, &comparison) {
+                                        return Err(jc_git::Error::Stale);
+                                    }
+                                    plan.with_hunks(
+                                        &comparison.model,
+                                        &[target.hunk.expect("hunk request")],
+                                    )
+                                } else {
+                                    Ok(plan)
+                                }
                             })
                             .map(Box::new),
                         ),
@@ -305,6 +349,50 @@ impl GitIndexController {
         path: Vec<u8>,
         action: IndexAction,
     ) -> Result<u64, IndexRequestError> {
+        self.prepare_target(
+            bench,
+            IndexTarget {
+                root,
+                path,
+                action,
+                hunk: None,
+            },
+            None,
+        )
+    }
+
+    pub fn prepare_hunk(
+        &mut self,
+        bench: &Workbench,
+        root: PathBuf,
+        comparison: Arc<RevisionComparison>,
+        hunk: usize,
+    ) -> Result<u64, IndexRequestError> {
+        let ComparisonOrigin::Local(local) = &comparison.origin else {
+            return Err(IndexRequestError::InvalidTarget);
+        };
+        if !comparison.can_select_index_hunk(hunk) {
+            return Err(IndexRequestError::InvalidTarget);
+        }
+        let action = match local.kind {
+            PairKind::Worktree => IndexAction::Stage,
+            PairKind::Prepared => IndexAction::Unstage,
+        };
+        let target = IndexTarget {
+            root,
+            path: comparison.path.clone(),
+            action,
+            hunk: Some(hunk),
+        };
+        self.prepare_target(bench, target, Some(comparison))
+    }
+
+    fn prepare_target(
+        &mut self,
+        bench: &Workbench,
+        target: IndexTarget,
+        comparison: Option<Arc<RevisionComparison>>,
+    ) -> Result<u64, IndexRequestError> {
         if self.active.is_some() {
             return Err(IndexRequestError::Busy);
         }
@@ -312,10 +400,10 @@ impl GitIndexController {
             return Err(IndexRequestError::ReviewPending);
         }
         require_clean(bench)?;
-        if !root.is_absolute()
-            || root.as_os_str().len() > PATH_LIMIT
-            || path.is_empty()
-            || path.len() > PATH_LIMIT
+        if !target.root.is_absolute()
+            || target.root.as_os_str().len() > PATH_LIMIT
+            || target.path.is_empty()
+            || target.path.len() > PATH_LIMIT
         {
             return Err(IndexRequestError::InvalidTarget);
         }
@@ -334,16 +422,16 @@ impl GitIndexController {
             self.worker = Some(Worker::spawn(self.wake.clone())?);
         }
         let target = IndexTarget {
-            root: root.into_boxed_path().into_path_buf(),
-            path: path.into_boxed_slice().into_vec(),
-            action,
+            root: target.root.into_boxed_path().into_path_buf(),
+            path: target.path.into_boxed_slice().into_vec(),
+            ..target
         };
         let cancel = Arc::new(AtomicBool::new(false));
         self.worker
             .as_ref()
             .unwrap()
             .requests
-            .try_send(Request::Prepare(target.clone(), cancel.clone()))
+            .try_send(Request::Prepare(target.clone(), cancel.clone(), comparison))
             .map_err(|_| IndexRequestError::WorkerUnavailable)?;
         self.next_ticket = ticket;
         self.preparation_failure = None;

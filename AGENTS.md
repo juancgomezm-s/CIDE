@@ -1,3 +1,14 @@
+# Amend and staged hunks in GUI/TUI — 2026-11-07
+
+Read docs/G4_CREATE_COMMIT.md and docs/GIT_ADVANCED_FOUNDATIONS.md. Amend pins
+the selected branch and tip before review, preserves author and parents and
+uses the existing commit publication and reflogs. Signed commits and special
+headers require their own flow. GUI/TUI index review applies one displayed
+hunk through the existing worker. Preserve exact source identities and reject
+confirmation when the visible hunk or Git comparison changes. Directed tests
+verified both frontends and the shared controllers in private repositories.
+Keep prior optimized deliveries and caches.
+
 # Reviewed local commits in GUI/TUI — 2026-11-07
 
 Read docs/G4_CREATE_COMMIT.md. The independent Git core previews exact
@@ -9,7 +20,7 @@ are required. GUI/TUI share one controller. Core and both input flows passed,
 as did fmt, selected all-target Clippy, workspace release offline and 25 hidden
 native regression checks. Delivery target/git-create-commit-next/release.
 The previous TUI whole-file index delivery is target/git-tui-index-next/release
-at 5237f67. Preserve both deliveries and caches. Amend and hunk UI remain open.
+at 5237f67. Preserve both deliveries and caches.
 
 # Git advanced foundations — 2026-11-07
 

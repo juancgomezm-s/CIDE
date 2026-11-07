@@ -109,8 +109,8 @@ impl State {
             _ => "En disco: índice → disco · bytes originales",
         }
         .into();
-        frame.footer = "Solo lectura · Índice y archivo en disco".into();
-        frame.details_top = p(164);
+        frame.footer = "Comparación local · bytes originales".into();
+        frame.details_top = p(192);
         if let Some(notice) = &self.git_workspace.notice {
             frame.details.push(label(notice, 256));
         } else if let Some(c) = self.git_revision.comparison() {
@@ -164,7 +164,7 @@ impl State {
                                 l.preview.right - p(12),
                                 l.preview.bottom - p(14),
                             ),
-                            l.preview.top + p(164),
+                            l.preview.top + p(192),
                             self.cell_height,
                         ),
                         mode: self.git_workspace.diff_mode(),

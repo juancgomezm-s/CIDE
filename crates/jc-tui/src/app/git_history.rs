@@ -684,7 +684,7 @@ impl TuiApp {
         }
         prepared.details.push(label(
             if self.git_history.local.is_some() {
-                "Fuentes Git y disco · bytes originales · solo lectura"
+                "Comparación local · bytes originales"
             } else {
                 "Histórico · comparación con el primer padre · solo lectura"
             },

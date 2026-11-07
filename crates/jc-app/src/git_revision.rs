@@ -73,11 +73,18 @@ pub struct RevisionComparison {
     pub after_oid: Option<String>,
     pub model: OwnedDiffModel,
     patch_options: PatchOptions,
-    repository_root: PathBuf,
+    pub(crate) repository_root: PathBuf,
     git_dir: PathBuf,
 }
 
 impl RevisionComparison {
+    pub fn can_select_index_hunk(&self, index: usize) -> bool {
+        matches!(self.origin, ComparisonOrigin::Local(_))
+            && matches!(self.patch_options.before_mode, Some(0o100644 | 0o100755))
+            && self.patch_options.before_mode == self.patch_options.after_mode
+            && self.model.hunks().nth(index).is_some()
+    }
+
     pub fn can_export_patch(&self) -> bool {
         self.patch_options.before_mode != self.patch_options.after_mode
             || self.model.hunks().next().is_some()

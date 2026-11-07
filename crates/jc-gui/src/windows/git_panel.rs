@@ -258,7 +258,41 @@ impl State {
             return Action::None;
         }
         if code == b'I' as usize && modifiers == Modifiers::CTRL.union(Modifiers::SHIFT) {
-            self.git_index_action();
+            self.git_index_action(false);
+            return Action::None;
+        }
+        if code == b'B' as usize && modifiers == Modifiers::CTRL.union(Modifiers::ALT) {
+            if self
+                .git_index
+                .review()
+                .is_some_and(|review| review.target.hunk.is_some())
+            {
+                self.status = "Ctrl+Intro confirma el bloque · Esc descarta".into();
+            } else {
+                self.git_index_action(true);
+            }
+            return Action::None;
+        }
+        if code == 0x0d
+            && modifiers == Modifiers::CTRL
+            && self
+                .git_index
+                .review()
+                .is_some_and(|review| review.target.hunk.is_some())
+        {
+            self.git_index_action(true);
+            return Action::None;
+        }
+        if code == 0x1b
+            && modifiers == Modifiers::NONE
+            && matches!(
+                self.git_index.state(),
+                jc_app::git_index::IndexState::Preparing | jc_app::git_index::IndexState::Reviewing
+            )
+        {
+            let _ = self.git_index.discard_review();
+            self.status = "Revisión del índice descartada".into();
+            self.git_workspace.invalidate();
             return Action::None;
         }
         if code == b'E' as usize && modifiers == Modifiers::CTRL.union(Modifiers::ALT) {

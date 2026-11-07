@@ -498,6 +498,97 @@ fn tui_index_reviews_then_stages_and_unstages_the_original_file() {
     assert_eq!(after.head, before.head);
     assert_eq!(after.branch, before.branch);
     assert_eq!(app.workbench.active_bytes().unwrap(), before.tracked);
+
+    let baseline: String = (0..32).map(|i| format!("linea {i:02}\r\n")).collect();
+    fixture.rewrite(TRACKED, baseline.as_bytes());
+    fixture.cache(&fixture.oid(&["hash-object", "-w", "--no-filters", "--", TRACKED]));
+    let tree = fixture.oid(&["write-tree"]);
+    let previous = fixture.oid(&["rev-parse", "HEAD"]);
+    let base_commit = fixture.oid(&[
+        "commit-tree",
+        &tree,
+        "-p",
+        &previous,
+        "-m",
+        "Base de bloques",
+    ]);
+    fixture.git(&["update-ref", "HEAD", &base_commit, &previous]);
+    let second_only = baseline.replace("linea 27", "segundo cambio");
+    let worktree = second_only.replace("linea 02", "primer cambio");
+    fixture.rewrite(TRACKED, worktree.as_bytes());
+    request_ready(&mut app, &wake);
+    key(&mut app, KeyCode::End);
+    compare(&mut app, &wake, 't');
+    assert!(app
+        .prepare_historical_diff(100, 8, 8)
+        .status
+        .contains("K preparar bloque"));
+    key(&mut app, KeyCode::Char('k'));
+    wait(&mut app, &wake, |a| {
+        a.git_index.state() == IndexState::Preparing
+    });
+    assert_eq!(app.git_index.review().unwrap().target.hunk, Some(0));
+    key(&mut app, KeyCode::Right);
+    key(&mut app, KeyCode::Enter);
+    assert!(app.git_index.review().is_none());
+    assert_eq!(fixture.git(&["show", ":tracked.txt"]), baseline.as_bytes());
+    key(&mut app, KeyCode::Char('k'));
+    wait(&mut app, &wake, |a| {
+        a.git_index.state() == IndexState::Preparing
+    });
+    assert_eq!(app.git_index.review().unwrap().target.hunk, Some(1));
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app, &wake, |a| {
+        a.git_index.state() == IndexState::Applying
+    });
+    assert_eq!(
+        app.git_index.state(),
+        IndexState::Published,
+        "{}",
+        app.status
+    );
+    assert_eq!(
+        fixture.git(&["show", ":tracked.txt"]),
+        second_only.as_bytes()
+    );
+    assert_eq!(
+        fs::read(fixture.path(TRACKED)).unwrap(),
+        worktree.as_bytes()
+    );
+
+    fixture.cache(&fixture.oid(&["hash-object", "-w", "--no-filters", "--", TRACKED]));
+    request_ready(&mut app, &wake);
+    key(&mut app, KeyCode::End);
+    compare(&mut app, &wake, 'p');
+    assert!(app
+        .prepare_historical_diff(100, 8, 8)
+        .status
+        .contains("K retirar bloque"));
+    key(&mut app, KeyCode::Char('k'));
+    wait(&mut app, &wake, |a| {
+        a.git_index.state() == IndexState::Preparing
+    });
+    let review = app.git_index.review().unwrap();
+    assert_eq!(review.target.action, IndexAction::Unstage);
+    assert_eq!(review.target.hunk, Some(0));
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app, &wake, |a| {
+        a.git_index.state() == IndexState::Applying
+    });
+    assert_eq!(
+        app.git_index.state(),
+        IndexState::Published,
+        "{}",
+        app.status
+    );
+    assert_eq!(
+        fixture.git(&["show", ":tracked.txt"]),
+        second_only.as_bytes()
+    );
+    assert_eq!(
+        fs::read(fixture.path(TRACKED)).unwrap(),
+        worktree.as_bytes()
+    );
 }
 fn rows(app: &mut TuiApp) -> BTreeMap<String, String> {
     app.git_status

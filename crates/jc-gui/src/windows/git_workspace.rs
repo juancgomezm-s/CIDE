@@ -133,6 +133,7 @@ enum Intent {
     SubmitCommit,
     CancelCommit,
     Index,
+    IndexHunk,
     Patch,
     SearchOpen,
     SearchRun,
@@ -443,11 +444,22 @@ impl State {
         self.add_git_commit_search_button(&mut frame);
         self.prepare_git_controls(&mut frame);
         self.add_git_patch_button(&mut frame);
-        if let Some(label) = self.git_index_button() {
+        for (block, shortcut, offset, intent) in [
+            (false, "Ctrl+Mayús+I", 12, Intent::Index),
+            (true, "Ctrl+Alt+B", 156, Intent::IndexHunk),
+        ] {
+            let Some(label) = self.git_index_button(block) else {
+                continue;
+            };
+            let (shortcut, offset) = if block && self.git_index.review().is_some() {
+                ("Ctrl+Intro", 12)
+            } else {
+                (shortcut, offset)
+            };
             let p = |n| self.dpi.pixels(n);
-            frame.footer = format!("Ctrl+Mayús+I {label} · {}", frame.footer);
-            let left = frame.preview.left + p(12);
-            let top = frame.preview.top + p(128);
+            frame.footer = format!("{shortcut} {label} · {}", frame.footer);
+            let left = frame.preview.left + p(offset);
+            let top = frame.preview.top + p(156);
             let candidate = rect(left, top, left + p(140), top + p(24));
             if candidate.right <= frame.preview.right - p(8)
                 && candidate.bottom <= frame.preview.bottom
@@ -459,7 +471,7 @@ impl State {
                 })
             {
                 frame.buttons.push((candidate, label.into(), false));
-                frame.hits.actions.push((candidate, Intent::Index));
+                frame.hits.actions.push((candidate, intent));
             }
         }
         self.add_create_commit_button(&mut frame);
@@ -863,7 +875,11 @@ impl State {
                 Action::None
             }
             Some(Intent::Index) => {
-                self.git_index_action();
+                self.git_index_action(false);
+                Action::None
+            }
+            Some(Intent::IndexHunk) => {
+                self.git_index_action(true);
                 Action::None
             }
             Some(Intent::Patch) => self.git_patch_action(),

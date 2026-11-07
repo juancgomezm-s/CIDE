@@ -31,20 +31,15 @@ impl TuiApp {
     }
 
     fn git_index_review_current(&self) -> bool {
-        let Some((comparison, local)) = self.git_index_comparison() else {
+        let Some((comparison, _)) = self.git_index_comparison() else {
             return false;
         };
         let Some(review) = self.git_index.review() else {
             return false;
         };
-        let pair = review.plan().pair();
-        self.project_root.as_ref() == Some(&review.target.root)
-            && review.target.path == comparison.path
-            && review.target.action == action(local.kind)
-            && pair.index == local.index
-            && pair.head == local.head
-            && pair.before.identity() == &local.before
-            && pair.after.identity() == &local.after
+        self.project_root
+            .as_deref()
+            .is_some_and(|root| review.matches(root, comparison, self.git_history.hunk))
     }
 
     pub(super) fn handle_git_index_key(&mut self, key: KeyEvent) -> bool {
@@ -52,14 +47,15 @@ impl TuiApp {
             return false;
         }
         match key.code {
-            KeyCode::Char('i' | 'I') => {
+            KeyCode::Char('i' | 'I' | 'k' | 'K') => {
+                let block = matches!(key.code, KeyCode::Char('k' | 'K'));
                 match self.git_index.state() {
                     IndexState::Preparing => {
                         self.status = "Comprobando el archivo y el índice…".into()
                     }
                     IndexState::Applying => self.status = "Publicando el cambio del índice…".into(),
                     IndexState::Reviewing => {
-                        self.status = "Intro confirma el archivo completo · Esc descarta".into();
+                        self.status = "Intro confirma la revisión pendiente · Esc descarta".into();
                     }
                     _ => {
                         let target =
@@ -69,11 +65,18 @@ impl TuiApp {
                                     (comparison.path.clone(), action(local.kind))
                                 }));
                         self.status = match target {
-                            Some((root, (path, action))) => self
-                                .git_index
-                                .prepare(&self.workbench, root, path, action)
-                                .map(|_| "Comprobando el archivo y el índice…".into())
-                                .unwrap_or_else(|error| error.to_string()),
+                            Some((root, (path, action))) => if block {
+                                self.git_index.prepare_hunk(
+                                    &self.workbench,
+                                    root,
+                                    self.git_revision.share_comparison().unwrap(),
+                                    self.git_history.hunk,
+                                )
+                            } else {
+                                self.git_index.prepare(&self.workbench, root, path, action)
+                            }
+                            .map(|_| "Comprobando la selección y el índice…".into())
+                            .unwrap_or_else(|error| error.to_string()),
                             None => "Selecciona el archivo y actualiza su comparación local con F5"
                                 .into(),
                         };
@@ -115,17 +118,32 @@ impl TuiApp {
             IndexState::Preparing => Some("Comprobando índice… · Esc descarta"),
             IndexState::Applying => Some("Publicando cambio del índice…"),
             IndexState::Reviewing if self.git_index_review_current() => {
-                Some(match self.git_index.review()?.target.action {
-                    IndexAction::Stage => "Intro confirma preparar archivo completo · Esc descarta",
-                    IndexAction::Unstage => {
+                let target = &self.git_index.review()?.target;
+                Some(match (target.action, target.hunk.is_some()) {
+                    (IndexAction::Stage, true) => "Intro confirma preparar bloque · Esc descarta",
+                    (IndexAction::Unstage, true) => "Intro confirma retirar bloque · Esc descarta",
+                    (IndexAction::Stage, false) => {
+                        "Intro confirma preparar archivo completo · Esc descarta"
+                    }
+                    (IndexAction::Unstage, false) => {
                         "Intro confirma retirar archivo completo · Esc descarta"
                     }
                 })
             }
-            _ => Some(match self.git_index_comparison()?.1.kind {
-                PairKind::Worktree => "I preparar archivo completo",
-                PairKind::Prepared => "I retirar archivo completo",
-            }),
+            _ => {
+                let (comparison, local) = self.git_index_comparison()?;
+                Some(
+                    match (
+                        local.kind,
+                        comparison.can_select_index_hunk(self.git_history.hunk),
+                    ) {
+                        (PairKind::Worktree, true) => "I preparar archivo · K preparar bloque",
+                        (PairKind::Prepared, true) => "I retirar archivo · K retirar bloque",
+                        (PairKind::Worktree, false) => "I preparar archivo completo",
+                        (PairKind::Prepared, false) => "I retirar archivo completo",
+                    },
+                )
+            }
         }
     }
 
@@ -134,7 +152,10 @@ impl TuiApp {
         if self.project_root.as_ref() != Some(&publication.target.root) {
             return None;
         }
-        let path = opaque(&publication.target.path, 120);
+        let mut path = opaque(&publication.target.path, 120);
+        if let Some(hunk) = publication.target.hunk {
+            path.push_str(&format!(" · bloque {}", hunk + 1));
+        }
         Some(match &publication.result {
             Ok(()) => match publication.target.action {
                 IndexAction::Stage => format!("Preparado: {path}"),
@@ -187,8 +208,14 @@ impl TuiApp {
             {
                 self.status = failure.error.to_string();
             }
-        } else if self.git_index.review().is_some() {
-            self.status = "Revisa el archivo completo. Intro confirma · Esc descarta".into();
+        } else if let Some(review) = self.git_index.review() {
+            self.status = match review.target.hunk {
+                Some(hunk) => format!(
+                    "Revisa el bloque {}. Intro confirma · Esc descarta",
+                    hunk + 1
+                ),
+                None => "Revisa el archivo completo. Intro confirma · Esc descarta".into(),
+            };
         }
         true
     }

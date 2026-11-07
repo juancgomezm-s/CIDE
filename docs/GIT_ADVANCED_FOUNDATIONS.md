@@ -64,8 +64,28 @@ cambios de selección antes y después de confirmar. Pasaron formato, Clippy
 de la TUI y compilación release offline. Entrega en
 `target/git-tui-index-next/release/`.
 
+## Preparar o retirar un bloque
+
+Abre **En disco** para preparar un bloque o **Preparados** para retirarlo.
+En la GUI, elige un bloque con las flechas de la comparación y pulsa
+**Preparar bloque** o **Retirar bloque**. **Ctrl+Alt+B** abre la revisión
+del bloque visible. **Confirmar bloque** o **Ctrl+Intro** publica la
+selección. En la TUI usa **←/→** para elegir, **K** para revisar e
+**Intro** para publicar. **Esc** descarta la revisión en ambas interfaces.
+
+Cada confirmación aplica un bloque de un archivo regular que existe en
+ambas fuentes y conserva su modo. La preparación de archivos completos
+sigue disponible para altas, bajas y otros cambios admitidos por el motor.
+La revisión liga el bloque a las identidades de las fuentes, a la ruta y
+al índice. La publicación aplica los rangos exactos y conserva los bytes
+de los demás bloques y del árbol de trabajo.
+
+Las pruebas dirigidas comprobaron la selección y publicación en ambas
+interfaces. La prueba de TUI también descartó una revisión al cambiar de
+bloque y retiró solo uno de dos bloques preparados. Se verificaron los
+bytes del índice y del archivo en disco. Formato y Clippy aprobados.
+
 Quedan pendientes el visor del grafo, el historial a través de renombrados,
-la selección de bloques en la interfaz, exportar parches desde la TUI,
-refs de escritura, integración de ramas y remotos.
+exportar parches desde la TUI, refs de escritura, integración de ramas y remotos.
 El commit local y su modificación tienen su propio recorrido de
 [revisión y publicación](G4_CREATE_COMMIT.md).
