@@ -57,6 +57,13 @@ crates afectados y compilación release offline. Los binarios están en
 verificó el despacho de la acción, y la prueba del adaptador verificó la
 publicación. El diálogo de exportación no se abrió durante la validación.
 
+En la TUI, abre una comparación local y pulsa I para revisar el archivo
+completo. Intro confirma y Esc descarta. La prueba dirigida preparó y retiró
+un archivo. También comprobó la protección de buffers modificados y los
+cambios de selección antes y después de confirmar. Pasaron formato, Clippy
+de la TUI y compilación release offline. Entrega en
+`target/git-tui-index-next/release/`.
+
 Quedan pendientes el visor del grafo, el historial a través de renombrados,
-la selección de bloques en la interfaz, estas acciones en la TUI, commit/amend
-y refs de escritura, la integración de ramas y los remotos.
+la selección de bloques en la interfaz, exportar parches desde la TUI,
+commit/amend, refs de escritura, integración de ramas y remotos.

@@ -56,6 +56,7 @@ struct ViewState {
     mode: Mode,
     selected: usize,
     scroll: usize,
+    pending_selection: Option<Vec<u8>>,
 }
 impl ViewState {
     fn validate_context(&mut self, root: Option<&Path>) -> bool {
@@ -66,6 +67,7 @@ impl ViewState {
         {
             self.options = None;
             self.mode = Mode::Stale;
+            self.pending_selection = None;
             self.reset_viewport();
             true
         } else {
@@ -140,6 +142,9 @@ pub(crate) struct GitStatusView {
 }
 impl GitStatusView {
     pub(crate) fn selected_path(&self) -> Option<Vec<u8>> {
+        self.selected_path_ref().map(<[u8]>::to_vec)
+    }
+    pub(super) fn selected_path_ref(&self) -> Option<&[u8]> {
         if self.state() != GitStatusTaskState::Ready || self.view.mode != Mode::Current {
             return None;
         }
@@ -148,7 +153,7 @@ impl GitStatusView {
             .status()
             .entries()
             .get(self.view.selected)
-            .map(|e| e.path().to_vec())
+            .map(|e| e.path())
     }
     pub(crate) fn history_info(&self) -> Option<&jc_app::git_revision::RepositoryInfo> {
         if self.state() == GitStatusTaskState::Ready {
@@ -164,6 +169,7 @@ impl GitStatusView {
         }
     }
     pub(crate) fn request(&mut self, root: &Path) -> Result<(), String> {
+        self.view.pending_selection = None;
         self.view.reset_viewport();
         if !root.is_absolute() || root.as_os_str().len() > PATH_LIMIT {
             self.controller.cancel();
@@ -186,9 +192,16 @@ impl GitStatusView {
         }
         Ok(())
     }
+    pub(super) fn refresh_after_index_write(&mut self, root: &Path) -> Result<(), String> {
+        let selected = self.selected_path();
+        self.request(root)?;
+        self.view.pending_selection = selected;
+        Ok(())
+    }
     pub(crate) fn cancel(&mut self) {
         self.controller.cancel();
         self.view.mode = Mode::Cancelled;
+        self.view.pending_selection = None;
         self.view.reset_viewport();
     }
     pub(crate) fn clear(&mut self) {
@@ -212,7 +225,21 @@ impl GitStatusView {
         let Some(options) = self.view.options.as_ref() else {
             return false;
         };
-        self.controller.poll(options)
+        let changed = self.controller.poll(options);
+        if changed && self.state() == GitStatusTaskState::Ready {
+            if let Some(path) = self.view.pending_selection.take() {
+                if let Some(ordinal) = self.controller.result().and_then(|snapshot| {
+                    snapshot
+                        .status()
+                        .entries()
+                        .iter()
+                        .position(|entry| entry.path() == path.as_slice())
+                }) {
+                    self.view.selected = ordinal;
+                }
+            }
+        }
+        changed
     }
     pub(crate) fn ready(&self) -> bool {
         self.controller.ready()

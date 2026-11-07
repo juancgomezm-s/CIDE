@@ -19,11 +19,15 @@ impl TuiApp {
                 usize::from(width).min(256),
             );
         }
+        if let Some(notice) = self.git_index_publication_notice() {
+            p.message = super::git_history::label(&format!("{notice} · {}", p.message), width);
+        }
         p
     }
     pub(crate) fn open_git_repository_status(&mut self) {
         self.git_history = Default::default();
         self.git_revision.cancel();
+        let _ = self.git_index.discard_review();
         self.panels.show_sidebar(SidebarView::GitStatus);
         let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
         self.request_git_repository_status();

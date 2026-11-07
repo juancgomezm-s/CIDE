@@ -22,6 +22,7 @@ impl TuiApp {
         self.git_diff.clear(&mut self.tasks);
         self.git_status.clear();
         self.git_revision.cancel();
+        let _ = self.git_index.discard_review();
         self.git_history = Default::default();
         self.quick_open.clear();
         self.quick_open_root = None;

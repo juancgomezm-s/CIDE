@@ -299,6 +299,146 @@ fn request_ready(app: &mut TuiApp, wake: &Wakeup) {
         "completion must wake without further keyboard input"
     );
 }
+
+#[test]
+fn tui_index_reviews_then_stages_and_unstages_the_original_file() {
+    use jc_app::{
+        git_index::{IndexAction, IndexState},
+        git_revision::GitRevisionState,
+    };
+
+    fn wait(app: &mut TuiApp, wake: &Wakeup, pending: impl Fn(&TuiApp) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while pending(app) {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            assert!(Instant::now() < deadline, "{}", app.status);
+            if pending(app) {
+                wake.wait(ticket, Some(Duration::from_millis(20)));
+            }
+        }
+    }
+
+    fn compare(app: &mut TuiApp, wake: &Wakeup, key_code: char) {
+        key(app, KeyCode::Char(key_code));
+        wait(app, wake, |a| {
+            matches!(
+                a.git_revision.state(),
+                GitRevisionState::Queued | GitRevisionState::Running
+            )
+        });
+        assert_eq!(app.git_revision.state(), GitRevisionState::Ready);
+        assert_eq!(app.focus.primary(), PrimaryFocus::BottomPanel);
+    }
+
+    fn review(app: &mut TuiApp, wake: &Wakeup, action: IndexAction) {
+        key(app, KeyCode::Char('i'));
+        wait(app, wake, |a| a.git_index.state() == IndexState::Preparing);
+        assert_eq!(
+            app.git_index.state(),
+            IndexState::Reviewing,
+            "{}",
+            app.status
+        );
+        assert_eq!(app.git_index.review().unwrap().target.action, action);
+        assert!(app
+            .prepare_historical_diff(80, 8, 8)
+            .status
+            .starts_with("Intro confirma"));
+    }
+
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let before = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    request_ready(&mut app, &wake);
+    key(&mut app, KeyCode::End);
+    assert_eq!(app.git_status.selected_path_ref(), Some(TRACKED.as_bytes()));
+    compare(&mut app, &wake, 't');
+    assert!(app
+        .prepare_historical_diff(80, 8, 8)
+        .status
+        .starts_with("I preparar"));
+
+    app.workbench.insert_text("sin guardar").unwrap();
+    key(&mut app, KeyCode::Char('i'));
+    assert_eq!(app.git_index.state(), IndexState::Idle);
+    assert!(app.status.contains("Guarda los documentos"));
+    app.workbench.undo().unwrap();
+
+    review(&mut app, &wake, IndexAction::Stage);
+    key(&mut app, KeyCode::Char('i'));
+    assert_eq!(app.git_index.state(), IndexState::Reviewing);
+    key(&mut app, KeyCode::Esc);
+    assert!(app.git_index.review().is_none());
+    assert_eq!(fixture.disk(), before);
+
+    review(&mut app, &wake, IndexAction::Stage);
+    let _ = app.focus.focus(PrimaryFocus::Sidebar, &app.panels);
+    key(&mut app, KeyCode::Home);
+    let _ = app.focus.focus(PrimaryFocus::BottomPanel, &app.panels);
+    key(&mut app, KeyCode::Enter);
+    assert!(app.git_index.review().is_none());
+    assert_eq!(fixture.disk(), before);
+
+    let _ = app.focus.focus(PrimaryFocus::Sidebar, &app.panels);
+    key(&mut app, KeyCode::End);
+    let _ = app.focus.focus(PrimaryFocus::BottomPanel, &app.panels);
+    review(&mut app, &wake, IndexAction::Stage);
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(app.git_index.state(), IndexState::Applying);
+    let _ = app.focus.focus(PrimaryFocus::Sidebar, &app.panels);
+    key(&mut app, KeyCode::Home);
+    wait(&mut app, &wake, |a| {
+        a.git_index.state() == IndexState::Applying
+    });
+    assert_eq!(
+        app.git_index.state(),
+        IndexState::Published,
+        "{}",
+        app.status
+    );
+    assert_eq!(wait_status(&mut app, &wake), GitStatusTaskState::Ready);
+    assert_eq!(
+        app.git_status.selected_path_ref(),
+        Some(UNTRACKED.as_bytes())
+    );
+    assert!(app
+        .prepare_local_git_status(80, 8)
+        .message
+        .starts_with("Preparado: tracked.txt"));
+    assert_eq!(fixture.git(&["show", ":tracked.txt"]), before.tracked);
+
+    key(&mut app, KeyCode::End);
+    compare(&mut app, &wake, 'p');
+    assert!(app
+        .prepare_historical_diff(80, 8, 8)
+        .status
+        .starts_with("I retirar"));
+    review(&mut app, &wake, IndexAction::Unstage);
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app, &wake, |a| {
+        a.git_index.state() == IndexState::Applying
+    });
+    assert_eq!(
+        app.git_index.state(),
+        IndexState::Published,
+        "{}",
+        app.status
+    );
+    assert_eq!(fixture.git(&["show", ":tracked.txt"]), b"head \xff\r\nend");
+    assert!(app
+        .prepare_local_git_status(80, 8)
+        .message
+        .starts_with("Retirado: tracked.txt"));
+    let after = fixture.disk();
+    assert_eq!(after.tracked, before.tracked);
+    assert_eq!(after.untracked, before.untracked);
+    assert_eq!(after.config, before.config);
+    assert_eq!(after.head, before.head);
+    assert_eq!(after.branch, before.branch);
+    assert_eq!(app.workbench.active_bytes().unwrap(), before.tracked);
+}
 fn rows(app: &mut TuiApp) -> BTreeMap<String, String> {
     app.git_status
         .prepare(256, 256)

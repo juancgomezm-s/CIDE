@@ -248,8 +248,12 @@ impl TuiApp {
             return true;
         }
         if self.git_history.local.is_some() {
+            if self.handle_git_index_key(key) {
+                return true;
+            }
             match key.code {
                 KeyCode::Esc | KeyCode::Char('b' | 'B') => {
+                    let _ = self.git_index.discard_review();
                     self.git_revision.cancel();
                     self.git_history.local = None;
                     self.panels.hide_bottom();
@@ -261,6 +265,7 @@ impl TuiApp {
                     return true;
                 }
                 KeyCode::F(5) => {
+                    let _ = self.git_index.discard_review();
                     if let (Some(root), Some((kind, path))) =
                         (self.project_root.clone(), self.git_history.local.clone())
                     {
@@ -670,6 +675,13 @@ impl TuiApp {
             status: label(self.git_revision.message(), width),
             ..GitPresentation::default()
         };
+        if self.git_history.local.is_some() {
+            if let Some(hint) = self.git_index_hint() {
+                prepared.status = label(hint, width);
+            } else if let Some(notice) = self.git_index_publication_notice() {
+                prepared.status = label(&notice, width);
+            }
+        }
         prepared.details.push(label(
             if self.git_history.local.is_some() {
                 "Fuentes Git y disco · bytes originales · solo lectura"
