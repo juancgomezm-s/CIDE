@@ -1,3 +1,17 @@
+# Git advanced foundations — 2026-11-07
+
+Read docs/GIT_ADVANCED_FOUNDATIONS.md. jc-git owns bounded refs/ancestry pages,
+exact unified patch encoding, reviewed whole-file and hunk index transactions.
+Preserve strict pre-lock tokens, same missing-location comparison only under the
+owned Git index lock, revalidation and sync before atomic publication. The host
+rejects dirty buffers and keeps completed publications across selection changes.
+GUI exposes whole-file index review/confirm and create-only patch export.
+Graph UI, rename following, hunk controls, TUI actions, commits/integration and
+network are separate pending blocks. Directed tests and 25 hidden native Git
+checks passed, with PATH empty in the GUI and fixture metadata unchanged.
+Fmt, selected all-target Clippy and workspace release offline passed. Delivery
+target/git-advanced-final/release. Keep earlier binaries and caches.
+
 # Extreme GUI geometry — 2026-11-07
 
 Read docs/M2_GUI_EXTREME_GEOMETRY.md. The prior buffer rejected 4096×2049 and

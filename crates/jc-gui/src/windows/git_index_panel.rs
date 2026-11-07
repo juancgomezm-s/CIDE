@@ -1,0 +1,220 @@
+//! Confirm whole-file index changes from the currently displayed local diff.
+use super::State;
+use jc_app::{
+    git_index::{IndexAction, IndexState},
+    git_revision::{ComparisonOrigin, LocalComparisonOrigin, PairKind, RevisionComparison},
+};
+
+impl State {
+    fn index_comparison(&self) -> Option<(&RevisionComparison, &LocalComparisonOrigin)> {
+        self.git_panel?;
+        let comparison = self.git_revision.comparison()?;
+        let ComparisonOrigin::Local(local) = &comparison.origin else {
+            return None;
+        };
+        (self.git_workspace.local_kind == Some(local.kind)
+            && self.git_workspace.selected_path.as_deref() == Some(comparison.path.as_slice()))
+        .then_some((comparison, local))
+    }
+
+    pub(super) fn git_index_button(&self) -> Option<&'static str> {
+        let (_, local) = self.index_comparison()?;
+        match self.git_index.state() {
+            IndexState::Preparing | IndexState::Applying => None,
+            IndexState::Reviewing => Some("Confirmar índice"),
+            _ => Some(match local.kind {
+                PairKind::Worktree => "Preparar archivo",
+                PairKind::Prepared => "Retirar archivo",
+            }),
+        }
+    }
+
+    pub(super) fn git_index_action(&mut self) {
+        let Some(root) = self.project_root.clone() else {
+            return;
+        };
+        let Some((comparison, local)) = self.index_comparison() else {
+            return;
+        };
+        let action = match local.kind {
+            PairKind::Worktree => IndexAction::Stage,
+            PairKind::Prepared => IndexAction::Unstage,
+        };
+        let result = if let Some(review) = self.git_index.review() {
+            let pair = review.plan().pair();
+            if review.target.root != root
+                || review.target.path != comparison.path
+                || review.target.action != action
+                || pair.index != local.index
+                || pair.head != local.head
+                || pair.before.identity() != &local.before
+                || pair.after.identity() != &local.after
+            {
+                let _ = self.git_index.discard_review();
+                Err("La comparación cambió. Actualízala antes de confirmar".into())
+            } else {
+                let ticket = review.ticket;
+                self.git_index
+                    .apply(&self.workbench, ticket, &root)
+                    .map(|()| "Publicando cambio del índice…")
+                    .map_err(|error| error.to_string())
+            }
+        } else {
+            let path = comparison.path.clone();
+            self.git_index
+                .prepare(&self.workbench, root, path, action)
+                .map(|_| "Comprobando el archivo y el índice…")
+                .map_err(|error| error.to_string())
+        };
+        match result {
+            Ok(message) => self.status = message.into(),
+            Err(error) => self.error(error),
+        }
+        self.git_workspace.invalidate();
+    }
+
+    pub(super) fn poll_git_index(&mut self) -> bool {
+        let was_applying = self.git_index.state() == IndexState::Applying;
+        if !self.git_index.poll() {
+            return false;
+        }
+        if was_applying {
+            if let Some(publication) = self.git_index.publication() {
+                match &publication.result {
+                    Ok(()) => {
+                        let same_root =
+                            self.project_root.as_ref() == Some(&publication.target.root);
+                        self.status = match publication.target.action {
+                            IndexAction::Stage => "Archivo preparado en el índice Git".into(),
+                            IndexAction::Unstage => "Archivo retirado del índice Git".into(),
+                        };
+                        if same_root {
+                            self.git_revision.cancel();
+                            self.schedule_git_status();
+                        }
+                    }
+                    Err(error) => self.error(error.to_string()),
+                }
+            }
+        } else if let Some(failure) = self.git_index.preparation_failure() {
+            self.error(failure.error.to_string());
+        } else if let Some(review) = self.git_index.review() {
+            if self.project_root.as_ref() == Some(&review.target.root) {
+                self.status = "Revisa el archivo completo y pulsa Confirmar índice".into();
+            } else {
+                let _ = self.git_index.discard_review();
+            }
+        }
+        self.git_workspace.invalidate();
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{windows::git_panel::GitIntent, GuiOptions};
+    use jc_app::{git_revision::GitRevisionState, git_status_tasks::GitStatusTaskState};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    };
+
+    struct Fixture {
+        base: PathBuf,
+        root: PathBuf,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .ancestors()
+                .nth(2)
+                .unwrap()
+                .canonicalize()
+                .unwrap();
+            let base = workspace.join("work/test-temp");
+            fs::create_dir_all(&base).unwrap();
+            let base = base.canonicalize().unwrap();
+            assert!(base.starts_with(&workspace));
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = base.join(format!("gui-git-index-{}-{stamp}", std::process::id()));
+            fs::create_dir(&root).unwrap();
+            fs::create_dir_all(root.join(".git/objects")).unwrap();
+            fs::create_dir_all(root.join(".git/refs/heads")).unwrap();
+            fs::write(root.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
+            fs::write(
+                root.join(".git/config"),
+                b"[core]\nrepositoryformatversion=0\nfilemode=false\nbare=false\n",
+            )
+            .unwrap();
+            Self { root, base }
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            if self
+                .root
+                .canonicalize()
+                .is_ok_and(|root| root == self.root && root.parent() == Some(self.base.as_path()))
+            {
+                let _ = fs::remove_dir_all(&self.root);
+            }
+        }
+    }
+
+    fn wait(state: &mut State, ready: impl Fn(&State) -> bool) {
+        let until = Instant::now() + Duration::from_secs(5);
+        while !ready(state) {
+            assert!(Instant::now() < until, "{}", state.status);
+            state.poll_git();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn gui_git_index_reviews_the_visible_comparison_then_publishes() {
+        let fixture = Fixture::new();
+        let path = fixture.root.join("new.txt");
+        let original = b"contenido\r\n";
+        fs::write(&path, original).unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![path.clone()],
+            project_root: Some(fixture.root.clone()),
+            encoding: Some(jc_text::TextEncoding::Utf8),
+            ..Default::default()
+        })
+        .unwrap();
+        state.request_git(GitIntent::Status);
+        wait(&mut state, |state| {
+            state.git_status.state() == GitStatusTaskState::Ready
+        });
+        state.request_git_local(PairKind::Worktree);
+        wait(&mut state, |state| {
+            state.git_revision.state() == GitRevisionState::Ready
+        });
+        use jc_app::Modifiers;
+        state.key_override = Some(Modifiers::CTRL.union(Modifiers::ALT));
+        assert!(matches!(
+            state.key(b'E' as usize).1,
+            crate::windows::Action::ExportGitPatch(_)
+        ));
+        state.key_override = Some(Modifiers::CTRL.union(Modifiers::SHIFT));
+        assert_eq!(state.git_index_button(), Some("Preparar archivo"));
+        state.key(b'I' as usize);
+        wait(&mut state, |state| {
+            state.git_index.state() == IndexState::Reviewing
+        });
+        assert_eq!(state.git_index_button(), Some("Confirmar índice"));
+        assert!(!fixture.root.join(".git/index").exists());
+        state.key(b'I' as usize);
+        wait(&mut state, |state| {
+            state.git_index.state() == IndexState::Published
+        });
+        assert!(fixture.root.join(".git/index").is_file());
+        assert_eq!(fs::read(path).unwrap(), original);
+    }
+}

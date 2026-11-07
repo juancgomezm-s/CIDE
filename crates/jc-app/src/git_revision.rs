@@ -13,6 +13,7 @@ pub use jc_git::commit_search::{
 };
 pub use jc_git::local_pair::PairKind;
 use jc_git::local_pair::{read_local_pair, HeadState, IndexToken, SourceIdentity};
+use jc_git::patch_export::{export_unified, PatchOptions};
 use jc_git::path_history::read_path_history;
 pub use jc_git::path_history::{PathHistoryCursor, PathHistoryEntry, PathHistoryPage};
 use jc_git::revision::{read_file_pair, read_revision, RevisionFilePair};
@@ -71,6 +72,80 @@ pub struct RevisionComparison {
     pub before_oid: Option<String>,
     pub after_oid: Option<String>,
     pub model: OwnedDiffModel,
+    patch_options: PatchOptions,
+    repository_root: PathBuf,
+    git_dir: PathBuf,
+}
+
+impl RevisionComparison {
+    pub fn can_export_patch(&self) -> bool {
+        self.patch_options.before_mode != self.patch_options.after_mode
+            || self.model.hunks().next().is_some()
+    }
+
+    /// Worker-only publication of the accepted snapshot to an explicit new
+    /// destination outside the repository. The snapshot does not read live
+    /// buffers or recalculate its comparison.
+    pub fn export_patch_to(
+        &self,
+        destination: &Path,
+        mut cancelled: impl FnMut() -> bool,
+    ) -> Result<usize, String> {
+        if cancelled() {
+            return Err("Se canceló la exportación del parche".into());
+        }
+        let name = destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|name| {
+                name.len() <= 240
+                    && !name
+                        .chars()
+                        .any(|c| c.is_control() || ":<>\"|?*".contains(c))
+            })
+            .ok_or("El nombre del parche no es válido")?;
+        if !destination.is_absolute()
+            || !destination
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case("patch"))
+        {
+            return Err("Elige un destino absoluto con extensión .patch".into());
+        }
+        let parent = destination
+            .parent()
+            .ok_or("El destino del parche no tiene carpeta")?
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        if parent.starts_with(&self.repository_root) || parent.starts_with(&self.git_dir) {
+            return Err("Elige una carpeta fuera del repositorio de la comparación".into());
+        }
+        // Linked worktrees can reference another control directory. Refuse this
+        // export until all of those destinations can be confined explicitly.
+        match self.git_dir.join("commondir").symlink_metadata() {
+            Ok(_) => {
+                return Err(
+                    "La exportación desde un directorio Git compartido aún no está disponible"
+                        .into(),
+                )
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        let target = parent.join(name);
+        match target.symlink_metadata() {
+            Ok(_) => return Err("El archivo de destino ya existe. Elige un nombre nuevo".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+        let patch = export_unified(&self.path, &self.model, self.patch_options, &mut cancelled)
+            .map_err(|error| error.to_string())?;
+        if cancelled() {
+            return Err("Se canceló la exportación del parche".into());
+        }
+        jc_files::publish_new_bytes(&target, &patch).map_err(|error| error.to_string())?;
+        Ok(patch.len())
+    }
 }
 
 #[derive(Debug)]
@@ -293,7 +368,7 @@ pub struct GitRevisionController {
     path_history: Option<PathHistoryPage>,
     blame: Option<BlamePage>,
     commit_search: Option<CommitSearchPage>,
-    comparison: Option<RevisionComparison>,
+    comparison: Option<Arc<RevisionComparison>>,
     state: GitRevisionState,
 }
 impl GitRevisionController {
@@ -425,7 +500,10 @@ impl GitRevisionController {
         })
     }
     pub fn comparison(&self) -> Option<&RevisionComparison> {
-        self.comparison.as_ref()
+        self.comparison.as_deref()
+    }
+    pub fn share_comparison(&self) -> Option<Arc<RevisionComparison>> {
+        self.comparison.clone()
     }
     pub fn message(&self) -> &'static str {
         match self.state {
@@ -699,7 +777,7 @@ impl GitRevisionController {
                 Ok(Outcome::Comparison(comparison))
                     if comparison_matches(&comparison, &completion.selection.query) =>
                 {
-                    self.comparison = Some(comparison);
+                    self.comparison = Some(Arc::new(comparison));
                     self.state = GitRevisionState::Ready;
                 }
                 Ok(_) => self.state = GitRevisionState::Failed,
@@ -823,6 +901,14 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
             let (after_id, after) = pair.after.into_parts();
             let before_oid = before_id.oid().map(str::to_owned);
             let after_oid = after_id.oid().map(str::to_owned);
+            let mode = |identity: &SourceIdentity| match identity {
+                SourceIdentity::Present { mode, .. } => Some(*mode),
+                SourceIdentity::Absent { .. } => None,
+            };
+            let patch_options = PatchOptions {
+                before_mode: mode(&before_id),
+                after_mode: mode(&after_id),
+            };
             let origin = ComparisonOrigin::Local(Box::new(LocalComparisonOrigin {
                 kind: pair.kind,
                 index: pair.index,
@@ -831,7 +917,16 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
                 after: after_id,
             }));
             build_comparison(
-                pair.path, origin, before_oid, before, after_oid, after, cancel, started,
+                pair.path,
+                pair.repository,
+                origin,
+                patch_options,
+                before_oid,
+                before,
+                after_oid,
+                after,
+                cancel,
+                started,
             )
             .map(Outcome::Comparison)
         }
@@ -888,6 +983,10 @@ fn comparison(
     cancel: &Cancellation,
     started: Instant,
 ) -> Result<RevisionComparison, Failure> {
+    let patch_options = PatchOptions {
+        before_mode: pair.before.as_ref().map(|blob| blob.mode),
+        after_mode: pair.after.as_ref().map(|blob| blob.mode),
+    };
     let (before_oid, before) = pair
         .before
         .map_or((None, Vec::new()), |blob| (Some(blob.oid), blob.bytes));
@@ -896,10 +995,12 @@ fn comparison(
         .map_or((None, Vec::new()), |blob| (Some(blob.oid), blob.bytes));
     build_comparison(
         pair.path,
+        pair.repository,
         ComparisonOrigin::Historical {
             commit: pair.commit,
             parent: pair.parent,
         },
+        patch_options,
         before_oid,
         before,
         after_oid,
@@ -911,7 +1012,9 @@ fn comparison(
 #[allow(clippy::too_many_arguments)]
 fn build_comparison(
     path: Vec<u8>,
+    repository: jc_git::Identity,
     origin: ComparisonOrigin,
+    patch_options: PatchOptions,
     before_oid: Option<String>,
     before: Vec<u8>,
     after_oid: Option<String>,
@@ -948,6 +1051,9 @@ fn build_comparison(
             before_oid,
             after_oid,
             model,
+            patch_options,
+            repository_root: repository.root,
+            git_dir: repository.git_dir,
         }),
         DiffStatus::Limited(_) => Err(Failure::Limited),
         DiffStatus::Cancelled if cancel.is_cancelled() => Err(Failure::Cancelled),
@@ -1467,6 +1573,65 @@ mod tests {
         assert_eq!(result.before_oid, Some(oid('b')));
         assert!(result.after_oid.is_none());
         assert_eq!(result.model.status(), DiffStatus::Exact);
+    }
+    #[test]
+    fn patch_publication_preserves_historical_modes_and_protects_existing_files() {
+        let fixture = std::env::temp_dir().join(format!(
+            "cide-patch-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&fixture).unwrap();
+        let fixture = fixture.canonicalize().unwrap();
+        let root = fixture.join("repo");
+        let git_dir = fixture.join("controls");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&git_dir).unwrap();
+        let pair = RevisionFilePair {
+            repository: jc_git::Identity {
+                root: root.clone(),
+                git_dir: git_dir.clone(),
+            },
+            commit: oid('a'),
+            parent: Some(oid('b')),
+            path: b"file".to_vec(),
+            before: Some(RevisionBlob {
+                oid: oid('c'),
+                mode: 0o100644,
+                bytes: b"x\r\n".to_vec(),
+            }),
+            after: Some(RevisionBlob {
+                oid: oid('d'),
+                mode: 0o100755,
+                bytes: b"y".to_vec(),
+            }),
+        };
+        let cancel = Cancellation::new(Duration::from_secs(6));
+        let accepted = comparison(pair, &cancel, Instant::now())
+            .unwrap_or_else(|_| panic!("bounded comparison"));
+        let expected = b"diff --git a/file b/file\nold mode 100644\nnew mode 100755\n--- a/file\n+++ b/file\n@@ -1,1 +1,1 @@\n-x\r\n+y\n\\ No newline at end of file\n";
+        let destination = fixture.join("new.patch");
+        assert_eq!(
+            accepted.export_patch_to(&destination, || false).unwrap(),
+            expected.len()
+        );
+        assert_eq!(std::fs::read(&destination).unwrap(), expected);
+        assert!(accepted.export_patch_to(&destination, || false).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), expected);
+        for denied in [root.join("new.patch"), git_dir.join("new.patch")] {
+            assert!(accepted.export_patch_to(&denied, || false).is_err());
+            assert!(!denied.exists());
+        }
+        let cancelled = fixture.join("cancel.patch");
+        assert!(accepted.export_patch_to(&cancelled, || true).is_err());
+        assert!(!cancelled.exists());
+        std::fs::remove_file(destination).unwrap();
+        std::fs::remove_dir(root).unwrap();
+        std::fs::remove_dir(git_dir).unwrap();
+        std::fs::remove_dir(fixture).unwrap();
     }
     #[test]
     fn requesting_a_file_keeps_its_listing_but_another_commit_discards_it() {

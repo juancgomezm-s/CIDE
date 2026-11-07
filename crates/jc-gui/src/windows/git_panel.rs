@@ -19,6 +19,7 @@ pub(super) struct GitFrame {
 }
 impl State {
     pub(super) fn clear_git(&mut self) {
+        let _ = self.git_index.discard_review();
         self.git_revision.cancel();
         self.git_status_due = false;
         let preferences = self.git_workspace.preference_bytes();
@@ -230,10 +231,14 @@ impl State {
                 "La tarea de estado Git se recuperó de un fallo; actualiza explícitamente".into();
             changed = true;
         }
-        if self.jobs.has_completed() || self.git_status.ready() || self.git_revision.ready() {
+        if self.jobs.has_completed()
+            || self.git_status.ready()
+            || self.git_revision.ready()
+            || self.git_index.ready()
+        {
             self.bridge.signal();
         }
-        changed
+        changed | self.poll_git_patch() | self.poll_git_index()
     }
     pub(super) fn cancel_git(&mut self, intent: GitIntent) {
         match intent {
@@ -247,6 +252,13 @@ impl State {
             return Action::None;
         };
         self.validate_git_context();
+        if code == b'I' as usize && modifiers == Modifiers::CTRL.union(Modifiers::SHIFT) {
+            self.git_index_action();
+            return Action::None;
+        }
+        if code == b'E' as usize && modifiers == Modifiers::CTRL.union(Modifiers::ALT) {
+            return self.git_patch_action();
+        }
         if let Some(action) = self.git_commit_search_key(code, modifiers) {
             return action;
         }

@@ -14,7 +14,9 @@ mod explorer_scroll;
 mod explorer_smoke;
 mod ffi;
 mod folder;
+mod git_index_panel;
 mod git_panel;
+mod git_patch;
 mod git_smoke;
 mod git_view;
 mod git_workspace;
@@ -380,6 +382,7 @@ enum Action {
     PasteProject(u64),
     PasteReplacement(u64),
     OpenWeb(String),
+    ExportGitPatch(Arc<jc_app::git_revision::RevisionComparison>),
     ChooseFolder,
     Open(bool),
     SaveAs,
@@ -445,6 +448,8 @@ struct State {
     git_source: jc_app::git_read::GitBlobSource,
     git_panel: Option<git_panel::GitIntent>,
     git_workspace: git_workspace::Workspace,
+    git_patch: git_patch::Controller,
+    git_index: jc_app::git_index::GitIndexController,
     git_view: git_view::GitView,
     git_diff: jc_app::git_diff::GitDiffController,
     git_status: jc_app::git_status_tasks::GitStatusController,
@@ -578,6 +583,8 @@ impl State {
             git_source: jc_app::git_read::GitBlobSource::Head,
             git_panel: None,
             git_workspace: Default::default(),
+            git_patch: Default::default(),
+            git_index: jc_app::git_index::GitIndexController::new(wakeup.clone()),
             git_view: Default::default(),
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_status: jc_app::git_status_tasks::GitStatusController::new(wakeup.clone()),
@@ -1970,8 +1977,22 @@ unsafe fn file_dialog_named(
     save: bool,
     title: Option<&str>,
 ) -> Result<Option<PathBuf>, String> {
+    file_dialog_options(hwnd, save, title, false)
+}
+
+unsafe fn file_dialog_options(
+    hwnd: Hwnd,
+    save: bool,
+    title: Option<&str>,
+    patch: bool,
+) -> Result<Option<PathBuf>, String> {
     let mut file = vec![0u16; 32768];
-    let filter = wide("Todos los archivos\0*.*\0");
+    let filter = wide(if patch {
+        "Parche Git (*.patch)\0*.patch\0"
+    } else {
+        "Todos los archivos\0*.*\0"
+    });
+    let patch_extension = wide("patch");
     let title = wide(title.unwrap_or(if save {
         "Guardar fuente como"
     } else {
@@ -1984,7 +2005,13 @@ unsafe fn file_dialog_named(
     options.file = file.as_mut_ptr();
     options.file_len = file.len() as u32;
     options.title = title.as_ptr();
-    options.flags = 0x80000 | 0x800 | 0x8 | 0x4 | if save { 0x2 } else { 0x1000 };
+    options.flags = 0x80000 | 0x800 | 0x8 | 0x4;
+    if patch {
+        options.flags |= 0x0001_0000; // OFN_NOTESTFILECREATE
+        options.default_extension = patch_extension.as_ptr();
+    } else {
+        options.flags |= if save { 0x2 } else { 0x1000 };
+    }
     let accepted = if save {
         GetSaveFileNameW(&mut options)
     } else {
@@ -2030,7 +2057,7 @@ unsafe fn release_idle_capture(hwnd: Hwnd) {
 unsafe fn perform(hwnd: Hwnd, action: Action) {
     if matches!(
         action,
-        Action::Open(_) | Action::SaveAs | Action::ChooseFolder
+        Action::Open(_) | Action::SaveAs | Action::ChooseFolder | Action::ExportGitPatch(_)
     ) && owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke)
     {
         if let Some(owner) = owner(hwnd) {
@@ -2061,6 +2088,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             }
         }
         Action::None => {}
+        Action::ExportGitPatch(comparison) => git_patch::choose_destination(hwnd, comparison),
         Action::OpenWeb(url) => {
             if let Err(error) = jc_platform::web_link::open(&url) {
                 if let Some(owner) = owner(hwnd) {

@@ -382,6 +382,17 @@ fn atomic_replace_with(
     atomic_replace_with_commit(target, create_only, write, replace_path)
 }
 
+/// Publish an already prepared byte artifact as a new file. A destination
+/// created by another process before commit is left intact.
+pub fn publish_new_bytes(target: &Path, bytes: &[u8]) -> Result<(), FileError> {
+    atomic_replace_with_commit(
+        target,
+        true,
+        |file| file.write_all(bytes),
+        |_, _| Err(io::Error::from(io::ErrorKind::AlreadyExists).into()),
+    )
+}
+
 fn atomic_replace_with_commit(
     target: &Path,
     create_only: bool,

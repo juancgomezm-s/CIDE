@@ -29,6 +29,7 @@ mod navigation_input;
 pub use navigation_input::parse_text_position;
 mod focus;
 pub mod git_diff;
+pub mod git_index;
 pub mod git_read;
 pub mod git_revision;
 pub mod git_status;

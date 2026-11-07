@@ -2,7 +2,10 @@
 pub mod blame;
 pub mod commit_search;
 pub mod diff_model;
+pub mod graph;
+pub mod index_write;
 pub mod local_pair;
+pub mod patch_export;
 pub mod path_history;
 pub mod revision;
 use gix::bstr::ByteSlice;
@@ -644,6 +647,185 @@ mod repository_context_tests {
             max_bytes: 64 * 1024,
             timeout: Duration::from_secs(5),
         }
+    }
+    #[test]
+    fn index_write_add_then_unstage_preserves_raw_disk_and_unborn_head() {
+        use super::index_write::{IndexAction, apply_index_change, prepare_index_change};
+        let fixture = Fixture::new();
+        drop(gix::init(&fixture.root).unwrap());
+        let raw = b"one\r\n\xfftwo";
+        fs::write(fixture.root.join("new.txt"), raw).unwrap();
+        let head = fs::read(fixture.root.join(".git/HEAD")).unwrap();
+        let prepare = |action| {
+            prepare_index_change(&fixture.root, b"new.txt", action, limits(), || false).unwrap()
+        };
+        let add = prepare(IndexAction::Stage);
+        assert!(!fixture.root.join(".git/index").exists());
+        assert_eq!(add.pair().after.bytes(), raw);
+        apply_index_change(add, || false).unwrap();
+        assert_eq!(
+            read_blob(&fixture.root, true, "new.txt", limits(), || false)
+                .unwrap()
+                .bytes,
+            raw
+        );
+        apply_index_change(prepare(IndexAction::Unstage), || false).unwrap();
+        assert!(matches!(
+            read_blob(&fixture.root, true, "new.txt", limits(), || false),
+            Err(Error::Missing)
+        ));
+        assert_eq!(fs::read(fixture.root.join("new.txt")).unwrap(), raw);
+        assert_eq!(fs::read(fixture.root.join(".git/HEAD")).unwrap(), head);
+        assert!(!fixture.root.join(".git/index.lock").exists());
+    }
+
+    #[test]
+    fn index_write_rejects_stale_bytes_conflicting_lock_and_late_cancellation() {
+        use super::index_write::{IndexAction, apply_index_change, prepare_index_change};
+        let fixture = Fixture::new();
+        drop(gix::init(&fixture.root).unwrap());
+        let file = fixture.root.join("new.txt");
+        let prepare = || {
+            prepare_index_change(
+                &fixture.root,
+                b"new.txt",
+                IndexAction::Stage,
+                limits(),
+                || false,
+            )
+            .unwrap()
+        };
+        fs::write(&file, b"first").unwrap();
+        let old = prepare();
+        fs::write(&file, b"second").unwrap();
+        assert!(matches!(
+            apply_index_change(old, || false),
+            Err(Error::Stale)
+        ));
+        let lock = fixture.root.join(".git/index.lock");
+        fs::write(&lock, b"foreign lock").unwrap();
+        let blocked = prepare();
+        assert!(apply_index_change(blocked, || false).is_err());
+        assert_eq!(fs::read(&lock).unwrap(), b"foreign lock");
+        fs::remove_file(&lock).unwrap();
+
+        let cancelled = prepare();
+        assert!(matches!(
+            apply_index_change(cancelled, || fs::metadata(&lock)
+                .is_ok_and(|meta| meta.len() > 0)),
+            Err(Error::Cancelled)
+        ));
+        assert!(!fixture.root.join(".git/index").exists());
+        assert!(!lock.exists());
+        assert_eq!(fs::read(&file).unwrap(), b"second");
+    }
+
+    #[test]
+    fn index_write_never_replaces_a_newer_index_and_unstages_a_tracked_deletion() {
+        use super::{
+            diff_model::{DiffLimits, OwnedDiffModel},
+            index_write::{IndexAction, IndexPlan, apply_index_change, prepare_index_change},
+        };
+        use std::sync::Arc;
+        let fixture = Fixture::new();
+        let repo = gix::init(&fixture.root).unwrap();
+        let raw = b"first\r\nunchanged\r\nlast";
+        fs::write(fixture.root.join("tracked.txt"), raw).unwrap();
+        fs::write(fixture.root.join("other.txt"), b"other\n").unwrap();
+        let prepare = |path: &[u8], action| {
+            prepare_index_change(&fixture.root, path, action, limits(), || false).unwrap()
+        };
+        let pending = prepare(b"other.txt", IndexAction::Stage);
+        apply_index_change(prepare(b"tracked.txt", IndexAction::Stage), || false).unwrap();
+        let index = fixture.root.join(".git/index");
+        let original_index = fs::read(&index).unwrap();
+        assert!(matches!(
+            apply_index_change(pending, || false),
+            Err(Error::Stale)
+        ));
+        assert_eq!(fs::read(&index).unwrap(), original_index);
+
+        let blob = repo.write_blob(raw).unwrap().detach();
+        let tree = repo
+            .write_object(gix::objs::Tree {
+                entries: vec![gix::objs::tree::Entry {
+                    mode: gix::objs::tree::EntryKind::Blob.into(),
+                    filename: "tracked.txt".into(),
+                    oid: blob,
+                }],
+            })
+            .unwrap()
+            .detach();
+        let signature = gix::actor::SignatureRef {
+            name: "Tester".into(),
+            email: "tester@example.invalid".into(),
+            time: "1700000000 +0000",
+        };
+        let head = repo
+            .commit_as(
+                signature,
+                signature,
+                "HEAD",
+                "fixture",
+                tree,
+                std::iter::empty::<gix::ObjectId>(),
+            )
+            .unwrap()
+            .detach();
+        let file = fixture.root.join("tracked.txt");
+        let changed = b"FIRST\r\nunchanged\r\nLAST";
+        fs::write(&file, changed).unwrap();
+        let first_hunk = |plan: IndexPlan| {
+            let diff = OwnedDiffModel::compute(
+                Arc::new(plan.pair().before.bytes().to_vec()),
+                Arc::new(plan.pair().after.bytes().to_vec()),
+                DiffLimits::default(),
+                || false,
+            );
+            assert_eq!(diff.hunks().count(), 2);
+            plan.with_hunks(&diff, &[0]).unwrap()
+        };
+        let staged = || {
+            read_blob(&fixture.root, true, "tracked.txt", limits(), || false)
+                .unwrap()
+                .bytes
+        };
+        apply_index_change(
+            first_hunk(prepare(b"tracked.txt", IndexAction::Stage)),
+            || false,
+        )
+        .unwrap();
+        assert_eq!(staged(), b"FIRST\r\nunchanged\r\nlast");
+        apply_index_change(prepare(b"tracked.txt", IndexAction::Stage), || false).unwrap();
+        apply_index_change(
+            first_hunk(prepare(b"tracked.txt", IndexAction::Unstage)),
+            || false,
+        )
+        .unwrap();
+        assert_eq!(staged(), b"first\r\nunchanged\r\nLAST");
+        assert_eq!(fs::read(&file).unwrap(), changed);
+        fs::remove_file(&file).unwrap();
+        apply_index_change(prepare(b"tracked.txt", IndexAction::Stage), || false).unwrap();
+        assert!(matches!(
+            read_blob(&fixture.root, true, "tracked.txt", limits(), || false),
+            Err(Error::Missing)
+        ));
+        apply_index_change(prepare(b"tracked.txt", IndexAction::Unstage), || false).unwrap();
+        assert_eq!(
+            read_blob(&fixture.root, true, "tracked.txt", limits(), || false)
+                .unwrap()
+                .bytes,
+            raw
+        );
+        assert!(!file.exists());
+        assert_eq!(
+            gix::open(&fixture.root)
+                .unwrap()
+                .head_id()
+                .unwrap()
+                .detach(),
+            head
+        );
     }
     #[test]
     fn ordinary_folder_is_typed_absent_for_status_and_diff_without_masking_invalid_roots() {

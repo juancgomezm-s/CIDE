@@ -1,3 +1,14 @@
+## Git avanzado · Índice, grafo y parches — 2026-11-07
+
+Cuatro casos nuevos de grafo, seis de parche y tres de índice pasaron en `jc-git`.
+El índice revalida HEAD, bytes y estado bajo lock. Las pruebas cubren alta, baja,
+bloques CRLF, cambios externos, lock ajeno y cancelación. El adaptador y la GUI
+confirmaron el plan en una segunda acción. La exportación usa publicación de
+archivo nuevo y el modelo exacto. Pasaron 25 comprobaciones Git con ventana
+nativa oculta y PATH vacío, con fuentes y metadatos intactos. Formato, Clippy
+de los crates afectados y release offline aprobados. Entrega en
+`target/git-advanced-final/release/`. [Alcance y validación](GIT_ADVANCED_FOUNDATIONS.md)
+
 ## Geometrías grandes de la GUI — 2026-11-07
 
 El caso anterior rechazaba 4096×2049 y 5120×2160. La solución conserva un DIB de

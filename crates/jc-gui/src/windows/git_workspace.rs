@@ -125,6 +125,8 @@ struct Stamp {
 }
 #[derive(Clone, Copy)]
 enum Intent {
+    Index,
+    Patch,
     SearchOpen,
     SearchRun,
     SearchScope,
@@ -430,7 +432,65 @@ impl State {
         self.add_git_blame_button(&mut frame);
         self.add_git_commit_search_button(&mut frame);
         self.prepare_git_controls(&mut frame);
+        self.add_git_patch_button(&mut frame);
+        if let Some(label) = self.git_index_button() {
+            let p = |n| self.dpi.pixels(n);
+            frame.footer = format!("Ctrl+Mayús+I {label} · {}", frame.footer);
+            let left = frame.preview.left + p(12);
+            let top = frame.preview.top + p(128);
+            let candidate = rect(left, top, left + p(140), top + p(24));
+            if candidate.right <= frame.preview.right - p(8)
+                && candidate.bottom <= frame.preview.bottom
+                && frame.buttons.iter().all(|(button, _, _)| {
+                    candidate.left >= button.right
+                        || candidate.right <= button.left
+                        || candidate.top >= button.bottom
+                        || candidate.bottom <= button.top
+                })
+            {
+                frame.buttons.push((candidate, label.into(), false));
+                frame.hits.actions.push((candidate, Intent::Index));
+            }
+        }
         Some(frame)
+    }
+
+    fn add_git_patch_button(&self, frame: &mut Frame) {
+        if let Some(notice) = &self.git_patch.notice {
+            frame.footer = format!("{notice} · {}", frame.footer);
+        }
+        let busy = self.git_patch.busy();
+        if !busy && !self.git_patch_available() {
+            return;
+        }
+        let (name, shortcut) = if busy {
+            ("Cancelar parche", "Ctrl+Alt+E cancelar exportación")
+        } else {
+            ("Exportar parche", "Ctrl+Alt+E exportar parche")
+        };
+        frame.footer = format!("{shortcut} · {}", frame.footer);
+        let p = |n| self.dpi.pixels(n);
+        let width = p(132);
+        for (area, left, y) in [
+            (frame.preview, frame.preview.right - p(140), p(128)),
+            (frame.toolbar, frame.toolbar.right - p(538), p(8)),
+        ] {
+            let candidate = rect(left, area.top + y, left + width, area.top + y + p(24));
+            if candidate.left >= area.left + p(8)
+                && candidate.right <= area.right - p(8)
+                && candidate.bottom <= area.bottom
+                && frame.buttons.iter().all(|(button, _, _)| {
+                    candidate.left >= button.right
+                        || candidate.right <= button.left
+                        || candidate.top >= button.bottom
+                        || candidate.bottom <= button.top
+                })
+            {
+                frame.buttons.push((candidate, name.into(), false));
+                frame.hits.actions.push((candidate, Intent::Patch));
+                break;
+            }
+        }
     }
 
     fn prepare_git_workspace_base(&mut self) -> Option<Frame> {
@@ -774,6 +834,11 @@ impl State {
             }
         }
         match intent {
+            Some(Intent::Index) => {
+                self.git_index_action();
+                Action::None
+            }
+            Some(Intent::Patch) => self.git_patch_action(),
             Some(Intent::SearchOpen) => {
                 self.open_git_commit_search();
                 Action::None

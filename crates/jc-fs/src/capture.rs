@@ -49,6 +49,18 @@ pub struct MissingToken {
     ancestors: Vec<FileState>,
 }
 impl MissingToken {
+    /// Compare the missing component and directory identities after an owned
+    /// sibling lock was created. Ordinary capture revalidation uses full equality.
+    pub fn same_location_as(&self, other: &Self) -> bool {
+        self.path == other.path
+            && self.missing_at == other.missing_at
+            && self
+                .ancestors
+                .iter()
+                .map(|state| &state.identity)
+                .eq(other.ancestors.iter().map(|state| &state.identity))
+    }
+
     /// Logical retained heap, excluding the containing value's inline size.
     pub fn memory_bytes(&self) -> usize {
         self.path.capacity()

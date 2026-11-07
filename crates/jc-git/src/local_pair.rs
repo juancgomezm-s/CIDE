@@ -61,6 +61,15 @@ pub struct IndexToken {
     checksum: IndexChecksum,
 }
 impl IndexToken {
+    pub(super) fn matches_under_lock(&self, other: &Self) -> bool {
+        match (&self.capture, &other.capture) {
+            (CaptureIdentity::Absent(before), CaptureIdentity::Absent(after)) => {
+                before.same_location_as(after)
+            }
+            _ => self == other,
+        }
+    }
+
     pub fn sha256(&self) -> Option<&[u8; 32]> {
         self.sha256.as_ref()
     }
@@ -242,7 +251,7 @@ fn capture(
         _ => Error::Io(error),
     })
 }
-fn index_capture(
+pub(super) fn index_capture(
     repo: &gix::Repository,
     root: &Path,
     ctx: &Context<'_>,
@@ -285,15 +294,13 @@ fn index_capture(
         }
     }
 }
-fn selected_index(
+pub(super) fn decode_index(
     repo: &gix::Repository,
     bytes: Option<&[u8]>,
-    path: &[u8],
-    limits: Limits,
     ctx: &Context<'_>,
-) -> Result<Option<revision::Entry>, Error> {
+) -> Result<gix::index::State, Error> {
     let Some(bytes) = bytes else {
-        return Ok(None);
+        return Ok(gix::index::State::new(repo.object_hash()));
     };
     // Admission only: gix remains the parser and validates signature/version.
     let count =
@@ -323,6 +330,17 @@ fn selected_index(
     {
         return Err(Error::Limited);
     }
+    Ok(state)
+}
+
+fn selected_index(
+    repo: &gix::Repository,
+    bytes: Option<&[u8]>,
+    path: &[u8],
+    limits: Limits,
+    ctx: &Context<'_>,
+) -> Result<Option<revision::Entry>, Error> {
+    let state = decode_index(repo, bytes, ctx)?;
     let mut selected = None;
     for entry in state.entries() {
         ctx.check()?;

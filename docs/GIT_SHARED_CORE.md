@@ -78,8 +78,9 @@ siendo responsabilidad del adaptador; no hay un Document dentro del motor.
   entrega la autorización solicitada mediante un contrato específico. No aparece
   una dependencia implícita a git.exe/ssh.exe o auxiliares externos.
 
-Las capacidades actuales siguen siendo solo lectura. Definir estos contratos no
-declara implementadas las escrituras, la red ni la recuperación de operaciones Git.
+El primer contrato de escritura publica cambios del índice a partir de un plan
+revisado. El grafo de ascendencia y el parche unificado también están disponibles
+en la biblioteca. [Fundamentos Git avanzados](GIT_ADVANCED_FOUNDATIONS.md)
 
 ## Consumo y distribución
 
