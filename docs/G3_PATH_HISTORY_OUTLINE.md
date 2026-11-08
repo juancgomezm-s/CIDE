@@ -9,17 +9,22 @@ el núcleo Rust independiente; no habilita escrituras Git ni amplía M2 físico.
 limits, cancelled)` entrega `PathHistoryPage`: identidad de repositorio, inicio
 fijado, ruta Git opaca, revisiones coincidentes, cursor siguiente, número de
 commits examinados e indicadores shallow/recorte de metadatos. Cada entrada
-incluye commit, primer padre, resumen/autor acotados y clase de cambio.
+incluye commit, primer padre, resumen/autor acotados, clase de cambio y
+ruta de esa revisión. Un renombrado también conserva la ruta del padre.
 
 Se comparan ID y modo de la entrada contra el primer padre, incluyendo creación,
-eliminación y cambios de modo. Un commit raíz se compara contra ausencia. No se
-siguen renombrados, otras ramas ni otros padres de una integración. Listar no
-lee blobs, HEAD ni archivos del worktree. La comparación seleccionada reutiliza
-`revision::read_file_pair` y el único modelo/proyector de diff existentes.
+eliminación y cambios de modo. Un commit raíz se compara contra ausencia.
+La búsqueda sigue el primer padre y reconoce renombrados exactos con un
+único blob del mismo modo en ambos árboles y una ruta anterior que
+desaparece. Copias, coincidencias múltiples y cambios de contenido o modo
+se conservan como altas. La detección comparte la cuota del recorrido.
+Listar solo lee metadatos de Git. La comparación abre las dos rutas de
+la revisión y reutiliza el modelo de diff existente.
 
 Cada página admite hasta 24 coincidencias y 128 commits examinados. Una página
 sin coincidencias puede tener continuación y no se presenta como fin. El cursor
-tipado, de campos privados, liga raíz/gitdir, inicio, ruta y próximo commit;
+tipado, de campos privados, liga raíz/gitdir, inicio, ruta inicial, ruta
+rastreada y próximo commit;
 se rechaza su uso con otra consulta. HEAD puede avanzar sin cambiar esta consulta.
 Al llegar a una frontera shallow declarada no se inventa el cambio que requeriría
 el padre ausente: se indica historial incompleto. Objetos anunciados ausentes o
@@ -51,6 +56,10 @@ historial** regresa sin recargar; **Todos los archivos** vuelve al estado local.
 La cabecera se conserva ligada al commit comparado aunque el cursor del listado
 se mueva. Errores/cuotas de la comparación se muestran, no como un diff vacío.
 En ventanas estrechas se ocultan botones que no caben; las teclas siguen disponibles.
+
+La GUI identifica **Renombrado** y la TUI usa **R** en la fila. El diff
+indica los nombres anterior y nuevo. Tras un renombrado, las páginas
+anteriores siguen consultando la ruta antigua.
 
 TUI: desde Estado Git, A consulta la ruta seleccionada; sin fila usa únicamente
 el archivo activo dentro del proyecto. N pagina, R/F5 relee, Intro compara,

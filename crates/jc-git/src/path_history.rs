@@ -1,7 +1,7 @@
-//! Bounded first-parent history of one exact Git path. No worktree, HEAD,
-//! rename detection, editable document or external executable participates.
+//! Bounded first-parent path history, following only unambiguous exact moves.
+//! No blob, worktree, HEAD or external executable participates in listing.
 use super::{Change, Context, Error, Identity, Limits, controlled, engine, open};
-use crate::revision::{Budget, commit, path_valid, tree_entry, verified};
+use crate::revision::{Budget, Entry, commit, path_valid, tree_entry, verified, verified_tree};
 use gix::bstr::ByteSlice;
 use std::path::{Path, PathBuf};
 
@@ -9,6 +9,7 @@ const MATCHES: usize = 24;
 const WALKED: usize = 128;
 const COMMIT_BYTES: usize = 64 * 1024;
 const SHALLOW_BYTES: usize = 32768;
+const RENAME_DEPTH: usize = 128;
 
 /// Only this provider can mint a continuation. Its identity binds a verified
 /// first-parent position to its original repository, pinned start and raw path.
@@ -18,6 +19,7 @@ pub struct PathHistoryCursor {
     git_dir: PathBuf,
     start: String,
     path: Vec<u8>,
+    walking_path: Vec<u8>,
     next: String,
 }
 impl PathHistoryCursor {
@@ -26,6 +28,7 @@ impl PathHistoryCursor {
             + self.git_dir.capacity()
             + self.start.capacity()
             + self.path.capacity()
+            + self.walking_path.capacity()
             + self.next.capacity()
     }
 }
@@ -37,6 +40,11 @@ pub struct PathHistoryEntry {
     pub summary: Vec<u8>,
     pub author: Vec<u8>,
     pub change: Change,
+    /// Path used for this row, which can differ from the query path on older revisions.
+    /// A deletion keeps its former path even though the current commit has no entry.
+    pub path: Vec<u8>,
+    /// Parent-side path for a verified exact move. Other rows use `path` on both sides.
+    pub previous_path: Option<Vec<u8>>,
 }
 impl PathHistoryEntry {
     pub fn memory_bytes(&self) -> usize {
@@ -44,6 +52,8 @@ impl PathHistoryEntry {
             + self.parent.as_ref().map_or(0, String::capacity)
             + self.summary.capacity()
             + self.author.capacity()
+            + self.path.capacity()
+            + self.previous_path.as_ref().map_or(0, Vec::capacity)
     }
 }
 pub struct PathHistoryPage {
@@ -155,10 +165,116 @@ pub(crate) fn shallow(
     Ok(ids)
 }
 
+struct RenameScan<'a, 'b> {
+    repo: &'a gix::Repository,
+    limits: Limits,
+    budget: &'b mut Budget,
+    ctx: &'b Context<'a>,
+}
+
+impl RenameScan<'_, '_> {
+    /// Visit one tree at a time with a shared path buffer. Early exit means the
+    /// caller already disproved uniqueness. Success means the whole scan fit.
+    fn walk(
+        &mut self,
+        id: gix::ObjectId,
+        prefix: &mut Vec<u8>,
+        depth: usize,
+        accept: &mut impl FnMut(&[u8], Entry) -> bool,
+    ) -> Result<bool, Error> {
+        if depth >= RENAME_DEPTH {
+            return Err(Error::Limited);
+        }
+        let Some(tree) = verified_tree(self.repo, id, self.limits, self.budget, self.ctx)? else {
+            return Ok(true);
+        };
+        for entry in tree.iter() {
+            self.ctx.check()?;
+            self.budget.visit()?;
+            let entry = entry.map_err(engine)?;
+            let name = entry.filename().as_bytes();
+            if name.is_empty() || name == b"." || name == b".." || name.contains(&b'/') {
+                return Err(Error::Unsupported);
+            }
+            let start = prefix.len();
+            if start + name.len() > self.limits.max_path {
+                return Err(Error::Limited);
+            }
+            prefix.extend_from_slice(name);
+            let value = Entry {
+                id: entry.object_id(),
+                mode: entry.mode().value() as u32,
+            };
+            if !accept(prefix, value) {
+                return Ok(false);
+            }
+            if value.mode == 0o40000 {
+                prefix.push(b'/');
+                if !self.walk(value.id, prefix, depth + 1, accept)? {
+                    return Ok(false);
+                }
+            }
+            prefix.truncate(start);
+        }
+        Ok(true)
+    }
+
+    fn previous_path(
+        &mut self,
+        parent: gix::ObjectId,
+        child: gix::ObjectId,
+        destination: &[u8],
+        needle: Entry,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let mut path = Vec::new();
+        let mut source = None;
+        let unique_source = self.walk(parent, &mut path, 0, &mut |path, entry| {
+            if entry.id != needle.id {
+                return true;
+            }
+            if entry.mode != needle.mode || source.is_some() {
+                return false;
+            }
+            source = Some(path.to_vec());
+            true
+        })?;
+        let Some(source) =
+            source.filter(|source| unique_source && source.as_slice() != destination)
+        else {
+            return Ok(None);
+        };
+        let unique_destination = self.walk(child, &mut path, 0, &mut |path, entry| {
+            // A source that still exists, even with different contents or
+            // type, does not prove a move. Likewise reject another same-OID
+            // path, including one with a different mode.
+            path != source.as_slice()
+                && (entry.id != needle.id || (path == destination && entry == needle))
+        })?;
+        if !unique_destination {
+            return Ok(None);
+        }
+        // The point lookup also checks duplicate components on this path.
+        if tree_entry(
+            self.repo,
+            parent,
+            &source,
+            self.limits,
+            self.budget,
+            self.ctx,
+        )? != Some(needle)
+        {
+            return Err(Error::Stale);
+        }
+        Ok(Some(source))
+    }
+}
+
 /// At most 24 matching commits and 128 first-parent comparisons are admitted per
 /// call. An empty page can still carry `next` after 128 unrelated commits. `None`
 /// means traversal ended, except `shallow=true` explicitly marks an incomplete
-/// declared boundary. Missing/corrupt objects elsewhere remain errors.
+/// declared boundary. An exact move follows the previous path across pages.
+/// Copies and ambiguous moves remain additions. Both scans share the same
+/// tree, entry and time quotas. Missing/corrupt objects remain errors.
 pub fn read_path_history(
     root: &Path,
     pinned_start: &str,
@@ -180,20 +296,25 @@ pub fn read_path_history(
         if start_id.kind() != repo.object_hash() {
             return Err(Error::Unsupported);
         }
-        let next_id = match continuation {
+        let (next_id, mut walking_path) = match continuation {
             Some(c)
                 if c.root == repository.root
                     && c.git_dir == repository.git_dir
                     && c.start == start
                     && c.path == path =>
             {
-                oid(&c.next)?
+                path_valid(&c.walking_path, limits.max_path)?;
+                (oid(&c.next)?, c.walking_path.clone())
             }
             Some(_) => return Err(Error::Stale),
-            None => start_id,
+            None => (start_id, path.to_vec()),
         };
         let mut budget = Budget::new(limits);
-        budget.charge(path.len().saturating_mul(2).saturating_add(256))?;
+        budget.charge(
+            path.len()
+                .saturating_mul(2)
+                .saturating_add(walking_path.len() * 2 + 256),
+        )?;
         let boundaries = shallow(&repo, limits, &mut budget, ctx)?;
         let mut entries = Vec::with_capacity(maximum);
         let mut pending = Some(next_id);
@@ -210,7 +331,7 @@ pub fn read_path_history(
                 commit(&repo, id, limits, &mut budget, ctx)?
             };
             scanned += 1;
-            let after = tree_entry(&repo, current.tree, path, limits, &mut budget, ctx)?;
+            let after = tree_entry(&repo, current.tree, &walking_path, limits, &mut budget, ctx)?;
             if boundaries.contains(&id) {
                 reached_shallow = true;
                 break;
@@ -219,13 +340,25 @@ pub fn read_path_history(
             let before = if let Some(parent) = parent_id {
                 charge_commit(&repo, parent, &mut budget, ctx)?;
                 let parent = commit(&repo, parent, limits, &mut budget, ctx)?;
-                let entry = tree_entry(&repo, parent.tree, path, limits, &mut budget, ctx)?;
+                let entry =
+                    tree_entry(&repo, parent.tree, &walking_path, limits, &mut budget, ctx)?;
                 cached = Some(parent);
                 entry
             } else {
                 None
             };
             if before != after {
+                let previous_path =
+                    match (before, after, cached.as_ref()) {
+                        (None, Some(needle), Some(parent)) => RenameScan {
+                            repo: &repo,
+                            limits,
+                            budget: &mut budget,
+                            ctx,
+                        }
+                        .previous_path(parent.tree, current.tree, &walking_path, needle)?,
+                        _ => None,
+                    };
                 charge_commit(&repo, id, &mut budget, ctx)?;
                 let value = verified(&repo, id, COMMIT_BYTES.min(limits.max_bytes), ctx)?
                     .try_into_commit()
@@ -242,7 +375,7 @@ pub fn read_path_history(
                     bytes[..bytes.len().min(cap)].to_vec()
                 };
                 let change = match (before, after) {
-                    (None, Some(_)) => Change::Added,
+                    (None, Some(_)) if previous_path.is_none() => Change::Added,
                     (Some(_), None) => Change::Deleted,
                     (Some(a), Some(b)) if a.mode & 0o170000 != b.mode & 0o170000 => {
                         Change::TypeChanged
@@ -255,8 +388,14 @@ pub fn read_path_history(
                     summary: clipped(summary, 256, &mut metadata_limited),
                     author: clipped(author.name.as_bytes(), 96, &mut metadata_limited),
                     change,
+                    path: walking_path.clone(),
+                    previous_path,
                 };
                 budget.charge(std::mem::size_of::<PathHistoryEntry>() * 2 + item.memory_bytes())?;
+                if let Some(source) = &item.previous_path {
+                    budget.charge(source.len() * 2)?;
+                    walking_path = source.clone();
+                }
                 entries.push(item);
             }
             pending = parent_id;
@@ -269,6 +408,7 @@ pub fn read_path_history(
             git_dir: repository.git_dir.clone(),
             start: start.clone(),
             path: path.to_vec(),
+            walking_path,
             next: id.to_string(),
         });
         let page = PathHistoryPage {
@@ -431,6 +571,136 @@ mod tests {
         let mut out = BTreeMap::new();
         walk(root, root, &mut out);
         out
+    }
+
+    #[test]
+    fn path_history_rename_follows_the_older_raw_path_across_page_boundary() {
+        let f = Fixture::new();
+        let repo = gix::init(&f.root).unwrap();
+        let a = repo.write_blob(b"antes\r\n").unwrap().detach();
+        let b = repo.write_blob(b"despues\r\n").unwrap().detach();
+        let old_tree = |blob| {
+            let directory = tree(&repo, &[(b"origen\xff.p", 0o100755, blob)]);
+            tree(&repo, &[(b"sub", 0o40000, directory)])
+        };
+        let root = save(&repo, old_tree(a), &[], "Alta");
+        let changed = save(&repo, old_tree(b), &[root], "Cambio en la ruta anterior");
+        let moved = save(
+            &repo,
+            tree(&repo, &[(b"source.p", 0o100755, b)]),
+            &[changed],
+            "Movimiento exacto",
+        );
+        drop(repo);
+        // Rename discovery uses the trees only, including on a continuation.
+        fs::remove_file(object_path(&f, b)).unwrap();
+        let before = image(&f.root);
+        let start = moved.to_string();
+        let one = Limits {
+            max_entries: 1,
+            ..limits()
+        };
+        let first = read_path_history(&f.root, &start, b"source.p", None, one, || false).unwrap();
+        let row = &first.entries[0];
+        assert_eq!(row.commit, start);
+        assert_eq!(row.change, Change::Modified);
+        assert_eq!(row.path, b"source.p");
+        assert_eq!(row.previous_path.as_deref(), Some(&b"sub/origen\xff.p"[..]));
+        let cursor = first.next.as_ref().unwrap();
+        assert!(matches!(
+            read_path_history(
+                &f.root,
+                &start,
+                b"sub/origen\xff.p",
+                Some(cursor),
+                limits(),
+                || false
+            ),
+            Err(Error::Stale)
+        ));
+        let tail = read_path_history(&f.root, &start, b"source.p", Some(cursor), limits(), || {
+            false
+        })
+        .unwrap();
+        assert_eq!(tail.path, b"source.p");
+        assert_eq!(tail.entries.len(), 2);
+        assert_eq!(tail.entries[0].commit, changed.to_string());
+        assert_eq!(tail.entries[1].commit, root.to_string());
+        assert!(
+            tail.entries
+                .iter()
+                .all(|row| row.path == b"sub/origen\xff.p" && row.previous_path.is_none())
+        );
+        assert!(tail.next.is_none());
+        assert_eq!(image(&f.root), before);
+    }
+
+    #[test]
+    fn path_history_rename_rejects_copies_ambiguity_and_mode_changes() {
+        for scenario in 0..5 {
+            let f = Fixture::new();
+            let repo = gix::init(&f.root).unwrap();
+            let blob = repo.write_blob(b"identico").unwrap().detach();
+            let replacement = repo.write_blob(b"otro").unwrap().detach();
+            let mut before: Vec<(&[u8], _, _)> = vec![(b"old.p", 0o100644, blob)];
+            let mut after: Vec<(&[u8], _, _)> = vec![(b"source.p", 0o100644, blob)];
+            match scenario {
+                0 => after.push((b"old.p", 0o100644, blob)), // copy, source survives
+                1 => before.push((b"alias.p", 0o100644, blob)), // two removed sources
+                2 => after.push((b"alias.p", 0o100644, blob)), // two destinations
+                3 => after.push((b"old.p", 0o100644, replacement)), // source reused
+                4 => before[0].1 = 0o100755,
+                _ => unreachable!(),
+            }
+            let parent = save(&repo, tree(&repo, &before), &[], "Padre");
+            let tip = save(&repo, tree(&repo, &after), &[parent], "Alta ambigua");
+            drop(repo);
+            let page = query(&f, tip);
+            assert_eq!(page.entries.len(), 1, "escenario {scenario}");
+            assert_eq!(page.entries[0].change, Change::Added);
+            assert!(page.entries[0].previous_path.is_none());
+        }
+    }
+
+    #[test]
+    fn path_history_rename_cannot_publish_a_match_with_an_incomplete_tree_scan() {
+        let f = Fixture::new();
+        let repo = gix::init(&f.root).unwrap();
+        let blob = repo.write_blob(b"original").unwrap().detach();
+        let other = repo.write_blob(b"otro").unwrap().detach();
+        let parent = save(
+            &repo,
+            tree(&repo, &[(b"old.p", 0o100644, blob)]),
+            &[],
+            "Padre",
+        );
+        let tip = save(
+            &repo,
+            tree(
+                &repo,
+                &[
+                    (b"source.p", 0o100644, blob),
+                    (b"unrelated-long-name", 0o100644, other),
+                ],
+            ),
+            &[parent],
+            "Necesita prueba de unicidad completa",
+        );
+        drop(repo);
+        let narrow = Limits {
+            max_path: b"source.p".len(),
+            ..limits()
+        };
+        assert!(matches!(
+            read_path_history(&f.root, &tip.to_string(), b"source.p", None, narrow, || {
+                false
+            }),
+            Err(Error::Limited)
+        ));
+        assert_eq!(
+            query(&f, tip).entries[0].previous_path.as_deref(),
+            Some(&b"old.p"[..])
+        );
     }
 
     #[test]

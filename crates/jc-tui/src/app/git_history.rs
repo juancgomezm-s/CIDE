@@ -487,7 +487,12 @@ impl TuiApp {
             .take(height)
             .map(|(ordinal, entry)| GitStatusRow {
                 ordinal,
-                flags: change(entry.change).into(),
+                flags: if entry.previous_path.is_some() {
+                    "R"
+                } else {
+                    change(entry.change)
+                }
+                .into(),
                 path: label(
                     &format!(
                         "{} {}",
@@ -641,13 +646,11 @@ impl TuiApp {
                 true
             }
             KeyCode::Enter => {
-                let file = self.git_revision.path_history().and_then(|page| {
-                    page.entries
-                        .get(self.git_history.selected)
-                        .map(|entry| (entry.commit.clone(), page.path.clone()))
-                });
-                if let (Some(root), Some((commit, path))) = (self.project_root.clone(), file) {
-                    self.status = match self.git_revision.request_file(root, commit, path) {
+                if let Some(root) = self.project_root.clone() {
+                    self.status = match self
+                        .git_revision
+                        .request_path_history_file(root, self.git_history.selected)
+                    {
                         Ok(()) => {
                             self.git_history.hunk = 0;
                             self.git_diff_scroll = 0;
@@ -747,6 +750,20 @@ impl TuiApp {
             return prepared;
         };
         prepared.details.push(opaque(&result.path, width));
+        if let jc_app::git_revision::ComparisonOrigin::Historical {
+            previous_path: Some(previous),
+            ..
+        } = &result.origin
+        {
+            prepared.details.push(label(
+                &format!(
+                    "Renombrado · {} → {}",
+                    opaque(previous, width),
+                    opaque(&result.path, width)
+                ),
+                width,
+            ));
+        }
         if let Some(sources) = result.origin.sources_label() {
             prepared.details.push(label(&sources, width));
         }

@@ -145,7 +145,7 @@ impl Budget {
         Ok(())
     }
 }
-fn verified_tree<'a>(
+pub(super) fn verified_tree<'a>(
     repo: &'a gix::Repository,
     id: gix::ObjectId,
     limits: Limits,
@@ -549,18 +549,51 @@ pub fn read_file_pair_parent(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<RevisionFilePair, Error> {
+    read_file_pair_at(root, selected, path, path, parent_index, limits, cancelled)
+}
+
+/// Compares distinct paths at the pinned first parent and selected commit.
+pub fn read_file_pair_paths(
+    root: &Path,
+    selected: &str,
+    before_path: &[u8],
+    after_path: &[u8],
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<RevisionFilePair, Error> {
+    read_file_pair_at(
+        root,
+        selected,
+        before_path,
+        after_path,
+        0,
+        limits,
+        cancelled,
+    )
+}
+
+fn read_file_pair_at(
+    root: &Path,
+    selected: &str,
+    before_path: &[u8],
+    path: &[u8],
+    parent_index: usize,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<RevisionFilePair, Error> {
     limits.admit()?;
     let id = commit_id(selected)?;
     path_valid(path, limits.max_path)?;
+    path_valid(before_path, limits.max_path)?;
     controlled(limits.timeout, cancelled, |ctx| {
         let (repo, repository) = open(root, ctx)?;
         let mut budget = Budget::new(limits);
-        budget.charge(path.len().saturating_mul(2))?;
+        budget.charge(path.len().saturating_add(before_path.len()))?;
         let selected = commit(&repo, id, limits, &mut budget, ctx)?;
         let parent = choose_parent(&selected, parent_index)?;
         let before = if let Some(id) = parent {
             let parent = commit(&repo, id, limits, &mut budget, ctx)?;
-            tree_entry(&repo, parent.tree, path, limits, &mut budget, ctx)?
+            tree_entry(&repo, parent.tree, before_path, limits, &mut budget, ctx)?
         } else {
             None
         };

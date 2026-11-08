@@ -18,7 +18,9 @@ use jc_git::local_pair::{read_local_pair, HeadState, IndexToken, SourceIdentity}
 use jc_git::patch_export::{export_unified, PatchOptions};
 use jc_git::path_history::read_path_history;
 pub use jc_git::path_history::{PathHistoryCursor, PathHistoryEntry, PathHistoryPage};
-use jc_git::revision::{read_file_pair_parent, read_revision_parent, RevisionFilePair};
+use jc_git::revision::{
+    read_file_pair_parent, read_file_pair_paths, read_revision_parent, RevisionFilePair,
+};
 pub use jc_git::revision::{Revision, RevisionEntry, RevisionFile};
 pub use jc_git::{Change, CommitInfo, RepositoryInfo};
 use std::{
@@ -88,8 +90,14 @@ impl RevisionComparison {
     }
 
     pub fn can_export_patch(&self) -> bool {
-        self.patch_options.before_mode != self.patch_options.after_mode
-            || self.model.hunks().next().is_some()
+        !matches!(
+            self.origin,
+            ComparisonOrigin::Historical {
+                previous_path: Some(_),
+                ..
+            }
+        ) && (self.patch_options.before_mode != self.patch_options.after_mode
+            || self.model.hunks().next().is_some())
     }
 
     /// Worker-only publication of the accepted snapshot to an explicit new
@@ -100,6 +108,15 @@ impl RevisionComparison {
         destination: &Path,
         mut cancelled: impl FnMut() -> bool,
     ) -> Result<usize, String> {
+        if matches!(
+            self.origin,
+            ComparisonOrigin::Historical {
+                previous_path: Some(_),
+                ..
+            }
+        ) {
+            return Err("El parche de un renombrado requiere dos rutas Git".into());
+        }
         if cancelled() {
             return Err("Se canceló la exportación del parche".into());
         }
@@ -162,6 +179,7 @@ pub enum ComparisonOrigin {
     Historical {
         commit: String,
         parent: Option<String>,
+        previous_path: Option<Vec<u8>>,
     },
     Local(Box<LocalComparisonOrigin>),
 }
@@ -198,7 +216,7 @@ impl ComparisonOrigin {
     }
     pub fn label(&self) -> String {
         match self {
-            Self::Historical { commit, parent } => format!(
+            Self::Historical { commit, parent, .. } => format!(
                 "{} → {}",
                 parent.as_deref().unwrap_or("árbol vacío"),
                 commit
@@ -240,6 +258,7 @@ enum Query {
         commit: String,
         path: Vec<u8>,
         parent: usize,
+        previous_path: Option<Vec<u8>>,
     },
     LocalFile {
         kind: PairKind,
@@ -314,7 +333,15 @@ impl Selection {
                 commit,
                 path,
                 parent,
-            } => commit.capacity() <= 64 && path.capacity() <= PATH_BYTES && *parent < 8,
+                previous_path,
+            } => {
+                commit.capacity() <= 64
+                    && path.capacity() <= PATH_BYTES
+                    && *parent < 8
+                    && previous_path
+                        .as_ref()
+                        .is_none_or(|path| *parent == 0 && path.capacity() <= PATH_BYTES)
+            }
             Query::LocalFile { path, .. } => path.capacity() <= PATH_BYTES,
         };
         bounded
@@ -677,6 +704,7 @@ impl GitRevisionController {
                 commit,
                 path,
                 parent: 0,
+                previous_path: None,
             },
         })
     }
@@ -700,6 +728,30 @@ impl GitRevisionController {
                 commit,
                 path,
                 parent,
+                previous_path: None,
+            },
+        })
+    }
+    pub fn request_path_history_file(&mut self, root: PathBuf, row: usize) -> Result<(), String> {
+        if self
+            .selection
+            .as_ref()
+            .is_none_or(|selected| selected.root != root)
+        {
+            return Err("El historial pertenece a otro proyecto".into());
+        }
+        let entry = self
+            .path_history
+            .as_ref()
+            .and_then(|page| page.entries.get(row))
+            .ok_or("La revisión del archivo ya no está disponible")?;
+        self.request(Selection {
+            root,
+            query: Query::HistoricalFile {
+                commit: entry.commit.clone(),
+                path: entry.path.clone(),
+                previous_path: entry.previous_path.clone(),
+                parent: 0,
             },
         })
     }
@@ -753,7 +805,7 @@ impl GitRevisionController {
             .selection
             .as_ref()
             .is_some_and(|current| current.root == selection.root)
-            && matches!(&selection.query,Query::HistoricalFile{commit,path,parent:0} if self.blame.as_ref().is_some_and(|p|
+            && matches!(&selection.query,Query::HistoricalFile{commit,path,parent:0,previous_path:None} if self.blame.as_ref().is_some_and(|p|
                 p.path==*path &&p.commits.iter().any(|c|c.commit.eq_ignore_ascii_case(commit))));
         if !retain_blame {
             self.blame = None;
@@ -763,15 +815,18 @@ impl GitRevisionController {
             .as_ref()
             .is_some_and(|current| current.root == selection.root)
             && match &selection.query {
-                Query::HistoricalFile { commit, path, .. } => {
-                    self.path_history.as_ref().is_some_and(|page| {
-                        page.path == *path
-                            && page
-                                .entries
-                                .iter()
-                                .any(|e| e.commit.eq_ignore_ascii_case(commit))
+                Query::HistoricalFile {
+                    commit,
+                    path,
+                    previous_path,
+                    parent: 0,
+                } => self.path_history.as_ref().is_some_and(|page| {
+                    page.entries.iter().any(|e| {
+                        e.commit.eq_ignore_ascii_case(commit)
+                            && e.path == *path
+                            && e.previous_path == *previous_path
                     })
-                }
+                }),
                 Query::Blame { start, path, .. } => {
                     self.path_history.as_ref().is_some_and(|page| {
                         page.path == *path
@@ -1084,16 +1139,30 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
             commit,
             path,
             parent,
+            previous_path,
         } => {
-            let pair =
-                read_file_pair_parent(&selection.root, commit, path, *parent, limits(), || {
-                    cancel.is_cancelled()
-                })
-                .map_err(Failure::Provider)?;
+            let stopped = || cancel.is_cancelled();
+            let pair = match previous_path {
+                Some(previous) => {
+                    read_file_pair_paths(&selection.root, commit, previous, path, limits(), stopped)
+                }
+                None => {
+                    read_file_pair_parent(&selection.root, commit, path, *parent, limits(), stopped)
+                }
+            }
+            .map_err(Failure::Provider)?;
             if pair.commit != *commit || pair.path != *path {
                 return Err(Failure::Identity);
             }
-            comparison(pair, cancel, started).map(Outcome::Comparison)
+            let mut result = comparison(pair, cancel, started)?;
+            if let ComparisonOrigin::Historical {
+                previous_path: source,
+                ..
+            } = &mut result.origin
+            {
+                source.clone_from(previous_path);
+            }
+            Ok(Outcome::Comparison(result))
         }
         Query::LocalFile { kind, path } => {
             let pair = read_local_pair(&selection.root, path, *kind, limits(), || {
@@ -1142,11 +1211,17 @@ fn comparison_matches(c: &RevisionComparison, query: &Query) -> bool {
     query.path() == Some(c.path.as_slice())
         && match (&c.origin, query) {
             (
-                ComparisonOrigin::Historical { commit, .. },
-                Query::HistoricalFile {
-                    commit: expected, ..
+                ComparisonOrigin::Historical {
+                    commit,
+                    previous_path,
+                    ..
                 },
-            ) => commit == expected,
+                Query::HistoricalFile {
+                    commit: expected,
+                    previous_path: expected_path,
+                    ..
+                },
+            ) => commit == expected && previous_path == expected_path,
             (ComparisonOrigin::Local(local), Query::LocalFile { kind: expected, .. }) => {
                 local.kind == *expected
             }
@@ -1205,6 +1280,7 @@ fn comparison(
         ComparisonOrigin::Historical {
             commit: pair.commit,
             parent: pair.parent,
+            previous_path: None,
         },
         patch_options,
         before_oid,
@@ -1527,6 +1603,8 @@ mod tests {
                 summary: b"Creacion".to_vec(),
                 author: b"Fixture".to_vec(),
                 change: Change::Added,
+                path: selection.query.path().unwrap().to_vec(),
+                previous_path: None,
             }],
             next: None,
             scanned: 1,

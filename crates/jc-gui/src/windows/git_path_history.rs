@@ -118,11 +118,11 @@ impl State {
         self.reset_path_view();
     }
     pub(super) fn open_git_path_commit(&mut self, index: usize) {
-        let Some((commit, path)) = self.git_revision.path_history().and_then(|p| {
-            p.entries
-                .get(index)
-                .map(|e| (e.commit.clone(), p.path.clone()))
-        }) else {
+        let Some(commit) = self
+            .git_revision
+            .path_history()
+            .and_then(|p| p.entries.get(index).map(|e| e.commit.clone()))
+        else {
             return;
         };
         let Some(root) = self.project_root.clone() else {
@@ -138,7 +138,7 @@ impl State {
         self.git_workspace.focus_diff = true;
         self.git_workspace.active = Column::Comparison;
         self.git_workspace.invalidate();
-        if let Err(e) = self.git_revision.request_file(root, commit, path) {
+        if let Err(e) = self.git_revision.request_path_history_file(root, index) {
             self.git_workspace.notice = Some(e);
         }
     }
@@ -300,7 +300,11 @@ impl State {
                     let r = rect(a.left, top, a.right, (top + p(64)).min(a.bottom));
                     f.commits.push(CommitRow {
                         rect: r,
-                        title: opaque(&e.summary, 160),
+                        title: if e.previous_path.is_some() {
+                            format!("Renombrado · {}", opaque(&e.summary, 140))
+                        } else {
+                            opaque(&e.summary, 160)
+                        },
                         detail: format!(
                             "{} · {}",
                             &e.commit[..e.commit.len().min(8)],
@@ -350,10 +354,25 @@ impl State {
                     } else {
                         "Selecciona una revisión para comparar el archivo".into()
                     },
-                    "Primer padre · sin seguimiento de renombrados".into(),
+                    "Primer padre · renombrados exactos".into(),
                 ];
             } else if self.git_revision.comparison().is_none() {
                 f.details.push(self.git_revision.message().into());
+            } else if let Some(comparison) = self.git_revision.comparison() {
+                if let jc_app::git_revision::ComparisonOrigin::Historical {
+                    previous_path: Some(previous),
+                    ..
+                } = &comparison.origin
+                {
+                    f.details.insert(
+                        0,
+                        format!(
+                            "Renombrado · {} → {}",
+                            opaque(previous, 120),
+                            opaque(&comparison.path, 120)
+                        ),
+                    );
+                }
             }
             f.footer = format!(
                 "Historial por archivo · {meta} · N más antiguos · R actualiza · Esc vuelve"
@@ -480,6 +499,18 @@ mod tests {
                 &format!("Revision {n}"),
             ]);
         }
+        let renamed = root.join("nuevo.p");
+        fs::rename(&file, &renamed).unwrap();
+        git(&["add", "-A", "--", "archivo.p", "nuevo.p"]);
+        git(&[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "Mover archivo",
+        ]);
+        let file = renamed;
         let mut s = State::new(&crate::GuiOptions {
             project_root: Some(root.clone()),
             encoding: Some(TextEncoding::Utf8),
@@ -509,10 +540,26 @@ mod tests {
         assert!(!frame.commits.is_empty());
         assert!(frame.footer.contains("hay más"));
         assert_eq!(jobs, s.jobs.outstanding());
+        click(&mut s, |i| matches!(i, Intent::PathCommit(0)));
+        wait(&mut s);
+        let renamed_pair = s.git_revision.comparison().unwrap();
+        assert_eq!(renamed_pair.path, b"nuevo.p");
+        assert!(
+            matches!(&renamed_pair.origin, jc_app::git_revision::ComparisonOrigin::Historical { previous_path: Some(path), .. } if path == b"archivo.p")
+        );
+        assert_eq!(
+            renamed_pair.model.source_bytes(DiffSide::Left),
+            b"version 25\r\n"
+        );
+        assert_eq!(
+            renamed_pair.model.source_bytes(DiffSide::Right),
+            b"version 25\r\n"
+        );
+        click(&mut s, |i| matches!(i, Intent::PathBack));
         click(&mut s, |i| matches!(i, Intent::PathNext));
         wait(&mut s);
-        assert_eq!(s.git_revision.path_history().unwrap().entries.len(), 2);
-        click(&mut s, |i| matches!(i, Intent::PathCommit(1)));
+        assert_eq!(s.git_revision.path_history().unwrap().entries.len(), 3);
+        click(&mut s, |i| matches!(i, Intent::PathCommit(2)));
         wait(&mut s);
         let pair = s.git_revision.comparison().unwrap();
         assert!(pair.before_oid.is_none());
@@ -523,7 +570,7 @@ mod tests {
         // Browsing another row must not relabel the still accepted root diff.
         s.git_workspace.focus_diff = false;
         assert!(s.git_path_history_key(0x26));
-        assert_eq!(s.git_workspace.path_selected, 0);
+        assert_eq!(s.git_workspace.path_selected, 1);
         assert_eq!(s.prepare_git_workspace().unwrap().summary[0], "Revision 0");
         click(&mut s, |i| matches!(i, Intent::PathBack));
         assert!(s.git_workspace.history_commit.is_none());
@@ -549,7 +596,7 @@ mod tests {
         permissions.set_readonly(false);
         fs::set_permissions(&blob_path, permissions).unwrap();
         fs::remove_file(blob_path).unwrap();
-        s.open_git_path_commit(1);
+        s.open_git_path_commit(2);
         let deadline = Instant::now() + Duration::from_secs(8);
         while matches!(
             s.git_revision.state(),
