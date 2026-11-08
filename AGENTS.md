@@ -1,3 +1,11 @@
+# Git references and merge parents in GUI/TUI
+
+Read docs/G1_GRAPH_VIEW.md. The reference selector opens the observed object ID
+and keeps the previous graph on a failed query. Preserve the selected parent
+through revision listing and file comparison. Directed tests, fmt, Clippy,
+offline release, 26 hidden GUI checks and the private TUI ConPTY flow passed.
+Delivery target/git-refs-parents-next/release. Keep earlier releases and caches.
+
 # Commit ancestry graph in GUI/TUI — 2026-11-07
 
 Read docs/G1_GRAPH_VIEW.md. Use the existing revision worker and retained

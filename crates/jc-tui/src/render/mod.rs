@@ -62,10 +62,11 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
         screen.text_styled(
             1,
             height - 1,
-            &clip(
-                "↑↓ seleccionar · Intro abrir commit · N más · F5 actualizar · Esc volver",
-                width - 2,
-            ),
+            &clip(if graph.title == "Ramas y etiquetas" {
+                "↑↓ seleccionar · Intro abrir referencia · Esc volver"
+            } else {
+                "↑↓ seleccionar · Intro abrir commit · R referencias · N más · F5 HEAD · Esc volver"
+            }, width - 2),
             CellStyle::Accent,
         );
         return screen;

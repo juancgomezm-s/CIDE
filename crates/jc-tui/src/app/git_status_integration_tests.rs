@@ -307,7 +307,18 @@ fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
     let initial = fixture.oid(&["rev-parse", "HEAD"]);
     let tree = fixture.oid(&["rev-parse", "HEAD^{tree}"]);
     let left = fixture.oid(&["commit-tree", &tree, "-p", &initial, "-m", "Rama uno"]);
-    let right = fixture.oid(&["commit-tree", &tree, "-p", &initial, "-m", "Rama dos"]);
+    let original = fixture.disk();
+    let alternate = b"texto del segundo padre\r\n";
+    fixture.rewrite(TRACKED, alternate);
+    fixture.cache(&fixture.oid(&["hash-object", "-w", "--no-filters", "--", TRACKED]));
+    let other_tree = fixture.oid(&["write-tree"]);
+    fixture.rewrite(TRACKED, &original.tracked);
+    fixture.rewrite(".git/index", &original.index);
+    let right = fixture.oid(&["commit-tree", &other_tree, "-p", &initial, "-m", "Rama dos"]);
+    fixture.git(&["update-ref", "refs/heads/lateral", &right]);
+    fixture.git(&["tag", "-a", "prueba", &left, "-m", "Etiqueta anotada"]);
+    let blob = fixture.oid(&["rev-parse", "HEAD:tracked.txt"]);
+    fixture.git(&["update-ref", "refs/tags/z-sin-commit", &blob]);
     let merge = fixture.oid(&[
         "commit-tree",
         &tree,
@@ -352,6 +363,46 @@ fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
     assert!(graph.has_next());
     assert_eq!(graph.entries.len(), 24);
     assert_eq!(graph.entries[0].commit.id, tip);
+    key(&mut app, KeyCode::Char('r'));
+    let refs = app.prepare_frame(100, 24).graph.unwrap();
+    let branch = refs
+        .rows
+        .iter()
+        .find(|row| row.path == "Rama lateral")
+        .unwrap()
+        .ordinal;
+    assert!(refs.rows.iter().any(|row| row.path == "Etiqueta prueba"));
+    for _ in 0..branch {
+        key(&mut app, KeyCode::Down);
+    }
+    fixture.git(&["update-ref", "refs/heads/lateral", &left, &right]);
+    key(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    assert_eq!(
+        app.git_revision.graph().unwrap().entries[0].commit.id,
+        right
+    );
+    key(&mut app, KeyCode::Char('r'));
+    key(&mut app, KeyCode::End);
+    key(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    assert_eq!(
+        app.git_revision.state(),
+        jc_app::git_revision::GitRevisionState::Failed
+    );
+    assert_eq!(
+        app.git_revision.graph().unwrap().entries[0].commit.id,
+        right
+    );
+    key(&mut app, KeyCode::Char('r'));
+    key(&mut app, KeyCode::End);
+    key(&mut app, KeyCode::Up);
+    key(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    assert_eq!(app.git_revision.graph().unwrap().entries[0].commit.id, left);
+    key(&mut app, KeyCode::Char('r'));
+    key(&mut app, KeyCode::Enter);
+    settle(&mut app);
     key(&mut app, KeyCode::Char('n'));
     settle(&mut app);
     let presented = app.prepare_frame(100, 24).graph.unwrap();
@@ -360,6 +411,28 @@ fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
     key(&mut app, KeyCode::Enter);
     settle(&mut app);
     assert_eq!(app.git_revision.revision().unwrap().commit, merge);
+    assert!(app.git_revision.revision().unwrap().files.is_empty());
+    key(&mut app, KeyCode::Char('p'));
+    settle(&mut app);
+    assert_eq!(
+        app.git_revision.revision().unwrap().parent.as_deref(),
+        Some(right.as_str())
+    );
+    assert_eq!(
+        app.git_revision.revision().unwrap().files[0].path,
+        TRACKED.as_bytes()
+    );
+    key(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    let pair = app.git_revision.comparison().unwrap();
+    assert_eq!(
+        pair.model.source_bytes(jc_app::diff_model::DiffSide::Left),
+        alternate
+    );
+    assert!(
+        matches!(&pair.origin, jc_app::git_revision::ComparisonOrigin::Historical { parent: Some(parent), .. } if *parent == right)
+    );
+    key(&mut app, KeyCode::Esc);
     key(&mut app, KeyCode::Esc);
     assert!(app.graph_showing());
     assert_eq!(

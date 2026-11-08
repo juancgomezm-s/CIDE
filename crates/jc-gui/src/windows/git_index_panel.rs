@@ -202,6 +202,104 @@ mod tests {
     }
 
     #[test]
+    fn gui_graph_selects_tag_and_merge_parent_for_files_and_diff() {
+        let fixture = Fixture::new();
+        let git = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+            .map(|directory| directory.join("git.exe"))
+            .find(|path| path.is_file())
+            .expect("Git is required for the owned fixture");
+        let run = |args: &[&str]| {
+            let output = std::process::Command::new(&git)
+                .current_dir(&fixture.root)
+                .env_clear()
+                .envs(std::env::vars_os().filter(|(key, _)| {
+                    matches!(
+                        key.to_str(),
+                        Some("SystemRoot" | "SYSTEMROOT" | "WINDIR" | "TEMP" | "TMP")
+                    )
+                }))
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_CONFIG_GLOBAL", "NUL")
+                .env("GIT_AUTHOR_NAME", "CIDE Fixture")
+                .env("GIT_AUTHOR_EMAIL", "cide@example.test")
+                .env("GIT_COMMITTER_NAME", "CIDE Fixture")
+                .env("GIT_COMMITTER_EMAIL", "cide@example.test")
+                .args(["-c", "core.hooksPath=NUL", "-c", "core.autocrlf=false"])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{:?}", output.stderr);
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        let source = fixture.root.join("merge.txt");
+        fs::write(&source, b"primer padre\n").unwrap();
+        run(&["add", "--", "merge.txt"]);
+        let a = run(&["write-tree"]);
+        let first = run(&["commit-tree", &a, "-m", "Primero"]);
+        fs::write(&source, b"segundo padre\n").unwrap();
+        run(&["add", "--", "merge.txt"]);
+        let b = run(&["write-tree"]);
+        let second = run(&["commit-tree", &b, "-m", "Segundo"]);
+        let merge = run(&[
+            "commit-tree",
+            &a,
+            "-p",
+            &first,
+            "-p",
+            &second,
+            "-m",
+            "Merge",
+        ]);
+        run(&["update-ref", "refs/heads/main", &merge]);
+        run(&["update-ref", "refs/heads/lateral", &second]);
+        run(&["tag", "prueba", &first]);
+        let index = fs::read(fixture.root.join(".git/index")).unwrap();
+        let mut state = State::new(&GuiOptions {
+            project_root: Some(fixture.root.clone()),
+            ..Default::default()
+        })
+        .unwrap();
+        state.request_git(GitIntent::Status);
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(b'G' as usize);
+        wait(&mut state, |s| s.git_revision.graph().is_some());
+        state.key(b'R' as usize);
+        state.key(0x23);
+        state.key(0x0d);
+        wait(&mut state, |s| s.git_revision.graph().is_some());
+        assert_eq!(
+            state.git_revision.graph().unwrap().entries[0].commit.id,
+            first
+        );
+        state.key(b'R' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| s.git_revision.graph().is_some());
+        state.key(0x0d);
+        wait(&mut state, |s| s.git_revision.revision().is_some());
+        assert_eq!(state.git_revision.revision().unwrap().commit, merge);
+        assert!(state.git_revision.revision().unwrap().files.is_empty());
+        state.key(b'P' as usize);
+        wait(&mut state, |s| s.git_revision.revision().is_some());
+        assert_eq!(
+            state.git_revision.revision().unwrap().parent.as_deref(),
+            Some(second.as_str())
+        );
+        state.key(0x0d);
+        wait(&mut state, |s| s.git_revision.comparison().is_some());
+        let pair = state.git_revision.comparison().unwrap();
+        assert_eq!(
+            pair.model.source_bytes(jc_app::diff_model::DiffSide::Left),
+            b"segundo padre\n"
+        );
+        assert_eq!(
+            pair.model.source_bytes(jc_app::diff_model::DiffSide::Right),
+            b"primer padre\n"
+        );
+        assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
+        assert_eq!(fs::read(source).unwrap(), b"segundo padre\n");
+    }
+
+    #[test]
     fn gui_create_commit_reviews_staged_paths_before_advancing_branch() {
         let fixture = Fixture::new();
         let path = fixture.root.join("new.txt");

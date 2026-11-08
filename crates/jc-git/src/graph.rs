@@ -352,6 +352,7 @@ struct Snapshot {
     requested: Option<gix::ObjectId>,
     start: Option<String>,
     head: Option<Head>,
+    refs: Arc<[RefEntry]>,
     nodes: Vec<GraphNode>,
     shallow: bool,
     metadata_limited: bool,
@@ -366,6 +367,7 @@ impl Snapshot {
             + self.repository.git_dir.capacity()
             + self.start.as_ref().map_or(0, String::capacity)
             + self.head.as_ref().map_or(0, Head::memory_bytes)
+            + ref_bytes(&self.refs)
             + self.nodes.capacity() * std::mem::size_of::<GraphNode>()
             + self
                 .nodes
@@ -397,6 +399,7 @@ pub struct GraphPage {
     pub start: Option<String>,
     /// Present only when the initial call selected HEAD implicitly.
     pub head: Option<Head>,
+    pub refs: Arc<[RefEntry]>,
     pub nodes: Vec<GraphNode>,
     pub next: Option<GraphCursor>,
     pub shallow: bool,
@@ -410,6 +413,11 @@ impl GraphPage {
             + self.repository.git_dir.capacity()
             + self.start.as_ref().map_or(0, String::capacity)
             + self.head.as_ref().map_or(0, Head::memory_bytes)
+            + if self.next.is_none() {
+                ref_bytes(&self.refs)
+            } else {
+                0
+            }
             + self.nodes.capacity() * std::mem::size_of::<GraphNode>()
             + self
                 .nodes
@@ -418,6 +426,20 @@ impl GraphPage {
                 .sum::<usize>()
             + self.next.as_ref().map_or(0, GraphCursor::memory_bytes)
     }
+}
+
+fn ref_bytes(refs: &[RefEntry]) -> usize {
+    std::mem::size_of_val(refs)
+        + refs
+            .iter()
+            .map(|entry| {
+                entry.name.capacity()
+                    + match &entry.target {
+                        RefTarget::Direct(oid) => oid.capacity(),
+                        RefTarget::Symbolic(name) => name.capacity(),
+                    }
+            })
+            .sum::<usize>()
 }
 
 fn parse_oid(value: &str) -> Result<gix::ObjectId, Error> {
@@ -594,10 +616,18 @@ fn snapshot(
     ctx: &Context<'_>,
 ) -> Result<Snapshot, Error> {
     let mut budget = Budget::new(limits);
-    let head = if requested.is_none() {
-        Some(references(repo, limits, &mut budget, ctx)?.0)
+    let (head, refs) = if requested.is_none() || window {
+        let (head, refs) = references(repo, limits, &mut budget, ctx)?;
+        (
+            requested.is_none().then_some(head),
+            if window {
+                Arc::from(refs)
+            } else {
+                Arc::from([])
+            },
+        )
     } else {
-        None
+        (None, Arc::from([]))
     };
     let id = requested.or(head
         .as_ref()
@@ -609,6 +639,7 @@ fn snapshot(
         requested,
         start: None,
         head,
+        refs,
         nodes: Vec::new(),
         shallow: false,
         metadata_limited: false,
@@ -682,6 +713,7 @@ fn page(snapshot: Arc<Snapshot>, offset: usize, limits: Limits) -> Result<GraphP
         },
         start: snapshot.start.clone(),
         head: snapshot.head.clone(),
+        refs: snapshot.refs.clone(),
         nodes: snapshot.nodes[offset..end].to_vec(),
         shallow: snapshot.shallow,
         metadata_limited: snapshot.metadata_limited,
@@ -721,6 +753,18 @@ pub fn read_graph_window(
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<GraphPage, Error> {
     read_graph_inner(root, None, continuation, true, limits, cancelled)
+}
+
+/// Open the viewer on an observed branch or tag target. Annotated tags are peeled
+/// by the same bounded commit reader as other explicit starting objects.
+pub fn read_graph_window_from(
+    root: &Path,
+    pinned_start: Option<&str>,
+    continuation: Option<&GraphCursor>,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<GraphPage, Error> {
+    read_graph_inner(root, pinned_start, continuation, true, limits, cancelled)
 }
 
 fn read_graph_inner(

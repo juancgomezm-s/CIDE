@@ -3,7 +3,7 @@
 //! poll accepts results. Rendering may borrow accepted immutable read models.
 use crate::{
     diff_model::{DiffLimits, DiffStatus, OwnedDiffModel},
-    git_graph::{CommitGraph, GraphNext},
+    git_graph::{CommitGraph, GraphNext, GraphReference},
     Cancellation, Wakeup,
 };
 use jc_git::blame::read_blame;
@@ -12,13 +12,13 @@ use jc_git::commit_search::search_commits;
 pub use jc_git::commit_search::{
     CommitSearchCursor, CommitSearchEntry, CommitSearchPage, SearchField,
 };
-use jc_git::graph::read_graph_window;
+use jc_git::graph::read_graph_window_from;
 pub use jc_git::local_pair::PairKind;
 use jc_git::local_pair::{read_local_pair, HeadState, IndexToken, SourceIdentity};
 use jc_git::patch_export::{export_unified, PatchOptions};
 use jc_git::path_history::read_path_history;
 pub use jc_git::path_history::{PathHistoryCursor, PathHistoryEntry, PathHistoryPage};
-use jc_git::revision::{read_file_pair, read_revision, RevisionFilePair};
+use jc_git::revision::{read_file_pair_parent, read_revision_parent, RevisionFilePair};
 pub use jc_git::revision::{Revision, RevisionEntry, RevisionFile};
 pub use jc_git::{Change, CommitInfo, RepositoryInfo};
 use std::{
@@ -214,6 +214,7 @@ impl ComparisonOrigin {
 enum Query {
     Graph {
         cursor: Option<GraphNext>,
+        reference: Option<GraphReference>,
     },
     CommitSearch {
         start: String,
@@ -233,10 +234,12 @@ enum Query {
     },
     Revision {
         commit: String,
+        parent: usize,
     },
     HistoricalFile {
         commit: String,
         path: Vec<u8>,
+        parent: usize,
     },
     LocalFile {
         kind: PairKind,
@@ -249,7 +252,7 @@ impl Query {
             Self::CommitSearch { start, .. } => Some(start),
             Self::Blame { start, .. } => Some(start),
             Self::PathHistory { start, .. } => Some(start),
-            Self::Revision { commit } | Self::HistoricalFile { commit, .. } => Some(commit),
+            Self::Revision { commit, .. } | Self::HistoricalFile { commit, .. } => Some(commit),
             _ => None,
         }
     }
@@ -259,6 +262,12 @@ impl Query {
             | Self::LocalFile { path, .. }
             | Self::PathHistory { path, .. }
             | Self::Blame { path, .. } => Some(path),
+            _ => None,
+        }
+    }
+    fn parent(&self) -> Option<usize> {
+        match self {
+            Self::Revision { parent, .. } | Self::HistoricalFile { parent, .. } => Some(*parent),
             _ => None,
         }
     }
@@ -300,10 +309,12 @@ impl Selection {
                         .as_ref()
                         .is_none_or(|c| c.memory_bytes() <= PATH_BYTES * 4)
             }
-            Query::Revision { commit } => commit.capacity() <= 64,
-            Query::HistoricalFile { commit, path } => {
-                commit.capacity() <= 64 && path.capacity() <= PATH_BYTES
-            }
+            Query::Revision { commit, parent } => commit.capacity() <= 64 && *parent < 8,
+            Query::HistoricalFile {
+                commit,
+                path,
+                parent,
+            } => commit.capacity() <= 64 && path.capacity() <= PATH_BYTES && *parent < 8,
             Query::LocalFile { path, .. } => path.capacity() <= PATH_BYTES,
         };
         bounded
@@ -379,6 +390,7 @@ pub struct GitRevisionController {
     generation: u64,
     selection: Option<Selection>,
     revision: Option<Revision>,
+    parent_options: Vec<String>,
     graph: Option<CommitGraph>,
     path_history: Option<PathHistoryPage>,
     blame: Option<BlamePage>,
@@ -404,6 +416,7 @@ impl GitRevisionController {
             generation: 0,
             selection: None,
             revision: None,
+            parent_options: Vec::new(),
             graph: None,
             path_history: None,
             blame: None,
@@ -419,24 +432,61 @@ impl GitRevisionController {
         self.revision.as_ref()
     }
     pub fn graph(&self) -> Option<&CommitGraph> {
+        if matches!(
+            self.state,
+            GitRevisionState::Queued | GitRevisionState::Running
+        ) && self
+            .selection
+            .as_ref()
+            .is_some_and(|selection| matches!(selection.query, Query::Graph { .. }))
+        {
+            return None;
+        }
         self.graph.as_ref()
     }
     pub fn request_graph(&mut self, root: PathBuf) -> Result<(), String> {
         self.request(Selection {
             root,
-            query: Query::Graph { cursor: None },
+            query: Query::Graph {
+                cursor: None,
+                reference: None,
+            },
+        })
+    }
+    /// Row zero is HEAD, followed by the references in the accepted catalogue.
+    pub fn request_graph_reference(&mut self, root: PathBuf, row: usize) -> Result<(), String> {
+        if self
+            .selection
+            .as_ref()
+            .is_none_or(|selected| selected.root != root)
+        {
+            return Err("La referencia pertenece a otro proyecto".into());
+        }
+        let reference = match row.checked_sub(1) {
+            None => None,
+            Some(index) => Some(
+                self.graph()
+                    .and_then(|p| p.references.get(index))
+                    .cloned()
+                    .ok_or("La referencia ya no está disponible")?,
+            ),
+        };
+        self.request(Selection {
+            root,
+            query: Query::Graph {
+                cursor: None,
+                reference,
+            },
         })
     }
     pub fn request_graph_next(&mut self, root: PathBuf) -> Result<(), String> {
-        let cursor = self
-            .graph
-            .as_ref()
-            .and_then(|page| page.next.clone())
-            .ok_or("No hay otra página del grafo")?;
+        let page = self.graph().ok_or("No hay otra página del grafo")?;
+        let cursor = page.next.clone().ok_or("No hay otra página del grafo")?;
         self.request(Selection {
             root,
             query: Query::Graph {
                 cursor: Some(cursor),
+                reference: page.reference.clone(),
             },
         })
     }
@@ -446,6 +496,7 @@ impl GitRevisionController {
         }
         self.invalidate_work();
         self.revision = None;
+        self.parent_options.clear();
         self.state = GitRevisionState::Ready;
         true
     }
@@ -593,10 +644,26 @@ impl GitRevisionController {
         self.comparison = None;
     }
     pub fn request_revision(&mut self, root: PathBuf, commit: String) -> Result<(), String> {
+        self.request_revision_parent(root, commit, 0)
+    }
+    pub fn request_revision_parent(
+        &mut self,
+        root: PathBuf,
+        commit: String,
+        parent: usize,
+    ) -> Result<(), String> {
         self.request(Selection {
             root,
-            query: Query::Revision { commit },
+            query: Query::Revision { commit, parent },
         })
+    }
+    pub fn parent_options(&self) -> (usize, &[String]) {
+        let index = self
+            .selection
+            .as_ref()
+            .and_then(|s| s.query.parent())
+            .unwrap_or(0);
+        (index, &self.parent_options)
     }
     pub fn request_file(
         &mut self,
@@ -606,7 +673,34 @@ impl GitRevisionController {
     ) -> Result<(), String> {
         self.request(Selection {
             root,
-            query: Query::HistoricalFile { commit, path },
+            query: Query::HistoricalFile {
+                commit,
+                path,
+                parent: 0,
+            },
+        })
+    }
+    pub fn request_revision_file(
+        &mut self,
+        root: PathBuf,
+        commit: String,
+        path: Vec<u8>,
+    ) -> Result<(), String> {
+        let parent = self
+            .selection
+            .as_ref()
+            .filter(|current| {
+                current.root == root && current.query.commit() == Some(commit.as_str())
+            })
+            .and_then(|current| current.query.parent())
+            .unwrap_or(0);
+        self.request(Selection {
+            root,
+            query: Query::HistoricalFile {
+                commit,
+                path,
+                parent,
+            },
         })
     }
     pub fn request_local_file(
@@ -627,7 +721,8 @@ impl GitRevisionController {
             .as_ref()
             .is_some_and(|current| current.root == selection.root)
             && match &selection.query {
-                Query::Revision { commit } | Query::HistoricalFile { commit, .. } => {
+                Query::Graph { .. } => true,
+                Query::Revision { commit, .. } | Query::HistoricalFile { commit, .. } => {
                     self.graph.as_ref().is_some_and(|graph| {
                         graph.entries.iter().any(|entry| entry.commit.id == *commit)
                     })
@@ -642,7 +737,7 @@ impl GitRevisionController {
             .as_ref()
             .is_some_and(|current| current.root == selection.root)
             && match &selection.query {
-                Query::Revision { commit } | Query::HistoricalFile { commit, .. } => {
+                Query::Revision { commit, .. } | Query::HistoricalFile { commit, .. } => {
                     self.commit_search.as_ref().is_some_and(|p| {
                         p.entries
                             .iter()
@@ -658,7 +753,7 @@ impl GitRevisionController {
             .selection
             .as_ref()
             .is_some_and(|current| current.root == selection.root)
-            && matches!(&selection.query,Query::HistoricalFile{commit,path} if self.blame.as_ref().is_some_and(|p|
+            && matches!(&selection.query,Query::HistoricalFile{commit,path,parent:0} if self.blame.as_ref().is_some_and(|p|
                 p.path==*path &&p.commits.iter().any(|c|c.commit.eq_ignore_ascii_case(commit))));
         if !retain_blame {
             self.blame = None;
@@ -668,7 +763,7 @@ impl GitRevisionController {
             .as_ref()
             .is_some_and(|current| current.root == selection.root)
             && match &selection.query {
-                Query::HistoricalFile { commit, path } => {
+                Query::HistoricalFile { commit, path, .. } => {
                     self.path_history.as_ref().is_some_and(|page| {
                         page.path == *path
                             && page
@@ -692,15 +787,25 @@ impl GitRevisionController {
         if !retain_path_history {
             self.path_history = None;
         }
-        let retain_revision = matches!(selection.query, Query::HistoricalFile { .. })
+        let same_revision = selection.query.parent().is_some()
             && self.selection.as_ref().is_some_and(|current| {
-                current.root == selection.root
+                current.query.parent().is_some()
+                    && current.root == selection.root
                     && current
                         .query
                         .commit()
                         .zip(selection.query.commit())
                         .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
             });
+        if !same_revision {
+            self.parent_options.clear();
+        }
+        let retain_revision = same_revision
+            && matches!(selection.query, Query::HistoricalFile { .. })
+            && self
+                .selection
+                .as_ref()
+                .is_some_and(|current| current.query.parent() == selection.query.parent());
         if !retain_revision {
             self.revision = None;
         }
@@ -716,7 +821,7 @@ impl GitRevisionController {
             return Err("La consulta necesita raíz absoluta, revisión y ruta Git válidas".into());
         }
         match &mut selection.query {
-            Query::Revision { commit }
+            Query::Revision { commit, .. }
             | Query::HistoricalFile { commit, .. }
             | Query::PathHistory { start: commit, .. }
             | Query::Blame { start: commit, .. }
@@ -764,6 +869,7 @@ impl GitRevisionController {
             self.invalidate_work();
             self.selection = None;
             self.revision = None;
+            self.parent_options.clear();
             self.graph = None;
             self.path_history = None;
             self.blame = None;
@@ -776,6 +882,7 @@ impl GitRevisionController {
     pub fn cancel(&mut self) {
         self.invalidate_work();
         self.revision = None;
+        self.parent_options.clear();
         self.graph = None;
         self.path_history = None;
         self.blame = None;
@@ -837,15 +944,22 @@ impl GitRevisionController {
                     self.state = GitRevisionState::Ready;
                 }
                 Ok(Outcome::Revision(revision))
-                    if matches!(completion.selection.query, Query::Revision { .. })
+                    if matches!(completion.selection.query, Query::Revision { parent, .. }
+                        if revision.parents.get(parent) == revision.parent.as_ref()
+                        && (parent == 0 || revision.parent.is_some()))
                         && Some(revision.commit.as_str())
                             == completion.selection.query.commit() =>
                 {
+                    self.parent_options.clone_from(&revision.parents);
                     self.revision = Some(revision);
                     self.state = GitRevisionState::Ready;
                 }
                 Ok(Outcome::Comparison(comparison))
-                    if comparison_matches(&comparison, &completion.selection.query) =>
+                    if comparison_matches(&comparison, &completion.selection.query)
+                        && self.revision.as_ref().is_none_or(|revision| {
+                            matches!(&comparison.origin, ComparisonOrigin::Historical { parent, .. }
+                                if *parent == revision.parent)
+                        }) =>
                 {
                     self.comparison = Some(Arc::new(comparison));
                     self.state = GitRevisionState::Ready;
@@ -907,13 +1021,20 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
     }
     let started = Instant::now();
     match &selection.query {
-        Query::Graph { cursor } => read_graph_window(
+        Query::Graph { cursor, reference } => read_graph_window_from(
             &selection.root,
+            reference.as_ref().map(|target| target.oid.as_str()),
             cursor.as_ref().map(GraphNext::cursor),
             limits(),
             || cancel.is_cancelled(),
         )
-        .map(|page| Outcome::Graph(CommitGraph::project(page, cursor.as_ref())))
+        .map(|page| {
+            Outcome::Graph(CommitGraph::project(
+                page,
+                cursor.as_ref(),
+                reference.clone(),
+            ))
+        })
         .map_err(Failure::Provider),
         Query::CommitSearch {
             start,
@@ -952,16 +1073,23 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
         )
         .map(Outcome::PathHistory)
         .map_err(Failure::Provider),
-        Query::Revision { commit } => {
-            read_revision(&selection.root, commit, limits(), || cancel.is_cancelled())
-                .map(Outcome::Revision)
-                .map_err(Failure::Provider)
-        }
-        Query::HistoricalFile { commit, path } => {
-            let pair = read_file_pair(&selection.root, commit, path, limits(), || {
+        Query::Revision { commit, parent } => {
+            read_revision_parent(&selection.root, commit, *parent, limits(), || {
                 cancel.is_cancelled()
             })
-            .map_err(Failure::Provider)?;
+            .map(Outcome::Revision)
+            .map_err(Failure::Provider)
+        }
+        Query::HistoricalFile {
+            commit,
+            path,
+            parent,
+        } => {
+            let pair =
+                read_file_pair_parent(&selection.root, commit, path, *parent, limits(), || {
+                    cancel.is_cancelled()
+                })
+                .map_err(Failure::Provider)?;
             if pair.commit != *commit || pair.path != *path {
                 return Err(Failure::Identity);
             }
@@ -1320,7 +1448,7 @@ mod tests {
             wake.clone(),
             Arc::new(|s, cancel| match &s.query {
                 Query::Blame { .. } => Ok(Outcome::Blame(blame_page(s))),
-                Query::HistoricalFile { commit, path } => comparison(
+                Query::HistoricalFile { commit, path, .. } => comparison(
                     RevisionFilePair {
                         repository: jc_git::Identity {
                             root: s.root.clone(),
@@ -1413,7 +1541,7 @@ mod tests {
             wake.clone(),
             Arc::new(|s, cancel| match &s.query {
                 Query::PathHistory { .. } => Ok(Outcome::PathHistory(history_page(s))),
-                Query::HistoricalFile { commit, path } => comparison(
+                Query::HistoricalFile { commit, path, .. } => comparison(
                     RevisionFilePair {
                         repository: jc_git::Identity {
                             root: s.root.clone(),

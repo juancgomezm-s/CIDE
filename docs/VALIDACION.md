@@ -1,3 +1,12 @@
+## Git · Referencias y elección del padre de un merge
+
+Pasaron las pruebas dirigidas del núcleo y de ambas interfaces, además de
+14 pruebas del controlador de revisiones. La entrega optimizada en
+`target/git-refs-parents-next/release/` pasó 26 comprobaciones Git con
+GUI oculta. Un ConPTY privado verificó la apertura de una rama, una
+etiqueta anotada y el diff contra el segundo padre en la TUI optimizada.
+Formato y Clippy aprobados. [Uso y alcance](G1_GRAPH_VIEW.md)
+
 ## Git · Entrega de amend, bloques y grafo — 2026-11-07
 
 La compilación offline de amend y bloques quedó en

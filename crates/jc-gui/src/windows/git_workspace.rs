@@ -135,6 +135,9 @@ enum Intent {
     GraphClose,
     GraphNext,
     GraphCommit(usize),
+    GraphReferences,
+    GraphReference(usize),
+    HistoryParent,
     CreateCommit,
     AmendCommit,
     SubmitCommit,
@@ -887,6 +890,18 @@ impl State {
             }
             Some(Intent::GraphCommit(index)) => {
                 self.open_graph_commit(index);
+                Action::None
+            }
+            Some(Intent::GraphReferences) => {
+                self.toggle_graph_references();
+                Action::None
+            }
+            Some(Intent::GraphReference(index)) => {
+                self.choose_graph_reference(index);
+                Action::None
+            }
+            Some(Intent::HistoryParent) => {
+                self.cycle_git_history_parent();
                 Action::None
             }
             Some(Intent::CreateCommit) => {

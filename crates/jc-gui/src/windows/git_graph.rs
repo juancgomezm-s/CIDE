@@ -1,5 +1,5 @@
 use super::*;
-use jc_app::{git_graph::GraphView, Modifiers};
+use jc_app::{git_graph::GraphView, git_revision::GitRevisionState, Modifiers};
 
 impl State {
     pub(in crate::windows) fn open_git_graph(&mut self) {
@@ -78,6 +78,27 @@ impl State {
         self.git_workspace.invalidate();
     }
 
+    pub(super) fn toggle_graph_references(&mut self) {
+        if self.git_revision.graph().is_some() {
+            if let Some(view) = &mut self.git_workspace.graph {
+                view.reference_selected = view.reference_selected.is_none().then_some(0);
+                self.git_workspace.invalidate();
+            }
+        }
+    }
+
+    pub(super) fn choose_graph_reference(&mut self, index: usize) {
+        let Some(root) = self.project_root.clone() else {
+            return;
+        };
+        self.git_workspace.notice = self.git_revision.request_graph_reference(root, index).err();
+        if let Some(view) = &mut self.git_workspace.graph {
+            view.reference_selected = None;
+            view.selected = 0;
+        }
+        self.git_workspace.invalidate();
+    }
+
     pub(in crate::windows) fn git_graph_key(&mut self, code: usize, mods: Modifiers) -> bool {
         let Some(view) = self.git_workspace.graph.as_ref() else {
             if code == b'G' as usize
@@ -103,10 +124,15 @@ impl State {
             return true;
         }
         match code {
+            0x1b if view.reference_selected.is_some() => self.toggle_graph_references(),
             0x1b => self.close_graph(),
             0x74 => self.open_git_graph(),
+            0x52 => self.toggle_graph_references(),
+            0x0d if view.reference_selected.is_some() => {
+                self.choose_graph_reference(view.selected_row())
+            }
             0x0d => self.open_graph_commit(view.selected),
-            0x4e => self.next_graph_page(),
+            0x4e if view.reference_selected.is_none() => self.next_graph_page(),
             0x26 | 0x28 | 0x21 | 0x22 | 0x24 | 0x23 => {
                 let delta = match code {
                     0x26 => -1,
@@ -124,11 +150,14 @@ impl State {
     }
 
     pub(super) fn move_git_graph(&mut self, delta: isize) {
-        let count = self
-            .git_revision
-            .graph()
-            .map_or(0, |graph| graph.entries.len());
         if let Some(view) = &mut self.git_workspace.graph {
+            let count = self.git_revision.graph().map_or(0, |graph| {
+                if view.reference_selected.is_some() {
+                    graph.reference_count()
+                } else {
+                    graph.entries.len()
+                }
+            });
             view.move_selection(count, delta);
             self.git_workspace.invalidate();
         }
@@ -157,17 +186,35 @@ impl State {
         frame.buttons.clear();
         frame.hits.actions.clear();
         frame.historical = false;
-        frame.subtitle = "Grafo de commits · ascendencia de HEAD".into();
-        frame.footer =
-            "↑↓ seleccionar · Intro abrir commit · N más · F5 actualizar · Esc volver".into();
+        let references = view.reference_selected.is_some();
+        frame.subtitle = if references {
+            "Ramas y etiquetas"
+        } else {
+            "Grafo de commits"
+        }
+        .into();
+        frame.footer = if references {
+            "↑↓ seleccionar · Intro abrir referencia · Esc volver"
+        } else {
+            "↑↓ seleccionar · Intro abrir commit · R referencias · N más · F5 HEAD · Esc volver"
+        }
+        .into();
         let graph = self.git_revision.graph();
         if let Some(graph) = graph {
             frame.summary.push(graph.heading());
+            if self.git_revision.state() != GitRevisionState::Ready {
+                frame.summary.push(self.git_revision.message().into());
+            }
             let row_height = p(23).max(1);
             let top = frame.preview.top + p(132);
             let count = ((frame.preview.bottom - top) / row_height).clamp(0, 24) as usize;
-            let first = view.first(graph.entries.len(), count);
-            for (index, entry) in graph.entries.iter().enumerate().skip(first).take(count) {
+            let total = if references {
+                graph.reference_count()
+            } else {
+                graph.entries.len()
+            };
+            let first = view.first(total, count);
+            for index in first..total.min(first + count) {
                 let y = top + (index - first) as i32 * row_height;
                 let r = rect(
                     frame.preview.left + p(12),
@@ -179,17 +226,29 @@ impl State {
                     rect: r,
                     old: String::new(),
                     new: String::new(),
-                    text: format!(
-                        "{}  {}  {}   ·   {}",
-                        entry.rail,
-                        &entry.commit.id[..8],
-                        opaque(&entry.commit.summary, 160),
-                        opaque(&entry.commit.author, 60)
-                    ),
-                    kind: if index == view.selected { 2 } else { 0 },
+                    text: if references {
+                        graph.reference_label(index).unwrap_or_default().to_owned()
+                    } else {
+                        let entry = &graph.entries[index];
+                        format!(
+                            "{}  {}  {}   ·   {}",
+                            entry.rail,
+                            &entry.commit.id[..8],
+                            opaque(&entry.commit.summary, 160),
+                            opaque(&entry.commit.author, 60)
+                        )
+                    },
+                    kind: if index == view.selected_row() { 2 } else { 0 },
                     parallel: true,
                 });
-                frame.hits.actions.push((r, Intent::GraphCommit(index)));
+                frame.hits.actions.push((
+                    r,
+                    if references {
+                        Intent::GraphReference(index)
+                    } else {
+                        Intent::GraphCommit(index)
+                    },
+                ));
             }
         } else {
             frame.summary.push(
@@ -201,10 +260,22 @@ impl State {
         }
         let top = frame.preview.top + p(96);
         for (offset, label, intent) in [
-            (12, "Volver", Intent::GraphClose),
-            (119, "Más antiguos", Intent::GraphNext),
+            (
+                12,
+                "Volver",
+                if references {
+                    Intent::GraphReferences
+                } else {
+                    Intent::GraphClose
+                },
+            ),
+            (119, "Referencias", Intent::GraphReferences),
+            (226, "Más antiguos", Intent::GraphNext),
         ] {
-            if matches!(intent, Intent::GraphNext) && !graph.is_some_and(|p| p.has_next()) {
+            if matches!(intent, Intent::GraphNext)
+                && (references || !graph.is_some_and(|p| p.has_next()))
+                || offset == 119 && (references || graph.is_none())
+            {
                 continue;
             }
             let left = frame.preview.left + p(offset);

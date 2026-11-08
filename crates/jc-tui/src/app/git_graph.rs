@@ -35,11 +35,14 @@ impl TuiApp {
     }
 
     pub(super) fn move_git_graph(&mut self, delta: isize) {
-        let count = self
-            .git_revision
-            .graph()
-            .map_or(0, |page| page.entries.len());
         if let Some(view) = &mut self.git_history.graph {
+            let count = self.git_revision.graph().map_or(0, |page| {
+                if view.reference_selected.is_some() {
+                    page.reference_count()
+                } else {
+                    page.entries.len()
+                }
+            });
             view.move_selection(count, delta);
         }
     }
@@ -66,18 +69,25 @@ impl TuiApp {
             return true;
         }
         match key.code {
+            KeyCode::Esc if view.reference_selected.is_some() => {
+                self.git_history.graph.as_mut().unwrap().reference_selected = None;
+            }
             KeyCode::Esc => {
                 self.git_history = Default::default();
                 self.git_revision.cancel();
             }
             KeyCode::F(5) => self.open_git_graph(),
+            KeyCode::Char('r' | 'R') if self.git_revision.graph().is_some() => {
+                let open = view.reference_selected.is_some();
+                self.git_history.graph.as_mut().unwrap().reference_selected = (!open).then_some(0);
+            }
             KeyCode::Up => self.move_git_graph(-1),
             KeyCode::Down => self.move_git_graph(1),
             KeyCode::PageUp => self.move_git_graph(-10),
             KeyCode::PageDown => self.move_git_graph(10),
             KeyCode::Home => self.move_git_graph(isize::MIN),
             KeyCode::End => self.move_git_graph(isize::MAX),
-            KeyCode::Char('n' | 'N') => {
+            KeyCode::Char('n' | 'N') if view.reference_selected.is_none() => {
                 if let Some(root) = self
                     .project_root
                     .clone()
@@ -87,6 +97,19 @@ impl TuiApp {
                         self.status = error;
                     }
                     self.git_history.graph.as_mut().unwrap().selected = 0;
+                }
+            }
+            KeyCode::Enter if view.reference_selected.is_some() => {
+                if let Some(root) = self.project_root.clone() {
+                    let row = view.selected_row();
+                    self.status = self
+                        .git_revision
+                        .request_graph_reference(root, row)
+                        .err()
+                        .unwrap_or_else(|| "Leyendo referencia…".into());
+                    let view = self.git_history.graph.as_mut().unwrap();
+                    view.reference_selected = None;
+                    view.selected = 0;
                 }
             }
             KeyCode::Enter => {
@@ -134,37 +157,54 @@ impl TuiApp {
                 ..Default::default()
             });
         };
-        let total = page.entries.len();
+        let references = view.reference_selected.is_some();
+        let total = if references {
+            page.reference_count()
+        } else {
+            page.entries.len()
+        };
         let count = usize::from(height).min(24);
         let scroll = view.first(total, count);
-        let rows = page
-            .entries
-            .iter()
-            .enumerate()
-            .skip(scroll)
-            .take(count)
-            .map(|(ordinal, entry)| GitStatusRow {
+        let rows = (scroll..total.min(scroll + count))
+            .map(|ordinal| GitStatusRow {
                 ordinal,
                 flags: String::new(),
-                path: label(
-                    &format!(
-                        "{} {} {} · {}",
-                        entry.rail,
-                        short_oid(&entry.commit.id),
-                        opaque(&entry.commit.summary, 160),
-                        opaque(&entry.commit.author, 80)
-                    ),
-                    width.saturating_sub(4),
-                ),
-                selected: ordinal == view.selected,
+                path: if references {
+                    label(
+                        page.reference_label(ordinal).unwrap_or_default(),
+                        width.saturating_sub(4),
+                    )
+                } else {
+                    let entry = &page.entries[ordinal];
+                    label(
+                        &format!(
+                            "{} {} {} · {}",
+                            entry.rail,
+                            short_oid(&entry.commit.id),
+                            opaque(&entry.commit.summary, 160),
+                            opaque(&entry.commit.author, 80)
+                        ),
+                        width.saturating_sub(4),
+                    )
+                },
+                selected: ordinal == view.selected_row(),
             })
             .collect();
         Some(GitStatusPresentation {
-            title: "Grafo de commits · ascendencia de HEAD".into(),
-            message: page.heading(),
+            title: if references {
+                "Ramas y etiquetas"
+            } else {
+                "Grafo de commits"
+            }
+            .into(),
+            message: if self.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready {
+                page.heading()
+            } else {
+                format!("{} · {}", self.git_revision.message(), page.heading())
+            },
             rows,
             total,
-            selected: view.selected,
+            selected: view.selected_row(),
             scroll,
         })
     }

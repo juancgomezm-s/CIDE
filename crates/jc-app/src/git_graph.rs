@@ -1,5 +1,5 @@
 //! Presentation of the bounded commit graph, with lane continuity across pages.
-use jc_git::graph::{Boundary, GraphCursor, GraphNode, GraphPage, Head};
+use jc_git::graph::{Boundary, GraphCursor, GraphNode, GraphPage, Head, RefKind, RefTarget};
 use std::sync::Arc;
 
 const LANES: usize = 12;
@@ -14,6 +14,7 @@ pub(crate) struct GraphNext(Arc<Continuation>);
 struct Continuation {
     cursor: GraphCursor,
     lanes: Vec<Option<String>>,
+    references: Arc<[GraphReference]>,
 }
 
 impl PartialEq for GraphNext {
@@ -34,10 +35,18 @@ pub struct GraphEntry {
     pub rail: String,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct GraphReference {
+    pub label: String,
+    pub(crate) oid: String,
+}
+
 pub struct CommitGraph {
     pub head: Option<Head>,
     pub start: Option<String>,
     pub entries: Vec<GraphEntry>,
+    pub(crate) references: Arc<[GraphReference]>,
+    pub(crate) reference: Option<GraphReference>,
     pub shallow: bool,
     pub metadata_limited: bool,
     pub lanes_limited: bool,
@@ -46,21 +55,41 @@ pub struct CommitGraph {
 }
 
 impl CommitGraph {
+    pub fn reference_label(&self, row: usize) -> Option<&str> {
+        match row.checked_sub(1) {
+            None => Some("HEAD · punto actual"),
+            Some(index) => self
+                .references
+                .get(index)
+                .map(|reference| reference.label.as_str()),
+        }
+    }
+
+    pub fn reference_count(&self) -> usize {
+        self.references.len() + 1
+    }
     pub fn has_next(&self) -> bool {
         self.next.is_some()
     }
     pub fn heading(&self) -> String {
-        let mut text = match &self.head {
-            Some(Head::Unborn { .. }) => "La rama aún no tiene commits".to_owned(),
-            Some(Head::Attached { name, .. }) => {
-                let name = name.strip_prefix(b"refs/heads/").unwrap_or(name);
-                format!(
-                    "Rama {}",
-                    crate::source_services::display_ui_label(&String::from_utf8_lossy(name), 72)
-                )
+        let mut text = if let Some(reference) = &self.reference {
+            reference.label.clone()
+        } else {
+            match &self.head {
+                Some(Head::Unborn { .. }) => "La rama aún no tiene commits".to_owned(),
+                Some(Head::Attached { name, .. }) => {
+                    let name = name.strip_prefix(b"refs/heads/").unwrap_or(name);
+                    format!(
+                        "Rama {}",
+                        crate::source_services::display_ui_label(
+                            &String::from_utf8_lossy(name),
+                            72
+                        )
+                    )
+                }
+                Some(Head::Detached { .. }) => "HEAD separado".to_owned(),
+                None => "Ascendencia del commit".to_owned(),
             }
-            Some(Head::Detached { .. }) => "HEAD separado".to_owned(),
-            None => "Ascendencia del commit".to_owned(),
         };
         if self.shallow {
             text.push_str(" · historial superficial");
@@ -77,7 +106,11 @@ impl CommitGraph {
         text
     }
 
-    pub(crate) fn project(page: GraphPage, previous: Option<&GraphNext>) -> Self {
+    pub(crate) fn project(
+        page: GraphPage,
+        previous: Option<&GraphNext>,
+        reference: Option<GraphReference>,
+    ) -> Self {
         let mut lanes = previous.map_or_else(Vec::new, |next| next.0.lanes.clone());
         let mut lanes_limited = false;
         let entries = page
@@ -89,17 +122,49 @@ impl CommitGraph {
                 GraphEntry { commit, rail }
             })
             .collect();
+        let references = previous.map_or_else(
+            || {
+                page.refs
+                    .iter()
+                    .filter_map(|entry| {
+                        let (prefix, kind): (&[u8], _) = match entry.kind {
+                            RefKind::LocalBranch => (b"refs/heads/", "Rama"),
+                            RefKind::RemoteBranch => (b"refs/remotes/", "Remota"),
+                            RefKind::Tag => (b"refs/tags/", "Etiqueta"),
+                            _ => return None,
+                        };
+                        let RefTarget::Direct(oid) = &entry.target else {
+                            return None;
+                        };
+                        let name = entry.name.strip_prefix(prefix)?;
+                        let name = String::from_utf8_lossy(name);
+                        let name = crate::source_services::display_ui_label(&name, 160);
+                        Some(GraphReference {
+                            label: format!("{kind} {name}"),
+                            oid: oid.clone(),
+                        })
+                    })
+                    .collect::<Arc<[_]>>()
+            },
+            |next| next.0.references.clone(),
+        );
         Self {
             head: page.head,
             start: page.start,
             entries,
+            references: references.clone(),
+            reference,
             shallow: page.shallow,
             metadata_limited: page.metadata_limited,
             lanes_limited,
             window_limited: page.window_limited,
-            next: page
-                .next
-                .map(|cursor| GraphNext(Arc::new(Continuation { cursor, lanes }))),
+            next: page.next.map(|cursor| {
+                GraphNext(Arc::new(Continuation {
+                    cursor,
+                    lanes,
+                    references,
+                }))
+            }),
         }
     }
 }
@@ -107,6 +172,7 @@ impl CommitGraph {
 pub struct GraphView {
     pub showing: bool,
     pub selected: usize,
+    pub reference_selected: Option<usize>,
 }
 
 impl Default for GraphView {
@@ -114,20 +180,28 @@ impl Default for GraphView {
         Self {
             showing: true,
             selected: 0,
+            reference_selected: None,
         }
     }
 }
 
 impl GraphView {
+    pub fn selected_row(&self) -> usize {
+        self.reference_selected.unwrap_or(self.selected)
+    }
+
     pub fn move_selection(&mut self, count: usize, delta: isize) {
-        self.selected = self
-            .selected
+        let selected = self
+            .reference_selected
+            .as_mut()
+            .unwrap_or(&mut self.selected);
+        *selected = selected
             .saturating_add_signed(delta)
             .min(count.saturating_sub(1));
     }
 
     pub fn first(&self, count: usize, height: usize) -> usize {
-        self.selected
+        self.selected_row()
             .saturating_sub(height.saturating_sub(1))
             .min(count.saturating_sub(height))
     }

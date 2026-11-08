@@ -343,13 +343,23 @@ pub fn read_revision(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<Revision, Error> {
+    read_revision_parent(root, selected, 0, limits, cancelled)
+}
+
+pub fn read_revision_parent(
+    root: &Path,
+    selected: &str,
+    parent_index: usize,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<Revision, Error> {
     limits.admit()?;
     let id = commit_id(selected)?;
     controlled(limits.timeout, cancelled, |ctx| {
         let (repo, repository) = open(root, ctx)?;
         let mut budget = Budget::new(limits);
         let selected = commit(&repo, id, limits, &mut budget, ctx)?;
-        let parent = selected.parents.first().copied();
+        let parent = choose_parent(&selected, parent_index)?;
         let before = if let Some(id) = parent {
             let parent = commit(&repo, id, limits, &mut budget, ctx)?;
             tree_entries(&repo, parent.tree, limits, &mut budget, ctx)?
@@ -407,6 +417,15 @@ pub fn read_revision(
             return Err(Error::Limited);
         }
         Ok(result)
+    })
+}
+
+fn choose_parent(commit: &Commit, index: usize) -> Result<Option<gix::ObjectId>, Error> {
+    if commit.parents.is_empty() && index == 0 {
+        return Ok(None);
+    }
+    commit.parents.get(index).copied().map(Some).ok_or_else(|| {
+        Error::Engine("El padre elegido no pertenece a la revisión disponible".into())
     })
 }
 fn push_file(
@@ -519,6 +538,17 @@ pub fn read_file_pair(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<RevisionFilePair, Error> {
+    read_file_pair_parent(root, selected, path, 0, limits, cancelled)
+}
+
+pub fn read_file_pair_parent(
+    root: &Path,
+    selected: &str,
+    path: &[u8],
+    parent_index: usize,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<RevisionFilePair, Error> {
     limits.admit()?;
     let id = commit_id(selected)?;
     path_valid(path, limits.max_path)?;
@@ -527,7 +557,7 @@ pub fn read_file_pair(
         let mut budget = Budget::new(limits);
         budget.charge(path.len().saturating_mul(2))?;
         let selected = commit(&repo, id, limits, &mut budget, ctx)?;
-        let parent = selected.parents.first().copied();
+        let parent = choose_parent(&selected, parent_index)?;
         let before = if let Some(id) = parent {
             let parent = commit(&repo, id, limits, &mut budget, ctx)?;
             tree_entry(&repo, parent.tree, path, limits, &mut budget, ctx)?
@@ -789,7 +819,7 @@ mod tests {
         assert_eq!(image(&fixture.root), before);
     }
     #[test]
-    fn merge_exposes_all_admitted_parents_and_uses_an_explicit_first_parent() {
+    fn merge_selects_each_parent_for_both_file_list_and_blob_pair() {
         let fixture = Fixture::new();
         let repo = gix::init(&fixture.root).unwrap();
         let a = repo.write_blob(b"A").unwrap().detach();
@@ -818,6 +848,25 @@ mod tests {
         .unwrap();
         assert_eq!(pair.before.unwrap().bytes, b"B");
         assert_eq!(pair.after.unwrap().bytes, b"B");
+        let revision =
+            read_revision_parent(&fixture.root, &merge.to_string(), 1, limits(), || false).unwrap();
+        assert_eq!(revision.parent, Some(first.to_string()));
+        assert_eq!(revision.files[0].path, b"source");
+        let pair = read_file_pair_parent(
+            &fixture.root,
+            &merge.to_string(),
+            b"source",
+            1,
+            limits(),
+            || false,
+        )
+        .unwrap();
+        assert_eq!(pair.parent, Some(first.to_string()));
+        assert_eq!(pair.before.unwrap().bytes, b"A");
+        assert_eq!(pair.after.unwrap().bytes, b"B");
+        assert!(
+            read_revision_parent(&fixture.root, &merge.to_string(), 2, limits(), || false).is_err()
+        );
     }
     #[test]
     fn invalid_ids_paths_cancellation_and_quotas_fail_without_a_partial_revision() {

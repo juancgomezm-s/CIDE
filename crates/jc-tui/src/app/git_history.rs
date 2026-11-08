@@ -111,6 +111,8 @@ impl TuiApp {
                 })
                 .collect()
         };
+        let (parent, parents) = self.git_revision.parent_options();
+        let parent_help = format!("Padre {}/{} · P cambiar", parent + 1, parents.len());
         GitStatusPresentation {
             title: label(
                 if self.git_history.files {
@@ -122,7 +124,11 @@ impl TuiApp {
             ),
             message: label(
                 if self.git_history.files {
-                    "Intro comparar · B atrás"
+                    if parents.len() > 1 {
+                        &parent_help
+                    } else {
+                        "Intro comparar · B atrás"
+                    }
                 } else if total == 0 {
                     "Sin historial · F5 leer"
                 } else {
@@ -215,6 +221,31 @@ impl TuiApp {
         }
         if self.git_history.path.is_some() {
             return self.handle_git_path_history_key(key);
+        }
+        if self.git_history.files && matches!(key.code, KeyCode::Char('p' | 'P')) {
+            let (current, parents) = self.git_revision.parent_options();
+            if parents.len() > 1 {
+                let parent = (current + 1) % parents.len();
+                if let (Some(root), Some(commit)) =
+                    (self.project_root.clone(), self.git_history.commit.clone())
+                {
+                    match self
+                        .git_revision
+                        .request_revision_parent(root, commit, parent)
+                    {
+                        Ok(()) => {
+                            self.git_history.selected = 0;
+                            self.git_history.hunk = 0;
+                            self.git_diff_scroll = 0;
+                            let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
+                            self.status =
+                                format!("Leyendo los archivos frente al padre {}", parent + 1);
+                        }
+                        Err(error) => self.status = error,
+                    }
+                }
+                return true;
+            }
         }
         if matches!(key.code, KeyCode::Char('p' | 'P' | 't' | 'T'))
             && !self.git_history.active
@@ -340,7 +371,11 @@ impl TuiApp {
             };
             let result = if self.git_history.files {
                 match self.git_history.commit.clone() {
-                    Some(commit) => self.git_revision.request_revision(root, commit),
+                    Some(commit) => self.git_revision.request_revision_parent(
+                        root,
+                        commit,
+                        self.git_revision.parent_options().0,
+                    ),
                     None => Ok(()),
                 }
             } else {
@@ -395,13 +430,13 @@ impl TuiApp {
                             .map(|f| (r.commit.clone(), f.path.clone()))
                     });
                     if let Some((commit, path)) = file {
-                        match self.git_revision.request_file(root, commit, path) {
+                        match self.git_revision.request_revision_file(root, commit, path) {
                             Ok(()) => {
                                 self.git_history.hunk = 0;
                                 self.git_diff_scroll = 0;
                                 self.panels.show_bottom(BottomPanel::Diff);
                                 let _ = self.focus.focus(PrimaryFocus::BottomPanel, &self.panels);
-                                self.status = "Comparando con el primer padre · E codificación · Esc archivos".into();
+                                self.status = "Comparando con el padre elegido · E codificación · Esc archivos".into();
                             }
                             Err(error) => self.status = error,
                         }
@@ -424,7 +459,7 @@ impl TuiApp {
                                 self.git_history.hunk = 0;
                                 self.git_diff_scroll = 0;
                                 self.panels.show_bottom(BottomPanel::Diff);
-                                self.status = "Leyendo archivos del commit · Intro compara con el primer padre".into();
+                                self.status = "Leyendo archivos del commit · Intro compara".into();
                             }
                             Err(error) => self.status = error,
                         }
@@ -687,7 +722,7 @@ impl TuiApp {
             if self.git_history.local.is_some() {
                 "Comparación local · bytes originales"
             } else {
-                "Histórico · comparación con el primer padre · solo lectura"
+                "Histórico · comparación con el padre elegido · solo lectura"
             },
             width,
         ));

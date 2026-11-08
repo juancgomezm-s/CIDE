@@ -6,6 +6,10 @@ use jc_app::Modifiers;
 
 impl State {
     pub(crate) fn request_git_history(&mut self, commit: String) {
+        self.request_git_history_parent(commit, 0);
+    }
+
+    fn request_git_history_parent(&mut self, commit: String, parent: usize) {
         let Some(root) = self.project_root.clone() else {
             return;
         };
@@ -22,7 +26,10 @@ impl State {
         self.git_workspace.history_encoding = self.git_workspace.history_encoding.or(self.encoding);
         self.git_workspace.notice = None;
         self.git_workspace.invalidate();
-        if let Err(error) = self.git_revision.request_revision(root, commit) {
+        if let Err(error) = self
+            .git_revision
+            .request_revision_parent(root, commit, parent)
+        {
             self.git_workspace.notice = Some(error);
         }
     }
@@ -45,8 +52,16 @@ impl State {
         self.git_workspace.history_hunk = 0;
         self.git_workspace.diff_first = 0;
         self.git_workspace.invalidate();
-        if let Err(error) = self.git_revision.request_file(root, commit, path) {
+        if let Err(error) = self.git_revision.request_revision_file(root, commit, path) {
             self.git_workspace.notice = Some(error);
+        }
+    }
+    pub(super) fn cycle_git_history_parent(&mut self) {
+        let (current, parents) = self.git_revision.parent_options();
+        if parents.len() > 1 {
+            if let Some(commit) = self.git_workspace.history_commit.clone() {
+                self.request_git_history_parent(commit, (current + 1) % parents.len());
+            }
         }
     }
     pub(crate) fn git_history_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
@@ -61,10 +76,11 @@ impl State {
             }
             0x74 => {
                 if let Some(c) = self.git_workspace.history_commit.clone() {
-                    self.request_git_history(c);
+                    self.request_git_history_parent(c, self.git_revision.parent_options().0);
                 }
             }
             0x09 => self.git_workspace.focus_diff = !self.git_workspace.focus_diff,
+            0x50 => self.cycle_git_history_parent(),
             0x0d if !self.git_workspace.focus_diff => {
                 self.request_git_history_file(self.git_workspace.history_selected)
             }
@@ -181,8 +197,20 @@ impl State {
             frame.hits.actions.push((r, Intent::HistoryFile(index)));
         }
         frame.count = format!("{} archivos", files.len());
-        frame.subtitle = "Archivos de la revisión · comparación con primer padre".into();
-        frame.footer = "Solo lectura · Comparación con el primer padre".into();
+        frame.subtitle = "Archivos de la revisión".into();
+        frame.footer = "Comparación histórica · solo lectura".into();
+        let (parent, parents) = self.git_revision.parent_options();
+        if parents.len() > 1 {
+            let label = format!("Padre {}/{} ▸", parent + 1, parents.len());
+            frame.footer = format!("P cambiar padre · {} · {}", label, frame.footer);
+            let right = l.preview.right - p(12);
+            let top = l.preview.top + p(96);
+            let r = rect(right - p(117), top, right, top + p(24));
+            if r.left >= l.preview.left && r.bottom <= l.preview.bottom {
+                frame.buttons.push((r, label, false));
+                frame.hits.actions.push((r, Intent::HistoryParent));
+            }
+        }
         if let Some(r) = revision {
             if frame.summary.is_empty() {
                 frame.summary = vec![
@@ -199,7 +227,7 @@ impl State {
                 r.parent
                     .as_ref()
                     .map_or("Commit raíz · árbol anterior vacío".into(), |parent| {
-                        format!("Primer padre: {parent}")
+                        format!("Padre elegido · {parent}")
                     }),
                 format!(
                     "{} archivos cambiados · {} padres",
