@@ -3,6 +3,7 @@
 //! poll accepts results. Rendering may borrow accepted immutable read models.
 use crate::{
     diff_model::{DiffLimits, DiffStatus, OwnedDiffModel},
+    git_graph::{CommitGraph, GraphNext},
     Cancellation, Wakeup,
 };
 use jc_git::blame::read_blame;
@@ -11,6 +12,7 @@ use jc_git::commit_search::search_commits;
 pub use jc_git::commit_search::{
     CommitSearchCursor, CommitSearchEntry, CommitSearchPage, SearchField,
 };
+use jc_git::graph::read_graph_window;
 pub use jc_git::local_pair::PairKind;
 use jc_git::local_pair::{read_local_pair, HeadState, IndexToken, SourceIdentity};
 use jc_git::patch_export::{export_unified, PatchOptions};
@@ -210,6 +212,9 @@ impl ComparisonOrigin {
 }
 #[derive(Clone, PartialEq, Eq)]
 enum Query {
+    Graph {
+        cursor: Option<GraphNext>,
+    },
     CommitSearch {
         start: String,
         text: String,
@@ -266,6 +271,7 @@ struct Selection {
 impl Selection {
     fn valid(&self) -> bool {
         let bounded = match &self.query {
+            Query::Graph { .. } => true,
             Query::CommitSearch {
                 start,
                 text,
@@ -322,6 +328,7 @@ fn valid_oid(oid: &str) -> bool {
 }
 
 enum Outcome {
+    Graph(CommitGraph),
     CommitSearch(CommitSearchPage),
     Blame(BlamePage),
     PathHistory(PathHistoryPage),
@@ -372,6 +379,7 @@ pub struct GitRevisionController {
     generation: u64,
     selection: Option<Selection>,
     revision: Option<Revision>,
+    graph: Option<CommitGraph>,
     path_history: Option<PathHistoryPage>,
     blame: Option<BlamePage>,
     commit_search: Option<CommitSearchPage>,
@@ -396,6 +404,7 @@ impl GitRevisionController {
             generation: 0,
             selection: None,
             revision: None,
+            graph: None,
             path_history: None,
             blame: None,
             commit_search: None,
@@ -408,6 +417,37 @@ impl GitRevisionController {
     }
     pub fn revision(&self) -> Option<&Revision> {
         self.revision.as_ref()
+    }
+    pub fn graph(&self) -> Option<&CommitGraph> {
+        self.graph.as_ref()
+    }
+    pub fn request_graph(&mut self, root: PathBuf) -> Result<(), String> {
+        self.request(Selection {
+            root,
+            query: Query::Graph { cursor: None },
+        })
+    }
+    pub fn request_graph_next(&mut self, root: PathBuf) -> Result<(), String> {
+        let cursor = self
+            .graph
+            .as_ref()
+            .and_then(|page| page.next.clone())
+            .ok_or("No hay otra página del grafo")?;
+        self.request(Selection {
+            root,
+            query: Query::Graph {
+                cursor: Some(cursor),
+            },
+        })
+    }
+    pub fn return_to_graph(&mut self) -> bool {
+        if self.graph.is_none() {
+            return false;
+        }
+        self.invalidate_work();
+        self.revision = None;
+        self.state = GitRevisionState::Ready;
+        true
     }
     pub fn path_history(&self) -> Option<&PathHistoryPage> {
         self.path_history.as_ref()
@@ -582,6 +622,21 @@ impl GitRevisionController {
     }
     fn request(&mut self, mut selection: Selection) -> Result<(), String> {
         self.invalidate_work();
+        let retain_graph = self
+            .selection
+            .as_ref()
+            .is_some_and(|current| current.root == selection.root)
+            && match &selection.query {
+                Query::Revision { commit } | Query::HistoricalFile { commit, .. } => {
+                    self.graph.as_ref().is_some_and(|graph| {
+                        graph.entries.iter().any(|entry| entry.commit.id == *commit)
+                    })
+                }
+                _ => false,
+            };
+        if !retain_graph {
+            self.graph = None;
+        }
         let retain_search = self
             .selection
             .as_ref()
@@ -666,7 +721,7 @@ impl GitRevisionController {
             | Query::PathHistory { start: commit, .. }
             | Query::Blame { start: commit, .. }
             | Query::CommitSearch { start: commit, .. } => commit.make_ascii_lowercase(),
-            Query::LocalFile { .. } => {}
+            Query::LocalFile { .. } | Query::Graph { .. } => {}
         }
         if self.worker.is_none() {
             let shared = self.shared.clone();
@@ -709,6 +764,7 @@ impl GitRevisionController {
             self.invalidate_work();
             self.selection = None;
             self.revision = None;
+            self.graph = None;
             self.path_history = None;
             self.blame = None;
             self.commit_search = None;
@@ -720,6 +776,7 @@ impl GitRevisionController {
     pub fn cancel(&mut self) {
         self.invalidate_work();
         self.revision = None;
+        self.graph = None;
         self.path_history = None;
         self.blame = None;
         self.commit_search = None;
@@ -752,6 +809,12 @@ impl GitRevisionController {
                 return false;
             }
             match completion.result {
+                Ok(Outcome::Graph(graph))
+                    if matches!(completion.selection.query, Query::Graph { .. }) =>
+                {
+                    self.graph = Some(graph);
+                    self.state = GitRevisionState::Ready;
+                }
                 Ok(Outcome::CommitSearch(page))
                     if matches!(&completion.selection.query,Query::CommitSearch{start,text,field,..}
                     if page.start==*start &&page.query==*text &&page.field==*field)
@@ -844,6 +907,14 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
     }
     let started = Instant::now();
     match &selection.query {
+        Query::Graph { cursor } => read_graph_window(
+            &selection.root,
+            cursor.as_ref().map(GraphNext::cursor),
+            limits(),
+            || cancel.is_cancelled(),
+        )
+        .map(|page| Outcome::Graph(CommitGraph::project(page, cursor.as_ref())))
+        .map_err(Failure::Provider),
         Query::CommitSearch {
             start,
             text,

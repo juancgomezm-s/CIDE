@@ -13,7 +13,14 @@ impl TuiApp {
             Event::Key(key) if is_action_event(key) => self.handle_key(key),
             Event::Paste(text) => self.handle_paste(&text),
             Event::Mouse(event) => {
-                if self.git_commit.view().is_none() {
+                if self.graph_showing() {
+                    use crossterm::event::MouseEventKind;
+                    match event.kind {
+                        MouseEventKind::ScrollUp => self.move_git_graph(-3),
+                        MouseEventKind::ScrollDown => self.move_git_graph(3),
+                        _ => {}
+                    }
+                } else if self.git_commit.view().is_none() {
                     self.handle_mouse(event);
                 } else {
                     use crossterm::event::MouseEventKind;
@@ -43,6 +50,9 @@ impl TuiApp {
             return;
         }
         if self.handle_git_create_commit_key(key) {
+            return;
+        }
+        if self.handle_git_graph_key(key) {
             return;
         }
         if self.showing_markdown() {
@@ -299,6 +309,9 @@ impl TuiApp {
         }
         if self.git_commit.view().is_some() {
             self.git_commit.edit(jc_app::FieldEdit::Insert(text));
+            return;
+        }
+        if self.graph_showing() {
             return;
         }
         if self.paste_commit_search(text) {

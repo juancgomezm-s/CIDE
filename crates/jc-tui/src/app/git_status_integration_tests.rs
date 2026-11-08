@@ -301,6 +301,75 @@ fn request_ready(app: &mut TuiApp, wake: &Wakeup) {
 }
 
 #[test]
+fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let initial = fixture.oid(&["rev-parse", "HEAD"]);
+    let tree = fixture.oid(&["rev-parse", "HEAD^{tree}"]);
+    let left = fixture.oid(&["commit-tree", &tree, "-p", &initial, "-m", "Rama uno"]);
+    let right = fixture.oid(&["commit-tree", &tree, "-p", &initial, "-m", "Rama dos"]);
+    let merge = fixture.oid(&[
+        "commit-tree",
+        &tree,
+        "-p",
+        &left,
+        "-p",
+        &right,
+        "-m",
+        "Integración",
+    ]);
+    let mut tip = merge.clone();
+    for i in 0..24 {
+        tip = fixture.oid(&[
+            "commit-tree",
+            &tree,
+            "-p",
+            &tip,
+            "-m",
+            &format!("Después {i}"),
+        ]);
+    }
+    fixture.git(&["update-ref", "HEAD", &tip, &initial]);
+    let before = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    request_ready(&mut app, &wake);
+    let settle = |app: &mut TuiApp| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while matches!(
+            app.git_revision.state(),
+            jc_app::git_revision::GitRevisionState::Queued
+                | jc_app::git_revision::GitRevisionState::Running
+        ) {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            assert!(Instant::now() < deadline, "{}", app.status);
+            wake.wait(ticket, Some(Duration::from_millis(10)));
+        }
+    };
+    key(&mut app, KeyCode::Char('g'));
+    settle(&mut app);
+    let graph = app.git_revision.graph().unwrap();
+    assert!(graph.has_next());
+    assert_eq!(graph.entries.len(), 24);
+    assert_eq!(graph.entries[0].commit.id, tip);
+    key(&mut app, KeyCode::Char('n'));
+    settle(&mut app);
+    let presented = app.prepare_frame(100, 24).graph.unwrap();
+    assert!(presented.rows[0].path.contains('◆'));
+    assert!(presented.rows[0].path.contains(&merge[..8]));
+    key(&mut app, KeyCode::Enter);
+    settle(&mut app);
+    assert_eq!(app.git_revision.revision().unwrap().commit, merge);
+    key(&mut app, KeyCode::Esc);
+    assert!(app.graph_showing());
+    assert_eq!(
+        app.git_revision.graph().unwrap().entries[0].commit.id,
+        merge
+    );
+    assert_eq!(fixture.disk(), before);
+}
+
+#[test]
 fn tui_create_commit_reviews_only_the_index_and_requires_f2_confirmation() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let fixture = Fixture::new();

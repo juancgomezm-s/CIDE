@@ -5,6 +5,7 @@
 [Pintado de ventanas grandes](docs/M2_GUI_EXTREME_GEOMETRY.md).
 [Git avanzado · índice y exportación de parches](docs/GIT_ADVANCED_FOUNDATIONS.md).
 [Crear un commit local](docs/G4_CREATE_COMMIT.md).
+[Grafo de commits](docs/G1_GRAPH_VIEW.md).
 
 [Markdown renderizado: imágenes, sangrías y enlaces](docs/M2_MARKDOWN_MEDIA_LINKS.md).
 
@@ -23,7 +24,7 @@ historial local, archivos y comparación en áreas independientes.
 local. Fondo elegido `#2E3440`; título y menús GUI comparten el tema. Ambas interfaces
 conservan cambios sin guardar, historial y vistas al salir y reabrir.
 Recuperación periódica y limpieza segura de copias: [contrato y evidencia](docs/PERIODIC_RECOVERY_RETENTION.md).
-GUI/TUI actuales en `target/git-create-commit-next/release/`, con
+GUI/TUI actuales en `target/git-graph-next/release/`, con
 [motor Git embebido en Rust](docs/GIT_EMBEDDED_ENGINE.md), sin `git.exe`.
 [Rueda y barras del Explorador](docs/M2_SIDEBAR_NAVIGATION.md) conservan selección y foco.
 [Deshacer/rehacer restaura la selección](docs/M2_SELECTION_HISTORY.md), también al recuperar la sesión.

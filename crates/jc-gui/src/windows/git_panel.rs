@@ -61,6 +61,7 @@ impl State {
         }
     }
     pub(super) fn request_git(&mut self, intent: GitIntent) -> Action {
+        self.git_workspace.graph = None;
         self.git_workspace.path_query = None;
         self.git_workspace.blame_query = None;
         self.git_workspace.commit_search = None;
@@ -255,6 +256,9 @@ impl State {
         };
         self.validate_git_context();
         if self.git_create_commit_key(code, modifiers) {
+            return Action::None;
+        }
+        if self.git_graph_key(code, modifiers) {
             return Action::None;
         }
         if code == b'I' as usize && modifiers == Modifiers::CTRL.union(Modifiers::SHIFT) {

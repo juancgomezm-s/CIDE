@@ -7,7 +7,7 @@ use crate::{
 use gix::bstr::ByteSlice;
 use std::{
     cmp::Reverse,
-    collections::{BTreeMap, BTreeSet, BinaryHeap},
+    collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque},
     fs, io,
     path::Path,
     sync::Arc,
@@ -321,6 +321,7 @@ pub enum Boundary {
     Interior,
     Root,
     Shallow,
+    Window,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -328,6 +329,7 @@ pub struct GraphNode {
     pub id: String,
     /// Parent order from the commit object. Shallow nodes retain these IDs as
     /// metadata, but those edges are not traversed across the declared boundary.
+    /// The viewer window omits parents beyond its admitted range.
     pub parents: Vec<String>,
     pub summary: Vec<u8>,
     pub author: Vec<u8>,
@@ -353,6 +355,8 @@ struct Snapshot {
     nodes: Vec<GraphNode>,
     shallow: bool,
     metadata_limited: bool,
+    window: bool,
+    window_limited: bool,
 }
 
 impl Snapshot {
@@ -397,6 +401,7 @@ pub struct GraphPage {
     pub next: Option<GraphCursor>,
     pub shallow: bool,
     pub metadata_limited: bool,
+    pub window_limited: bool,
 }
 
 impl GraphPage {
@@ -543,7 +548,7 @@ fn topological(
         .collect::<BTreeMap<_, _>>();
     for node in nodes
         .values()
-        .filter(|node| node.output.boundary == Boundary::Interior)
+        .filter(|node| matches!(node.output.boundary, Boundary::Interior | Boundary::Window))
     {
         ctx.check()?;
         for parent in &node.parents {
@@ -560,7 +565,7 @@ fn topological(
     while let Some((_, Reverse(id))) = available.pop() {
         ctx.check()?;
         let node = nodes.remove(&id).ok_or(Error::Missing)?;
-        if node.output.boundary == Boundary::Interior {
+        if matches!(node.output.boundary, Boundary::Interior | Boundary::Window) {
             for parent in node.parents {
                 let count = children.get_mut(&parent).ok_or(Error::Missing)?;
                 *count -= 1;
@@ -584,6 +589,7 @@ fn snapshot(
     repo: &gix::Repository,
     repository: Identity,
     requested: Option<gix::ObjectId>,
+    window: bool,
     limits: Limits,
     ctx: &Context<'_>,
 ) -> Result<Snapshot, Error> {
@@ -606,6 +612,8 @@ fn snapshot(
         nodes: Vec::new(),
         shallow: false,
         metadata_limited: false,
+        window,
+        window_limited: false,
     };
     let Some(id) = id else { return Ok(result) };
     let boundaries = shallow(repo, limits, &mut budget, ctx)?;
@@ -613,11 +621,11 @@ fn snapshot(
     let root_id = root.id;
     result.start = Some(root_id.to_string());
     let maximum = MAX_NODES.min(limits.max_entries);
-    let mut pending = vec![root_id];
+    let mut pending = VecDeque::from([root_id]);
     let mut admitted = BTreeSet::from([root_id]);
     let mut nodes = BTreeMap::new();
     let mut root = Some(root);
-    while let Some(id) = pending.pop() {
+    while let Some(id) = pending.pop_front() {
         ctx.check()?;
         let commit = if let Some(root) = root.take() {
             root
@@ -626,7 +634,7 @@ fn snapshot(
                 .try_into_commit()
                 .map_err(engine)?
         };
-        let node = read_node(
+        let mut node = read_node(
             commit,
             &boundaries,
             &mut budget,
@@ -635,14 +643,24 @@ fn snapshot(
         match node.output.boundary {
             Boundary::Shallow => result.shallow = true,
             Boundary::Root => {}
-            Boundary::Interior => {
+            Boundary::Interior | Boundary::Window => {
                 for parent in &node.parents {
-                    if admitted.insert(*parent) {
-                        if admitted.len() > maximum {
+                    if !admitted.contains(parent) {
+                        if admitted.len() == maximum {
+                            if window {
+                                node.output.boundary = Boundary::Window;
+                                result.window_limited = true;
+                                continue;
+                            }
                             return Err(Error::Limited);
                         }
-                        pending.push(*parent);
+                        admitted.insert(*parent);
+                        pending.push_back(*parent);
                     }
+                }
+                if node.output.boundary == Boundary::Window {
+                    node.parents.retain(|parent| admitted.contains(parent));
+                    node.output.parents = node.parents.iter().map(ToString::to_string).collect();
                 }
             }
         }
@@ -667,6 +685,7 @@ fn page(snapshot: Arc<Snapshot>, offset: usize, limits: Limits) -> Result<GraphP
         nodes: snapshot.nodes[offset..end].to_vec(),
         shallow: snapshot.shallow,
         metadata_limited: snapshot.metadata_limited,
+        window_limited: snapshot.window_limited,
         next: (end < snapshot.nodes.len()).then_some(GraphCursor {
             snapshot,
             offset: end,
@@ -690,6 +709,28 @@ pub fn read_graph(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<GraphPage, Error> {
+    read_graph_inner(root, pinned_start, continuation, false, limits, cancelled)
+}
+
+/// UI-sized ancestry window of HEAD. If the node cap is reached, page only
+/// the admitted graph and mark nodes whose older edges leave the window.
+pub fn read_graph_window(
+    root: &Path,
+    continuation: Option<&GraphCursor>,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<GraphPage, Error> {
+    read_graph_inner(root, None, continuation, true, limits, cancelled)
+}
+
+fn read_graph_inner(
+    root: &Path,
+    pinned_start: Option<&str>,
+    continuation: Option<&GraphCursor>,
+    window: bool,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<GraphPage, Error> {
     limits.admit()?;
     if limits.max_entries == 0 {
         return Err(Error::Limited);
@@ -701,6 +742,7 @@ pub fn read_graph(
             let snapshot = &cursor.snapshot;
             if snapshot.repository.root != repository.root
                 || snapshot.repository.git_dir != repository.git_dir
+                || snapshot.window != window
                 || requested.is_some_and(|id| {
                     Some(id) != snapshot.requested
                         && snapshot
@@ -715,7 +757,7 @@ pub fn read_graph(
             return page(snapshot.clone(), cursor.offset, limits);
         }
         page(
-            Arc::new(snapshot(&repo, repository, requested, limits, ctx)?),
+            Arc::new(snapshot(&repo, repository, requested, window, limits, ctx)?),
             0,
             limits,
         )
@@ -946,6 +988,27 @@ mod tests {
             ),
             Err(Error::Stale)
         ));
+        fixture.set_head(tip);
+        let tiny = Limits {
+            max_entries: 4,
+            ..limits()
+        };
+        let window = read_graph_window(&fixture.root, None, tiny, || false).unwrap();
+        assert_eq!(window.nodes.len(), 4);
+        assert!(window.window_limited && !window.shallow);
+        assert!(
+            window
+                .nodes
+                .iter()
+                .any(|node| node.boundary == Boundary::Window)
+        );
+        for (i, node) in window.nodes.iter().enumerate() {
+            assert!(node.parents.iter().all(|parent| {
+                window.nodes[i + 1..]
+                    .iter()
+                    .any(|older| older.id == *parent)
+            }));
+        }
     }
 
     #[test]

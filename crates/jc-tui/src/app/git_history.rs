@@ -14,6 +14,7 @@ const COLS: usize = 256;
 
 #[derive(Default)]
 pub(crate) struct HistoryView {
+    pub(super) graph: Option<jc_app::git_graph::GraphView>,
     pub(super) active: bool,
     pub(super) files: bool,
     pub(super) selected: usize,

@@ -1,3 +1,14 @@
+## Git · Entrega de amend, bloques y grafo — 2026-11-07
+
+La compilación offline de amend y bloques quedó en
+`target/git-amend-hunks-next/release/`. Pasaron 25 comprobaciones con GUI
+oculta y dos recorridos de escritura en la TUI optimizada mediante
+ConPTY privado. La entrega posterior en `target/git-graph-next/release/`
+pasó 26 comprobaciones con GUI oculta y tres recorridos en la TUI
+optimizada, incluido abrir un commit desde el grafo y volver. Formato,
+Clippy y pruebas dirigidas del núcleo y de ambas interfaces aprobados.
+[Uso y alcance del grafo](G1_GRAPH_VIEW.md)
+
 ## Git · Crear commit en GUI y TUI — 2026-11-07
 
 Pasaron el recorrido del núcleo y los dos recorridos de interfaz en

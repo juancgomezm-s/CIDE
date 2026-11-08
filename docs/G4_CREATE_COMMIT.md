@@ -67,3 +67,10 @@ GUI y TUI, y el reemplazo con bytes preparados conservando el mensaje en
 el núcleo. También verificaron el autor, los padres, el reflog y el
 rechazo al cambiar de rama aunque las dos ramas apunten al mismo commit.
 Pasaron Clippy y formato.
+
+La entrega optimizada con amend y selección por bloques está en
+`target/git-amend-hunks-next/release/`. En la TUI compilada, un ConPTY
+privado comprobó la preparación parcial y el reemplazo explícito de
+HEAD con esos bytes. La GUI compilada pasó 25 comprobaciones de
+regresión Git con una ventana oculta. Ambas pruebas usaron PATH vacío
+en CIDE.

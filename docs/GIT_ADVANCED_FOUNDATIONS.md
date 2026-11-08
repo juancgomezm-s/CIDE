@@ -85,7 +85,8 @@ interfaces. La prueba de TUI también descartó una revisión al cambiar de
 bloque y retiró solo uno de dos bloques preparados. Se verificaron los
 bytes del índice y del archivo en disco. Formato y Clippy aprobados.
 
-Quedan pendientes el visor del grafo, el historial a través de renombrados,
-exportar parches desde la TUI, refs de escritura, integración de ramas y remotos.
+Quedan pendientes el historial a través de renombrados, exportar parches
+desde la TUI, refs de escritura, integración de ramas y remotos.
+El [visor del grafo](G1_GRAPH_VIEW.md) recorre la ascendencia de HEAD.
 El commit local y su modificación tienen su propio recorrido de
 [revisión y publicación](G4_CREATE_COMMIT.md).

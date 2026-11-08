@@ -278,6 +278,23 @@ mod tests {
             fs::read(branch).unwrap(),
             format!("{replacement}\n").as_bytes()
         );
+
+        state.key_override = Some(Modifiers::NONE);
+        state.key(b'G' as usize);
+        wait(&mut state, |s| s.git_revision.graph().is_some());
+        assert_eq!(
+            state.git_revision.graph().unwrap().entries[0].commit.id,
+            replacement.to_string()
+        );
+        state.key(0x0d);
+        wait(&mut state, |s| s.git_revision.revision().is_some());
+        assert_eq!(
+            state.git_revision.revision().unwrap().commit,
+            replacement.to_string()
+        );
+        state.key(0x1b);
+        assert!(state.git_workspace.graph.as_ref().unwrap().showing);
+        assert!(state.git_revision.graph().is_some());
     }
 
     #[test]

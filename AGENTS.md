@@ -1,3 +1,14 @@
+# Commit ancestry graph in GUI/TUI — 2026-11-07
+
+Read docs/G1_GRAPH_VIEW.md. Use the existing revision worker and retained
+graph page for return from commit detail. HEAD ancestry displays 24 rows
+per page, up to 512 admitted nodes. The viewer marks the window boundary
+and preserves lane continuity. The strict graph API retains its quota
+error contract. Directed tests, selected all-target Clippy, fmt, offline
+release, 26 hidden native checks and a private release ConPTY passed.
+Delivery target/git-graph-next/release. Keep the separate validated amend
+and hunks delivery target/git-amend-hunks-next/release and earlier caches.
+
 # Amend and staged hunks in GUI/TUI — 2026-11-07
 
 Read docs/G4_CREATE_COMMIT.md and docs/GIT_ADVANCED_FOUNDATIONS.md. Amend pins

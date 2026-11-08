@@ -24,6 +24,8 @@ mod commit_search;
 mod create_commit;
 pub(super) use commit_search::paste_query as paste_commit_query;
 pub(super) use create_commit::paste_message as paste_commit_message;
+#[path = "git_graph.rs"]
+mod graph_ui;
 #[path = "git_history.rs"]
 mod history;
 #[path = "git_layout.rs"]
@@ -49,6 +51,7 @@ const SELECTION: u32 = 0x00624e41;
 
 #[derive(Default)]
 pub(super) struct Workspace {
+    pub(super) graph: Option<jc_app::git_graph::GraphView>,
     pub(super) commit_search: Option<commit_search::CommitSearchView>,
     pub hits: Option<Hits>,
     preferences: Preferences,
@@ -128,6 +131,10 @@ struct Stamp {
 }
 #[derive(Clone, Copy)]
 enum Intent {
+    GraphOpen,
+    GraphClose,
+    GraphNext,
+    GraphCommit(usize),
     CreateCommit,
     AmendCommit,
     SubmitCommit,
@@ -424,6 +431,14 @@ impl State {
         if self.git_commit.view().is_some() {
             return Some(self.prepare_create_commit(frame));
         }
+        if self
+            .git_workspace
+            .graph
+            .as_ref()
+            .is_some_and(|graph| graph.showing)
+        {
+            return Some(self.prepare_git_graph(frame));
+        }
         let mut frame = if self.git_workspace.commit_search.is_some() {
             self.prepare_git_commit_search(frame)
         } else if self.git_workspace.blame_query.is_some() {
@@ -475,6 +490,7 @@ impl State {
             }
         }
         self.add_create_commit_button(&mut frame);
+        self.add_graph_button(&mut frame);
         Some(frame)
     }
 
@@ -857,6 +873,22 @@ impl State {
             }
         }
         match intent {
+            Some(Intent::GraphOpen) => {
+                self.open_git_graph();
+                Action::None
+            }
+            Some(Intent::GraphClose) => {
+                self.close_graph();
+                Action::None
+            }
+            Some(Intent::GraphNext) => {
+                self.next_graph_page();
+                Action::None
+            }
+            Some(Intent::GraphCommit(index)) => {
+                self.open_graph_commit(index);
+                Action::None
+            }
             Some(Intent::CreateCommit) => {
                 self.open_git_create_commit(false);
                 Action::None
@@ -1128,6 +1160,15 @@ impl State {
         if self.git_commit.view().is_some() {
             self.git_commit.scroll(steps);
             self.git_workspace.invalidate();
+            return true;
+        }
+        if self
+            .git_workspace
+            .graph
+            .as_ref()
+            .is_some_and(|graph| graph.showing)
+        {
+            self.move_git_graph(steps);
             return true;
         }
         if inside(l.preview, x, y) {
@@ -1545,6 +1586,7 @@ pub(super) unsafe fn draw(
         let bg = match row.kind {
             -1 => REMOVE,
             1 => ADD,
+            2 => SELECTION,
             _ => shell::BACKGROUND,
         };
         paint::fill(dc, row.rect, bg)?;

@@ -19,7 +19,7 @@ impl TuiApp {
         if self.git_status.history_info().is_some() {
             p.message = jc_app::source_services::display_ui_label(
                 &format!(
-                    "F buscar commits · H historial · A archivo · L anotar · {}",
+                    "G grafo · F buscar commits · H historial · A archivo · L anotar · {}",
                     p.message
                 ),
                 usize::from(width).min(256),
@@ -59,6 +59,13 @@ impl TuiApp {
     }
 
     pub(crate) fn handle_git_status_sidebar_key(&mut self, key: KeyEvent) {
+        if key.modifiers.is_empty()
+            && matches!(key.code, KeyCode::Char('g' | 'G'))
+            && !self.commit_search_editing()
+        {
+            self.open_git_graph();
+            return;
+        }
         if !self.git_history.active
             && key.modifiers.is_empty()
             && key.kind == crossterm::event::KeyEventKind::Press

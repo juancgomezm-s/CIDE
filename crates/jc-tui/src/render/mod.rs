@@ -57,6 +57,19 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
         );
         return screen;
     }
+    if let Some(graph) = &frame.graph {
+        git_status::draw_git_status(&mut screen, graph, 0, 0, width, height - 1, true);
+        screen.text_styled(
+            1,
+            height - 1,
+            &clip(
+                "↑↓ seleccionar · Intro abrir commit · N más · F5 actualizar · Esc volver",
+                width - 2,
+            ),
+            CellStyle::Accent,
+        );
+        return screen;
+    }
 
     draw_menu_bar(app, &mut screen);
     draw_tabs(app, &mut screen);

@@ -387,6 +387,60 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     }
     checks.push("git_local_pairs_native_keys_exact_head_index_disk_with_dirty_buffer");
     checks.push("git_local_pairs_gdi_and_enter_preserve_sources_and_editor_geometry");
+    command(hwnd, CommandId::GitRepositoryStatus)?;
+    status_ready(hwnd)?;
+    key(hwnd, b'G' as usize, Modifiers::NONE)?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let graph_tip = loop {
+        let state = owner(hwnd).ok_or("Graph smoke lost HWND")?.state.borrow();
+        if let Some(tip) = state
+            .git_revision
+            .graph()
+            .and_then(|page| page.entries.first())
+        {
+            break tip.commit.id.clone();
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "Graph did not become ready: {}",
+                state.git_revision.message()
+            ));
+        }
+        drop(state);
+        one_task(hwnd)?;
+    };
+    let graph_bitmap = options
+        .bitmap
+        .as_ref()
+        .map(|p| p.with_file_name("native-git-graph.bmp"));
+    readonly_frame(hwnd, graph_bitmap.as_deref())?;
+    key(hwnd, 0x0d, Modifiers::NONE)?;
+    history_ready(hwnd, false)?;
+    if owner(hwnd)
+        .unwrap()
+        .state
+        .borrow()
+        .git_revision
+        .revision()
+        .is_none_or(|r| r.commit != graph_tip)
+    {
+        return Err("Graph opened a different commit".into());
+    }
+    key(hwnd, 0x1b, Modifiers::NONE)?;
+    if !owner(hwnd)
+        .unwrap()
+        .state
+        .borrow()
+        .git_workspace
+        .graph
+        .as_ref()
+        .is_some_and(|g| g.showing)
+        || snapshot(hwnd)? != unchanged
+    {
+        return Err("Returning to the graph changed the editor or lost the graph".into());
+    }
+    key(hwnd, 0x1b, Modifiers::NONE)?;
+    checks.push("git_graph_native_paint_open_commit_and_return_preserve_editor");
     {
         let mut s = owner(hwnd).unwrap().state.borrow_mut();
         let text = format!("\n/* Consulta de contacto: muestra propia de validación. */\nDEFINE VARIABLE cTelefono AS CHARACTER NO-UNDO.\n\nPROCEDURE obtenerTelefono:\n    DEFINE INPUT PARAMETER ipCliente AS INTEGER NO-UNDO.\n    IF orden_v_exten.udf_c[1] <> \"\" THEN DO:\n        cTelefono = orden_v_exten.udf_c[1].\n    END.\n    ELSE DO:\n        cTelefono = \"No tiene\".\n    END.\nEND PROCEDURE.\n\n{}",

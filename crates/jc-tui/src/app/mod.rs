@@ -13,6 +13,7 @@ mod git_blame;
 mod git_commit_search;
 mod git_create_commit;
 mod git_diff;
+mod git_graph;
 mod git_history;
 mod git_index;
 mod git_repository;
