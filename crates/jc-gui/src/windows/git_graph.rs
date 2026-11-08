@@ -58,6 +58,25 @@ impl State {
         }
         self.request_git_history(id);
     }
+    pub(super) fn open_graph_reference_draft(&mut self, kind: jc_app::git_commit::RefKind) {
+        let Some(view) = self
+            .git_workspace
+            .graph
+            .as_ref()
+            .filter(|view| view.showing && view.reference_selected.is_none())
+        else {
+            return;
+        };
+        let target = self
+            .git_revision
+            .graph()
+            .and_then(|graph| graph.entries.get(view.selected))
+            .map(|entry| entry.commit.id.clone());
+        if let (Some(root), Some(target)) = (self.project_root.clone(), target) {
+            self.git_commit.open_reference(root, kind, target);
+            self.git_workspace.invalidate();
+        }
+    }
 
     pub(super) fn next_graph_page(&mut self) {
         let Some(root) = self.project_root.clone() else {
@@ -128,6 +147,12 @@ impl State {
             0x1b => self.close_graph(),
             0x74 => self.open_git_graph(),
             0x52 => self.toggle_graph_references(),
+            0x42 if view.reference_selected.is_none() => {
+                self.open_graph_reference_draft(jc_app::git_commit::RefKind::Branch)
+            }
+            0x54 if view.reference_selected.is_none() => {
+                self.open_graph_reference_draft(jc_app::git_commit::RefKind::Tag)
+            }
             0x0d if view.reference_selected.is_some() => {
                 self.choose_graph_reference(view.selected_row())
             }
@@ -196,7 +221,7 @@ impl State {
         frame.footer = if references {
             "↑↓ seleccionar · Intro abrir referencia · Esc volver"
         } else {
-            "↑↓ seleccionar · Intro abrir commit · R referencias · N más · F5 HEAD · Esc volver"
+            "Intro abrir · R referencias · B crear rama · T crear etiqueta · N más · Esc volver"
         }
         .into();
         let graph = self.git_revision.graph();
@@ -271,10 +296,22 @@ impl State {
             ),
             (119, "Referencias", Intent::GraphReferences),
             (226, "Más antiguos", Intent::GraphNext),
+            (
+                333,
+                "Crear rama",
+                Intent::GraphCreateReference(jc_app::git_commit::RefKind::Branch),
+            ),
+            (
+                440,
+                "Crear etiqueta",
+                Intent::GraphCreateReference(jc_app::git_commit::RefKind::Tag),
+            ),
         ] {
             if matches!(intent, Intent::GraphNext)
                 && (references || !graph.is_some_and(|p| p.has_next()))
                 || offset == 119 && (references || graph.is_none())
+                || matches!(intent, Intent::GraphCreateReference(_))
+                    && (references || graph.is_none_or(|page| page.entries.is_empty()))
             {
                 continue;
             }

@@ -24,7 +24,7 @@ historial local, archivos y comparación en áreas independientes.
 local. Fondo elegido `#2E3440`; título y menús GUI comparten el tema. Ambas interfaces
 conservan cambios sin guardar, historial y vistas al salir y reabrir.
 Recuperación periódica y limpieza segura de copias: [contrato y evidencia](docs/PERIODIC_RECOVERY_RETENTION.md).
-GUI/TUI actuales en `target/git-refs-parents-next/release/`, con
+GUI/TUI actuales en `target/git-rename-patch-refs-next/release/`, con
 [motor Git embebido en Rust](docs/GIT_EMBEDDED_ENGINE.md), sin `git.exe`.
 [Rueda y barras del Explorador](docs/M2_SIDEBAR_NAVIGATION.md) conservan selección y foco.
 [Deshacer/rehacer restaura la selección](docs/M2_SELECTION_HISTORY.md), también al recuperar la sesión.

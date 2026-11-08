@@ -13,6 +13,7 @@ pub enum PromptKind {
     Open,
     New,
     SaveAs,
+    GitExportPatch,
     OpenFolder,
     ProjectQuery,
     ProjectInclude,

@@ -159,7 +159,7 @@ impl TuiApp {
                 && self.panels.bottom_visible()
                 && self.panels.bottom() == BottomPanel::Diff
                 && self.focus.primary() == PrimaryFocus::BottomPanel;
-        if history_context && self.handle_git_history_key(key) {
+        if history_context && (self.handle_git_patch_key(key) || self.handle_git_history_key(key)) {
             return;
         }
         if let Some(stroke) = to_stroke(key) {

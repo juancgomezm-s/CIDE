@@ -85,8 +85,18 @@ interfaces. La prueba de TUI también descartó una revisión al cambiar de
 bloque y retiró solo uno de dos bloques preparados. Se verificaron los
 bytes del índice y del archivo en disco. Formato y Clippy aprobados.
 
-Quedan pendientes el historial a través de renombrados, exportar parches
-desde la TUI, refs de escritura, integración de ramas y remotos.
-El [visor del grafo](G1_GRAPH_VIEW.md) recorre la ascendencia de HEAD.
+## Exportar parches desde la TUI
+
+En una comparación Git local o histórica, enfoca el diff y pulsa **X**.
+Escribe una ruta absoluta a un archivo `.patch` nuevo fuera del
+repositorio y pulsa **Intro**. **Esc** cancela el diálogo. Durante la
+exportación, **X** solicita cancelar antes de publicar el archivo.
+La tarea usa el mismo par revisado y el mismo guardado seguro que la GUI.
+La exportación admite comparaciones de una sola ruta.
+
+Quedan pendientes la gestión de referencias existentes, la restauración
+de archivos, la integración de ramas y los remotos.
+El [visor del grafo](G1_GRAPH_VIEW.md) recorre la ascendencia elegida y
+permite crear ramas y etiquetas ligeras.
 El commit local y su modificación tienen su propio recorrido de
 [revisión y publicación](G4_CREATE_COMMIT.md).

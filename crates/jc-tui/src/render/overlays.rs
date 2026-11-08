@@ -34,6 +34,9 @@ fn draw_prompt(app: &TuiApp, screen: &mut Screen, kind: PromptKind, input: &str)
         PromptKind::Open => "Abrir archivo",
         PromptKind::New => "Ruta del archivo nuevo",
         PromptKind::SaveAs => "Guardar como",
+        PromptKind::GitExportPatch => {
+            "Exportar parche · ruta absoluta .patch fuera del repositorio"
+        }
         PromptKind::OpenFolder => "Abrir carpeta",
         PromptKind::ProjectQuery => {
             if app.workbench.search().regex {

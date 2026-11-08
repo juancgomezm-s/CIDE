@@ -49,7 +49,7 @@ impl TuiApp {
         let plain = key.modifiers.is_empty();
         if key.code == KeyCode::Esc && plain {
             self.git_commit.cancel();
-        } else if view.review().is_some() {
+        } else if view.reviewing() {
             match key.code {
                 KeyCode::F(2) if plain && key.kind == KeyEventKind::Press => self
                     .git_commit
@@ -88,6 +88,7 @@ impl TuiApp {
         }
         let (changed, outcome) = self.git_commit.poll();
         if let Some(outcome) = outcome {
+            let refresh_graph = outcome.reference && outcome.result.is_ok() && self.graph_showing();
             let notice = match outcome.result {
                 Ok(_) => self
                     .git_commit
@@ -97,7 +98,11 @@ impl TuiApp {
                 Err(error) => error,
             };
             if self.project_root.as_ref() == Some(&outcome.root) {
-                self.git_revision.cancel();
+                if refresh_graph {
+                    self.open_git_graph();
+                } else if !outcome.reference {
+                    self.git_revision.cancel();
+                }
                 let _ = self.git_status.refresh_after_index_write(&outcome.root);
             }
             self.status = notice;
@@ -118,12 +123,26 @@ impl TuiApp {
             .first()
             .filter(|s| !s.is_empty())
             .cloned()
-            .unwrap_or_else(|| "Escribe el mensaje del commit".into())];
+            .unwrap_or_else(|| {
+                if view.reference.is_some() {
+                    "Escribe el nombre de la referencia".into()
+                } else {
+                    "Escribe el mensaje del commit".into()
+                }
+            })];
         let mut caret = None;
         let hint = if self.git_commit.applying() {
-            "Publicando commit…"
+            "Publicando operación Git…"
         } else if self.git_commit.busy() {
-            "Leyendo el índice… · Esc cancela"
+            if view.reference.is_some() {
+                "Comprobando referencia… · Esc cancela"
+            } else {
+                "Leyendo el índice… · Esc cancela"
+            }
+        } else if let Some(plan) = view.reference_review() {
+            rows.push(format!("Referencia nueva · {}", plan.full_name()));
+            rows.push(format!("Commit de destino · {}", plan.target()));
+            "F2 crea la referencia · Esc cancela"
         } else if let Some(plan) = view.review() {
             let (name, email) = plan.author();
             rows.push(format!(
@@ -160,7 +179,10 @@ impl TuiApp {
             if !view.message.is_empty() {
                 caret = Some(field.cursor_column as u16);
             }
-            if let Some(old) = &view.replaces {
+            if let Some((_, target)) = &view.reference {
+                rows.push(format!("Commit de destino · {target}"));
+                "Intro revisa · Esc cancela"
+            } else if let Some(old) = &view.replaces {
                 rows.push(format!("Reemplaza {}", old.head));
                 "Vacío conserva mensaje · Intro revisa · Esc cancela"
             } else {

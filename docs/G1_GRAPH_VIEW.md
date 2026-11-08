@@ -59,3 +59,17 @@ Pasaron formato, Clippy, 26 comprobaciones de regresión con la GUI
 oculta y el recorrido de rama, etiqueta anotada y segundo padre en
 la TUI mediante ConPTY privado. Las fuentes y los metadatos de los
 repositorios de prueba conservaron sus bytes.
+
+## Crear referencias desde un commit
+
+En el grafo, selecciona un commit y pulsa **B** para crear una rama
+local o **T** para crear una etiqueta ligera. La GUI también ofrece
+los botones **Crear rama** y **Crear etiqueta**. Escribe el nombre
+y pulsa **Intro** para revisar el nombre completo y el SHA de destino.
+En la GUI, **Ctrl+Intro** confirma. En la TUI, usa **F2**. **Esc**
+descarta el formulario.
+
+El motor crea una referencia nueva bajo el bloqueo Git y comprueba
+colisiones con referencias sueltas o empaquetadas. La creación conserva
+la rama activa, HEAD, el índice, los archivos de trabajo y los reflogs.
+El grafo actualiza el selector al terminar.

@@ -439,6 +439,28 @@ fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
         app.git_revision.graph().unwrap().entries[0].commit.id,
         merge
     );
+    key(&mut app, KeyCode::Char('t'));
+    app.handle_event(Event::Paste("integracion-verificada".into()));
+    key(&mut app, KeyCode::Enter);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.git_commit.busy() {
+        let ticket = wake.ticket();
+        app.poll_tasks();
+        assert!(Instant::now() < deadline, "{}", app.status);
+        wake.wait(ticket, Some(Duration::from_millis(10)));
+    }
+    let view = app.git_commit.view().unwrap();
+    assert!(view.reference_review().is_some(), "{:?}", view.error);
+    let tag = fixture.path(".git/refs/tags/integracion-verificada");
+    assert!(!tag.exists());
+    key(&mut app, KeyCode::F(2));
+    while app.git_commit.busy() {
+        let ticket = wake.ticket();
+        app.poll_tasks();
+        assert!(Instant::now() < deadline, "{}", app.status);
+        wake.wait(ticket, Some(Duration::from_millis(10)));
+    }
+    assert_eq!(fs::read_to_string(tag).unwrap().trim(), merge);
     assert_eq!(fixture.disk(), before);
 }
 
@@ -748,6 +770,144 @@ fn assert_status_rows(app: &mut TuiApp) {
             (UNTRACKED.into(), "??".into())
         ])
     );
+}
+
+fn wait_patch_comparison(app: &mut TuiApp, wake: &Wakeup) {
+    use jc_app::git_revision::GitRevisionState;
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let ticket = wake.ticket();
+        app.poll_tasks();
+        match app.git_revision.state() {
+            GitRevisionState::Ready => return,
+            GitRevisionState::Queued | GitRevisionState::Running => {}
+            state => panic!("Falló la comparación para el parche: {state:?}"),
+        }
+        assert!(Instant::now() < deadline);
+        wake.wait(ticket, Some(Duration::from_millis(20)));
+    }
+}
+
+fn patch_destination(app: &mut TuiApp, path: &Path) {
+    use crate::state::PromptKind;
+    assert!(matches!(
+        app.overlay,
+        UiOverlay::Prompt {
+            kind: PromptKind::GitExportPatch,
+            ..
+        }
+    ));
+    app.handle_event(Event::Paste(path.to_str().unwrap().into()));
+    key(app, KeyCode::Enter);
+}
+
+fn accept_patch_result(app: &mut TuiApp, wake: &Wakeup) {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let ticket = wake.ticket();
+        if app.git_patch.ready() {
+            break;
+        }
+        assert!(Instant::now() < deadline, "{}", app.status);
+        wake.wait(ticket, Some(Duration::from_millis(20)));
+    }
+    assert!(app
+        .prepare_frame(100, 32)
+        .git
+        .status
+        .contains("Exportando parche"));
+    assert!(app.git_patch.ready(), "la pintura solo lee estado");
+    assert!(app.poll_tasks().changed);
+}
+
+fn patch_artifact(fixture: &Fixture) -> PathBuf {
+    fixture.base.join(format!(
+        "cide-export-{}-{}.patch",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ))
+}
+
+#[test]
+fn tui_patch_local_guards_the_prompt_identity_and_publishes_exact_bytes() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let fixture = Fixture::new();
+    let (mut app, wake) = fixture.app(true);
+    let disk = fixture.disk();
+    app.workbench
+        .insert_text("buffer independiente\r\n")
+        .unwrap();
+    let editor = app.workbench.active_bytes().unwrap();
+    let destination = patch_artifact(&fixture);
+    request_ready(&mut app, &wake);
+    key(&mut app, KeyCode::End);
+    key(&mut app, KeyCode::Char('t'));
+    wait_patch_comparison(&mut app, &wake);
+    assert!(app
+        .prepare_frame(100, 32)
+        .git
+        .status
+        .starts_with("X exportar parche"));
+
+    key(&mut app, KeyCode::Char('x'));
+    key(&mut app, KeyCode::Esc);
+    assert!(matches!(app.overlay, UiOverlay::None));
+    assert!(app.status.contains("cancelada"));
+    key(&mut app, KeyCode::Char('x'));
+    app.git_revision.cancel();
+    patch_destination(&mut app, &destination);
+    assert!(app.status.contains("comparación cambió"));
+    assert!(!destination.exists());
+
+    key(&mut app, KeyCode::F(5));
+    wait_patch_comparison(&mut app, &wake);
+    key(&mut app, KeyCode::Char('x'));
+    patch_destination(&mut app, &destination);
+    accept_patch_result(&mut app, &wake);
+    assert!(app.status.starts_with("Parche exportado"));
+    let expected = b"diff --git a/tracked.txt b/tracked.txt\n--- a/tracked.txt\n+++ b/tracked.txt\n@@ -1,1 +1,2 @@\n-index content \x81\r\n+work \xfe\r\n+last\n";
+    assert_eq!(fs::read(&destination).unwrap(), expected);
+
+    key(&mut app, KeyCode::Char('x'));
+    patch_destination(&mut app, &destination);
+    accept_patch_result(&mut app, &wake);
+    assert!(app.status.contains("ya existe"));
+    assert_eq!(fs::read(&destination).unwrap(), expected);
+
+    let denied = fixture.path("dentro-del-repo.patch");
+    key(&mut app, KeyCode::Char('x'));
+    patch_destination(&mut app, &denied);
+    accept_patch_result(&mut app, &wake);
+    assert!(app.status.contains("fuera del repositorio"));
+    assert!(!denied.exists());
+    assert_eq!(app.workbench.active_bytes().unwrap(), editor);
+    assert_eq!(fixture.disk(), disk);
+    fs::remove_file(destination).unwrap();
+}
+
+#[test]
+fn tui_patch_historical_root_uses_pinned_blob_and_keeps_missing_final_lf() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let fixture = Fixture::new();
+    let (mut app, wake) = fixture.app(true);
+    let disk = fixture.disk();
+    let destination = patch_artifact(&fixture);
+    request_ready(&mut app, &wake);
+    key(&mut app, KeyCode::Char('h'));
+    key(&mut app, KeyCode::Enter);
+    wait_patch_comparison(&mut app, &wake);
+    key(&mut app, KeyCode::Enter);
+    wait_patch_comparison(&mut app, &wake);
+    assert_eq!(app.focus.primary(), PrimaryFocus::BottomPanel);
+    key(&mut app, KeyCode::Char('x'));
+    patch_destination(&mut app, &destination);
+    accept_patch_result(&mut app, &wake);
+    assert!(app.status.starts_with("Parche exportado"));
+    let expected = b"diff --git a/tracked.txt b/tracked.txt\nnew file mode 100644\n--- /dev/null\n+++ b/tracked.txt\n@@ -0,0 +1,2 @@\n+head \xff\r\n+end\n\\ No newline at end of file\n";
+    assert_eq!(fs::read(&destination).unwrap(), expected);
+    assert_eq!(app.workbench.active_bytes().unwrap(), disk.tracked);
+    assert_eq!(fixture.disk(), disk);
+    fs::remove_file(destination).unwrap();
 }
 
 #[test]

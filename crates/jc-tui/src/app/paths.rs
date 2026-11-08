@@ -52,6 +52,10 @@ impl TuiApp {
             return;
         }
         let path = PathBuf::from(value);
+        if kind == PromptKind::GitExportPatch {
+            self.submit_git_patch(path);
+            return;
+        }
         if matches!(kind, PromptKind::Open) {
             match self.workbench.open_file(path, self.default_encoding) {
                 Ok(_) => {
@@ -64,7 +68,7 @@ impl TuiApp {
             return;
         }
         let result: Result<(), String> = match kind {
-            PromptKind::GoToPosition | PromptKind::RenameSymbol => {
+            PromptKind::GoToPosition | PromptKind::RenameSymbol | PromptKind::GitExportPatch => {
                 unreachable!()
             }
             PromptKind::Open => self.open_path(path),

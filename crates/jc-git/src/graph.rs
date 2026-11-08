@@ -261,7 +261,7 @@ fn resolve_head(
     }
 }
 
-fn references(
+pub(super) fn references(
     repo: &gix::Repository,
     limits: Limits,
     budget: &mut Budget,

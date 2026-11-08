@@ -16,6 +16,7 @@ mod git_diff;
 mod git_graph;
 mod git_history;
 mod git_index;
+mod git_patch;
 mod git_repository;
 mod git_status;
 mod markdown;
@@ -119,6 +120,7 @@ pub struct TuiApp {
     pub(crate) git_diff: jc_app::git_diff::GitDiffController,
     pub(crate) git_revision: jc_app::git_revision::GitRevisionController,
     pub(crate) git_index: jc_app::git_index::GitIndexController,
+    pub(crate) git_patch: git_patch::PatchExport,
     pub(crate) git_commit: jc_app::git_commit::CommitController,
     pub(crate) git_history: git_history::HistoryView,
     pub(crate) open_diff: jc_app::open_diff::OpenDiffController,
@@ -204,6 +206,7 @@ impl TuiApp {
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_revision: jc_app::git_revision::GitRevisionController::new(wakeup.clone()),
             git_index: jc_app::git_index::GitIndexController::new(wakeup.clone()),
+            git_patch: Default::default(),
             git_commit: jc_app::git_commit::CommitController::new(wakeup.clone()),
             git_history: Default::default(),
             open_diff: Default::default(),
@@ -358,6 +361,7 @@ impl TuiApp {
             }
         }
         update.changed |= self.poll_git_index();
+        update.changed |= self.poll_git_patch();
         update.changed |= self.poll_git_create_commit();
         update.changed |= self.poll_markdown_anchor();
         update.changed |= self.poll_quick_open();

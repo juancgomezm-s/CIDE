@@ -431,7 +431,7 @@ impl TuiApp {
             } else {
                 Self::prepare_git_diff
             };
-            prepare(
+            let mut prepared = prepare(
                 self,
                 layout.width,
                 usize::from(layout.bottom_height.saturating_sub(3)),
@@ -440,7 +440,9 @@ impl TuiApp {
                 } else {
                     0
                 },
-            )
+            );
+            self.add_git_patch_status(&mut prepared, layout.width);
+            prepared
         } else {
             GitPresentation::default()
         };

@@ -1,3 +1,15 @@
+# Exact renames, TUI patches and local reference creation — 2026-11-08
+
+Read docs/G3_PATH_HISTORY_OUTLINE.md, docs/GIT_ADVANCED_FOUNDATIONS.md and
+docs/G1_GRAPH_VIEW.md. Keep history cursors pinned to the starting path and
+the older tracked path. Follow only unique exact renames within the existing
+tree budgets. TUI patch export pins the accepted comparison and uses shared
+create-only file publication. Branches and lightweight tags pin the selected
+commit and confirm through the shared form and a create-only Git transaction.
+Directed tests, fmt, selective Clippy, offline release, 26 hidden GUI checks
+and private TUI ConPTY export/tag creation passed. Delivery
+target/git-rename-patch-refs-next/release. Preserve older releases and caches.
+
 # Git references and merge parents in GUI/TUI
 
 Read docs/G1_GRAPH_VIEW.md. The reference selector opens the observed object ID

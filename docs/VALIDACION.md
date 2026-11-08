@@ -1,3 +1,15 @@
+## Git · Renombrados, parches TUI y creación de referencias — 2026-11-08
+
+Pasaron ocho casos de historial por archivo, cinco de creación de
+referencias y 14 del controlador de revisiones. Se verificaron la
+comparación de dos rutas en la GUI, la creación confirmada de ramas y
+etiquetas en las interfaces y la exportación local e histórica en TUI.
+Formato, Clippy y release offline aprobados. La entrega en
+`target/git-rename-patch-refs-next/release/` pasó 26 comprobaciones con GUI
+oculta. En ConPTY privado la TUI optimizada exportó un parche CRLF y creó
+una etiqueta ligera tras confirmar. Los archivos y referencias de partida
+conservaron sus bytes.
+
 ## Git · Referencias y elección del padre de un merge
 
 Pasaron las pruebas dirigidas del núcleo y de ambas interfaces, además de

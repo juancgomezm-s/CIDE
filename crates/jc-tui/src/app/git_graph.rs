@@ -77,6 +77,21 @@ impl TuiApp {
                 self.git_revision.cancel();
             }
             KeyCode::F(5) => self.open_git_graph(),
+            KeyCode::Char('b' | 'B' | 't' | 'T') if view.reference_selected.is_none() => {
+                let target = self
+                    .git_revision
+                    .graph()
+                    .and_then(|graph| graph.entries.get(view.selected))
+                    .map(|entry| entry.commit.id.clone());
+                if let (Some(root), Some(target)) = (self.project_root.clone(), target) {
+                    let kind = if matches!(key.code, KeyCode::Char('b' | 'B')) {
+                        jc_app::git_commit::RefKind::Branch
+                    } else {
+                        jc_app::git_commit::RefKind::Tag
+                    };
+                    self.git_commit.open_reference(root, kind, target);
+                }
+            }
             KeyCode::Char('r' | 'R') if self.git_revision.graph().is_some() => {
                 let open = view.reference_selected.is_some();
                 self.git_history.graph.as_mut().unwrap().reference_selected = (!open).then_some(0);

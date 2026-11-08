@@ -212,6 +212,7 @@ pub(crate) fn run(mut options: LaunchOptions, search_workers: usize) -> io::Resu
             || app.tasks.has_completed()
             || app.git_status.ready()
             || app.git_index.ready()
+            || app.git_patch.ready()
             || app.git_commit.ready()
             || app.quick_open.ready()
             || app.project_search.ready()

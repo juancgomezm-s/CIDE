@@ -92,7 +92,7 @@ impl State {
         };
         if code == 0x1b && mods == Modifiers::NONE {
             self.git_commit.cancel();
-        } else if view.review().is_some() {
+        } else if view.reviewing() {
             match (code, mods) {
                 (0x0d, Modifiers::CTRL) => self.submit_git_create_commit(),
                 (0x26, Modifiers::NONE) => self.git_commit.scroll(-1),
@@ -129,6 +129,13 @@ impl State {
         }
         let (changed, outcome) = self.git_commit.poll();
         if let Some(outcome) = outcome {
+            let refresh_graph = outcome.reference
+                && outcome.result.is_ok()
+                && self
+                    .git_workspace
+                    .graph
+                    .as_ref()
+                    .is_some_and(|view| view.showing);
             self.status = match outcome.result {
                 Ok(_) => self
                     .git_commit
@@ -138,7 +145,11 @@ impl State {
                 Err(error) => error,
             };
             if self.project_root.as_ref() == Some(&outcome.root) {
-                self.git_revision.cancel();
+                if refresh_graph {
+                    self.open_git_graph();
+                } else if !outcome.reference {
+                    self.git_revision.cancel();
+                }
                 self.schedule_git_status();
             }
         }
@@ -228,10 +239,14 @@ impl State {
         f.subtitle = view.title().into();
         f.footer = view.error.clone().unwrap_or_else(|| {
             if self.git_commit.applying() {
-                "Publicando commit…".into()
+                "Publicando operación Git…".into()
             } else if self.git_commit.busy() {
-                "Leyendo el índice preparado… · Esc cancela".into()
-            } else if view.review().is_some() {
+                if view.reference.is_some() {
+                    "Comprobando referencia… · Esc cancela".into()
+                } else {
+                    "Leyendo el índice preparado… · Esc cancela".into()
+                }
+            } else if view.reviewing() {
                 "↑↓ recorrer archivos · Ctrl+Intro confirmar · Esc cancelar".into()
             } else {
                 "Intro revisar · Esc cancelar".into()
@@ -248,10 +263,15 @@ impl State {
         f.query = Some(QueryRow {
             rect: r,
             text: field.rows.first().cloned().unwrap_or_default(),
-            caret: (!self.git_commit.busy() && view.review().is_none())
+            caret: (!self.git_commit.busy() && !view.reviewing())
                 .then_some(field.cursor_column as i32 * self.cell_width),
         });
-        let (label, offset) = if let Some(plan) = view.review() {
+        let (label, offset) = if let Some(plan) = view.reference_review() {
+            f.summary = vec![format!("Referencia nueva · {}", plan.full_name())];
+            f.details_top = p(132);
+            f.details = vec![format!("Commit de destino · {}", plan.target())];
+            ("Confirmar creación", 150)
+        } else if let Some(plan) = view.review() {
             let (name, email) = plan.author();
             f.summary = vec![format!(
                 "{} · {} archivos preparados",
@@ -309,6 +329,9 @@ impl State {
                 },
                 150,
             )
+        } else if let Some((_, target)) = &view.reference {
+            f.summary = vec![format!("Nombre de la referencia · commit {target}")];
+            ("Revisar referencia", 12)
         } else {
             f.summary = vec![if let Some(old) = &view.replaces {
                 format!(

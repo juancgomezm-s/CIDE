@@ -137,6 +137,7 @@ enum Intent {
     GraphCommit(usize),
     GraphReferences,
     GraphReference(usize),
+    GraphCreateReference(jc_app::git_commit::RefKind),
     HistoryParent,
     CreateCommit,
     AmendCommit,
@@ -898,6 +899,10 @@ impl State {
             }
             Some(Intent::GraphReference(index)) => {
                 self.choose_graph_reference(index);
+                Action::None
+            }
+            Some(Intent::GraphCreateReference(kind)) => {
+                self.open_graph_reference_draft(kind);
                 Action::None
             }
             Some(Intent::HistoryParent) => {

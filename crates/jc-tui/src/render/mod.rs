@@ -65,7 +65,7 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
             &clip(if graph.title == "Ramas y etiquetas" {
                 "↑↓ seleccionar · Intro abrir referencia · Esc volver"
             } else {
-                "↑↓ seleccionar · Intro abrir commit · R referencias · N más · F5 HEAD · Esc volver"
+                "↑↓ · Intro abrir · R refs · B crear rama · T crear etiqueta · N más · F5 HEAD · Esc volver"
             }, width - 2),
             CellStyle::Accent,
         );

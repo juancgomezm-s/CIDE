@@ -295,6 +295,21 @@ mod tests {
             pair.model.source_bytes(jc_app::diff_model::DiffSide::Right),
             b"primer padre\n"
         );
+        state.key(0x1b);
+        state.key(b'B' as usize);
+        for unit in "desde-grafo".encode_utf16() {
+            state.character(unit);
+        }
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        assert!(view.reference_review().is_some(), "{:?}", view.error);
+        let new_branch = fixture.root.join(".git/refs/heads/desde-grafo");
+        assert!(!new_branch.exists());
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert_eq!(fs::read_to_string(new_branch).unwrap().trim(), merge);
         assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
         assert_eq!(fs::read(source).unwrap(), b"segundo padre\n");
     }

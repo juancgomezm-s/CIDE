@@ -69,7 +69,12 @@ impl TuiApp {
                         Err(error) => error.to_string(),
                     };
                 }
-                KeyCode::Esc => self.close_overlay(),
+                KeyCode::Esc => {
+                    self.close_overlay();
+                    if kind == crate::state::PromptKind::GitExportPatch {
+                        self.status = "Exportación de parche cancelada".into();
+                    }
+                }
                 KeyCode::Enter => self.submit_prompt(kind, input),
                 KeyCode::Backspace => {
                     let from =
