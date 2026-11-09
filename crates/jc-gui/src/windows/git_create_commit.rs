@@ -147,6 +147,9 @@ impl State {
         } else if view.reviewing() {
             match (code, mods) {
                 (0x0d, Modifiers::CTRL) => self.submit_git_create_commit(),
+                (0x0d, Modifiers::NONE) if view.choosing_mainline().is_some() => {
+                    self.submit_git_create_commit();
+                }
                 (0x0d, Modifiers::NONE) if view.merge_conflicts().is_some() => {
                     self.git_commit.merge_action(MergeAction::Open(view.first));
                 }
@@ -374,19 +377,23 @@ impl State {
                     .into()
             } else if self.git_commit.busy() {
                 view.pending_hint().into()
+            } else if view.choosing_mainline().is_some() {
+                "↑↓ elige padre · Intro muestra los cambios · Esc cancela".into()
             } else if let Some(plan) = view.merge_review() {
                 if plan.can_apply() {
                     if view.can_return_to_merge_choices() {
                         "Ctrl+Intro confirma · Esc vuelve a las resoluciones".into()
+                    } else if view.can_return_to_mainline() {
+                        "Ctrl+Intro confirma · Esc vuelve a elegir padre".into()
                     } else {
                         "↑↓ archivos · Ctrl+Intro confirma · Esc cancela".into()
                     }
                 } else if plan.rows.is_empty() {
-                    "Esc volver".into()
+                    "Esc vuelve".into()
                 } else if view.all_merge_choices_saved() {
-                    "Intro abre archivo · Ctrl+Intro revisa el resultado · Esc cancela".into()
+                    "Intro abre archivo · Ctrl+Intro revisa el resultado · Esc vuelve".into()
                 } else {
-                    "↑↓ selecciona conflicto · Intro abre archivo · Esc cancela".into()
+                    "↑↓ selecciona conflicto · Intro abre archivo · Esc vuelve".into()
                 }
             } else if view.reviewing() {
                 if view.review().is_some()
@@ -460,6 +467,42 @@ impl State {
                 }
                 ("Restaurar archivo", 12)
             }
+        } else if let Some(plan) = view.choosing_mainline() {
+            f.summary = vec![
+                format!("Commit de fusión · {}", plan.incoming()),
+                "Elige el padre que se usará como base".into(),
+            ];
+            let top = f.preview.top + p(138);
+            let row_height = p(23).max(1);
+            let count = ((f.preview.bottom - top) / row_height).max(0) as usize;
+            let first = view.first.saturating_sub(count.saturating_sub(1));
+            for (index, id) in plan
+                .mainline_choices()
+                .iter()
+                .enumerate()
+                .skip(first)
+                .take(count)
+            {
+                let y = top + (index - first) as i32 * row_height;
+                let r = rect(
+                    f.preview.left + p(12),
+                    y,
+                    f.preview.right - p(12),
+                    y + row_height,
+                );
+                f.code.push(CodeRow {
+                    rect: r,
+                    old: String::new(),
+                    new: String::new(),
+                    text: format!("Padre {} · {id}", index + 1),
+                    kind: if index == view.first { 2 } else { 0 },
+                    parallel: false,
+                });
+                if !self.git_commit.busy() {
+                    f.hits.actions.push((r, Intent::SelectMainline(index)));
+                }
+            }
+            ("Ver cambios", 12)
         } else if let Some(plan) = view.merge_abort_review() {
             f.summary = vec![
                 format!(
@@ -482,8 +525,11 @@ impl State {
                 f.details
                     .push("La rama volverá a su commit anterior".into());
             }
+            if let Some((number, id)) = plan.mainline() {
+                f.details.push(format!("Padre principal {number} · {id}"));
+            }
             let row_height = p(23).max(1);
-            let top = f.preview.top + p(194);
+            let top = f.preview.top + p(if plan.mainline().is_some() { 217 } else { 194 });
             let count = ((f.preview.bottom - top) / row_height).clamp(0, 128) as usize;
             let first = view.first.min(plan.rows.len().saturating_sub(count));
             for (i, row) in plan.rows.iter().skip(first).take(count).enumerate() {
@@ -525,8 +571,11 @@ impl State {
             if let Some(result) = plan.result() {
                 f.details.push(format!("Resultado · {result}"));
             }
+            if let Some((number, id)) = plan.mainline() {
+                f.details.push(format!("Padre principal {number} · {id}"));
+            }
             let row_height = p(23).max(1);
-            let top = f.preview.top + p(207);
+            let top = f.preview.top + p(if plan.mainline().is_some() { 230 } else { 207 });
             let count = ((f.preview.bottom - top) / row_height).clamp(0, 128) as usize;
             let conflicts = view.merge_conflicts().is_some();
             let first = if conflicts {
@@ -737,7 +786,8 @@ impl State {
             ("Revisar preparados", 12)
         };
         if !self.git_commit.busy()
-            && (view.all_merge_choices_saved()
+            && (view.choosing_mainline().is_some()
+                || view.all_merge_choices_saved()
                 || view.merge_review().is_none_or(|plan| plan.can_apply()))
         {
             let top = f.preview.top + p(96);
@@ -751,7 +801,7 @@ impl State {
             let top = f.preview.top + p(96);
             let r = rect(left, top, left + p(85), top + p(24));
             if f.buttons.iter().all(|(b, _, _)| r.left >= b.right) {
-                let back = view.can_return_to_merge_choices();
+                let back = view.can_return_to_merge_choices() || view.can_return_to_mainline();
                 let label = if back {
                     "Volver"
                 } else if view

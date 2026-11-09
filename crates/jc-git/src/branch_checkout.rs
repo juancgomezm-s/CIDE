@@ -21,6 +21,12 @@ pub(super) const JOURNAL_NAME: &str = "cide-switch.pending";
 const JOURNAL_BYTES: usize = 16 * 1024;
 const MAX_FILES: usize = 128;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Mainline {
+    pub number: usize,
+    pub id: ObjectId,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Journal {
     pub source: String,
@@ -29,6 +35,7 @@ pub(super) struct Journal {
     pub to: ObjectId,
     pub incoming: Option<ObjectId>,
     pub cherry_pick: bool,
+    pub mainline: Option<Mainline>,
     pub aborting: bool,
     old_index: ObjectId,
     new_index: ObjectId,
@@ -47,12 +54,14 @@ impl Journal {
             return Err(Error::Unsupported);
         }
         let mut lines = std::str::from_utf8(&bytes).map_err(engine)?.lines();
-        let (integration, cherry_pick, aborting) = match lines.next() {
-            Some("CIDE-SWITCH-1") => (false, false, false),
-            Some("CIDE-MERGE-1") => (true, false, false),
-            Some("CIDE-MERGE-ABORT-1") => (true, false, true),
-            Some("CIDE-PICK-1") => (true, true, false),
-            Some("CIDE-PICK-ABORT-1") => (true, true, true),
+        let (integration, cherry_pick, aborting, has_mainline) = match lines.next() {
+            Some("CIDE-SWITCH-1") => (false, false, false, false),
+            Some("CIDE-MERGE-1") => (true, false, false, false),
+            Some("CIDE-MERGE-ABORT-1") => (true, false, true, false),
+            Some("CIDE-PICK-1") => (true, true, false, false),
+            Some("CIDE-PICK-ABORT-1") => (true, true, true, false),
+            Some("CIDE-PICK-2") => (true, true, false, true),
+            Some("CIDE-PICK-ABORT-2") => (true, true, true, true),
             _ => return Err(Error::Unsupported),
         };
         let source = lines.next().ok_or(Error::Unsupported)?.to_owned();
@@ -62,6 +71,17 @@ impl Journal {
         };
         let (from, to, old_index, new_index) = (oid()?, oid()?, oid()?, oid()?);
         let incoming = if integration { Some(oid()?) } else { None };
+        let mainline = if has_mainline {
+            let id = oid()?;
+            let number = lines
+                .next()
+                .and_then(|text| text.parse::<usize>().ok().filter(|n| n.to_string() == text))
+                .filter(|number| (1..=revision::MAX_PARENTS).contains(number))
+                .ok_or(Error::Unsupported)?;
+            Some(Mainline { number, id })
+        } else {
+            None
+        };
         let nonce = lines.next().ok_or(Error::Unsupported)?.to_owned();
         if nonce.is_empty()
             || nonce.len() > 64
@@ -77,6 +97,7 @@ impl Journal {
             to,
             incoming,
             cherry_pick,
+            mainline,
             aborting,
             old_index,
             new_index,
@@ -87,11 +108,18 @@ impl Journal {
     fn bytes(&self) -> Vec<u8> {
         let mut data = format!(
             "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
-            match (self.incoming.is_some(), self.cherry_pick, self.aborting) {
-                (true, true, true) => "CIDE-PICK-ABORT-1",
-                (true, true, false) => "CIDE-PICK-1",
-                (true, false, true) => "CIDE-MERGE-ABORT-1",
-                (true, false, false) => "CIDE-MERGE-1",
+            match (
+                self.incoming.is_some(),
+                self.cherry_pick,
+                self.aborting,
+                self.mainline.is_some()
+            ) {
+                (true, true, true, true) => "CIDE-PICK-ABORT-2",
+                (true, true, false, true) => "CIDE-PICK-2",
+                (true, true, true, false) => "CIDE-PICK-ABORT-1",
+                (true, true, false, false) => "CIDE-PICK-1",
+                (true, false, true, _) => "CIDE-MERGE-ABORT-1",
+                (true, false, false, _) => "CIDE-MERGE-1",
                 _ => "CIDE-SWITCH-1",
             },
             self.source,
@@ -103,6 +131,9 @@ impl Journal {
         );
         if let Some(incoming) = self.incoming {
             data.push_str(&format!("{incoming}\n"));
+        }
+        if let Some(mainline) = self.mainline {
+            data.push_str(&format!("{}\n{}\n", mainline.id, mainline.number));
         }
         data.push_str(&self.nonce);
         data.push('\n');
@@ -316,6 +347,7 @@ pub(super) struct Transition<'a> {
 pub(super) struct MergeCheckout<'a> {
     pub incoming: ObjectId,
     pub cherry_pick: bool,
+    pub mainline: Option<Mainline>,
     pub entries: &'a BTreeMap<Vec<u8>, revision::Entry>,
     pub blobs: &'a BTreeMap<ObjectId, Vec<u8>>,
 }
@@ -750,7 +782,8 @@ impl Checkout {
                     from: commits.0,
                     to: commits.1,
                     incoming: merge.as_ref().map(|merge| merge.incoming),
-                    cherry_pick: merge.is_some_and(|merge| merge.cherry_pick),
+                    cherry_pick: merge.as_ref().is_some_and(|merge| merge.cherry_pick),
+                    mainline: merge.and_then(|merge| merge.mainline),
                     aborting: false,
                     old_index: current_index,
                     new_index,

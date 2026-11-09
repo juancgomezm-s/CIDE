@@ -309,6 +309,18 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     );
     assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), original);
 
+    let tree = fixture.oid(&["rev-parse", &format!("{incoming}^{{tree}}")]);
+    let merge_pick = fixture.oid(&[
+        "commit-tree",
+        &tree,
+        "-p",
+        &incoming,
+        "-p",
+        &original,
+        "-m",
+        "Fusión para cherry-pick",
+    ]);
+    fixture.git(&["update-ref", "refs/heads/aborto", &merge_pick]);
     key(&mut app, KeyCode::F(5));
     wait_for(&mut app, |app| {
         app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
@@ -328,9 +340,21 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     });
     assert_eq!(
         app.git_revision.graph().unwrap().entries[0].commit.id,
-        incoming
+        merge_pick
     );
     key(&mut app, KeyCode::Char('p'));
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let chooser = app.prepare_frame(100, 24).commit.unwrap();
+    assert!(chooser
+        .rows
+        .iter()
+        .any(|row| row.contains("Padre 1") && row.contains(&incoming)));
+    assert!(chooser
+        .rows
+        .iter()
+        .any(|row| row.contains("Padre 2") && row.contains(&original)));
+    key(&mut app, KeyCode::Down);
     key(&mut app, KeyCode::Enter);
     wait_for(&mut app, |app| !app.git_commit.busy());
     let view = app.git_commit.view().unwrap();
@@ -338,6 +362,7 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
         .merge_review()
         .unwrap_or_else(|| panic!("{:?}", view.error));
     assert!(plan.is_cherry_pick() && plan.can_apply());
+    assert_eq!(plan.mainline().unwrap().0, 2);
     assert!(!added.exists());
     let block = OpenOptions::new()
         .read(true)
@@ -353,7 +378,9 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     key(&mut app, KeyCode::Enter);
     wait_for(&mut app, |app| !app.git_commit.busy());
     let review = app.git_commit.view().unwrap();
-    assert!(review.merge_abort_review().unwrap().is_cherry_pick());
+    let abort = review.merge_abort_review().unwrap();
+    assert!(abort.is_cherry_pick());
+    assert_eq!(abort.mainline().unwrap().0, 2);
     assert!(added.exists());
     key(&mut app, KeyCode::F(2));
     wait_for(&mut app, |app| !app.git_commit.busy());

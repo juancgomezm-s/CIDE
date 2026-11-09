@@ -719,6 +719,18 @@ mod tests {
         assert_eq!(fs::read(&incoming_path).unwrap(), b"mismo contenido\n");
         assert_eq!(run(&["rev-parse", "HEAD"]), original);
 
+        let tree = run(&["rev-parse", &format!("{incoming}^{{tree}}")]);
+        let merge_pick = run(&[
+            "commit-tree",
+            &tree,
+            "-p",
+            &incoming,
+            "-p",
+            &original,
+            "-m",
+            "Fusión para cherry-pick",
+        ]);
+        run(&["update-ref", "refs/heads/aborto", &merge_pick]);
         let pick = |state: &mut State| {
             state.key_override = Some(jc_app::Modifiers::NONE);
             state.key(0x74);
@@ -735,9 +747,35 @@ mod tests {
             wait(state, |s| s.git_revision.state() == GitRevisionState::Ready);
             assert_eq!(
                 state.git_revision.graph().unwrap().entries[0].commit.id,
-                incoming
+                merge_pick
             );
             state.key(b'P' as usize);
+            state.key(0x0d);
+            wait(state, |s| !s.git_commit.busy());
+            let view = state.git_commit.view().unwrap();
+            let plan = view
+                .choosing_mainline()
+                .unwrap_or_else(|| panic!("{:?}", view.error));
+            assert_eq!(
+                plan.mainline_choices()
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+                [incoming.clone(), original.clone()]
+            );
+            state.key(0x0d);
+            wait(state, |s| !s.git_commit.busy());
+            let plan = state.git_commit.view().unwrap().merge_review().unwrap();
+            assert_eq!(plan.mainline().unwrap().0, 1);
+            assert!(!plan.can_apply() && plan.rows.is_empty());
+            state.key(0x1b);
+            assert!(state
+                .git_commit
+                .view()
+                .unwrap()
+                .choosing_mainline()
+                .is_some());
+            state.key(0x28);
             state.key(0x0d);
             wait(state, |s| !s.git_commit.busy());
         };
@@ -751,6 +789,28 @@ mod tests {
         pick(&mut state);
         let view = state.git_commit.view().unwrap();
         assert!(view.merge_conflicts().unwrap().is_cherry_pick());
+        state.key(0x0d);
+        state.key(0x09);
+        state.key(0x09);
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(b'U' as usize);
+        state.key(0x0d);
+        assert!(state.git_commit.view().unwrap().all_merge_choices_saved());
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let review = state.git_commit.view().unwrap();
+        assert!(review.can_return_to_merge_choices(), "{:?}", review.error);
+        assert_eq!(review.merge_review().unwrap().mainline().unwrap().0, 2);
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x1b);
+        assert!(state.git_commit.view().unwrap().merge_conflicts().is_some());
+        state.key(0x1b);
+        assert!(state
+            .git_commit
+            .view()
+            .unwrap()
+            .choosing_mainline()
+            .is_some());
         state.key(0x1b);
         assert!(state.git_commit.view().is_none());
         assert!(!pending.exists() && !added.exists());
@@ -767,6 +827,7 @@ mod tests {
             .merge_review()
             .unwrap_or_else(|| panic!("{:?}", view.error));
         assert!(plan.is_cherry_pick() && plan.can_apply());
+        assert_eq!(plan.mainline().unwrap().0, 2);
         assert_eq!(plan.rows.len(), 2);
         state.key(0x0d);
         assert!(!added.exists());

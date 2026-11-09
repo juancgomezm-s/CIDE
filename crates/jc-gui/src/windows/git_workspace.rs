@@ -151,6 +151,7 @@ enum Intent {
     SubmitCommit,
     CancelCommit,
     Merge(jc_app::git_merge_resolution::MergeAction),
+    SelectMainline(usize),
     BackMerge,
     Index,
     IndexHunk,
@@ -989,6 +990,11 @@ impl State {
             }
             Some(Intent::Merge(action)) => {
                 self.git_commit.merge_action(action);
+                self.git_workspace.invalidate();
+                Action::None
+            }
+            Some(Intent::SelectMainline(index)) => {
+                self.git_commit.select_mainline(index);
                 self.git_workspace.invalidate();
                 Action::None
             }

@@ -1630,11 +1630,6 @@ mod tests {
                 b"archivo privado"
             );
             assert_eq!(pick().unwrap().kind, MergeKind::UpToDate);
-            let merge = commit_at_tree(&repo, tree, &[active, selected], "fusión");
-            assert!(
-                prepare_cherry_pick(&fixture.root, &merge.to_string(), limits(), || false).is_err()
-            );
-
             let tree = repo
                 .write_object(Tree {
                     entries: vec![Entry {
@@ -1653,6 +1648,98 @@ mod tests {
             assert_eq!(
                 fs::read(fixture.root.join("raiz.txt")).unwrap(),
                 b"uno\r\nDOS AJENO\r\ntres\r\nFIN"
+            );
+        }
+
+        #[test]
+        fn cherry_pick_mainline_changes_the_delta_and_is_pinned_through_recovery() {
+            use crate::local_merge::prepare_cherry_pick_mainline;
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            let fixture = Fixture::new();
+            let (repo, active, other) =
+                scenario(&fixture, true, b"uno\r\nDOS AJENO\r\ntres\r\nfin");
+            let blob = repo
+                .write_blob(b"uno\r\nDOS AJENO\r\ntres\r\nFIN")
+                .unwrap()
+                .detach();
+            let tree = repo
+                .write_object(Tree {
+                    entries: vec![Entry {
+                        mode: EntryKind::Blob.into(),
+                        filename: "a.txt".into(),
+                        oid: blob,
+                    }],
+                })
+                .unwrap()
+                .detach();
+            let merge = commit_at_tree(&repo, tree, &[active, other], "Fusión elegida");
+            let pick =
+                || prepare_cherry_pick(&fixture.root, &merge.to_string(), limits(), || false);
+            let git = fixture.git();
+            let pending = git.join(crate::branch_checkout::JOURNAL_NAME);
+            let index = git.join("index");
+            let branch = git.join("refs/heads/activa");
+            let original_index = fs::read(&index).unwrap();
+            let file = fixture.root.join("a.txt");
+            let original = fs::read(&file).unwrap();
+            let selector = pick().unwrap();
+            assert_eq!(selector.kind, MergeKind::ChooseMainline);
+            assert_eq!(selector.mainline_choices(), [active, other]);
+            assert!(!selector.can_apply());
+            assert!(selector.mainline_review(2).is_none());
+            assert_eq!(fs::read(&index).unwrap(), original_index);
+            assert!(!pending.exists());
+            let first =
+                prepare_cherry_pick_mainline(selector.mainline_review(0).unwrap(), || false)
+                    .unwrap();
+            let second = selector.mainline_review(1).unwrap();
+            assert_eq!(first.mainline(), Some((1, active)));
+            let published_ref = format!("{}\n", first.result().unwrap());
+            assert!(
+                apply_merge(first, || fs::read_to_string(&branch).unwrap()
+                    == published_ref)
+                .is_err()
+            );
+            assert_eq!(fs::read(&file).unwrap(), b"uno\r\nDOS AJENO\r\ntres\r\nFIN");
+            assert!(prepare_cherry_pick_mainline(second, || false).is_err());
+            let resumed = pick().unwrap();
+            assert!(resumed.recovering());
+            assert!(resumed.mainline_choices().is_empty());
+            assert_eq!(resumed.mainline(), Some((1, active)));
+            let abort = || prepare_merge_abort(&fixture.root, limits(), || false).unwrap();
+            let plan = abort();
+            assert_eq!(plan.mainline(), Some((1, active)));
+            assert!(plan.restores_index() && plan.restores_branch());
+            assert!(
+                apply_merge_abort(plan, || fs::read(&file).ok().as_ref() == Some(&original))
+                    .is_err()
+            );
+            assert!(pick().is_err());
+            assert_eq!(abort().mainline(), Some((1, active)));
+            assert_eq!(apply_merge_abort(abort(), || false).unwrap().id, active);
+            assert_eq!(fs::read(&index).unwrap(), original_index);
+            assert_eq!(fs::read(&file).unwrap(), original);
+            assert!(!pending.exists());
+            let second =
+                prepare_cherry_pick_mainline(pick().unwrap().mainline_review(1).unwrap(), || false)
+                    .unwrap();
+            assert_eq!(second.mainline(), Some((2, other)));
+            let id = apply_merge(second, || false).unwrap().id;
+            assert_eq!(fs::read(&file).unwrap(), b"UNO\r\ndos\r\ntres\r\nFIN");
+            let commit = repo.find_commit(id).unwrap();
+            assert_eq!(
+                commit
+                    .parent_ids()
+                    .map(|parent| parent.detach())
+                    .collect::<Vec<_>>(),
+                [active]
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
             );
         }
 

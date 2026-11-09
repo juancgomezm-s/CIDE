@@ -25,6 +25,11 @@ impl MergeAbortPlan {
     pub fn is_cherry_pick(&self) -> bool {
         self.journal.cherry_pick
     }
+    pub fn mainline(&self) -> Option<(usize, ObjectId)> {
+        self.journal
+            .mainline
+            .map(|parent| (parent.number, parent.id))
+    }
     pub fn restores_index(&self) -> bool {
         self.original_index.is_some()
     }

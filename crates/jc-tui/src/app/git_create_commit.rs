@@ -115,6 +115,14 @@ impl TuiApp {
                 KeyCode::Enter
                     if plain
                         && key.kind == KeyEventKind::Press
+                        && view.choosing_mainline().is_some() =>
+                {
+                    self.git_commit
+                        .submit(&self.workbench, self.project_root.as_deref())
+                }
+                KeyCode::Enter
+                    if plain
+                        && key.kind == KeyEventKind::Press
                         && view.merge_conflicts().is_some() =>
                 {
                     self.git_commit.merge_action(MergeAction::Open(view.first));
@@ -302,6 +310,23 @@ impl TuiApp {
                 }
                 "F2 restaura el archivo · Esc cancela"
             }
+        } else if let Some(plan) = view.choosing_mainline() {
+            rows.push(format!("Commit de fusión · {}", plan.incoming()));
+            rows.push("Elige el padre que se usará como base".into());
+            let count = usize::from(height.saturating_sub(4)).saturating_sub(rows.len());
+            let first = view.first.saturating_sub(count.saturating_sub(1));
+            rows.extend(
+                plan.mainline_choices()
+                    .iter()
+                    .enumerate()
+                    .skip(first)
+                    .take(count)
+                    .map(|(index, id)| {
+                        let selected = if index == view.first { "› " } else { "  " };
+                        format!("{selected}Padre {} · {id}", index + 1)
+                    }),
+            );
+            "↑↓ elige padre · Intro muestra los cambios · Esc cancela"
         } else if let Some(plan) = view.merge_abort_review() {
             rows.push(format!(
                 "{} pendiente · {} → {}",
@@ -319,6 +344,9 @@ impl TuiApp {
             }
             if plan.restores_branch() {
                 rows.push("La rama volverá a su commit anterior".into());
+            }
+            if let Some((number, id)) = plan.mainline() {
+                rows.push(format!("Padre principal {number} · {id}"));
             }
             let count = usize::from(height.saturating_sub(4))
                 .saturating_sub(rows.len())
@@ -346,6 +374,9 @@ impl TuiApp {
             ]);
             if let Some(result) = plan.result() {
                 rows.push(format!("Resultado · {result}"));
+            }
+            if let Some((number, id)) = plan.mainline() {
+                rows.push(format!("Padre principal {number} · {id}"));
             }
             let count = usize::from(height.saturating_sub(4))
                 .saturating_sub(rows.len())
@@ -395,15 +426,17 @@ impl TuiApp {
             } else if plan.can_apply() {
                 if view.can_return_to_merge_choices() {
                     "F2 confirma · Esc vuelve a resoluciones"
+                } else if view.can_return_to_mainline() {
+                    "F2 confirma · Esc vuelve a elegir padre"
                 } else {
                     "↑↓ archivos · F2 confirma · Esc cancela"
                 }
             } else if plan.rows.is_empty() {
                 "Esc vuelve"
             } else if view.all_merge_choices_saved() {
-                "Intro abre · F2 revisa el resultado · Esc aborta borrador"
+                "Intro abre · F2 revisa el resultado · Esc vuelve"
             } else {
-                "↑↓ selecciona · Intro abre conflicto · Esc aborta borrador"
+                "↑↓ selecciona · Intro abre conflicto · Esc vuelve"
             }
         } else if let Some(plan) = view.branch_switch_review() {
             rows.extend([

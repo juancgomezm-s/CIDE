@@ -4,7 +4,7 @@ use super::{Change, Context, Error, Identity, Limits, controlled, engine, object
 use gix::bstr::ByteSlice;
 use std::{collections::BTreeMap, fmt, path::Path};
 
-const MAX_PARENTS: usize = 8;
+pub(super) const MAX_PARENTS: usize = 8;
 const MAX_DEPTH: usize = 128;
 const MAX_SOURCE_BYTES: usize = 4 * 1024 * 1024;
 

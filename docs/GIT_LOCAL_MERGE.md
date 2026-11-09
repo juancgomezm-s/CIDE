@@ -146,20 +146,27 @@ repositorios temporales en segundo plano.
 En **Git → Grafo**, abre la rama o etiqueta de origen desde **Referencias**.
 Selecciona el commit y pulsa **P** o el botón **Cherry-pick** de la GUI.
 **Intro** muestra el origen, la rama activa y las rutas que cambiarían.
-Confirma con **Ctrl+Intro** en la GUI o **F2** en la TUI.
+Si el commit es de fusión, primero elige el padre principal con **↑↓**
+o con el ratón en la GUI. Pulsa **Intro** para ver la diferencia respecto
+a ese padre. **Esc** permite volver a elegir antes de publicar. Confirma
+con **Ctrl+Intro** en la GUI o **F2** en la TUI.
 
-CIDE aplica únicamente la diferencia entre el commit elegido y su padre.
+CIDE aplica únicamente la diferencia entre el commit elegido y el padre
+principal. El selector admite hasta ocho padres y muestra sus identificadores
+en el orden del commit.
 Para un commit raíz, usa un árbol vacío como base. El resultado tiene un solo
 padre, el commit activo al revisar. Conserva el autor y el mensaje del origen
 y usa la identidad local para registrar quién publica. Si el resultado no
-cambia el árbol activo, no crea un commit vacío. Los commits con varios
-padres requieren un flujo de elección de padre principal que aún está pendiente.
+cambia el árbol activo, no crea un commit vacío.
 
 Si hay conflictos, usa las mismas vistas de **Base**, **Actual**, **Entrante**
-y **Resultado** de la fusión. Desde la lista de conflictos, **Esc** cierra
-el borrador sin escribir. Si la publicación confirmada se interrumpe después
-de empezar a escribir, pulsa **A** desde el grafo para revisar y confirmar el aborto, o
-vuelve a seleccionar el mismo commit para reanudar. La operación conserva los
+y **Resultado** de la fusión. Desde la lista de conflictos, **Esc** descarta
+el borrador sin escribir. Si habías elegido un padre, vuelve al selector.
+Si la publicación confirmada se interrumpe después de empezar a escribir,
+pulsa **A** desde el grafo para revisar y confirmar el aborto, o vuelve a
+seleccionar el mismo commit para reanudar. La reanudación usa el
+número y el identificador del padre que se guardaron al confirmar. La revisión
+del aborto también muestra ese padre. La operación conserva los
 cambios preparados y de trabajo ajenos a las rutas afectadas. Si detecta una
 edición posterior sobre una ruta que debe revertir, deja el registro y los
 respaldos disponibles.
@@ -172,3 +179,11 @@ verificó el aborto tras una escritura parcial. El núcleo comprobó el commit
 raíz, el delta seleccionado, la conservación del autor, mensaje y cambios
 preparados, y la recuperación tras publicar el índice. Las pruebas se
 ejecutaron en segundo plano con repositorios temporales.
+
+La elección del padre principal pasó formato, Clippy y 907 pruebas con
+el mismo comando. La GUI comprobó que el primer padre podía dar una revisión
+sin cambios, que era posible volver y elegir el segundo, y que la revisión
+de un conflicto conservaba esa elección. La TUI comprobó el aborto tras una
+escritura parcial. El núcleo verificó que cada padre producía un delta
+distinto, rechazó el cambio de padre mientras había una operación pendiente
+y restauró el archivo, el índice y la rama tras interrumpir el propio aborto.

@@ -1,7 +1,7 @@
 //! Read-only three-way planning and recoverable local publication.
 use crate::{
     Change, Context, Error, Identity, Limits,
-    branch_checkout::{Checkout, Journal, MergeCheckout, Transition},
+    branch_checkout::{Checkout, Journal, Mainline, MergeCheckout, Transition},
     branch_switch::{capture_head, direct_branch, name_text, open_for_switch},
     commit_write, controlled,
     diff_model::{DiffLimits, DiffModel, DiffSide, DiffStatus},
@@ -40,6 +40,7 @@ pub enum MergeKind {
     FastForward,
     Commit,
     Conflicts,
+    ChooseMainline,
 }
 
 impl MergeKind {
@@ -49,6 +50,7 @@ impl MergeKind {
             Self::FastForward => "Avance directo de la rama activa",
             Self::Commit => "Commit de fusión con dos padres",
             Self::Conflicts => "Conflictos por resolver · borrador de fusión",
+            Self::ChooseMainline => "Elige el padre principal",
         }
     }
 }
@@ -145,23 +147,30 @@ pub enum MergeResolution {
 #[derive(Clone)]
 enum Source {
     Branch(FullName),
-    CherryPick(String),
+    CherryPick(String, Option<Mainline>),
 }
 
 impl Source {
     fn label(&self) -> &str {
         match self {
             Self::Branch(name) => &name_text(name)[HEADS.len()..],
-            Self::CherryPick(id) => id,
+            Self::CherryPick(id, _) => id,
         }
     }
 
     fn is_cherry_pick(&self) -> bool {
-        matches!(self, Self::CherryPick(_))
+        matches!(self, Self::CherryPick(..))
+    }
+
+    fn mainline(&self) -> Option<Mainline> {
+        match self {
+            Self::CherryPick(_, mainline) => *mainline,
+            Self::Branch(_) => None,
+        }
     }
 }
 
-/// Identity of the reviewed conflict set, independent of the frontend draft.
+/// Identity of a reviewed integration, independent of the frontend draft.
 pub struct MergeReview {
     repository: Identity,
     limits: Limits,
@@ -177,6 +186,7 @@ pub struct MergePlan {
     pub kind: MergeKind,
     pub rows: Vec<MergeRow>,
     conflicts: BTreeMap<Vec<u8>, MergeConflict>,
+    mainline_choices: Vec<ObjectId>,
     repository: Identity,
     limits: Limits,
     active: FullName,
@@ -207,6 +217,7 @@ impl MergePlan {
             match self.kind {
                 MergeKind::UpToDate => "Sin cambios que aplicar",
                 MergeKind::Conflicts => "Conflictos por resolver · borrador de cherry-pick",
+                MergeKind::ChooseMainline => self.kind.label(),
                 _ => "Se creará un commit con los cambios seleccionados",
             }
         } else {
@@ -228,18 +239,42 @@ impl MergePlan {
     pub fn conflict(&self, path: &[u8]) -> Option<&MergeConflict> {
         self.conflicts.get(path)
     }
+    pub fn mainline_choices(&self) -> &[ObjectId] {
+        &self.mainline_choices
+    }
+    pub fn mainline(&self) -> Option<(usize, ObjectId)> {
+        self.source
+            .mainline()
+            .map(|parent| (parent.number, parent.id))
+    }
+    pub fn mainline_review(&self, index: usize) -> Option<MergeReview> {
+        let id = *self.mainline_choices.get(index)?;
+        let mut review = self.review_identity();
+        review.source = Source::CherryPick(
+            self.incoming().into(),
+            Some(Mainline {
+                number: index + 1,
+                id,
+            }),
+        );
+        Some(review)
+    }
     pub fn resolution_review(&self) -> Option<MergeReview> {
         (!self.conflicts.is_empty() && self.conflicts.values().all(MergeConflict::can_resolve))
-            .then(|| MergeReview {
-                repository: self.repository.clone(),
-                limits: self.limits,
-                active: self.active.clone(),
-                source: self.source.clone(),
-                from: self.from,
-                theirs: self.theirs,
-                head_file: self.head_file.clone(),
-                index: self.index.clone(),
-            })
+            .then(|| self.review_identity())
+    }
+
+    fn review_identity(&self) -> MergeReview {
+        MergeReview {
+            repository: self.repository.clone(),
+            limits: self.limits,
+            active: self.active.clone(),
+            source: self.source.clone(),
+            from: self.from,
+            theirs: self.theirs,
+            head_file: self.head_file.clone(),
+            index: self.index.clone(),
+        }
     }
 }
 
@@ -790,12 +825,23 @@ pub fn prepare_cherry_pick(
     let theirs = ObjectId::from_hex(commit.as_bytes()).map_err(engine)?;
     prepare(
         root,
-        Source::CherryPick(theirs.to_string()),
+        Source::CherryPick(theirs.to_string(), None),
         theirs,
         limits,
         None,
         cancelled,
     )
+}
+
+/// Review the delta against the selected parent of a merge commit.
+pub fn prepare_cherry_pick_mainline(
+    review: MergeReview,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    if review.source.mainline().is_none() {
+        return Err(Error::Stale);
+    }
+    prepare_review(&review, None, cancelled)
 }
 
 /// Build a fresh publication preview from explicit choices for all reviewed paths.
@@ -804,22 +850,32 @@ pub fn prepare_resolved_merge(
     choices: BTreeMap<Vec<u8>, MergeResolution>,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<MergePlan, Error> {
+    prepare_review(&review, Some(choices), cancelled)
+}
+
+type Resolutions = BTreeMap<Vec<u8>, MergeResolution>;
+
+fn prepare_review(
+    review: &MergeReview,
+    choices: Option<Resolutions>,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
     prepare(
         &review.repository.root,
         review.source.clone(),
         review.theirs,
         review.limits,
-        Some((&review, choices)),
+        Some((review, choices)),
         cancelled,
     )
 }
 
 fn prepare(
     root: &Path,
-    source: Source,
+    mut source: Source,
     theirs: ObjectId,
     limits: Limits,
-    resolution: Option<(&MergeReview, BTreeMap<Vec<u8>, MergeResolution>)>,
+    review: Option<(&MergeReview, Option<Resolutions>)>,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<MergePlan, Error> {
     if !cfg!(windows) {
@@ -863,10 +919,16 @@ fn prepare(
                     journal.destination
                 )));
             }
+            if let Source::CherryPick(_, parent) = &mut source {
+                if parent.is_some() && *parent != journal.mainline {
+                    return Err(Error::Stale);
+                }
+                *parent = journal.mainline;
+            }
         }
         let from = pending.as_ref().map_or(head, |journal| journal.from);
         let (index, index_bytes) = local_pair::index_capture(&repo, &repository.git_dir, ctx)?;
-        if let Some((review, _)) = &resolution {
+        if let Some((review, _)) = &review {
             index_write::same_repository(&review.repository, &repository)?;
             if pending.is_some()
                 || active != review.active
@@ -877,6 +939,7 @@ fn prepare(
                 return Err(Error::Stale);
             }
         }
+        let resolution = review.and_then(|(_, choices)| choices);
         let state = local_pair::decode_index(&repo, index_bytes.as_deref(), ctx)?;
         if state.entries().iter().any(|entry| entry.stage_raw() != 0) {
             return Err(Error::Unmerged);
@@ -887,6 +950,7 @@ fn prepare(
             kind: MergeKind::UpToDate,
             rows: Vec::new(),
             conflicts: BTreeMap::new(),
+            mainline_choices: Vec::new(),
             repository,
             limits,
             active,
@@ -903,18 +967,32 @@ fn prepare(
         };
         let picked = if plan.is_cherry_pick() {
             let commit = revision::commit(&repo, theirs, limits, &mut Budget::new(limits), ctx)?;
-            if commit.limited || commit.parents.len() > 1 {
-                return Err(Error::Engine(
-                    "El cherry-pick de un commit de fusión requiere elegir un padre principal"
-                        .into(),
-                ));
+            if commit.limited {
+                return Err(Error::Limited);
+            }
+            if commit.parents.len() > 1 && plan.source.mainline().is_none() {
+                if pending.is_some() || resolution.is_some() {
+                    return Err(Error::Stale);
+                }
+                plan.kind = MergeKind::ChooseMainline;
+                plan.mainline_choices = commit.parents;
+                return Ok(plan);
             }
             Some(commit)
         } else {
             None
         };
         let common = if let Some(commit) = &picked {
-            commit.parents.first().copied()
+            if let Some(parent) = plan.source.mainline() {
+                if commit.parents.len() < 2
+                    || commit.parents.get(parent.number - 1) != Some(&parent.id)
+                {
+                    return Err(Error::Stale);
+                }
+                Some(parent.id)
+            } else {
+                commit.parents.first().copied()
+            }
         } else {
             Some(base(&repo, from, theirs, limits, ctx)?)
         };
@@ -999,7 +1077,7 @@ fn prepare(
                 }
                 (journal.to, commit.tree, stored, BTreeMap::new())
             } else {
-                if let Some((_, mut choices)) = resolution {
+                if let Some(mut choices) = resolution {
                     if conflicts.is_empty() || choices.len() != conflicts.len() {
                         return Err(Error::Stale);
                     }
@@ -1123,6 +1201,7 @@ fn prepare(
                 merge: Some(MergeCheckout {
                     incoming: theirs,
                     cherry_pick: plan.is_cherry_pick(),
+                    mainline: plan.source.mainline(),
                     entries: &entries,
                     blobs: &blobs,
                 }),

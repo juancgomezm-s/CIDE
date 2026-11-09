@@ -10,8 +10,9 @@ pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
 use jc_git::local_merge::{
-    apply_merge, apply_merge_abort, prepare_cherry_pick, prepare_merge, prepare_merge_abort,
-    prepare_resolved_merge, MergeAbortPlan, MergeKind, MergePlan,
+    apply_merge, apply_merge_abort, prepare_cherry_pick, prepare_cherry_pick_mainline,
+    prepare_merge, prepare_merge_abort, prepare_resolved_merge, MergeAbortPlan, MergeKind,
+    MergePlan,
 };
 use jc_git::local_pair::SourceIdentity;
 pub use jc_git::ref_write::RefKind;
@@ -148,6 +149,7 @@ pub struct CommitView {
     review: Option<WritePlan>,
     merge_draft: MergeDraft,
     saved_merge_review: Option<Box<MergePlan>>,
+    saved_mainline_review: Option<Box<MergePlan>>,
 }
 
 impl CommitView {
@@ -228,6 +230,13 @@ impl CommitView {
     pub fn merge_conflicts(&self) -> Option<&MergePlan> {
         self.merge_review()
             .filter(|plan| plan.kind == MergeKind::Conflicts)
+    }
+    pub fn choosing_mainline(&self) -> Option<&MergePlan> {
+        self.merge_review()
+            .filter(|plan| plan.kind == MergeKind::ChooseMainline)
+    }
+    pub fn can_return_to_mainline(&self) -> bool {
+        self.saved_mainline_review.is_some()
     }
     pub fn merge_abort_review(&self) -> Option<&MergeAbortPlan> {
         match &self.review {
@@ -365,6 +374,7 @@ impl CommitController {
                 review: None,
                 merge_draft: MergeDraft::default(),
                 saved_merge_review: None,
+                saved_mainline_review: None,
             });
         }
     }
@@ -516,6 +526,16 @@ impl CommitController {
             view.error = None;
             return true;
         }
+        if let Some(plan) = view.saved_mainline_review.take() {
+            view.first = view
+                .merge_review()
+                .and_then(MergePlan::mainline)
+                .map_or(0, |(number, _)| number - 1);
+            view.review = Some(WritePlan::Merge(plan));
+            view.merge_draft = MergeDraft::default();
+            view.error = None;
+            return true;
+        }
         false
     }
 
@@ -537,13 +557,28 @@ impl CommitController {
             .review()
             .map(|plan| plan.files().len())
             .or_else(|| view.branch_switch_review().map(|plan| plan.files().len()))
-            .or_else(|| view.merge_review().map(|plan| plan.rows.len()))
+            .or_else(|| {
+                view.merge_review()
+                    .map(|plan| plan.rows.len().max(plan.mainline_choices().len()))
+            })
             .or_else(|| view.merge_abort_review().map(|plan| plan.rows.len()))
             .unwrap_or(0);
         view.first = view
             .first
             .saturating_add_signed(delta)
             .min(count.saturating_sub(1));
+    }
+
+    pub fn select_mainline(&mut self, index: usize) {
+        if self.busy() {
+            return;
+        }
+        if let Some(view) = self.view.as_mut().filter(|view| {
+            view.choosing_mainline()
+                .is_some_and(|plan| index < plan.mainline_choices().len())
+        }) {
+            view.first = index;
+        }
     }
 
     pub fn submit(&mut self, bench: &Workbench, root: Option<&Path>) {
@@ -557,6 +592,14 @@ impl CommitController {
             self.cancel();
             return;
         }
+        let mainline = if let Some(plan) = view.choosing_mainline() {
+            let Some(review) = plan.mainline_review(view.first) else {
+                return;
+            };
+            Some(review)
+        } else {
+            None
+        };
         let resolution = if let Some(plan) = view.merge_conflicts() {
             if view.merge_file().is_some() || !view.all_merge_choices_saved() {
                 return;
@@ -565,7 +608,7 @@ impl CommitController {
                 return;
             };
             Some((review, view.merge_draft.choices.clone()))
-        } else if view.merge_review().is_some_and(|plan| !plan.can_apply()) {
+        } else if mainline.is_none() && view.merge_review().is_some_and(|plan| !plan.can_apply()) {
             return;
         } else {
             None
@@ -576,9 +619,10 @@ impl CommitController {
         }
         view.error = None;
         view.input_token = Arc::new(());
-        let plan = if resolution.is_some() {
+        let plan = if resolution.is_some() || mainline.is_some() {
             None
         } else {
+            view.saved_mainline_review = None;
             view.review.take()
         };
         let applying = plan.is_some();
@@ -596,6 +640,12 @@ impl CommitController {
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let cancelled = || stop.load(Ordering::Acquire);
+                    if let Some(review) = mainline {
+                        return Completion::Review(
+                            prepare_cherry_pick_mainline(review, cancelled)
+                                .map(|plan| WritePlan::Merge(Box::new(plan))),
+                        );
+                    }
                     if let Some((review, choices)) = resolution {
                         return Completion::Review(
                             prepare_resolved_merge(review, choices, cancelled)
@@ -775,8 +825,12 @@ impl CommitController {
         };
         match result {
             Completion::Review(Ok(plan)) => {
-                if let Some(WritePlan::Merge(conflicts)) = view.review.replace(plan) {
-                    view.saved_merge_review = Some(conflicts);
+                if let Some(WritePlan::Merge(previous)) = view.review.replace(plan) {
+                    if previous.kind == MergeKind::ChooseMainline {
+                        view.saved_mainline_review = Some(previous);
+                    } else {
+                        view.saved_merge_review = Some(previous);
+                    }
                 }
                 view.first = 0;
             }
