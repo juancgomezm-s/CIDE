@@ -399,6 +399,38 @@ mod tests {
             state.status
         );
         assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
+        assert_eq!(fs::read(&source).unwrap(), b"segundo padre\n");
+
+        run(&["read-tree", &merge]);
+        fs::write(&source, b"primer padre\n").unwrap();
+        wait(&mut state, |s| s.git_revision.graph().is_some());
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(b'R' as usize);
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama lateral"))
+            .unwrap();
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'C' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let review = view
+            .branch_switch_review()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(review.files()[0].path(), b"merge.txt");
+        assert_eq!(fs::read(&source).unwrap(), b"primer padre\n");
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert_eq!(
+            fs::read(&head).unwrap(),
+            b"ref: refs/heads/lateral\n",
+            "{}",
+            state.status
+        );
         assert_eq!(fs::read(source).unwrap(), b"segundo padre\n");
     }
 

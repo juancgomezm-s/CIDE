@@ -41,6 +41,7 @@ pub struct GraphReference {
     pub label: String,
     pub(crate) oid: String,
     write: Option<ReferenceTarget>,
+    active: bool,
 }
 
 pub struct CommitGraph {
@@ -71,7 +72,17 @@ impl CommitGraph {
         self.references.len() + 1
     }
     pub fn reference_write_target(&self, row: usize) -> Option<&ReferenceTarget> {
-        self.references.get(row.checked_sub(1)?)?.write.as_ref()
+        let reference = self.references.get(row.checked_sub(1)?)?;
+        (!reference.active)
+            .then_some(reference.write.as_ref())
+            .flatten()
+    }
+    pub fn branch_switch_target(&self, row: usize) -> Option<&ReferenceTarget> {
+        self.references
+            .get(row.checked_sub(1)?)?
+            .write
+            .as_ref()
+            .filter(|target| target.kind == WriteRefKind::Branch)
     }
     pub fn has_next(&self) -> bool {
         self.next.is_some()
@@ -144,7 +155,7 @@ impl CommitGraph {
                         let name = entry.name.strip_prefix(prefix)?;
                         let active = matches!(&page.head, Some(Head::Attached { name, .. } | Head::Unborn { name }) if name == &entry.name);
                         let write = match entry.kind {
-                            RefKind::LocalBranch if !active => Some(WriteRefKind::Branch),
+                            RefKind::LocalBranch => Some(WriteRefKind::Branch),
                             RefKind::Tag => Some(WriteRefKind::Tag),
                             _ => None,
                         }
@@ -161,6 +172,7 @@ impl CommitGraph {
                             label: format!("{kind} {name}"),
                             oid: oid.clone(),
                             write,
+                            active,
                         })
                     })
                     .collect::<Arc<[_]>>()

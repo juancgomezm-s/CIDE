@@ -57,10 +57,13 @@ impl TuiApp {
     }
 
     fn graph_branch_target(&self, row: usize) -> Option<&jc_app::git_commit::ReferenceTarget> {
-        cfg!(windows)
-            .then(|| self.graph_write_target(row))
-            .flatten()
-            .filter(|target| target.kind == jc_app::git_commit::RefKind::Branch)
+        if !cfg!(windows)
+            || self.git_revision.state() != jc_app::git_revision::GitRevisionState::Ready
+            || self.git_index.state() == jc_app::git_index::IndexState::Applying
+        {
+            return None;
+        }
+        self.git_revision.graph()?.branch_switch_target(row)
     }
 
     pub(super) fn handle_git_graph_key(&mut self, key: KeyEvent) -> bool {

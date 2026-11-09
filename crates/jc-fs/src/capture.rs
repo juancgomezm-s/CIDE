@@ -143,6 +143,34 @@ impl PendingExistingFile {
             Err(ReplaceError::Io(io::ErrorKind::Unsupported.into()))
         }
     }
+
+    /// Move the reviewed original to an explicit backup. Publish the staged
+    /// replacement if requested. Both destination names are create-only.
+    pub fn publish_checkout(self, backup: &Path, replace: bool) -> Result<(), ReplaceError> {
+        #[cfg(windows)]
+        {
+            self.inner.publish_checkout(backup, replace)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (backup, replace);
+            Err(ReplaceError::Io(io::ErrorKind::Unsupported.into()))
+        }
+    }
+}
+
+pub fn create_missing_parents(
+    root: &Path,
+    expected: &MissingToken,
+    cancelled: &mut dyn FnMut() -> bool,
+) -> io::Result<()> {
+    #[cfg(windows)]
+    return windows::create_missing_parents(root, expected, cancelled);
+    #[cfg(not(windows))]
+    {
+        let _ = (root, expected, cancelled);
+        Err(io::ErrorKind::Unsupported.into())
+    }
 }
 
 /// Stage a replacement of the same single-link file and exact reviewed bytes.
@@ -780,7 +808,7 @@ mod windows {
     }
 
     impl PendingExistingFile {
-        fn preserve_original(&self) -> io::Result<PathBuf> {
+        fn validate_original(&self) -> io::Result<()> {
             let target = &self.replacement.target;
             if state(&self.original)? != self.expected || final_path(&self.original)? != *target {
                 return Err(changed());
@@ -790,6 +818,12 @@ mod windows {
             if final_path(&self.backup_handle)? != self.backup_dir {
                 return Err(changed());
             }
+            Ok(())
+        }
+
+        fn preserve_original(&self) -> io::Result<PathBuf> {
+            self.validate_original()?;
+            let target = &self.replacement.target;
             let name: String = target
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -820,15 +854,38 @@ mod windows {
             self,
             publish: impl FnOnce(&mut PendingMissingFile) -> io::Result<()>,
         ) -> Result<PathBuf, ReplaceError> {
-            let mut this = self;
-            let backup = this.preserve_original().map_err(ReplaceError::Io)?;
-            match publish(&mut this.replacement) {
+            let backup = self.preserve_original().map_err(ReplaceError::Io)?;
+            self.finish_replacement(backup, publish)
+        }
+
+        pub(super) fn publish_checkout(
+            self,
+            backup: &Path,
+            replace: bool,
+        ) -> Result<(), ReplaceError> {
+            if backup.parent() != Some(self.backup_dir.as_path()) {
+                return Err(ReplaceError::Io(excluded()));
+            }
+            self.validate_original().map_err(ReplaceError::Io)?;
+            rename_new(&self.original, backup).map_err(ReplaceError::Io)?;
+            if replace {
+                self.finish_replacement(backup.to_path_buf(), PendingMissingFile::publish)?;
+            }
+            Ok(())
+        }
+
+        fn finish_replacement(
+            mut self,
+            backup: PathBuf,
+            publish: impl FnOnce(&mut PendingMissingFile) -> io::Result<()>,
+        ) -> Result<PathBuf, ReplaceError> {
+            match publish(&mut self.replacement) {
                 Ok(()) => Ok(backup),
                 Err(error) => {
-                    if this
+                    if self
                         .replacement
                         .check_dirs()
-                        .and_then(|()| rename_new(&this.original, &this.replacement.target))
+                        .and_then(|()| rename_new(&self.original, &self.replacement.target))
                         .is_ok()
                     {
                         Err(ReplaceError::Io(error))
@@ -837,6 +894,45 @@ mod windows {
                     }
                 }
             }
+        }
+    }
+
+    pub(super) fn create_missing_parents(
+        root: &Path,
+        expected: &MissingToken,
+        cancelled: &mut dyn FnMut() -> bool,
+    ) -> io::Result<()> {
+        validate_write_path(root, &expected.path)?;
+        let mut previous: Option<MissingToken> = None;
+        loop {
+            let pinned = capture_with_handles(
+                root,
+                &expected.path,
+                0,
+                CaptureAccess::PublishMissing,
+                cancelled,
+            )?;
+            let Capture::Absent { token } = pinned.capture else {
+                return Err(changed());
+            };
+            if previous.as_ref().is_some_and(|prior| {
+                !token.missing_at.starts_with(&prior.missing_at)
+                    || token.missing_at == prior.missing_at
+                    || token.ancestors.len() < prior.ancestors.len()
+                    || !token
+                        .ancestors
+                        .iter()
+                        .zip(&prior.ancestors)
+                        .all(|(current, old)| current.identity == old.identity)
+            }) || previous.is_none() && !token.same_location_as(expected)
+            {
+                return Err(changed());
+            }
+            if token.is_leaf() {
+                return Ok(());
+            }
+            std::fs::create_dir(&token.missing_at)?;
+            previous = Some(token);
         }
     }
 

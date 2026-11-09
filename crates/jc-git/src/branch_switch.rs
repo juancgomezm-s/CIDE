@@ -1,7 +1,11 @@
-//! Reviewed branch switch when the current and destination commits share a tree.
+//! Reviewed branch switch over pinned references and a recoverable worktree plan.
 
+pub use crate::branch_checkout::CheckoutFile;
+pub(super) use crate::branch_checkout::JOURNAL_NAME;
 use crate::{
-    Context, Error, Identity, Limits, commit_write, controlled, engine, graph, index_write,
+    Context, Error, Identity, Limits,
+    branch_checkout::{Checkout, Journal, Transition},
+    commit_write, controlled, engine, graph, index_write,
     local_pair::{self, IndexToken},
     ref_write::{self, RefKind},
     revision::{self, Budget},
@@ -31,9 +35,12 @@ pub struct BranchSwitchPlan {
     source_target: ObjectId,
     target: ObjectId,
     tree: ObjectId,
+    target_tree: ObjectId,
     head_file: jc_fs::FileToken,
     index: IndexToken,
     write_reflog: bool,
+    checkout: Option<Checkout>,
+    completed: bool,
 }
 
 impl BranchSwitchPlan {
@@ -52,6 +59,18 @@ impl BranchSwitchPlan {
     pub fn target(&self) -> ObjectId {
         self.target
     }
+
+    pub fn files(&self) -> &[CheckoutFile] {
+        self.checkout
+            .as_ref()
+            .map_or(&[], |checkout| checkout.files.as_slice())
+    }
+
+    pub fn recovering(&self) -> bool {
+        self.checkout
+            .as_ref()
+            .is_some_and(|checkout| checkout.resuming)
+    }
 }
 
 #[derive(Debug)]
@@ -68,7 +87,7 @@ fn name_text(name: &FullName) -> &str {
 }
 
 fn open_for_switch(root: &Path, ctx: &Context<'_>) -> Result<(gix::Repository, Identity), Error> {
-    let (repo, identity) = index_write::open_for_write(root, ctx)?;
+    let (repo, identity) = index_write::open_for_write_during_switch(root, ctx)?;
     for control in ["worktrees", "config.worktree", "BISECT_START"] {
         if index_write::exists(&identity.git_dir.join(control))? {
             return Err(Error::Engine(
@@ -126,8 +145,7 @@ fn commit_tree(
         .map(|id| id.detach())
 }
 
-/// Review a switch only if HEAD is attached to a local branch and the exact
-/// destination commit has the same tree. The index is pinned but left intact.
+/// Review a switch from an attached HEAD to an exact local branch tip.
 pub fn prepare_branch_switch(
     root: &Path,
     destination: &str,
@@ -154,7 +172,23 @@ pub fn prepare_branch_switch(
             .strip_prefix(HEADS.as_bytes())
             .and_then(|short| std::str::from_utf8(short).ok())
             .ok_or(Error::Unsupported)?;
-        let source = ref_write::reference_name(RefKind::Branch, source, limits)?;
+        let current = ref_write::reference_name(RefKind::Branch, source, limits)?;
+        let pending = Journal::read(&repository, ctx)?;
+        let source = if let Some(journal) = &pending {
+            let source = ref_write::reference_name(RefKind::Branch, &journal.source, limits)?;
+            if journal.destination != name_text(&destination)[HEADS.len()..]
+                || journal.to != target
+                || (current != source && current != destination)
+            {
+                return Err(Error::Engine(format!(
+                    "Hay un cambio pendiente. Vuelve a elegir la rama {} para recuperarlo",
+                    journal.destination
+                )));
+            }
+            source
+        } else {
+            current.clone()
+        };
         if ref_write::namespace_conflicts(source.as_bstr().as_bytes(), name_text(&destination)) {
             return Err(Error::Engine(
                 "Elige una rama distinta de la activa, con un nombre sin colisiones".into(),
@@ -165,14 +199,15 @@ pub fn prepare_branch_switch(
         }
         let source_target = direct_branch(&refs, &source)?;
         let tree = commit_tree(&repo, source_target, limits, ctx)?;
-        if tree != commit_tree(&repo, target, limits, ctx)? {
-            return Err(Error::Engine(
-                "La rama tiene otro árbol. Cambiar sus archivos requiere un flujo recuperable"
-                    .into(),
-            ));
+        let target_tree = commit_tree(&repo, target, limits, ctx)?;
+        if pending
+            .as_ref()
+            .is_some_and(|journal| journal.from != source_target || tree == target_tree)
+        {
+            return Err(Error::Stale);
         }
         revision::verified_tree(&repo, tree, limits, &mut budget, ctx)?;
-        let head_file = capture_head(&repository.git_dir, &source, ctx)?;
+        let head_file = capture_head(&repository.git_dir, &current, ctx)?;
         let (index, bytes) = local_pair::index_capture(&repo, &repository.git_dir, ctx)?;
         let state = local_pair::decode_index(&repo, bytes.as_deref(), ctx)?;
         if state.entries().iter().any(|entry| entry.stage_raw() != 0) {
@@ -182,6 +217,31 @@ pub fn prepare_branch_switch(
         if write_reflog {
             commit_write::local_identity(&repo)?;
         }
+        let completed = current == destination;
+        let checkout = if tree != target_tree {
+            let checkout = Checkout::prepare(
+                &repo,
+                &repository,
+                Transition {
+                    branches: (
+                        &name_text(&source)[HEADS.len()..],
+                        &name_text(&destination)[HEADS.len()..],
+                    ),
+                    commits: (source_target, target),
+                    trees: (tree, target_tree),
+                },
+                bytes.as_deref().ok_or(Error::Unsupported)?,
+                pending,
+                limits,
+                ctx,
+            )?;
+            if completed && !checkout.index_published(&index) {
+                return Err(Error::Stale);
+            }
+            Some(checkout)
+        } else {
+            None
+        };
         Ok(BranchSwitchPlan {
             repository,
             limits,
@@ -190,9 +250,12 @@ pub fn prepare_branch_switch(
             source_target,
             target,
             tree,
+            target_tree,
             head_file,
             index,
             write_reflog,
+            checkout,
+            completed,
         })
     })
 }
@@ -202,6 +265,25 @@ pub fn prepare_branch_switch(
 pub fn apply_branch_switch(
     plan: BranchSwitchPlan,
     mut cancelled: impl FnMut() -> bool,
+) -> Result<BranchSwitchPublication, Error> {
+    let recovery = plan.checkout.is_some();
+    let journal = plan.repository.git_dir.join(JOURNAL_NAME);
+    let destination = plan.destination().to_owned();
+    apply(&plan, &mut cancelled).map_err(|error| {
+        if recovery && journal.exists() {
+            Error::Engine(format!(
+                "{error}. Para reanudar, vuelve a elegir la rama {destination}. Registro en {}",
+                journal.display()
+            ))
+        } else {
+            error
+        }
+    })
+}
+
+fn apply(
+    plan: &BranchSwitchPlan,
+    cancelled: &mut impl FnMut() -> bool,
 ) -> Result<BranchSwitchPublication, Error> {
     let stop = AtomicBool::new(false);
     let reason = AtomicU8::new(0);
@@ -218,6 +300,11 @@ pub fn apply_branch_switch(
         }
     };
     let git = &plan.repository.git_dir;
+    let current = if plan.completed {
+        &plan.destination
+    } else {
+        &plan.source
+    };
     let hold = |name: &str, boundary| {
         Marker::acquire_to_hold_resource(git.join(name), Fail::Immediately, boundary, 0)
             .map_err(engine)
@@ -225,12 +312,15 @@ pub fn apply_branch_switch(
     check()?;
     let (repo, identity) = open_for_switch(&plan.repository.root, &ctx)?;
     index_write::same_repository(&plan.repository, &identity)?;
-    if capture_head(git, &plan.source, &ctx)? != plan.head_file
+    if capture_head(git, current, &ctx)? != plan.head_file
         || local_pair::index_capture(&repo, git, &ctx)?.0 != plan.index
     {
         return Err(Error::Stale);
     }
-    let _index = hold("index", None)?;
+    let mut index_lock = Some(
+        File::acquire_to_update_resource(git.join("index"), Fail::Immediately, None, 0)
+            .map_err(engine)?,
+    );
     let mut head = File::acquire_to_update_resource(git.join("HEAD"), Fail::Immediately, None, 0)
         .map_err(engine)?;
     let _config = hold("config", None)?;
@@ -245,23 +335,22 @@ pub fn apply_branch_switch(
     index_write::same_repository(&plan.repository, &identity)?;
     let mut budget = Budget::new(plan.limits);
     let (_, refs) = graph::references(&fresh, plan.limits, &mut budget, &ctx)?;
+    let (index_now, index_bytes) = local_pair::index_capture(&fresh, git, &ctx)?;
     if direct_branch(&refs, &plan.source)? != plan.source_target
         || direct_branch(&refs, &plan.destination)? != plan.target
-        || capture_head(git, &plan.source, &ctx)? != plan.head_file
-        || !local_pair::index_capture(&fresh, git, &ctx)?
-            .0
-            .matches_under_lock(&plan.index)
+        || capture_head(git, current, &ctx)? != plan.head_file
+        || !index_now.matches_under_lock(&plan.index)
         || (fresh.refs.write_reflog != WriteReflog::Disable) != plan.write_reflog
     {
         return Err(Error::Stale);
     }
     if commit_tree(&fresh, plan.source_target, plan.limits, &ctx)? != plan.tree
-        || commit_tree(&fresh, plan.target, plan.limits, &ctx)? != plan.tree
+        || commit_tree(&fresh, plan.target, plan.limits, &ctx)? != plan.target_tree
     {
         return Err(Error::Stale);
     }
     revision::verified_tree(&fresh, plan.tree, plan.limits, &mut budget, &ctx)?;
-    let reflog = if plan.write_reflog {
+    let reflog = if plan.write_reflog && !plan.completed {
         let line = gix::refs::log::Line {
             previous_oid: plan.source_target,
             new_oid: plan.target,
@@ -281,15 +370,59 @@ pub fn apply_branch_switch(
     } else {
         None
     };
-    writeln!(head, "ref: {destination}")?;
-    head.with_mut(|file| file.sync_all())?;
+    if !plan.completed {
+        writeln!(head, "ref: {destination}")?;
+        head.with_mut(|file| file.sync_all())?;
+    }
     check()?;
-    head.commit().map_err(|error| {
-        Error::Engine(format!(
-            "Cambio de rama incierto. Actualiza el repositorio antes de reintentar ({})",
-            engine(error)
-        ))
-    })?;
+    let mut index_again = None;
+    if let Some(checkout) = &plan.checkout {
+        checkout.validate(
+            &fresh,
+            &identity,
+            index_bytes.as_deref().ok_or(Error::Stale)?,
+            plan.limits,
+            &ctx,
+        )?;
+        if let Some(bytes) = &checkout.index_bytes {
+            let lock = index_lock.as_mut().ok_or(Error::Stale)?;
+            lock.write_all(bytes)?;
+            lock.with_mut(|file| file.sync_all())?;
+        }
+        check()?;
+        checkout.publish_files(&identity, plan.limits, &ctx, &mut check)?;
+        if checkout.index_bytes.is_some() {
+            check()?;
+            if local_pair::index_capture(&fresh, git, &ctx)?.0 != plan.index {
+                return Err(Error::Stale);
+            }
+            index_lock
+                .take()
+                .ok_or(Error::Stale)?
+                .commit()
+                .map_err(engine)?;
+            index_again = Some(hold("index", None)?);
+        }
+        if !checkout.index_published(&local_pair::index_capture(&fresh, git, &ctx)?.0) {
+            return Err(Error::Stale);
+        }
+    } else if Journal::read(&identity, &ctx)?.is_some() {
+        return Err(Error::Stale);
+    }
+    check()?;
+    if plan.completed {
+        plan.checkout
+            .as_ref()
+            .ok_or(Error::Stale)?
+            .finish(&identity, &ctx)?;
+    } else {
+        head.commit().map_err(|error| {
+            Error::Engine(format!(
+                "Cambio de rama incierto. Actualiza el repositorio antes de reintentar ({})",
+                engine(error)
+            ))
+        })?;
+    }
     let reflog_warning = reflog.and_then(|(log, before)| {
         let publish = || -> Result<(), Error> {
             // Publishing HEAD releases HEAD.lock. Reacquire it before touching
@@ -314,6 +447,14 @@ pub fn apply_branch_switch(
             )
         })
     });
+    if !plan.completed
+        && let Some(checkout) = &plan.checkout
+    {
+        let _head = hold("HEAD", None)?;
+        capture_head(git, &plan.destination, &ctx)?;
+        checkout.finish(&identity, &ctx)?;
+    }
+    drop(index_again);
     Ok(BranchSwitchPublication {
         source: plan.source().to_owned(),
         destination: plan.destination().to_owned(),

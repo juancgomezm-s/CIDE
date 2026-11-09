@@ -972,7 +972,7 @@ mod tests {
         }
 
         #[test]
-        fn rejects_different_trees_symbolic_destinations_and_other_worktrees() {
+        fn rejects_switch_without_index_symbolic_destinations_and_other_worktrees() {
             let fixture = Fixture::new();
             let (repo, source, target) = setup(&fixture);
             let git = fixture.git();
@@ -992,9 +992,10 @@ mod tests {
             let different = commit_at_tree(&repo, tree, &[source], "cambia");
             let dest = git.join("refs/heads/destino");
             fs::write(&dest, format!("{different}\n")).unwrap();
-            assert!(
-                matches!(review(&fixture, different), Err(Error::Engine(message)) if message.contains("otro árbol"))
-            );
+            assert!(matches!(
+                review(&fixture, different),
+                Err(Error::Unsupported)
+            ));
             fs::write(&dest, b"ref: refs/heads/activa\n").unwrap();
             assert!(matches!(review(&fixture, source), Err(Error::Unsupported)));
             fs::write(&dest, format!("{target}\n")).unwrap();
@@ -1005,6 +1006,148 @@ mod tests {
                 b"ref: refs/heads/activa\n"
             );
             assert!(!git.join("logs/HEAD").exists());
+        }
+
+        #[test]
+        fn switches_different_trees_and_resumes_after_worktree_and_index_publication() {
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            let fixture = Fixture::new();
+            let (repo, _, _) = setup(&fixture);
+            let git = fixture.git();
+            let blob = |bytes: &[u8]| repo.write_blob(bytes).unwrap().detach();
+            let old = blob(b"antes\r\n");
+            let new = blob(b"despues\r\n");
+            let removed = blob(b"se retira");
+            let added = blob(b"ruta nueva\xff");
+            let staged = blob(b"cambio preparado independiente");
+            let rules = b"* -text\nnueva/c.txt text eol=lf\nconvertir.txt text eol=crlf\n";
+            let attributes = blob(rules);
+            let entry = |name: &str, kind: EntryKind, oid| Entry {
+                filename: name.into(),
+                mode: kind.into(),
+                oid,
+            };
+            let write_tree = |entries| repo.write_object(Tree { entries }).unwrap().detach();
+            let old_tree = write_tree(vec![
+                entry(".gitattributes", EntryKind::Blob, attributes),
+                entry("a.txt", EntryKind::Blob, old),
+                entry("b.txt", EntryKind::Blob, removed),
+            ]);
+            let sub = write_tree(vec![entry("c.txt", EntryKind::Blob, added)]);
+            let new_tree = write_tree(vec![
+                entry(".gitattributes", EntryKind::Blob, attributes),
+                entry("a.txt", EntryKind::Blob, new),
+                entry("nueva", EntryKind::Tree, sub),
+            ]);
+            let source = commit_at_tree(&repo, old_tree, &[], "antes");
+            let target = commit_at_tree(&repo, new_tree, &[source], "después");
+            fs::write(git.join("refs/heads/activa"), format!("{source}\n")).unwrap();
+            fs::write(git.join("refs/heads/destino"), format!("{target}\n")).unwrap();
+            let mut state = gix::index::State::new(repo.object_hash());
+            for (name, id) in [
+                (b".gitattributes".as_slice(), attributes),
+                (b"a.txt".as_slice(), old),
+                (b"b.txt", removed),
+                (b"local", staged),
+            ] {
+                state.dangerously_push_entry(
+                    Default::default(),
+                    id,
+                    gix::index::entry::Flags::empty(),
+                    gix::index::entry::Mode::FILE,
+                    name.as_bstr(),
+                );
+            }
+            let index = git.join("index");
+            gix::index::File::from_state(state, index.clone())
+                .write(Default::default())
+                .unwrap();
+            let original_index = fs::read(&index).unwrap();
+            let a = fixture.root.join("a.txt");
+            let b = fixture.root.join("b.txt");
+            let c = fixture.root.join("nueva/c.txt");
+            let local = fixture.root.join("local");
+            let journal = git.join(crate::branch_switch::JOURNAL_NAME);
+            fs::write(fixture.root.join(".gitattributes"), b"* text eol=crlf\n").unwrap();
+            fs::write(&a, b"cambio local").unwrap();
+            fs::write(&b, b"se retira").unwrap();
+            fs::write(&local, b"cambio no preparado independiente").unwrap();
+            assert!(matches!(review(&fixture, target), Err(Error::Filter)));
+            fs::write(fixture.root.join(".gitattributes"), rules).unwrap();
+            assert!(review(&fixture, target).is_err());
+            assert!(!journal.exists());
+            fs::write(&a, b"antes\r\n").unwrap();
+            let conversion_tree = write_tree(vec![
+                entry(".gitattributes", EntryKind::Blob, attributes),
+                entry("a.txt", EntryKind::Blob, old),
+                entry("b.txt", EntryKind::Blob, removed),
+                entry("convertir.txt", EntryKind::Blob, blob(b"contenido\n")),
+            ]);
+            let conversion = commit_at_tree(&repo, conversion_tree, &[source], "conversión");
+            let destination = git.join("refs/heads/destino");
+            fs::write(&destination, format!("{conversion}\n")).unwrap();
+            assert!(matches!(review(&fixture, conversion), Err(Error::Filter)));
+            fs::write(destination, format!("{target}\n")).unwrap();
+            let plan = review(&fixture, target).unwrap();
+            assert_eq!(
+                plan.files().iter().map(|f| f.change()).collect::<Vec<_>>(),
+                vec![
+                    crate::Change::Modified,
+                    crate::Change::Deleted,
+                    crate::Change::Added
+                ]
+            );
+            assert_eq!(fs::read(&a).unwrap(), b"antes\r\n");
+            assert!(
+                apply_branch_switch(plan, || fs::read(&a).is_ok_and(|b| b == b"despues\r\n"))
+                    .is_err()
+            );
+            assert!(journal.is_file());
+            assert_eq!(fs::read(&index).unwrap(), original_index);
+            assert!(b.is_file() && !c.exists());
+            fs::write(&b, b"edicion posterior al fallo").unwrap();
+            assert!(review(&fixture, target).is_err());
+            assert_eq!(fs::read(&b).unwrap(), b"edicion posterior al fallo");
+            fs::write(&b, b"se retira").unwrap();
+            let plan = review(&fixture, target).unwrap();
+            assert!(plan.recovering());
+            assert!(
+                apply_branch_switch(plan, || fs::read(&index).is_ok_and(|b| b != original_index))
+                    .is_err()
+            );
+            assert_eq!(
+                fs::read(git.join("HEAD")).unwrap(),
+                b"ref: refs/heads/activa\n"
+            );
+            assert!(journal.is_file());
+            let saved_journal = fs::read(&journal).unwrap();
+            let plan = review(&fixture, target).unwrap();
+            apply_branch_switch(plan, || false).unwrap();
+            assert!(!journal.exists());
+            assert_eq!(fs::read(&a).unwrap(), b"despues\r\n");
+            assert!(!b.exists());
+            assert_eq!(fs::read(c).unwrap(), b"ruta nueva\xff");
+            assert_eq!(
+                fs::read(local).unwrap(),
+                b"cambio no preparado independiente"
+            );
+            let switched = repo.open_index().unwrap();
+            assert_eq!(
+                switched.entry_by_path(b"local".as_bstr()).unwrap().id,
+                staged
+            );
+            assert_eq!(switched.entry_by_path(b"a.txt".as_bstr()).unwrap().id, new);
+            assert!(switched.entry_by_path(b"b.txt".as_bstr()).is_none());
+            assert_eq!(
+                fs::read(git.join("HEAD")).unwrap(),
+                b"ref: refs/heads/destino\n"
+            );
+            fs::write(&journal, saved_journal).unwrap();
+            apply_branch_switch(review(&fixture, target).unwrap(), || false).unwrap();
+            assert!(!journal.exists());
         }
 
         #[test]

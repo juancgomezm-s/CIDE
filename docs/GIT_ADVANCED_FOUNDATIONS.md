@@ -133,8 +133,9 @@ interrupción entre los dos movimientos, el respaldo queda en `.git`.
 El flujo admite un archivo regular de modo 100644, sin conversiones de Git
 y sin enlaces físicos adicionales, dentro del mismo volumen del repositorio.
 
-Quedan pendientes el cambio entre ramas con árboles distintos, la integración
-de ramas y los remotos.
+El cambio de rama con vista previa y recuperación se describe en el
+[visor del grafo](G1_GRAPH_VIEW.md). Quedan pendientes la integración de ramas
+y los remotos.
 
 La validación local en Windows con Rust 1.88.0 pasó con
 `python scripts/check-local.py --steps fmt test clippy build demo`.

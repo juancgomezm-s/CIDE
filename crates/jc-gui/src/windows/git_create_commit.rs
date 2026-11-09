@@ -153,7 +153,7 @@ impl State {
                 } else if !outcome.reference {
                     self.git_revision.cancel();
                 }
-                if outcome.restore && outcome.result.is_ok() {
+                if outcome.refresh_files && outcome.result.is_ok() {
                     self.refresh_explorer();
                 }
                 self.schedule_git_status();
@@ -249,7 +249,11 @@ impl State {
             } else if self.git_commit.busy() {
                 view.pending_hint().into()
             } else if view.reviewing() {
-                if view.review().is_some() {
+                if view.review().is_some()
+                    || view
+                        .branch_switch_review()
+                        .is_some_and(|plan| !plan.files().is_empty())
+                {
                     "↑↓ recorrer archivos · Ctrl+Intro confirmar · Esc cancelar".into()
                 } else {
                     "Ctrl+Intro confirmar · Esc cancelar".into()
@@ -319,14 +323,48 @@ impl State {
         } else if let Some(plan) = view.branch_switch_review() {
             f.summary = vec![
                 format!("{} → {}", plan.source(), plan.destination()),
-                "El índice y los archivos de trabajo se conservan".into(),
+                if plan.files().is_empty() {
+                    "El índice y los archivos de trabajo se conservan".into()
+                } else {
+                    format!(
+                        "{} archivos afectados · originales respaldados en .git",
+                        plan.files().len()
+                    )
+                },
             ];
             f.details_top = p(132);
             f.details = vec![
                 format!("Commit de origen · {}", plan.source_target()),
                 format!("Commit de destino · {}", plan.target()),
             ];
-            ("Cambiar rama", 12)
+            let row_height = p(23).max(1);
+            let top = f.preview.top + p(194);
+            let count = ((f.preview.bottom - top) / row_height).clamp(0, 128) as usize;
+            let first = view.first.min(plan.files().len().saturating_sub(count));
+            for (row, file) in plan.files().iter().skip(first).take(count).enumerate() {
+                let y = top + row as i32 * row_height;
+                f.code.push(CodeRow {
+                    rect: rect(
+                        f.preview.left + p(12),
+                        y,
+                        f.preview.right - p(12),
+                        y + row_height,
+                    ),
+                    old: String::new(),
+                    new: String::new(),
+                    text: format!("{}  {}", file_flag(file.change()), opaque(file.path(), 256)),
+                    kind: 0,
+                    parallel: false,
+                });
+            }
+            (
+                if plan.recovering() {
+                    "Reanudar cambio"
+                } else {
+                    "Cambiar rama"
+                },
+                12,
+            )
         } else if let Some(plan) = view.reference_review() {
             f.summary = vec![format!("Referencia nueva · {}", plan.full_name())];
             f.details_top = p(132);

@@ -77,6 +77,10 @@ impl WriteDraft {
     fn refreshes_graph(&self) -> bool {
         self.is_reference() || matches!(self, Self::SwitchBranch(_))
     }
+
+    fn refreshes_files(&self) -> bool {
+        matches!(self, Self::Restore(_) | Self::SwitchBranch(_))
+    }
 }
 
 pub fn restore_label(comparison: &RevisionComparison) -> Option<&'static str> {
@@ -322,12 +326,15 @@ impl CommitController {
         let Some(view) = &mut self.view else {
             return;
         };
-        if let Some(review) = view.review() {
-            view.first = view
-                .first
-                .saturating_add_signed(delta)
-                .min(review.files().len().saturating_sub(1));
-        }
+        let count = view
+            .review()
+            .map(|plan| plan.files().len())
+            .or_else(|| view.branch_switch_review().map(|plan| plan.files().len()))
+            .unwrap_or(0);
+        view.first = view
+            .first
+            .saturating_add_signed(delta)
+            .min(count.saturating_sub(1));
     }
 
     pub fn submit(&mut self, bench: &Workbench, root: Option<&Path>) {
@@ -509,7 +516,7 @@ impl CommitController {
             Completion::Applied(result) => {
                 let root = view.root.clone();
                 let reference = view.draft.refreshes_graph();
-                let restore = matches!(view.draft, WriteDraft::Restore(_));
+                let refresh_files = view.draft.refreshes_files();
                 let result = result.map_err(|e| e.to_string());
                 if let Ok(message) = &result {
                     self.notice = Some((root.clone(), message.clone()));
@@ -523,7 +530,7 @@ impl CommitController {
                         root,
                         result,
                         reference,
-                        restore,
+                        refresh_files,
                     }),
                 );
             }
@@ -543,7 +550,7 @@ impl CommitController {
                             root: view.root.clone(),
                             result: Err(view.error.clone().unwrap()),
                             reference: view.draft.refreshes_graph(),
-                            restore: matches!(view.draft, WriteDraft::Restore(_)),
+                            refresh_files: view.draft.refreshes_files(),
                         }),
                     );
                 }
@@ -557,7 +564,7 @@ pub struct CommitOutcome {
     pub root: PathBuf,
     pub result: Result<String, String>,
     pub reference: bool,
-    pub restore: bool,
+    pub refresh_files: bool,
 }
 
 pub fn file_flag(change: jc_git::Change) -> &'static str {

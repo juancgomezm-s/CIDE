@@ -104,8 +104,13 @@ impl State {
     }
 
     fn graph_branch_target(&self) -> Option<&jc_app::git_commit::ReferenceTarget> {
-        self.graph_write_target()
-            .filter(|target| target.kind == jc_app::git_commit::RefKind::Branch)
+        let row = self.git_workspace.graph.as_ref()?.reference_selected?;
+        if self.git_revision.state() != GitRevisionState::Ready
+            || self.git_index.state() == jc_app::git_index::IndexState::Applying
+        {
+            return None;
+        }
+        self.git_revision.graph()?.branch_switch_target(row)
     }
 
     pub(super) fn open_graph_branch_switch(&mut self) {

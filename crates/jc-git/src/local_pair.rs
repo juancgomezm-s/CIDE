@@ -245,13 +245,13 @@ fn digest(bytes: &[u8], kind: gix::hash::Kind, ctx: &Context<'_>) -> Result<gix:
     ctx.check()?;
     hash.try_finalize().map_err(engine)
 }
-fn sha256(bytes: &[u8], ctx: &Context<'_>) -> Result<[u8; 32], Error> {
+pub(super) fn sha256(bytes: &[u8], ctx: &Context<'_>) -> Result<[u8; 32], Error> {
     digest(bytes, gix::hash::Kind::Sha256, ctx)?
         .as_slice()
         .try_into()
         .map_err(|_| Error::Unsupported)
 }
-fn capture(
+pub(super) fn capture(
     root: &Path,
     path: &Path,
     cap: usize,

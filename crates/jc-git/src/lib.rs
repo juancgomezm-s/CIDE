@@ -1,5 +1,6 @@
 //! Embedded Git provider independent of editor hosts and frontends.
 pub mod blame;
+mod branch_checkout;
 pub mod branch_switch;
 pub mod commit_search;
 pub mod commit_write;

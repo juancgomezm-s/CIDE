@@ -94,15 +94,50 @@ repositorio antes de reintentar.
 
 ## Cambiar de rama local
 
-En **Referencias**, selecciona otra rama local y pulsa **C** o **Cambiar
-rama** en la GUI. **Intro** revisa los nombres y commits de origen y destino.
+En **Referencias**, selecciona la rama local de destino y pulsa **C** o
+**Cambiar rama** en la GUI. **Intro** muestra los nombres y commits de
+origen y destino y las rutas que se van a añadir, modificar o retirar.
 Confirma con **Ctrl+Intro** en la GUI o **F2** en la TUI. **Esc** cierra la
 revisión. CIDE vuelve a leer el grafo y el estado después del cambio.
 
-Disponible en Windows entre ramas con el mismo árbol de archivos. Ambas
-pueden apuntar a commits distintos. CIDE cambia HEAD y conserva el índice,
-los archivos modificados y los archivos sin seguimiento. Los documentos
-del editor deben estar guardados. La confirmación comprueba HEAD, ambas
-ramas y el índice. Si cambió alguno, hay que volver a revisar. Con reflog
-habilitado, se usa la identidad local y se registra el cambio en HEAD.
-Un cambio que requiere actualizar el árbol de trabajo queda pendiente.
+En Windows, si los árboles coinciden, CIDE solo cambia HEAD. Si son distintos,
+actualiza las rutas revisadas y sus entradas del índice. Los cambios preparados,
+modificados o sin seguimiento en otras rutas se conservan. Una edición local
+en una ruta afectada impide la operación. Guarda los documentos modificados
+del editor antes de continuar. Si tenías abierto un archivo actualizado, vuelve
+a abrirlo para ver la versión de la nueva rama.
+
+La confirmación comprueba HEAD, ambas ramas, el índice y los archivos afectados.
+Antes de la primera escritura, CIDE guarda `.git/cide-switch.pending`.
+Los archivos retirados o reemplazados quedan en respaldos
+`.git/cide-switch-*.bak`. CIDE publica el índice y después HEAD. Con reflog
+habilitado se registra el cambio con la identidad local.
+
+Si falla después de crear el registro, vuelve a seleccionar la rama de destino
+y confirma **Reanudar cambio**. CIDE verifica las rutas ya actualizadas y
+continúa con las pendientes. Si encuentra datos distintos de los revisados,
+detiene la reanudación y conserva los archivos y el registro. Una ruta
+reemplazada que falta y tiene respaldo requiere revisión manual para distinguir
+una interrupción entre movimientos de una eliminación posterior. Si decides
+volver al estado de origen en esa ruta, mueve el respaldo indicado de vuelta
+a su ruta original antes de reanudar. Un bloqueo de Git que quedó tras un cierre
+abrupto se informa y requiere comprobar su propietario antes de resolverlo.
+
+El cambio de árbol admite hasta 128 rutas de archivos regulares de modo
+100644 y crea las carpetas necesarias. Requiere un índice ordinario y archivos
+sin conversiones. CIDE admite atributos estables que dejan los bytes intactos,
+incluido `text eol=lf` en contenido LF. Los cambios de atributos, enlaces
+afectados, cambios entre archivo y carpeta, alias de rutas y repositorios con
+otros árboles de trabajo quedan fuera del alcance.
+
+La suite local en Windows pasó 895 pruebas con
+`python scripts/check-local.py --steps fmt test clippy build demo`.
+Incluyó la vista previa y confirmación en ambas interfaces, conflictos con
+ediciones locales y reanudación tras interrumpir la escritura de archivos
+o del índice. Después de ampliar el soporte de atributos, pasaron siete
+pruebas dirigidas y `--steps fmt clippy build demo`.
+
+La entrega en `target/git-switch-trees-final/release/` pasó 26 comprobaciones
+con una ventana oculta. En una terminal aislada, la TUI compilada cambió
+entre árboles con atributos y conservó los bytes locales y su entrada
+preparada. Ambos procesos se validaron con PATH vacío.

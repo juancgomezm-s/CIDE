@@ -342,6 +342,7 @@ fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
     }
     fixture.git(&["update-ref", "HEAD", &tip, &initial]);
     fixture.git(&["update-ref", "refs/heads/segura", &merge]);
+    fixture.git(&["update-ref", "refs/heads/distinta", &right]);
     fixture.git(&["config", "--local", "user.name", "CIDE Fixture"]);
     fixture.git(&["config", "--local", "user.email", "cide@example.test"]);
     let before = fixture.disk();
@@ -563,6 +564,49 @@ fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
     assert_eq!(after.index, before.index);
     assert_eq!(after.branch, before.branch);
     assert_eq!(after.tracked, before.tracked);
+    assert_eq!(after.untracked, before.untracked);
+
+    fixture.git(&["read-tree", &merge]);
+    fixture.rewrite(TRACKED, b"head \xff\r\nend");
+    settle(&mut app);
+    key(&mut app, KeyCode::Char('r'));
+    let row = app
+        .prepare_frame(100, 24)
+        .graph
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|row| row.path == "Rama distinta")
+        .unwrap()
+        .ordinal;
+    for _ in 0..row {
+        key(&mut app, KeyCode::Down);
+    }
+    key(&mut app, KeyCode::Char('c'));
+    key(&mut app, KeyCode::Enter);
+    let settle_write = |app: &mut TuiApp| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while app.git_commit.busy() {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            assert!(Instant::now() < deadline, "{}", app.status);
+            wake.wait(ticket, Some(Duration::from_millis(10)));
+        }
+    };
+    settle_write(&mut app);
+    let view = app.git_commit.view().unwrap();
+    assert!(view.branch_switch_review().is_some(), "{:?}", view.error);
+    let preview = app.prepare_frame(100, 24).commit.unwrap();
+    assert!(preview.rows.iter().any(|row| row.contains(TRACKED)));
+    assert_eq!(
+        fs::read(fixture.path(TRACKED)).unwrap(),
+        b"head \xff\r\nend"
+    );
+    key(&mut app, KeyCode::F(2));
+    settle_write(&mut app);
+    let after = fixture.disk();
+    assert_eq!(after.head, b"ref: refs/heads/distinta\n", "{}", app.status);
+    assert_eq!(after.tracked, alternate);
     assert_eq!(after.untracked, before.untracked);
 }
 

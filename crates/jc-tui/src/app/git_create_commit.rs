@@ -106,7 +106,7 @@ impl TuiApp {
                 } else if !outcome.reference {
                     self.git_revision.cancel();
                 }
-                if outcome.restore && outcome.result.is_ok() {
+                if outcome.refresh_files && outcome.result.is_ok() {
                     self.refresh_explorer();
                 }
                 let _ = self.git_status.refresh_after_index_write(&outcome.root);
@@ -205,9 +205,33 @@ impl TuiApp {
                 format!("{} → {}", plan.source(), plan.destination()),
                 format!("Commit de origen · {}", plan.source_target()),
                 format!("Commit de destino · {}", plan.target()),
-                "El índice y los archivos de trabajo se conservan".into(),
+                if plan.files().is_empty() {
+                    "El índice y los archivos de trabajo se conservan".into()
+                } else {
+                    format!(
+                        "{} archivos afectados · respaldo en .git",
+                        plan.files().len()
+                    )
+                },
             ]);
-            "F2 cambia de rama · Esc cancela"
+            let count = usize::from(height.saturating_sub(4))
+                .saturating_sub(rows.len())
+                .min(128);
+            let first = view.first.min(plan.files().len().saturating_sub(count));
+            rows.extend(plan.files().iter().skip(first).take(count).map(|file| {
+                format!(
+                    "{}  {}",
+                    file_flag(file.change()),
+                    opaque(file.path(), width.saturating_sub(3))
+                )
+            }));
+            if plan.recovering() {
+                "↑↓ archivos · F2 reanuda el cambio · Esc cancela"
+            } else if plan.files().is_empty() {
+                "F2 cambia de rama · Esc cancela"
+            } else {
+                "↑↓ archivos · F2 cambia de rama · Esc cancela"
+            }
         } else if let Some(plan) = view.reference_review() {
             rows.push(format!("Referencia nueva · {}", plan.full_name()));
             rows.push(format!("Commit de destino · {}", plan.target()));

@@ -171,6 +171,19 @@ pub(super) fn open_for_write(
     root: &Path,
     ctx: &Context<'_>,
 ) -> Result<(gix::Repository, Identity), Error> {
+    let result = open_for_write_during_switch(root, ctx)?;
+    if exists(&result.1.git_dir.join(crate::branch_switch::JOURNAL_NAME))? {
+        return Err(Error::Engine(
+            "Hay un cambio de rama pendiente de recuperación".into(),
+        ));
+    }
+    Ok(result)
+}
+
+pub(super) fn open_for_write_during_switch(
+    root: &Path,
+    ctx: &Context<'_>,
+) -> Result<(gix::Repository, Identity), Error> {
     if !root.is_absolute() {
         return Err(Error::InvalidRoot);
     }
@@ -212,24 +225,40 @@ fn source_mode(source: &Source) -> Option<u32> {
 }
 
 pub(super) fn reject_conversion(repo: &gix::Repository, pair: &LocalPair) -> Result<(), Error> {
+    reject_path_conversion(repo, &pair.repository, &pair.path)
+}
+
+pub(super) fn reject_path_conversion(
+    repo: &gix::Repository,
+    repository: &Identity,
+    path: &[u8],
+) -> Result<(), Error> {
+    reject_config_conversion(repo, repository)?;
+    let relative = gix::path::from_bstr(path.as_bstr()).map_err(engine)?;
+    let target = repository.root.join(relative);
+    let mut directory = target.parent();
+    while let Some(parent) = directory.filter(|p| p.starts_with(&repository.root)) {
+        if exists(&parent.join(".gitattributes"))? {
+            return Err(Error::Filter);
+        }
+        directory = parent.parent();
+    }
+    Ok(())
+}
+
+pub(super) fn reject_config_conversion(
+    repo: &gix::Repository,
+    repository: &Identity,
+) -> Result<(), Error> {
     let config = repo.config_snapshot();
     if config.string("core.attributesFile").is_some()
         || config.string("core.eol").is_some()
         || config.string("core.autocrlf").is_some_and(|value| {
             !matches!(value.as_bstr().as_bytes(), b"false" | b"no" | b"off" | b"0")
         })
-        || exists(&pair.repository.git_dir.join("info/attributes"))?
+        || exists(&repository.git_dir.join("info/attributes"))?
     {
         return Err(Error::Filter);
-    }
-    let relative = gix::path::from_bstr(pair.path.as_bstr()).map_err(engine)?;
-    let target = pair.repository.root.join(relative);
-    let mut directory = target.parent();
-    while let Some(parent) = directory.filter(|p| p.starts_with(&pair.repository.root)) {
-        if exists(&parent.join(".gitattributes"))? {
-            return Err(Error::Filter);
-        }
-        directory = parent.parent();
     }
     Ok(())
 }
