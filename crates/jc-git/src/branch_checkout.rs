@@ -14,19 +14,21 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+pub(super) mod rollback;
 mod shape;
 
 pub(super) const JOURNAL_NAME: &str = "cide-switch.pending";
 const JOURNAL_BYTES: usize = 16 * 1024;
 const MAX_FILES: usize = 128;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Journal {
     pub source: String,
     pub destination: String,
     pub from: ObjectId,
     pub to: ObjectId,
     pub incoming: Option<ObjectId>,
+    pub aborting: bool,
     old_index: ObjectId,
     new_index: ObjectId,
     nonce: String,
@@ -44,9 +46,10 @@ impl Journal {
             return Err(Error::Unsupported);
         }
         let mut lines = std::str::from_utf8(&bytes).map_err(engine)?.lines();
-        let merge = match lines.next() {
-            Some("CIDE-SWITCH-1") => false,
-            Some("CIDE-MERGE-1") => true,
+        let (merge, aborting) = match lines.next() {
+            Some("CIDE-SWITCH-1") => (false, false),
+            Some("CIDE-MERGE-1") => (true, false),
+            Some("CIDE-MERGE-ABORT-1") => (true, true),
             _ => return Err(Error::Unsupported),
         };
         let source = lines.next().ok_or(Error::Unsupported)?.to_owned();
@@ -70,6 +73,7 @@ impl Journal {
             from,
             to,
             incoming,
+            aborting,
             old_index,
             new_index,
             nonce,
@@ -79,7 +83,9 @@ impl Journal {
     fn bytes(&self) -> Vec<u8> {
         let mut data = format!(
             "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
-            if self.incoming.is_some() {
+            if self.aborting {
+                "CIDE-MERGE-ABORT-1"
+            } else if self.incoming.is_some() {
                 "CIDE-MERGE-1"
             } else {
                 "CIDE-SWITCH-1"
@@ -104,6 +110,156 @@ impl Journal {
             .git_dir
             .join(format!("cide-switch-{}-{file}.bak", self.nonce))
     }
+
+    fn auxiliary(&self, repo: &Identity, suffix: &str) -> PathBuf {
+        repo.git_dir
+            .join(format!("cide-switch-{}-{suffix}", self.nonce))
+    }
+
+    pub fn original_index(
+        &self,
+        repo: &Identity,
+        ctx: &Context<'_>,
+    ) -> Result<Option<Vec<u8>>, Error> {
+        let Some(bytes) = read_record(
+            repo,
+            &self.auxiliary(repo, "index"),
+            crate::INDEX_BYTES as usize,
+            ctx,
+        )?
+        else {
+            return Ok(None);
+        };
+        if index_id(&bytes, ctx)? != self.old_index {
+            return Err(Error::Stale);
+        }
+        Ok(Some(bytes))
+    }
+
+    pub fn index_state(&self, token: &local_pair::IndexToken) -> Result<bool, Error> {
+        match token.sha256().map(|hash| hash.as_slice()) {
+            Some(hash) if hash == self.old_index.as_slice() => Ok(false),
+            Some(hash) if hash == self.new_index.as_slice() => Ok(true),
+            _ => Err(Error::Engine(
+                "El índice contiene cambios ajenos a la fusión".into(),
+            )),
+        }
+    }
+
+    fn record_output(
+        &self,
+        repo: &Identity,
+        slot: usize,
+        key: [u8; 12],
+        ctx: &Context<'_>,
+    ) -> Result<(), Error> {
+        if self.incoming.is_some() {
+            write_record(
+                repo,
+                &self.auxiliary(repo, &format!("{slot}.output")),
+                &key,
+                12,
+                ctx,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn output(
+        &self,
+        repo: &Identity,
+        slot: usize,
+        ctx: &Context<'_>,
+    ) -> Result<Option<[u8; 12]>, Error> {
+        read_record(
+            repo,
+            &self.auxiliary(repo, &format!("{slot}.output")),
+            12,
+            ctx,
+        )?
+        .map(|bytes| bytes.try_into().map_err(|_| Error::Stale))
+        .transpose()
+    }
+
+    pub fn begin_abort(&self, repo: &Identity, ctx: &Context<'_>) -> Result<Self, Error> {
+        if self.incoming.is_none() || Self::read(repo, ctx)?.as_ref() != Some(self) {
+            return Err(Error::Stale);
+        }
+        let mut journal = self.clone();
+        if !journal.aborting {
+            journal.aborting = true;
+            write_record(
+                repo,
+                &repo.git_dir.join(JOURNAL_NAME),
+                &journal.bytes(),
+                JOURNAL_BYTES,
+                ctx,
+            )?;
+        }
+        Ok(journal)
+    }
+
+    pub fn finish(&self, repo: &Identity, slots: usize, ctx: &Context<'_>) -> Result<(), Error> {
+        let path = repo.git_dir.join(JOURNAL_NAME);
+        let Capture::Present { bytes, token, .. } =
+            local_pair::capture(&repo.git_dir, &path, JOURNAL_BYTES, ctx)?
+        else {
+            return Err(Error::Stale);
+        };
+        if bytes != self.bytes() || !token.has_single_link() {
+            return Err(Error::Stale);
+        }
+        jc_fs::remove_captured_file(&repo.git_dir, &token)?;
+        if self.incoming.is_some() {
+            for (path, limit) in
+                std::iter::once((self.auxiliary(repo, "index"), crate::INDEX_BYTES as usize)).chain(
+                    (0..slots).map(|slot| (self.auxiliary(repo, &format!("{slot}.output")), 12)),
+                )
+            {
+                if let Ok(Capture::Present { token, .. }) =
+                    local_pair::capture(&repo.git_dir, &path, limit, ctx)
+                {
+                    let _ = jc_fs::remove_captured_file(&repo.git_dir, &token);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn read_record(
+    repo: &Identity,
+    path: &Path,
+    limit: usize,
+    ctx: &Context<'_>,
+) -> Result<Option<Vec<u8>>, Error> {
+    match local_pair::capture(&repo.git_dir, path, limit, ctx)? {
+        Capture::Present { bytes, token, .. } if token.has_single_link() => Ok(Some(bytes)),
+        Capture::Absent { .. } => Ok(None),
+        _ => Err(Error::Stale),
+    }
+}
+
+fn write_record(
+    repo: &Identity,
+    path: &Path,
+    bytes: &[u8],
+    limit: usize,
+    ctx: &Context<'_>,
+) -> Result<(), Error> {
+    use std::io::Write;
+    let mut lock = gix::lock::File::acquire_to_update_resource(
+        path,
+        gix::lock::acquire::Fail::Immediately,
+        None,
+        0,
+    )
+    .map_err(engine)?;
+    read_record(repo, path, limit, ctx)?;
+    lock.write_all(bytes)?;
+    lock.with_mut(|file| file.sync_all())?;
+    lock.commit().map_err(engine)?;
+    Ok(())
 }
 
 #[derive(PartialEq, Eq)]
@@ -170,6 +326,36 @@ fn is_attributes(path: &[u8]) -> bool {
     path.rsplit(|&b| b == b'/')
         .next()
         .is_some_and(|name| name.eq_ignore_ascii_case(b".gitattributes"))
+}
+
+fn checkout_target(repo: &Identity, path: &[u8]) -> Result<PathBuf, Error> {
+    let text = std::str::from_utf8(path).map_err(engine)?;
+    for part in path.split(|b| *b == b'/') {
+        gix::validate::path::component(part.as_bstr(), None, Default::default()).map_err(engine)?;
+        if part.contains(&b'~') || part.eq_ignore_ascii_case(b".git") {
+            return Err(Error::Unsupported);
+        }
+    }
+    Ok(repo
+        .root
+        .join(text.replace('/', std::path::MAIN_SEPARATOR_STR)))
+}
+
+fn changed_paths<'a>(
+    old: &'a BTreeMap<Vec<u8>, revision::Entry>,
+    new: &'a BTreeMap<Vec<u8>, revision::Entry>,
+    limits: Limits,
+) -> Result<Vec<&'a Vec<u8>>, Error> {
+    let mut paths: Vec<_> = old
+        .keys()
+        .chain(new.keys().filter(|path| !old.contains_key(*path)))
+        .filter(|path| old.get(*path) != new.get(*path))
+        .collect();
+    if paths.len() > limits.max_entries.min(MAX_FILES) {
+        return Err(Error::Limited);
+    }
+    paths.sort_unstable();
+    Ok(paths)
 }
 
 fn attribute_sources(
@@ -384,15 +570,7 @@ impl Checkout {
             ));
         }
 
-        let mut paths: Vec<_> = old
-            .keys()
-            .chain(new.keys().filter(|p| !old.contains_key(*p)))
-            .filter(|p| old.get(*p) != new.get(*p))
-            .collect();
-        paths.sort_unstable();
-        if paths.len() > limits.max_entries.min(MAX_FILES) {
-            return Err(Error::Limited);
-        }
+        let paths = changed_paths(&old, new, limits)?;
         if paths.iter().any(|p| is_attributes(p))
             || index.entries().iter().any(|entry| {
                 let path = entry.path(&index).as_bytes();
@@ -420,13 +598,7 @@ impl Checkout {
             ctx.check()?;
             let text = std::str::from_utf8(path).map_err(engine)?;
             let structural = roots.iter().find(|root| shape::contains(root, path));
-            for part in path.split(|b| *b == b'/') {
-                gix::validate::path::component(part.as_bstr(), None, Default::default())
-                    .map_err(engine)?;
-                if part.contains(&b'~') || part.eq_ignore_ascii_case(b".git") {
-                    return Err(Error::Unsupported);
-                }
-            }
+            let target = checkout_target(repository, path)?;
             // The index can include staged additions unrelated to either tree.
             // Check their Windows aliases too before admitting a path.
             if old
@@ -459,9 +631,6 @@ impl Checkout {
                             .intersects(Flags::INTENT_TO_ADD | Flags::SKIP_WORKTREE) => {}
                 _ => return Err(conflict(path)),
             }
-            let target = repository
-                .root
-                .join(text.replace('/', std::path::MAIN_SEPARATOR_STR));
             let before = file_bytes(repo, before, limits, &mut budget, ctx)?;
             let after = if let Some(bytes) = after
                 .filter(|entry| entry.mode == 0o100644)
@@ -576,6 +745,7 @@ impl Checkout {
                     from: commits.0,
                     to: commits.1,
                     incoming: merge.map(|merge| merge.incoming),
+                    aborting: false,
                     old_index: current_index,
                     new_index,
                     nonce: format!("{:x}{timestamp:x}", std::process::id()),
@@ -682,6 +852,14 @@ impl Checkout {
                         &repository.git_dir,
                         &mut || ctx.check().is_err(),
                     )?;
+                    if self.merge && file.after.is_some() {
+                        self.journal.record_output(
+                            repository,
+                            i,
+                            pending.replacement_key()?,
+                            ctx,
+                        )?;
+                    }
                     pending
                         .publish_checkout(&backup, file.after.is_some())
                         .map_err(|error| match error {
@@ -711,13 +889,17 @@ impl Checkout {
                     if !expected.is_compatible_after_creating_parents(&token) {
                         return Err(conflict(&file.path));
                     }
-                    jc_fs::stage_missing_file(
+                    let pending = jc_fs::stage_missing_file(
                         &repository.root,
                         &token,
                         file.after.as_deref().ok_or(Error::Stale)?,
                         &mut || ctx.check().is_err(),
-                    )?
-                    .publish()?;
+                    )?;
+                    if self.merge {
+                        self.journal
+                            .record_output(repository, i, pending.object_key()?, ctx)?;
+                    }
+                    pending.publish()?;
                 }
             }
         }
@@ -746,10 +928,27 @@ impl Checkout {
     }
 
     pub fn finish(&self, repository: &Identity, ctx: &Context<'_>) -> Result<(), Error> {
-        if Journal::read(repository, ctx)?.as_ref() != Some(&self.journal) {
-            return Err(Error::Stale);
+        self.journal.finish(repository, self.files.len(), ctx)
+    }
+
+    pub fn save_original_index(
+        &self,
+        repo: &Identity,
+        bytes: &[u8],
+        ctx: &Context<'_>,
+    ) -> Result<(), Error> {
+        if self.merge && !self.resuming && self.index_bytes.is_some() {
+            if index_id(bytes, ctx)? != self.journal.old_index {
+                return Err(Error::Stale);
+            }
+            let path = self.journal.auxiliary(repo, "index");
+            let Capture::Absent { token } = local_pair::capture(&repo.git_dir, &path, 0, ctx)?
+            else {
+                return Err(Error::Stale);
+            };
+            jc_fs::stage_missing_file(&repo.git_dir, &token, bytes, &mut || ctx.check().is_err())?
+                .publish()?;
         }
-        std::fs::remove_file(repository.git_dir.join(JOURNAL_NAME))?;
         Ok(())
     }
 

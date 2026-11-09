@@ -261,13 +261,14 @@ impl CheckoutShape {
             if !token.is_compatible_after_creating_parents(&leaf) {
                 return Err(conflict(&file.path));
             }
-            jc_fs::stage_missing_file(
+            let pending = jc_fs::stage_missing_file(
                 &repo.root,
                 &leaf,
                 file.after.as_deref().ok_or(Error::Stale)?,
                 &mut || ctx.check().is_err(),
-            )?
-            .publish()?;
+            )?;
+            journal.record_output(repo, slot, pending.object_key()?, ctx)?;
+            pending.publish()?;
         }
         self.verify_applied(files, repo, journal, limits, ctx)
     }

@@ -256,6 +256,58 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     );
     assert!(!fixture.path("actual.txt").exists());
     assert!(!fixture.path("entrante.txt").exists());
+
+    use std::os::windows::fs::OpenOptionsExt;
+    let original = fixture.oid(&["rev-parse", "HEAD"]);
+    let index = fixture.path(".git/index");
+    let added = fixture.path("aborto-nuevo.txt");
+    let pending = fixture.path(".git/cide-switch.pending");
+    fixture.create("aborto-nuevo.txt", b"archivo de la fusion");
+    fixture.rewrite("origen.txt", b"cambio entrante");
+    fixture.git(&["add", "--", "aborto-nuevo.txt", "origen.txt"]);
+    let tree = fixture.oid(&["write-tree"]);
+    let incoming = fixture.oid(&["commit-tree", &tree, "-p", &original, "-m", "Abortar"]);
+    fixture.git(&["update-ref", "refs/heads/aborto", &incoming]);
+    fixture.git(&["read-tree", &original]);
+    fixture.rewrite("origen.txt", b"mismo contenido");
+    fs::remove_file(&added).unwrap();
+    let before = fs::read(&index).unwrap();
+    key(&mut app, KeyCode::F(5));
+    wait_for(&mut app, |app| {
+        app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    });
+    select(&mut app, "Rama aborto");
+    assert!(app.git_commit.view().unwrap().merge_review().is_some());
+    let block = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(fixture.path("origen.txt"))
+        .unwrap();
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    drop(block);
+    assert!(pending.exists());
+    assert!(added.exists(), "{}", app.status);
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Char('a'));
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let preview = app.prepare_frame(100, 24).commit.unwrap();
+    assert!(preview
+        .rows
+        .iter()
+        .any(|row| row.contains("aborto-nuevo.txt")));
+    assert!(added.exists());
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().is_none(), "{}", app.status);
+    assert!(!pending.exists() && !added.exists());
+    assert_eq!(fs::read(&index).unwrap(), before);
+    assert_eq!(
+        fs::read(fixture.path("origen.txt")).unwrap(),
+        b"mismo contenido"
+    );
+    assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), original);
 }
 
 fn installed_git() -> PathBuf {

@@ -10,7 +10,8 @@ pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
 use jc_git::local_merge::{
-    apply_merge, prepare_merge, prepare_resolved_merge, MergeKind, MergePlan,
+    apply_merge, apply_merge_abort, prepare_merge, prepare_merge_abort, prepare_resolved_merge,
+    MergeAbortPlan, MergeKind, MergePlan,
 };
 use jc_git::local_pair::SourceIdentity;
 pub use jc_git::ref_write::RefKind;
@@ -48,6 +49,7 @@ enum WritePlan {
     ReferenceChange(Box<RefChangePlan>),
     BranchSwitch(Box<BranchSwitchPlan>),
     Merge(Box<MergePlan>),
+    MergeAbort(Box<MergeAbortPlan>),
     Restore(Box<RestorePlan>),
 }
 
@@ -65,6 +67,7 @@ pub enum WriteDraft {
     ChangeReference(ReferenceTarget, bool),
     SwitchBranch(ReferenceTarget),
     MergeBranch(ReferenceTarget),
+    AbortMerge,
     Restore(Arc<RevisionComparison>),
 }
 
@@ -79,18 +82,23 @@ impl WriteDraft {
             Self::ChangeReference(_, false)
                 | Self::SwitchBranch(_)
                 | Self::MergeBranch(_)
+                | Self::AbortMerge
                 | Self::Restore(_)
         )
     }
 
     fn refreshes_graph(&self) -> bool {
-        self.is_reference() || matches!(self, Self::SwitchBranch(_) | Self::MergeBranch(_))
+        self.is_reference()
+            || matches!(
+                self,
+                Self::SwitchBranch(_) | Self::MergeBranch(_) | Self::AbortMerge
+            )
     }
 
     fn refreshes_files(&self) -> bool {
         matches!(
             self,
-            Self::Restore(_) | Self::SwitchBranch(_) | Self::MergeBranch(_)
+            Self::Restore(_) | Self::SwitchBranch(_) | Self::MergeBranch(_) | Self::AbortMerge
         )
     }
 }
@@ -150,6 +158,7 @@ impl CommitView {
             },
             WriteDraft::SwitchBranch(_) => "Cambiar rama",
             WriteDraft::MergeBranch(_) => "Fusionar rama",
+            WriteDraft::AbortMerge => "Abortar fusión",
             WriteDraft::Restore(comparison) => {
                 restore_label(comparison).unwrap_or("Restaurar archivo")
             }
@@ -166,6 +175,7 @@ impl CommitView {
             WriteDraft::Restore(_) => "Comprobando el índice y el archivo… · Esc cancela",
             WriteDraft::SwitchBranch(_) => "Comprobando ambas ramas… · Esc cancela",
             WriteDraft::MergeBranch(_) => "Calculando la fusión local… · Esc cancela",
+            WriteDraft::AbortMerge => "Revisando cambios de la fusión… · Esc cancela",
             _ => "Comprobando referencia… · Esc cancela",
         }
     }
@@ -211,6 +221,12 @@ impl CommitView {
     pub fn merge_conflicts(&self) -> Option<&MergePlan> {
         self.merge_review()
             .filter(|plan| plan.kind == MergeKind::Conflicts)
+    }
+    pub fn merge_abort_review(&self) -> Option<&MergeAbortPlan> {
+        match &self.review {
+            Some(WritePlan::MergeAbort(plan)) => Some(plan),
+            _ => None,
+        }
     }
     pub fn merge_file(&self) -> Option<&MergeFile> {
         self.merge_draft.file.as_ref()
@@ -266,6 +282,28 @@ impl CommitController {
     pub fn applying(&self) -> bool {
         self.job.as_ref().is_some_and(|job| job.applying)
     }
+    pub fn merge_publication_hint(&self) -> Option<&'static str> {
+        let job = self.job.as_ref().filter(|job| job.applying)?;
+        matches!(self.view.as_ref()?.draft, WriteDraft::MergeBranch(_)).then(|| {
+            if job.cancelled.load(Ordering::Acquire) {
+                "Deteniendo la fusión en un punto seguro…"
+            } else {
+                "Publicando fusión… · Esc detiene para revisar el aborto"
+            }
+        })
+    }
+
+    pub fn request_merge_stop(&mut self) -> bool {
+        if self.merge_publication_hint().is_none() {
+            return false;
+        }
+        self.job
+            .as_ref()
+            .unwrap()
+            .cancelled
+            .store(true, Ordering::Release);
+        true
+    }
     pub fn ready(&self) -> bool {
         self.job
             .as_ref()
@@ -289,6 +327,11 @@ impl CommitController {
     pub fn open_merge(&mut self, root: PathBuf, target: ReferenceTarget) {
         if cfg!(windows) && target.kind == RefKind::Branch {
             self.open_write(root, None, WriteDraft::MergeBranch(target));
+        }
+    }
+    pub fn open_merge_abort(&mut self, root: PathBuf) {
+        if cfg!(windows) {
+            self.open_write(root, None, WriteDraft::AbortMerge);
         }
     }
     pub fn open_restore(&mut self, root: PathBuf, comparison: Arc<RevisionComparison>) {
@@ -483,6 +526,7 @@ impl CommitController {
             .map(|plan| plan.files().len())
             .or_else(|| view.branch_switch_review().map(|plan| plan.files().len()))
             .or_else(|| view.merge_review().map(|plan| plan.rows.len()))
+            .or_else(|| view.merge_abort_review().map(|plan| plan.rows.len()))
             .unwrap_or(0);
         view.first = view
             .first
@@ -606,6 +650,13 @@ impl CommitController {
                                 })
                             }))
                         }
+                        Some(WritePlan::MergeAbort(plan)) => {
+                            Completion::Applied(apply_merge_abort(*plan, cancelled).map(|result| {
+                                result
+                                    .reflog_warning
+                                    .unwrap_or_else(|| "Fusión abortada".into())
+                            }))
+                        }
                         None => Completion::Review(match (draft, replaces) {
                             (WriteDraft::CreateReference(kind, target), _) => {
                                 prepare_ref(&root, &target, kind, &message, LIMITS, cancelled)
@@ -632,6 +683,10 @@ impl CommitController {
                             (WriteDraft::MergeBranch(target), _) => {
                                 prepare_merge(&root, &target.name, &target.oid, LIMITS, cancelled)
                                     .map(|plan| WritePlan::Merge(Box::new(plan)))
+                            }
+                            (WriteDraft::AbortMerge, _) => {
+                                prepare_merge_abort(&root, LIMITS, cancelled)
+                                    .map(|plan| WritePlan::MergeAbort(Box::new(plan)))
                             }
                             (WriteDraft::Restore(comparison), _) => {
                                 prepare_restore(&root, &comparison.path, LIMITS, cancelled)
@@ -711,7 +766,13 @@ impl CommitController {
                     self.notice = Some((root.clone(), message.clone()));
                     self.view = None;
                 } else {
-                    if let Some(plan) = view.saved_merge_review.take() {
+                    if matches!(view.draft, WriteDraft::MergeBranch(_))
+                        && job.cancelled.load(Ordering::Acquire)
+                    {
+                        view.draft = WriteDraft::AbortMerge;
+                        view.saved_merge_review = None;
+                        view.merge_draft = MergeDraft::default();
+                    } else if let Some(plan) = view.saved_merge_review.take() {
                         view.review = Some(WritePlan::Merge(plan));
                     }
                     view.error = result.as_ref().err().cloned();

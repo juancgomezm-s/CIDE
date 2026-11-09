@@ -13,6 +13,14 @@ struct ObjectIdentity {
     index: u64,
     attributes: u32,
 }
+impl ObjectIdentity {
+    fn key(&self) -> [u8; 12] {
+        let mut key = [0; 12];
+        key[..4].copy_from_slice(&self.volume.to_le_bytes());
+        key[4..].copy_from_slice(&self.index.to_le_bytes());
+        key
+    }
+}
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FileState {
     identity: ObjectIdentity,
@@ -30,6 +38,9 @@ pub struct FileToken {
     state: FileState,
 }
 impl FileToken {
+    pub fn object_key(&self) -> [u8; 12] {
+        self.state.identity.key()
+    }
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -101,6 +112,12 @@ pub struct PendingMissingFile {
     inner: windows::PendingMissingFile,
 }
 impl PendingMissingFile {
+    pub fn object_key(&self) -> io::Result<[u8; 12]> {
+        #[cfg(windows)]
+        return self.inner.object_key();
+        #[cfg(not(windows))]
+        Err(io::ErrorKind::Unsupported.into())
+    }
     pub fn publish(self) -> io::Result<()> {
         #[cfg(windows)]
         {
@@ -146,6 +163,12 @@ pub enum ReplaceError {
 }
 
 impl PendingExistingFile {
+    pub fn replacement_key(&self) -> io::Result<[u8; 12]> {
+        #[cfg(windows)]
+        return self.inner.replacement_key();
+        #[cfg(not(windows))]
+        Err(io::ErrorKind::Unsupported.into())
+    }
     pub fn publish(self) -> Result<PathBuf, ReplaceError> {
         #[cfg(windows)]
         {
@@ -169,6 +192,16 @@ impl PendingExistingFile {
             let _ = (backup, replace);
             Err(ReplaceError::Io(io::ErrorKind::Unsupported.into()))
         }
+    }
+}
+
+pub fn remove_captured_file(root: &Path, token: &FileToken) -> io::Result<()> {
+    #[cfg(windows)]
+    return windows::remove_captured_file(root, token);
+    #[cfg(not(windows))]
+    {
+        let _ = (root, token);
+        Err(io::ErrorKind::Unsupported.into())
     }
 }
 
@@ -849,6 +882,9 @@ mod windows {
         Ok(())
     }
     impl PendingMissingFile {
+        pub(super) fn object_key(&self) -> io::Result<[u8; 12]> {
+            Ok(state(&self.file)?.identity.key())
+        }
         pub(super) fn publish(&mut self) -> io::Result<()> {
             self.check_dirs()?;
             rename_new(&self.file, &self.target)?;
@@ -994,6 +1030,9 @@ mod windows {
     }
 
     impl PendingExistingFile {
+        pub(super) fn replacement_key(&self) -> io::Result<[u8; 12]> {
+            self.replacement.object_key()
+        }
         fn validate_original(&self) -> io::Result<()> {
             let target = &self.replacement.target;
             if state(&self.original)? != self.expected || final_path(&self.original)? != *target {
@@ -1081,6 +1120,36 @@ mod windows {
                 }
             }
         }
+    }
+
+    pub(super) fn remove_captured_file(root: &Path, expected: &FileToken) -> io::Result<()> {
+        let pinned = capture_with_handles(
+            root,
+            expected.path(),
+            usize::try_from(expected.len()).map_err(|_| changed())?,
+            CaptureAccess::ReplaceExisting,
+            &mut || false,
+        )?;
+        let Capture::Present { token, .. } = pinned.capture else {
+            return Err(changed());
+        };
+        if token != *expected || !token.has_single_link() {
+            return Err(changed());
+        }
+        let file = pinned.file.as_ref().ok_or_else(changed)?;
+        let mut delete = 1u8;
+        if unsafe {
+            SetFileInformationByHandle(
+                file.as_raw_handle(),
+                FILE_DISPOSITION_INFO,
+                (&mut delete as *mut u8).cast(),
+                size_of::<u8>() as u32,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
     }
 
     pub(super) fn create_missing_parents(

@@ -877,7 +877,10 @@ mod tests {
     #[cfg(windows)]
     mod local_merge {
         use super::*;
-        use crate::local_merge::{MergeKind, MergePlan, apply_merge, prepare_merge};
+        use crate::local_merge::{
+            MergeKind, MergePlan, apply_merge, apply_merge_abort, prepare_merge,
+            prepare_merge_abort,
+        };
         use std::io::Write;
 
         fn scenario(
@@ -1209,7 +1212,7 @@ mod tests {
                 assert_eq!(paths, [expected]);
                 let prepare = || {
                     prepare_resolved_merge(
-                        draft.resolution_review().unwrap(),
+                        review(&fixture, incoming)?.resolution_review().unwrap(),
                         std::collections::BTreeMap::from([(
                             b"ruta".to_vec(),
                             MergeResolution::Use(MergeSide::Incoming),
@@ -1232,6 +1235,17 @@ mod tests {
                 assert!(apply_merge(plan, || false).is_err());
                 assert_eq!(fs::read(&from).unwrap(), "edición posterior".as_bytes());
                 fs::write(&from, bytes).unwrap();
+                let index = git.join("index");
+                let before = fs::read(&index).unwrap();
+                assert!(
+                    apply_merge(prepare().unwrap(), || fs::read(&index).unwrap() != before)
+                        .is_err()
+                );
+                let abort = prepare_merge_abort(&fixture.root, limits(), || false).unwrap();
+                assert!(abort.restores_index());
+                apply_merge_abort(abort, || false).unwrap();
+                assert_eq!(fs::read(&from).unwrap(), bytes);
+                assert_eq!(fs::read(&index).unwrap(), before);
                 let plan = prepare().unwrap();
                 let result = plan.result().unwrap();
                 let concurrent = fixture.root.join("ruta/sub/concurrente.txt");
@@ -1461,6 +1475,73 @@ mod tests {
             assert_eq!(resumed.result(), Some(result));
             assert_eq!(apply_merge(resumed, || false).unwrap().id, result);
             assert!(!pending.exists());
+        }
+
+        #[test]
+        fn merge_abort_reverses_publications_and_resumes_without_overwriting_local_changes() {
+            let fixture = Fixture::new();
+            let (_, active, incoming) = scenario(&fixture, true, b"uno\r\ndos\r\ntres\r\nFIN");
+            let git = fixture.git();
+            let index = git.join("index");
+            let branch = git.join("refs/heads/activa");
+            let pending = git.join(crate::branch_checkout::JOURNAL_NAME);
+            let file = fixture.root.join("a.txt");
+            let original = fs::read(&file).unwrap();
+            let before = fs::read(&index).unwrap();
+            let abort = || prepare_merge_abort(&fixture.root, limits(), || false);
+            assert!(abort().is_err());
+            let plan = review(&fixture, incoming).unwrap();
+            let result = plan.result().unwrap();
+            let published_branch = format!("{result}\n");
+            assert!(
+                apply_merge(plan, || {
+                    fs::read_to_string(&branch).unwrap() == published_branch
+                })
+                .is_err()
+            );
+            let published = fs::read(&index).unwrap();
+            let merged = fs::read(&file).unwrap();
+            assert_ne!(published, before);
+            let plan = abort().unwrap();
+            assert!(plan.restores_index() && plan.restores_branch());
+            fs::write(&file, b"edicion local posterior").unwrap();
+            assert!(apply_merge_abort(plan, || false).is_err());
+            assert_eq!(fs::read(&file).unwrap(), b"edicion local posterior");
+            fs::write(&file, &merged).unwrap();
+            let moved = fixture.root.join("aparte");
+            fs::rename(&file, &moved).unwrap();
+            fs::write(&file, &merged).unwrap();
+            assert!(abort().is_err());
+            fs::remove_file(&file).unwrap();
+            fs::rename(&moved, &file).unwrap();
+            let plan = abort().unwrap();
+            assert!(
+                apply_merge_abort(plan, || fs::read(&file).ok().as_ref() == Some(&original))
+                    .is_err()
+            );
+            assert!(pending.exists());
+            assert_eq!(fs::read(&index).unwrap(), published);
+            assert!(review(&fixture, incoming).is_err());
+            assert_eq!(
+                apply_merge_abort(abort().unwrap(), || false).unwrap().id,
+                active
+            );
+            assert_eq!(fs::read(&file).unwrap(), original);
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert_eq!(
+                fs::read_to_string(branch).unwrap().trim(),
+                active.to_string()
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("sin-seguimiento")).unwrap(),
+                b"archivo privado"
+            );
+            assert!(!pending.exists());
+            assert!(abort().is_err());
         }
     }
 

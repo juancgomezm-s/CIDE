@@ -96,6 +96,14 @@ impl TuiApp {
                 self.git_revision.cancel();
             }
             KeyCode::F(5) => self.open_git_graph(),
+            KeyCode::Char('a' | 'A') if key.kind == KeyEventKind::Press => {
+                if self.git_index.state() != jc_app::git_index::IndexState::Applying {
+                    if let Some(root) = self.project_root.clone() {
+                        let _ = self.git_index.discard_review();
+                        self.git_commit.open_merge_abort(root);
+                    }
+                }
+            }
             KeyCode::Char('b' | 'B' | 't' | 'T') if view.reference_selected.is_none() => {
                 if self.git_index.state() == jc_app::git_index::IndexState::Applying {
                     return true;

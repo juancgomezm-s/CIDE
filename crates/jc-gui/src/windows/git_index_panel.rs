@@ -650,8 +650,74 @@ mod tests {
         state.key(0x0d);
         wait(&mut state, |s| !s.git_commit.busy());
         assert!(state.git_commit.view().is_none(), "{}", state.status);
-        assert_eq!(fs::read(incoming_path).unwrap(), b"mismo contenido\n");
+        assert_eq!(fs::read(&incoming_path).unwrap(), b"mismo contenido\n");
         assert!(!actual_path.exists());
+
+        use std::os::windows::fs::OpenOptionsExt;
+        let original = run(&["rev-parse", "HEAD"]);
+        let index = fixture.root.join(".git/index");
+        let added = fixture.root.join("aborto-nuevo.txt");
+        let pending = fixture.root.join(".git/cide-switch.pending");
+        fs::write(&added, b"archivo de la fusion\n").unwrap();
+        fs::write(&incoming_path, b"cambio entrante\n").unwrap();
+        run(&["add", "--", "aborto-nuevo.txt", "nombre-entrante.txt"]);
+        let tree = run(&["write-tree"]);
+        let incoming = run(&["commit-tree", &tree, "-p", &original, "-m", "Abortar"]);
+        run(&["update-ref", "refs/heads/aborto", &incoming]);
+        run(&["read-tree", &original]);
+        fs::write(&incoming_path, b"mismo contenido\n").unwrap();
+        fs::remove_file(&added).unwrap();
+        let before = fs::read(&index).unwrap();
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x74);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        state.key(b'R' as usize);
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama aborto"))
+            .unwrap();
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'M' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().unwrap().merge_review().is_some());
+        let block = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(3)
+            .open(&incoming_path)
+            .unwrap();
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        drop(block);
+        assert!(pending.exists());
+        assert!(added.exists(), "{}", state.status);
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x1b);
+        state.key(b'A' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let review = view
+            .merge_abort_review()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(review.rows[0].path, b"aborto-nuevo.txt");
+        assert!(added.exists());
+        state.key(0x0d);
+        assert!(!state.git_commit.busy());
+        assert!(added.exists());
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert!(!pending.exists() && !added.exists());
+        assert_eq!(fs::read(&index).unwrap(), before);
+        assert_eq!(fs::read(&incoming_path).unwrap(), b"mismo contenido\n");
+        assert_eq!(run(&["rev-parse", "HEAD"]), original);
     }
 
     #[test]

@@ -52,7 +52,7 @@ impl TuiApp {
         };
         let plain = key.modifiers.is_empty();
         if key.code == KeyCode::Esc && plain {
-            if !self.git_commit.back_merge() {
+            if !self.git_commit.request_merge_stop() && !self.git_commit.back_merge() {
                 self.git_commit.cancel();
             }
         } else if view.merge_file().is_some() {
@@ -247,7 +247,9 @@ impl TuiApp {
             .collect::<Vec<_>>();
         let mut caret = None;
         let hint = if self.git_commit.applying() {
-            "Publicando operación Git…"
+            self.git_commit
+                .merge_publication_hint()
+                .unwrap_or("Publicando operación Git…")
         } else if self.git_commit.busy() {
             view.pending_hint()
         } else if let Some(plan) = view.reference_change_review() {
@@ -300,6 +302,31 @@ impl TuiApp {
                 }
                 "F2 restaura el archivo · Esc cancela"
             }
+        } else if let Some(plan) = view.merge_abort_review() {
+            rows.push(format!(
+                "Fusión pendiente · {} → {}",
+                plan.incoming(),
+                plan.active()
+            ));
+            rows.push(format!("{} archivos que se revertirán", plan.rows.len()));
+            if plan.restores_index() {
+                rows.push("Se restaurará el índice original".into());
+            }
+            if plan.restores_branch() {
+                rows.push("La rama volverá a su commit anterior".into());
+            }
+            let count = usize::from(height.saturating_sub(4))
+                .saturating_sub(rows.len())
+                .min(128);
+            let first = view.first.min(plan.rows.len().saturating_sub(count));
+            rows.extend(plan.rows.iter().skip(first).take(count).map(|row| {
+                format!(
+                    "{}  {}",
+                    row.change.map_or("", file_flag),
+                    opaque(&row.path, width.saturating_sub(3))
+                )
+            }));
+            "F2 confirma el aborto · Esc cancela"
         } else if let Some(plan) = view.merge_review() {
             let (active, incoming) = plan.tips();
             rows.extend([
@@ -453,6 +480,9 @@ impl TuiApp {
             } else if let WriteDraft::MergeBranch(target) = &view.draft {
                 rows.push(format!("Rama a incorporar en la activa · {}", target.name));
                 "Intro revisa la fusión · Esc cancela"
+            } else if matches!(view.draft, WriteDraft::AbortMerge) {
+                rows.push("Revisa qué se restaurará antes de abortar".into());
+                "Intro revisa el aborto · Esc cancela"
             } else if let WriteDraft::Restore(comparison) = &view.draft {
                 rows.push(opaque(&comparison.path, width));
                 "Intro revisa recuperación · Esc cancela"

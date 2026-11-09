@@ -28,6 +28,8 @@ use std::{
 
 const HEADS: &str = "refs/heads/";
 const MAX_PATHS: usize = 128;
+mod abort;
+pub use abort::{MergeAbortPlan, apply_merge_abort, prepare_merge_abort};
 pub const MERGE_EDIT_BYTES: usize = 64 * 1024;
 type Entries = BTreeMap<Vec<u8>, Entry>;
 type Blobs = BTreeMap<ObjectId, Vec<u8>>;
@@ -780,6 +782,11 @@ fn prepare(
         let active_short = &name_text(&active)[HEADS.len()..];
         let incoming_short = &name_text(&incoming)[HEADS.len()..];
         if let Some(journal) = &pending {
+            if journal.aborting {
+                return Err(Error::Engine(
+                    "Hay un aborto pendiente. Elige Abortar fusión para continuarlo".into(),
+                ));
+            }
             if journal.incoming.is_none() {
                 return Err(Error::Engine(
                     "Hay un cambio de rama pendiente de recuperación".into(),
@@ -1029,8 +1036,8 @@ fn prepare(
     })
 }
 
-/// Publish a confirmed plan. If an I/O failure interrupts publication, only
-/// the same pinned merge can resume through the durable checkout journal.
+/// Publish a confirmed plan. The durable journal permits resuming the pinned
+/// merge or reviewing its rollback after an interruption.
 pub fn apply_merge(
     plan: MergePlan,
     mut cancelled: impl FnMut() -> bool,
@@ -1046,7 +1053,7 @@ pub fn apply_merge(
             .exists()
         {
             Error::Engine(format!(
-                "{error}. Para reanudar la fusión, vuelve a elegir la rama {}",
+                "{error}. Elige Abortar fusión o vuelve a elegir la rama {} para reanudar",
                 plan.incoming()
             ))
         } else {
@@ -1191,6 +1198,7 @@ fn publish(
         lock.with_mut(|file| file.sync_all())?;
     }
     check()?;
+    checkout.save_original_index(&identity, index_bytes.as_deref().ok_or(Error::Stale)?, &ctx)?;
     checkout.publish_files(&identity, plan.limits, &ctx, &mut check)?;
     let mut index_again = None;
     if checkout.index_bytes.is_some() {
@@ -1217,6 +1225,7 @@ fn publish(
         index_write::same_repository(&plan.repository, &identity)?;
         verify_refs(&fresh, result)?;
     }
+    check()?;
     let mut reflog_warning = None;
     for (path, lock, before) in logs.into_iter().flatten() {
         let write = || -> Result<(), Error> {

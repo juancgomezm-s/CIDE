@@ -137,6 +137,18 @@ impl State {
         }
     }
 
+    pub(super) fn open_graph_merge_abort(&mut self) {
+        if self.git_index.state() == jc_app::git_index::IndexState::Applying {
+            return;
+        }
+        let Some(root) = self.project_root.clone() else {
+            return;
+        };
+        let _ = self.git_index.discard_review();
+        self.git_commit.open_merge_abort(root);
+        self.git_workspace.invalidate();
+    }
+
     fn graph_merge_target(&self) -> Option<&jc_app::git_commit::ReferenceTarget> {
         let row = self.git_workspace.graph.as_ref()?.reference_selected?;
         self.graph_branch_target()?;
@@ -240,6 +252,7 @@ impl State {
             0x2e if view.reference_selected.is_some() => self.open_graph_reference_change(false),
             0x43 if view.reference_selected.is_some() => self.open_graph_branch_switch(),
             0x4D if view.reference_selected.is_some() => self.open_graph_merge(),
+            0x41 => self.open_graph_merge_abort(),
             0x0d if view.reference_selected.is_some() => {
                 self.choose_graph_reference(view.selected_row())
             }
@@ -314,7 +327,7 @@ impl State {
         } else if references {
             "↑↓ seleccionar · Intro abrir referencia · Esc volver"
         } else {
-            "Intro abrir · R referencias · B crear rama · T crear etiqueta · N más · Esc volver"
+            "Intro abrir · R referencias · A abortar fusión · B rama · T etiqueta · N más · Esc volver"
         }
         .into();
         let graph = self.git_revision.graph();
@@ -432,6 +445,7 @@ impl State {
                 },
             ),
             (226, "Fusionar rama", Intent::GraphMergeBranch),
+            (547, "Abortar fusión", Intent::GraphAbortMerge),
         ] {
             if matches!(intent, Intent::GraphNext)
                 && (references || !graph.is_some_and(|p| p.has_next()))
@@ -441,6 +455,7 @@ impl State {
                 || matches!(intent, Intent::GraphSwitchBranch)
                     && self.graph_branch_target().is_none()
                 || matches!(intent, Intent::GraphMergeBranch) && self.graph_merge_target().is_none()
+                || matches!(intent, Intent::GraphAbortMerge) && references
                 || matches!(intent, Intent::GraphCreateReference(_))
                     && (references || graph.is_none_or(|page| page.entries.is_empty()))
             {

@@ -62,13 +62,32 @@ interrumpida se reanuda, usa ese mismo árbol, incluidas las ediciones del
 borrador.
 
 Si falla una publicación después de crear el registro de recuperación, elige
-la misma rama entrante para **Reanudar fusión**. El registro y los respaldos se
+la misma rama entrante para **Reanudar fusión**, o usa **Abortar fusión** desde
+el grafo (**A** en GUI y TUI). Mientras el merge escribe, **Esc** pide que se
+detenga en el siguiente punto seguro. Si queda pendiente, **Intro** abre la
+revisión del aborto. La revisión enumera las rutas que se revertirán e indica
+si ya se publicaron el índice o la rama. Confirma con **Ctrl+Intro** en la GUI
+o **F2** en la TUI.
+
+El registro y los respaldos se
 guardan dentro de `.git`. El motor comprueba los identificadores, las huellas
 del índice y los bytes esperados antes de retomar. Si encuentra una edición
-posterior, la conserva y detiene la recuperación. Una fusión interrumpida
-bloquea las demás escrituras Git de CIDE hasta que se complete. El reflog de la
-rama y el de HEAD registran la publicación cuando están habilitados. El estado
-Git, el grafo y el explorador se actualizan al terminar.
+posterior en una ruta afectada o un índice cambiado por otra operación, detiene
+el aborto y conserva los cambios y respaldos. Para retirar una salida escrita
+por el merge exige tanto los bytes esperados como la identidad del archivo.
+Si el índice ya se publicó, recupera la copia anterior byte por byte, incluidos
+los cambios preparados antes de fusionar. Si la rama avanzó, vuelve al commit
+anterior tras comprobar que todavía apunta al resultado de esta fusión.
+
+Una vez iniciado el aborto, una interrupción permite volver a revisarlo y
+continuar en el sentido de la restauración. Las otras escrituras Git de CIDE
+quedan bloqueadas mientras exista el registro. Si faltan pruebas de propiedad
+del cambio, por ejemplo en una fusión anterior a esta función o cuando falta
+un archivo y su ausencia también podría ser una eliminación local, CIDE
+conserva los respaldos y se detiene. El comando opera sobre fusiones pendientes
+iniciadas en CIDE. El reflog de la rama y el de HEAD registran los movimientos
+cuando están habilitados. El estado Git, el grafo y el explorador se actualizan
+al terminar.
 
 El flujo requiere un repositorio ordinario de Windows, una rama activa, un
 índice presente y rutas admitidas por la transacción de archivos. El recorrido
@@ -110,3 +129,14 @@ La validación del renombre pasó 903 pruebas con el mismo comando. La GUI
 conservó la ruta entrante y la TUI recuperó la ruta original. El núcleo
 comprobó las tres rutas, una eliminación, el rechazo de copias ambiguas,
 la protección de cambios locales y la reanudación tras una interrupción.
+
+La validación del aborto pasó formato, Clippy y 904 pruebas locales con
+`python scripts/check-local.py --steps fmt clippy test --jobs 2` en Windows.
+Los tres auxiliares marcados como ignorados se ejecutaron desde sus pruebas
+padre. En GUI y TUI un bloqueo de archivo interrumpió la publicación después
+de escribir la primera ruta. Las pruebas abrieron la revisión y confirmaron
+que el aborto retiró solo esa salida. El núcleo comprobó el aborto tras
+publicar el índice y mover la rama, la reanudación de un aborto interrumpido,
+las dos transiciones de archivo y carpeta, y la protección de una edición
+posterior y de un archivo ajeno con contenido idéntico. Las pruebas usaron
+repositorios temporales en segundo plano.
