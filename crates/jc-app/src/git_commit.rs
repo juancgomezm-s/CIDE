@@ -8,6 +8,7 @@ use jc_git::branch_switch::{apply_branch_switch, prepare_branch_switch, BranchSw
 pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
+use jc_git::local_merge::{apply_merge, prepare_merge, MergePlan};
 use jc_git::local_pair::SourceIdentity;
 pub use jc_git::ref_write::RefKind;
 use jc_git::ref_write::{
@@ -43,6 +44,7 @@ enum WritePlan {
     Reference(Box<RefPlan>),
     ReferenceChange(Box<RefChangePlan>),
     BranchSwitch(Box<BranchSwitchPlan>),
+    Merge(Box<MergePlan>),
     Restore(Box<RestorePlan>),
 }
 
@@ -59,6 +61,7 @@ pub enum WriteDraft {
     CreateReference(RefKind, String),
     ChangeReference(ReferenceTarget, bool),
     SwitchBranch(ReferenceTarget),
+    MergeBranch(ReferenceTarget),
     Restore(Arc<RevisionComparison>),
 }
 
@@ -70,16 +73,22 @@ impl WriteDraft {
     fn has_input(&self) -> bool {
         !matches!(
             self,
-            Self::ChangeReference(_, false) | Self::SwitchBranch(_) | Self::Restore(_)
+            Self::ChangeReference(_, false)
+                | Self::SwitchBranch(_)
+                | Self::MergeBranch(_)
+                | Self::Restore(_)
         )
     }
 
     fn refreshes_graph(&self) -> bool {
-        self.is_reference() || matches!(self, Self::SwitchBranch(_))
+        self.is_reference() || matches!(self, Self::SwitchBranch(_) | Self::MergeBranch(_))
     }
 
     fn refreshes_files(&self) -> bool {
-        matches!(self, Self::Restore(_) | Self::SwitchBranch(_))
+        matches!(
+            self,
+            Self::Restore(_) | Self::SwitchBranch(_) | Self::MergeBranch(_)
+        )
     }
 }
 
@@ -135,6 +144,7 @@ impl CommitView {
                 (RefKind::Tag, false) => "Eliminar etiqueta",
             },
             WriteDraft::SwitchBranch(_) => "Cambiar rama",
+            WriteDraft::MergeBranch(_) => "Fusionar rama",
             WriteDraft::Restore(comparison) => {
                 restore_label(comparison).unwrap_or("Restaurar archivo")
             }
@@ -150,6 +160,7 @@ impl CommitView {
             WriteDraft::Commit => "Leyendo el índice preparado… · Esc cancela",
             WriteDraft::Restore(_) => "Comprobando el índice y el archivo… · Esc cancela",
             WriteDraft::SwitchBranch(_) => "Comprobando ambas ramas… · Esc cancela",
+            WriteDraft::MergeBranch(_) => "Calculando la fusión local… · Esc cancela",
             _ => "Comprobando referencia… · Esc cancela",
         }
     }
@@ -185,6 +196,12 @@ impl CommitView {
     }
     pub fn reviewing(&self) -> bool {
         self.review.is_some()
+    }
+    pub fn merge_review(&self) -> Option<&MergePlan> {
+        match &self.review {
+            Some(WritePlan::Merge(plan)) => Some(plan),
+            _ => None,
+        }
     }
     fn input_limit(&self) -> usize {
         if self.draft.is_reference() {
@@ -245,6 +262,11 @@ impl CommitController {
     pub fn open_branch_switch(&mut self, root: PathBuf, target: ReferenceTarget) {
         if cfg!(windows) && target.kind == RefKind::Branch {
             self.open_write(root, None, WriteDraft::SwitchBranch(target));
+        }
+    }
+    pub fn open_merge(&mut self, root: PathBuf, target: ReferenceTarget) {
+        if cfg!(windows) && target.kind == RefKind::Branch {
+            self.open_write(root, None, WriteDraft::MergeBranch(target));
         }
     }
     pub fn open_restore(&mut self, root: PathBuf, comparison: Arc<RevisionComparison>) {
@@ -330,6 +352,7 @@ impl CommitController {
             .review()
             .map(|plan| plan.files().len())
             .or_else(|| view.branch_switch_review().map(|plan| plan.files().len()))
+            .or_else(|| view.merge_review().map(|plan| plan.rows.len()))
             .unwrap_or(0);
         view.first = view
             .first
@@ -346,6 +369,9 @@ impl CommitController {
         };
         if Some(view.root.as_path()) != root {
             self.cancel();
+            return;
+        }
+        if view.merge_review().is_some_and(|plan| !plan.can_apply()) {
             return;
         }
         if !view.draft.is_reference() && crate::git_index::require_clean(bench).is_err() {
@@ -423,6 +449,13 @@ impl CommitController {
                                 })
                             }),
                         ),
+                        Some(WritePlan::Merge(plan)) => {
+                            Completion::Applied(apply_merge(*plan, cancelled).map(|publication| {
+                                publication.reflog_warning.unwrap_or_else(|| {
+                                    format!("Fusión local publicada · {}", publication.id)
+                                })
+                            }))
+                        }
                         None => Completion::Review(match (draft, replaces) {
                             (WriteDraft::CreateReference(kind, target), _) => {
                                 prepare_ref(&root, &target, kind, &message, LIMITS, cancelled)
@@ -446,6 +479,10 @@ impl CommitController {
                                 cancelled,
                             )
                             .map(|plan| WritePlan::BranchSwitch(Box::new(plan))),
+                            (WriteDraft::MergeBranch(target), _) => {
+                                prepare_merge(&root, &target.name, &target.oid, LIMITS, cancelled)
+                                    .map(|plan| WritePlan::Merge(Box::new(plan)))
+                            }
                             (WriteDraft::Restore(comparison), _) => {
                                 prepare_restore(&root, &comparison.path, LIMITS, cancelled)
                                     .and_then(|plan| {

@@ -24,6 +24,7 @@ pub(super) struct Journal {
     pub destination: String,
     pub from: ObjectId,
     pub to: ObjectId,
+    pub incoming: Option<ObjectId>,
     old_index: ObjectId,
     new_index: ObjectId,
     nonce: String,
@@ -41,15 +42,18 @@ impl Journal {
             return Err(Error::Unsupported);
         }
         let mut lines = std::str::from_utf8(&bytes).map_err(engine)?.lines();
-        if lines.next() != Some("CIDE-SWITCH-1") {
-            return Err(Error::Unsupported);
-        }
+        let merge = match lines.next() {
+            Some("CIDE-SWITCH-1") => false,
+            Some("CIDE-MERGE-1") => true,
+            _ => return Err(Error::Unsupported),
+        };
         let source = lines.next().ok_or(Error::Unsupported)?.to_owned();
         let destination = lines.next().ok_or(Error::Unsupported)?.to_owned();
         let mut oid = || {
             ObjectId::from_hex(lines.next().ok_or(Error::Unsupported)?.as_bytes()).map_err(engine)
         };
         let (from, to, old_index, new_index) = (oid()?, oid()?, oid()?, oid()?);
+        let incoming = if merge { Some(oid()?) } else { None };
         let nonce = lines.next().ok_or(Error::Unsupported)?.to_owned();
         if nonce.is_empty()
             || nonce.len() > 64
@@ -63,6 +67,7 @@ impl Journal {
             destination,
             from,
             to,
+            incoming,
             old_index,
             new_index,
             nonce,
@@ -70,17 +75,26 @@ impl Journal {
     }
 
     fn bytes(&self) -> Vec<u8> {
-        format!(
-            "CIDE-SWITCH-1\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        let mut data = format!(
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            if self.incoming.is_some() {
+                "CIDE-MERGE-1"
+            } else {
+                "CIDE-SWITCH-1"
+            },
             self.source,
             self.destination,
             self.from,
             self.to,
             self.old_index,
-            self.new_index,
-            self.nonce
-        )
-        .into_bytes()
+            self.new_index
+        );
+        if let Some(incoming) = self.incoming {
+            data.push_str(&format!("{incoming}\n"));
+        }
+        data.push_str(&self.nonce);
+        data.push('\n');
+        data.into_bytes()
     }
 
     fn backup(&self, repository: &Identity, file: usize) -> PathBuf {
@@ -125,12 +139,20 @@ pub(super) struct Checkout {
     pub resuming: bool,
     pub index_bytes: Option<Vec<u8>>,
     attribute_sources: BTreeMap<Vec<u8>, Option<ObjectId>>,
+    merge: bool,
 }
 
 pub(super) struct Transition<'a> {
     pub branches: (&'a str, &'a str),
     pub commits: (ObjectId, ObjectId),
     pub trees: (ObjectId, ObjectId),
+    pub merge: Option<MergeCheckout<'a>>,
+}
+
+pub(super) struct MergeCheckout<'a> {
+    pub incoming: ObjectId,
+    pub entries: &'a BTreeMap<Vec<u8>, revision::Entry>,
+    pub blobs: &'a BTreeMap<ObjectId, Vec<u8>>,
 }
 
 fn conflict(path: &[u8]) -> Error {
@@ -230,6 +252,7 @@ fn check_effective_attributes(
     attributes: &mut gix::AttributeStack<'_>,
     path: &[u8],
     sources: (Option<&[u8]>, Option<&[u8]>),
+    merge: bool,
 ) -> Result<(), Error> {
     let mut outcome = attributes.selected_attribute_matches([
         "text",
@@ -238,6 +261,7 @@ fn check_effective_attributes(
         "filter",
         "ident",
         "working-tree-encoding",
+        "merge",
     ]);
     attributes
         .at_entry(path.as_bstr(), Some(Mode::FILE))
@@ -247,6 +271,12 @@ fn check_effective_attributes(
     let mut lf = false;
     for attr in outcome.iter_selected() {
         let state = attr.assignment.state;
+        if attr.assignment.name.as_str() == "merge" {
+            if merge && !state.is_unspecified() {
+                return Err(Error::Filter);
+            }
+            continue;
+        }
         if state.is_unspecified() || state.is_unset() {
             continue;
         }
@@ -318,10 +348,18 @@ impl Checkout {
             branches,
             commits,
             trees,
+            merge,
         } = transition;
+        let merging = merge.is_some();
         let mut budget = revision::Budget::new(limits);
         let old = revision::tree_entries(repo, trees.0, limits, &mut budget, ctx)?;
-        let new = revision::tree_entries(repo, trees.1, limits, &mut budget, ctx)?;
+        let stored;
+        let new = if let Some(merge) = &merge {
+            merge.entries
+        } else {
+            stored = revision::tree_entries(repo, trees.1, limits, &mut budget, ctx)?;
+            &stored
+        };
         let mut index = local_pair::decode_index(repo, Some(bytes), ctx)?;
         if index.resolve_undo().is_some()
             || index.fs_monitor().is_some()
@@ -408,11 +446,18 @@ impl Checkout {
                 .root
                 .join(text.replace('/', std::path::MAIN_SEPARATOR_STR));
             let before = file_bytes(repo, before, limits, &mut budget, ctx)?;
-            let after = file_bytes(repo, after, limits, &mut budget, ctx)?;
+            let after =
+                if let Some(bytes) = after.and_then(|entry| merge.as_ref()?.blobs.get(&entry.id)) {
+                    budget.charge(bytes.len())?;
+                    Some(bytes.clone())
+                } else {
+                    file_bytes(repo, after, limits, &mut budget, ctx)?
+                };
             check_effective_attributes(
                 &mut attributes,
                 path,
                 (before.as_deref(), after.as_deref()),
+                merging,
             )?;
             let observed = observe(
                 repository,
@@ -438,7 +483,7 @@ impl Checkout {
             });
         }
 
-        let index_bytes = if index_applied {
+        let index_bytes = if index_applied || files.is_empty() {
             None
         } else {
             index.remove_entries(|_, path, _| {
@@ -491,6 +536,7 @@ impl Checkout {
                     destination: branches.1.into(),
                     from: commits.0,
                     to: commits.1,
+                    incoming: merge.map(|merge| merge.incoming),
                     old_index: current_index,
                     new_index,
                     nonce: format!("{:x}{timestamp:x}", std::process::id()),
@@ -503,6 +549,7 @@ impl Checkout {
             resuming,
             index_bytes,
             attribute_sources,
+            merge: merging,
         })
     }
 
@@ -531,6 +578,7 @@ impl Checkout {
                 &mut attributes,
                 &file.path,
                 (file.before.as_deref(), file.after.as_deref()),
+                self.merge,
             )?;
             let backup = self.resuming.then(|| self.journal.backup(repository, i));
             let current = observe(
@@ -594,12 +642,15 @@ impl Checkout {
                             }
                         })?;
                 }
-                Observed::Missing(_) => {
+                Observed::Missing(expected) => {
                     let Capture::Absent { token } =
                         local_pair::capture(&repository.root, &file.target, 0, ctx)?
                     else {
                         return Err(conflict(&file.path));
                     };
+                    if !expected.is_compatible_after_creating_parents(&token) {
+                        return Err(conflict(&file.path));
+                    }
                     jc_fs::create_missing_parents(&repository.root, &token, &mut || {
                         ctx.check().is_err()
                     })?;
@@ -608,6 +659,9 @@ impl Checkout {
                     else {
                         return Err(conflict(&file.path));
                     };
+                    if !expected.is_compatible_after_creating_parents(&token) {
+                        return Err(conflict(&file.path));
+                    }
                     jc_fs::stage_missing_file(
                         &repository.root,
                         &token,

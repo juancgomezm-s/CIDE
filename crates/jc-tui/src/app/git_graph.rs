@@ -129,16 +129,28 @@ impl TuiApp {
                         .open_reference_change(root, target, key.code == KeyCode::F(2));
                 }
             }
-            KeyCode::Char('c' | 'C')
+            KeyCode::Char('c' | 'C' | 'm' | 'M')
                 if view.reference_selected.is_some() && key.kind == KeyEventKind::Press =>
             {
+                let merge = matches!(key.code, KeyCode::Char('m' | 'M'));
                 let target = view
                     .reference_selected
-                    .and_then(|row| self.graph_branch_target(row))
+                    .and_then(|row| {
+                        let target = self.graph_branch_target(row)?;
+                        if merge {
+                            self.git_revision.graph()?.branch_merge_target(row)
+                        } else {
+                            Some(target)
+                        }
+                    })
                     .cloned();
                 if let Some((root, target)) = self.project_root.clone().zip(target) {
                     let _ = self.git_index.discard_review();
-                    self.git_commit.open_branch_switch(root, target);
+                    if merge {
+                        self.git_commit.open_merge(root, target);
+                    } else {
+                        self.git_commit.open_branch_switch(root, target);
+                    }
                 }
             }
             KeyCode::Char('r' | 'R') if self.git_revision.graph().is_some() => {
@@ -262,10 +274,10 @@ impl TuiApp {
             }
             .into(),
             message: if references && self.graph_branch_target(view.selected_row()).is_some() {
-                if cfg!(windows) {
-                    "C cambiar rama · Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
+                if page.branch_merge_target(view.selected_row()).is_some() {
+                    "M fusionar · C cambiar · Intro abrir · F2 renombrar · Supr eliminar · Esc"
                 } else {
-                    "C cambiar rama · Intro abrir · Supr eliminar · Esc volver"
+                    "C cambiar rama · Intro abrir · Esc volver"
                 }
                 .into()
             } else if references && self.graph_write_target(view.selected_row()).is_some() {

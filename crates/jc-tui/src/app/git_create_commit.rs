@@ -200,6 +200,37 @@ impl TuiApp {
                 }
                 "F2 restaura el archivo · Esc cancela"
             }
+        } else if let Some(plan) = view.merge_review() {
+            let (active, incoming) = plan.tips();
+            rows.extend([
+                format!("{} → {}", plan.incoming(), plan.active()),
+                plan.kind.label().into(),
+                format!("Activa · {active}"),
+                format!("Entrante · {incoming}"),
+            ]);
+            if let Some(result) = plan.result() {
+                rows.push(format!("Resultado · {result}"));
+            }
+            let count = usize::from(height.saturating_sub(4))
+                .saturating_sub(rows.len())
+                .min(128);
+            let first = view.first.min(plan.rows.len().saturating_sub(count));
+            rows.extend(plan.rows.iter().skip(first).take(count).map(|row| {
+                format!(
+                    "{}  {}",
+                    row.change.map_or("Conflicto", file_flag),
+                    opaque(&row.path, width.saturating_sub(3)),
+                )
+            }));
+            if plan.recovering() {
+                "↑↓ archivos · F2 reanuda la fusión · Esc cancela"
+            } else if plan.can_apply() {
+                "↑↓ archivos · F2 confirma la fusión · Esc cancela"
+            } else if plan.rows.is_empty() {
+                "Esc vuelve"
+            } else {
+                "↑↓ conflictos · Esc vuelve"
+            }
         } else if let Some(plan) = view.branch_switch_review() {
             rows.extend([
                 format!("{} → {}", plan.source(), plan.destination()),
@@ -281,6 +312,9 @@ impl TuiApp {
             } else if let WriteDraft::SwitchBranch(target) = &view.draft {
                 rows.push(format!("Rama de destino · {}", target.name));
                 "Intro revisa el cambio · Esc cancela"
+            } else if let WriteDraft::MergeBranch(target) = &view.draft {
+                rows.push(format!("Rama a incorporar en la activa · {}", target.name));
+                "Intro revisa la fusión · Esc cancela"
             } else if let WriteDraft::Restore(comparison) = &view.draft {
                 rows.push(opaque(&comparison.path, width));
                 "Intro revisa recuperación · Esc cancela"

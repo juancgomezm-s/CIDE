@@ -141,6 +141,7 @@ enum Intent {
     GraphOpenReference,
     GraphChangeReference(bool),
     GraphSwitchBranch,
+    GraphMergeBranch,
     GraphCreateReference(jc_app::git_commit::RefKind),
     HistoryParent,
     CreateCommit,
@@ -946,6 +947,10 @@ impl State {
             }
             Some(Intent::GraphSwitchBranch) => {
                 self.open_graph_branch_switch();
+                Action::None
+            }
+            Some(Intent::GraphMergeBranch) => {
+                self.open_graph_merge();
                 Action::None
             }
             Some(Intent::GraphCreateReference(kind)) => {

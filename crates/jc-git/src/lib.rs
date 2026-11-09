@@ -7,6 +7,7 @@ pub mod commit_write;
 pub mod diff_model;
 pub mod graph;
 pub mod index_write;
+pub mod local_merge;
 pub mod local_pair;
 pub mod patch_export;
 pub mod path_history;

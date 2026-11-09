@@ -875,6 +875,247 @@ mod tests {
     }
 
     #[cfg(windows)]
+    mod local_merge {
+        use super::*;
+        use crate::local_merge::{MergeKind, MergePlan, apply_merge, prepare_merge};
+        use std::io::Write;
+
+        fn scenario(
+            fixture: &Fixture,
+            divergent: bool,
+            right: &[u8],
+        ) -> (gix::Repository, gix::ObjectId, gix::ObjectId) {
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            let repo = gix::init(&fixture.root).unwrap();
+            let base = b"uno\r\ndos\r\ntres\r\nfin";
+            let left = b"UNO\r\ndos\r\ntres\r\nfin";
+            let make_tree = |bytes: &[u8]| {
+                let id = repo.write_blob(bytes).unwrap().detach();
+                let tree = repo
+                    .write_object(Tree {
+                        entries: vec![Entry {
+                            mode: EntryKind::Blob.into(),
+                            filename: "a.txt".into(),
+                            oid: id,
+                        }],
+                    })
+                    .unwrap()
+                    .detach();
+                (id, tree)
+            };
+            let (original, tree) = make_tree(base);
+            let common = commit_at_tree(&repo, tree, &[], "base");
+            let (active_blob, active) = if divergent {
+                let (blob, tree) = make_tree(left);
+                (blob, commit_at_tree(&repo, tree, &[common], "izquierda"))
+            } else {
+                (original, common)
+            };
+            let (_, tree) = make_tree(right);
+            let incoming = commit_at_tree(&repo, tree, &[common], "derecha");
+            let git = fixture.git();
+            fs::write(git.join("HEAD"), "ref: refs/heads/activa\n").unwrap();
+            fs::write(git.join("refs/heads/activa"), format!("{active}\n")).unwrap();
+            fs::write(git.join("refs/heads/entrante"), format!("{incoming}\n")).unwrap();
+            fs::OpenOptions::new().append(true).open(git.join("config")).unwrap()
+                .write_all(b"\n[core]\nlogAllRefUpdates = true\n[user]\nname = CIDE\nemail = cide@invalid\n")
+                .unwrap();
+            let local = repo.write_blob(b"preparado local").unwrap().detach();
+            let mut state = gix::index::State::new(repo.object_hash());
+            for (path, id) in [(b"a.txt".as_slice(), active_blob), (b"local", local)] {
+                state.dangerously_push_entry(
+                    Default::default(),
+                    id,
+                    gix::index::entry::Flags::empty(),
+                    gix::index::entry::Mode::FILE,
+                    path.as_bstr(),
+                );
+            }
+            gix::index::File::from_state(state, git.join("index"))
+                .write(Default::default())
+                .unwrap();
+            fs::write(
+                fixture.root.join("a.txt"),
+                if divergent { left } else { base },
+            )
+            .unwrap();
+            fs::write(fixture.root.join("local"), b"no preparado local").unwrap();
+            fs::write(fixture.root.join("sin-seguimiento"), b"archivo privado").unwrap();
+            (repo, active, incoming)
+        }
+
+        fn review(fixture: &Fixture, incoming: gix::ObjectId) -> Result<MergePlan, Error> {
+            prepare_merge(
+                &fixture.root,
+                "entrante",
+                &incoming.to_string(),
+                limits(),
+                || false,
+            )
+        }
+
+        #[test]
+        fn merge_divergent_combines_independent_edits_and_preserves_local_state() {
+            let fixture = Fixture::new();
+            let (_, active, incoming) = scenario(&fixture, true, b"uno\r\ndos\r\ntres\r\nFIN");
+            let git = fixture.git();
+            let plan = review(&fixture, incoming).unwrap();
+            let id = plan.result().unwrap();
+            let repo = gix::open(&fixture.root).unwrap();
+            assert!(
+                repo.try_find_object(id).unwrap().is_none(),
+                "la vista previa escribió un objeto"
+            );
+            let staged = repo.open_index().unwrap();
+            let previous = staged.entry_by_path(b"local".as_bstr()).unwrap().clone();
+            assert_eq!(plan.kind, MergeKind::Commit);
+            assert_eq!(plan.rows[0].path, b"a.txt");
+            assert_eq!(
+                fs::read(fixture.root.join("a.txt")).unwrap(),
+                b"UNO\r\ndos\r\ntres\r\nfin"
+            );
+            let applied = apply_merge(plan, || false).unwrap();
+            assert_eq!(applied.id, id);
+            assert!(applied.reflog_warning.is_none());
+            let repo = gix::open(&fixture.root).unwrap();
+            let commit = repo.find_commit(id).unwrap();
+            assert_eq!(
+                commit
+                    .parent_ids()
+                    .map(|id| id.detach())
+                    .collect::<Vec<_>>(),
+                [active, incoming]
+            );
+            assert_eq!(commit.tree().unwrap().iter().count(), 1);
+            assert_eq!(
+                repo.open_index()
+                    .unwrap()
+                    .entry_by_path(b"local".as_bstr())
+                    .unwrap()
+                    .id,
+                previous.id
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("sin-seguimiento")).unwrap(),
+                b"archivo privado"
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("a.txt")).unwrap(),
+                b"UNO\r\ndos\r\ntres\r\nFIN"
+            );
+            assert_eq!(
+                fs::read(git.join("HEAD")).unwrap(),
+                b"ref: refs/heads/activa\n"
+            );
+            assert_eq!(
+                fs::read_to_string(git.join("refs/heads/entrante"))
+                    .unwrap()
+                    .trim(),
+                incoming.to_string()
+            );
+            assert_eq!(repo.head_id().unwrap().detach(), id);
+            assert!(
+                fs::read_to_string(git.join("logs/HEAD"))
+                    .unwrap()
+                    .contains(&format!("{active} {id}"))
+            );
+            assert!(
+                fs::read_to_string(git.join("logs/refs/heads/activa"))
+                    .unwrap()
+                    .contains(&format!("{active} {id}"))
+            );
+            let review = review(&fixture, incoming).unwrap();
+            assert_eq!(review.kind, MergeKind::UpToDate);
+            assert!(!review.can_apply());
+        }
+
+        #[test]
+        fn merge_conflict_cannot_publish_and_leaves_all_local_bytes_intact() {
+            let fixture = Fixture::new();
+            let (_, active, incoming) = scenario(&fixture, true, b"otro\r\ndos\r\ntres\r\nfin");
+            let git = fixture.git();
+            let index = fs::read(git.join("index")).unwrap();
+            let plan = review(&fixture, incoming).unwrap();
+            assert_eq!(plan.kind, MergeKind::Conflicts);
+            assert_eq!(plan.rows[0].path, b"a.txt");
+            assert!(plan.rows[0].change.is_none());
+            assert!(apply_merge(plan, || false).is_err());
+            assert_eq!(fs::read(git.join("index")).unwrap(), index);
+            assert_eq!(
+                fs::read(fixture.root.join("a.txt")).unwrap(),
+                b"UNO\r\ndos\r\ntres\r\nfin"
+            );
+            assert_eq!(
+                fs::read_to_string(git.join("refs/heads/activa"))
+                    .unwrap()
+                    .trim(),
+                active.to_string()
+            );
+            assert!(!git.join(crate::branch_checkout::JOURNAL_NAME).exists());
+        }
+
+        #[test]
+        fn merge_fast_forward_rejects_local_edits_and_changed_ref() {
+            let fixture = Fixture::new();
+            let (_, active, incoming) = scenario(&fixture, false, b"entrante");
+            let git = fixture.git();
+            let file = fixture.root.join("a.txt");
+            let reviewed = review(&fixture, incoming).unwrap();
+            assert_eq!(reviewed.kind, MergeKind::FastForward);
+            fs::write(&file, "edición entre revisión y confirmación").unwrap();
+            assert!(apply_merge(reviewed, || false).is_err());
+            assert!(review(&fixture, incoming).is_err());
+            assert_eq!(
+                fs::read(&file).unwrap(),
+                "edición entre revisión y confirmación".as_bytes()
+            );
+            fs::write(&file, b"uno\r\ndos\r\ntres\r\nfin").unwrap();
+            let reviewed = review(&fixture, incoming).unwrap();
+            fs::write(git.join("refs/heads/entrante"), format!("{active}\n")).unwrap();
+            assert!(matches!(apply_merge(reviewed, || false), Err(Error::Stale)));
+            assert!(!git.join(crate::branch_checkout::JOURNAL_NAME).exists());
+        }
+
+        #[test]
+        fn merge_resumes_after_index_publication_without_replacing_a_later_edit() {
+            let fixture = Fixture::new();
+            let (_, active, incoming) = scenario(&fixture, true, b"uno\r\ndos\r\ntres\r\nFIN");
+            let git = fixture.git();
+            let index = git.join("index");
+            let before = fs::read(&index).unwrap();
+            let plan = review(&fixture, incoming).unwrap();
+            let result = plan.result().unwrap();
+            assert!(apply_merge(plan, || fs::read(&index).unwrap() != before).is_err());
+            let pending = git.join(crate::branch_checkout::JOURNAL_NAME);
+            assert!(pending.exists());
+            assert_eq!(
+                fs::read_to_string(git.join("refs/heads/activa"))
+                    .unwrap()
+                    .trim(),
+                active.to_string()
+            );
+            let file = fixture.root.join("a.txt");
+            let merged = fs::read(&file).unwrap();
+            fs::write(&file, b"edicion local posterior").unwrap();
+            assert!(review(&fixture, incoming).is_err());
+            assert_eq!(fs::read(&file).unwrap(), b"edicion local posterior");
+            fs::write(&file, merged).unwrap();
+            let resumed = review(&fixture, incoming).unwrap();
+            assert!(resumed.recovering());
+            assert_eq!(resumed.result(), Some(result));
+            assert_eq!(apply_merge(resumed, || false).unwrap().id, result);
+            assert!(!pending.exists());
+        }
+    }
+
+    #[cfg(windows)]
     mod branch_switch {
         use super::*;
         use crate::branch_switch::{BranchSwitchPlan, apply_branch_switch, prepare_branch_switch};

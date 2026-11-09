@@ -73,6 +73,19 @@ impl MissingToken {
                 .eq(other.ancestors.iter().map(|state| &state.identity))
     }
 
+    /// Compare a checkout destination after earlier entries may have created
+    /// some of its missing parents. Already observed directories cannot change.
+    pub fn is_compatible_after_creating_parents(&self, other: &Self) -> bool {
+        self.path == other.path
+            && other.missing_at.starts_with(&self.missing_at)
+            && other.ancestors.len() >= self.ancestors.len()
+            && self
+                .ancestors
+                .iter()
+                .zip(&other.ancestors)
+                .all(|(before, after)| before.identity == after.identity)
+    }
+
     /// Logical retained heap, excluding the containing value's inline size.
     pub fn memory_bytes(&self) -> usize {
         self.path.capacity()

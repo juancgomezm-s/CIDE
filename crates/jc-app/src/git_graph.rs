@@ -84,6 +84,13 @@ impl CommitGraph {
             .as_ref()
             .filter(|target| target.kind == WriteRefKind::Branch)
     }
+    pub fn branch_merge_target(&self, row: usize) -> Option<&ReferenceTarget> {
+        if !cfg!(windows) || !matches!(self.head, Some(Head::Attached { .. })) {
+            return None;
+        }
+        self.reference_write_target(row)
+            .filter(|target| target.kind == WriteRefKind::Branch)
+    }
     pub fn has_next(&self) -> bool {
         self.next.is_some()
     }

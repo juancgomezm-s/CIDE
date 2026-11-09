@@ -174,7 +174,7 @@ pub(super) fn open_for_write(
     let result = open_for_write_during_switch(root, ctx)?;
     if exists(&result.1.git_dir.join(crate::branch_switch::JOURNAL_NAME))? {
         return Err(Error::Engine(
-            "Hay un cambio de rama pendiente de recuperación".into(),
+            "Hay un cambio de rama o una fusión pendiente de recuperación".into(),
         ));
     }
     Ok(result)

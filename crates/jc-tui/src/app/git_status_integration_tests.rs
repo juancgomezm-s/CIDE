@@ -26,6 +26,102 @@ static SERIAL: Mutex<()> = Mutex::new(());
 const TRACKED: &str = "tracked.txt";
 const UNTRACKED: &str = "nuevo-é[1].txt";
 
+#[test]
+fn tui_local_merge_lists_conflicts_and_only_applies_a_confirmed_preview() {
+    let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
+    let fixture = Fixture::new();
+    let base = fixture.oid(&["rev-parse", "HEAD"]);
+    fixture.git(&["config", "--local", "user.name", "CIDE Fixture"]);
+    fixture.git(&["config", "--local", "user.email", "cide@example.test"]);
+    let next = |text: &[u8], parent: &str| {
+        fixture.rewrite(TRACKED, text);
+        let blob = fixture.oid(&["hash-object", "-w", "--no-filters", "--", TRACKED]);
+        fixture.cache(&blob);
+        let tree = fixture.oid(&["write-tree"]);
+        fixture.oid(&["commit-tree", &tree, "-p", parent, "-m", "Cambio de prueba"])
+    };
+    let active = next(b"activa\r\nend", &base);
+    let conflicting = next(b"conflicto\r\nend", &base);
+    let forward = next(b"avance\r\nend", &active);
+    fixture.git(&["update-ref", "HEAD", &active]);
+    fixture.git(&["update-ref", "refs/heads/conflicto", &conflicting]);
+    fixture.git(&["update-ref", "refs/heads/avance", &forward]);
+    fixture.git(&["read-tree", &active]);
+    fixture.rewrite(TRACKED, b"activa\r\nend");
+    let before = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    request_ready(&mut app, &wake);
+    let wait_for = |app: &mut TuiApp, ready: fn(&TuiApp) -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !ready(app) {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            assert!(Instant::now() < deadline, "{}", app.status);
+            wake.wait(ticket, Some(Duration::from_millis(10)));
+        }
+    };
+    key(&mut app, KeyCode::Char('g'));
+    wait_for(&mut app, |app| app.git_revision.graph().is_some());
+    let select = |app: &mut TuiApp, label: &str| {
+        key(app, KeyCode::Char('r'));
+        let row = app
+            .prepare_frame(100, 24)
+            .graph
+            .unwrap()
+            .rows
+            .into_iter()
+            .find(|row| row.path == label)
+            .unwrap()
+            .ordinal;
+        key(app, KeyCode::Home);
+        for _ in 0..row {
+            key(app, KeyCode::Down);
+        }
+        key(app, KeyCode::Char('m'));
+        key(app, KeyCode::Enter);
+        wait_for(app, |app| !app.git_commit.busy());
+    };
+    select(&mut app, "Rama conflicto");
+    let preview = app.prepare_frame(100, 24).commit.unwrap();
+    assert!(preview
+        .rows
+        .iter()
+        .any(|row| row.contains("Conflicto") && row.contains(TRACKED)));
+    assert!(!preview.hint.contains("F2"));
+    key(&mut app, KeyCode::F(2));
+    assert!(!app.git_commit.busy());
+    assert_eq!(fixture.disk(), before);
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Esc);
+    select(&mut app, "Rama avance");
+    let view = app.git_commit.view().unwrap();
+    let review = view
+        .merge_review()
+        .unwrap_or_else(|| panic!("{:?}", view.error));
+    assert_eq!(review.result().unwrap().to_string(), forward);
+    assert_eq!(fixture.disk(), before);
+    app.workbench.insert_text("edición sin guardar").unwrap();
+    key(&mut app, KeyCode::F(2));
+    assert_eq!(fixture.disk(), before);
+    assert!(app
+        .git_commit
+        .view()
+        .unwrap()
+        .error
+        .as_ref()
+        .unwrap()
+        .contains("Guarda"));
+    app.workbench.undo().unwrap();
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().is_none(), "{}", app.status);
+    assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), forward);
+    let after = fixture.disk();
+    assert_eq!(after.head, before.head);
+    assert_eq!(after.tracked, b"avance\r\nend");
+    assert_eq!(after.untracked, before.untracked);
+}
+
 fn installed_git() -> PathBuf {
     if let Some(path) = std::env::var_os("JC_GIT_TEST_EXE") {
         return PathBuf::from(path).canonicalize().unwrap();

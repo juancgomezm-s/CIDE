@@ -82,11 +82,14 @@ pub struct BranchSwitchPublication {
     pub reflog_warning: Option<String>,
 }
 
-fn name_text(name: &FullName) -> &str {
+pub(super) fn name_text(name: &FullName) -> &str {
     name.as_bstr().to_str().expect("UTF-8 branch name")
 }
 
-fn open_for_switch(root: &Path, ctx: &Context<'_>) -> Result<(gix::Repository, Identity), Error> {
+pub(super) fn open_for_switch(
+    root: &Path,
+    ctx: &Context<'_>,
+) -> Result<(gix::Repository, Identity), Error> {
     let (repo, identity) = index_write::open_for_write_during_switch(root, ctx)?;
     for control in ["worktrees", "config.worktree", "BISECT_START"] {
         if index_write::exists(&identity.git_dir.join(control))? {
@@ -98,7 +101,7 @@ fn open_for_switch(root: &Path, ctx: &Context<'_>) -> Result<(gix::Repository, I
     Ok((repo, identity))
 }
 
-fn direct_branch(refs: &[graph::RefEntry], name: &FullName) -> Result<ObjectId, Error> {
+pub(super) fn direct_branch(refs: &[graph::RefEntry], name: &FullName) -> Result<ObjectId, Error> {
     let name = name.as_bstr().as_bytes();
     let index = refs
         .binary_search_by(|entry| entry.name.as_slice().cmp(name))
@@ -109,7 +112,7 @@ fn direct_branch(refs: &[graph::RefEntry], name: &FullName) -> Result<ObjectId, 
     }
 }
 
-fn capture_head(
+pub(super) fn capture_head(
     git: &Path,
     branch: &FullName,
     ctx: &Context<'_>,
@@ -175,6 +178,11 @@ pub fn prepare_branch_switch(
         let current = ref_write::reference_name(RefKind::Branch, source, limits)?;
         let pending = Journal::read(&repository, ctx)?;
         let source = if let Some(journal) = &pending {
+            if journal.incoming.is_some() {
+                return Err(Error::Engine(
+                    "Hay una fusión pendiente. Elige Fusionar rama para reanudarla".into(),
+                ));
+            }
             let source = ref_write::reference_name(RefKind::Branch, &journal.source, limits)?;
             if journal.destination != name_text(&destination)[HEADS.len()..]
                 || journal.to != target
@@ -229,6 +237,7 @@ pub fn prepare_branch_switch(
                     ),
                     commits: (source_target, target),
                     trees: (tree, target_tree),
+                    merge: None,
                 },
                 bytes.as_deref().ok_or(Error::Unsupported)?,
                 pending,

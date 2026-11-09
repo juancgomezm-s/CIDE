@@ -113,7 +113,7 @@ pub(super) fn local_identity(repo: &gix::Repository) -> Result<gix::actor::Signa
     })
 }
 
-fn check_signing(repo: &gix::Repository) -> Result<(), Error> {
+pub(super) fn check_signing(repo: &gix::Repository) -> Result<(), Error> {
     if repo
         .config_snapshot()
         .boolean("commit.gpgSign")
@@ -460,7 +460,7 @@ pub(super) fn stage_log_with_source(
     Ok((lock, source))
 }
 
-fn store_object(
+pub(super) fn store_object(
     repo: &gix::Repository,
     root: &Path,
     id: gix::ObjectId,

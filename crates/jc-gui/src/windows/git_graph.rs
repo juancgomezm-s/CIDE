@@ -125,6 +125,24 @@ impl State {
         }
     }
 
+    pub(super) fn open_graph_merge(&mut self) {
+        if let Some((root, target)) = self
+            .project_root
+            .clone()
+            .zip(self.graph_merge_target().cloned())
+        {
+            let _ = self.git_index.discard_review();
+            self.git_commit.open_merge(root, target);
+            self.git_workspace.invalidate();
+        }
+    }
+
+    fn graph_merge_target(&self) -> Option<&jc_app::git_commit::ReferenceTarget> {
+        let row = self.git_workspace.graph.as_ref()?.reference_selected?;
+        self.graph_branch_target()?;
+        self.git_revision.graph()?.branch_merge_target(row)
+    }
+
     pub(super) fn select_graph_reference(&mut self, index: usize) {
         if let Some(view) = &mut self.git_workspace.graph {
             view.reference_selected = Some(index);
@@ -221,6 +239,7 @@ impl State {
             0x71 if view.reference_selected.is_some() => self.open_graph_reference_change(true),
             0x2e if view.reference_selected.is_some() => self.open_graph_reference_change(false),
             0x43 if view.reference_selected.is_some() => self.open_graph_branch_switch(),
+            0x4D if view.reference_selected.is_some() => self.open_graph_merge(),
             0x0d if view.reference_selected.is_some() => {
                 self.choose_graph_reference(view.selected_row())
             }
@@ -286,8 +305,10 @@ impl State {
             "Grafo de commits"
         }
         .into();
-        frame.footer = if references && self.graph_branch_target().is_some() {
-            "C cambiar rama · Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
+        frame.footer = if references && self.graph_merge_target().is_some() {
+            "M fusionar · C cambiar · Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
+        } else if references && self.graph_branch_target().is_some() {
+            "C cambiar rama · Intro abrir · Esc volver"
         } else if references && self.graph_write_target().is_some() {
             "Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
         } else if references {
@@ -376,7 +397,7 @@ impl State {
                 },
             ),
             (
-                226,
+                if references { 440 } else { 226 },
                 if references {
                     "Renombrar"
                 } else {
@@ -389,7 +410,7 @@ impl State {
                 },
             ),
             (
-                333,
+                if references { 547 } else { 333 },
                 if references { "Eliminar" } else { "Crear rama" },
                 if references {
                     Intent::GraphChangeReference(false)
@@ -398,7 +419,7 @@ impl State {
                 },
             ),
             (
-                440,
+                if references { 333 } else { 440 },
                 if references {
                     "Cambiar rama"
                 } else {
@@ -410,6 +431,7 @@ impl State {
                     Intent::GraphCreateReference(jc_app::git_commit::RefKind::Tag)
                 },
             ),
+            (226, "Fusionar rama", Intent::GraphMergeBranch),
         ] {
             if matches!(intent, Intent::GraphNext)
                 && (references || !graph.is_some_and(|p| p.has_next()))
@@ -418,6 +440,7 @@ impl State {
                     && self.graph_write_target().is_none()
                 || matches!(intent, Intent::GraphSwitchBranch)
                     && self.graph_branch_target().is_none()
+                || matches!(intent, Intent::GraphMergeBranch) && self.graph_merge_target().is_none()
                 || matches!(intent, Intent::GraphCreateReference(_))
                     && (references || graph.is_none_or(|page| page.entries.is_empty()))
             {

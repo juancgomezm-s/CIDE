@@ -431,7 +431,41 @@ mod tests {
             "{}",
             state.status
         );
-        assert_eq!(fs::read(source).unwrap(), b"segundo padre\n");
+        assert_eq!(fs::read(&source).unwrap(), b"segundo padre\n");
+
+        wait(&mut state, |s| s.git_revision.graph().is_some());
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(b'R' as usize);
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama main"))
+            .unwrap();
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'M' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let review = view
+            .merge_review()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(review.result().unwrap().to_string(), merge);
+        assert_eq!(review.rows[0].path, b"merge.txt");
+        assert_eq!(fs::read(&source).unwrap(), b"segundo padre\n");
+        state.key(0x0d);
+        assert!(!state.git_commit.busy(), "Intro solo no puede confirmar");
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert_eq!(
+            fs::read(&source).unwrap(),
+            b"primer padre\n",
+            "{}",
+            state.status
+        );
+        assert_eq!(fs::read(&head).unwrap(), b"ref: refs/heads/lateral\n");
+        assert_eq!(run(&["rev-parse", "HEAD"]), merge);
     }
 
     #[test]

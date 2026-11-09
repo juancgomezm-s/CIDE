@@ -1,0 +1,811 @@
+//! Read-only three-way planning and recoverable local publication.
+use crate::{
+    Change, Context, Error, Identity, Limits,
+    branch_checkout::{Checkout, Journal, MergeCheckout, Transition},
+    branch_switch::{capture_head, direct_branch, name_text, open_for_switch},
+    commit_write, controlled,
+    diff_model::{DiffLimits, DiffModel, DiffSide, DiffStatus},
+    engine, graph, index_write,
+    local_pair::{self, IndexToken},
+    ref_write::{self, RefKind},
+    revision::{self, Budget, Entry},
+};
+use gix::{
+    ObjectId,
+    bstr::ByteSlice,
+    lock::{File, Marker, acquire::Fail},
+    objs::{Commit, Kind, Tree, WriteTo, tree::EntryKind},
+    refs::{FullName, store::WriteReflog},
+};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    io::Write,
+    ops::Range,
+    path::Path,
+    sync::atomic::{AtomicBool, AtomicU8},
+    time::Instant,
+};
+
+const HEADS: &str = "refs/heads/";
+const MAX_PATHS: usize = 128;
+type Entries = BTreeMap<Vec<u8>, Entry>;
+type Blobs = BTreeMap<ObjectId, Vec<u8>>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MergeKind {
+    UpToDate,
+    FastForward,
+    Commit,
+    Conflicts,
+}
+
+impl MergeKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::UpToDate => "La rama activa ya contiene esos cambios",
+            Self::FastForward => "Avance directo de la rama activa",
+            Self::Commit => "Commit de fusión con dos padres",
+            Self::Conflicts => "Conflictos · no se modificará el repositorio",
+        }
+    }
+}
+
+pub struct MergeRow {
+    pub path: Vec<u8>,
+    /// None identifies a conflict rather than a proposed write.
+    pub change: Option<Change>,
+}
+
+pub struct MergePlan {
+    pub kind: MergeKind,
+    pub rows: Vec<MergeRow>,
+    repository: Identity,
+    limits: Limits,
+    active: FullName,
+    incoming: FullName,
+    from: ObjectId,
+    theirs: ObjectId,
+    result: Option<(ObjectId, ObjectId)>,
+    head_file: jc_fs::FileToken,
+    index: IndexToken,
+    checkout: Option<Checkout>,
+    objects: Option<Objects>,
+    completed: bool,
+    write_reflog: bool,
+}
+
+impl MergePlan {
+    pub fn active(&self) -> &str {
+        &name_text(&self.active)[HEADS.len()..]
+    }
+    pub fn incoming(&self) -> &str {
+        &name_text(&self.incoming)[HEADS.len()..]
+    }
+    pub fn tips(&self) -> (ObjectId, ObjectId) {
+        (self.from, self.theirs)
+    }
+    pub fn result(&self) -> Option<ObjectId> {
+        self.result.map(|(commit, _)| commit)
+    }
+    pub fn can_apply(&self) -> bool {
+        self.checkout.is_some()
+    }
+    pub fn recovering(&self) -> bool {
+        self.checkout.as_ref().is_some_and(|plan| plan.resuming)
+    }
+}
+
+#[derive(Debug)]
+pub struct MergePublication {
+    pub id: ObjectId,
+    pub reflog_warning: Option<String>,
+}
+
+struct Objects {
+    blobs: Blobs,
+    trees: Vec<(ObjectId, Tree)>,
+    commit: Commit,
+}
+
+fn open(root: &Path, ctx: &Context<'_>) -> Result<(gix::Repository, Identity), Error> {
+    let (repo, identity) = open_for_switch(root, ctx)?;
+    for control in ["shallow", "info/grafts", "refs/replace", "MERGE_AUTOSTASH"] {
+        if index_write::exists(&identity.git_dir.join(control))? {
+            return Err(Error::Unsupported);
+        }
+    }
+    if repo.config_snapshot().string("merge.default").is_some() {
+        return Err(Error::Filter);
+    }
+    Ok((repo, identity))
+}
+
+fn refs(
+    repo: &gix::Repository,
+    limits: Limits,
+    ctx: &Context<'_>,
+) -> Result<(FullName, Vec<graph::RefEntry>), Error> {
+    let (head, refs) = graph::references(repo, limits, &mut Budget::new(limits), ctx)?;
+    if refs
+        .iter()
+        .any(|entry| entry.name.starts_with(b"refs/replace/"))
+    {
+        return Err(Error::Unsupported);
+    }
+    let graph::Head::Attached { name, .. } = head else {
+        return Err(Error::Engine(
+            "La fusión requiere una rama local activa".into(),
+        ));
+    };
+    let short = name
+        .strip_prefix(HEADS.as_bytes())
+        .and_then(|name| std::str::from_utf8(name).ok())
+        .ok_or(Error::Unsupported)?;
+    Ok((
+        ref_write::reference_name(RefKind::Branch, short, limits)?,
+        refs,
+    ))
+}
+
+fn base(
+    repo: &gix::Repository,
+    from: ObjectId,
+    theirs: ObjectId,
+    limits: Limits,
+    ctx: &Context<'_>,
+) -> Result<ObjectId, Error> {
+    if from == theirs {
+        return Ok(from);
+    }
+    let mut budget = Budget::new(limits);
+    let mut commits = BTreeMap::new();
+    let mut seen = [BTreeSet::new(), BTreeSet::new()];
+    let mut todo = VecDeque::from([(0, from), (1, theirs)]);
+    while let Some((side, id)) = todo.pop_front() {
+        ctx.check()?;
+        if id == [theirs, from][side] {
+            return Ok(id);
+        }
+        if !seen[side].insert(id) {
+            continue;
+        }
+        if let std::collections::btree_map::Entry::Vacant(slot) = commits.entry(id) {
+            // Bound the walk even if the repository lacks a commit graph.
+            if seen[0].len() + seen[1].len() > limits.max_entries.min(8192) {
+                return Err(Error::Limited);
+            }
+            let commit = revision::commit(repo, id, limits, &mut budget, ctx)?;
+            if commit.limited {
+                return Err(Error::Limited);
+            }
+            slot.insert(commit);
+        }
+        todo.extend(commits[&id].parents.iter().map(|parent| (side, *parent)));
+    }
+    let common: BTreeSet<_> = seen[0].intersection(&seen[1]).copied().collect();
+    let mut best = common.clone();
+    for id in common {
+        ctx.check()?;
+        for parent in &commits[&id].parents {
+            best.remove(parent);
+        }
+    }
+    match best.len() {
+        1 => best.into_iter().next().ok_or(Error::Stale),
+        0 => Err(Error::Engine("Las ramas no tienen una base común".into())),
+        _ => Err(Error::Engine(
+            "Las ramas tienen varias bases de fusión; se requiere resolución manual".into(),
+        )),
+    }
+}
+
+fn tree_id(
+    repo: &gix::Repository,
+    commit: ObjectId,
+    limits: Limits,
+    ctx: &Context<'_>,
+) -> Result<ObjectId, Error> {
+    Ok(revision::commit(repo, commit, limits, &mut Budget::new(limits), ctx)?.tree)
+}
+
+fn offset(model: &DiffModel<'_>, side: DiffSide, line: crate::diff_model::DiffLine) -> usize {
+    model
+        .line_byte_range(side, line)
+        .map_or_else(|| model.source_bytes(side).len(), |range| range.start)
+}
+
+fn edits<'a>(model: &DiffModel<'a>) -> Vec<(Range<usize>, &'a [u8])> {
+    model
+        .hunks()
+        .map(|span| {
+            let start = offset(model, DiffSide::Left, span.left.start);
+            let end = offset(model, DiffSide::Left, span.left.end);
+            let a = offset(model, DiffSide::Right, span.right.start);
+            let b = offset(model, DiffSide::Right, span.right.end);
+            (start..end, &model.source_bytes(DiffSide::Right)[a..b])
+        })
+        .collect()
+}
+
+fn merge_bytes(
+    base: &[u8],
+    ours: &[u8],
+    theirs: &[u8],
+    ctx: &Context<'_>,
+) -> Result<Option<Vec<u8>>, Error> {
+    if [base, ours, theirs]
+        .into_iter()
+        .any(|source| source.contains(&0))
+    {
+        return Ok(None);
+    }
+    let diff =
+        |side| DiffModel::compute(base, side, DiffLimits::default(), || ctx.check().is_err());
+    let left = diff(ours);
+    let right = diff(theirs);
+    ctx.check()?;
+    if left.status() != DiffStatus::Exact || right.status() != DiffStatus::Exact {
+        return Err(Error::Limited);
+    }
+    let mut edits = [edits(&left), edits(&right)].concat();
+    edits.sort_by_key(|(range, _)| (range.start, range.end));
+    edits.dedup();
+    let mut out = Vec::new();
+    let mut last: Option<Range<usize>> = None;
+    for (range, replacement) in edits {
+        ctx.check()?;
+        let start = last.as_ref().map_or(0, |last| last.end);
+        if range.start < start
+            || last.as_ref().is_some_and(|last| {
+                last.start == range.start || (range.is_empty() && range.start == last.end)
+            })
+        {
+            return Ok(None);
+        }
+        out.extend_from_slice(&base[start..range.start]);
+        out.extend_from_slice(replacement);
+        last = Some(range);
+    }
+    out.extend_from_slice(&base[last.map_or(0, |range| range.end)..]);
+    Ok(Some(out))
+}
+
+struct Candidate {
+    entries: Entries,
+    blobs: Blobs,
+    conflicts: BTreeSet<Vec<u8>>,
+}
+
+fn combine(
+    repo: &gix::Repository,
+    ids: [ObjectId; 3],
+    limits: Limits,
+    ctx: &Context<'_>,
+) -> Result<Candidate, Error> {
+    let mut budget = Budget::new(limits);
+    let [base, ours, theirs] =
+        ids.map(|id| revision::merge_tree_entries(repo, id, limits, &mut budget, ctx));
+    let (base, ours, theirs) = (base?, ours?, theirs?);
+    let possible_rename = |side: &Entries| {
+        side.keys().any(|path| !base.contains_key(path))
+            && base.keys().any(|path| !side.contains_key(path))
+    };
+    let (left_moves, right_moves) = (possible_rename(&ours), possible_rename(&theirs));
+    let mut candidate = Candidate {
+        entries: BTreeMap::new(),
+        blobs: BTreeMap::new(),
+        conflicts: BTreeSet::new(),
+    };
+    let paths: BTreeSet<_> = base
+        .keys()
+        .chain(ours.keys())
+        .chain(theirs.keys())
+        .collect();
+    for path in paths {
+        ctx.check()?;
+        let (before, left, right) = (base.get(path), ours.get(path), theirs.get(path));
+        let conflicting_move = before.is_some()
+            && left != before
+            && right != before
+            && ((left_moves && left.is_none()) || (right_moves && right.is_none()))
+            && ids[1] != ids[2];
+        let entry = if conflicting_move {
+            candidate.conflicts.insert(path.clone());
+            continue;
+        } else if left == right || right == before {
+            left.copied()
+        } else if left == before {
+            right.copied()
+        } else if let (Some(before), Some(left), Some(right)) = (before, left, right)
+            && [before, left, right]
+                .iter()
+                .all(|entry| entry.mode == 0o100644)
+        {
+            let read = |entry: &Entry, budget: &mut Budget| -> Result<Vec<u8>, Error> {
+                let mut blob = revision::verified(repo, entry.id, limits.max_blob, ctx)?;
+                if blob.kind != Kind::Blob {
+                    return Err(Error::Unsupported);
+                }
+                budget.charge(blob.data.len())?;
+                Ok(std::mem::take(&mut blob.data))
+            };
+            let merged = merge_bytes(
+                &read(before, &mut budget)?,
+                &read(left, &mut budget)?,
+                &read(right, &mut budget)?,
+                ctx,
+            )?;
+            let Some(bytes) = merged else {
+                candidate.conflicts.insert(path.clone());
+                continue;
+            };
+            if bytes.len() > limits.max_blob {
+                return Err(Error::Limited);
+            }
+            budget.charge(bytes.len())?;
+            let id =
+                gix::objs::compute_hash(repo.object_hash(), Kind::Blob, &bytes).map_err(engine)?;
+            candidate.blobs.insert(id, bytes);
+            Some(Entry { id, mode: 0o100644 })
+        } else {
+            candidate.conflicts.insert(path.clone());
+            continue;
+        };
+        if let Some(entry) = entry {
+            candidate.entries.insert(path.clone(), entry);
+        }
+    }
+    // A flat merge can otherwise accept both sides of a file/directory collision.
+    for path in candidate.entries.keys() {
+        ctx.check()?;
+        for (offset, _) in path.iter().enumerate().filter(|(_, byte)| **byte == b'/') {
+            if candidate.entries.contains_key(&path[..offset]) {
+                candidate.conflicts.insert(path[..offset].to_vec());
+            }
+        }
+    }
+    if candidate.conflicts.len() > limits.max_entries.min(MAX_PATHS) {
+        return Err(Error::Limited);
+    }
+    Ok(candidate)
+}
+
+fn make_trees(
+    repo: &gix::Repository,
+    entries: &Entries,
+    limits: Limits,
+    ctx: &Context<'_>,
+) -> Result<(ObjectId, Vec<(ObjectId, Tree)>), Error> {
+    let mut editor =
+        gix::objs::tree::Editor::new(Tree::default(), &repo.objects, repo.object_hash());
+    for (path, entry) in entries {
+        ctx.check()?;
+        let kind = match entry.mode {
+            0o100644 => EntryKind::Blob,
+            0o100755 => EntryKind::BlobExecutable,
+            0o120000 => EntryKind::Link,
+            _ => return Err(Error::Unsupported),
+        };
+        editor
+            .upsert(
+                path.split(|b| *b == b'/').map(ByteSlice::as_bstr),
+                kind,
+                entry.id,
+            )
+            .map_err(engine)?;
+    }
+    let mut trees = Vec::new();
+    let mut budget = Budget::new(limits);
+    let id = editor
+        .write(|tree| {
+            ctx.check()?;
+            let mut data = Vec::new();
+            tree.write_to(&mut data)?;
+            budget.charge(data.len())?;
+            let id =
+                gix::objs::compute_hash(repo.object_hash(), Kind::Tree, &data).map_err(engine)?;
+            trees.push((id, tree.clone()));
+            Ok::<_, Error>(id)
+        })
+        .map_err(engine)?;
+    Ok((id, trees))
+}
+
+/// Pin both tips, the active branch, the index and the affected worktree paths.
+/// Conflict reviews are read-only and cannot be passed to publication.
+pub fn prepare_merge(
+    root: &Path,
+    incoming: &str,
+    expected_tip: &str,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    if !cfg!(windows) {
+        return Err(Error::Unsupported);
+    }
+    limits.admit()?;
+    let incoming = ref_write::reference_name(RefKind::Branch, incoming, limits)?;
+    let theirs = ObjectId::from_hex(expected_tip.as_bytes()).map_err(engine)?;
+    controlled(limits.timeout, cancelled, |ctx| {
+        let (repo, repository) = open(root, ctx)?;
+        let (active, refs) = refs(&repo, limits, ctx)?;
+        if ref_write::namespace_conflicts(active.as_bstr().as_bytes(), name_text(&incoming)) {
+            return Err(Error::Engine("Elige otra rama local para fusionar".into()));
+        }
+        if direct_branch(&refs, &incoming)? != theirs {
+            return Err(Error::Stale);
+        }
+        let head = direct_branch(&refs, &active)?;
+        let head_file = capture_head(&repository.git_dir, &active, ctx)?;
+        let pending = Journal::read(&repository, ctx)?;
+        let active_short = &name_text(&active)[HEADS.len()..];
+        let incoming_short = &name_text(&incoming)[HEADS.len()..];
+        if let Some(journal) = &pending {
+            if journal.incoming.is_none() {
+                return Err(Error::Engine(
+                    "Hay un cambio de rama pendiente de recuperación".into(),
+                ));
+            }
+            if journal.source != active_short
+                || journal.destination != incoming_short
+                || journal.incoming != Some(theirs)
+                || (head != journal.from && head != journal.to)
+            {
+                return Err(Error::Engine(format!(
+                    "Hay una fusión pendiente. Vuelve a elegir la rama {} con su referencia original para recuperarla",
+                    journal.destination
+                )));
+            }
+        }
+        let from = pending.as_ref().map_or(head, |journal| journal.from);
+        let (index, index_bytes) = local_pair::index_capture(&repo, &repository.git_dir, ctx)?;
+        let state = local_pair::decode_index(&repo, index_bytes.as_deref(), ctx)?;
+        if state.entries().iter().any(|entry| entry.stage_raw() != 0) {
+            return Err(Error::Unmerged);
+        }
+        drop(state);
+        let write_reflog = repo.refs.write_reflog != WriteReflog::Disable;
+        let mut plan = MergePlan {
+            kind: MergeKind::UpToDate,
+            rows: Vec::new(),
+            repository,
+            limits,
+            active,
+            incoming,
+            from,
+            theirs,
+            result: None,
+            head_file,
+            index,
+            checkout: None,
+            objects: None,
+            completed: false,
+            write_reflog,
+        };
+        let common = base(&repo, from, theirs, limits, ctx)?;
+        if common == theirs {
+            if pending.is_some() {
+                return Err(Error::Stale);
+            }
+            return Ok(plan);
+        }
+        let old_tree = tree_id(&repo, from, limits, ctx)?;
+        let their_tree = tree_id(&repo, theirs, limits, ctx)?;
+        let (result, tree, entries, blobs) = if common == from {
+            plan.kind = MergeKind::FastForward;
+            let entries =
+                revision::tree_entries(&repo, their_tree, limits, &mut Budget::new(limits), ctx)?;
+            (theirs, their_tree, entries, BTreeMap::new())
+        } else {
+            plan.kind = MergeKind::Commit;
+            let base_tree = tree_id(&repo, common, limits, ctx)?;
+            let Candidate {
+                entries,
+                blobs,
+                conflicts,
+            } = combine(&repo, [base_tree, old_tree, their_tree], limits, ctx)?;
+            if !conflicts.is_empty() {
+                if pending.is_some() {
+                    return Err(Error::Stale);
+                }
+                plan.kind = MergeKind::Conflicts;
+                plan.rows = conflicts
+                    .into_iter()
+                    .map(|path| MergeRow { path, change: None })
+                    .collect();
+                return Ok(plan);
+            }
+            let (tree, trees) = make_trees(&repo, &entries, limits, ctx)?;
+            let id = if let Some(journal) = &pending {
+                let commit =
+                    revision::commit(&repo, journal.to, limits, &mut Budget::new(limits), ctx)?;
+                if commit.tree != tree || commit.parents != [from, theirs] || commit.limited {
+                    return Err(Error::Stale);
+                }
+                journal.to
+            } else {
+                commit_write::check_signing(&repo)?;
+                let signature = commit_write::local_identity(&repo)?;
+                let commit = Commit {
+                    tree,
+                    parents: [from, theirs].into_iter().collect(),
+                    author: signature.clone(),
+                    committer: signature,
+                    encoding: None,
+                    extra_headers: Vec::new(),
+                    message: format!(
+                        "Fusionar rama '{}' en '{}'\n",
+                        plan.incoming(),
+                        plan.active()
+                    )
+                    .into(),
+                };
+                let mut bytes = Vec::new();
+                commit.write_to(&mut bytes)?;
+                let id = gix::objs::compute_hash(repo.object_hash(), Kind::Commit, &bytes)
+                    .map_err(engine)?;
+                plan.objects = Some(Objects {
+                    blobs: blobs.clone(),
+                    trees,
+                    commit,
+                });
+                id
+            };
+            (id, tree, entries, blobs)
+        };
+        if pending.as_ref().is_some_and(|journal| journal.to != result) {
+            return Err(Error::Stale);
+        }
+        if write_reflog && head != result {
+            commit_write::local_identity(&repo)?;
+        }
+        let checkout = Checkout::prepare(
+            &repo,
+            &plan.repository,
+            Transition {
+                branches: (plan.active(), plan.incoming()),
+                commits: (from, result),
+                trees: (old_tree, tree),
+                merge: Some(MergeCheckout {
+                    incoming: theirs,
+                    entries: &entries,
+                    blobs: &blobs,
+                }),
+            },
+            index_bytes.as_deref().ok_or(Error::Unsupported)?,
+            pending,
+            limits,
+            ctx,
+        )?;
+        plan.completed = head == result;
+        if plan.completed && !checkout.index_published(&plan.index) {
+            return Err(Error::Stale);
+        }
+        plan.rows = checkout
+            .files
+            .iter()
+            .map(|file| MergeRow {
+                path: file.path().to_vec(),
+                change: Some(file.change()),
+            })
+            .collect();
+        plan.checkout = Some(checkout);
+        plan.result = Some((result, tree));
+        Ok(plan)
+    })
+}
+
+/// Publish a confirmed plan. If an I/O failure interrupts publication, only
+/// the same pinned merge can resume through the durable checkout journal.
+pub fn apply_merge(
+    plan: MergePlan,
+    mut cancelled: impl FnMut() -> bool,
+) -> Result<MergePublication, Error> {
+    let (Some(checkout), Some(result)) = (&plan.checkout, plan.result) else {
+        return Err(Error::Engine("Esta revisión no admite confirmación".into()));
+    };
+    publish(&plan, checkout, result, &mut cancelled).map_err(|error| {
+        if plan
+            .repository
+            .git_dir
+            .join(crate::branch_checkout::JOURNAL_NAME)
+            .exists()
+        {
+            Error::Engine(format!(
+                "{error}. Para reanudar la fusión, vuelve a elegir la rama {}",
+                plan.incoming()
+            ))
+        } else {
+            error
+        }
+    })
+}
+
+fn publish(
+    plan: &MergePlan,
+    checkout: &Checkout,
+    (result, result_tree): (ObjectId, ObjectId),
+    cancelled: &mut impl FnMut() -> bool,
+) -> Result<MergePublication, Error> {
+    let stop = AtomicBool::new(false);
+    let reason = AtomicU8::new(0);
+    let ctx = Context {
+        stop: &stop,
+        reason: &reason,
+        deadline: Instant::now() + plan.limits.timeout,
+    };
+    let mut check = || {
+        if cancelled() {
+            Err(Error::Cancelled)
+        } else {
+            ctx.check()
+        }
+    };
+    let git = &plan.repository.git_dir;
+    let hold = |name: &str, boundary| {
+        Marker::acquire_to_hold_resource(git.join(name), Fail::Immediately, boundary, 0)
+            .map_err(engine)
+    };
+    let expected_head = if plan.completed { result } else { plan.from };
+    let verify_refs = |repo: &gix::Repository, expected| -> Result<(), Error> {
+        let (active, refs) = refs(repo, plan.limits, &ctx)?;
+        if active != plan.active
+            || direct_branch(&refs, &plan.active)? != expected
+            || direct_branch(&refs, &plan.incoming)? != plan.theirs
+            || capture_head(git, &plan.active, &ctx)? != plan.head_file
+        {
+            return Err(Error::Stale);
+        }
+        Ok(())
+    };
+    check()?;
+    let (repo, identity) = open(&plan.repository.root, &ctx)?;
+    index_write::same_repository(&plan.repository, &identity)?;
+    if local_pair::index_capture(&repo, git, &ctx)?.0 != plan.index {
+        return Err(Error::Stale);
+    }
+    let mut index_lock = Some(
+        File::acquire_to_update_resource(git.join("index"), Fail::Immediately, None, 0)
+            .map_err(engine)?,
+    );
+    let _head = hold("HEAD", None)?;
+    let _config = hold("config", None)?;
+    let _packed = hold("packed-refs", None)?;
+    let active = name_text(&plan.active);
+    let incoming = name_text(&plan.incoming);
+    ref_write::ordinary_path_absent(git, active, &ctx)?;
+    ref_write::ordinary_path_absent(git, incoming, &ctx)?;
+    let _incoming = hold(incoming, Some(git.join("refs")))?;
+    let mut branch = File::acquire_to_update_resource(
+        git.join(active),
+        Fail::Immediately,
+        Some(git.join("refs")),
+        0,
+    )
+    .map_err(engine)?;
+    let (fresh, identity) = open(&plan.repository.root, &ctx)?;
+    index_write::same_repository(&plan.repository, &identity)?;
+    verify_refs(&fresh, expected_head)?;
+    let (index, index_bytes) = local_pair::index_capture(&fresh, git, &ctx)?;
+    if !index.matches_under_lock(&plan.index)
+        || (fresh.refs.write_reflog != WriteReflog::Disable) != plan.write_reflog
+    {
+        return Err(Error::Stale);
+    }
+    checkout.validate(
+        &fresh,
+        &identity,
+        index_bytes.as_deref().ok_or(Error::Stale)?,
+        plan.limits,
+        &ctx,
+    )?;
+    if let Some(objects) = &plan.objects {
+        commit_write::check_signing(&fresh)?;
+        let signature = commit_write::local_identity(&fresh)?;
+        if signature.name != objects.commit.committer.name
+            || signature.email != objects.commit.committer.email
+        {
+            return Err(Error::Stale);
+        }
+        for (id, bytes) in &objects.blobs {
+            check()?;
+            commit_write::store_object(&fresh, git, *id, &gix::objs::BlobRef { data: bytes })?;
+        }
+        for (id, tree) in &objects.trees {
+            check()?;
+            commit_write::store_object(&fresh, git, *id, tree)?;
+        }
+        commit_write::store_object(&fresh, git, result, &objects.commit)?;
+    }
+    if tree_id(&fresh, result, plan.limits, &ctx)? != result_tree {
+        return Err(Error::Stale);
+    }
+    revision::verified_tree(
+        &fresh,
+        result_tree,
+        plan.limits,
+        &mut Budget::new(plan.limits),
+        &ctx,
+    )?;
+    let logs = if plan.write_reflog && !plan.completed {
+        let line = gix::refs::log::Line {
+            previous_oid: plan.from,
+            new_oid: result,
+            signature: commit_write::local_identity(&fresh)?,
+            message: format!("merge {}: {}", plan.incoming(), plan.kind.label()).into(),
+        };
+        let branch_log = Path::new("logs").join(active);
+        Some(
+            [branch_log, Path::new("logs/HEAD").into()]
+                .map(|path| {
+                    let (lock, token) = commit_write::stage_log_with_source(git, &path, &line)?;
+                    Ok::<_, Error>((path, lock, token))
+                })
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    } else {
+        None
+    };
+    if !plan.completed {
+        writeln!(branch, "{result}")?;
+        branch.with_mut(|file| file.sync_all())?;
+    }
+    if let Some(bytes) = &checkout.index_bytes {
+        let lock = index_lock.as_mut().ok_or(Error::Stale)?;
+        lock.write_all(bytes)?;
+        lock.with_mut(|file| file.sync_all())?;
+    }
+    check()?;
+    checkout.publish_files(&identity, plan.limits, &ctx, &mut check)?;
+    let mut index_again = None;
+    if checkout.index_bytes.is_some() {
+        check()?;
+        if local_pair::index_capture(&fresh, git, &ctx)?.0 != plan.index {
+            return Err(Error::Stale);
+        }
+        index_lock
+            .take()
+            .ok_or(Error::Stale)?
+            .commit()
+            .map_err(engine)?;
+        index_again = Some(hold("index", None)?);
+    }
+    if !checkout.index_published(&local_pair::index_capture(&fresh, git, &ctx)?.0) {
+        return Err(Error::Stale);
+    }
+    check()?;
+    let _branch_again;
+    if !plan.completed {
+        branch.commit().map_err(engine)?;
+        _branch_again = hold(active, Some(git.join("refs")))?;
+        let (fresh, identity) = open(&plan.repository.root, &ctx)?;
+        index_write::same_repository(&plan.repository, &identity)?;
+        verify_refs(&fresh, result)?;
+    }
+    let mut reflog_warning = None;
+    for (path, lock, before) in logs.into_iter().flatten() {
+        let write = || -> Result<(), Error> {
+            let current = match commit_write::capture_log(git, &git.join(path))? {
+                jc_fs::Capture::Present { token, .. } => Some(token),
+                jc_fs::Capture::Absent { .. } => None,
+            };
+            if current != before {
+                return Err(Error::Stale);
+            }
+            lock.commit().map_err(engine)?;
+            Ok(())
+        };
+        if let Err(error) = write() {
+            reflog_warning = Some(format!(
+                "Fusión publicada · {result}. Falló el reflog ({error})"
+            ));
+        }
+    }
+    checkout.finish(&identity, &ctx)?;
+    drop(index_again);
+    Ok(MergePublication {
+        id: result,
+        reflog_warning,
+    })
+}

@@ -248,6 +248,14 @@ impl State {
                 "Publicando operación Git…".into()
             } else if self.git_commit.busy() {
                 view.pending_hint().into()
+            } else if let Some(plan) = view.merge_review() {
+                if plan.can_apply() {
+                    "↑↓ archivos · Ctrl+Intro confirma · Esc cancela".into()
+                } else if plan.rows.is_empty() {
+                    "Esc volver".into()
+                } else {
+                    "↑↓ conflictos · Esc volver".into()
+                }
             } else if view.reviewing() {
                 if view.review().is_some()
                     || view
@@ -320,6 +328,52 @@ impl State {
                 }
                 ("Restaurar archivo", 12)
             }
+        } else if let Some(plan) = view.merge_review() {
+            f.summary = vec![
+                format!("{} → {}", plan.incoming(), plan.active()),
+                plan.kind.label().into(),
+            ];
+            let (active, incoming) = plan.tips();
+            f.details_top = p(132);
+            f.details = vec![
+                format!("Activa · {active}"),
+                format!("Entrante · {incoming}"),
+            ];
+            if let Some(result) = plan.result() {
+                f.details.push(format!("Resultado · {result}"));
+            }
+            let row_height = p(23).max(1);
+            let top = f.preview.top + p(207);
+            let count = ((f.preview.bottom - top) / row_height).clamp(0, 128) as usize;
+            let first = view.first.min(plan.rows.len().saturating_sub(count));
+            for (i, row) in plan.rows.iter().skip(first).take(count).enumerate() {
+                let y = top + i as i32 * row_height;
+                f.code.push(CodeRow {
+                    rect: rect(
+                        f.preview.left + p(12),
+                        y,
+                        f.preview.right - p(12),
+                        y + row_height,
+                    ),
+                    old: String::new(),
+                    new: String::new(),
+                    text: format!(
+                        "{}  {}",
+                        row.change.map_or("Conflicto", file_flag),
+                        opaque(&row.path, 256)
+                    ),
+                    kind: 0,
+                    parallel: false,
+                });
+            }
+            (
+                if plan.recovering() {
+                    "Reanudar fusión"
+                } else {
+                    "Confirmar fusión"
+                },
+                12,
+            )
         } else if let Some(plan) = view.branch_switch_review() {
             f.summary = vec![
                 format!("{} → {}", plan.source(), plan.destination()),
@@ -437,6 +491,9 @@ impl State {
         } else if let WriteDraft::SwitchBranch(target) = &view.draft {
             f.summary = vec![format!("Rama de destino · {}", target.name)];
             ("Revisar cambio", 12)
+        } else if let WriteDraft::MergeBranch(target) = &view.draft {
+            f.summary = vec![format!("Rama a incorporar en la activa · {}", target.name)];
+            ("Revisar fusión", 12)
         } else if let WriteDraft::Restore(comparison) = &view.draft {
             f.summary = vec![opaque(&comparison.path, 256)];
             ("Revisar archivo", 12)
@@ -451,7 +508,7 @@ impl State {
             }];
             ("Revisar preparados", 12)
         };
-        if !self.git_commit.busy() {
+        if !self.git_commit.busy() && view.merge_review().is_none_or(|plan| plan.can_apply()) {
             let top = f.preview.top + p(96);
             let left = f.preview.left + p(offset);
             let r = rect(left, top, left + p(135), top + p(24));

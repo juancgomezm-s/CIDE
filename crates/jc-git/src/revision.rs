@@ -252,7 +252,7 @@ pub(crate) struct Commit {
     pub(crate) id: gix::ObjectId,
     pub(crate) tree: gix::ObjectId,
     pub(crate) parents: Vec<gix::ObjectId>,
-    limited: bool,
+    pub(super) limited: bool,
 }
 pub(crate) fn commit(
     repo: &gix::Repository,
@@ -306,12 +306,36 @@ pub(super) fn tree_entries(
     budget: &mut Budget,
     ctx: &Context<'_>,
 ) -> Result<Entries, Error> {
+    collect_tree_entries(repo, id, limits, budget, ctx, false)
+}
+
+pub(super) fn merge_tree_entries(
+    repo: &gix::Repository,
+    id: gix::ObjectId,
+    limits: Limits,
+    budget: &mut Budget,
+    ctx: &Context<'_>,
+) -> Result<Entries, Error> {
+    collect_tree_entries(repo, id, limits, budget, ctx, true)
+}
+
+fn collect_tree_entries(
+    repo: &gix::Repository,
+    id: gix::ObjectId,
+    limits: Limits,
+    budget: &mut Budget,
+    ctx: &Context<'_>,
+    reject_empty_subtrees: bool,
+) -> Result<Entries, Error> {
     let mut entries = Entries::new();
     let mut pending = vec![(Vec::new(), id, 0usize)];
     while let Some((prefix, id, depth)) = pending.pop() {
         ctx.check()?;
         if depth >= MAX_DEPTH {
             return Err(Error::Limited);
+        }
+        if reject_empty_subtrees && depth != 0 && id.is_empty_tree() {
+            return Err(Error::Unsupported);
         }
         let Some(tree) = verified_tree(repo, id, limits, budget, ctx)? else {
             continue;
