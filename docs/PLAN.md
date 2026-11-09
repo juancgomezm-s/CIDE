@@ -573,6 +573,8 @@ Git completo (stage/unstage por hunk, commit, fetch, pull, push, ramas, merge y 
 [Fusión local de ramas](GIT_LOCAL_MERGE.md): GUI y TUI revisan y confirman el
 avance directo o la fusión divergente. La resolución de archivos ordinarios
 muestra Base, Actual, Entrante y un Resultado editable antes de confirmar.
+Las colisiones entre archivo y carpeta se resuelven eligiendo la estructura
+completa de una versión.
 
 **CI pertenece a M5.** Hasta iniciar M5 no se ejecutará GitHub Actions automáticamente en `push` ni `pull_request`, ni se usará CI remoto para perseguir fallos intermedios de M2–M4. El workflow queda conservado únicamente como `workflow_dispatch` manual y no debe invocarse antes de M5 salvo autorización explícita del propietario.
 

@@ -1131,6 +1131,149 @@ mod tests {
         }
 
         #[test]
+        fn merge_structural_conflict_protects_local_files_and_resumes_both_directions() {
+            use crate::local_merge::{MergeResolution, MergeSide, prepare_resolved_merge};
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            for old_file in [true, false] {
+                let fixture = Fixture::new();
+                let (repo, _, _) = scenario(&fixture, false, b"original");
+                let git = fixture.git();
+                let base = commit(&repo, &[], "base");
+                let bytes = b"contenido de prueba";
+                let blob = repo.write_blob(bytes).unwrap().detach();
+                let tree = |name: &str, kind: EntryKind, oid| {
+                    repo.write_object(Tree {
+                        entries: vec![Entry {
+                            filename: name.into(),
+                            mode: kind.into(),
+                            oid,
+                        }],
+                    })
+                    .unwrap()
+                    .detach()
+                };
+                let plain = tree("ruta", EntryKind::Blob, blob);
+                let nested = tree(
+                    "ruta",
+                    EntryKind::Tree,
+                    tree(
+                        "sub",
+                        EntryKind::Tree,
+                        tree("archivo.txt", EntryKind::Blob, blob),
+                    ),
+                );
+                let (old, new) = if old_file {
+                    (plain, nested)
+                } else {
+                    (nested, plain)
+                };
+                let active = commit_at_tree(&repo, old, &[base], "actual");
+                let incoming = commit_at_tree(&repo, new, &[base], "entrante");
+                fs::write(git.join("refs/heads/activa"), format!("{active}\n")).unwrap();
+                fs::write(git.join("refs/heads/entrante"), format!("{incoming}\n")).unwrap();
+                let leaf = if old_file {
+                    "ruta"
+                } else {
+                    "ruta/sub/archivo.txt"
+                };
+                let from = fixture.root.join(leaf);
+                fs::create_dir_all(from.parent().unwrap()).unwrap();
+                fs::write(&from, bytes).unwrap();
+                let mut index = gix::index::State::new(repo.object_hash());
+                index.dangerously_push_entry(
+                    Default::default(),
+                    blob,
+                    gix::index::entry::Flags::empty(),
+                    gix::index::entry::Mode::FILE,
+                    leaf.as_bytes().as_bstr(),
+                );
+                gix::index::File::from_state(index, git.join("index"))
+                    .write(Default::default())
+                    .unwrap();
+                let draft = review(&fixture, incoming).unwrap();
+                assert_eq!(draft.rows.len(), 1);
+                let conflict = draft.conflict(b"ruta").unwrap();
+                assert!(conflict.is_file_directory());
+                let paths = conflict
+                    .shape_paths(MergeSide::Incoming)
+                    .unwrap()
+                    .collect::<Vec<_>>();
+                let expected: &[u8] = if old_file {
+                    b"ruta/sub/archivo.txt"
+                } else {
+                    b"ruta"
+                };
+                assert_eq!(paths, [expected]);
+                let prepare = || {
+                    prepare_resolved_merge(
+                        draft.resolution_review().unwrap(),
+                        std::collections::BTreeMap::from([(
+                            b"ruta".to_vec(),
+                            MergeResolution::Use(MergeSide::Incoming),
+                        )]),
+                        || false,
+                    )
+                };
+                fs::write(&from, "edición local").unwrap();
+                assert!(prepare().is_err());
+                fs::write(&from, bytes).unwrap();
+                if !old_file {
+                    let untracked = fixture.root.join("ruta/sub/local.txt");
+                    fs::write(&untracked, b"sin seguimiento").unwrap();
+                    assert!(prepare().is_err());
+                    assert_eq!(fs::read(&untracked).unwrap(), b"sin seguimiento");
+                    fs::remove_file(untracked).unwrap();
+                }
+                let plan = prepare().unwrap();
+                fs::write(&from, "edición posterior").unwrap();
+                assert!(apply_merge(plan, || false).is_err());
+                assert_eq!(fs::read(&from).unwrap(), "edición posterior".as_bytes());
+                fs::write(&from, bytes).unwrap();
+                let plan = prepare().unwrap();
+                let result = plan.result().unwrap();
+                let concurrent = fixture.root.join("ruta/sub/concurrente.txt");
+                assert!(
+                    apply_merge(plan, || {
+                        if from.is_file() {
+                            return false;
+                        }
+                        if old_file {
+                            return true;
+                        }
+                        if !concurrent.exists() {
+                            fs::write(&concurrent, b"creado durante la publicacion").unwrap();
+                        }
+                        false
+                    })
+                    .is_err()
+                );
+                assert!(!from.exists());
+                if !old_file {
+                    assert_eq!(
+                        fs::read(&concurrent).unwrap(),
+                        b"creado durante la publicacion"
+                    );
+                    assert!(review(&fixture, incoming).is_err());
+                    fs::remove_file(concurrent).unwrap();
+                }
+                let resumed = review(&fixture, incoming).unwrap();
+                assert!(resumed.recovering());
+                assert_eq!(resumed.result(), Some(result));
+                assert_eq!(apply_merge(resumed, || false).unwrap().id, result);
+                let to = fixture.root.join(std::str::from_utf8(expected).unwrap());
+                assert_eq!(fs::read(&to).unwrap(), bytes);
+                assert_eq!(
+                    fs::read(fixture.root.join("sin-seguimiento")).unwrap(),
+                    b"archivo privado"
+                );
+                assert!(!git.join(crate::branch_checkout::JOURNAL_NAME).exists());
+            }
+        }
+
+        #[test]
         fn merge_fast_forward_rejects_local_edits_and_changed_ref() {
             let fixture = Fixture::new();
             let (_, active, incoming) = scenario(&fixture, false, b"entrante");

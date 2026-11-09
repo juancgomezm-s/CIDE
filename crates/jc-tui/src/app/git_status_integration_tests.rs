@@ -141,6 +141,62 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     assert_eq!(after.head, before.head);
     assert_eq!(after.tracked, b"resuelto: activa\r\nend");
     assert_eq!(after.untracked, before.untracked);
+
+    fixture.create("forma", b"archivo entrante");
+    fixture.git(&["add", "--", "forma"]);
+    let tree = fixture.oid(&["write-tree"]);
+    let file = fixture.oid(&["commit-tree", &tree, "-p", &merged, "-m", "Archivo"]);
+    fixture.git(&["update-ref", "refs/heads/archivo", &file]);
+    fs::remove_file(fixture.path("forma")).unwrap();
+    fixture.git(&["read-tree", &merged]);
+    fs::create_dir_all(fixture.path("forma/sub")).unwrap();
+    fixture.create("forma/sub/hoja.txt", b"carpeta actual");
+    fixture.git(&["add", "--", "forma"]);
+    let tree = fixture.oid(&["write-tree"]);
+    let folder = fixture.oid(&["commit-tree", &tree, "-p", &merged, "-m", "Carpeta"]);
+    fixture.git(&["update-ref", "HEAD", &folder]);
+    key(&mut app, KeyCode::F(5));
+    wait_for(&mut app, |app| {
+        app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    });
+    select(&mut app, "Rama archivo");
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Tab);
+    let frame = app.prepare_frame(100, 24).commit.unwrap();
+    assert!(frame
+        .rows
+        .iter()
+        .any(|row| row.contains("forma/sub/hoja.txt")));
+    key(&mut app, KeyCode::Tab);
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('u'),
+        KeyModifiers::CONTROL,
+    )));
+    key(&mut app, KeyCode::F(2));
+    fixture.create("forma/sub/local.txt", b"sin seguimiento");
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let view = app.git_commit.view().unwrap();
+    assert!(view
+        .error
+        .as_ref()
+        .is_some_and(|error| error.contains("local.txt")));
+    assert!(view.all_merge_choices_saved());
+    assert_eq!(
+        fs::read(fixture.path("forma/sub/local.txt")).unwrap(),
+        b"sin seguimiento"
+    );
+    fs::remove_file(fixture.path("forma/sub/local.txt")).unwrap();
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().unwrap().can_return_to_merge_choices());
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().is_none(), "{}", app.status);
+    assert_eq!(
+        fs::read(fixture.path("forma")).unwrap(),
+        b"archivo entrante"
+    );
 }
 
 fn installed_git() -> PathBuf {

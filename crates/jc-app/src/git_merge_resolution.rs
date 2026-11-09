@@ -99,7 +99,8 @@ impl MergeFile {
     pub fn can_edit(&self, plan: &MergePlan) -> bool {
         self.pane == MergePane::Result
             && plan.conflict(self.path(plan)).is_some_and(|conflict| {
-                editable(self.result(conflict).unwrap_or_default()).is_some()
+                !conflict.is_file_directory()
+                    && editable(self.result(conflict).unwrap_or_default()).is_some()
             })
     }
     pub(crate) fn paste_budget(&self, plan: &MergePlan) -> Option<usize> {
@@ -142,9 +143,14 @@ impl MergeFile {
             }
         } else {
             let conflict = plan.conflict(self.path(plan)).unwrap();
-            let last = lines(self.source(conflict).unwrap_or_default())
-                .count()
-                .saturating_sub(1);
+            let count = self
+                .display_side()
+                .and_then(|side| conflict.shape_paths(side))
+                .map_or_else(
+                    || lines(self.source(conflict).unwrap_or_default()).count(),
+                    Iterator::count,
+                );
+            let last = count.saturating_sub(1);
             self.first_line = self.first_line.saturating_add_signed(delta).min(last);
         }
         Ok(())
@@ -156,11 +162,15 @@ impl MergeFile {
     ) -> Result<(), &'static str> {
         let conflict = plan.conflict(self.path(plan)).unwrap();
         let bytes = self.result(conflict).unwrap_or_default();
-        if self.pane != MergePane::Result || editable(bytes).is_none() {
+        if conflict.is_file_directory()
+            || self.pane != MergePane::Result
+            || editable(bytes).is_none()
+        {
             match edit {
                 FieldEdit::Left => self.left = self.left.saturating_sub(8),
                 FieldEdit::Right => self.left = self.left.saturating_add(8).min(16_384),
                 FieldEdit::Home => self.left = 0,
+                _ if conflict.is_file_directory() => return Ok(()),
                 _ if self.pane == MergePane::Result => {
                     return Err("La edición requiere UTF-8 y hasta 64 KiB")
                 }
@@ -271,8 +281,50 @@ fn tokens(bytes: &[u8]) -> Box<dyn Iterator<Item = Cow<'_, str>> + '_> {
 }
 
 impl MergeFile {
+    fn display_side(&self) -> Option<MergeSide> {
+        self.pane.side().or(match self.choice {
+            MergeResolution::Use(side) => Some(side),
+            MergeResolution::Edit(_) => None,
+        })
+    }
+
     pub fn present(&self, plan: &MergePlan, width: usize, height: usize) -> MergeText {
         let conflict = plan.conflict(self.path(plan)).unwrap();
+        if let Some(mut paths) = self
+            .display_side()
+            .and_then(|side| conflict.shape_paths(side))
+        {
+            let first = paths.next();
+            let note = match first {
+                None => "Ruta ausente en esta versión",
+                Some(path) if path == self.path(plan) => {
+                    "Archivo · se conserva el archivo de esta versión"
+                }
+                Some(_) => "Carpeta · se conservan todos los archivos de esta versión",
+            };
+            let rows = first
+                .into_iter()
+                .chain(paths)
+                .enumerate()
+                .skip(self.first_line)
+                .take(height.clamp(1, 64))
+                .map(|(row, path)| {
+                    let escaped = path
+                        .iter()
+                        .flat_map(|&byte| std::ascii::escape_default(byte))
+                        .skip(self.left)
+                        .take(width.clamp(1, 256))
+                        .map(char::from)
+                        .collect();
+                    (row + 1, escaped)
+                })
+                .collect();
+            return MergeText {
+                rows,
+                caret: None,
+                note,
+            };
+        }
         let source = self.source(conflict);
         let editing = self.can_edit(plan);
         let note = match (source, self.pane, editing) {

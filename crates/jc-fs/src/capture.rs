@@ -186,6 +186,60 @@ pub fn create_missing_parents(
     }
 }
 
+/// Names observed in a bounded, confined directory walk. Directory identities
+/// can be used to remove the exact reviewed directory after its leaves are gone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TreeNode {
+    File,
+    Directory(DirectoryToken),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DirectoryToken(ObjectIdentity);
+
+pub struct TreeParents {
+    _handles: Vec<std::fs::File>,
+}
+
+pub fn pin_tree_parents(root: &Path, target: &Path) -> io::Result<TreeParents> {
+    #[cfg(windows)]
+    return windows::pin_tree_parent(root, target).map(|handles| TreeParents { _handles: handles });
+    #[cfg(not(windows))]
+    {
+        let _ = (root, target);
+        Err(io::ErrorKind::Unsupported.into())
+    }
+}
+
+pub fn inspect_tree(
+    root: &Path,
+    target: &Path,
+    limit: usize,
+    cancelled: &mut dyn FnMut() -> bool,
+) -> io::Result<std::collections::BTreeMap<PathBuf, TreeNode>> {
+    #[cfg(windows)]
+    return windows::inspect_tree(root, target, limit, cancelled);
+    #[cfg(not(windows))]
+    {
+        let _ = (root, target, limit, cancelled);
+        Err(io::ErrorKind::Unsupported.into())
+    }
+}
+
+pub fn remove_empty_directory(
+    root: &Path,
+    target: &Path,
+    expected: &DirectoryToken,
+) -> io::Result<()> {
+    #[cfg(windows)]
+    return windows::remove_empty_directory(root, target, expected);
+    #[cfg(not(windows))]
+    {
+        let _ = (root, target, expected);
+        Err(io::ErrorKind::Unsupported.into())
+    }
+}
+
 /// Stage a replacement of the same single-link file and exact reviewed bytes.
 /// `backup_dir` must be a direct child of the pinned root on the same volume.
 /// Both publication renames are create-only. If the second fails, the original
@@ -441,6 +495,125 @@ mod windows {
             if validate_dir(root, dir)? != *before {
                 return Err(changed());
             }
+        }
+        Ok(())
+    }
+
+    pub(super) fn pin_tree_parent(root: &Path, target: &Path) -> io::Result<Vec<File>> {
+        let relative = target.strip_prefix(root).map_err(|_| excluded())?;
+        let parts = relative.components().collect::<Vec<_>>();
+        if !root.is_absolute()
+            || parts.is_empty()
+            || parts.len() > MAX_DEPTH
+            || parts
+                .iter()
+                .any(|part| !matches!(part, Component::Normal(_)))
+        {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        let mut path = root.to_path_buf();
+        let mut dirs = Vec::new();
+        for part in std::iter::once(None).chain(parts[..parts.len() - 1].iter().map(Some)) {
+            if let Some(part) = part {
+                path.push(part.as_os_str());
+            }
+            let dir = open(&path, READ_ATTRIBUTES | LIST_DIRECTORY)?;
+            validate_dir(root, &dir)?;
+            if final_path(&dir)? != path {
+                return Err(excluded());
+            }
+            dirs.push(dir);
+        }
+        Ok(dirs)
+    }
+
+    pub(super) fn inspect_tree(
+        root: &Path,
+        target: &Path,
+        limit: usize,
+        cancelled: &mut dyn FnMut() -> bool,
+    ) -> io::Result<std::collections::BTreeMap<PathBuf, TreeNode>> {
+        let _parents = pin_tree_parent(root, target)?;
+        let mut nodes = std::collections::BTreeMap::new();
+        let mut pending = vec![target.to_path_buf()];
+        // Keep every visited directory pinned until the walk is complete.
+        let mut dirs = Vec::new();
+        while let Some(path) = pending.pop() {
+            check(cancelled)?;
+            let handle = match open(&path, READ_ATTRIBUTES | LIST_DIRECTORY) {
+                Ok(handle) => handle,
+                Err(error) if path == target && error.kind() == io::ErrorKind::NotFound => break,
+                Err(error) => return Err(error),
+            };
+            let before = state(&handle)?;
+            if final_path(&handle)? != path {
+                return Err(excluded());
+            }
+            if nodes.len() == limit {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "La carpeta supera el límite de entradas",
+                ));
+            }
+            let node = if before.identity.attributes & DIRECTORY != 0 {
+                for child in fs::read_dir(&path)? {
+                    check(cancelled)?;
+                    if nodes.len() + pending.len() + 1 >= limit {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "La carpeta supera el límite de entradas",
+                        ));
+                    }
+                    let path = child?.path();
+                    if path.components().count() > root.components().count() + MAX_DEPTH {
+                        return Err(io::ErrorKind::InvalidInput.into());
+                    }
+                    pending.push(path);
+                }
+                let token = DirectoryToken(before.identity.clone());
+                dirs.push((handle, before));
+                TreeNode::Directory(token)
+            } else {
+                if before.links != 1 {
+                    return Err(excluded());
+                }
+                TreeNode::File
+            };
+            nodes.insert(path, node);
+        }
+        for (dir, before) in dirs {
+            if state(&dir)? != before {
+                return Err(changed());
+            }
+        }
+        Ok(nodes)
+    }
+
+    pub(super) fn remove_empty_directory(
+        root: &Path,
+        target: &Path,
+        expected: &DirectoryToken,
+    ) -> io::Result<()> {
+        let _parents = pin_tree_parent(root, target)?;
+        let directory = open(target, READ_ATTRIBUTES | LIST_DIRECTORY | DELETE)?;
+        if final_path(&directory)? != target
+            || validate_dir(root, &directory)?.identity != expected.0
+        {
+            return Err(changed());
+        }
+        let mut delete = 1u8;
+        // Windows rejects this operation on a nonempty directory. Using the
+        // reviewed handle prevents removal of a different object at the path.
+        if unsafe {
+            SetFileInformationByHandle(
+                directory.as_raw_handle(),
+                FILE_DISPOSITION_INFO,
+                (&mut delete as *mut u8).cast(),
+                size_of::<u8>() as u32,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
         }
         Ok(())
     }

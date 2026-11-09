@@ -518,6 +518,69 @@ mod tests {
             run(&["rev-list", "--parents", "-n", "1", "HEAD"]),
             format!("{resolved} {merge} {incoming}")
         );
+
+        let shape = fixture.root.join("forma");
+        let child = shape.join("sub/hoja.txt");
+        fs::create_dir_all(child.parent().unwrap()).unwrap();
+        fs::write(&child, b"carpeta entrante\n").unwrap();
+        run(&["add", "--", "forma"]);
+        let tree = run(&["write-tree"]);
+        let folder = run(&["commit-tree", &tree, "-p", &resolved, "-m", "Carpeta"]);
+        run(&["update-ref", "refs/heads/carpeta", &folder]);
+        fs::remove_file(&child).unwrap();
+        fs::remove_dir(child.parent().unwrap()).unwrap();
+        fs::remove_dir(&shape).unwrap();
+        run(&["read-tree", &resolved]);
+        fs::write(&shape, b"archivo actual\n").unwrap();
+        run(&["add", "--", "forma"]);
+        let tree = run(&["write-tree"]);
+        let file = run(&["commit-tree", &tree, "-p", &resolved, "-m", "Archivo"]);
+        run(&["update-ref", "HEAD", &file]);
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x74);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        state.key(b'R' as usize);
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama carpeta"))
+            .unwrap();
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'M' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        state.key(0x0d);
+        state.key(0x09);
+        state.key(0x09);
+        let view = state.git_commit.view().unwrap();
+        let text = view
+            .merge_file()
+            .unwrap()
+            .present(view.merge_conflicts().unwrap(), 100, 20);
+        assert!(text.note.starts_with("Carpeta"));
+        assert_eq!(text.rows[0].1, "forma/sub/hoja.txt");
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(b'U' as usize);
+        state.key(0x0d);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(
+            state
+                .git_commit
+                .view()
+                .unwrap()
+                .can_return_to_merge_choices(),
+            "{}",
+            state.status
+        );
+        assert_eq!(fs::read(&shape).unwrap(), b"archivo actual\n");
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert_eq!(fs::read(child).unwrap(), b"carpeta entrante\n");
     }
 
     #[test]

@@ -66,15 +66,26 @@ pub enum MergeSide {
 
 pub struct MergeConflict {
     versions: Option<[Option<Vec<u8>>; 3]>,
+    shapes: Option<[Entries; 3]>,
 }
 
 impl MergeConflict {
     pub fn can_resolve(&self) -> bool {
-        self.versions.is_some()
+        self.versions.is_some() || self.shapes.is_some()
     }
 
     pub fn bytes(&self, side: MergeSide) -> Option<&[u8]> {
         self.versions.as_ref()?[side as usize].as_deref()
+    }
+    pub fn is_file_directory(&self) -> bool {
+        self.shapes.is_some()
+    }
+    pub fn shape_paths(&self, side: MergeSide) -> Option<impl Iterator<Item = &[u8]>> {
+        Some(
+            self.shapes.as_ref()?[side as usize]
+                .keys()
+                .map(Vec::as_slice),
+        )
     }
 }
 
@@ -369,6 +380,28 @@ fn path_collisions(entries: &Entries) -> impl Iterator<Item = &[u8]> {
     })
 }
 
+fn contains_path(root: &[u8], path: &[u8]) -> bool {
+    path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|tail| tail.starts_with(b"/"))
+}
+
+fn subtree(entries: &Entries, path: &[u8]) -> Entries {
+    let mut subtree = Entries::new();
+    if let Some(entry) = entries.get(path) {
+        subtree.insert(path.to_vec(), *entry);
+    }
+    let prefix = [path, b"/"].concat();
+    subtree.extend(
+        entries
+            .range(prefix.clone()..)
+            .take_while(|(key, _)| key.starts_with(&prefix))
+            .map(|(key, entry)| (key.clone(), *entry)),
+    );
+    subtree
+}
+
 fn combine(
     repo: &gix::Repository,
     ids: [ObjectId; 3],
@@ -389,6 +422,39 @@ fn combine(
         blobs: BTreeMap::new(),
         conflicts: BTreeMap::new(),
     };
+    let mut structural = BTreeSet::new();
+    for (files, folders) in [(&ours, &theirs), (&theirs, &ours)] {
+        for path in folders.keys() {
+            ctx.check()?;
+            for (offset, byte) in path.iter().enumerate() {
+                if *byte == b'/' && files.contains_key(&path[..offset]) {
+                    structural.insert(path[..offset].to_vec());
+                }
+            }
+        }
+    }
+    for path in structural {
+        ctx.check()?;
+        let shapes = [&base, &ours, &theirs].map(|entries| subtree(entries, &path));
+        if shapes[0] == shapes[1] || shapes[0] == shapes[2] {
+            continue;
+        }
+        let ordinary = shapes
+            .iter()
+            .flatten()
+            .all(|(_, entry)| entry.mode == 0o100644);
+        candidate.conflicts.insert(
+            path,
+            MergeConflict {
+                versions: None,
+                shapes: ordinary.then_some(shapes),
+            },
+        );
+        if candidate.conflicts.len() > limits.max_entries.min(MAX_PATHS) {
+            return Err(Error::Limited);
+        }
+    }
+    let structural: Vec<_> = candidate.conflicts.keys().cloned().collect();
     let paths: BTreeSet<_> = base
         .keys()
         .chain(ours.keys())
@@ -396,6 +462,9 @@ fn combine(
         .collect();
     for path in paths {
         ctx.check()?;
+        if structural.iter().any(|root| contains_path(root, path)) {
+            continue;
+        }
         let (before, left, right) = (base.get(path), ours.get(path), theirs.get(path));
         let conflicting_move = before.is_some()
             && left != before
@@ -432,6 +501,7 @@ fn combine(
                     path.clone(),
                     MergeConflict {
                         versions: Some(versions),
+                        shapes: None,
                     },
                 );
                 continue;
@@ -442,9 +512,13 @@ fn combine(
             budget.charge(bytes.len())?;
             Some(add_result_blob(repo, &mut candidate.blobs, bytes)?)
         } else {
-            candidate
-                .conflicts
-                .insert(path.clone(), MergeConflict { versions: None });
+            candidate.conflicts.insert(
+                path.clone(),
+                MergeConflict {
+                    versions: None,
+                    shapes: None,
+                },
+            );
             continue;
         };
         if let Some(entry) = entry {
@@ -454,9 +528,13 @@ fn combine(
     // A flat merge can otherwise accept both sides of a file/directory collision.
     for path in path_collisions(&candidate.entries) {
         ctx.check()?;
-        candidate
-            .conflicts
-            .insert(path.to_vec(), MergeConflict { versions: None });
+        candidate.conflicts.insert(
+            path.to_vec(),
+            MergeConflict {
+                versions: None,
+                shapes: None,
+            },
+        );
     }
     if candidate.conflicts.len() > limits.max_entries.min(MAX_PATHS) {
         return Err(Error::Limited);
@@ -661,9 +739,19 @@ fn prepare(
                 // Only paths offered by the conflict review can differ from the
                 // automatic merge. The journal pins the exact resolved commit.
                 if conflicts.values().any(|conflict| !conflict.can_resolve())
+                    || conflicts.iter().any(|(path, conflict)| {
+                        conflict
+                            .shapes
+                            .as_ref()
+                            .is_some_and(|shapes| !shapes.contains(&subtree(&stored, path)))
+                    })
                     || stored.iter().any(|(path, entry)| {
                         if conflicts.contains_key(path) {
                             entry.mode != 0o100644
+                        } else if conflicts.iter().any(|(root, conflict)| {
+                            conflict.shapes.is_some() && contains_path(root, path)
+                        }) {
+                            false
                         } else {
                             entries.get(path) != Some(entry)
                         }
@@ -684,7 +772,15 @@ fn prepare(
                         if !conflict.can_resolve() {
                             return Err(Error::Unsupported);
                         }
-                        let bytes = match choices.remove(path).ok_or(Error::Stale)? {
+                        let choice = choices.remove(path).ok_or(Error::Stale)?;
+                        if let Some(shapes) = &conflict.shapes {
+                            let MergeResolution::Use(side) = choice else {
+                                return Err(Error::Unsupported);
+                            };
+                            entries.extend(shapes[side as usize].clone());
+                            continue;
+                        }
+                        let bytes = match choice {
                             MergeResolution::Use(side) => conflict.bytes(side).map(<[u8]>::to_vec),
                             MergeResolution::Edit(text) => {
                                 if text.len() > MERGE_EDIT_BYTES.min(limits.max_blob)

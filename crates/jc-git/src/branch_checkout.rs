@@ -14,6 +14,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod shape;
+
 pub(super) const JOURNAL_NAME: &str = "cide-switch.pending";
 const JOURNAL_BYTES: usize = 16 * 1024;
 const MAX_FILES: usize = 128;
@@ -109,6 +111,7 @@ enum Observed {
     Before(jc_fs::FileToken),
     Missing(jc_fs::MissingToken),
     Applied,
+    Structural,
 }
 
 pub struct CheckoutFile {
@@ -140,6 +143,7 @@ pub(super) struct Checkout {
     pub index_bytes: Option<Vec<u8>>,
     attribute_sources: BTreeMap<Vec<u8>, Option<ObjectId>>,
     merge: bool,
+    shapes: Vec<shape::CheckoutShape>,
 }
 
 pub(super) struct Transition<'a> {
@@ -397,7 +401,13 @@ impl Checkout {
         {
             return Err(Error::Filter);
         }
-        let attribute_sources = attribute_sources(&paths, &index, &old, ctx)?;
+        let roots = if merging {
+            shape::roots(&paths, &old, new)
+        } else {
+            Vec::new()
+        };
+        let mut attribute_sources = attribute_sources(&paths, &index, &old, ctx)?;
+        attribute_sources.retain(|path, _| !roots.iter().any(|root| shape::contains(root, path)));
         check_attribute_sources(repo, repository, &attribute_sources, ctx)?;
         let mut attributes = repo
             .attributes_only(
@@ -409,6 +419,7 @@ impl Checkout {
         for path in paths {
             ctx.check()?;
             let text = std::str::from_utf8(path).map_err(engine)?;
+            let structural = roots.iter().find(|root| shape::contains(root, path));
             for part in path.split(|b| *b == b'/') {
                 gix::validate::path::component(part.as_bstr(), None, Default::default())
                     .map_err(engine)?;
@@ -424,7 +435,13 @@ impl Checkout {
                 .map(Vec::as_slice)
                 .chain(index.entries().iter().map(|e| e.path(&index).as_bytes()))
                 .any(|other| {
-                    other != path.as_slice() && ref_write::namespace_conflicts(other, text)
+                    other != path.as_slice()
+                        && ref_write::namespace_conflicts(other, text)
+                        && !structural.is_some_and(|root| {
+                            (other == root || path.as_slice() == root)
+                                && shape::contains(root, other)
+                                && (old.contains_key(other) || new.contains_key(other))
+                        })
                 })
             {
                 return Err(conflict(path));
@@ -446,32 +463,38 @@ impl Checkout {
                 .root
                 .join(text.replace('/', std::path::MAIN_SEPARATOR_STR));
             let before = file_bytes(repo, before, limits, &mut budget, ctx)?;
-            let after =
-                if let Some(bytes) = after.and_then(|entry| merge.as_ref()?.blobs.get(&entry.id)) {
-                    budget.charge(bytes.len())?;
-                    Some(bytes.clone())
-                } else {
-                    file_bytes(repo, after, limits, &mut budget, ctx)?
-                };
+            let after = if let Some(bytes) = after
+                .filter(|entry| entry.mode == 0o100644)
+                .and_then(|entry| merge.as_ref()?.blobs.get(&entry.id))
+            {
+                budget.charge(bytes.len())?;
+                Some(bytes.clone())
+            } else {
+                file_bytes(repo, after, limits, &mut budget, ctx)?
+            };
             check_effective_attributes(
                 &mut attributes,
                 path,
                 (before.as_deref(), after.as_deref()),
                 merging,
             )?;
-            let observed = observe(
-                repository,
-                &target,
-                path,
-                (before.as_deref(), after.as_deref()),
-                pending
-                    .as_ref()
-                    .map(|p| p.backup(repository, files.len()))
-                    .as_deref(),
-                limits,
-                ctx,
-            )?;
-            if index_applied && observed != Observed::Applied {
+            let observed = if structural.is_some() {
+                Observed::Structural
+            } else {
+                observe(
+                    repository,
+                    &target,
+                    path,
+                    (before.as_deref(), after.as_deref()),
+                    pending
+                        .as_ref()
+                        .map(|p| p.backup(repository, files.len()))
+                        .as_deref(),
+                    limits,
+                    ctx,
+                )?
+            };
+            if index_applied && matches!(observed, Observed::Before(_) | Observed::Missing(_)) {
                 return Err(conflict(path));
             }
             files.push(CheckoutFile {
@@ -481,6 +504,22 @@ impl Checkout {
                 after,
                 observed,
             });
+        }
+        let shapes = roots
+            .into_iter()
+            .map(|root| {
+                shape::CheckoutShape::prepare(
+                    root,
+                    &files,
+                    repository,
+                    pending.as_ref(),
+                    limits,
+                    ctx,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if index_applied && shapes.iter().any(|shape| !shape.is_applied()) {
+            return Err(Error::Stale);
         }
 
         let index_bytes = if index_applied || files.is_empty() {
@@ -550,6 +589,7 @@ impl Checkout {
             index_bytes,
             attribute_sources,
             merge: merging,
+            shapes,
         })
     }
 
@@ -580,6 +620,9 @@ impl Checkout {
                 (file.before.as_deref(), file.after.as_deref()),
                 self.merge,
             )?;
+            if file.observed == Observed::Structural {
+                continue;
+            }
             let backup = self.resuming.then(|| self.journal.backup(repository, i));
             let current = observe(
                 repository,
@@ -593,6 +636,9 @@ impl Checkout {
             if current != file.observed {
                 return Err(conflict(&file.path));
             }
+        }
+        for shape in &self.shapes {
+            shape.validate(&self.files, repository, pending.as_ref(), limits, ctx)?;
         }
         Ok(())
     }
@@ -619,11 +665,14 @@ impl Checkout {
             )?
             .publish()?;
         }
+        for shape in &self.shapes {
+            shape.publish(&self.files, repository, &self.journal, limits, ctx, check)?;
+        }
         for (i, file) in self.files.iter().enumerate() {
             check()?;
             let backup = self.journal.backup(repository, i);
             match &file.observed {
-                Observed::Applied => {}
+                Observed::Applied | Observed::Structural => {}
                 Observed::Before(token) => {
                     let pending = jc_fs::stage_existing_file(
                         &repository.root,
@@ -673,6 +722,9 @@ impl Checkout {
             }
         }
         for (i, file) in self.files.iter().enumerate() {
+            if file.observed == Observed::Structural {
+                continue;
+            }
             let backup = self.journal.backup(repository, i);
             if observe(
                 repository,
@@ -686,6 +738,9 @@ impl Checkout {
             {
                 return Err(conflict(&file.path));
             }
+        }
+        for shape in &self.shapes {
+            shape.verify_applied(&self.files, repository, &self.journal, limits, ctx)?;
         }
         Ok(())
     }

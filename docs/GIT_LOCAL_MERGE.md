@@ -29,8 +29,19 @@ revisión. **Esc** vuelve al borrador de resoluciones desde la revisión final.
 
 La edición admite UTF-8 de hasta 64 KiB por archivo. Para archivos mayores
 o con otros bytes puedes elegir una versión completa, incluida una versión
-en la que el archivo no existe. Los conflictos estructurales, como las
-colisiones entre archivos y carpetas, requieren otro flujo.
+en la que el archivo no existe.
+
+En una colisión **Archivo/carpeta**, cada pestaña indica si la ruta contiene
+un archivo, una carpeta o está ausente en ese commit. La vista de carpeta
+muestra los archivos que incluye. **Ctrl+U** elige la versión completa y
+**Resultado** muestra qué estructura quedará al confirmar.
+
+Para convertir una carpeta en archivo, CIDE verifica los archivos que
+retirará y guarda sus originales en `.git`. La operación se detiene si
+detecta cambios locales, archivos sin seguimiento o carpetas ajenas dentro
+de la ruta. Solo retira carpetas vacías. La recuperación vuelve a comprobar
+los respaldos y continúa desde el último estado verificable. Otros conflictos
+estructurales, como los renombres incompatibles, quedan pendientes.
 
 La vista previa no escribe objetos ni toca el índice. La confirmación vuelve a
 comprobar las referencias, HEAD, el índice y los archivos afectados. Las
@@ -74,7 +85,7 @@ reanudación tras publicar el índice. Las comprobaciones se ejecutaron en
 segundo plano, sin escritorio, repositorios personales ni GitHub Actions.
 
 Para generar los ejecutables usando la caché compartida:
-`python scripts/build-cide-local.py --output target/git-merge-resolution-next/release`.
+`python scripts/build-cide-local.py --output target/git-merge-structural-next/release`.
 
 La resolución interactiva pasó la suite local de Windows con Rust 1.88.0
 mediante `python scripts/check-local.py --steps fmt clippy test --jobs 2`.
@@ -82,3 +93,8 @@ Pasaron 901 pruebas. Los tres auxiliares se ejecutaron desde sus pruebas padre.
 Las pruebas cubrieron la edición y confirmación en ambos frontends, el rechazo
 de cambios locales posteriores a la revisión y la recuperación del resultado
 editado tras publicar el índice.
+
+La validación de archivo/carpeta pasó 902 pruebas con el mismo comando.
+Los recorridos de GUI y TUI cubrieron las dos conversiones. El núcleo
+comprobó el rechazo de ediciones locales, la protección de un archivo
+creado durante la publicación y la recuperación posterior.
