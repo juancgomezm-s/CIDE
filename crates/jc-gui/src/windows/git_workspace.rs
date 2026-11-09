@@ -971,7 +971,7 @@ impl State {
                 Action::None
             }
             Some(Intent::ResetMode(mode)) => {
-                self.git_commit.select_reset_mode(Some(mode));
+                self.git_commit.select_reset_mode(mode);
                 self.git_workspace.invalidate();
                 Action::None
             }

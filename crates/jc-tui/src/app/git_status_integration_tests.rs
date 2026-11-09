@@ -503,6 +503,66 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
         })
         .unwrap();
     assert_eq!(fs::read(backup.path()).unwrap(), before);
+
+    use jc_app::git_commit::ResetMode;
+    let disposable = "aborto-hard-local.txt";
+    fixture.create(disposable, b"version preparada");
+    fixture.git(&["add", "--", disposable]);
+    fixture.rewrite(disposable, b"version en disco");
+    let index_before = fs::read(&index).unwrap();
+    key(&mut app, KeyCode::F(5));
+    wait_for(&mut app, |app| {
+        app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    });
+    key(&mut app, KeyCode::Char('x'));
+    key(&mut app, KeyCode::Tab);
+    key(&mut app, KeyCode::Tab);
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let view = app.git_commit.view().unwrap();
+    let plan = view
+        .merge_review()
+        .unwrap_or_else(|| panic!("{:?}", view.error));
+    assert_eq!(plan.reset_mode(), Some(ResetMode::Hard));
+    assert!(plan.hard_changes_file(disposable.as_bytes()));
+    assert!(fixture.path(disposable).exists());
+    let block = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(fixture.path("origen.txt"))
+        .unwrap();
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    drop(block);
+    assert!(
+        pending.exists() && !fixture.path(disposable).exists(),
+        "{}",
+        app.status
+    );
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Char('a'));
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let view = app.git_commit.view().unwrap();
+    let abort = view
+        .merge_abort_review()
+        .unwrap_or_else(|| panic!("{:?}", view.error));
+    assert_eq!(abort.reset_mode(), Some(ResetMode::Hard));
+    assert_eq!(abort.rows[0].path, disposable.as_bytes());
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().is_none(), "{}", app.status);
+    assert!(!pending.exists());
+    assert_eq!(fs::read(&index).unwrap(), index_before);
+    assert_eq!(
+        fs::read(fixture.path(disposable)).unwrap(),
+        b"version en disco"
+    );
+    assert_eq!(
+        fs::read(fixture.path("origen.txt")).unwrap(),
+        b"version local posterior"
+    );
+    assert_eq!(fs::read(&added).unwrap(), b"archivo de la fusion");
 }
 
 fn installed_git() -> PathBuf {

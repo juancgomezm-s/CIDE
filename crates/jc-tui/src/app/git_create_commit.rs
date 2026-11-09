@@ -141,7 +141,8 @@ impl TuiApp {
             && matches!(view.draft, WriteDraft::Reset(..))
             && matches!(key.code, KeyCode::Tab | KeyCode::Up | KeyCode::Down)
         {
-            self.git_commit.select_reset_mode(None);
+            self.git_commit
+                .step_reset_mode(if key.code == KeyCode::Up { -1 } else { 1 });
         } else {
             let mut utf8 = [0; 4];
             let edit = match key.code {
@@ -341,7 +342,7 @@ impl TuiApp {
                 plan.incoming(),
                 plan.active()
             ));
-            if plan.reset_mode().is_some() {
+            if matches!(plan.reset_mode(), Some(ResetMode::Soft | ResetMode::Mixed)) {
                 rows.push("Se conservan los archivos de trabajo".into());
             } else {
                 rows.push(format!("{} archivos que se revertirán", plan.rows.len()));
@@ -397,6 +398,9 @@ impl TuiApp {
                         "Cambios en el índice · se guardará una copia del anterior".into()
                     }
                     Some(ResetMode::Mixed) => "El índice ya coincide con el destino".into(),
+                    Some(ResetMode::Hard) => {
+                        "Disco e índice · se creará un respaldo antes de escribir".into()
+                    }
                     None => format!("Resultado · {result}"),
                 });
             }
@@ -434,8 +438,17 @@ impl TuiApp {
                     } else {
                         "Conflicto"
                     };
+                    let scope = if plan.reset_mode() == Some(ResetMode::Hard) {
+                        if plan.hard_changes_file(&row.path) {
+                            "Disco · "
+                        } else {
+                            "Índice · "
+                        }
+                    } else {
+                        ""
+                    };
                     format!(
-                        "{}{}  {}",
+                        "{}{scope}{}  {}",
                         if conflicts && index == view.first {
                             "› "
                         } else {
@@ -448,6 +461,8 @@ impl TuiApp {
             ));
             if plan.recovering() {
                 "↑↓ archivos · F2 reanuda · Esc cancela"
+            } else if plan.reset_mode() == Some(ResetMode::Hard) && plan.can_apply() {
+                "F2 confirma reset hard · Esc vuelve a elegir modo"
             } else if plan.reset_mode().is_some() {
                 if plan.can_apply() {
                     "F2 confirma el reset · Esc vuelve a elegir modo"
@@ -563,6 +578,10 @@ impl TuiApp {
                     (
                         ResetMode::Mixed,
                         "ajusta el índice al destino y conserva los archivos",
+                    ),
+                    (
+                        ResetMode::Hard,
+                        "respalda y reemplaza los archivos indicados",
                     ),
                 ] {
                     let mark = if *mode == choice { "›" } else { " " };

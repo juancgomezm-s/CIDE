@@ -15,6 +15,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod hard_reset;
 mod reset;
 pub(super) mod rollback;
 pub(super) use reset::ResetTransition;
@@ -39,6 +40,7 @@ pub(super) struct Journal {
     pub incoming: Option<ObjectId>,
     pub commit_operation: Option<CommitOperation>,
     pub reset: Option<ResetMode>,
+    hard_manifest: Option<ObjectId>,
     pub mainline: Option<Mainline>,
     pub aborting: bool,
     old_index: ObjectId,
@@ -63,13 +65,16 @@ impl Journal {
         let reset = match header {
             Some("CIDE-RESET-SOFT-1" | "CIDE-RESET-SOFT-ABORT-1") => Some(ResetMode::Soft),
             Some("CIDE-RESET-MIXED-1" | "CIDE-RESET-MIXED-ABORT-1") => Some(ResetMode::Mixed),
+            Some("CIDE-RESET-HARD-1" | "CIDE-RESET-HARD-ABORT-1") => Some(ResetMode::Hard),
             _ => None,
         };
         let (integration, commit_operation, aborting, has_mainline) = match header {
-            Some("CIDE-RESET-SOFT-1" | "CIDE-RESET-MIXED-1") => (true, None, false, false),
-            Some("CIDE-RESET-SOFT-ABORT-1" | "CIDE-RESET-MIXED-ABORT-1") => {
-                (true, None, true, false)
+            Some("CIDE-RESET-SOFT-1" | "CIDE-RESET-MIXED-1" | "CIDE-RESET-HARD-1") => {
+                (true, None, false, false)
             }
+            Some(
+                "CIDE-RESET-SOFT-ABORT-1" | "CIDE-RESET-MIXED-ABORT-1" | "CIDE-RESET-HARD-ABORT-1",
+            ) => (true, None, true, false),
             Some("CIDE-SWITCH-1") => (false, None, false, false),
             Some("CIDE-MERGE-1") => (true, None, false, false),
             Some("CIDE-MERGE-ABORT-1") => (true, None, true, false),
@@ -90,6 +95,11 @@ impl Journal {
         };
         let (from, to, old_index, new_index) = (oid()?, oid()?, oid()?, oid()?);
         let incoming = if integration { Some(oid()?) } else { None };
+        let hard_manifest = if reset == Some(ResetMode::Hard) {
+            Some(oid()?)
+        } else {
+            None
+        };
         let mainline = if has_mainline {
             let id = oid()?;
             let number = lines
@@ -117,6 +127,7 @@ impl Journal {
             incoming,
             commit_operation,
             reset,
+            hard_manifest,
             mainline,
             aborting,
             old_index,
@@ -134,6 +145,8 @@ impl Journal {
                 (Some(ResetMode::Soft), true) => "CIDE-RESET-SOFT-ABORT-1",
                 (Some(ResetMode::Mixed), false) => "CIDE-RESET-MIXED-1",
                 (Some(ResetMode::Mixed), true) => "CIDE-RESET-MIXED-ABORT-1",
+                (Some(ResetMode::Hard), false) => "CIDE-RESET-HARD-1",
+                (Some(ResetMode::Hard), true) => "CIDE-RESET-HARD-ABORT-1",
                 (None, _) => match (
                     self.incoming.is_some(),
                     self.commit_operation,
@@ -163,6 +176,9 @@ impl Journal {
         if let Some(incoming) = self.incoming {
             data.push_str(&format!("{incoming}\n"));
         }
+        if let Some(manifest) = self.hard_manifest {
+            data.push_str(&format!("{manifest}\n"));
+        }
         if let Some(mainline) = self.mainline {
             data.push_str(&format!("{}\n{}\n", mainline.id, mainline.number));
         }
@@ -189,7 +205,7 @@ impl Journal {
     ) -> Result<Option<Vec<u8>>, Error> {
         let Some(bytes) = read_record(
             repo,
-            &self.auxiliary(repo, "index"),
+            &self.index_backup_path(repo),
             crate::INDEX_BYTES as usize,
             ctx,
         )?
@@ -218,6 +234,16 @@ impl Journal {
     pub fn retained_reset_index(&self, repo: &Identity) -> Option<PathBuf> {
         (self.reset == Some(ResetMode::Mixed) && !self.aborting && self.old_index != self.new_index)
             .then(|| self.auxiliary(repo, "index"))
+    }
+
+    pub fn hard_backup_path(&self, repo: &Identity) -> Option<PathBuf> {
+        (self.reset == Some(ResetMode::Hard))
+            .then(|| repo.git_dir.join(format!("cide-hard-{}", self.nonce)))
+    }
+
+    fn index_backup_path(&self, repo: &Identity) -> PathBuf {
+        self.hard_backup_path(repo)
+            .map_or_else(|| self.auxiliary(repo, "index"), |dir| dir.join("index"))
     }
 
     fn record_output(
@@ -377,6 +403,7 @@ pub(super) struct Checkout {
     attribute_sources: BTreeMap<Vec<u8>, Option<ObjectId>>,
     merge: bool,
     shapes: Vec<shape::CheckoutShape>,
+    hard_backup: Option<hard_reset::HardBackup>,
 }
 
 pub(super) struct Transition<'a> {
@@ -826,6 +853,7 @@ impl Checkout {
                     incoming: merge.as_ref().map(|merge| merge.incoming),
                     commit_operation: merge.as_ref().and_then(|merge| merge.commit_operation),
                     reset: None,
+                    hard_manifest: None,
                     mainline: merge.and_then(|merge| merge.mainline),
                     aborting: false,
                     old_index: current_index,
@@ -842,6 +870,7 @@ impl Checkout {
             attribute_sources,
             merge: merging,
             shapes,
+            hard_backup: None,
         })
     }
 
@@ -857,7 +886,7 @@ impl Checkout {
         if pending.as_ref() != self.resuming.then_some(&self.journal) {
             return Err(Error::Stale);
         }
-        if self.journal.reset.is_some() {
+        if matches!(self.journal.reset, Some(ResetMode::Soft | ResetMode::Mixed)) {
             return Ok(());
         }
         check_attribute_sources(repo, repository, &self.attribute_sources, ctx)?;
@@ -937,7 +966,7 @@ impl Checkout {
                         &repository.git_dir,
                         &mut || ctx.check().is_err(),
                     )?;
-                    if self.merge && file.after.is_some() {
+                    if (self.merge || self.hard_backup.is_some()) && file.after.is_some() {
                         self.journal.record_output(
                             repository,
                             i,
@@ -980,7 +1009,7 @@ impl Checkout {
                         file.after.as_deref().ok_or(Error::Stale)?,
                         &mut || ctx.check().is_err(),
                     )?;
-                    if self.merge {
+                    if self.merge || self.hard_backup.is_some() {
                         self.journal
                             .record_output(repository, i, pending.object_key()?, ctx)?;
                     }
@@ -1022,6 +1051,9 @@ impl Checkout {
         bytes: &[u8],
         ctx: &Context<'_>,
     ) -> Result<(), Error> {
+        if let Some(backup) = &self.hard_backup {
+            return backup.save(repo, &self.journal, bytes, &self.files, ctx);
+        }
         if (self.merge || self.journal.reset.is_some())
             && !self.resuming
             && self.index_bytes.is_some()

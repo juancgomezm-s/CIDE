@@ -2118,6 +2118,149 @@ mod tests {
             assert_eq!(fs::read(&file).unwrap(), b"edicion local");
             assert!(!reset(active, ResetMode::Mixed).unwrap().can_apply());
         }
+        #[test]
+        fn reset_hard_retains_worktree_and_staged_only_bytes_in_the_backup() {
+            use crate::local_merge::{ResetMode, prepare_reset};
+            let fixture = Fixture::new();
+            let (repo, active, _) = scenario(&fixture, true, b"otra rama");
+            let git = fixture.git();
+            let index = git.join("index");
+            let file = fixture.root.join("a.txt");
+            fs::write(&file, b"edicion local").unwrap();
+            let before = fs::read(&index).unwrap();
+            let staged = repo
+                .open_index()
+                .unwrap()
+                .entry_by_path(b"local".as_bstr())
+                .unwrap()
+                .id;
+            let plan = prepare_reset(
+                &fixture.root,
+                &active.to_string(),
+                ResetMode::Hard,
+                limits(),
+                || false,
+            )
+            .unwrap();
+            assert!(
+                plan.can_apply()
+                    && plan.hard_changes_file(b"a.txt")
+                    && plan.hard_changes_file(b"local")
+            );
+            assert_eq!(fs::read(&file).unwrap(), b"edicion local");
+            assert!(!git.join(crate::branch_checkout::JOURNAL_NAME).exists());
+            let backup = apply_merge(plan, || false).unwrap().hard_backup.unwrap();
+            assert_eq!(fs::read(&file).unwrap(), b"UNO\r\ndos\r\ntres\r\nfin");
+            assert!(!fixture.root.join("local").exists());
+            assert_eq!(
+                fs::read(fixture.root.join("sin-seguimiento")).unwrap(),
+                b"archivo privado"
+            );
+            assert_eq!(fs::read(backup.join("index")).unwrap(), before);
+            assert_eq!(
+                fs::read(backup.join("archivos/0")).unwrap(),
+                b"edicion local"
+            );
+            assert_eq!(
+                fs::read(backup.join("archivos/1")).unwrap(),
+                b"no preparado local"
+            );
+            assert_eq!(
+                fs::read(backup.join("preparados").join(staged.to_string())).unwrap(),
+                b"preparado local"
+            );
+            let manifest = fs::read_to_string(backup.join("manifest.tsv")).unwrap();
+            assert!(manifest.contains(&format!("preparado\t{staged}\tlocal")));
+            assert!(manifest.contains("\ta.txt\n"));
+        }
+
+        #[test]
+        fn reset_hard_abort_restores_disk_index_and_branch_and_blocks_later_edits() {
+            use crate::local_merge::{ResetMode, prepare_reset};
+            let fixture = Fixture::new();
+            let (repo, active, _) = scenario(&fixture, true, b"otra rama");
+            let target = repo
+                .find_commit(active)
+                .unwrap()
+                .parent_ids()
+                .next()
+                .unwrap()
+                .detach();
+            let git = fixture.git();
+            let index = git.join("index");
+            let branch = git.join("refs/heads/activa");
+            let pending = git.join(crate::branch_checkout::JOURNAL_NAME);
+            let file = fixture.root.join("a.txt");
+            let before = fs::read(&index).unwrap();
+            fs::write(&file, b"edicion revisada").unwrap();
+            let hard = || {
+                prepare_reset(
+                    &fixture.root,
+                    &target.to_string(),
+                    ResetMode::Hard,
+                    limits(),
+                    || false,
+                )
+            };
+            let stale = hard().unwrap();
+            fs::write(&file, b"edicion antes de confirmar").unwrap();
+            assert!(apply_merge(stale, || false).is_err());
+            assert!(!pending.exists());
+            assert_eq!(fs::read(&file).unwrap(), b"edicion antes de confirmar");
+            let target_ref = format!("{target}\n");
+            assert!(
+                apply_merge(hard().unwrap(), || fs::read_to_string(&branch).unwrap()
+                    == target_ref)
+                .is_err()
+            );
+            assert!(pending.exists());
+            assert!(hard().is_err());
+            let abort = || prepare_merge_abort(&fixture.root, limits(), || false);
+            let review = abort().unwrap();
+            assert!(review.restores_branch() && review.restores_index());
+            assert_eq!(review.reset_mode(), Some(ResetMode::Hard));
+            let output = fs::read(&file).unwrap();
+            fs::write(&file, b"edicion posterior").unwrap();
+            assert!(apply_merge_abort(review, || false).is_err());
+            assert_eq!(fs::read(&file).unwrap(), b"edicion posterior");
+            fs::write(&file, output).unwrap();
+            let result = apply_merge_abort(abort().unwrap(), || false).unwrap();
+            assert_eq!(result.id, active);
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert_eq!(fs::read(&file).unwrap(), b"edicion antes de confirmar");
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+            assert!(result.hard_backup.unwrap().join("manifest.tsv").is_file());
+            assert!(!pending.exists());
+        }
+
+        #[test]
+        fn reset_hard_does_not_replace_an_untracked_collision() {
+            use crate::local_merge::{ResetMode, prepare_reset};
+            let fixture = Fixture::new();
+            let (repo, active, _) = scenario(&fixture, true, b"otra rama");
+            let git = fixture.git();
+            let index = git.join("index");
+            gix::index::File::from_state(gix::index::State::new(repo.object_hash()), &index)
+                .write(Default::default())
+                .unwrap();
+            let file = fixture.root.join("a.txt");
+            fs::write(&file, b"contenido no rastreado").unwrap();
+            assert!(
+                prepare_reset(
+                    &fixture.root,
+                    &active.to_string(),
+                    ResetMode::Hard,
+                    limits(),
+                    || false
+                )
+                .is_err()
+            );
+            assert_eq!(fs::read(file).unwrap(), b"contenido no rastreado");
+            assert!(!git.join(crate::branch_checkout::JOURNAL_NAME).exists());
+        }
     }
 
     #[cfg(windows)]

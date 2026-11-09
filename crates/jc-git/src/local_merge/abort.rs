@@ -36,6 +36,7 @@ impl MergeAbortPlan {
             return match mode {
                 ResetMode::Soft => "Reset soft pendiente",
                 ResetMode::Mixed => "Reset mixed pendiente",
+                ResetMode::Hard => "Reset hard pendiente",
             };
         }
         match self.operation() {
@@ -93,7 +94,11 @@ pub fn prepare_merge_abort(
         } else {
             None
         };
-        let rollback = if journal.reset.is_none() {
+        let rollback = if journal.reset == Some(ResetMode::Hard) {
+            Some(Rollback::prepare_hard(
+                &repo, &identity, &journal, limits, ctx,
+            )?)
+        } else if journal.reset.is_none() {
             let trees = (
                 tree_id(&repo, journal.from, limits, ctx)?,
                 tree_id(&repo, journal.to, limits, ctx)?,
@@ -286,5 +291,6 @@ pub fn apply_merge_abort(
         id: journal.from,
         reflog_warning,
         index_backup: None,
+        hard_backup: journal.hard_backup_path(&identity),
     })
 }

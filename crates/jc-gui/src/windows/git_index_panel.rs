@@ -950,6 +950,51 @@ mod tests {
         assert_eq!(fs::read(&index).unwrap(), before);
         assert!(!added.exists());
         assert_eq!(fs::read(&incoming_path).unwrap(), b"mismo contenido\n");
+
+        use jc_app::git_commit::ResetMode;
+        fs::write(&incoming_path, b"cambio local para respaldar\n").unwrap();
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x74);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        state.key(b'X' as usize);
+        state.key(0x26);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let plan = view
+            .merge_review()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(plan.reset_mode(), Some(ResetMode::Hard));
+        assert!(plan.hard_changes_file(b"nombre-entrante.txt"));
+        state.key(0x0d);
+        assert_eq!(
+            fs::read(&incoming_path).unwrap(),
+            b"cambio local para respaldar\n"
+        );
+        assert!(!added.exists());
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert_eq!(fs::read(&incoming_path).unwrap(), b"cambio entrante\n");
+        assert!(added.exists());
+        let backup = fs::read_dir(fixture.root.join(".git"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with("cide-hard-"))
+            })
+            .unwrap();
+        assert_eq!(fs::read(backup.path().join("index")).unwrap(), before);
+        assert_eq!(
+            fs::read(backup.path().join("archivos/1")).unwrap(),
+            b"cambio local para respaldar\n"
+        );
     }
 
     #[test]

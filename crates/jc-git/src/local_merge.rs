@@ -154,13 +154,17 @@ pub enum CommitOperation {
 pub enum ResetMode {
     Soft,
     Mixed,
+    Hard,
 }
 
 impl ResetMode {
+    pub const ALL: [Self; 3] = [Self::Soft, Self::Mixed, Self::Hard];
+
     pub fn label(self) -> &'static str {
         match self {
             Self::Soft => "soft",
             Self::Mixed => "mixed",
+            Self::Hard => "hard",
         }
     }
 }
@@ -266,6 +270,9 @@ impl MergePlan {
                 (_, false) => "Sin cambios que aplicar",
                 (ResetMode::Soft, true) => "Se conserva el índice",
                 (ResetMode::Mixed, true) => "El índice quedará como en el commit de destino",
+                (ResetMode::Hard, true) => {
+                    "Se actualizarán la rama, el índice y los archivos indicados"
+                }
             };
         }
         match (self.operation(), self.kind) {
@@ -282,6 +289,15 @@ impl MergePlan {
     }
     pub fn reset_mode(&self) -> Option<ResetMode> {
         self.source.reset_mode()
+    }
+    pub fn hard_changes_file(&self, path: &[u8]) -> bool {
+        self.reset_mode() == Some(ResetMode::Hard)
+            && self.checkout.as_ref().is_some_and(|checkout| {
+                checkout
+                    .files
+                    .binary_search_by(|file| file.path().cmp(path))
+                    .is_ok()
+            })
     }
     pub fn tips(&self) -> (ObjectId, ObjectId) {
         (self.from, self.theirs)
@@ -341,6 +357,7 @@ pub struct MergePublication {
     pub id: ObjectId,
     pub reflog_warning: Option<String>,
     pub index_backup: Option<std::path::PathBuf>,
+    pub hard_backup: Option<std::path::PathBuf>,
 }
 
 struct Objects {
@@ -1020,6 +1037,12 @@ fn prepare(
                 }
                 *parent = journal.mainline;
             }
+            if journal.reset == Some(ResetMode::Hard) {
+                return Err(Error::Engine(
+                    "Hay un reset hard interrumpido. Elige Abortar antes de volver a intentarlo"
+                        .into(),
+                ));
+            }
         }
         let from = pending.as_ref().map_or(head, |journal| journal.from);
         let (index, index_bytes) = local_pair::index_capture(&repo, &repository.git_dir, ctx)?;
@@ -1035,7 +1058,10 @@ fn prepare(
             }
         }
         let resolution = review.and_then(|(_, choices)| choices);
-        if source.reset_mode() != Some(ResetMode::Mixed) {
+        if !matches!(
+            source.reset_mode(),
+            Some(ResetMode::Mixed | ResetMode::Hard)
+        ) {
             let state = local_pair::decode_index(&repo, index_bytes.as_deref(), ctx)?;
             if state.entries().iter().any(|entry| entry.stage_raw() != 0) {
                 return Err(Error::Unmerged);
@@ -1063,7 +1089,7 @@ fn prepare(
         };
         if let Some(mode) = plan.reset_mode() {
             let target_tree = tree_id(&repo, theirs, limits, ctx)?;
-            let old_tree = if mode == ResetMode::Soft {
+            let old_tree = if mode != ResetMode::Mixed {
                 tree_id(&repo, from, limits, ctx)?
             } else {
                 target_tree
@@ -1398,6 +1424,11 @@ pub fn apply_merge(
                 (Some(CommitOperation::Revert), _) => "Revertir en el commit",
                 (_, Some(ResetMode::Soft)) => "Reset soft en el commit",
                 (_, Some(ResetMode::Mixed)) => "Reset mixed en el commit",
+                (_, Some(ResetMode::Hard)) => {
+                    return Error::Engine(format!(
+                        "{error}. Elige Abortar para recuperar el reset hard"
+                    ));
+                }
                 _ => "Fusionar en la rama",
             };
             Error::Engine(format!(
@@ -1618,5 +1649,6 @@ fn publish(
         id: result,
         reflog_warning,
         index_backup,
+        hard_backup: checkout.journal.hard_backup_path(&identity),
     })
 }

@@ -114,7 +114,10 @@ impl WriteDraft {
         self.publishes_integration()
             || matches!(
                 self,
-                Self::Restore(_) | Self::SwitchBranch(_) | Self::AbortMerge
+                Self::Restore(_)
+                    | Self::SwitchBranch(_)
+                    | Self::AbortMerge
+                    | Self::Reset(ResetMode::Hard, _)
             )
     }
 }
@@ -383,7 +386,7 @@ impl CommitController {
         }
     }
 
-    pub fn select_reset_mode(&mut self, choice: Option<ResetMode>) {
+    pub fn select_reset_mode(&mut self, choice: ResetMode) {
         if self.busy() {
             return;
         }
@@ -391,11 +394,19 @@ impl CommitController {
             return;
         };
         if let WriteDraft::Reset(mode, _) = &mut view.draft {
-            *mode = choice.unwrap_or(match *mode {
-                ResetMode::Soft => ResetMode::Mixed,
-                ResetMode::Mixed => ResetMode::Soft,
-            });
+            *mode = choice;
             view.error = None;
+        }
+    }
+
+    pub fn step_reset_mode(&mut self, delta: isize) {
+        let Some(WriteDraft::Reset(current, _)) = self.view.as_ref().map(|view| &view.draft) else {
+            return;
+        };
+        let modes = ResetMode::ALL;
+        if let Some(index) = modes.iter().position(|mode| mode == current) {
+            let next = (index as isize + delta).rem_euclid(modes.len() as isize) as usize;
+            self.select_reset_mode(modes[next]);
         }
     }
 
@@ -663,11 +674,13 @@ impl CommitController {
         } else {
             None
         };
-        let preserves_worktree = matches!(view.draft, WriteDraft::Reset(..))
-            || (matches!(view.draft, WriteDraft::AbortMerge)
-                && view
-                    .merge_abort_review()
-                    .is_none_or(|plan| plan.reset_mode().is_some()));
+        let preserves_worktree = matches!(
+            view.draft,
+            WriteDraft::Reset(ResetMode::Soft | ResetMode::Mixed, _)
+        ) || (matches!(view.draft, WriteDraft::AbortMerge)
+            && view.merge_abort_review().is_none_or(|plan| {
+                matches!(plan.reset_mode(), Some(ResetMode::Soft | ResetMode::Mixed))
+            }));
         if !view.draft.is_reference()
             && !preserves_worktree
             && crate::git_index::require_clean(bench).is_err()
@@ -771,6 +784,20 @@ impl CommitController {
                                 None => "Fusión local publicada",
                             };
                             Completion::Applied(apply_merge(*plan, cancelled).map(|publication| {
+                                if let Some(name) = publication
+                                    .hard_backup
+                                    .as_ref()
+                                    .and_then(|path| path.file_name())
+                                {
+                                    let notice = format!(
+                                        "Reset hard aplicado · Respaldo en .git/{}",
+                                        name.to_string_lossy()
+                                    );
+                                    return publication.reflog_warning.map_or_else(
+                                        || notice.clone(),
+                                        |warning| format!("{notice} · {warning}"),
+                                    );
+                                }
                                 let mut message = publication
                                     .reflog_warning
                                     .unwrap_or_else(|| format!("{action} · {}", publication.id));
@@ -795,7 +822,19 @@ impl CommitController {
                                 None => "Fusión abortada",
                             };
                             Completion::Applied(apply_merge_abort(*plan, cancelled).map(|result| {
-                                result.reflog_warning.unwrap_or_else(|| action.into())
+                                let mut notice =
+                                    result.reflog_warning.unwrap_or_else(|| action.into());
+                                if let Some(name) = result
+                                    .hard_backup
+                                    .as_ref()
+                                    .and_then(|path| path.file_name())
+                                {
+                                    notice.push_str(&format!(
+                                        " · Respaldo en .git/{}",
+                                        name.to_string_lossy()
+                                    ));
+                                }
+                                notice
                             }))
                         }
                         None => Completion::Review(match (draft, replaces) {

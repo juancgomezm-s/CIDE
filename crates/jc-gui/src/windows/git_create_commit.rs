@@ -163,7 +163,8 @@ impl State {
             match code {
                 0x0d => self.submit_git_create_commit(),
                 0x09 | 0x26 | 0x28 if matches!(view.draft, WriteDraft::Reset(..)) => {
-                    self.git_commit.select_reset_mode(None);
+                    self.git_commit
+                        .step_reset_mode(if code == 0x26 { -1 } else { 1 });
                 }
                 0x08 => self.git_commit.edit(FieldEdit::Backspace),
                 0x2e => self.git_commit.edit(FieldEdit::Delete),
@@ -515,7 +516,7 @@ impl State {
         } else if let Some(plan) = view.merge_abort_review() {
             f.summary = vec![
                 format!("{} · {} → {}", plan.label(), plan.incoming(), plan.active()),
-                if plan.reset_mode().is_some() {
+                if matches!(plan.reset_mode(), Some(ResetMode::Soft | ResetMode::Mixed)) {
                     "Se conservan los archivos de trabajo".into()
                 } else {
                     format!("{} archivos que se revertirán", plan.rows.len())
@@ -591,6 +592,9 @@ impl State {
                             "Cambios en el índice · se guardará una copia del anterior".into()
                         }
                         ResetMode::Mixed => "El índice ya coincide con el destino".into(),
+                        ResetMode::Hard => {
+                            "Disco e índice · se creará un respaldo antes de escribir".into()
+                        }
                     });
                 } else {
                     f.details.push(format!("Resultado · {result}"));
@@ -636,12 +640,21 @@ impl State {
                 } else {
                     "Conflicto"
                 };
+                let scope = if plan.reset_mode() == Some(ResetMode::Hard) {
+                    if plan.hard_changes_file(&row.path) {
+                        "Disco · "
+                    } else {
+                        "Índice · "
+                    }
+                } else {
+                    ""
+                };
                 f.code.push(CodeRow {
                     rect: r,
                     old: String::new(),
                     new: String::new(),
                     text: format!(
-                        "{}  {}",
+                        "{scope}{}  {}",
                         row.change.map_or(label, file_flag),
                         opaque(&row.path, 256)
                     ),
@@ -663,6 +676,8 @@ impl State {
                     "Revisar resultado"
                 } else if plan.recovering() {
                     "Reanudar"
+                } else if plan.reset_mode() == Some(ResetMode::Hard) {
+                    "Confirmar reset hard"
                 } else if plan.reset_mode().is_some() {
                     "Confirmar reset"
                 } else {
@@ -804,13 +819,16 @@ impl State {
                     ResetMode::Mixed => {
                         "Mixed ajusta el índice al destino y conserva los archivos".into()
                     }
+                    ResetMode::Hard => {
+                        "Hard reemplaza los archivos indicados después de respaldarlos".into()
+                    }
                 },
             ];
             if !self.git_commit.busy() {
-                for (offset, choice) in [(12, ResetMode::Soft), (92, ResetMode::Mixed)] {
+                for (index, choice) in ResetMode::ALL.into_iter().enumerate() {
                     self.add_merge_button(
                         &mut f,
-                        offset,
+                        12 + 80 * index as i32,
                         76,
                         choice.label(),
                         *mode == choice,
@@ -818,7 +836,7 @@ impl State {
                     );
                 }
             }
-            ("Ver cambios", 172)
+            ("Ver cambios", 252)
         } else if let WriteDraft::CommitOperation(_, target) = &view.draft {
             f.summary = vec![format!("Commit de origen · {target}")];
             ("Ver cambios", 12)

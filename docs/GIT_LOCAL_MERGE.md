@@ -173,6 +173,54 @@ verificó soft sin índice, mixed sobre el commit actual y el aborto después de
 publicar el índice pero antes de mover la rama. Las pruebas usaron repositorios
 temporales en segundo plano.
 
+## Reset hard
+
+En **Git → Grafo**, selecciona el destino y pulsa **X**. Elige **hard** y
+pulsa **Intro**. La revisión distingue los archivos que se reemplazarán,
+crearán o retirarán del disco de los cambios que solo afectan al índice.
+Confirma con **Ctrl+Intro** o **Confirmar reset hard** en la GUI, o con
+**F2** en la TUI. Los documentos sin guardar bloquean la operación para
+que puedas decidir qué guardar antes de confirmar.
+
+Antes de tocar el directorio de trabajo, CIDE guarda una carpeta
+`.git/cide-hard-…` y registra su ruta en el resultado. Para recuperar
+contenido después de un reset completado, abre `manifest.tsv` en esa
+carpeta y copia a un lugar seguro los archivos que necesites:
+
+- Una fila **archivo** da el número de la copia en `archivos/` y la ruta
+  original. Un guion en el campo de la huella anterior indica que el
+  archivo se creó durante el reset y no tiene una copia anterior.
+- Una fila **preparado** da el identificador de la copia en `preparados/`
+  y su ruta original. Contiene los bytes preparados, aunque sean distintos
+  de los que estaban en el disco. Una **eliminación preparada** queda
+  registrada en el manifiesto y en el índice.
+- El archivo `index` es la copia exacta del índice anterior. El manifiesto
+  también indica los commits de origen y destino.
+
+Si la publicación se interrumpe, pulsa **A** desde el grafo para revisar y
+confirmar el aborto. El aborto restaura el disco, el índice y la rama según
+lo que se hubiera publicado. Si detecta una edición posterior o un estado
+ambiguo, conserva los archivos y el respaldo para que puedas revisarlos.
+Después del aborto se conserva la carpeta de respaldo.
+
+Este flujo admite archivos regulares con un índice existente. CIDE conserva
+los archivos no rastreados y bloquea las colisiones con ellos, las
+conversiones de texto no admitidas y las colisiones de archivo con carpeta.
+La revisión está acotada a 128 cambios en disco, 2 MiB por archivo y un
+presupuesto total de lectura y respaldo. El manifiesto se publica cuando
+termina de escribirse el respaldo.
+
+Formato y Clippy pasaron con `python scripts/check-local.py --steps fmt
+clippy test --jobs 2`. La primera ejecución de pruebas se detuvo en una
+prueba existente de reintentos de guardado en Windows. La repetición con
+`RUST_TEST_THREADS=2` y `--steps test --jobs 2` pasó las 915 pruebas,
+incluida la de guardado. Los tres auxiliares se ejecutaron desde sus
+pruebas padre. La GUI verificó la confirmación y el respaldo después de
+aplicar. La TUI verificó el aborto tras una eliminación seguida de un
+bloqueo. El núcleo comprobó la restauración de rama, índice y disco y el
+rechazo de ediciones posteriores y colisiones con archivos no rastreados.
+Las pruebas usaron repositorios temporales en segundo plano.
+
 ## Cherry-pick
 
 En **Git → Grafo**, abre la rama o etiqueta de origen desde **Referencias**.

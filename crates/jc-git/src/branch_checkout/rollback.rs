@@ -36,6 +36,22 @@ pub(crate) struct Rollback {
 }
 
 impl Rollback {
+    pub(crate) fn prepare_hard(
+        repo: &gix::Repository,
+        identity: &Identity,
+        journal: &Journal,
+        limits: Limits,
+        ctx: &Context<'_>,
+    ) -> Result<Self, Error> {
+        let files = super::hard_reset::load_files(repo, identity, journal, limits, ctx)?;
+        let reviewed = observe(&files, &[], identity, journal, limits, ctx)?;
+        Ok(Self {
+            files,
+            shapes: Vec::new(),
+            reviewed,
+        })
+    }
+
     pub(crate) fn prepare(
         repo: &gix::Repository,
         identity: &Identity,
