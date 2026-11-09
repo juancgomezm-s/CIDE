@@ -444,6 +444,65 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
         b"cambio entrante"
     );
     assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), incoming);
+
+    fixture.rewrite("origen.txt", b"version solo preparada");
+    fixture.git(&["add", "--", "origen.txt"]);
+    fixture.rewrite("origen.txt", b"version local posterior");
+    let before = fs::read(&index).unwrap();
+    key(&mut app, KeyCode::F(5));
+    wait_for(&mut app, |app| {
+        app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    });
+    let row = app
+        .git_revision
+        .graph()
+        .unwrap()
+        .entries
+        .iter()
+        .position(|entry| entry.commit.id == original)
+        .unwrap();
+    for _ in 0..row {
+        key(&mut app, KeyCode::Down);
+    }
+    key(&mut app, KeyCode::Char('x'));
+    key(&mut app, KeyCode::Tab);
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let view = app.git_commit.view().unwrap();
+    let plan = view
+        .merge_review()
+        .unwrap_or_else(|| panic!("{:?}", view.error));
+    assert_eq!(
+        plan.reset_mode(),
+        Some(jc_app::git_commit::ResetMode::Mixed)
+    );
+    assert_eq!(plan.rows.len(), 2);
+    assert_eq!(fs::read(&index).unwrap(), before);
+    assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), incoming);
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().is_none(), "{}", app.status);
+    assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), original);
+    assert_eq!(
+        fixture.oid(&["rev-parse", ":origen.txt"]),
+        fixture.oid(&["rev-parse", "HEAD:origen.txt"])
+    );
+    assert_eq!(
+        fs::read(fixture.path("origen.txt")).unwrap(),
+        b"version local posterior"
+    );
+    assert_eq!(fs::read(&added).unwrap(), b"archivo de la fusion");
+    let backup = fs::read_dir(fixture.path(".git"))
+        .unwrap()
+        .filter_map(Result::ok)
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| name.starts_with("cide-switch-") && name.ends_with("-index"))
+        })
+        .unwrap();
+    assert_eq!(fs::read(backup.path()).unwrap(), before);
 }
 
 fn installed_git() -> PathBuf {

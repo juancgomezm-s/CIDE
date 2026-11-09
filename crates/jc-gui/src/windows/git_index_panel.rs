@@ -913,6 +913,43 @@ mod tests {
             run(&["rev-list", "--parents", "-n", "1", "HEAD"]),
             format!("{} {applied}", run(&["rev-parse", "HEAD"]))
         );
+        let current = run(&["rev-parse", "HEAD"]);
+        let before = fs::read(&index).unwrap();
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x74);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        let row = state
+            .git_revision
+            .graph()
+            .unwrap()
+            .entries
+            .iter()
+            .position(|entry| entry.commit.id == applied)
+            .unwrap();
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'X' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let plan = view
+            .merge_review()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(plan.reset_mode(), Some(jc_app::git_commit::ResetMode::Soft));
+        assert_eq!(plan.rows.len(), 2);
+        state.key(0x0d);
+        assert_eq!(run(&["rev-parse", "HEAD"]), current);
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert_eq!(run(&["rev-parse", "HEAD"]), applied);
+        assert_eq!(fs::read(&index).unwrap(), before);
+        assert!(!added.exists());
+        assert_eq!(fs::read(&incoming_path).unwrap(), b"mismo contenido\n");
     }
 
     #[test]

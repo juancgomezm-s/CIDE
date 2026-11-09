@@ -12,7 +12,7 @@ pub struct MergeAbortPlan {
     head_file: jc_fs::FileToken,
     index: IndexToken,
     original_index: Option<Vec<u8>>,
-    rollback: Rollback,
+    rollback: Option<Rollback>,
 }
 
 impl MergeAbortPlan {
@@ -28,7 +28,16 @@ impl MergeAbortPlan {
     pub fn operation(&self) -> Option<CommitOperation> {
         self.journal.commit_operation
     }
+    pub fn reset_mode(&self) -> Option<ResetMode> {
+        self.journal.reset
+    }
     pub fn label(&self) -> &'static str {
+        if let Some(mode) = self.reset_mode() {
+            return match mode {
+                ResetMode::Soft => "Reset soft pendiente",
+                ResetMode::Mixed => "Reset mixed pendiente",
+            };
+        }
         match self.operation() {
             Some(CommitOperation::CherryPick) => "Cherry-pick pendiente",
             Some(CommitOperation::Revert) => "Reversión pendiente",
@@ -84,13 +93,20 @@ pub fn prepare_merge_abort(
         } else {
             None
         };
-        let trees = (
-            tree_id(&repo, journal.from, limits, ctx)?,
-            tree_id(&repo, journal.to, limits, ctx)?,
-        );
-        let rollback = Rollback::prepare(&repo, &identity, &journal, trees, limits, ctx)?;
+        let rollback = if journal.reset.is_none() {
+            let trees = (
+                tree_id(&repo, journal.from, limits, ctx)?,
+                tree_id(&repo, journal.to, limits, ctx)?,
+            );
+            Some(Rollback::prepare(
+                &repo, &identity, &journal, trees, limits, ctx,
+            )?)
+        } else {
+            None
+        };
         let rows = rollback
-            .rows()
+            .iter()
+            .flat_map(Rollback::rows)
             .map(|(path, change)| MergeRow {
                 path: path.to_vec(),
                 change: Some(change),
@@ -179,8 +195,9 @@ pub fn apply_merge_abort(
     {
         return Err(Error::Stale);
     }
-    plan.rollback
-        .validate(&identity, &plan.journal, plan.limits, &ctx)?;
+    if let Some(rollback) = &plan.rollback {
+        rollback.validate(&identity, &plan.journal, plan.limits, &ctx)?;
+    }
     let logs = if plan.restores_branch() && fresh.refs.write_reflog != WriteReflog::Disable {
         let line = gix::refs::log::Line {
             previous_oid: plan.head,
@@ -189,6 +206,7 @@ pub fn apply_merge_abort(
             message: match plan.operation() {
                 Some(CommitOperation::CherryPick) => "cherry-pick: abortar operación de CIDE",
                 Some(CommitOperation::Revert) => "revert: abortar operación de CIDE",
+                None if plan.journal.reset.is_some() => "reset: abortar operación de CIDE",
                 None => "merge: abortar fusión de CIDE",
             }
             .into(),
@@ -212,10 +230,14 @@ pub fn apply_merge_abort(
     }
     check()?;
     let journal = plan.journal.begin_abort(&identity, &ctx)?;
-    plan.rollback
-        .apply(&identity, &journal, plan.limits, &ctx, &mut check)?;
+    if let Some(rollback) = &plan.rollback {
+        rollback.apply(&identity, &journal, plan.limits, &ctx, &mut check)?;
+    }
     check()?;
-    if local_pair::index_capture(&fresh, git, &ctx)?.0 != plan.index {
+    if !local_pair::index_capture(&fresh, git, &ctx)?
+        .0
+        .matches_under_lock(&plan.index)
+    {
         return Err(Error::Stale);
     }
     let _index_again;
@@ -255,9 +277,14 @@ pub fn apply_merge_abort(
             reflog_warning = Some(format!("Operación abortada. Falló el reflog ({error})"));
         }
     }
-    journal.finish(&identity, plan.rollback.slots(), &ctx)?;
+    journal.finish(
+        &identity,
+        plan.rollback.as_ref().map_or(0, Rollback::slots),
+        &ctx,
+    )?;
     Ok(MergePublication {
         id: journal.from,
         reflog_warning,
+        index_backup: None,
     })
 }

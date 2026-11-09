@@ -1,7 +1,7 @@
 //! Read-only three-way planning and recoverable local publication.
 use crate::{
     Change, Context, Error, Identity, Limits,
-    branch_checkout::{Checkout, Journal, Mainline, MergeCheckout, Transition},
+    branch_checkout::{Checkout, Journal, Mainline, MergeCheckout, ResetTransition, Transition},
     branch_switch::{capture_head, direct_branch, name_text, open_for_switch},
     commit_write, controlled,
     diff_model::{DiffLimits, DiffModel, DiffSide, DiffStatus},
@@ -150,6 +150,21 @@ pub enum CommitOperation {
     Revert,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResetMode {
+    Soft,
+    Mixed,
+}
+
+impl ResetMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Soft => "soft",
+            Self::Mixed => "mixed",
+        }
+    }
+}
+
 impl CommitOperation {
     pub fn title(self) -> &'static str {
         match self {
@@ -162,6 +177,7 @@ impl CommitOperation {
 #[derive(Clone)]
 enum Source {
     Branch(FullName),
+    Reset(ResetMode, String),
     Commit {
         operation: CommitOperation,
         id: String,
@@ -173,21 +189,28 @@ impl Source {
     fn label(&self) -> &str {
         match self {
             Self::Branch(name) => &name_text(name)[HEADS.len()..],
-            Self::Commit { id, .. } => id,
+            Self::Commit { id, .. } | Self::Reset(_, id) => id,
         }
     }
 
     fn operation(&self) -> Option<CommitOperation> {
         match self {
             Self::Commit { operation, .. } => Some(*operation),
-            Self::Branch(_) => None,
+            Self::Branch(_) | Self::Reset(..) => None,
         }
     }
 
     fn mainline(&self) -> Option<Mainline> {
         match self {
             Self::Commit { mainline, .. } => *mainline,
-            Self::Branch(_) => None,
+            Self::Branch(_) | Self::Reset(..) => None,
+        }
+    }
+
+    fn reset_mode(&self) -> Option<ResetMode> {
+        match self {
+            Self::Reset(mode, _) => Some(*mode),
+            _ => None,
         }
     }
 }
@@ -238,6 +261,13 @@ impl MergePlan {
         self.source.operation()
     }
     pub fn label(&self) -> &'static str {
+        if let Some(mode) = self.reset_mode() {
+            return match (mode, self.can_apply()) {
+                (_, false) => "Sin cambios que aplicar",
+                (ResetMode::Soft, true) => "Se conserva el índice",
+                (ResetMode::Mixed, true) => "El índice quedará como en el commit de destino",
+            };
+        }
         match (self.operation(), self.kind) {
             (Some(_), MergeKind::UpToDate) => "Sin cambios que aplicar",
             (Some(_), MergeKind::Conflicts) => "Conflictos por resolver · borrador sin escrituras",
@@ -249,6 +279,9 @@ impl MergePlan {
             }
             _ => self.kind.label(),
         }
+    }
+    pub fn reset_mode(&self) -> Option<ResetMode> {
+        self.source.reset_mode()
     }
     pub fn tips(&self) -> (ObjectId, ObjectId) {
         (self.from, self.theirs)
@@ -307,6 +340,7 @@ impl MergePlan {
 pub struct MergePublication {
     pub id: ObjectId,
     pub reflog_warning: Option<String>,
+    pub index_backup: Option<std::path::PathBuf>,
 }
 
 struct Objects {
@@ -848,6 +882,24 @@ pub fn prepare_cherry_pick(
     prepare_commit_operation(root, commit, CommitOperation::CherryPick, limits, cancelled)
 }
 
+pub fn prepare_reset(
+    root: &Path,
+    commit: &str,
+    mode: ResetMode,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    let target = ObjectId::from_hex(commit.as_bytes()).map_err(engine)?;
+    prepare(
+        root,
+        Source::Reset(mode, target.to_string()),
+        target,
+        limits,
+        None,
+        cancelled,
+    )
+}
+
 pub fn prepare_commit_operation(
     root: &Path,
     commit: &str,
@@ -949,6 +1001,7 @@ fn prepare(
             }
             if journal.source != active_short
                 || journal.commit_operation != source.operation()
+                || journal.reset != source.reset_mode()
                 || journal.destination != source.label()
                 || journal.incoming != Some(theirs)
                 || (head != journal.from && head != journal.to)
@@ -982,11 +1035,12 @@ fn prepare(
             }
         }
         let resolution = review.and_then(|(_, choices)| choices);
-        let state = local_pair::decode_index(&repo, index_bytes.as_deref(), ctx)?;
-        if state.entries().iter().any(|entry| entry.stage_raw() != 0) {
-            return Err(Error::Unmerged);
+        if source.reset_mode() != Some(ResetMode::Mixed) {
+            let state = local_pair::decode_index(&repo, index_bytes.as_deref(), ctx)?;
+            if state.entries().iter().any(|entry| entry.stage_raw() != 0) {
+                return Err(Error::Unmerged);
+            }
         }
-        drop(state);
         let write_reflog = repo.refs.write_reflog != WriteReflog::Disable;
         let mut plan = MergePlan {
             kind: MergeKind::UpToDate,
@@ -1007,6 +1061,42 @@ fn prepare(
             completed: false,
             write_reflog,
         };
+        if let Some(mode) = plan.reset_mode() {
+            let target_tree = tree_id(&repo, theirs, limits, ctx)?;
+            let old_tree = if mode == ResetMode::Soft {
+                tree_id(&repo, from, limits, ctx)?
+            } else {
+                target_tree
+            };
+            if mode == ResetMode::Soft && from == theirs && pending.is_none() {
+                return Ok(plan);
+            }
+            let (checkout, rows) = Checkout::prepare_reset(
+                &repo,
+                &plan.repository,
+                ResetTransition {
+                    mode,
+                    branch: plan.active(),
+                    commits: (from, theirs),
+                    trees: (old_tree, target_tree),
+                },
+                (&plan.index, index_bytes.as_deref()),
+                pending,
+                limits,
+                ctx,
+            )?;
+            if from == theirs && rows.is_empty() && !checkout.resuming {
+                return Ok(plan);
+            }
+            plan.completed = head == theirs;
+            if from != theirs && plan.completed && !checkout.index_published(&plan.index) {
+                return Err(Error::Stale);
+            }
+            plan.rows = rows;
+            plan.checkout = Some(checkout);
+            plan.result = Some((theirs, target_tree));
+            return Ok(plan);
+        }
         let operation = plan.operation();
         let picked = if operation.is_some() {
             let commit = revision::commit(&repo, theirs, limits, &mut Budget::new(limits), ctx)?;
@@ -1303,10 +1393,12 @@ pub fn apply_merge(
             .join(crate::branch_checkout::JOURNAL_NAME)
             .exists()
         {
-            let origin = match plan.operation() {
-                Some(CommitOperation::CherryPick) => "Cherry-pick en el commit",
-                Some(CommitOperation::Revert) => "Revertir en el commit",
-                None => "Fusionar en la rama",
+            let origin = match (plan.operation(), plan.reset_mode()) {
+                (Some(CommitOperation::CherryPick), _) => "Cherry-pick en el commit",
+                (Some(CommitOperation::Revert), _) => "Revertir en el commit",
+                (_, Some(ResetMode::Soft)) => "Reset soft en el commit",
+                (_, Some(ResetMode::Mixed)) => "Reset mixed en el commit",
+                _ => "Fusionar en la rama",
             };
             Error::Engine(format!(
                 "{error}. Elige Abortar o vuelve a usar {origin} {} para reanudar",
@@ -1397,13 +1489,12 @@ fn publish(
     {
         return Err(Error::Stale);
     }
-    checkout.validate(
-        &fresh,
-        &identity,
-        index_bytes.as_deref().ok_or(Error::Stale)?,
-        plan.limits,
-        &ctx,
-    )?;
+    let original = if plan.reset_mode() == Some(ResetMode::Soft) {
+        index_bytes.as_deref().unwrap_or_default()
+    } else {
+        index_bytes.as_deref().ok_or(Error::Stale)?
+    };
+    checkout.validate(&fresh, &identity, original, plan.limits, &ctx)?;
     if let Some(objects) = &plan.objects {
         commit_write::check_signing(&fresh)?;
         let signature = commit_write::local_identity(&fresh)?;
@@ -1437,10 +1528,13 @@ fn publish(
             previous_oid: plan.from,
             new_oid: result,
             signature: commit_write::local_identity(&fresh)?,
-            message: match plan.operation() {
-                Some(CommitOperation::CherryPick) => format!("cherry-pick: {}", plan.incoming()),
-                Some(CommitOperation::Revert) => format!("revert: {}", plan.incoming()),
-                None => format!("merge {}: {}", plan.incoming(), plan.kind.label()),
+            message: match (plan.operation(), plan.reset_mode()) {
+                (Some(CommitOperation::CherryPick), _) => {
+                    format!("cherry-pick: {}", plan.incoming())
+                }
+                (Some(CommitOperation::Revert), _) => format!("revert: {}", plan.incoming()),
+                (_, Some(mode)) => format!("reset --{}: {}", mode.label(), plan.incoming()),
+                _ => format!("merge {}: {}", plan.incoming(), plan.kind.label()),
             }
             .into(),
         };
@@ -1467,7 +1561,11 @@ fn publish(
         lock.with_mut(|file| file.sync_all())?;
     }
     check()?;
-    checkout.save_original_index(&identity, index_bytes.as_deref().ok_or(Error::Stale)?, &ctx)?;
+    checkout.save_original_index(&identity, original, &ctx)?;
+    let index_backup = checkout.journal.retained_reset_index(&identity);
+    if index_backup.is_some() && checkout.journal.original_index(&identity, &ctx)?.is_none() {
+        return Err(Error::Stale);
+    }
     checkout.publish_files(&identity, plan.limits, &ctx, &mut check)?;
     let mut index_again = None;
     if checkout.index_bytes.is_some() {
@@ -1519,5 +1617,6 @@ fn publish(
     Ok(MergePublication {
         id: result,
         reflog_warning,
+        index_backup,
     })
 }

@@ -2,7 +2,7 @@ use super::{git_diff::model_rows, git_history::opaque, presentation::GitRowKind,
 use crate::input::is_plain_text;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use jc_app::{
-    git_commit::{file_flag, CommitOperation, WriteDraft},
+    git_commit::{file_flag, CommitOperation, ResetMode, WriteDraft},
     git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit,
 };
@@ -136,6 +136,12 @@ impl TuiApp {
         } else if key.code == KeyCode::Enter && plain && key.kind == KeyEventKind::Press {
             self.git_commit
                 .submit(&self.workbench, self.project_root.as_deref());
+        } else if plain
+            && key.kind == KeyEventKind::Press
+            && matches!(view.draft, WriteDraft::Reset(..))
+            && matches!(key.code, KeyCode::Tab | KeyCode::Up | KeyCode::Down)
+        {
+            self.git_commit.select_reset_mode(None);
         } else {
             let mut utf8 = [0; 4];
             let edit = match key.code {
@@ -335,7 +341,11 @@ impl TuiApp {
                 plan.incoming(),
                 plan.active()
             ));
-            rows.push(format!("{} archivos que se revertirán", plan.rows.len()));
+            if plan.reset_mode().is_some() {
+                rows.push("Se conservan los archivos de trabajo".into());
+            } else {
+                rows.push(format!("{} archivos que se revertirán", plan.rows.len()));
+            }
             if plan.restores_index() {
                 rows.push("Se restaurará el índice original".into());
             }
@@ -359,13 +369,17 @@ impl TuiApp {
             "F2 confirma el aborto · Esc cancela"
         } else if let Some(plan) = view.merge_review() {
             let (active, incoming) = plan.tips();
-            let origin = if plan.operation() == Some(CommitOperation::Revert) {
+            let origin = if plan.reset_mode().is_some() {
+                "Destino"
+            } else if plan.operation() == Some(CommitOperation::Revert) {
                 "Commit a revertir"
             } else {
                 "Entrante"
             };
             rows.extend([
-                if plan.operation().is_some() {
+                if let Some(mode) = plan.reset_mode() {
+                    format!("Reset {} · rama {}", mode.label(), plan.active())
+                } else if plan.operation().is_some() {
                     format!("Rama activa · {}", plan.active())
                 } else {
                     format!("{} → {}", plan.incoming(), plan.active())
@@ -375,7 +389,16 @@ impl TuiApp {
                 format!("{origin} · {incoming}"),
             ]);
             if let Some(result) = plan.result() {
-                rows.push(format!("Resultado · {result}"));
+                rows.push(match plan.reset_mode() {
+                    Some(ResetMode::Soft) => {
+                        "Diferencias entre commits · los archivos se conservan".into()
+                    }
+                    Some(ResetMode::Mixed) if !plan.rows.is_empty() => {
+                        "Cambios en el índice · se guardará una copia del anterior".into()
+                    }
+                    Some(ResetMode::Mixed) => "El índice ya coincide con el destino".into(),
+                    None => format!("Resultado · {result}"),
+                });
             }
             if let Some((number, id)) = plan.mainline() {
                 rows.push(format!("Padre principal {number} · {id}"));
@@ -425,6 +448,12 @@ impl TuiApp {
             ));
             if plan.recovering() {
                 "↑↓ archivos · F2 reanuda · Esc cancela"
+            } else if plan.reset_mode().is_some() {
+                if plan.can_apply() {
+                    "F2 confirma el reset · Esc vuelve a elegir modo"
+                } else {
+                    "Esc vuelve a elegir modo"
+                }
             } else if plan.can_apply() {
                 if view.can_return_to_merge_choices() {
                     "F2 confirma · Esc vuelve a resoluciones"
@@ -524,6 +553,22 @@ impl TuiApp {
             } else if let WriteDraft::MergeBranch(target) = &view.draft {
                 rows.push(format!("Rama a incorporar en la activa · {}", target.name));
                 "Intro revisa la fusión · Esc cancela"
+            } else if let WriteDraft::Reset(mode, target) = &view.draft {
+                rows.push(format!("Commit de destino · {target}"));
+                for (choice, description) in [
+                    (
+                        ResetMode::Soft,
+                        "mueve la rama y conserva el índice y los archivos",
+                    ),
+                    (
+                        ResetMode::Mixed,
+                        "ajusta el índice al destino y conserva los archivos",
+                    ),
+                ] {
+                    let mark = if *mode == choice { "›" } else { " " };
+                    rows.push(format!("{mark} {} · {description}", choice.label()));
+                }
+                "↑↓ o Tab elige modo · Intro muestra los cambios · Esc cancela"
             } else if let WriteDraft::CommitOperation(_, target) = &view.draft {
                 rows.push(format!("Commit de origen · {target}"));
                 "Intro muestra los cambios · Esc cancela"

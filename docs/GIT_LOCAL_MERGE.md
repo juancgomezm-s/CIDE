@@ -141,6 +141,38 @@ las dos transiciones de archivo y carpeta, y la protección de una edición
 posterior y de un archivo ajeno con contenido idéntico. Las pruebas usaron
 repositorios temporales en segundo plano.
 
+## Reset soft y mixed
+
+En **Git → Grafo**, selecciona el commit de destino y pulsa **X** o el
+botón **Reset**. Elige el modo con **Tab**, **↑↓** o con el ratón en la
+GUI. **Intro** muestra la rama, su commit actual, el destino y las rutas
+afectadas. Confirma con **Ctrl+Intro** en la GUI o **F2** en la TUI.
+
+- **Soft** mueve la rama activa y conserva el índice byte por byte.
+  La lista muestra cómo cambia la base de comparación entre commits.
+- **Mixed** también ajusta el índice al árbol del destino. La lista
+  muestra los cambios del índice, incluso si el destino es el commit
+  actual. Si cambia el índice, CIDE conserva una copia exacta del anterior
+  en `.git` y muestra su nombre al finalizar. La copia referencia objetos
+  de Git y su recuperación depende de que sigan disponibles.
+
+Ambos modos conservan los archivos de trabajo, incluidos los no rastreados,
+y permiten mantener documentos sin guardar. Si la rama o el índice cambian
+después de revisar, CIDE detiene la publicación. Si se interrumpe una
+publicación ya confirmada, vuelve a elegir el mismo modo y destino para
+reanudar o pulsa **A** para revisar el aborto. El aborto restaura el índice
+y la rama si corresponde. Mixed requiere un índice existente. El historial
+de la rama y de HEAD registra el movimiento si el reflog está habilitado.
+
+En Windows pasaron formato, Clippy y 912 pruebas con
+`python scripts/check-local.py --steps fmt clippy test --jobs 2`. Los tres
+auxiliares se ejecutaron desde sus pruebas padre. La GUI confirmó soft con
+el índice intacto. La TUI confirmó mixed con un archivo cuya versión en disco
+difería de la preparada, y comprobó la copia del índice anterior. El núcleo
+verificó soft sin índice, mixed sobre el commit actual y el aborto después de
+publicar el índice pero antes de mover la rama. Las pruebas usaron repositorios
+temporales en segundo plano.
+
 ## Cherry-pick
 
 En **Git → Grafo**, abre la rama o etiqueta de origen desde **Referencias**.

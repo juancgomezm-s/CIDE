@@ -107,7 +107,7 @@ impl TuiApp {
                     }
                 }
             }
-            KeyCode::Char('b' | 'B' | 't' | 'T' | 'p' | 'P' | 'v' | 'V')
+            KeyCode::Char('b' | 'B' | 't' | 'T' | 'p' | 'P' | 'v' | 'V' | 'x' | 'X')
                 if view.reference_selected.is_none() =>
             {
                 if self.git_index.state() == jc_app::git_index::IndexState::Applying {
@@ -124,13 +124,17 @@ impl TuiApp {
                         KeyCode::Char('v' | 'V') => Some(CommitOperation::Revert),
                         _ => None,
                     };
-                    if let Some(operation) = operation {
+                    if operation.is_some() || matches!(key.code, KeyCode::Char('x' | 'X')) {
                         if self.git_revision.state() == GitRevisionState::Ready
                             && key.kind == KeyEventKind::Press
                         {
                             let _ = self.git_index.discard_review();
-                            self.git_commit
-                                .open_commit_operation(root, target, operation);
+                            if let Some(operation) = operation {
+                                self.git_commit
+                                    .open_commit_operation(root, target, operation);
+                            } else {
+                                self.git_commit.open_reset(root, target);
+                            }
                         }
                         return true;
                     }

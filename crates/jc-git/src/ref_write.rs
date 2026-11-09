@@ -2007,6 +2007,117 @@ mod tests {
             assert_eq!(fs::read(&file).unwrap(), bytes);
             assert!(!pending.exists());
         }
+        #[test]
+        fn reset_soft_keeps_exact_index_and_current_files() {
+            use crate::local_merge::{ResetMode, prepare_reset};
+            let fixture = Fixture::new();
+            let (repo, active, _) = scenario(&fixture, true, b"otra rama");
+            let target = repo
+                .find_commit(active)
+                .unwrap()
+                .parent_ids()
+                .next()
+                .unwrap()
+                .detach();
+            let git = fixture.git();
+            let branch = git.join("refs/heads/activa");
+            let index = git.join("index");
+            let before = fs::read(&index).unwrap();
+            let file = fixture.root.join("a.txt");
+            let reset = |id: gix::ObjectId| {
+                prepare_reset(
+                    &fixture.root,
+                    &id.to_string(),
+                    ResetMode::Soft,
+                    limits(),
+                    || false,
+                )
+                .unwrap()
+            };
+            let plan = reset(target);
+            assert!(plan.can_apply());
+            assert_eq!(plan.rows.len(), 1);
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert_eq!(
+                fs::read_to_string(&branch).unwrap().trim(),
+                active.to_string()
+            );
+            fs::write(&file, b"edicion posterior a la vista previa").unwrap();
+            let publication = apply_merge(plan, || false).unwrap();
+            assert_eq!(publication.id, target);
+            assert!(publication.index_backup.is_none());
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert_eq!(
+                fs::read(&file).unwrap(),
+                b"edicion posterior a la vista previa"
+            );
+            assert_eq!(
+                fs::read_to_string(&branch).unwrap().trim(),
+                target.to_string()
+            );
+            fs::remove_file(&index).unwrap();
+            assert_eq!(apply_merge(reset(active), || false).unwrap().id, active);
+            assert!(!index.exists());
+        }
+
+        #[test]
+        fn reset_mixed_retains_staged_bytes_and_recovers_partial_publication() {
+            use crate::local_merge::{ResetMode, prepare_reset};
+            let fixture = Fixture::new();
+            let (repo, active, _) = scenario(&fixture, true, b"otra rama");
+            let target = repo
+                .find_commit(active)
+                .unwrap()
+                .parent_ids()
+                .next()
+                .unwrap()
+                .detach();
+            let git = fixture.git();
+            let index = git.join("index");
+            let before = fs::read(&index).unwrap();
+            let pending = git.join(crate::branch_checkout::JOURNAL_NAME);
+            let file = fixture.root.join("a.txt");
+            fs::write(&file, b"edicion local").unwrap();
+            let reset = |id: gix::ObjectId, mode| {
+                prepare_reset(&fixture.root, &id.to_string(), mode, limits(), || false)
+            };
+            let plan = reset(target, ResetMode::Mixed).unwrap();
+            assert_eq!(plan.rows.len(), 2);
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert!(!pending.exists());
+            assert!(apply_merge(plan, || fs::read(&index).unwrap() != before).is_err());
+            assert!(pending.exists());
+            assert!(reset(target, ResetMode::Soft).is_err());
+            assert!(reset(target, ResetMode::Mixed).unwrap().recovering());
+            let abort = prepare_merge_abort(&fixture.root, limits(), || false).unwrap();
+            assert!(abort.restores_index());
+            assert!(abort.rows.is_empty());
+            assert_eq!(apply_merge_abort(abort, || false).unwrap().id, active);
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert_eq!(fs::read(&file).unwrap(), b"edicion local");
+            assert!(!pending.exists());
+            let same_head = reset(active, ResetMode::Mixed).unwrap();
+            assert_eq!(same_head.rows.len(), 1);
+            let publication = apply_merge(same_head, || false).unwrap();
+            assert_eq!(publication.id, active);
+            assert_eq!(fs::read(publication.index_backup.unwrap()).unwrap(), before);
+            assert!(
+                repo.open_index()
+                    .unwrap()
+                    .entry_by_path(b"local".as_bstr())
+                    .is_none()
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("sin-seguimiento")).unwrap(),
+                b"archivo privado"
+            );
+            assert_eq!(fs::read(&file).unwrap(), b"edicion local");
+            assert!(!reset(active, ResetMode::Mixed).unwrap().can_apply());
+        }
     }
 
     #[cfg(windows)]

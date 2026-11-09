@@ -9,12 +9,12 @@ use jc_git::branch_switch::{apply_branch_switch, prepare_branch_switch, BranchSw
 pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
-pub use jc_git::local_merge::CommitOperation;
 use jc_git::local_merge::{
     apply_merge, apply_merge_abort, prepare_commit_mainline, prepare_commit_operation,
-    prepare_merge, prepare_merge_abort, prepare_resolved_merge, MergeAbortPlan, MergeKind,
-    MergePlan,
+    prepare_merge, prepare_merge_abort, prepare_reset, prepare_resolved_merge, MergeAbortPlan,
+    MergeKind, MergePlan,
 };
+pub use jc_git::local_merge::{CommitOperation, ResetMode};
 use jc_git::local_pair::SourceIdentity;
 pub use jc_git::ref_write::RefKind;
 use jc_git::ref_write::{
@@ -70,6 +70,7 @@ pub enum WriteDraft {
     SwitchBranch(ReferenceTarget),
     MergeBranch(ReferenceTarget),
     CommitOperation(CommitOperation, String),
+    Reset(ResetMode, String),
     AbortMerge,
     Restore(Arc<RevisionComparison>),
 }
@@ -86,6 +87,7 @@ impl WriteDraft {
                 | Self::SwitchBranch(_)
                 | Self::MergeBranch(_)
                 | Self::CommitOperation(..)
+                | Self::Reset(..)
                 | Self::AbortMerge
                 | Self::Restore(_)
         )
@@ -95,10 +97,17 @@ impl WriteDraft {
         matches!(self, Self::MergeBranch(_) | Self::CommitOperation(..))
     }
 
+    fn can_stop_publication(&self) -> bool {
+        self.publishes_integration() || matches!(self, Self::Reset(..))
+    }
+
     fn refreshes_graph(&self) -> bool {
         self.is_reference()
             || self.publishes_integration()
-            || matches!(self, Self::SwitchBranch(_) | Self::AbortMerge)
+            || matches!(
+                self,
+                Self::SwitchBranch(_) | Self::AbortMerge | Self::Reset(..)
+            )
     }
 
     fn refreshes_files(&self) -> bool {
@@ -167,6 +176,7 @@ impl CommitView {
             WriteDraft::SwitchBranch(_) => "Cambiar rama",
             WriteDraft::MergeBranch(_) => "Fusionar rama",
             WriteDraft::CommitOperation(operation, _) => operation.title(),
+            WriteDraft::Reset(..) => "Reset de commit",
             WriteDraft::AbortMerge => "Abortar operación Git",
             WriteDraft::Restore(comparison) => {
                 restore_label(comparison).unwrap_or("Restaurar archivo")
@@ -191,6 +201,7 @@ impl CommitView {
                 "Calculando la reversión… · Esc cancela"
             }
             WriteDraft::AbortMerge => "Revisando cambios de la operación… · Esc cancela",
+            WriteDraft::Reset(..) => "Calculando el reset… · Esc cancela",
             _ => "Comprobando referencia… · Esc cancela",
         }
     }
@@ -306,7 +317,7 @@ impl CommitController {
     }
     pub fn merge_publication_hint(&self) -> Option<&'static str> {
         let job = self.job.as_ref().filter(|job| job.applying)?;
-        self.view.as_ref()?.draft.publishes_integration().then(|| {
+        self.view.as_ref()?.draft.can_stop_publication().then(|| {
             if job.cancelled.load(Ordering::Acquire) {
                 "Deteniendo la operación en un punto seguro…"
             } else {
@@ -366,6 +377,28 @@ impl CommitController {
             self.open_write(root, None, WriteDraft::CommitOperation(operation, commit));
         }
     }
+    pub fn open_reset(&mut self, root: PathBuf, commit: String) {
+        if cfg!(windows) {
+            self.open_write(root, None, WriteDraft::Reset(ResetMode::Soft, commit));
+        }
+    }
+
+    pub fn select_reset_mode(&mut self, choice: Option<ResetMode>) {
+        if self.busy() {
+            return;
+        }
+        let Some(view) = self.view.as_mut().filter(|view| !view.reviewing()) else {
+            return;
+        };
+        if let WriteDraft::Reset(mode, _) = &mut view.draft {
+            *mode = choice.unwrap_or(match *mode {
+                ResetMode::Soft => ResetMode::Mixed,
+                ResetMode::Mixed => ResetMode::Soft,
+            });
+            view.error = None;
+        }
+    }
+
     pub fn open_restore(&mut self, root: PathBuf, comparison: Arc<RevisionComparison>) {
         if restore_label(&comparison).is_some() {
             self.open_write(root, None, WriteDraft::Restore(comparison));
@@ -547,6 +580,12 @@ impl CommitController {
             view.error = None;
             return true;
         }
+        if matches!(view.draft, WriteDraft::Reset(..)) && view.reviewing() {
+            view.review = None;
+            view.first = 0;
+            view.error = None;
+            return true;
+        }
         false
     }
 
@@ -624,7 +663,15 @@ impl CommitController {
         } else {
             None
         };
-        if !view.draft.is_reference() && crate::git_index::require_clean(bench).is_err() {
+        let preserves_worktree = matches!(view.draft, WriteDraft::Reset(..))
+            || (matches!(view.draft, WriteDraft::AbortMerge)
+                && view
+                    .merge_abort_review()
+                    .is_none_or(|plan| plan.reset_mode().is_some()));
+        if !view.draft.is_reference()
+            && !preserves_worktree
+            && crate::git_index::require_clean(bench).is_err()
+        {
             view.error = Some("Guarda los documentos modificados antes de continuar".into());
             return;
         }
@@ -720,18 +767,31 @@ impl CommitController {
                             let action = match plan.operation() {
                                 Some(CommitOperation::CherryPick) => "Cherry-pick publicado",
                                 Some(CommitOperation::Revert) => "Reversión publicada",
+                                None if plan.reset_mode().is_some() => "Reset aplicado",
                                 None => "Fusión local publicada",
                             };
                             Completion::Applied(apply_merge(*plan, cancelled).map(|publication| {
-                                publication
+                                let mut message = publication
                                     .reflog_warning
-                                    .unwrap_or_else(|| format!("{action} · {}", publication.id))
+                                    .unwrap_or_else(|| format!("{action} · {}", publication.id));
+                                if let Some(name) = publication
+                                    .index_backup
+                                    .as_ref()
+                                    .and_then(|path| path.file_name())
+                                {
+                                    message.push_str(&format!(
+                                        " · Índice anterior en .git/{}",
+                                        name.to_string_lossy()
+                                    ));
+                                }
+                                message
                             }))
                         }
                         Some(WritePlan::MergeAbort(plan)) => {
                             let action = match plan.operation() {
                                 Some(CommitOperation::CherryPick) => "Cherry-pick abortado",
                                 Some(CommitOperation::Revert) => "Reversión abortada",
+                                None if plan.reset_mode().is_some() => "Reset abortado",
                                 None => "Fusión abortada",
                             };
                             Completion::Applied(apply_merge_abort(*plan, cancelled).map(|result| {
@@ -770,6 +830,10 @@ impl CommitController {
                                     &root, &commit, operation, LIMITS, cancelled,
                                 )
                                 .map(|plan| WritePlan::Merge(Box::new(plan)))
+                            }
+                            (WriteDraft::Reset(mode, commit), _) => {
+                                prepare_reset(&root, &commit, mode, LIMITS, cancelled)
+                                    .map(|plan| WritePlan::Merge(Box::new(plan)))
                             }
                             (WriteDraft::AbortMerge, _) => {
                                 prepare_merge_abort(&root, LIMITS, cancelled)
@@ -857,7 +921,7 @@ impl CommitController {
                     self.notice = Some((root.clone(), message.clone()));
                     self.view = None;
                 } else {
-                    if view.draft.publishes_integration() && job.cancelled.load(Ordering::Acquire) {
+                    if view.draft.can_stop_publication() && job.cancelled.load(Ordering::Acquire) {
                         view.draft = WriteDraft::AbortMerge;
                         view.saved_merge_review = None;
                         view.merge_draft = MergeDraft::default();

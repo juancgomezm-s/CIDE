@@ -1,7 +1,7 @@
 //! Recoverable updates of the paths that differ between two pinned trees.
 use crate::{
     Context, Error, Identity, Limits, engine, index_write, local_merge::CommitOperation,
-    local_pair, ref_write, revision,
+    local_merge::ResetMode, local_pair, ref_write, revision,
 };
 use gix::{
     ObjectId,
@@ -15,7 +15,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+mod reset;
 pub(super) mod rollback;
+pub(super) use reset::ResetTransition;
 mod shape;
 
 pub(super) const JOURNAL_NAME: &str = "cide-switch.pending";
@@ -36,6 +38,7 @@ pub(super) struct Journal {
     pub to: ObjectId,
     pub incoming: Option<ObjectId>,
     pub commit_operation: Option<CommitOperation>,
+    pub reset: Option<ResetMode>,
     pub mainline: Option<Mainline>,
     pub aborting: bool,
     old_index: ObjectId,
@@ -56,7 +59,17 @@ impl Journal {
         }
         let mut lines = std::str::from_utf8(&bytes).map_err(engine)?.lines();
         use CommitOperation::{CherryPick, Revert};
-        let (integration, commit_operation, aborting, has_mainline) = match lines.next() {
+        let header = lines.next();
+        let reset = match header {
+            Some("CIDE-RESET-SOFT-1" | "CIDE-RESET-SOFT-ABORT-1") => Some(ResetMode::Soft),
+            Some("CIDE-RESET-MIXED-1" | "CIDE-RESET-MIXED-ABORT-1") => Some(ResetMode::Mixed),
+            _ => None,
+        };
+        let (integration, commit_operation, aborting, has_mainline) = match header {
+            Some("CIDE-RESET-SOFT-1" | "CIDE-RESET-MIXED-1") => (true, None, false, false),
+            Some("CIDE-RESET-SOFT-ABORT-1" | "CIDE-RESET-MIXED-ABORT-1") => {
+                (true, None, true, false)
+            }
             Some("CIDE-SWITCH-1") => (false, None, false, false),
             Some("CIDE-MERGE-1") => (true, None, false, false),
             Some("CIDE-MERGE-ABORT-1") => (true, None, true, false),
@@ -103,6 +116,7 @@ impl Journal {
             to,
             incoming,
             commit_operation,
+            reset,
             mainline,
             aborting,
             old_index,
@@ -115,23 +129,29 @@ impl Journal {
         use CommitOperation::{CherryPick, Revert};
         let mut data = format!(
             "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
-            match (
-                self.incoming.is_some(),
-                self.commit_operation,
-                self.aborting,
-                self.mainline.is_some()
-            ) {
-                (true, Some(CherryPick), true, true) => "CIDE-PICK-ABORT-2",
-                (true, Some(CherryPick), false, true) => "CIDE-PICK-2",
-                (true, Some(CherryPick), true, false) => "CIDE-PICK-ABORT-1",
-                (true, Some(CherryPick), false, false) => "CIDE-PICK-1",
-                (true, Some(Revert), true, true) => "CIDE-REVERT-ABORT-2",
-                (true, Some(Revert), false, true) => "CIDE-REVERT-2",
-                (true, Some(Revert), true, false) => "CIDE-REVERT-ABORT-1",
-                (true, Some(Revert), false, false) => "CIDE-REVERT-1",
-                (true, None, true, _) => "CIDE-MERGE-ABORT-1",
-                (true, None, false, _) => "CIDE-MERGE-1",
-                _ => "CIDE-SWITCH-1",
+            match (self.reset, self.aborting) {
+                (Some(ResetMode::Soft), false) => "CIDE-RESET-SOFT-1",
+                (Some(ResetMode::Soft), true) => "CIDE-RESET-SOFT-ABORT-1",
+                (Some(ResetMode::Mixed), false) => "CIDE-RESET-MIXED-1",
+                (Some(ResetMode::Mixed), true) => "CIDE-RESET-MIXED-ABORT-1",
+                (None, _) => match (
+                    self.incoming.is_some(),
+                    self.commit_operation,
+                    self.aborting,
+                    self.mainline.is_some()
+                ) {
+                    (true, Some(CherryPick), true, true) => "CIDE-PICK-ABORT-2",
+                    (true, Some(CherryPick), false, true) => "CIDE-PICK-2",
+                    (true, Some(CherryPick), true, false) => "CIDE-PICK-ABORT-1",
+                    (true, Some(CherryPick), false, false) => "CIDE-PICK-1",
+                    (true, Some(Revert), true, true) => "CIDE-REVERT-ABORT-2",
+                    (true, Some(Revert), false, true) => "CIDE-REVERT-2",
+                    (true, Some(Revert), true, false) => "CIDE-REVERT-ABORT-1",
+                    (true, Some(Revert), false, false) => "CIDE-REVERT-1",
+                    (true, None, true, _) => "CIDE-MERGE-ABORT-1",
+                    (true, None, false, _) => "CIDE-MERGE-1",
+                    _ => "CIDE-SWITCH-1",
+                },
             },
             self.source,
             self.destination,
@@ -183,13 +203,21 @@ impl Journal {
     }
 
     pub fn index_state(&self, token: &local_pair::IndexToken) -> Result<bool, Error> {
+        if self.reset == Some(ResetMode::Soft) && token.is_absent() && self.old_index.is_null() {
+            return Ok(false);
+        }
         match token.sha256().map(|hash| hash.as_slice()) {
             Some(hash) if hash == self.old_index.as_slice() => Ok(false),
             Some(hash) if hash == self.new_index.as_slice() => Ok(true),
             _ => Err(Error::Engine(
-                "El índice contiene cambios ajenos a la fusión".into(),
+                "El índice contiene cambios ajenos a la operación".into(),
             )),
         }
+    }
+
+    pub fn retained_reset_index(&self, repo: &Identity) -> Option<PathBuf> {
+        (self.reset == Some(ResetMode::Mixed) && !self.aborting && self.old_index != self.new_index)
+            .then(|| self.auxiliary(repo, "index"))
     }
 
     fn record_output(
@@ -258,9 +286,12 @@ impl Journal {
         jc_fs::remove_captured_file(&repo.git_dir, &token)?;
         if self.incoming.is_some() {
             for (path, limit) in
-                std::iter::once((self.auxiliary(repo, "index"), crate::INDEX_BYTES as usize)).chain(
-                    (0..slots).map(|slot| (self.auxiliary(repo, &format!("{slot}.output")), 12)),
-                )
+                std::iter::once((self.auxiliary(repo, "index"), crate::INDEX_BYTES as usize))
+                    .filter(|_| self.retained_reset_index(repo).is_none())
+                    .chain(
+                        (0..slots)
+                            .map(|slot| (self.auxiliary(repo, &format!("{slot}.output")), 12)),
+                    )
             {
                 if let Ok(Capture::Present { token, .. }) =
                     local_pair::capture(&repo.git_dir, &path, limit, ctx)
@@ -794,6 +825,7 @@ impl Checkout {
                     to: commits.1,
                     incoming: merge.as_ref().map(|merge| merge.incoming),
                     commit_operation: merge.as_ref().and_then(|merge| merge.commit_operation),
+                    reset: None,
                     mainline: merge.and_then(|merge| merge.mainline),
                     aborting: false,
                     old_index: current_index,
@@ -824,6 +856,9 @@ impl Checkout {
         let pending = Journal::read(repository, ctx)?;
         if pending.as_ref() != self.resuming.then_some(&self.journal) {
             return Err(Error::Stale);
+        }
+        if self.journal.reset.is_some() {
+            return Ok(());
         }
         check_attribute_sources(repo, repository, &self.attribute_sources, ctx)?;
         let index = local_pair::decode_index(repo, Some(index), ctx)?;
@@ -987,7 +1022,10 @@ impl Checkout {
         bytes: &[u8],
         ctx: &Context<'_>,
     ) -> Result<(), Error> {
-        if self.merge && !self.resuming && self.index_bytes.is_some() {
+        if (self.merge || self.journal.reset.is_some())
+            && !self.resuming
+            && self.index_bytes.is_some()
+        {
             if index_id(bytes, ctx)? != self.journal.old_index {
                 return Err(Error::Stale);
             }
@@ -1003,6 +1041,9 @@ impl Checkout {
     }
 
     pub fn index_published(&self, token: &local_pair::IndexToken) -> bool {
+        if self.journal.reset == Some(ResetMode::Soft) && token.is_absent() {
+            return self.journal.new_index.is_null();
+        }
         token
             .sha256()
             .is_some_and(|digest| digest.as_slice() == self.journal.new_index.as_slice())

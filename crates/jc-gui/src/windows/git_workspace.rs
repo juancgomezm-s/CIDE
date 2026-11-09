@@ -143,6 +143,8 @@ enum Intent {
     GraphSwitchBranch,
     GraphMergeBranch,
     GraphCommitOperation(jc_app::git_commit::CommitOperation),
+    GraphReset,
+    ResetMode(jc_app::git_commit::ResetMode),
     GraphAbortMerge,
     GraphCreateReference(jc_app::git_commit::RefKind),
     HistoryParent,
@@ -961,7 +963,16 @@ impl State {
                 Action::None
             }
             Some(Intent::GraphCommitOperation(operation)) => {
-                self.open_graph_commit_operation(operation);
+                self.open_graph_commit_operation(Some(operation));
+                Action::None
+            }
+            Some(Intent::GraphReset) => {
+                self.open_graph_commit_operation(None);
+                Action::None
+            }
+            Some(Intent::ResetMode(mode)) => {
+                self.git_commit.select_reset_mode(Some(mode));
+                self.git_workspace.invalidate();
                 Action::None
             }
             Some(Intent::GraphAbortMerge) => {

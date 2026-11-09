@@ -1,6 +1,6 @@
 use super::*;
 use jc_app::{
-    git_commit::{file_flag, CommitOperation, WriteDraft},
+    git_commit::{file_flag, CommitOperation, ResetMode, WriteDraft},
     git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit, Modifiers,
 };
@@ -162,6 +162,9 @@ impl State {
         } else if mods == Modifiers::NONE {
             match code {
                 0x0d => self.submit_git_create_commit(),
+                0x09 | 0x26 | 0x28 if matches!(view.draft, WriteDraft::Reset(..)) => {
+                    self.git_commit.select_reset_mode(None);
+                }
                 0x08 => self.git_commit.edit(FieldEdit::Backspace),
                 0x2e => self.git_commit.edit(FieldEdit::Delete),
                 0x25 => self.git_commit.edit(FieldEdit::Left),
@@ -380,7 +383,13 @@ impl State {
             } else if view.choosing_mainline().is_some() {
                 "↑↓ elige padre · Intro muestra los cambios · Esc cancela".into()
             } else if let Some(plan) = view.merge_review() {
-                if plan.can_apply() {
+                if plan.reset_mode().is_some() {
+                    if plan.can_apply() {
+                        "Ctrl+Intro confirma · Esc vuelve a elegir modo".into()
+                    } else {
+                        "Esc vuelve a elegir modo".into()
+                    }
+                } else if plan.can_apply() {
                     if view.can_return_to_merge_choices() {
                         "Ctrl+Intro confirma · Esc vuelve a las resoluciones".into()
                     } else if view.can_return_to_mainline() {
@@ -506,7 +515,11 @@ impl State {
         } else if let Some(plan) = view.merge_abort_review() {
             f.summary = vec![
                 format!("{} · {} → {}", plan.label(), plan.incoming(), plan.active()),
-                format!("{} archivos que se revertirán", plan.rows.len()),
+                if plan.reset_mode().is_some() {
+                    "Se conservan los archivos de trabajo".into()
+                } else {
+                    format!("{} archivos que se revertirán", plan.rows.len())
+                },
             ];
             f.details_top = p(132);
             if plan.restores_index() {
@@ -546,7 +559,9 @@ impl State {
             ("Confirmar aborto", 12)
         } else if let Some(plan) = view.merge_review() {
             f.summary = vec![
-                if plan.operation().is_some() {
+                if let Some(mode) = plan.reset_mode() {
+                    format!("Reset {} · rama {}", mode.label(), plan.active())
+                } else if plan.operation().is_some() {
                     format!("Rama activa · {}", plan.active())
                 } else {
                     format!("{} → {}", plan.incoming(), plan.active())
@@ -555,7 +570,9 @@ impl State {
             ];
             let (active, incoming) = plan.tips();
             f.details_top = p(132);
-            let origin = if plan.operation() == Some(CommitOperation::Revert) {
+            let origin = if plan.reset_mode().is_some() {
+                "Destino"
+            } else if plan.operation() == Some(CommitOperation::Revert) {
                 "Commit a revertir"
             } else {
                 "Entrante"
@@ -565,7 +582,19 @@ impl State {
                 format!("{origin} · {incoming}"),
             ];
             if let Some(result) = plan.result() {
-                f.details.push(format!("Resultado · {result}"));
+                if let Some(mode) = plan.reset_mode() {
+                    f.details.push(match mode {
+                        ResetMode::Soft => {
+                            "Diferencias entre commits · los archivos se conservan".into()
+                        }
+                        ResetMode::Mixed if !plan.rows.is_empty() => {
+                            "Cambios en el índice · se guardará una copia del anterior".into()
+                        }
+                        ResetMode::Mixed => "El índice ya coincide con el destino".into(),
+                    });
+                } else {
+                    f.details.push(format!("Resultado · {result}"));
+                }
             }
             if let Some((number, id)) = plan.mainline() {
                 f.details.push(format!("Padre principal {number} · {id}"));
@@ -634,6 +663,8 @@ impl State {
                     "Revisar resultado"
                 } else if plan.recovering() {
                     "Reanudar"
+                } else if plan.reset_mode().is_some() {
+                    "Confirmar reset"
                 } else {
                     match plan.operation() {
                         Some(CommitOperation::CherryPick) => "Confirmar cherry-pick",
@@ -763,6 +794,31 @@ impl State {
         } else if let WriteDraft::MergeBranch(target) = &view.draft {
             f.summary = vec![format!("Rama a incorporar en la activa · {}", target.name)];
             ("Revisar fusión", 12)
+        } else if let WriteDraft::Reset(mode, target) = &view.draft {
+            f.summary = vec![
+                format!("Commit de destino · {target}"),
+                match mode {
+                    ResetMode::Soft => {
+                        "Soft mueve la rama y conserva el índice y los archivos".into()
+                    }
+                    ResetMode::Mixed => {
+                        "Mixed ajusta el índice al destino y conserva los archivos".into()
+                    }
+                },
+            ];
+            if !self.git_commit.busy() {
+                for (offset, choice) in [(12, ResetMode::Soft), (92, ResetMode::Mixed)] {
+                    self.add_merge_button(
+                        &mut f,
+                        offset,
+                        76,
+                        choice.label(),
+                        *mode == choice,
+                        Intent::ResetMode(choice),
+                    );
+                }
+            }
+            ("Ver cambios", 172)
         } else if let WriteDraft::CommitOperation(_, target) = &view.draft {
             f.summary = vec![format!("Commit de origen · {target}")];
             ("Ver cambios", 12)
@@ -799,7 +855,11 @@ impl State {
             let top = f.preview.top + p(96);
             let r = rect(left, top, left + p(85), top + p(24));
             if f.buttons.iter().all(|(b, _, _)| r.left >= b.right) {
-                let back = view.can_return_to_merge_choices() || view.can_return_to_mainline();
+                let back = view.can_return_to_merge_choices()
+                    || view.can_return_to_mainline()
+                    || view
+                        .merge_review()
+                        .is_some_and(|plan| plan.reset_mode().is_some());
                 let label = if back {
                     "Volver"
                 } else if view
