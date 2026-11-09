@@ -1,8 +1,9 @@
 use super::{git_diff::model_rows, git_history::opaque, presentation::GitRowKind, TuiApp};
 use crate::input::is_plain_text;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use jc_app::{
     git_commit::{file_flag, WriteDraft},
+    git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit,
 };
 
@@ -10,7 +11,7 @@ pub(crate) struct CommitPresentation {
     pub title: &'static str,
     pub rows: Vec<String>,
     pub hint: String,
-    pub caret: Option<u16>,
+    pub caret: Option<(u16, u16)>,
 }
 
 impl TuiApp {
@@ -51,12 +52,73 @@ impl TuiApp {
         };
         let plain = key.modifiers.is_empty();
         if key.code == KeyCode::Esc && plain {
-            self.git_commit.cancel();
+            if !self.git_commit.back_merge() {
+                self.git_commit.cancel();
+            }
+        } else if view.merge_file().is_some() {
+            let mut utf8 = [0; 4];
+            let edit = match key.code {
+                KeyCode::Tab if plain && key.kind == KeyEventKind::Press => {
+                    self.git_commit.merge_action(MergeAction::NextPane);
+                    None
+                }
+                KeyCode::Char('u' | 'U') if key.modifiers == KeyModifiers::CONTROL => {
+                    self.git_commit.merge_action(MergeAction::UseVersion);
+                    None
+                }
+                KeyCode::F(2) if plain && key.kind == KeyEventKind::Press => {
+                    self.git_commit.merge_action(MergeAction::Accept);
+                    None
+                }
+                KeyCode::Enter if plain => {
+                    self.git_commit.merge_action(MergeAction::Newline);
+                    None
+                }
+                KeyCode::Char('t' | 'T') if key.modifiers == KeyModifiers::CONTROL => {
+                    Some(FieldEdit::Insert("\t"))
+                }
+                KeyCode::Char(ch) if is_plain_text(key) => {
+                    Some(FieldEdit::Insert(ch.encode_utf8(&mut utf8)))
+                }
+                KeyCode::Backspace if plain => Some(FieldEdit::Backspace),
+                KeyCode::Delete if plain => Some(FieldEdit::Delete),
+                KeyCode::Left if plain => Some(FieldEdit::Left),
+                KeyCode::Right if plain => Some(FieldEdit::Right),
+                KeyCode::Home if plain => Some(FieldEdit::Home),
+                KeyCode::End if plain => Some(FieldEdit::End),
+                KeyCode::Up if plain => {
+                    self.git_commit.scroll(-1);
+                    None
+                }
+                KeyCode::Down if plain => {
+                    self.git_commit.scroll(1);
+                    None
+                }
+                KeyCode::PageUp if plain => {
+                    self.git_commit.scroll(-12);
+                    None
+                }
+                KeyCode::PageDown if plain => {
+                    self.git_commit.scroll(12);
+                    None
+                }
+                _ => None,
+            };
+            if let Some(edit) = edit {
+                self.git_commit.edit(edit);
+            }
         } else if view.reviewing() {
             match key.code {
                 KeyCode::F(2) if plain && key.kind == KeyEventKind::Press => self
                     .git_commit
                     .submit(&self.workbench, self.project_root.as_deref()),
+                KeyCode::Enter
+                    if plain
+                        && key.kind == KeyEventKind::Press
+                        && view.merge_conflicts().is_some() =>
+                {
+                    self.git_commit.merge_action(MergeAction::Open(view.first));
+                }
                 KeyCode::Up if plain => self.git_commit.scroll(-1),
                 KeyCode::Down if plain => self.git_commit.scroll(1),
                 KeyCode::PageUp if plain => self.git_commit.scroll(-10),
@@ -123,6 +185,44 @@ impl TuiApp {
     ) -> Option<CommitPresentation> {
         let view = self.git_commit.view()?;
         let width = width.saturating_sub(4).min(256);
+        if let (Some(plan), Some(file)) = (view.merge_conflicts(), view.merge_file()) {
+            let text = file.present(
+                plan,
+                usize::from(width.saturating_sub(8)),
+                usize::from(height.saturating_sub(7)),
+            );
+            let tabs = MergePane::ALL
+                .into_iter()
+                .map(|pane| {
+                    if pane == file.pane {
+                        format!("[{}]", pane.label())
+                    } else {
+                        pane.label().into()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("  ");
+            let mut rows = vec![tabs, opaque(file.path(plan), width), text.note.into()];
+            rows.extend(
+                text.rows
+                    .into_iter()
+                    .map(|(line, content)| format!("{line:>6}  {content}")),
+            );
+            return Some(CommitPresentation {
+                title: "Resolver conflicto",
+                rows,
+                hint: view.error.clone().unwrap_or_else(|| {
+                    if file.pane == MergePane::Result {
+                        "Tab vista · F2 acepta archivo · Esc vuelve".into()
+                    } else {
+                        "Tab vista · Ctrl+U usa versión · Esc vuelve".into()
+                    }
+                }),
+                caret: text
+                    .caret
+                    .map(|(row, col)| (col as u16 + 8, row as u16 + 3)),
+            });
+        }
         let field = present_field(&view.message, view.cursor, usize::from(width), 1);
         let mut rows = view
             .has_input()
@@ -214,22 +314,50 @@ impl TuiApp {
             let count = usize::from(height.saturating_sub(4))
                 .saturating_sub(rows.len())
                 .min(128);
-            let first = view.first.min(plan.rows.len().saturating_sub(count));
-            rows.extend(plan.rows.iter().skip(first).take(count).map(|row| {
-                format!(
-                    "{}  {}",
-                    row.change.map_or("Conflicto", file_flag),
-                    opaque(&row.path, width.saturating_sub(3)),
-                )
-            }));
+            let conflicts = view.merge_conflicts().is_some();
+            let first = if conflicts {
+                view.first.saturating_sub(count.saturating_sub(1))
+            } else {
+                view.first.min(plan.rows.len().saturating_sub(count))
+            };
+            rows.extend(plan.rows.iter().enumerate().skip(first).take(count).map(
+                |(index, row)| {
+                    let label = if view.merge_choice_saved(&row.path) {
+                        "Resuelto"
+                    } else if plan
+                        .conflict(&row.path)
+                        .is_some_and(|conflict| !conflict.can_resolve())
+                    {
+                        "Estructural"
+                    } else {
+                        "Conflicto"
+                    };
+                    format!(
+                        "{}{}  {}",
+                        if conflicts && index == view.first {
+                            "› "
+                        } else {
+                            "  "
+                        },
+                        row.change.map_or(label, file_flag),
+                        opaque(&row.path, width.saturating_sub(3)),
+                    )
+                },
+            ));
             if plan.recovering() {
                 "↑↓ archivos · F2 reanuda la fusión · Esc cancela"
             } else if plan.can_apply() {
-                "↑↓ archivos · F2 confirma la fusión · Esc cancela"
+                if view.can_return_to_merge_choices() {
+                    "F2 confirma fusión · Esc vuelve a resoluciones"
+                } else {
+                    "↑↓ archivos · F2 confirma la fusión · Esc cancela"
+                }
             } else if plan.rows.is_empty() {
                 "Esc vuelve"
+            } else if view.all_merge_choices_saved() {
+                "Intro abre · F2 revisa el resultado · Esc cancela"
             } else {
-                "↑↓ conflictos · Esc vuelve"
+                "↑↓ selecciona · Intro abre conflicto · Esc cancela"
             }
         } else if let Some(plan) = view.branch_switch_review() {
             rows.extend([
@@ -301,7 +429,7 @@ impl TuiApp {
             }
         } else {
             if view.has_input() && !view.message.is_empty() {
-                caret = Some(field.cursor_column as u16);
+                caret = Some((field.cursor_column as u16, 0));
             }
             if let WriteDraft::CreateReference(_, target) = &view.draft {
                 rows.push(format!("Commit de destino · {target}"));

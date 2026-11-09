@@ -1761,6 +1761,16 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_ERASEBKGND => return 1,
             WM_KEYDOWN | WM_SYSKEYDOWN => {
+                if wparam == 0x0d
+                    && lparam & (1 << 30) != 0
+                    && state
+                        .git_commit
+                        .view()
+                        .is_some_and(|view| view.merge_review().is_some())
+                    && state.modifiers() == Modifiers::CTRL
+                {
+                    return 0;
+                }
                 let result = state.key(wparam);
                 handled = result.0;
                 action = result.1;

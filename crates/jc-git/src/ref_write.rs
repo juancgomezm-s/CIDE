@@ -1062,6 +1062,75 @@ mod tests {
         }
 
         #[test]
+        fn merge_resolved_result_is_pinned_and_recovers_after_index_publication() {
+            use crate::local_merge::{MergeResolution, MergeSide, prepare_resolved_merge};
+            let fixture = Fixture::new();
+            let (_, active, incoming) = scenario(&fixture, true, b"otro\r\ndos\r\ntres\r\nfin");
+            let path = b"a.txt";
+            let index = fixture.git().join("index");
+            let before = fs::read(&index).unwrap();
+            let file = fixture.root.join("a.txt");
+            let original = fs::read(&file).unwrap();
+            let draft = review(&fixture, incoming).unwrap();
+            let conflict = draft.conflict(path).unwrap();
+            assert_eq!(
+                conflict.bytes(MergeSide::Base),
+                Some(b"uno\r\ndos\r\ntres\r\nfin".as_slice())
+            );
+            assert_eq!(
+                conflict.bytes(MergeSide::Current),
+                Some(original.as_slice())
+            );
+            assert_eq!(
+                conflict.bytes(MergeSide::Incoming),
+                Some(b"otro\r\ndos\r\ntres\r\nfin".as_slice())
+            );
+            let result = "Solución\r\nfin";
+            let prepare = || {
+                prepare_resolved_merge(
+                    draft.resolution_review().unwrap(),
+                    std::collections::BTreeMap::from([(
+                        path.to_vec(),
+                        MergeResolution::Edit(result.into()),
+                    )]),
+                    || false,
+                )
+            };
+            fs::write(&file, b"cambio local").unwrap();
+            assert!(prepare().is_err());
+            assert_eq!(fs::read(&file).unwrap(), b"cambio local");
+            fs::write(&file, &original).unwrap();
+            let plan = prepare().unwrap();
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert_eq!(fs::read(&file).unwrap(), original);
+            fs::write(&file, b"edicion despues de revisar").unwrap();
+            assert!(apply_merge(plan, || false).is_err());
+            assert_eq!(fs::read(&file).unwrap(), b"edicion despues de revisar");
+            fs::write(&file, &original).unwrap();
+            let plan = prepare().unwrap();
+            let id = plan.result().unwrap();
+            assert!(apply_merge(plan, || fs::read(&index).unwrap() != before).is_err());
+            let resumed = review(&fixture, incoming).unwrap();
+            assert!(resumed.recovering());
+            assert_eq!(resumed.result(), Some(id));
+            assert_eq!(apply_merge(resumed, || false).unwrap().id, id);
+            assert_eq!(fs::read(&file).unwrap(), result.as_bytes());
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+            let repo = gix::open(&fixture.root).unwrap();
+            let commit = repo.find_commit(id).unwrap();
+            assert_eq!(
+                commit
+                    .parent_ids()
+                    .map(|id| id.detach())
+                    .collect::<Vec<_>>(),
+                [active, incoming]
+            );
+        }
+
+        #[test]
         fn merge_fast_forward_rejects_local_edits_and_changed_ref() {
             let fixture = Fixture::new();
             let (_, active, incoming) = scenario(&fixture, false, b"entrante");

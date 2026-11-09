@@ -1,6 +1,7 @@
 use super::*;
 use jc_app::{
     git_commit::{file_flag, WriteDraft},
+    git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit, Modifiers,
 };
 use std::sync::Arc;
@@ -94,10 +95,61 @@ impl State {
             return false;
         };
         if code == 0x1b && mods == Modifiers::NONE {
-            self.git_commit.cancel();
+            if !self.git_commit.back_merge() {
+                self.git_commit.cancel();
+            }
+        } else if view.merge_file().is_some() {
+            let edit = match (code, mods) {
+                (0x09, Modifiers::NONE) => {
+                    self.git_commit.merge_action(MergeAction::NextPane);
+                    None
+                }
+                (0x55, Modifiers::CTRL) => {
+                    self.git_commit.merge_action(MergeAction::UseVersion);
+                    None
+                }
+                (0x0d, Modifiers::CTRL) => {
+                    self.git_commit.merge_action(MergeAction::Accept);
+                    None
+                }
+                (0x0d, Modifiers::NONE) => {
+                    self.git_commit.merge_action(MergeAction::Newline);
+                    None
+                }
+                (0x54, Modifiers::CTRL) => Some(FieldEdit::Insert("\t")),
+                (0x08, Modifiers::NONE) => Some(FieldEdit::Backspace),
+                (0x2e, Modifiers::NONE) => Some(FieldEdit::Delete),
+                (0x25, Modifiers::NONE) => Some(FieldEdit::Left),
+                (0x27, Modifiers::NONE) => Some(FieldEdit::Right),
+                (0x24, Modifiers::NONE) => Some(FieldEdit::Home),
+                (0x23, Modifiers::NONE) => Some(FieldEdit::End),
+                (0x26, Modifiers::NONE) => {
+                    self.git_commit.scroll(-1);
+                    None
+                }
+                (0x28, Modifiers::NONE) => {
+                    self.git_commit.scroll(1);
+                    None
+                }
+                (0x21, Modifiers::NONE) => {
+                    self.git_commit.scroll(-12);
+                    None
+                }
+                (0x22, Modifiers::NONE) => {
+                    self.git_commit.scroll(12);
+                    None
+                }
+                _ => None,
+            };
+            if let Some(edit) = edit {
+                self.git_commit.edit(edit);
+            }
         } else if view.reviewing() {
             match (code, mods) {
                 (0x0d, Modifiers::CTRL) => self.submit_git_create_commit(),
+                (0x0d, Modifiers::NONE) if view.merge_conflicts().is_some() => {
+                    self.git_commit.merge_action(MergeAction::Open(view.first));
+                }
                 (0x26, Modifiers::NONE) => self.git_commit.scroll(-1),
                 (0x28, Modifiers::NONE) => self.git_commit.scroll(1),
                 (0x21, Modifiers::NONE) => self.git_commit.scroll(-10),
@@ -243,6 +295,77 @@ impl State {
         f.buttons.clear();
         f.hits.actions.clear();
         f.subtitle = view.title().into();
+        if let (Some(plan), Some(file)) = (view.merge_conflicts(), view.merge_file()) {
+            f.subtitle = "Resolver conflicto".into();
+            let row_height = self.cell_height.max(p(16));
+            let top = f.preview.top + p(132);
+            let text_left = f.preview.left + p(12) + 48;
+            let cols = ((f.preview.right - text_left - 6) / self.cell_width.max(1)).max(1);
+            let rows = ((f.preview.bottom - top) / row_height).clamp(0, 64);
+            let text = file.present(plan, cols as usize, rows as usize);
+            f.summary = vec![opaque(file.path(plan), 256), text.note.into()];
+            for (index, (line, content)) in text.rows.into_iter().take(rows as usize).enumerate() {
+                let y = top + index as i32 * row_height;
+                f.code.push(CodeRow {
+                    rect: rect(
+                        f.preview.left + p(12),
+                        y,
+                        f.preview.right - p(12),
+                        y + row_height,
+                    ),
+                    old: line.to_string(),
+                    new: String::new(),
+                    text: content,
+                    kind: 0,
+                    parallel: true,
+                });
+            }
+            if let Some((row, column)) = text.caret.filter(|(row, _)| *row < rows as usize) {
+                let x = text_left + column as i32 * self.cell_width;
+                let y = top + row as i32 * row_height;
+                if x < f.preview.right - p(12) {
+                    f.merge_caret = Some(rect(x, y + 2, x + p(2).max(1), y + row_height - 2));
+                }
+            }
+            for (index, pane) in MergePane::ALL.into_iter().enumerate() {
+                self.add_merge_button(
+                    &mut f,
+                    12 + 80 * index as i32,
+                    76,
+                    pane.label(),
+                    pane == file.pane,
+                    Intent::Merge(MergeAction::Pane(pane)),
+                );
+            }
+            if file.pane != MergePane::Result {
+                self.add_merge_button(
+                    &mut f,
+                    337,
+                    108,
+                    "Usar versión",
+                    false,
+                    Intent::Merge(MergeAction::UseVersion),
+                );
+            } else {
+                self.add_merge_button(
+                    &mut f,
+                    337,
+                    122,
+                    "Aceptar archivo",
+                    true,
+                    Intent::Merge(MergeAction::Accept),
+                );
+            }
+            self.add_merge_button(&mut f, 465, 76, "Volver", false, Intent::BackMerge);
+            f.footer = view.error.clone().unwrap_or_else(|| {
+                if file.pane == MergePane::Result {
+                    "Tab cambia vista · Ctrl+Intro acepta archivo · Esc vuelve".into()
+                } else {
+                    "Tab cambia vista · Ctrl+U usa versión · Esc vuelve".into()
+                }
+            });
+            return f;
+        }
         f.footer = view.error.clone().unwrap_or_else(|| {
             if self.git_commit.applying() {
                 "Publicando operación Git…".into()
@@ -250,11 +373,17 @@ impl State {
                 view.pending_hint().into()
             } else if let Some(plan) = view.merge_review() {
                 if plan.can_apply() {
-                    "↑↓ archivos · Ctrl+Intro confirma · Esc cancela".into()
+                    if view.can_return_to_merge_choices() {
+                        "Ctrl+Intro confirma fusión · Esc vuelve a las resoluciones".into()
+                    } else {
+                        "↑↓ archivos · Ctrl+Intro confirma · Esc cancela".into()
+                    }
                 } else if plan.rows.is_empty() {
                     "Esc volver".into()
+                } else if view.all_merge_choices_saved() {
+                    "Intro abre archivo · Ctrl+Intro revisa el resultado · Esc cancela".into()
                 } else {
-                    "↑↓ conflictos · Esc volver".into()
+                    "↑↓ selecciona conflicto · Intro abre archivo · Esc cancela".into()
                 }
             } else if view.reviewing() {
                 if view.review().is_some()
@@ -345,29 +474,56 @@ impl State {
             let row_height = p(23).max(1);
             let top = f.preview.top + p(207);
             let count = ((f.preview.bottom - top) / row_height).clamp(0, 128) as usize;
-            let first = view.first.min(plan.rows.len().saturating_sub(count));
+            let conflicts = view.merge_conflicts().is_some();
+            let first = if conflicts {
+                view.first.saturating_sub(count.saturating_sub(1))
+            } else {
+                view.first.min(plan.rows.len().saturating_sub(count))
+            };
             for (i, row) in plan.rows.iter().skip(first).take(count).enumerate() {
                 let y = top + i as i32 * row_height;
+                let r = rect(
+                    f.preview.left + p(12),
+                    y,
+                    f.preview.right - p(12),
+                    y + row_height,
+                );
+                let label = if view.merge_choice_saved(&row.path) {
+                    "Resuelto"
+                } else if plan
+                    .conflict(&row.path)
+                    .is_some_and(|conflict| !conflict.can_resolve())
+                {
+                    "Estructural"
+                } else {
+                    "Conflicto"
+                };
                 f.code.push(CodeRow {
-                    rect: rect(
-                        f.preview.left + p(12),
-                        y,
-                        f.preview.right - p(12),
-                        y + row_height,
-                    ),
+                    rect: r,
                     old: String::new(),
                     new: String::new(),
                     text: format!(
                         "{}  {}",
-                        row.change.map_or("Conflicto", file_flag),
+                        row.change.map_or(label, file_flag),
                         opaque(&row.path, 256)
                     ),
-                    kind: 0,
+                    kind: if conflicts && view.first == first + i {
+                        2
+                    } else {
+                        0
+                    },
                     parallel: false,
                 });
+                if conflicts && !self.git_commit.busy() {
+                    f.hits
+                        .actions
+                        .push((r, Intent::Merge(MergeAction::Open(first + i))));
+                }
             }
             (
-                if plan.recovering() {
+                if conflicts {
+                    "Revisar resultado"
+                } else if plan.recovering() {
                     "Reanudar fusión"
                 } else {
                     "Confirmar fusión"
@@ -508,7 +664,10 @@ impl State {
             }];
             ("Revisar preparados", 12)
         };
-        if !self.git_commit.busy() && view.merge_review().is_none_or(|plan| plan.can_apply()) {
+        if !self.git_commit.busy()
+            && (view.all_merge_choices_saved()
+                || view.merge_review().is_none_or(|plan| plan.can_apply()))
+        {
             let top = f.preview.top + p(96);
             let left = f.preview.left + p(offset);
             let r = rect(left, top, left + p(135), top + p(24));
@@ -520,10 +679,38 @@ impl State {
             let top = f.preview.top + p(96);
             let r = rect(left, top, left + p(85), top + p(24));
             if f.buttons.iter().all(|(b, _, _)| r.left >= b.right) {
-                f.buttons.push((r, "Cancelar".into(), false));
-                f.hits.actions.push((r, Intent::CancelCommit));
+                let back = view.can_return_to_merge_choices();
+                f.buttons
+                    .push((r, if back { "Volver" } else { "Cancelar" }.into(), false));
+                f.hits.actions.push((
+                    r,
+                    if back {
+                        Intent::BackMerge
+                    } else {
+                        Intent::CancelCommit
+                    },
+                ));
             }
         }
         f
+    }
+
+    fn add_merge_button(
+        &self,
+        f: &mut Frame,
+        offset: i32,
+        width: i32,
+        label: &str,
+        active: bool,
+        intent: Intent,
+    ) {
+        let p = |n| self.dpi.pixels(n);
+        let left = f.preview.left + p(offset);
+        let top = f.preview.top + p(96);
+        let r = rect(left, top, left + p(width), top + p(24));
+        if r.right <= f.preview.right && r.bottom <= f.preview.bottom {
+            f.buttons.push((r, label.into(), active));
+            f.hits.actions.push((r, intent));
+        }
     }
 }

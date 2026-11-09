@@ -75,6 +75,7 @@ fn engine(e: impl std::fmt::Display) -> Error {
     Error::Engine(e.to_string().chars().take(400).collect())
 }
 
+#[derive(Clone)]
 pub struct Identity {
     pub root: PathBuf,
     pub git_dir: PathBuf,

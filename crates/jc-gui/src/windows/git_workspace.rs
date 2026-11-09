@@ -148,6 +148,8 @@ enum Intent {
     AmendCommit,
     SubmitCommit,
     CancelCommit,
+    Merge(jc_app::git_merge_resolution::MergeAction),
+    BackMerge,
     Index,
     IndexHunk,
     RestoreFile,
@@ -262,6 +264,7 @@ pub(super) struct Frame {
     commits: Vec<CommitRow>,
     rows: Vec<FileRow>,
     code: Vec<CodeRow>,
+    merge_caret: Option<Rect>,
     annotations: Vec<BlameRow>,
     details: Vec<String>,
     footer: String,
@@ -880,6 +883,7 @@ impl State {
             commits,
             rows,
             code,
+            merge_caret: None,
             annotations: Vec::new(),
             details,
             footer: "Solo lectura · Comparación local · Esc vuelve al editor".into(),
@@ -971,6 +975,16 @@ impl State {
             }
             Some(Intent::SubmitCommit) => {
                 self.submit_git_create_commit();
+                Action::None
+            }
+            Some(Intent::Merge(action)) => {
+                self.git_commit.merge_action(action);
+                self.git_workspace.invalidate();
+                Action::None
+            }
+            Some(Intent::BackMerge) => {
+                self.git_commit.back_merge();
+                self.git_workspace.invalidate();
                 Action::None
             }
             Some(Intent::CancelCommit) => {
@@ -1726,6 +1740,9 @@ pub(super) unsafe fn draw(
             shell::TEXT,
             bg,
         )?;
+    }
+    if let Some(caret) = f.merge_caret {
+        paint::fill(dc, caret, shell::TEXT)?;
     }
     for row in &f.annotations {
         let bg = if row.selected {

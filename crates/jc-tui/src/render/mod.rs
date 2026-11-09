@@ -46,8 +46,8 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
                 },
             );
         }
-        if let Some(caret) = commit.caret {
-            screen.set_cursor(2 + caret.min(width - 4), 2);
+        if let Some((column, row)) = commit.caret.filter(|(_, row)| *row < height - 4) {
+            screen.set_cursor(2 + column.min(width - 4), 2 + row);
         }
         screen.text_styled(
             2,

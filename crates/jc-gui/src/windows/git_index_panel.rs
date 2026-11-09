@@ -466,6 +466,58 @@ mod tests {
         );
         assert_eq!(fs::read(&head).unwrap(), b"ref: refs/heads/lateral\n");
         assert_eq!(run(&["rev-parse", "HEAD"]), merge);
+
+        fs::write(&source, b"entrante\n").unwrap();
+        run(&["add", "--", "merge.txt"]);
+        let tree = run(&["write-tree"]);
+        let incoming = run(&["commit-tree", &tree, "-p", &second, "-m", "Conflicto"]);
+        run(&["update-ref", "refs/heads/conflicto", &incoming]);
+        run(&["read-tree", &merge]);
+        fs::write(&source, b"primer padre\n").unwrap();
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x74);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        state.key(b'R' as usize);
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama conflicto"))
+            .unwrap();
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'M' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().unwrap().merge_conflicts().is_some());
+        state.key(0x0d);
+        state.key(0x09);
+        state.key(0x09);
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(b'U' as usize);
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        for unit in "GUI ".encode_utf16() {
+            state.character(unit);
+        }
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        assert!(state.git_commit.view().unwrap().all_merge_choices_saved());
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let preview = state.git_commit.view().unwrap();
+        assert!(preview.can_return_to_merge_choices(), "{:?}", preview.error);
+        assert_eq!(run(&["rev-parse", "HEAD"]), merge);
+        assert_eq!(fs::read(&source).unwrap(), b"primer padre\n");
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert_eq!(fs::read(source).unwrap(), b"GUI entrante\n");
+        let resolved = run(&["rev-parse", "HEAD"]);
+        assert_eq!(
+            run(&["rev-list", "--parents", "-n", "1", "HEAD"]),
+            format!("{resolved} {merge} {incoming}")
+        );
     }
 
     #[test]

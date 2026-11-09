@@ -15,9 +15,22 @@ El núcleo Rust embebido calcula la ascendencia y distingue:
   padres, primero el activo y luego el entrante. En archivos regulares, el
   motor puede combinar ediciones de líneas no superpuestas. Conserva los bytes,
   incluido CRLF y la ausencia de salto al final.
-- **Conflicto:** la revisión lista las rutas y deshabilita la confirmación.
-  No se crean marcadores, etapas de conflicto ni `MERGE_HEAD`. La resolución
-  interactiva de BASE/ACTUAL/ENTRANTE/RESULTADO queda como siguiente bloque.
+- **Conflicto:** abre cada ruta con **Intro**. **Tab** recorre **Base**,
+  **Actual**, **Entrante** y **Resultado**. **Ctrl+U** toma la versión
+  que estás viendo como resultado. En la GUI puedes usar también los botones.
+
+**Actual** corresponde al commit de la rama activa. **Resultado** empieza con
+esa versión. Puedes editar y pegar texto,
+usar **Intro** para un salto de línea y **Ctrl+T** para un tabulador.
+Acepta el archivo desde **Resultado** con **Ctrl+Intro** en la GUI o **F2**
+en la TUI. En la lista, la misma tecla genera la revisión final cuando todos
+los archivos están resueltos. La publicación requiere confirmar desde esa
+revisión. **Esc** vuelve al borrador de resoluciones desde la revisión final.
+
+La edición admite UTF-8 de hasta 64 KiB por archivo. Para archivos mayores
+o con otros bytes puedes elegir una versión completa, incluida una versión
+en la que el archivo no existe. Los conflictos estructurales, como las
+colisiones entre archivos y carpetas, requieren otro flujo.
 
 La vista previa no escribe objetos ni toca el índice. La confirmación vuelve a
 comprobar las referencias, HEAD, el índice y los archivos afectados. Las
@@ -26,6 +39,11 @@ cambio preparado o un archivo sin seguimiento que coincidan con una ruta que
 se debe reemplazar bloquean la escritura; el resto de los cambios locales se
 conserva. En una fusión divergente, los cambios preparados ajenos quedan en
 el índice y no entran en el commit de fusión.
+
+Las resoluciones se guardan en el borrador mientras está abierto. El resultado
+final se registra con su árbol exacto al confirmar. Si una publicación
+interrumpida se reanuda, usa ese mismo árbol, incluidas las ediciones del
+borrador.
 
 Si falla una publicación después de crear el registro de recuperación, elige
 la misma rama entrante para **Reanudar fusión**. El registro y los respaldos se
@@ -56,4 +74,11 @@ reanudación tras publicar el índice. Las comprobaciones se ejecutaron en
 segundo plano, sin escritorio, repositorios personales ni GitHub Actions.
 
 Para generar los ejecutables usando la caché compartida:
-`python scripts/build-cide-local.py --output target/git-local-merge-next/release`.
+`python scripts/build-cide-local.py --output target/git-merge-resolution-next/release`.
+
+La resolución interactiva pasó la suite local de Windows con Rust 1.88.0
+mediante `python scripts/check-local.py --steps fmt clippy test --jobs 2`.
+Pasaron 901 pruebas. Los tres auxiliares se ejecutaron desde sus pruebas padre.
+Las pruebas cubrieron la edición y confirmación en ambos frontends, el rechazo
+de cambios locales posteriores a la revisión y la recuperación del resultado
+editado tras publicar el índice.

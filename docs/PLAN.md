@@ -571,8 +571,8 @@ Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, n
 Git completo (stage/unstage por hunk, commit, fetch, pull, push, ramas, merge y resolución BASE/OURS/THEIRS/RESULT), proveedores semánticos/LSP, tareas e integración con OmniCore, todos bajo demanda. Construir los flujos de Git con confirmaciones y protección de archivos modificados; el visor read-only se adelanta a M2A. Hardening del contrato de proveedores internos de lenguaje y sus contribuciones al registro central; búsqueda de proyecto permanece priorizada en M2A.
 
 [Fusión local de ramas](GIT_LOCAL_MERGE.md): GUI y TUI revisan y confirman el
-avance directo o la fusión divergente sin conflictos. La vista de conflictos
-protege los cambios locales; sigue pendiente la resolución interactiva.
+avance directo o la fusión divergente. La resolución de archivos ordinarios
+muestra Base, Actual, Entrante y un Resultado editable antes de confirmar.
 
 **CI pertenece a M5.** Hasta iniciar M5 no se ejecutará GitHub Actions automáticamente en `push` ni `pull_request`, ni se usará CI remoto para perseguir fallos intermedios de M2–M4. El workflow queda conservado únicamente como `workflow_dispatch` manual y no debe invocarse antes de M5 salvo autorización explícita del propietario.
 

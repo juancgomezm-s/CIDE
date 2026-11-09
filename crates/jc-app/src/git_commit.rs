@@ -1,6 +1,7 @@
 //! Shared draft, review and background publication for the two frontends.
 use crate::{
     edit_field,
+    git_merge_resolution::{MergeAction, MergeDraft, MergeFile, MergePane},
     git_revision::{ComparisonOrigin, PairKind, RevisionComparison},
     FieldEdit, Wakeup, Workbench,
 };
@@ -8,7 +9,9 @@ use jc_git::branch_switch::{apply_branch_switch, prepare_branch_switch, BranchSw
 pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
-use jc_git::local_merge::{apply_merge, prepare_merge, MergePlan};
+use jc_git::local_merge::{
+    apply_merge, prepare_merge, prepare_resolved_merge, MergeKind, MergePlan,
+};
 use jc_git::local_pair::SourceIdentity;
 pub use jc_git::ref_write::RefKind;
 use jc_git::ref_write::{
@@ -130,6 +133,8 @@ pub struct CommitView {
     pub error: Option<String>,
     input_token: Arc<()>,
     review: Option<WritePlan>,
+    merge_draft: MergeDraft,
+    saved_merge_review: Option<Box<MergePlan>>,
 }
 
 impl CommitView {
@@ -202,6 +207,23 @@ impl CommitView {
             Some(WritePlan::Merge(plan)) => Some(plan),
             _ => None,
         }
+    }
+    pub fn merge_conflicts(&self) -> Option<&MergePlan> {
+        self.merge_review()
+            .filter(|plan| plan.kind == MergeKind::Conflicts)
+    }
+    pub fn merge_file(&self) -> Option<&MergeFile> {
+        self.merge_draft.file.as_ref()
+    }
+    pub fn merge_choice_saved(&self, path: &[u8]) -> bool {
+        self.merge_draft.choices.contains_key(path)
+    }
+    pub fn all_merge_choices_saved(&self) -> bool {
+        self.merge_conflicts()
+            .is_some_and(|plan| self.merge_draft.choices.len() == plan.rows.len())
+    }
+    pub fn can_return_to_merge_choices(&self) -> bool {
+        self.saved_merge_review.is_some()
     }
     fn input_limit(&self) -> usize {
         if self.draft.is_reference() {
@@ -286,6 +308,8 @@ impl CommitController {
                 error: None,
                 input_token: Arc::new(()),
                 review: None,
+                merge_draft: MergeDraft::default(),
+                saved_merge_review: None,
             });
         }
     }
@@ -309,28 +333,36 @@ impl CommitController {
     pub fn input_token(&self) -> Option<Arc<()>> {
         self.view
             .as_ref()
-            .filter(|v| v.has_input() && !self.busy() && v.review.is_none())
+            .filter(|_| self.paste_budget().is_some())
             .map(|v| v.input_token.clone())
     }
 
     pub fn paste_budget(&self) -> Option<usize> {
-        self.view
-            .as_ref()
-            .filter(|v| v.has_input() && !self.busy() && v.review.is_none())
-            .map(|v| v.input_limit().saturating_sub(v.message.len()).max(1))
+        let view = self.view.as_ref().filter(|_| !self.busy())?;
+        if let (Some(file), Some(plan)) = (view.merge_file(), view.merge_conflicts()) {
+            return file.paste_budget(plan);
+        }
+        (view.has_input() && view.review.is_none())
+            .then(|| view.input_limit().saturating_sub(view.message.len()).max(1))
     }
 
     pub fn edit(&mut self, edit: FieldEdit<'_>) {
         if self.busy() {
             return;
         }
-        let Some(view) = self
-            .view
-            .as_mut()
-            .filter(|v| v.has_input() && v.review.is_none())
-        else {
+        let Some(view) = self.view.as_mut() else {
             return;
         };
+        if let (Some(WritePlan::Merge(plan)), Some(file)) =
+            (&view.review, &mut view.merge_draft.file)
+        {
+            view.error = file.edit(plan, edit).err().map(str::to_owned);
+            view.input_token = Arc::new(());
+            return;
+        }
+        if !view.has_input() || view.review.is_some() {
+            return;
+        }
         if let FieldEdit::Insert(text) = edit {
             if text.chars().any(char::is_control) {
                 view.error = Some("El campo debe ocupar una sola línea".into());
@@ -344,10 +376,108 @@ impl CommitController {
         view.input_token = Arc::new(());
     }
 
+    pub fn merge_action(&mut self, action: MergeAction) {
+        if self.busy() {
+            return;
+        }
+        let Some(view) = &mut self.view else { return };
+        let Some(WritePlan::Merge(plan)) = &view.review else {
+            return;
+        };
+        if plan.kind != MergeKind::Conflicts {
+            return;
+        }
+        let file = &mut view.merge_draft.file;
+        view.error = None;
+        view.input_token = Arc::new(());
+        match action {
+            MergeAction::Open(row) if file.is_none() => {
+                let Some(entry) = plan.rows.get(row) else {
+                    return;
+                };
+                if plan
+                    .conflict(&entry.path)
+                    .is_some_and(|conflict| conflict.can_resolve())
+                {
+                    view.first = row;
+                    *file = Some(MergeFile::open(
+                        row,
+                        view.merge_draft.choices.get(&entry.path),
+                    ));
+                } else {
+                    view.error =
+                        Some("La resolución interactiva requiere un archivo ordinario".into());
+                }
+            }
+            MergeAction::Pane(pane) => {
+                if let Some(file) = file {
+                    file.set_pane(pane);
+                }
+            }
+            MergeAction::NextPane => {
+                if let Some(file) = file {
+                    file.next_pane();
+                }
+            }
+            MergeAction::UseVersion => {
+                if let Some(file) = file {
+                    file.use_version();
+                }
+            }
+            MergeAction::Accept => {
+                if file
+                    .as_ref()
+                    .is_some_and(|file| file.pane == MergePane::Result)
+                {
+                    let file = file.take().unwrap();
+                    let path = file.path(plan).to_vec();
+                    view.merge_draft.choices.insert(path, file.take_choice());
+                }
+            }
+            MergeAction::Newline => {
+                if let Some(file) = file {
+                    view.error = file.newline(plan).err().map(str::to_owned);
+                }
+            }
+            MergeAction::Open(_) => {}
+        }
+    }
+
+    /// Return to the conflict list or the draft after reviewing the final tree.
+    pub fn back_merge(&mut self) -> bool {
+        if self.busy() {
+            return false;
+        }
+        let Some(view) = &mut self.view else {
+            return false;
+        };
+        if view.merge_draft.file.take().is_some() {
+            view.error = None;
+            view.input_token = Arc::new(());
+            return true;
+        }
+        if let Some(plan) = view.saved_merge_review.take() {
+            view.review = Some(WritePlan::Merge(plan));
+            view.error = None;
+            return true;
+        }
+        false
+    }
+
     pub fn scroll(&mut self, delta: isize) {
+        if self.busy() {
+            return;
+        }
         let Some(view) = &mut self.view else {
             return;
         };
+        if let (Some(WritePlan::Merge(plan)), Some(file)) =
+            (&view.review, &mut view.merge_draft.file)
+        {
+            view.error = file.scroll(plan, delta).err().map(str::to_owned);
+            view.input_token = Arc::new(());
+            return;
+        }
         let count = view
             .review()
             .map(|plan| plan.files().len())
@@ -371,16 +501,30 @@ impl CommitController {
             self.cancel();
             return;
         }
-        if view.merge_review().is_some_and(|plan| !plan.can_apply()) {
+        let resolution = if let Some(plan) = view.merge_conflicts() {
+            if view.merge_file().is_some() || !view.all_merge_choices_saved() {
+                return;
+            }
+            let Some(review) = plan.resolution_review() else {
+                return;
+            };
+            Some((review, view.merge_draft.choices.clone()))
+        } else if view.merge_review().is_some_and(|plan| !plan.can_apply()) {
             return;
-        }
+        } else {
+            None
+        };
         if !view.draft.is_reference() && crate::git_index::require_clean(bench).is_err() {
             view.error = Some("Guarda los documentos modificados antes de continuar".into());
             return;
         }
         view.error = None;
         view.input_token = Arc::new(());
-        let plan = view.review.take();
+        let plan = if resolution.is_some() {
+            None
+        } else {
+            view.review.take()
+        };
         let applying = plan.is_some();
         let root = view.root.clone();
         let message = view.message.clone();
@@ -396,6 +540,12 @@ impl CommitController {
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let cancelled = || stop.load(Ordering::Acquire);
+                    if let Some((review, choices)) = resolution {
+                        return Completion::Review(
+                            prepare_resolved_merge(review, choices, cancelled)
+                                .map(|plan| WritePlan::Merge(Box::new(plan))),
+                        );
+                    }
                     match plan {
                         Some(WritePlan::Commit(plan)) => {
                             Completion::Applied(apply_commit(*plan, cancelled).map(|publication| {
@@ -546,7 +696,9 @@ impl CommitController {
         };
         match result {
             Completion::Review(Ok(plan)) => {
-                view.review = Some(plan);
+                if let Some(WritePlan::Merge(conflicts)) = view.review.replace(plan) {
+                    view.saved_merge_review = Some(conflicts);
+                }
                 view.first = 0;
             }
             Completion::Review(Err(e)) => view.error = Some(e.to_string()),
@@ -559,6 +711,9 @@ impl CommitController {
                     self.notice = Some((root.clone(), message.clone()));
                     self.view = None;
                 } else {
+                    if let Some(plan) = view.saved_merge_review.take() {
+                        view.review = Some(WritePlan::Merge(plan));
+                    }
                     view.error = result.as_ref().err().cloned();
                 }
                 return (

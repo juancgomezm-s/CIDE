@@ -27,7 +27,7 @@ const TRACKED: &str = "tracked.txt";
 const UNTRACKED: &str = "nuevo-é[1].txt";
 
 #[test]
-fn tui_local_merge_lists_conflicts_and_only_applies_a_confirmed_preview() {
+fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     let _serial = SERIAL.lock().unwrap_or_else(|error| error.into_inner());
     let fixture = Fixture::new();
     let base = fixture.oid(&["rev-parse", "HEAD"]);
@@ -42,10 +42,8 @@ fn tui_local_merge_lists_conflicts_and_only_applies_a_confirmed_preview() {
     };
     let active = next(b"activa\r\nend", &base);
     let conflicting = next(b"conflicto\r\nend", &base);
-    let forward = next(b"avance\r\nend", &active);
     fixture.git(&["update-ref", "HEAD", &active]);
     fixture.git(&["update-ref", "refs/heads/conflicto", &conflicting]);
-    fixture.git(&["update-ref", "refs/heads/avance", &forward]);
     fixture.git(&["read-tree", &active]);
     fixture.rewrite(TRACKED, b"activa\r\nend");
     let before = fixture.disk();
@@ -91,14 +89,33 @@ fn tui_local_merge_lists_conflicts_and_only_applies_a_confirmed_preview() {
     key(&mut app, KeyCode::F(2));
     assert!(!app.git_commit.busy());
     assert_eq!(fixture.disk(), before);
-    key(&mut app, KeyCode::Esc);
-    key(&mut app, KeyCode::Esc);
-    select(&mut app, "Rama avance");
+    key(&mut app, KeyCode::Enter);
+    for expected in ["head \\xFF", "activa", "conflicto"] {
+        let frame = app.prepare_frame(100, 24).commit.unwrap();
+        assert!(
+            frame.rows.iter().any(|row| row.contains(expected)),
+            "{:?}",
+            frame.rows
+        );
+        key(&mut app, KeyCode::Tab);
+    }
+    key(&mut app, KeyCode::Home);
+    app.handle_event(Event::Paste("resuelto: ".into()));
+    let result = app.prepare_frame(100, 24).commit.unwrap();
+    assert!(result.caret.is_some());
+    assert!(result
+        .rows
+        .iter()
+        .any(|row| row.contains("resuelto: activa")));
+    key(&mut app, KeyCode::F(2));
+    assert!(app.git_commit.view().unwrap().all_merge_choices_saved());
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
     let view = app.git_commit.view().unwrap();
     let review = view
         .merge_review()
         .unwrap_or_else(|| panic!("{:?}", view.error));
-    assert_eq!(review.result().unwrap().to_string(), forward);
+    let merged = review.result().unwrap().to_string();
     assert_eq!(fixture.disk(), before);
     app.workbench.insert_text("edición sin guardar").unwrap();
     key(&mut app, KeyCode::F(2));
@@ -115,10 +132,14 @@ fn tui_local_merge_lists_conflicts_and_only_applies_a_confirmed_preview() {
     key(&mut app, KeyCode::F(2));
     wait_for(&mut app, |app| !app.git_commit.busy());
     assert!(app.git_commit.view().is_none(), "{}", app.status);
-    assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), forward);
+    assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), merged);
+    assert_eq!(
+        fixture.oid(&["rev-list", "--parents", "-n", "1", "HEAD"]),
+        format!("{merged} {active} {conflicting}")
+    );
     let after = fixture.disk();
     assert_eq!(after.head, before.head);
-    assert_eq!(after.tracked, b"avance\r\nend");
+    assert_eq!(after.tracked, b"resuelto: activa\r\nend");
     assert_eq!(after.untracked, before.untracked);
 }
 

@@ -28,6 +28,7 @@ use std::{
 
 const HEADS: &str = "refs/heads/";
 const MAX_PATHS: usize = 128;
+pub const MERGE_EDIT_BYTES: usize = 64 * 1024;
 type Entries = BTreeMap<Vec<u8>, Entry>;
 type Blobs = BTreeMap<ObjectId, Vec<u8>>;
 
@@ -45,7 +46,7 @@ impl MergeKind {
             Self::UpToDate => "La rama activa ya contiene esos cambios",
             Self::FastForward => "Avance directo de la rama activa",
             Self::Commit => "Commit de fusión con dos padres",
-            Self::Conflicts => "Conflictos · no se modificará el repositorio",
+            Self::Conflicts => "Conflictos por resolver · borrador de fusión",
         }
     }
 }
@@ -56,9 +57,49 @@ pub struct MergeRow {
     pub change: Option<Change>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MergeSide {
+    Base,
+    Current,
+    Incoming,
+}
+
+pub struct MergeConflict {
+    versions: Option<[Option<Vec<u8>>; 3]>,
+}
+
+impl MergeConflict {
+    pub fn can_resolve(&self) -> bool {
+        self.versions.is_some()
+    }
+
+    pub fn bytes(&self, side: MergeSide) -> Option<&[u8]> {
+        self.versions.as_ref()?[side as usize].as_deref()
+    }
+}
+
+#[derive(Clone)]
+pub enum MergeResolution {
+    Use(MergeSide),
+    Edit(String),
+}
+
+/// Identity of the reviewed conflict set, independent of the frontend draft.
+pub struct MergeReview {
+    repository: Identity,
+    limits: Limits,
+    active: FullName,
+    incoming: FullName,
+    from: ObjectId,
+    theirs: ObjectId,
+    head_file: jc_fs::FileToken,
+    index: IndexToken,
+}
+
 pub struct MergePlan {
     pub kind: MergeKind,
     pub rows: Vec<MergeRow>,
+    conflicts: BTreeMap<Vec<u8>, MergeConflict>,
     repository: Identity,
     limits: Limits,
     active: FullName,
@@ -92,6 +133,22 @@ impl MergePlan {
     }
     pub fn recovering(&self) -> bool {
         self.checkout.as_ref().is_some_and(|plan| plan.resuming)
+    }
+    pub fn conflict(&self, path: &[u8]) -> Option<&MergeConflict> {
+        self.conflicts.get(path)
+    }
+    pub fn resolution_review(&self) -> Option<MergeReview> {
+        (!self.conflicts.is_empty() && self.conflicts.values().all(MergeConflict::can_resolve))
+            .then(|| MergeReview {
+                repository: self.repository.clone(),
+                limits: self.limits,
+                active: self.active.clone(),
+                incoming: self.incoming.clone(),
+                from: self.from,
+                theirs: self.theirs,
+                head_file: self.head_file.clone(),
+                index: self.index.clone(),
+            })
     }
 }
 
@@ -273,7 +330,43 @@ fn merge_bytes(
 struct Candidate {
     entries: Entries,
     blobs: Blobs,
-    conflicts: BTreeSet<Vec<u8>>,
+    conflicts: BTreeMap<Vec<u8>, MergeConflict>,
+}
+
+fn read_version(
+    repo: &gix::Repository,
+    entry: Option<&Entry>,
+    limits: Limits,
+    budget: &mut Budget,
+    ctx: &Context<'_>,
+) -> Result<Option<Vec<u8>>, Error> {
+    let Some(entry) = entry else {
+        return Ok(None);
+    };
+    let mut blob = revision::verified(repo, entry.id, limits.max_blob, ctx)?;
+    if blob.kind != Kind::Blob {
+        return Err(Error::Unsupported);
+    }
+    budget.charge(blob.data.len())?;
+    Ok(Some(std::mem::take(&mut blob.data)))
+}
+
+fn add_result_blob(
+    repo: &gix::Repository,
+    blobs: &mut Blobs,
+    bytes: Vec<u8>,
+) -> Result<Entry, Error> {
+    let id = gix::objs::compute_hash(repo.object_hash(), Kind::Blob, &bytes).map_err(engine)?;
+    blobs.entry(id).or_insert(bytes);
+    Ok(Entry { id, mode: 0o100644 })
+}
+
+fn path_collisions(entries: &Entries) -> impl Iterator<Item = &[u8]> {
+    entries.keys().flat_map(|path| {
+        path.iter().enumerate().filter_map(|(offset, byte)| {
+            (*byte == b'/' && entries.contains_key(&path[..offset])).then_some(&path[..offset])
+        })
+    })
 }
 
 fn combine(
@@ -294,7 +387,7 @@ fn combine(
     let mut candidate = Candidate {
         entries: BTreeMap::new(),
         blobs: BTreeMap::new(),
-        conflicts: BTreeSet::new(),
+        conflicts: BTreeMap::new(),
     };
     let paths: BTreeSet<_> = base
         .keys()
@@ -309,46 +402,49 @@ fn combine(
             && right != before
             && ((left_moves && left.is_none()) || (right_moves && right.is_none()))
             && ids[1] != ids[2];
-        let entry = if conflicting_move {
-            candidate.conflicts.insert(path.clone());
-            continue;
-        } else if left == right || right == before {
+        let entry = if !conflicting_move && (left == right || right == before) {
             left.copied()
-        } else if left == before {
+        } else if !conflicting_move && left == before {
             right.copied()
-        } else if let (Some(before), Some(left), Some(right)) = (before, left, right)
+        } else if !conflicting_move
             && [before, left, right]
-                .iter()
+                .into_iter()
+                .flatten()
                 .all(|entry| entry.mode == 0o100644)
         {
-            let read = |entry: &Entry, budget: &mut Budget| -> Result<Vec<u8>, Error> {
-                let mut blob = revision::verified(repo, entry.id, limits.max_blob, ctx)?;
-                if blob.kind != Kind::Blob {
-                    return Err(Error::Unsupported);
+            let versions = [
+                read_version(repo, before, limits, &mut budget, ctx)?,
+                read_version(repo, left, limits, &mut budget, ctx)?,
+                read_version(repo, right, limits, &mut budget, ctx)?,
+            ];
+            let merged = match versions.each_ref().map(Option::as_deref) {
+                [Some(base), Some(current), Some(incoming)] => {
+                    match merge_bytes(base, current, incoming, ctx) {
+                        Ok(result) => result,
+                        Err(Error::Limited) => None,
+                        Err(error) => return Err(error),
+                    }
                 }
-                budget.charge(blob.data.len())?;
-                Ok(std::mem::take(&mut blob.data))
+                _ => None,
             };
-            let merged = merge_bytes(
-                &read(before, &mut budget)?,
-                &read(left, &mut budget)?,
-                &read(right, &mut budget)?,
-                ctx,
-            )?;
             let Some(bytes) = merged else {
-                candidate.conflicts.insert(path.clone());
+                candidate.conflicts.insert(
+                    path.clone(),
+                    MergeConflict {
+                        versions: Some(versions),
+                    },
+                );
                 continue;
             };
             if bytes.len() > limits.max_blob {
                 return Err(Error::Limited);
             }
             budget.charge(bytes.len())?;
-            let id =
-                gix::objs::compute_hash(repo.object_hash(), Kind::Blob, &bytes).map_err(engine)?;
-            candidate.blobs.insert(id, bytes);
-            Some(Entry { id, mode: 0o100644 })
+            Some(add_result_blob(repo, &mut candidate.blobs, bytes)?)
         } else {
-            candidate.conflicts.insert(path.clone());
+            candidate
+                .conflicts
+                .insert(path.clone(), MergeConflict { versions: None });
             continue;
         };
         if let Some(entry) = entry {
@@ -356,13 +452,11 @@ fn combine(
         }
     }
     // A flat merge can otherwise accept both sides of a file/directory collision.
-    for path in candidate.entries.keys() {
+    for path in path_collisions(&candidate.entries) {
         ctx.check()?;
-        for (offset, _) in path.iter().enumerate().filter(|(_, byte)| **byte == b'/') {
-            if candidate.entries.contains_key(&path[..offset]) {
-                candidate.conflicts.insert(path[..offset].to_vec());
-            }
-        }
+        candidate
+            .conflicts
+            .insert(path.to_vec(), MergeConflict { versions: None });
     }
     if candidate.conflicts.len() > limits.max_entries.min(MAX_PATHS) {
         return Err(Error::Limited);
@@ -420,6 +514,33 @@ pub fn prepare_merge(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<MergePlan, Error> {
+    prepare(root, incoming, expected_tip, limits, None, cancelled)
+}
+
+/// Build a fresh publication preview from explicit choices for all reviewed paths.
+pub fn prepare_resolved_merge(
+    review: MergeReview,
+    choices: BTreeMap<Vec<u8>, MergeResolution>,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    prepare(
+        &review.repository.root,
+        &name_text(&review.incoming)[HEADS.len()..],
+        &review.theirs.to_string(),
+        review.limits,
+        Some((&review, choices)),
+        cancelled,
+    )
+}
+
+fn prepare(
+    root: &Path,
+    incoming: &str,
+    expected_tip: &str,
+    limits: Limits,
+    resolution: Option<(&MergeReview, BTreeMap<Vec<u8>, MergeResolution>)>,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
     if !cfg!(windows) {
         return Err(Error::Unsupported);
     }
@@ -459,6 +580,17 @@ pub fn prepare_merge(
         }
         let from = pending.as_ref().map_or(head, |journal| journal.from);
         let (index, index_bytes) = local_pair::index_capture(&repo, &repository.git_dir, ctx)?;
+        if let Some((review, _)) = &resolution {
+            index_write::same_repository(&review.repository, &repository)?;
+            if pending.is_some()
+                || active != review.active
+                || from != review.from
+                || head_file != review.head_file
+                || index != review.index
+            {
+                return Err(Error::Stale);
+            }
+        }
         let state = local_pair::decode_index(&repo, index_bytes.as_deref(), ctx)?;
         if state.entries().iter().any(|entry| entry.stage_raw() != 0) {
             return Err(Error::Unmerged);
@@ -468,6 +600,7 @@ pub fn prepare_merge(
         let mut plan = MergePlan {
             kind: MergeKind::UpToDate,
             rows: Vec::new(),
+            conflicts: BTreeMap::new(),
             repository,
             limits,
             active,
@@ -484,7 +617,7 @@ pub fn prepare_merge(
         };
         let common = base(&repo, from, theirs, limits, ctx)?;
         if common == theirs {
-            if pending.is_some() {
+            if pending.is_some() || resolution.is_some() {
                 return Err(Error::Stale);
             }
             return Ok(plan);
@@ -492,6 +625,9 @@ pub fn prepare_merge(
         let old_tree = tree_id(&repo, from, limits, ctx)?;
         let their_tree = tree_id(&repo, theirs, limits, ctx)?;
         let (result, tree, entries, blobs) = if common == from {
+            if resolution.is_some() {
+                return Err(Error::Stale);
+            }
             plan.kind = MergeKind::FastForward;
             let entries =
                 revision::tree_entries(&repo, their_tree, limits, &mut Budget::new(limits), ctx)?;
@@ -500,30 +636,90 @@ pub fn prepare_merge(
             plan.kind = MergeKind::Commit;
             let base_tree = tree_id(&repo, common, limits, ctx)?;
             let Candidate {
-                entries,
-                blobs,
+                mut entries,
+                mut blobs,
                 conflicts,
             } = combine(&repo, [base_tree, old_tree, their_tree], limits, ctx)?;
-            if !conflicts.is_empty() {
-                if pending.is_some() {
-                    return Err(Error::Stale);
-                }
-                plan.kind = MergeKind::Conflicts;
-                plan.rows = conflicts
-                    .into_iter()
-                    .map(|path| MergeRow { path, change: None })
-                    .collect();
-                return Ok(plan);
-            }
-            let (tree, trees) = make_trees(&repo, &entries, limits, ctx)?;
-            let id = if let Some(journal) = &pending {
+            if let Some(journal) = &pending {
                 let commit =
                     revision::commit(&repo, journal.to, limits, &mut Budget::new(limits), ctx)?;
-                if commit.tree != tree || commit.parents != [from, theirs] || commit.limited {
+                if commit.parents != [from, theirs] || commit.limited {
                     return Err(Error::Stale);
                 }
-                journal.to
+                if conflicts.is_empty()
+                    && make_trees(&repo, &entries, limits, ctx)?.0 != commit.tree
+                {
+                    return Err(Error::Stale);
+                }
+                let stored = revision::merge_tree_entries(
+                    &repo,
+                    commit.tree,
+                    limits,
+                    &mut Budget::new(limits),
+                    ctx,
+                )?;
+                // Only paths offered by the conflict review can differ from the
+                // automatic merge. The journal pins the exact resolved commit.
+                if conflicts.values().any(|conflict| !conflict.can_resolve())
+                    || stored.iter().any(|(path, entry)| {
+                        if conflicts.contains_key(path) {
+                            entry.mode != 0o100644
+                        } else {
+                            entries.get(path) != Some(entry)
+                        }
+                    })
+                    || entries.keys().any(|path| !stored.contains_key(path))
+                {
+                    return Err(Error::Stale);
+                }
+                (journal.to, commit.tree, stored, BTreeMap::new())
             } else {
+                if let Some((_, mut choices)) = resolution {
+                    if conflicts.is_empty() || choices.len() != conflicts.len() {
+                        return Err(Error::Stale);
+                    }
+                    let mut budget = Budget::new(limits);
+                    for (path, conflict) in &conflicts {
+                        ctx.check()?;
+                        if !conflict.can_resolve() {
+                            return Err(Error::Unsupported);
+                        }
+                        let bytes = match choices.remove(path).ok_or(Error::Stale)? {
+                            MergeResolution::Use(side) => conflict.bytes(side).map(<[u8]>::to_vec),
+                            MergeResolution::Edit(text) => {
+                                if text.len() > MERGE_EDIT_BYTES.min(limits.max_blob)
+                                    || text
+                                        .chars()
+                                        .any(|c| c.is_control() && !matches!(c, '\t' | '\r' | '\n'))
+                                {
+                                    return Err(Error::Unsupported);
+                                }
+                                Some(text.into_bytes())
+                            }
+                        };
+                        if let Some(bytes) = bytes {
+                            budget.charge(bytes.len())?;
+                            let entry = add_result_blob(&repo, &mut blobs, bytes)?;
+                            entries.insert(path.clone(), entry);
+                        }
+                    }
+                    if path_collisions(&entries).next().is_some() {
+                        return Err(Error::Engine(
+                            "El resultado contiene una colisión entre un archivo y una carpeta"
+                                .into(),
+                        ));
+                    }
+                } else if !conflicts.is_empty() {
+                    plan.kind = MergeKind::Conflicts;
+                    plan.rows = conflicts
+                        .keys()
+                        .cloned()
+                        .map(|path| MergeRow { path, change: None })
+                        .collect();
+                    plan.conflicts = conflicts;
+                    return Ok(plan);
+                }
+                let (tree, trees) = make_trees(&repo, &entries, limits, ctx)?;
                 commit_write::check_signing(&repo)?;
                 let signature = commit_write::local_identity(&repo)?;
                 let commit = Commit {
@@ -549,9 +745,8 @@ pub fn prepare_merge(
                     trees,
                     commit,
                 });
-                id
-            };
-            (id, tree, entries, blobs)
+                (id, tree, entries, blobs)
+            }
         };
         if pending.as_ref().is_some_and(|journal| journal.to != result) {
             return Err(Error::Stale);
