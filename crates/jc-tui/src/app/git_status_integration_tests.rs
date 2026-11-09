@@ -197,6 +197,65 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
         fs::read(fixture.path("forma")).unwrap(),
         b"archivo entrante"
     );
+
+    let previous = fixture.oid(&["rev-parse", "HEAD"]);
+    fixture.create("actual.txt", b"mismo contenido");
+    let blob = fixture.oid(&["hash-object", "-w", "--no-filters", "actual.txt"]);
+    let version = |path: &str, parent: &str| {
+        fixture.git(&["read-tree", &previous]);
+        fixture.git(&[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("100644,{blob},{path}"),
+        ]);
+        let tree = fixture.oid(&["write-tree"]);
+        fixture.oid(&["commit-tree", &tree, "-p", parent, "-m", path])
+    };
+    let base = version("origen.txt", &previous);
+    let incoming = version("entrante.txt", &base);
+    let actual = version("actual.txt", &base);
+    fixture.git(&["update-ref", "refs/heads/renombre", &incoming]);
+    fixture.git(&["update-ref", "HEAD", &actual]);
+    key(&mut app, KeyCode::F(5));
+    wait_for(&mut app, |app| {
+        app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    });
+    select(&mut app, "Rama renombre");
+    let frame = app.prepare_frame(100, 24).commit.unwrap();
+    assert!(frame
+        .rows
+        .iter()
+        .any(|row| row.contains("Renombre") && row.contains("origen.txt")));
+    key(&mut app, KeyCode::Enter);
+    let frame = app.prepare_frame(100, 24).commit.unwrap();
+    assert!(frame.rows.iter().any(|row| row.contains("origen.txt")));
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('u'),
+        KeyModifiers::CONTROL,
+    )));
+    key(&mut app, KeyCode::F(2));
+    fixture.create("origen.txt", b"archivo local");
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().unwrap().error.is_some());
+    assert_eq!(
+        fs::read(fixture.path("origen.txt")).unwrap(),
+        b"archivo local"
+    );
+    fs::remove_file(fixture.path("origen.txt")).unwrap();
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().unwrap().can_return_to_merge_choices());
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().is_none(), "{}", app.status);
+    assert_eq!(
+        fs::read(fixture.path("origen.txt")).unwrap(),
+        b"mismo contenido"
+    );
+    assert!(!fixture.path("actual.txt").exists());
+    assert!(!fixture.path("entrante.txt").exists());
 }
 
 fn installed_git() -> PathBuf {

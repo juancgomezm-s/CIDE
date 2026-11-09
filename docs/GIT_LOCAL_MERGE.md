@@ -40,8 +40,13 @@ Para convertir una carpeta en archivo, CIDE verifica los archivos que
 retirará y guarda sus originales en `.git`. La operación se detiene si
 detecta cambios locales, archivos sin seguimiento o carpetas ajenas dentro
 de la ruta. Solo retira carpetas vacías. La recuperación vuelve a comprobar
-los respaldos y continúa desde el último estado verificable. Otros conflictos
-estructurales, como los renombres incompatibles, quedan pendientes.
+los respaldos y continúa desde el último estado verificable.
+
+En un conflicto **Renombre**, **Base**, **Actual** y **Entrante** muestran
+la ruta del mismo archivo en cada versión. Con **Ctrl+U** elige la ruta
+visible. **Resultado** muestra la ruta que quedará, o su ausencia si la
+versión elegida eliminó el archivo. La revisión final muestra las altas y
+bajas antes de escribir.
 
 La vista previa no escribe objetos ni toca el índice. La confirmación vuelve a
 comprobar las referencias, HEAD, el índice y los archivos afectados. Las
@@ -70,8 +75,10 @@ El flujo requiere un repositorio ordinario de Windows, una rama activa, un
 de ascendencia está acotado a un máximo de 8192 commits y la operación admite
 hasta 128 rutas afectadas. Varias bases de fusión, árboles sin base común,
 repositorios parciales, enlaces en rutas afectadas, conversiones de texto y
-conductores de merge requieren otro flujo. No hay seguimiento general de
-renombres; los posibles renombres en competencia se rechazan. El motor no
+conductores de merge requieren otro flujo. El conflicto de renombre requiere
+una correspondencia única y contenido idéntico entre el origen y el destino.
+Las copias ambiguas, los renombres con cambios de contenido y las rutas que
+solo difieren por mayúsculas quedan fuera de esta resolución. El motor no
 ejecuta `git.exe`, hooks ni acciones de red.
 
 Validación local en Windows con Rust 1.88.0: `python scripts/check-local.py
@@ -85,7 +92,7 @@ reanudación tras publicar el índice. Las comprobaciones se ejecutaron en
 segundo plano, sin escritorio, repositorios personales ni GitHub Actions.
 
 Para generar los ejecutables usando la caché compartida:
-`python scripts/build-cide-local.py --output target/git-merge-structural-next/release`.
+`python scripts/build-cide-local.py --output target/git-merge-rename-next/release`.
 
 La resolución interactiva pasó la suite local de Windows con Rust 1.88.0
 mediante `python scripts/check-local.py --steps fmt clippy test --jobs 2`.
@@ -98,3 +105,8 @@ La validación de archivo/carpeta pasó 902 pruebas con el mismo comando.
 Los recorridos de GUI y TUI cubrieron las dos conversiones. El núcleo
 comprobó el rechazo de ediciones locales, la protección de un archivo
 creado durante la publicación y la recuperación posterior.
+
+La validación del renombre pasó 903 pruebas con el mismo comando. La GUI
+conservó la ruta entrante y la TUI recuperó la ruta original. El núcleo
+comprobó las tres rutas, una eliminación, el rechazo de copias ambiguas,
+la protección de cambios locales y la reanudación tras una interrupción.

@@ -99,7 +99,7 @@ impl MergeFile {
     pub fn can_edit(&self, plan: &MergePlan) -> bool {
         self.pane == MergePane::Result
             && plan.conflict(self.path(plan)).is_some_and(|conflict| {
-                !conflict.is_file_directory()
+                !conflict.requires_whole_version()
                     && editable(self.result(conflict).unwrap_or_default()).is_some()
             })
     }
@@ -145,7 +145,7 @@ impl MergeFile {
             let conflict = plan.conflict(self.path(plan)).unwrap();
             let count = self
                 .display_side()
-                .and_then(|side| conflict.shape_paths(side))
+                .and_then(|side| conflict.version_paths(side))
                 .map_or_else(
                     || lines(self.source(conflict).unwrap_or_default()).count(),
                     Iterator::count,
@@ -162,7 +162,7 @@ impl MergeFile {
     ) -> Result<(), &'static str> {
         let conflict = plan.conflict(self.path(plan)).unwrap();
         let bytes = self.result(conflict).unwrap_or_default();
-        if conflict.is_file_directory()
+        if conflict.requires_whole_version()
             || self.pane != MergePane::Result
             || editable(bytes).is_none()
         {
@@ -170,7 +170,7 @@ impl MergeFile {
                 FieldEdit::Left => self.left = self.left.saturating_sub(8),
                 FieldEdit::Right => self.left = self.left.saturating_add(8).min(16_384),
                 FieldEdit::Home => self.left = 0,
-                _ if conflict.is_file_directory() => return Ok(()),
+                _ if conflict.requires_whole_version() => return Ok(()),
                 _ if self.pane == MergePane::Result => {
                     return Err("La edición requiere UTF-8 y hasta 64 KiB")
                 }
@@ -292,11 +292,12 @@ impl MergeFile {
         let conflict = plan.conflict(self.path(plan)).unwrap();
         if let Some(mut paths) = self
             .display_side()
-            .and_then(|side| conflict.shape_paths(side))
+            .and_then(|side| conflict.version_paths(side))
         {
             let first = paths.next();
             let note = match first {
                 None => "Ruta ausente en esta versión",
+                Some(_) if conflict.is_rename() => "Ruta y contenido de esta versión",
                 Some(path) if path == self.path(plan) => {
                     "Archivo · se conserva el archivo de esta versión"
                 }

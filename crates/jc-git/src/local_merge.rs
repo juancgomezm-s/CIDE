@@ -66,23 +66,68 @@ pub enum MergeSide {
 
 pub struct MergeConflict {
     versions: Option<[Option<Vec<u8>>; 3]>,
-    shapes: Option<[Entries; 3]>,
+    paths: Option<PathChoices>,
+}
+
+#[derive(PartialEq, Eq)]
+enum PathConflict {
+    FileDirectory,
+    Rename,
+}
+
+struct PathChoices {
+    kind: PathConflict,
+    alternatives: [Entries; 3],
+}
+
+impl PathChoices {
+    fn covers(&self, root: &[u8], path: &[u8]) -> bool {
+        match self.kind {
+            PathConflict::FileDirectory => contains_path(root, path),
+            PathConflict::Rename => self
+                .alternatives
+                .iter()
+                .any(|entries| entries.contains_key(path)),
+        }
+    }
+
+    fn matches(&self, root: &[u8], stored: &Entries) -> bool {
+        match self.kind {
+            PathConflict::FileDirectory => self.alternatives.contains(&subtree(stored, root)),
+            PathConflict::Rename => self.alternatives.iter().any(|selected| {
+                self.alternatives
+                    .iter()
+                    .flat_map(Entries::keys)
+                    .all(|path| stored.get(path) == selected.get(path))
+            }),
+        }
+    }
 }
 
 impl MergeConflict {
     pub fn can_resolve(&self) -> bool {
-        self.versions.is_some() || self.shapes.is_some()
+        self.versions.is_some() || self.paths.is_some()
     }
 
     pub fn bytes(&self, side: MergeSide) -> Option<&[u8]> {
         self.versions.as_ref()?[side as usize].as_deref()
     }
     pub fn is_file_directory(&self) -> bool {
-        self.shapes.is_some()
+        self.paths
+            .as_ref()
+            .is_some_and(|paths| paths.kind == PathConflict::FileDirectory)
     }
-    pub fn shape_paths(&self, side: MergeSide) -> Option<impl Iterator<Item = &[u8]>> {
+    pub fn is_rename(&self) -> bool {
+        self.paths
+            .as_ref()
+            .is_some_and(|paths| paths.kind == PathConflict::Rename)
+    }
+    pub fn requires_whole_version(&self) -> bool {
+        self.paths.is_some()
+    }
+    pub fn version_paths(&self, side: MergeSide) -> Option<impl Iterator<Item = &[u8]>> {
         Some(
-            self.shapes.as_ref()?[side as usize]
+            self.paths.as_ref()?.alternatives[side as usize]
                 .keys()
                 .map(Vec::as_slice),
         )
@@ -402,6 +447,87 @@ fn subtree(entries: &Entries, path: &[u8]) -> Entries {
     subtree
 }
 
+type UniqueFiles<'a> = BTreeMap<ObjectId, Option<&'a [u8]>>;
+
+fn unique_files<'a>(tree: &'a Entries, ctx: &Context<'_>) -> Result<UniqueFiles<'a>, Error> {
+    let mut unique = BTreeMap::new();
+    for (path, entry) in tree {
+        ctx.check()?;
+        unique
+            .entry(entry.id)
+            .and_modify(|seen| *seen = None)
+            .or_insert_with(|| (entry.mode == 0o100644).then_some(path.as_slice()));
+    }
+    Ok(unique)
+}
+
+/// A rename is inferred only from a unique, unchanged blob and a new name.
+/// Independent edits at a competing destination stay outside this choice.
+fn rename_conflicts(
+    trees: [&Entries; 3],
+    added: [bool; 2],
+    structural: &[Vec<u8>],
+    limits: Limits,
+    ctx: &Context<'_>,
+) -> Result<BTreeMap<Vec<u8>, MergeConflict>, Error> {
+    let [base, ours, theirs] = trees;
+    let [original, left, right] = trees.map(|tree| unique_files(tree, ctx));
+    let (original, left, right) = (original?, left?, right?);
+    let mut conflicts = BTreeMap::new();
+    for (id, origin) in original {
+        ctx.check()?;
+        let Some(origin) = origin else { continue };
+        let [current, incoming] = [(ours, &left), (theirs, &right)].map(|(side, unique)| {
+            let dest = unique.get(&id).copied().flatten()?;
+            (!side.contains_key(origin) && !base.contains_key(dest)).then_some(dest)
+        });
+        if current == incoming
+            || current.is_some_and(|path| theirs.contains_key(path))
+            || incoming.is_some_and(|path| ours.contains_key(path))
+        {
+            continue;
+        }
+        // A branch with other additions and no exact match might have moved
+        // and edited the file. Keep the existing conservative conflict there.
+        let deleted =
+            |side: &Entries, has_additions: bool| !side.contains_key(origin) && !has_additions;
+        if (current.is_none() && !deleted(ours, added[0]))
+            || (incoming.is_none() && !deleted(theirs, added[1]))
+        {
+            continue;
+        }
+        let paths = [Some(origin), current, incoming];
+        if paths.into_iter().flatten().any(|path| {
+            structural
+                .iter()
+                .any(|root| contains_path(root, path) || contains_path(path, root))
+        }) {
+            continue;
+        }
+        let alternatives = [base, ours, theirs].map(|tree| {
+            paths
+                .into_iter()
+                .flatten()
+                .filter_map(|path| tree.get(path).map(|entry| (path.to_vec(), *entry)))
+                .collect()
+        });
+        conflicts.insert(
+            origin.to_vec(),
+            MergeConflict {
+                versions: None,
+                paths: Some(PathChoices {
+                    kind: PathConflict::Rename,
+                    alternatives,
+                }),
+            },
+        );
+        if conflicts.len() > limits.max_entries.min(MAX_PATHS) {
+            return Err(Error::Limited);
+        }
+    }
+    Ok(conflicts)
+}
+
 fn combine(
     repo: &gix::Repository,
     ids: [ObjectId; 3],
@@ -412,11 +538,10 @@ fn combine(
     let [base, ours, theirs] =
         ids.map(|id| revision::merge_tree_entries(repo, id, limits, &mut budget, ctx));
     let (base, ours, theirs) = (base?, ours?, theirs?);
-    let possible_rename = |side: &Entries| {
-        side.keys().any(|path| !base.contains_key(path))
-            && base.keys().any(|path| !side.contains_key(path))
-    };
-    let (left_moves, right_moves) = (possible_rename(&ours), possible_rename(&theirs));
+    let added = [&ours, &theirs].map(|side| side.keys().any(|path| !base.contains_key(path)));
+    let [left_moves, right_moves] =
+        [&ours, &theirs].map(|side| base.keys().any(|path| !side.contains_key(path)));
+    let (left_moves, right_moves) = (left_moves && added[0], right_moves && added[1]);
     let mut candidate = Candidate {
         entries: BTreeMap::new(),
         blobs: BTreeMap::new(),
@@ -447,7 +572,10 @@ fn combine(
             path,
             MergeConflict {
                 versions: None,
-                shapes: ordinary.then_some(shapes),
+                paths: ordinary.then_some(PathChoices {
+                    kind: PathConflict::FileDirectory,
+                    alternatives: shapes,
+                }),
             },
         );
         if candidate.conflicts.len() > limits.max_entries.min(MAX_PATHS) {
@@ -455,6 +583,18 @@ fn combine(
         }
     }
     let structural: Vec<_> = candidate.conflicts.keys().cloned().collect();
+    let renames = if left_moves || right_moves {
+        rename_conflicts([&base, &ours, &theirs], added, &structural, limits, ctx)?
+    } else {
+        BTreeMap::new()
+    };
+    let renamed_paths: BTreeSet<_> = renames
+        .values()
+        .filter_map(|conflict| conflict.paths.as_ref())
+        .flat_map(|choices| choices.alternatives.iter().flat_map(Entries::keys))
+        .cloned()
+        .collect();
+    candidate.conflicts.extend(renames);
     let paths: BTreeSet<_> = base
         .keys()
         .chain(ours.keys())
@@ -462,7 +602,7 @@ fn combine(
         .collect();
     for path in paths {
         ctx.check()?;
-        if structural.iter().any(|root| contains_path(root, path)) {
+        if renamed_paths.contains(path) || structural.iter().any(|root| contains_path(root, path)) {
             continue;
         }
         let (before, left, right) = (base.get(path), ours.get(path), theirs.get(path));
@@ -501,7 +641,7 @@ fn combine(
                     path.clone(),
                     MergeConflict {
                         versions: Some(versions),
-                        shapes: None,
+                        paths: None,
                     },
                 );
                 continue;
@@ -516,7 +656,7 @@ fn combine(
                 path.clone(),
                 MergeConflict {
                     versions: None,
-                    shapes: None,
+                    paths: None,
                 },
             );
             continue;
@@ -532,7 +672,7 @@ fn combine(
             path.to_vec(),
             MergeConflict {
                 versions: None,
-                shapes: None,
+                paths: None,
             },
         );
     }
@@ -741,15 +881,18 @@ fn prepare(
                 if conflicts.values().any(|conflict| !conflict.can_resolve())
                     || conflicts.iter().any(|(path, conflict)| {
                         conflict
-                            .shapes
+                            .paths
                             .as_ref()
-                            .is_some_and(|shapes| !shapes.contains(&subtree(&stored, path)))
+                            .is_some_and(|choices| !choices.matches(path, &stored))
                     })
                     || stored.iter().any(|(path, entry)| {
                         if conflicts.contains_key(path) {
                             entry.mode != 0o100644
                         } else if conflicts.iter().any(|(root, conflict)| {
-                            conflict.shapes.is_some() && contains_path(root, path)
+                            conflict
+                                .paths
+                                .as_ref()
+                                .is_some_and(|choices| choices.covers(root, path))
                         }) {
                             false
                         } else {
@@ -773,11 +916,11 @@ fn prepare(
                             return Err(Error::Unsupported);
                         }
                         let choice = choices.remove(path).ok_or(Error::Stale)?;
-                        if let Some(shapes) = &conflict.shapes {
+                        if let Some(paths) = &conflict.paths {
                             let MergeResolution::Use(side) = choice else {
                                 return Err(Error::Unsupported);
                             };
-                            entries.extend(shapes[side as usize].clone());
+                            entries.extend(paths.alternatives[side as usize].clone());
                             continue;
                         }
                         let bytes = match choice {

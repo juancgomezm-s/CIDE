@@ -1198,7 +1198,7 @@ mod tests {
                 let conflict = draft.conflict(b"ruta").unwrap();
                 assert!(conflict.is_file_directory());
                 let paths = conflict
-                    .shape_paths(MergeSide::Incoming)
+                    .version_paths(MergeSide::Incoming)
                     .unwrap()
                     .collect::<Vec<_>>();
                 let expected: &[u8] = if old_file {
@@ -1271,6 +1271,143 @@ mod tests {
                 );
                 assert!(!git.join(crate::branch_checkout::JOURNAL_NAME).exists());
             }
+        }
+
+        #[test]
+        fn merge_competing_renames_publish_one_path_and_resume_safely() {
+            use crate::local_merge::{MergeResolution, MergeSide, prepare_resolved_merge};
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            let fixture = Fixture::new();
+            let (repo, _, _) = scenario(&fixture, false, b"original");
+            let git = fixture.git();
+            let bytes = b"contenido del renombre";
+            let blob = repo.write_blob(bytes).unwrap().detach();
+            let tree = |names: &[&str]| {
+                repo.write_object(Tree {
+                    entries: names
+                        .iter()
+                        .map(|name| Entry {
+                            filename: (*name).into(),
+                            mode: EntryKind::Blob.into(),
+                            oid: blob,
+                        })
+                        .collect(),
+                })
+                .unwrap()
+                .detach()
+            };
+            let base = commit_at_tree(&repo, tree(&["origen.txt"]), &[], "base");
+            let active = commit_at_tree(&repo, tree(&["actual.txt"]), &[base], "actual");
+            let incoming = commit_at_tree(&repo, tree(&["entrante.txt"]), &[base], "entrante");
+            fs::write(git.join("refs/heads/activa"), format!("{active}\n")).unwrap();
+            fs::write(git.join("refs/heads/entrante"), format!("{incoming}\n")).unwrap();
+            let from = fixture.root.join("actual.txt");
+            let to = fixture.root.join("entrante.txt");
+            fs::write(&from, bytes).unwrap();
+            let mut index = gix::index::State::new(repo.object_hash());
+            index.dangerously_push_entry(
+                Default::default(),
+                blob,
+                gix::index::entry::Flags::empty(),
+                gix::index::entry::Mode::FILE,
+                b"actual.txt".as_bstr(),
+            );
+            gix::index::File::from_state(index, git.join("index"))
+                .write(Default::default())
+                .unwrap();
+
+            let draft = review(&fixture, incoming).unwrap();
+            assert_eq!(draft.rows.len(), 1);
+            let conflict = draft.conflict(b"origen.txt").unwrap();
+            assert!(conflict.is_rename());
+            for (side, path) in [
+                (MergeSide::Base, b"origen.txt".as_slice()),
+                (MergeSide::Current, b"actual.txt".as_slice()),
+                (MergeSide::Incoming, b"entrante.txt".as_slice()),
+            ] {
+                assert_eq!(
+                    conflict.version_paths(side).unwrap().collect::<Vec<_>>(),
+                    [path]
+                );
+            }
+            let prepare = |side| {
+                prepare_resolved_merge(
+                    draft.resolution_review().unwrap(),
+                    std::collections::BTreeMap::from([(
+                        b"origen.txt".to_vec(),
+                        MergeResolution::Use(side),
+                    )]),
+                    || false,
+                )
+            };
+            assert!(prepare(MergeSide::Current).unwrap().rows.is_empty());
+            assert!(
+                prepare(MergeSide::Base)
+                    .unwrap()
+                    .rows
+                    .iter()
+                    .any(|row| row.path == b"origen.txt")
+            );
+            fs::write(&to, b"archivo local").unwrap();
+            assert!(prepare(MergeSide::Incoming).is_err());
+            assert_eq!(fs::read(&to).unwrap(), b"archivo local");
+            fs::remove_file(&to).unwrap();
+
+            let plan = prepare(MergeSide::Incoming).unwrap();
+            fs::write(&from, b"edicion posterior").unwrap();
+            assert!(apply_merge(plan, || false).is_err());
+            assert_eq!(fs::read(&from).unwrap(), b"edicion posterior");
+            fs::write(&from, bytes).unwrap();
+            let plan = prepare(MergeSide::Incoming).unwrap();
+            let result = plan.result().unwrap();
+            assert!(apply_merge(plan, || !from.exists()).is_err());
+            fs::write(&to, b"creado durante la recuperacion").unwrap();
+            assert!(review(&fixture, incoming).is_err());
+            assert_eq!(fs::read(&to).unwrap(), b"creado durante la recuperacion");
+            fs::remove_file(&to).unwrap();
+            let resumed = review(&fixture, incoming).unwrap();
+            assert!(resumed.recovering());
+            assert_eq!(apply_merge(resumed, || false).unwrap().id, result);
+            assert_eq!(fs::read(&to).unwrap(), bytes);
+            assert!(!from.exists());
+            assert!(!fixture.root.join("origen.txt").exists());
+            assert_eq!(
+                fs::read(fixture.root.join("sin-seguimiento")).unwrap(),
+                b"archivo privado"
+            );
+            let commit = repo.find_commit(result).unwrap();
+            let result_tree = commit.tree().unwrap();
+            let paths = result_tree
+                .iter()
+                .map(|entry| entry.unwrap().filename().to_vec())
+                .collect::<Vec<_>>();
+            assert_eq!(paths, [b"entrante.txt".to_vec()]);
+
+            // A copied blob leaves two plausible destinations, so the
+            // resolver must not offer an arbitrary selection.
+            let ambiguous = commit_at_tree(
+                &repo,
+                tree(&["copia-a.txt", "copia-b.txt"]),
+                &[base],
+                "copia",
+            );
+            fs::write(git.join("refs/heads/activa"), format!("{active}\n")).unwrap();
+            fs::write(git.join("refs/heads/entrante"), format!("{ambiguous}\n")).unwrap();
+            let draft = review(&fixture, ambiguous).unwrap();
+            assert!(draft.resolution_review().is_none());
+
+            let deleted = commit_at_tree(&repo, tree(&[]), &[base], "borrado");
+            fs::write(git.join("refs/heads/entrante"), format!("{deleted}\n")).unwrap();
+            let draft = review(&fixture, deleted).unwrap();
+            let conflict = draft.conflict(b"origen.txt").unwrap();
+            assert!(conflict.is_rename());
+            assert_eq!(
+                conflict.version_paths(MergeSide::Incoming).unwrap().count(),
+                0
+            );
         }
 
         #[test]

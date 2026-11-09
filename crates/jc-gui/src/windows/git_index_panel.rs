@@ -581,6 +581,77 @@ mod tests {
         wait(&mut state, |s| !s.git_commit.busy());
         assert!(state.git_commit.view().is_none(), "{}", state.status);
         assert_eq!(fs::read(child).unwrap(), b"carpeta entrante\n");
+
+        let previous = run(&["rev-parse", "HEAD"]);
+        let actual_path = fixture.root.join("nombre-actual.txt");
+        let incoming_path = fixture.root.join("nombre-entrante.txt");
+        fs::write(&actual_path, b"mismo contenido\n").unwrap();
+        let blob = run(&["hash-object", "-w", "--no-filters", "nombre-actual.txt"]);
+        let version = |path: &str, parent: &str| {
+            run(&["read-tree", &previous]);
+            run(&[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("100644,{blob},{path}"),
+            ]);
+            let tree = run(&["write-tree"]);
+            run(&["commit-tree", &tree, "-p", parent, "-m", path])
+        };
+        let base = version("nombre-base.txt", &previous);
+        let incoming = version("nombre-entrante.txt", &base);
+        let actual = version("nombre-actual.txt", &base);
+        run(&["update-ref", "refs/heads/renombre", &incoming]);
+        run(&["update-ref", "HEAD", &actual]);
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x74);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        state.key(b'R' as usize);
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama renombre"))
+            .unwrap();
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'M' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        state.key(0x0d);
+        for name in [
+            "nombre-base.txt",
+            "nombre-actual.txt",
+            "nombre-entrante.txt",
+        ] {
+            let view = state.git_commit.view().unwrap();
+            let text = view
+                .merge_file()
+                .unwrap()
+                .present(view.merge_conflicts().unwrap(), 100, 20);
+            assert_eq!(text.rows[0].1, name);
+            if name != "nombre-entrante.txt" {
+                state.key(0x09);
+            }
+        }
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(b'U' as usize);
+        state.key(0x0d);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state
+            .git_commit
+            .view()
+            .unwrap()
+            .can_return_to_merge_choices());
+        assert!(!incoming_path.exists());
+        assert!(actual_path.exists());
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert_eq!(fs::read(incoming_path).unwrap(), b"mismo contenido\n");
+        assert!(!actual_path.exists());
     }
 
     #[test]

@@ -492,6 +492,11 @@ impl State {
                     "Resuelto"
                 } else if plan
                     .conflict(&row.path)
+                    .is_some_and(|conflict| conflict.is_rename())
+                {
+                    "Renombre"
+                } else if plan
+                    .conflict(&row.path)
                     .is_some_and(|conflict| conflict.is_file_directory())
                 {
                     "Archivo/carpeta"
