@@ -62,7 +62,7 @@ interrumpida se reanuda, usa ese mismo árbol, incluidas las ediciones del
 borrador.
 
 Si falla una publicación después de crear el registro de recuperación, elige
-la misma rama entrante para **Reanudar fusión**, o usa **Abortar fusión** desde
+la misma rama entrante para **Reanudar**, o usa **Abortar** desde
 el grafo (**A** en GUI y TUI). Mientras el merge escribe, **Esc** pide que se
 detenga en el siguiente punto seguro. Si queda pendiente, **Intro** abre la
 revisión del aborto. La revisión enumera las rutas que se revertirán e indica
@@ -85,9 +85,9 @@ quedan bloqueadas mientras exista el registro. Si faltan pruebas de propiedad
 del cambio, por ejemplo en una fusión anterior a esta función o cuando falta
 un archivo y su ausencia también podría ser una eliminación local, CIDE
 conserva los respaldos y se detiene. El comando opera sobre fusiones pendientes
-iniciadas en CIDE. El reflog de la rama y el de HEAD registran los movimientos
-cuando están habilitados. El estado Git, el grafo y el explorador se actualizan
-al terminar.
+iniciadas en CIDE y sobre el cherry-pick descrito abajo. El reflog de la rama y
+el de HEAD registran los movimientos cuando están habilitados. El estado Git,
+el grafo y el explorador se actualizan al terminar.
 
 El flujo requiere un repositorio ordinario de Windows, una rama activa, un
 índice presente y rutas admitidas por la transacción de archivos. El recorrido
@@ -140,3 +140,35 @@ publicar el índice y mover la rama, la reanudación de un aborto interrumpido,
 las dos transiciones de archivo y carpeta, y la protección de una edición
 posterior y de un archivo ajeno con contenido idéntico. Las pruebas usaron
 repositorios temporales en segundo plano.
+
+## Cherry-pick
+
+En **Git → Grafo**, abre la rama o etiqueta de origen desde **Referencias**.
+Selecciona el commit y pulsa **P** o el botón **Cherry-pick** de la GUI.
+**Intro** muestra el origen, la rama activa y las rutas que cambiarían.
+Confirma con **Ctrl+Intro** en la GUI o **F2** en la TUI.
+
+CIDE aplica únicamente la diferencia entre el commit elegido y su padre.
+Para un commit raíz, usa un árbol vacío como base. El resultado tiene un solo
+padre, el commit activo al revisar. Conserva el autor y el mensaje del origen
+y usa la identidad local para registrar quién publica. Si el resultado no
+cambia el árbol activo, no crea un commit vacío. Los commits con varios
+padres requieren un flujo de elección de padre principal que aún está pendiente.
+
+Si hay conflictos, usa las mismas vistas de **Base**, **Actual**, **Entrante**
+y **Resultado** de la fusión. Desde la lista de conflictos, **Esc** cierra
+el borrador sin escribir. Si la publicación confirmada se interrumpe después
+de empezar a escribir, pulsa **A** desde el grafo para revisar y confirmar el aborto, o
+vuelve a seleccionar el mismo commit para reanudar. La operación conserva los
+cambios preparados y de trabajo ajenos a las rutas afectadas. Si detecta una
+edición posterior sobre una ruta que debe revertir, deja el registro y los
+respaldos disponibles.
+
+La validación local de Windows pasó formato, Clippy y 906 pruebas con
+`python scripts/check-local.py --steps fmt clippy test --jobs 2`. Los tres
+auxiliares se ejecutaron desde sus pruebas padre. La GUI verificó el descarte
+del conflicto sin escrituras y la confirmación del cherry-pick. La TUI
+verificó el aborto tras una escritura parcial. El núcleo comprobó el commit
+raíz, el delta seleccionado, la conservación del autor, mensaje y cambios
+preparados, y la recuperación tras publicar el índice. Las pruebas se
+ejecutaron en segundo plano con repositorios temporales.

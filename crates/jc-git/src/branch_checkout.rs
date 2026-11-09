@@ -28,6 +28,7 @@ pub(super) struct Journal {
     pub from: ObjectId,
     pub to: ObjectId,
     pub incoming: Option<ObjectId>,
+    pub cherry_pick: bool,
     pub aborting: bool,
     old_index: ObjectId,
     new_index: ObjectId,
@@ -46,10 +47,12 @@ impl Journal {
             return Err(Error::Unsupported);
         }
         let mut lines = std::str::from_utf8(&bytes).map_err(engine)?.lines();
-        let (merge, aborting) = match lines.next() {
-            Some("CIDE-SWITCH-1") => (false, false),
-            Some("CIDE-MERGE-1") => (true, false),
-            Some("CIDE-MERGE-ABORT-1") => (true, true),
+        let (integration, cherry_pick, aborting) = match lines.next() {
+            Some("CIDE-SWITCH-1") => (false, false, false),
+            Some("CIDE-MERGE-1") => (true, false, false),
+            Some("CIDE-MERGE-ABORT-1") => (true, false, true),
+            Some("CIDE-PICK-1") => (true, true, false),
+            Some("CIDE-PICK-ABORT-1") => (true, true, true),
             _ => return Err(Error::Unsupported),
         };
         let source = lines.next().ok_or(Error::Unsupported)?.to_owned();
@@ -58,7 +61,7 @@ impl Journal {
             ObjectId::from_hex(lines.next().ok_or(Error::Unsupported)?.as_bytes()).map_err(engine)
         };
         let (from, to, old_index, new_index) = (oid()?, oid()?, oid()?, oid()?);
-        let incoming = if merge { Some(oid()?) } else { None };
+        let incoming = if integration { Some(oid()?) } else { None };
         let nonce = lines.next().ok_or(Error::Unsupported)?.to_owned();
         if nonce.is_empty()
             || nonce.len() > 64
@@ -73,6 +76,7 @@ impl Journal {
             from,
             to,
             incoming,
+            cherry_pick,
             aborting,
             old_index,
             new_index,
@@ -83,12 +87,12 @@ impl Journal {
     fn bytes(&self) -> Vec<u8> {
         let mut data = format!(
             "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
-            if self.aborting {
-                "CIDE-MERGE-ABORT-1"
-            } else if self.incoming.is_some() {
-                "CIDE-MERGE-1"
-            } else {
-                "CIDE-SWITCH-1"
+            match (self.incoming.is_some(), self.cherry_pick, self.aborting) {
+                (true, true, true) => "CIDE-PICK-ABORT-1",
+                (true, true, false) => "CIDE-PICK-1",
+                (true, false, true) => "CIDE-MERGE-ABORT-1",
+                (true, false, false) => "CIDE-MERGE-1",
+                _ => "CIDE-SWITCH-1",
             },
             self.source,
             self.destination,
@@ -311,6 +315,7 @@ pub(super) struct Transition<'a> {
 
 pub(super) struct MergeCheckout<'a> {
     pub incoming: ObjectId,
+    pub cherry_pick: bool,
     pub entries: &'a BTreeMap<Vec<u8>, revision::Entry>,
     pub blobs: &'a BTreeMap<ObjectId, Vec<u8>>,
 }
@@ -744,7 +749,8 @@ impl Checkout {
                     destination: branches.1.into(),
                     from: commits.0,
                     to: commits.1,
-                    incoming: merge.map(|merge| merge.incoming),
+                    incoming: merge.as_ref().map(|merge| merge.incoming),
+                    cherry_pick: merge.is_some_and(|merge| merge.cherry_pick),
                     aborting: false,
                     old_index: current_index,
                     new_index,

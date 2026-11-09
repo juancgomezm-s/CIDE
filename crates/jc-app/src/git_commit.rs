@@ -10,8 +10,8 @@ pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
 use jc_git::local_merge::{
-    apply_merge, apply_merge_abort, prepare_merge, prepare_merge_abort, prepare_resolved_merge,
-    MergeAbortPlan, MergeKind, MergePlan,
+    apply_merge, apply_merge_abort, prepare_cherry_pick, prepare_merge, prepare_merge_abort,
+    prepare_resolved_merge, MergeAbortPlan, MergeKind, MergePlan,
 };
 use jc_git::local_pair::SourceIdentity;
 pub use jc_git::ref_write::RefKind;
@@ -67,6 +67,7 @@ pub enum WriteDraft {
     ChangeReference(ReferenceTarget, bool),
     SwitchBranch(ReferenceTarget),
     MergeBranch(ReferenceTarget),
+    CherryPick(String),
     AbortMerge,
     Restore(Arc<RevisionComparison>),
 }
@@ -82,24 +83,28 @@ impl WriteDraft {
             Self::ChangeReference(_, false)
                 | Self::SwitchBranch(_)
                 | Self::MergeBranch(_)
+                | Self::CherryPick(_)
                 | Self::AbortMerge
                 | Self::Restore(_)
         )
     }
 
+    fn publishes_integration(&self) -> bool {
+        matches!(self, Self::MergeBranch(_) | Self::CherryPick(_))
+    }
+
     fn refreshes_graph(&self) -> bool {
         self.is_reference()
-            || matches!(
-                self,
-                Self::SwitchBranch(_) | Self::MergeBranch(_) | Self::AbortMerge
-            )
+            || self.publishes_integration()
+            || matches!(self, Self::SwitchBranch(_) | Self::AbortMerge)
     }
 
     fn refreshes_files(&self) -> bool {
-        matches!(
-            self,
-            Self::Restore(_) | Self::SwitchBranch(_) | Self::MergeBranch(_) | Self::AbortMerge
-        )
+        self.publishes_integration()
+            || matches!(
+                self,
+                Self::Restore(_) | Self::SwitchBranch(_) | Self::AbortMerge
+            )
     }
 }
 
@@ -158,7 +163,8 @@ impl CommitView {
             },
             WriteDraft::SwitchBranch(_) => "Cambiar rama",
             WriteDraft::MergeBranch(_) => "Fusionar rama",
-            WriteDraft::AbortMerge => "Abortar fusión",
+            WriteDraft::CherryPick(_) => "Cherry-pick",
+            WriteDraft::AbortMerge => "Abortar operación Git",
             WriteDraft::Restore(comparison) => {
                 restore_label(comparison).unwrap_or("Restaurar archivo")
             }
@@ -175,7 +181,8 @@ impl CommitView {
             WriteDraft::Restore(_) => "Comprobando el índice y el archivo… · Esc cancela",
             WriteDraft::SwitchBranch(_) => "Comprobando ambas ramas… · Esc cancela",
             WriteDraft::MergeBranch(_) => "Calculando la fusión local… · Esc cancela",
-            WriteDraft::AbortMerge => "Revisando cambios de la fusión… · Esc cancela",
+            WriteDraft::CherryPick(_) => "Calculando el cherry-pick… · Esc cancela",
+            WriteDraft::AbortMerge => "Revisando cambios de la operación… · Esc cancela",
             _ => "Comprobando referencia… · Esc cancela",
         }
     }
@@ -284,11 +291,11 @@ impl CommitController {
     }
     pub fn merge_publication_hint(&self) -> Option<&'static str> {
         let job = self.job.as_ref().filter(|job| job.applying)?;
-        matches!(self.view.as_ref()?.draft, WriteDraft::MergeBranch(_)).then(|| {
+        self.view.as_ref()?.draft.publishes_integration().then(|| {
             if job.cancelled.load(Ordering::Acquire) {
-                "Deteniendo la fusión en un punto seguro…"
+                "Deteniendo la operación en un punto seguro…"
             } else {
-                "Publicando fusión… · Esc detiene para revisar el aborto"
+                "Publicando cambios… · Esc detiene para revisar el aborto"
             }
         })
     }
@@ -332,6 +339,11 @@ impl CommitController {
     pub fn open_merge_abort(&mut self, root: PathBuf) {
         if cfg!(windows) {
             self.open_write(root, None, WriteDraft::AbortMerge);
+        }
+    }
+    pub fn open_cherry_pick(&mut self, root: PathBuf, commit: String) {
+        if cfg!(windows) {
+            self.open_write(root, None, WriteDraft::CherryPick(commit));
         }
     }
     pub fn open_restore(&mut self, root: PathBuf, comparison: Arc<RevisionComparison>) {
@@ -644,17 +656,25 @@ impl CommitController {
                             }),
                         ),
                         Some(WritePlan::Merge(plan)) => {
+                            let action = if plan.is_cherry_pick() {
+                                "Cherry-pick publicado"
+                            } else {
+                                "Fusión local publicada"
+                            };
                             Completion::Applied(apply_merge(*plan, cancelled).map(|publication| {
-                                publication.reflog_warning.unwrap_or_else(|| {
-                                    format!("Fusión local publicada · {}", publication.id)
-                                })
+                                publication
+                                    .reflog_warning
+                                    .unwrap_or_else(|| format!("{action} · {}", publication.id))
                             }))
                         }
                         Some(WritePlan::MergeAbort(plan)) => {
+                            let action = if plan.is_cherry_pick() {
+                                "Cherry-pick abortado"
+                            } else {
+                                "Fusión abortada"
+                            };
                             Completion::Applied(apply_merge_abort(*plan, cancelled).map(|result| {
-                                result
-                                    .reflog_warning
-                                    .unwrap_or_else(|| "Fusión abortada".into())
+                                result.reflog_warning.unwrap_or_else(|| action.into())
                             }))
                         }
                         None => Completion::Review(match (draft, replaces) {
@@ -682,6 +702,10 @@ impl CommitController {
                             .map(|plan| WritePlan::BranchSwitch(Box::new(plan))),
                             (WriteDraft::MergeBranch(target), _) => {
                                 prepare_merge(&root, &target.name, &target.oid, LIMITS, cancelled)
+                                    .map(|plan| WritePlan::Merge(Box::new(plan)))
+                            }
+                            (WriteDraft::CherryPick(commit), _) => {
+                                prepare_cherry_pick(&root, &commit, LIMITS, cancelled)
                                     .map(|plan| WritePlan::Merge(Box::new(plan)))
                             }
                             (WriteDraft::AbortMerge, _) => {
@@ -766,9 +790,7 @@ impl CommitController {
                     self.notice = Some((root.clone(), message.clone()));
                     self.view = None;
                 } else {
-                    if matches!(view.draft, WriteDraft::MergeBranch(_))
-                        && job.cancelled.load(Ordering::Acquire)
-                    {
+                    if view.draft.publishes_integration() && job.cancelled.load(Ordering::Acquire) {
                         view.draft = WriteDraft::AbortMerge;
                         view.saved_merge_review = None;
                         view.merge_draft = MergeDraft::default();

@@ -308,6 +308,59 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
         b"mismo contenido"
     );
     assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), original);
+
+    key(&mut app, KeyCode::F(5));
+    wait_for(&mut app, |app| {
+        app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    });
+    key(&mut app, KeyCode::Char('r'));
+    let row = app.git_revision.graph().unwrap();
+    let ordinal = (1..row.reference_count())
+        .find(|&row_index| row.reference_label(row_index) == Some("Rama aborto"))
+        .unwrap();
+    key(&mut app, KeyCode::Home);
+    for _ in 0..ordinal {
+        key(&mut app, KeyCode::Down);
+    }
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| {
+        app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    });
+    assert_eq!(
+        app.git_revision.graph().unwrap().entries[0].commit.id,
+        incoming
+    );
+    key(&mut app, KeyCode::Char('p'));
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let view = app.git_commit.view().unwrap();
+    let plan = view
+        .merge_review()
+        .unwrap_or_else(|| panic!("{:?}", view.error));
+    assert!(plan.is_cherry_pick() && plan.can_apply());
+    assert!(!added.exists());
+    let block = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(fixture.path("origen.txt"))
+        .unwrap();
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    drop(block);
+    assert!(pending.exists() && added.exists(), "{}", app.status);
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Char('a'));
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let review = app.git_commit.view().unwrap();
+    assert!(review.merge_abort_review().unwrap().is_cherry_pick());
+    assert!(added.exists());
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().is_none(), "{}", app.status);
+    assert!(!pending.exists() && !added.exists());
+    assert_eq!(fs::read(&index).unwrap(), before);
+    assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), original);
 }
 
 fn installed_git() -> PathBuf {

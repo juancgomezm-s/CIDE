@@ -377,7 +377,7 @@ impl State {
             } else if let Some(plan) = view.merge_review() {
                 if plan.can_apply() {
                     if view.can_return_to_merge_choices() {
-                        "Ctrl+Intro confirma fusión · Esc vuelve a las resoluciones".into()
+                        "Ctrl+Intro confirma · Esc vuelve a las resoluciones".into()
                     } else {
                         "↑↓ archivos · Ctrl+Intro confirma · Esc cancela".into()
                     }
@@ -462,7 +462,16 @@ impl State {
             }
         } else if let Some(plan) = view.merge_abort_review() {
             f.summary = vec![
-                format!("Fusión pendiente · {} → {}", plan.incoming(), plan.active()),
+                format!(
+                    "{} pendiente · {} → {}",
+                    if plan.is_cherry_pick() {
+                        "Cherry-pick"
+                    } else {
+                        "Fusión"
+                    },
+                    plan.incoming(),
+                    plan.active()
+                ),
                 format!("{} archivos que se revertirán", plan.rows.len()),
             ];
             f.details_top = p(132);
@@ -500,8 +509,12 @@ impl State {
             ("Confirmar aborto", 12)
         } else if let Some(plan) = view.merge_review() {
             f.summary = vec![
-                format!("{} → {}", plan.incoming(), plan.active()),
-                plan.kind.label().into(),
+                if plan.is_cherry_pick() {
+                    format!("Rama activa · {}", plan.active())
+                } else {
+                    format!("{} → {}", plan.incoming(), plan.active())
+                },
+                plan.label().into(),
             ];
             let (active, incoming) = plan.tips();
             f.details_top = p(132);
@@ -575,7 +588,9 @@ impl State {
                 if conflicts {
                     "Revisar resultado"
                 } else if plan.recovering() {
-                    "Reanudar fusión"
+                    "Reanudar"
+                } else if plan.is_cherry_pick() {
+                    "Confirmar cherry-pick"
                 } else {
                     "Confirmar fusión"
                 },
@@ -701,6 +716,9 @@ impl State {
         } else if let WriteDraft::MergeBranch(target) = &view.draft {
             f.summary = vec![format!("Rama a incorporar en la activa · {}", target.name)];
             ("Revisar fusión", 12)
+        } else if let WriteDraft::CherryPick(target) = &view.draft {
+            f.summary = vec![format!("Commit de origen · {target}")];
+            ("Revisar cherry-pick", 12)
         } else if matches!(view.draft, WriteDraft::AbortMerge) {
             f.summary = vec!["Revisa qué se restaurará antes de abortar".into()];
             ("Revisar aborto", 12)
@@ -734,8 +752,17 @@ impl State {
             let r = rect(left, top, left + p(85), top + p(24));
             if f.buttons.iter().all(|(b, _, _)| r.left >= b.right) {
                 let back = view.can_return_to_merge_choices();
-                f.buttons
-                    .push((r, if back { "Volver" } else { "Cancelar" }.into(), false));
+                let label = if back {
+                    "Volver"
+                } else if view
+                    .merge_conflicts()
+                    .is_some_and(|plan| plan.is_cherry_pick())
+                {
+                    "Abortar"
+                } else {
+                    "Cancelar"
+                };
+                f.buttons.push((r, label.into(), false));
                 f.hits.actions.push((
                     r,
                     if back {

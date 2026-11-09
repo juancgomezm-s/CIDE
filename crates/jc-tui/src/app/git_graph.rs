@@ -4,7 +4,9 @@ use super::{
     TuiApp,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
-use jc_app::{git_graph::GraphView, BottomPanel, PrimaryFocus, SidebarView};
+use jc_app::{
+    git_graph::GraphView, git_revision::GitRevisionState, BottomPanel, PrimaryFocus, SidebarView,
+};
 
 impl TuiApp {
     pub(super) fn graph_showing(&self) -> bool {
@@ -104,7 +106,9 @@ impl TuiApp {
                     }
                 }
             }
-            KeyCode::Char('b' | 'B' | 't' | 'T') if view.reference_selected.is_none() => {
+            KeyCode::Char('b' | 'B' | 't' | 'T' | 'p' | 'P')
+                if view.reference_selected.is_none() =>
+            {
                 if self.git_index.state() == jc_app::git_index::IndexState::Applying {
                     return true;
                 }
@@ -114,6 +118,15 @@ impl TuiApp {
                     .and_then(|graph| graph.entries.get(view.selected))
                     .map(|entry| entry.commit.id.clone());
                 if let (Some(root), Some(target)) = (self.project_root.clone(), target) {
+                    if matches!(key.code, KeyCode::Char('p' | 'P')) {
+                        if self.git_revision.state() == GitRevisionState::Ready
+                            && key.kind == KeyEventKind::Press
+                        {
+                            let _ = self.git_index.discard_review();
+                            self.git_commit.open_cherry_pick(root, target);
+                        }
+                        return true;
+                    }
                     let kind = if matches!(key.code, KeyCode::Char('b' | 'B')) {
                         jc_app::git_commit::RefKind::Branch
                     } else {

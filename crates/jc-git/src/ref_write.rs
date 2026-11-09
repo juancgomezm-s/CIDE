@@ -878,8 +878,8 @@ mod tests {
     mod local_merge {
         use super::*;
         use crate::local_merge::{
-            MergeKind, MergePlan, apply_merge, apply_merge_abort, prepare_merge,
-            prepare_merge_abort,
+            MergeKind, MergePlan, apply_merge, apply_merge_abort, prepare_cherry_pick,
+            prepare_merge, prepare_merge_abort,
         };
         use std::io::Write;
 
@@ -1542,6 +1542,169 @@ mod tests {
             );
             assert!(!pending.exists());
             assert!(abort().is_err());
+        }
+
+        #[test]
+        fn cherry_pick_applies_only_the_selected_delta_and_preserves_author_and_message() {
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            let fixture = Fixture::new();
+            let (repo, active, prior) =
+                scenario(&fixture, true, b"uno\r\nDOS AJENO\r\ntres\r\nfin");
+            let blob = repo
+                .write_blob(b"uno\r\nDOS AJENO\r\ntres\r\nFIN")
+                .unwrap()
+                .detach();
+            let tree = repo
+                .write_object(Tree {
+                    entries: vec![Entry {
+                        mode: EntryKind::Blob.into(),
+                        filename: "a.txt".into(),
+                        oid: blob,
+                    }],
+                })
+                .unwrap()
+                .detach();
+            let selected = commit_at_tree(&repo, tree, &[prior], "Mensaje original\n\nDetalle");
+            let pick =
+                || prepare_cherry_pick(&fixture.root, &selected.to_string(), limits(), || false);
+            let index = fixture.git().join("index");
+            let before = fs::read(&index).unwrap();
+            let staged = repo
+                .open_index()
+                .unwrap()
+                .entry_by_path(b"local".as_bstr())
+                .unwrap()
+                .id;
+            let plan = pick().unwrap();
+            assert!(plan.is_cherry_pick());
+            assert_eq!(plan.rows.len(), 1);
+            assert_eq!(fs::read(&index).unwrap(), before);
+            let id = apply_merge(plan, || false).unwrap().id;
+            assert_ne!(id, selected);
+            assert_eq!(
+                fs::read(fixture.root.join("a.txt")).unwrap(),
+                b"UNO\r\ndos\r\ntres\r\nFIN"
+            );
+            let applied = repo.find_commit(id).unwrap();
+            let original = repo.find_commit(selected).unwrap();
+            assert_eq!(
+                applied
+                    .parent_ids()
+                    .map(|parent| parent.detach())
+                    .collect::<Vec<_>>(),
+                [active]
+            );
+            assert_eq!(
+                applied.decode().unwrap().author,
+                original.decode().unwrap().author
+            );
+            assert_eq!(
+                applied.decode().unwrap().message,
+                original.decode().unwrap().message
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+            assert_eq!(
+                repo.open_index()
+                    .unwrap()
+                    .entry_by_path(b"local".as_bstr())
+                    .unwrap()
+                    .id,
+                staged
+            );
+            assert!(
+                applied
+                    .tree()
+                    .unwrap()
+                    .lookup_entry_by_path("local")
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("sin-seguimiento")).unwrap(),
+                b"archivo privado"
+            );
+            assert_eq!(pick().unwrap().kind, MergeKind::UpToDate);
+            let merge = commit_at_tree(&repo, tree, &[active, selected], "fusión");
+            assert!(
+                prepare_cherry_pick(&fixture.root, &merge.to_string(), limits(), || false).is_err()
+            );
+
+            let tree = repo
+                .write_object(Tree {
+                    entries: vec![Entry {
+                        mode: EntryKind::Blob.into(),
+                        filename: "raiz.txt".into(),
+                        oid: blob,
+                    }],
+                })
+                .unwrap()
+                .detach();
+            let root = commit_at_tree(&repo, tree, &[], "Commit raíz");
+            let root_plan =
+                prepare_cherry_pick(&fixture.root, &root.to_string(), limits(), || false).unwrap();
+            assert_eq!(root_plan.rows[0].path, b"raiz.txt");
+            apply_merge(root_plan, || false).unwrap();
+            assert_eq!(
+                fs::read(fixture.root.join("raiz.txt")).unwrap(),
+                b"uno\r\nDOS AJENO\r\ntres\r\nFIN"
+            );
+        }
+
+        #[test]
+        fn cherry_pick_conflicts_are_read_only_and_interrupted_publication_can_be_aborted() {
+            use crate::local_merge::{MergeResolution, MergeSide, prepare_resolved_merge};
+            let fixture = Fixture::new();
+            let (_, active, selected) = scenario(&fixture, true, b"ENTRANTE\r\ndos\r\ntres\r\nfin");
+            let git = fixture.git();
+            let index = git.join("index");
+            let pending = git.join(crate::branch_checkout::JOURNAL_NAME);
+            let original = fs::read(&index).unwrap();
+            let file = fixture.root.join("a.txt");
+            let bytes = fs::read(&file).unwrap();
+            let pick =
+                || prepare_cherry_pick(&fixture.root, &selected.to_string(), limits(), || false);
+            let draft = pick().unwrap();
+            assert_eq!(draft.kind, MergeKind::Conflicts);
+            assert!(!draft.can_apply());
+            assert!(!pending.exists());
+            assert_eq!(fs::read(&index).unwrap(), original);
+            assert_eq!(fs::read(&file).unwrap(), bytes);
+            let resolve = |draft: MergePlan| {
+                prepare_resolved_merge(
+                    draft.resolution_review().unwrap(),
+                    std::collections::BTreeMap::from([(
+                        b"a.txt".to_vec(),
+                        MergeResolution::Use(MergeSide::Incoming),
+                    )]),
+                    || false,
+                )
+                .unwrap()
+            };
+            let plan = resolve(draft);
+            fs::write(&file, b"edicion local").unwrap();
+            assert!(apply_merge(plan, || false).is_err());
+            assert!(!pending.exists());
+            assert_eq!(fs::read(&file).unwrap(), b"edicion local");
+            fs::write(&file, &bytes).unwrap();
+            assert!(
+                apply_merge(resolve(pick().unwrap()), || fs::read(&index).unwrap()
+                    != original)
+                .is_err()
+            );
+            assert!(review(&fixture, selected).is_err());
+            assert!(pick().unwrap().recovering());
+            let abort = prepare_merge_abort(&fixture.root, limits(), || false).unwrap();
+            assert!(abort.is_cherry_pick() && abort.restores_index());
+            assert_eq!(apply_merge_abort(abort, || false).unwrap().id, active);
+            assert_eq!(fs::read(&index).unwrap(), original);
+            assert_eq!(fs::read(&file).unwrap(), bytes);
+            assert!(!pending.exists());
         }
     }
 

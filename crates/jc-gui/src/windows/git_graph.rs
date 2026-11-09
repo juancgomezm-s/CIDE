@@ -149,6 +149,32 @@ impl State {
         self.git_workspace.invalidate();
     }
 
+    pub(super) fn open_graph_cherry_pick(&mut self) {
+        let Some(view) = self
+            .git_workspace
+            .graph
+            .as_ref()
+            .filter(|view| view.showing && view.reference_selected.is_none())
+        else {
+            return;
+        };
+        if self.git_index.state() == jc_app::git_index::IndexState::Applying
+            || self.git_revision.state() != GitRevisionState::Ready
+        {
+            return;
+        }
+        let target = self
+            .git_revision
+            .graph()
+            .and_then(|graph| graph.entries.get(view.selected))
+            .map(|entry| entry.commit.id.clone());
+        if let (Some(root), Some(target)) = (self.project_root.clone(), target) {
+            let _ = self.git_index.discard_review();
+            self.git_commit.open_cherry_pick(root, target);
+            self.git_workspace.invalidate();
+        }
+    }
+
     fn graph_merge_target(&self) -> Option<&jc_app::git_commit::ReferenceTarget> {
         let row = self.git_workspace.graph.as_ref()?.reference_selected?;
         self.graph_branch_target()?;
@@ -253,6 +279,7 @@ impl State {
             0x43 if view.reference_selected.is_some() => self.open_graph_branch_switch(),
             0x4D if view.reference_selected.is_some() => self.open_graph_merge(),
             0x41 => self.open_graph_merge_abort(),
+            0x50 => self.open_graph_cherry_pick(),
             0x0d if view.reference_selected.is_some() => {
                 self.choose_graph_reference(view.selected_row())
             }
@@ -327,7 +354,7 @@ impl State {
         } else if references {
             "↑↓ seleccionar · Intro abrir referencia · Esc volver"
         } else {
-            "Intro abrir · R referencias · A abortar fusión · B rama · T etiqueta · N más · Esc volver"
+            "Intro abrir · P cherry-pick · A abortar · R referencias · B rama · T etiqueta · N más"
         }
         .into();
         let graph = self.git_revision.graph();
@@ -410,7 +437,7 @@ impl State {
                 },
             ),
             (
-                if references { 440 } else { 226 },
+                440,
                 if references {
                     "Renombrar"
                 } else {
@@ -423,7 +450,7 @@ impl State {
                 },
             ),
             (
-                if references { 547 } else { 333 },
+                547,
                 if references { "Eliminar" } else { "Crear rama" },
                 if references {
                     Intent::GraphChangeReference(false)
@@ -432,7 +459,7 @@ impl State {
                 },
             ),
             (
-                if references { 333 } else { 440 },
+                if references { 333 } else { 654 },
                 if references {
                     "Cambiar rama"
                 } else {
@@ -445,7 +472,8 @@ impl State {
                 },
             ),
             (226, "Fusionar rama", Intent::GraphMergeBranch),
-            (547, "Abortar fusión", Intent::GraphAbortMerge),
+            (226, "Cherry-pick", Intent::GraphCherryPick),
+            (333, "Abortar", Intent::GraphAbortMerge),
         ] {
             if matches!(intent, Intent::GraphNext)
                 && (references || !graph.is_some_and(|p| p.has_next()))
@@ -456,6 +484,8 @@ impl State {
                     && self.graph_branch_target().is_none()
                 || matches!(intent, Intent::GraphMergeBranch) && self.graph_merge_target().is_none()
                 || matches!(intent, Intent::GraphAbortMerge) && references
+                || matches!(intent, Intent::GraphCherryPick)
+                    && (references || graph.is_none_or(|page| page.entries.is_empty()))
                 || matches!(intent, Intent::GraphCreateReference(_))
                     && (references || graph.is_none_or(|page| page.entries.is_empty()))
             {

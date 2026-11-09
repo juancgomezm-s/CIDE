@@ -142,6 +142,7 @@ enum Intent {
     GraphChangeReference(bool),
     GraphSwitchBranch,
     GraphMergeBranch,
+    GraphCherryPick,
     GraphAbortMerge,
     GraphCreateReference(jc_app::git_commit::RefKind),
     HistoryParent,
@@ -956,6 +957,10 @@ impl State {
             }
             Some(Intent::GraphMergeBranch) => {
                 self.open_graph_merge();
+                Action::None
+            }
+            Some(Intent::GraphCherryPick) => {
+                self.open_graph_cherry_pick();
                 Action::None
             }
             Some(Intent::GraphAbortMerge) => {

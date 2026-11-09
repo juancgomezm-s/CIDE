@@ -304,7 +304,12 @@ impl TuiApp {
             }
         } else if let Some(plan) = view.merge_abort_review() {
             rows.push(format!(
-                "Fusión pendiente · {} → {}",
+                "{} pendiente · {} → {}",
+                if plan.is_cherry_pick() {
+                    "Cherry-pick"
+                } else {
+                    "Fusión"
+                },
                 plan.incoming(),
                 plan.active()
             ));
@@ -330,8 +335,12 @@ impl TuiApp {
         } else if let Some(plan) = view.merge_review() {
             let (active, incoming) = plan.tips();
             rows.extend([
-                format!("{} → {}", plan.incoming(), plan.active()),
-                plan.kind.label().into(),
+                if plan.is_cherry_pick() {
+                    format!("Rama activa · {}", plan.active())
+                } else {
+                    format!("{} → {}", plan.incoming(), plan.active())
+                },
+                plan.label().into(),
                 format!("Activa · {active}"),
                 format!("Entrante · {incoming}"),
             ]);
@@ -382,19 +391,19 @@ impl TuiApp {
                 },
             ));
             if plan.recovering() {
-                "↑↓ archivos · F2 reanuda la fusión · Esc cancela"
+                "↑↓ archivos · F2 reanuda · Esc cancela"
             } else if plan.can_apply() {
                 if view.can_return_to_merge_choices() {
-                    "F2 confirma fusión · Esc vuelve a resoluciones"
+                    "F2 confirma · Esc vuelve a resoluciones"
                 } else {
-                    "↑↓ archivos · F2 confirma la fusión · Esc cancela"
+                    "↑↓ archivos · F2 confirma · Esc cancela"
                 }
             } else if plan.rows.is_empty() {
                 "Esc vuelve"
             } else if view.all_merge_choices_saved() {
-                "Intro abre · F2 revisa el resultado · Esc cancela"
+                "Intro abre · F2 revisa el resultado · Esc aborta borrador"
             } else {
-                "↑↓ selecciona · Intro abre conflicto · Esc cancela"
+                "↑↓ selecciona · Intro abre conflicto · Esc aborta borrador"
             }
         } else if let Some(plan) = view.branch_switch_review() {
             rows.extend([
@@ -480,6 +489,9 @@ impl TuiApp {
             } else if let WriteDraft::MergeBranch(target) = &view.draft {
                 rows.push(format!("Rama a incorporar en la activa · {}", target.name));
                 "Intro revisa la fusión · Esc cancela"
+            } else if let WriteDraft::CherryPick(target) = &view.draft {
+                rows.push(format!("Commit de origen · {target}"));
+                "Intro revisa el cherry-pick · Esc cancela"
             } else if matches!(view.draft, WriteDraft::AbortMerge) {
                 rows.push("Revisa qué se restaurará antes de abortar".into());
                 "Intro revisa el aborto · Esc cancela"

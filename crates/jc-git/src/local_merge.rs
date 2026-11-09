@@ -142,12 +142,31 @@ pub enum MergeResolution {
     Edit(String),
 }
 
+#[derive(Clone)]
+enum Source {
+    Branch(FullName),
+    CherryPick(String),
+}
+
+impl Source {
+    fn label(&self) -> &str {
+        match self {
+            Self::Branch(name) => &name_text(name)[HEADS.len()..],
+            Self::CherryPick(id) => id,
+        }
+    }
+
+    fn is_cherry_pick(&self) -> bool {
+        matches!(self, Self::CherryPick(_))
+    }
+}
+
 /// Identity of the reviewed conflict set, independent of the frontend draft.
 pub struct MergeReview {
     repository: Identity,
     limits: Limits,
     active: FullName,
-    incoming: FullName,
+    source: Source,
     from: ObjectId,
     theirs: ObjectId,
     head_file: jc_fs::FileToken,
@@ -161,7 +180,7 @@ pub struct MergePlan {
     repository: Identity,
     limits: Limits,
     active: FullName,
-    incoming: FullName,
+    source: Source,
     from: ObjectId,
     theirs: ObjectId,
     result: Option<(ObjectId, ObjectId)>,
@@ -178,7 +197,21 @@ impl MergePlan {
         &name_text(&self.active)[HEADS.len()..]
     }
     pub fn incoming(&self) -> &str {
-        &name_text(&self.incoming)[HEADS.len()..]
+        self.source.label()
+    }
+    pub fn is_cherry_pick(&self) -> bool {
+        self.source.is_cherry_pick()
+    }
+    pub fn label(&self) -> &'static str {
+        if self.is_cherry_pick() {
+            match self.kind {
+                MergeKind::UpToDate => "Sin cambios que aplicar",
+                MergeKind::Conflicts => "Conflictos por resolver · borrador de cherry-pick",
+                _ => "Se creará un commit con los cambios seleccionados",
+            }
+        } else {
+            self.kind.label()
+        }
     }
     pub fn tips(&self) -> (ObjectId, ObjectId) {
         (self.from, self.theirs)
@@ -201,7 +234,7 @@ impl MergePlan {
                 repository: self.repository.clone(),
                 limits: self.limits,
                 active: self.active.clone(),
-                incoming: self.incoming.clone(),
+                source: self.source.clone(),
                 from: self.from,
                 theirs: self.theirs,
                 head_file: self.head_file.clone(),
@@ -249,7 +282,7 @@ fn refs(
     }
     let graph::Head::Attached { name, .. } = head else {
         return Err(Error::Engine(
-            "La fusión requiere una rama local activa".into(),
+            "La operación requiere una rama local activa".into(),
         ));
     };
     let short = name
@@ -532,14 +565,19 @@ fn rename_conflicts(
 
 fn combine(
     repo: &gix::Repository,
-    ids: [ObjectId; 3],
+    base_tree: Option<ObjectId>,
+    sides: [ObjectId; 2],
     limits: Limits,
     ctx: &Context<'_>,
 ) -> Result<Candidate, Error> {
     let mut budget = Budget::new(limits);
-    let [base, ours, theirs] =
-        ids.map(|id| revision::merge_tree_entries(repo, id, limits, &mut budget, ctx));
-    let (base, ours, theirs) = (base?, ours?, theirs?);
+    let base = base_tree
+        .map(|id| revision::merge_tree_entries(repo, id, limits, &mut budget, ctx))
+        .transpose()?
+        .unwrap_or_default();
+    let [ours, theirs] =
+        sides.map(|id| revision::merge_tree_entries(repo, id, limits, &mut budget, ctx));
+    let (ours, theirs) = (ours?, theirs?);
     let added = [&ours, &theirs].map(|side| side.keys().any(|path| !base.contains_key(path)));
     let [left_moves, right_moves] =
         [&ours, &theirs].map(|side| base.keys().any(|path| !side.contains_key(path)));
@@ -612,7 +650,7 @@ fn combine(
             && left != before
             && right != before
             && ((left_moves && left.is_none()) || (right_moves && right.is_none()))
-            && ids[1] != ids[2];
+            && sides[0] != sides[1];
         let entry = if !conflicting_move && (left == right || right == before) {
             left.copied()
         } else if !conflicting_move && left == before {
@@ -734,7 +772,30 @@ pub fn prepare_merge(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<MergePlan, Error> {
-    prepare(root, incoming, expected_tip, limits, None, cancelled)
+    let source = Source::Branch(ref_write::reference_name(
+        RefKind::Branch,
+        incoming,
+        limits,
+    )?);
+    let theirs = ObjectId::from_hex(expected_tip.as_bytes()).map_err(engine)?;
+    prepare(root, source, theirs, limits, None, cancelled)
+}
+
+pub fn prepare_cherry_pick(
+    root: &Path,
+    commit: &str,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    let theirs = ObjectId::from_hex(commit.as_bytes()).map_err(engine)?;
+    prepare(
+        root,
+        Source::CherryPick(theirs.to_string()),
+        theirs,
+        limits,
+        None,
+        cancelled,
+    )
 }
 
 /// Build a fresh publication preview from explicit choices for all reviewed paths.
@@ -745,8 +806,8 @@ pub fn prepare_resolved_merge(
 ) -> Result<MergePlan, Error> {
     prepare(
         &review.repository.root,
-        &name_text(&review.incoming)[HEADS.len()..],
-        &review.theirs.to_string(),
+        review.source.clone(),
+        review.theirs,
         review.limits,
         Some((&review, choices)),
         cancelled,
@@ -755,8 +816,8 @@ pub fn prepare_resolved_merge(
 
 fn prepare(
     root: &Path,
-    incoming: &str,
-    expected_tip: &str,
+    source: Source,
+    theirs: ObjectId,
     limits: Limits,
     resolution: Option<(&MergeReview, BTreeMap<Vec<u8>, MergeResolution>)>,
     cancelled: impl FnMut() -> bool + Send,
@@ -765,26 +826,25 @@ fn prepare(
         return Err(Error::Unsupported);
     }
     limits.admit()?;
-    let incoming = ref_write::reference_name(RefKind::Branch, incoming, limits)?;
-    let theirs = ObjectId::from_hex(expected_tip.as_bytes()).map_err(engine)?;
     controlled(limits.timeout, cancelled, |ctx| {
         let (repo, repository) = open(root, ctx)?;
         let (active, refs) = refs(&repo, limits, ctx)?;
-        if ref_write::namespace_conflicts(active.as_bstr().as_bytes(), name_text(&incoming)) {
-            return Err(Error::Engine("Elige otra rama local para fusionar".into()));
-        }
-        if direct_branch(&refs, &incoming)? != theirs {
-            return Err(Error::Stale);
+        if let Source::Branch(incoming) = &source {
+            if ref_write::namespace_conflicts(active.as_bstr().as_bytes(), name_text(incoming)) {
+                return Err(Error::Engine("Elige otra rama local para fusionar".into()));
+            }
+            if direct_branch(&refs, incoming)? != theirs {
+                return Err(Error::Stale);
+            }
         }
         let head = direct_branch(&refs, &active)?;
         let head_file = capture_head(&repository.git_dir, &active, ctx)?;
         let pending = Journal::read(&repository, ctx)?;
         let active_short = &name_text(&active)[HEADS.len()..];
-        let incoming_short = &name_text(&incoming)[HEADS.len()..];
         if let Some(journal) = &pending {
             if journal.aborting {
                 return Err(Error::Engine(
-                    "Hay un aborto pendiente. Elige Abortar fusión para continuarlo".into(),
+                    "Hay un aborto pendiente. Elige Abortar operación para continuarlo".into(),
                 ));
             }
             if journal.incoming.is_none() {
@@ -793,12 +853,13 @@ fn prepare(
                 ));
             }
             if journal.source != active_short
-                || journal.destination != incoming_short
+                || journal.cherry_pick != source.is_cherry_pick()
+                || journal.destination != source.label()
                 || journal.incoming != Some(theirs)
                 || (head != journal.from && head != journal.to)
             {
                 return Err(Error::Engine(format!(
-                    "Hay una fusión pendiente. Vuelve a elegir la rama {} con su referencia original para recuperarla",
+                    "Hay una operación pendiente con {}. Vuelve a elegir el mismo origen o selecciona Abortar operación",
                     journal.destination
                 )));
             }
@@ -829,7 +890,7 @@ fn prepare(
             repository,
             limits,
             active,
-            incoming,
+            source,
             from,
             theirs,
             result: None,
@@ -840,16 +901,36 @@ fn prepare(
             completed: false,
             write_reflog,
         };
-        let common = base(&repo, from, theirs, limits, ctx)?;
-        if common == theirs {
+        let picked = if plan.is_cherry_pick() {
+            let commit = revision::commit(&repo, theirs, limits, &mut Budget::new(limits), ctx)?;
+            if commit.limited || commit.parents.len() > 1 {
+                return Err(Error::Engine(
+                    "El cherry-pick de un commit de fusión requiere elegir un padre principal"
+                        .into(),
+                ));
+            }
+            Some(commit)
+        } else {
+            None
+        };
+        let common = if let Some(commit) = &picked {
+            commit.parents.first().copied()
+        } else {
+            Some(base(&repo, from, theirs, limits, ctx)?)
+        };
+        if !plan.is_cherry_pick() && common == Some(theirs) {
             if pending.is_some() || resolution.is_some() {
                 return Err(Error::Stale);
             }
             return Ok(plan);
         }
         let old_tree = tree_id(&repo, from, limits, ctx)?;
-        let their_tree = tree_id(&repo, theirs, limits, ctx)?;
-        let (result, tree, entries, blobs) = if common == from {
+        let their_tree = if let Some(commit) = picked {
+            commit.tree
+        } else {
+            tree_id(&repo, theirs, limits, ctx)?
+        };
+        let (result, tree, entries, blobs) = if !plan.is_cherry_pick() && common == Some(from) {
             if resolution.is_some() {
                 return Err(Error::Stale);
             }
@@ -859,16 +940,22 @@ fn prepare(
             (theirs, their_tree, entries, BTreeMap::new())
         } else {
             plan.kind = MergeKind::Commit;
-            let base_tree = tree_id(&repo, common, limits, ctx)?;
+            let base_tree = common
+                .map(|id| tree_id(&repo, id, limits, ctx))
+                .transpose()?;
+            let mut parents = vec![from];
+            if !plan.is_cherry_pick() {
+                parents.push(theirs);
+            }
             let Candidate {
                 mut entries,
                 mut blobs,
                 conflicts,
-            } = combine(&repo, [base_tree, old_tree, their_tree], limits, ctx)?;
+            } = combine(&repo, base_tree, [old_tree, their_tree], limits, ctx)?;
             if let Some(journal) = &pending {
                 let commit =
                     revision::commit(&repo, journal.to, limits, &mut Budget::new(limits), ctx)?;
-                if commit.parents != [from, theirs] || commit.limited {
+                if commit.parents != parents || commit.limited {
                     return Err(Error::Stale);
                 }
                 if conflicts.is_empty()
@@ -966,21 +1053,47 @@ fn prepare(
                     return Ok(plan);
                 }
                 let (tree, trees) = make_trees(&repo, &entries, limits, ctx)?;
+                if plan.is_cherry_pick() && tree == old_tree {
+                    plan.kind = MergeKind::UpToDate;
+                    return Ok(plan);
+                }
                 commit_write::check_signing(&repo)?;
                 let signature = commit_write::local_identity(&repo)?;
-                let commit = Commit {
-                    tree,
-                    parents: [from, theirs].into_iter().collect(),
-                    author: signature.clone(),
-                    committer: signature,
-                    encoding: None,
-                    extra_headers: Vec::new(),
-                    message: format!(
-                        "Fusionar rama '{}' en '{}'\n",
-                        plan.incoming(),
-                        plan.active()
-                    )
-                    .into(),
+                let commit = if plan.is_cherry_pick() {
+                    let original = revision::verified(
+                        &repo,
+                        theirs,
+                        limits.max_bytes.min(crate::OBJECT_BYTES as usize),
+                        ctx,
+                    )?
+                    .try_into_commit()
+                    .map_err(engine)?
+                    .decode()
+                    .map_err(engine)?
+                    .into_owned()
+                    .map_err(engine)?;
+                    Commit {
+                        tree,
+                        parents: parents.into_iter().collect(),
+                        committer: signature,
+                        extra_headers: Vec::new(),
+                        ..original
+                    }
+                } else {
+                    Commit {
+                        tree,
+                        parents: parents.into_iter().collect(),
+                        author: signature.clone(),
+                        committer: signature,
+                        encoding: None,
+                        extra_headers: Vec::new(),
+                        message: format!(
+                            "Fusionar rama '{}' en '{}'\n",
+                            plan.incoming(),
+                            plan.active()
+                        )
+                        .into(),
+                    }
                 };
                 let mut bytes = Vec::new();
                 commit.write_to(&mut bytes)?;
@@ -1009,6 +1122,7 @@ fn prepare(
                 trees: (old_tree, tree),
                 merge: Some(MergeCheckout {
                     incoming: theirs,
+                    cherry_pick: plan.is_cherry_pick(),
                     entries: &entries,
                     blobs: &blobs,
                 }),
@@ -1052,8 +1166,13 @@ pub fn apply_merge(
             .join(crate::branch_checkout::JOURNAL_NAME)
             .exists()
         {
+            let origin = if plan.is_cherry_pick() {
+                "el commit"
+            } else {
+                "la rama"
+            };
             Error::Engine(format!(
-                "{error}. Elige Abortar fusión o vuelve a elegir la rama {} para reanudar",
+                "{error}. Elige Abortar operación o vuelve a elegir {origin} {} para reanudar",
                 plan.incoming()
             ))
         } else {
@@ -1092,8 +1211,12 @@ fn publish(
         let (active, refs) = refs(repo, plan.limits, &ctx)?;
         if active != plan.active
             || direct_branch(&refs, &plan.active)? != expected
-            || direct_branch(&refs, &plan.incoming)? != plan.theirs
             || capture_head(git, &plan.active, &ctx)? != plan.head_file
+        {
+            return Err(Error::Stale);
+        }
+        if let Source::Branch(incoming) = &plan.source
+            && direct_branch(&refs, incoming)? != plan.theirs
         {
             return Err(Error::Stale);
         }
@@ -1113,10 +1236,14 @@ fn publish(
     let _config = hold("config", None)?;
     let _packed = hold("packed-refs", None)?;
     let active = name_text(&plan.active);
-    let incoming = name_text(&plan.incoming);
     ref_write::ordinary_path_absent(git, active, &ctx)?;
-    ref_write::ordinary_path_absent(git, incoming, &ctx)?;
-    let _incoming = hold(incoming, Some(git.join("refs")))?;
+    let _incoming = if let Source::Branch(incoming) = &plan.source {
+        let incoming = name_text(incoming);
+        ref_write::ordinary_path_absent(git, incoming, &ctx)?;
+        Some(hold(incoming, Some(git.join("refs")))?)
+    } else {
+        None
+    };
     let mut branch = File::acquire_to_update_resource(
         git.join(active),
         Fail::Immediately,
@@ -1173,7 +1300,12 @@ fn publish(
             previous_oid: plan.from,
             new_oid: result,
             signature: commit_write::local_identity(&fresh)?,
-            message: format!("merge {}: {}", plan.incoming(), plan.kind.label()).into(),
+            message: if plan.is_cherry_pick() {
+                format!("cherry-pick: {}", plan.incoming())
+            } else {
+                format!("merge {}: {}", plan.incoming(), plan.kind.label())
+            }
+            .into(),
         };
         let branch_log = Path::new("logs").join(active);
         Some(
@@ -1241,7 +1373,7 @@ fn publish(
         };
         if let Err(error) = write() {
             reflog_warning = Some(format!(
-                "Fusión publicada · {result}. Falló el reflog ({error})"
+                "Operación publicada · {result}. Falló el reflog ({error})"
             ));
         }
     }

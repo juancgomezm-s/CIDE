@@ -22,6 +22,9 @@ impl MergeAbortPlan {
     pub fn incoming(&self) -> &str {
         &self.journal.destination
     }
+    pub fn is_cherry_pick(&self) -> bool {
+        self.journal.cherry_pick
+    }
     pub fn restores_index(&self) -> bool {
         self.original_index.is_some()
     }
@@ -43,7 +46,9 @@ pub fn prepare_merge_abort(
         let (repo, identity) = open(root, ctx)?;
         let journal = Journal::read(&identity, ctx)?
             .filter(|journal| journal.incoming.is_some())
-            .ok_or_else(|| Error::Engine("No hay una fusión de CIDE pendiente".into()))?;
+            .ok_or_else(|| {
+                Error::Engine("No hay una fusión ni un cherry-pick de CIDE pendiente".into())
+            })?;
         let (active, refs) = refs(&repo, limits, ctx)?;
         if name_text(&active)[HEADS.len()..] != journal.source {
             return Err(Error::Stale);
@@ -166,7 +171,12 @@ pub fn apply_merge_abort(
             previous_oid: plan.head,
             new_oid: plan.journal.from,
             signature: commit_write::local_identity(&fresh)?,
-            message: "merge: abortar fusión de CIDE".into(),
+            message: if plan.is_cherry_pick() {
+                "cherry-pick: abortar operación de CIDE"
+            } else {
+                "merge: abortar fusión de CIDE"
+            }
+            .into(),
         };
         [
             Path::new("logs").join(active),
@@ -227,7 +237,7 @@ pub fn apply_merge_abort(
             Ok(())
         };
         if let Err(error) = publish() {
-            reflog_warning = Some(format!("Fusión abortada. Falló el reflog ({error})"));
+            reflog_warning = Some(format!("Operación abortada. Falló el reflog ({error})"));
         }
     }
     journal.finish(&identity, plan.rollback.slots(), &ctx)?;
