@@ -341,6 +341,9 @@ fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
         ]);
     }
     fixture.git(&["update-ref", "HEAD", &tip, &initial]);
+    fixture.git(&["update-ref", "refs/heads/segura", &merge]);
+    fixture.git(&["config", "--local", "user.name", "CIDE Fixture"]);
+    fixture.git(&["config", "--local", "user.email", "cide@example.test"]);
     let before = fixture.disk();
     let (mut app, wake) = fixture.app(true);
     request_ready(&mut app, &wake);
@@ -506,15 +509,81 @@ fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
         app.status
     );
     assert_eq!(fixture.disk(), before);
+
+    settle(&mut app);
+    key(&mut app, KeyCode::Char('r'));
+    let row = app
+        .prepare_frame(100, 24)
+        .graph
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|row| row.path == "Rama segura")
+        .unwrap()
+        .ordinal;
+    for _ in 0..row {
+        key(&mut app, KeyCode::Down);
+    }
+    key(&mut app, KeyCode::Char('c'));
+    key(&mut app, KeyCode::Enter);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.git_commit.busy() {
+        let ticket = wake.ticket();
+        app.poll_tasks();
+        assert!(Instant::now() < deadline, "{}", app.status);
+        wake.wait(ticket, Some(Duration::from_millis(10)));
+    }
+    let view = app.git_commit.view().unwrap();
+    let review = view
+        .branch_switch_review()
+        .unwrap_or_else(|| panic!("{:?}", view.error));
+    assert_eq!(review.target().to_string(), merge);
+    assert_eq!(fixture.disk(), before);
+    app.workbench.insert_text("sin guardar").unwrap();
+    key(&mut app, KeyCode::F(2));
+    assert!(app
+        .git_commit
+        .view()
+        .unwrap()
+        .error
+        .as_ref()
+        .unwrap()
+        .contains("Guarda"));
+    assert_eq!(fixture.disk(), before);
+    app.workbench.undo().unwrap();
+    key(&mut app, KeyCode::F(2));
+    while app.git_commit.busy() {
+        let ticket = wake.ticket();
+        app.poll_tasks();
+        assert!(Instant::now() < deadline, "{}", app.status);
+        wake.wait(ticket, Some(Duration::from_millis(10)));
+    }
+    let after = fixture.disk();
+    assert_eq!(after.head, b"ref: refs/heads/segura\n", "{}", app.status);
+    assert_eq!(after.index, before.index);
+    assert_eq!(after.branch, before.branch);
+    assert_eq!(after.tracked, before.tracked);
+    assert_eq!(after.untracked, before.untracked);
 }
 
 #[test]
 fn tui_recovers_a_deleted_file_only_after_review() {
+    tui_restore_case(false);
+}
+
+#[test]
+fn tui_restores_an_existing_file_and_preserves_its_local_bytes() {
+    tui_restore_case(true);
+}
+
+fn tui_restore_case(existing: bool) {
     use jc_app::git_revision::GitRevisionState;
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let fixture = Fixture::new();
     let before = fixture.disk();
-    fs::remove_file(fixture.path(TRACKED)).unwrap();
+    if !existing {
+        fs::remove_file(fixture.path(TRACKED)).unwrap();
+    }
     let (mut app, wake) = fixture.app(false);
     request_ready(&mut app, &wake);
     key(&mut app, KeyCode::End);
@@ -535,13 +604,30 @@ fn tui_recovers_a_deleted_file_only_after_review() {
             GitRevisionState::Queued | GitRevisionState::Running
         )
     });
-    assert!(app.git_restore_available(), "{}", app.status);
+    let expected_label = if existing {
+        "Restaurar archivo"
+    } else {
+        "Recuperar archivo"
+    };
+    assert_eq!(
+        app.git_restore_label(),
+        Some(expected_label),
+        "{}",
+        app.status
+    );
+    assert!(app
+        .prepare_historical_diff(45, 8, 8)
+        .status
+        .starts_with(&format!("U {expected_label}")));
     key(&mut app, KeyCode::Char('u'));
     key(&mut app, KeyCode::Enter);
     wait(&mut app, |app| app.git_commit.busy());
     let view = app.git_commit.view().unwrap();
     assert!(view.restore_review().is_some(), "{:?}", view.error);
-    assert!(!fixture.path(TRACKED).exists());
+    assert_eq!(
+        fs::read(fixture.path(TRACKED)).ok().as_deref(),
+        existing.then_some(before.tracked.as_slice())
+    );
     key(&mut app, KeyCode::F(2));
     wait(&mut app, |app| app.git_commit.busy());
     assert_eq!(
@@ -552,6 +638,15 @@ fn tui_recovers_a_deleted_file_only_after_review() {
     assert_eq!(after.index, before.index);
     assert_eq!(after.head, before.head);
     assert_eq!(after.untracked, before.untracked);
+    if existing {
+        let backup = fs::read_dir(fixture.path(".git"))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "bak"))
+            .expect("backed up local bytes");
+        assert_eq!(fs::read(backup).unwrap(), before.tracked);
+        assert!(app.status.contains("Respaldo en .git/"), "{}", app.status);
+    }
 }
 
 #[test]
@@ -672,7 +767,7 @@ fn tui_index_reviews_then_stages_and_unstages_the_original_file() {
     assert!(app
         .prepare_historical_diff(80, 8, 8)
         .status
-        .starts_with("I preparar"));
+        .contains("I preparar"));
 
     app.workbench.insert_text("sin guardar").unwrap();
     key(&mut app, KeyCode::Char('i'));

@@ -1,4 +1,4 @@
-use super::{git_history::opaque, TuiApp};
+use super::{git_diff::model_rows, git_history::opaque, presentation::GitRowKind, TuiApp};
 use crate::input::is_plain_text;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use jc_app::{
@@ -168,7 +168,46 @@ impl TuiApp {
                 "Objeto · {}",
                 pair.before.identity().oid().unwrap_or_default()
             ));
-            "F2 recupera el archivo · Esc cancela"
+            if pair.after.identity().is_absent() {
+                "F2 recupera el archivo · Esc cancela"
+            } else {
+                rows.push(format!(
+                    "Respaldo en .git · {} bytes actuales",
+                    pair.after.bytes().len()
+                ));
+                if let (WriteDraft::Restore(comparison), Some(encoding)) =
+                    (&view.draft, self.git_history.encoding)
+                {
+                    rows.push("Vista previa · − índice · + disco".into());
+                    let available =
+                        usize::from(height.saturating_sub(4)).saturating_sub(rows.len());
+                    let (preview, _) = model_rows(
+                        &comparison.model,
+                        self.git_history.hunk,
+                        self.git_diff_scroll,
+                        width.saturating_sub(3),
+                        available.min(12),
+                        encoding,
+                    );
+                    rows.extend(preview.into_iter().map(|row| {
+                        let sign = match row.kind {
+                            GitRowKind::Deleted => "−",
+                            GitRowKind::Added => "+",
+                            _ => " ",
+                        };
+                        format!("{sign} {}{}", row.text, row.eol)
+                    }));
+                }
+                "F2 restaura el archivo · Esc cancela"
+            }
+        } else if let Some(plan) = view.branch_switch_review() {
+            rows.extend([
+                format!("{} → {}", plan.source(), plan.destination()),
+                format!("Commit de origen · {}", plan.source_target()),
+                format!("Commit de destino · {}", plan.target()),
+                "El índice y los archivos de trabajo se conservan".into(),
+            ]);
+            "F2 cambia de rama · Esc cancela"
         } else if let Some(plan) = view.reference_review() {
             rows.push(format!("Referencia nueva · {}", plan.full_name()));
             rows.push(format!("Commit de destino · {}", plan.target()));
@@ -215,6 +254,9 @@ impl TuiApp {
             } else if let WriteDraft::ChangeReference(target, _) = &view.draft {
                 rows.push(format!("Referencia actual · {}", target.name));
                 "Intro revisa · Esc cancela"
+            } else if let WriteDraft::SwitchBranch(target) = &view.draft {
+                rows.push(format!("Rama de destino · {}", target.name));
+                "Intro revisa el cambio · Esc cancela"
             } else if let WriteDraft::Restore(comparison) = &view.draft {
                 rows.push(opaque(&comparison.path, width));
                 "Intro revisa recuperación · Esc cancela"

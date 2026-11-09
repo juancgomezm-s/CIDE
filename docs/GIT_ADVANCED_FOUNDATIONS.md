@@ -111,8 +111,45 @@ publicación lo conserva y devuelve un error. Un cierre abrupto puede
 dejar un temporal sin publicar. Los errores controlados limpian el
 temporal por su handle.
 
-Quedan pendientes el cambio de rama, la restauración de archivos
-existentes, la integración de ramas y los remotos.
+## Restaurar un archivo existente
+
+En **En disco**, selecciona un archivo regular modificado y pulsa
+**Restaurar archivo** o **Ctrl+Alt+R** en la GUI. En la TUI usa **U** con
+el foco en el diff. **Intro** muestra qué versión se escribirá, el bloque
+visible de la comparación y el tamaño del respaldo. Confirma con
+**Ctrl+Intro** en la GUI o **F2** en la TUI. **Esc** cierra la revisión.
+
+La operación escribe los bytes exactos del índice y conserva el archivo
+anterior como un respaldo `.bak` en `.git`. CIDE muestra su nombre al
+terminar. Una edición en disco o en el índice posterior a la revisión
+invalida la confirmación. Los documentos modificados en el editor deben
+guardarse antes de revisar o confirmar. Si el archivo ya estaba abierto,
+ciérralo y vuelve a abrirlo para ver la versión restaurada en el editor.
+
+La publicación usa dos movimientos en Windows. Si el segundo falla,
+CIDE intenta devolver el original. Si otro proceso ocupó la ruta, conserva
+ese archivo y el respaldo e informa dónde quedó el original. En caso de
+interrupción entre los dos movimientos, el respaldo queda en `.git`.
+El flujo admite un archivo regular de modo 100644, sin conversiones de Git
+y sin enlaces físicos adicionales, dentro del mismo volumen del repositorio.
+
+Quedan pendientes el cambio entre ramas con árboles distintos, la integración
+de ramas y los remotos.
+
+La validación local en Windows con Rust 1.88.0 pasó con
+`python scripts/check-local.py --steps fmt test clippy build demo`.
+Fueron 894 pruebas del workspace. Los tres procesos auxiliares se invocaron
+desde sus pruebas padre. La primera corrida reveló una expectativa de
+geometría anterior para el panel Git. La corrección mantiene el espacio de
+la fila de acciones y la suite completa pasó. La prueba de terminal reveló
+que el atajo quedaba oculto con un panel bajo. Se movió a la línea de acciones
+y se verificó de nuevo con tres pruebas dirigidas de la TUI y el ejecutor local
+`--steps fmt clippy build`. Los ejecutables optimizados quedaron en
+`target/git-switch-restore-final/release/`.
+La GUI pasó 26 comprobaciones con una ventana oculta. La TUI compilada
+cambió de rama y restauró el archivo en una terminal aislada. Se comprobaron
+los bytes del respaldo y del índice. Ambos ejecutables se probaron con PATH
+vacío. La validación cubre Windows.
 El [visor del grafo](G1_GRAPH_VIEW.md) recorre la ascendencia elegida y
 permite crear ramas y etiquetas ligeras.
 El commit local y su modificación tienen su propio recorrido de

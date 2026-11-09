@@ -1,7 +1,7 @@
 //! Confirm whole-file index changes from the currently displayed local diff.
 use super::State;
 use jc_app::{
-    git_commit::can_restore_missing,
+    git_commit::restore_label,
     git_index::{IndexAction, IndexState},
     git_revision::{ComparisonOrigin, LocalComparisonOrigin, PairKind, RevisionComparison},
 };
@@ -18,19 +18,18 @@ impl State {
         .then_some((comparison, local))
     }
 
-    pub(super) fn git_restore_available(&self) -> bool {
-        self.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    pub(super) fn git_restore_label(&self) -> Option<&'static str> {
+        let ready = self.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
             && !matches!(
                 self.git_index.state(),
                 IndexState::Preparing | IndexState::Reviewing | IndexState::Applying
-            )
-            && self
-                .index_comparison()
-                .is_some_and(|(comparison, _)| can_restore_missing(comparison))
+            );
+        let (comparison, _) = self.index_comparison()?;
+        ready.then(|| restore_label(comparison)).flatten()
     }
 
     pub(super) fn open_git_restore(&mut self) {
-        if self.git_restore_available() {
+        if self.git_restore_label().is_some() {
             if let Some((root, comparison)) = self
                 .project_root
                 .clone()
@@ -169,6 +168,7 @@ mod tests {
     use std::{
         fs,
         path::{Path, PathBuf},
+        sync::atomic::{AtomicU64, Ordering},
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
@@ -178,6 +178,7 @@ mod tests {
     }
     impl Fixture {
         fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
             let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .ancestors()
                 .nth(2)
@@ -192,7 +193,11 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let root = base.join(format!("gui-git-index-{}-{stamp}", std::process::id()));
+            let serial = NEXT.fetch_add(1, Ordering::Relaxed);
+            let root = base.join(format!(
+                "gui-git-index-{}-{stamp}-{serial}",
+                std::process::id()
+            ));
             fs::create_dir(&root).unwrap();
             fs::create_dir_all(root.join(".git/objects")).unwrap();
             fs::create_dir_all(root.join(".git/refs/heads")).unwrap();
@@ -361,11 +366,53 @@ mod tests {
         assert!(!new_branch.exists(), "{}", state.status);
         assert_eq!(fs::read_to_string(renamed).unwrap().trim(), merge);
         assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
+        let head = fixture.root.join(".git/HEAD");
+        run(&["config", "--local", "user.name", "CIDE Fixture"]);
+        run(&["config", "--local", "user.email", "cide@example.test"]);
+        let old_head = fs::read(&head).unwrap();
+        wait(&mut state, |s| s.git_revision.graph().is_some());
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(b'R' as usize);
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama rama-renombrada"))
+            .unwrap();
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'C' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let review = view
+            .branch_switch_review()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(review.destination(), "rama-renombrada");
+        assert_eq!(fs::read(&head).unwrap(), old_head);
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert_eq!(
+            fs::read(&head).unwrap(),
+            b"ref: refs/heads/rama-renombrada\n",
+            "{}",
+            state.status
+        );
+        assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
         assert_eq!(fs::read(source).unwrap(), b"segundo padre\n");
     }
 
     #[test]
     fn gui_recovers_a_deleted_file_only_after_review() {
+        gui_restore_case(None);
+    }
+
+    #[test]
+    fn gui_restores_an_existing_file_and_preserves_its_local_bytes() {
+        gui_restore_case(Some(b"cambios locales\r\n\xff"));
+    }
+
+    fn gui_restore_case(disk: Option<&[u8]>) {
         use jc_app::Modifiers;
         let fixture = Fixture::new();
         let path = fixture.root.join("recuperar.txt");
@@ -390,7 +437,11 @@ mod tests {
         wait(&mut state, |s| s.git_index.state() == IndexState::Published);
         let index_path = fixture.root.join(".git/index");
         let index = fs::read(&index_path).unwrap();
-        fs::remove_file(&path).unwrap();
+        if let Some(disk) = disk {
+            fs::write(&path, disk).unwrap();
+        } else {
+            fs::remove_file(&path).unwrap();
+        }
         state.request_git(GitIntent::Status);
         wait(&mut state, |s| {
             s.git_status.state() == GitStatusTaskState::Ready
@@ -406,12 +457,24 @@ mod tests {
         wait(&mut state, |s| !s.git_commit.busy());
         let view = state.git_commit.view().unwrap();
         assert!(view.restore_review().is_some(), "{:?}", view.error);
-        assert!(!path.exists());
+        assert_eq!(
+            view.restore_review().unwrap().pair().after.bytes(),
+            disk.unwrap_or_default()
+        );
+        assert_eq!(fs::read(&path).ok().as_deref(), disk);
         state.key_override = Some(Modifiers::CTRL);
         state.key(0x0d);
         wait(&mut state, |s| !s.git_commit.busy());
         assert_eq!(fs::read(path).unwrap(), bytes);
         assert_eq!(fs::read(index_path).unwrap(), index);
+        if let Some(disk) = disk {
+            let backup = fs::read_dir(fixture.root.join(".git"))
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|path| path.extension().is_some_and(|ext| ext == "bak"))
+                .expect("backed up local bytes");
+            assert_eq!(fs::read(backup).unwrap(), disk);
+        }
     }
 
     #[test]

@@ -103,6 +103,23 @@ impl State {
         }
     }
 
+    fn graph_branch_target(&self) -> Option<&jc_app::git_commit::ReferenceTarget> {
+        self.graph_write_target()
+            .filter(|target| target.kind == jc_app::git_commit::RefKind::Branch)
+    }
+
+    pub(super) fn open_graph_branch_switch(&mut self) {
+        if let Some((root, target)) = self
+            .project_root
+            .clone()
+            .zip(self.graph_branch_target().cloned())
+        {
+            let _ = self.git_index.discard_review();
+            self.git_commit.open_branch_switch(root, target);
+            self.git_workspace.invalidate();
+        }
+    }
+
     pub(super) fn select_graph_reference(&mut self, index: usize) {
         if let Some(view) = &mut self.git_workspace.graph {
             view.reference_selected = Some(index);
@@ -198,6 +215,7 @@ impl State {
             }
             0x71 if view.reference_selected.is_some() => self.open_graph_reference_change(true),
             0x2e if view.reference_selected.is_some() => self.open_graph_reference_change(false),
+            0x43 if view.reference_selected.is_some() => self.open_graph_branch_switch(),
             0x0d if view.reference_selected.is_some() => {
                 self.choose_graph_reference(view.selected_row())
             }
@@ -263,7 +281,9 @@ impl State {
             "Grafo de commits"
         }
         .into();
-        frame.footer = if references && self.graph_write_target().is_some() {
+        frame.footer = if references && self.graph_branch_target().is_some() {
+            "C cambiar rama · Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
+        } else if references && self.graph_write_target().is_some() {
             "Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
         } else if references {
             "↑↓ seleccionar · Intro abrir referencia · Esc volver"
@@ -374,8 +394,16 @@ impl State {
             ),
             (
                 440,
-                "Crear etiqueta",
-                Intent::GraphCreateReference(jc_app::git_commit::RefKind::Tag),
+                if references {
+                    "Cambiar rama"
+                } else {
+                    "Crear etiqueta"
+                },
+                if references {
+                    Intent::GraphSwitchBranch
+                } else {
+                    Intent::GraphCreateReference(jc_app::git_commit::RefKind::Tag)
+                },
             ),
         ] {
             if matches!(intent, Intent::GraphNext)
@@ -383,6 +411,8 @@ impl State {
                 || offset == 119 && graph.is_none()
                 || matches!(intent, Intent::GraphChangeReference(_))
                     && self.graph_write_target().is_none()
+                || matches!(intent, Intent::GraphSwitchBranch)
+                    && self.graph_branch_target().is_none()
                 || matches!(intent, Intent::GraphCreateReference(_))
                     && (references || graph.is_none_or(|page| page.entries.is_empty()))
             {

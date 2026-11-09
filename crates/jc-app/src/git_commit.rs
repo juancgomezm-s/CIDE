@@ -4,6 +4,7 @@ use crate::{
     git_revision::{ComparisonOrigin, PairKind, RevisionComparison},
     FieldEdit, Wakeup, Workbench,
 };
+use jc_git::branch_switch::{apply_branch_switch, prepare_branch_switch, BranchSwitchPlan};
 pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
@@ -41,6 +42,7 @@ enum WritePlan {
     Commit(Box<CommitPlan>),
     Reference(Box<RefPlan>),
     ReferenceChange(Box<RefChangePlan>),
+    BranchSwitch(Box<BranchSwitchPlan>),
     Restore(Box<RestorePlan>),
 }
 
@@ -56,6 +58,7 @@ pub enum WriteDraft {
     Commit,
     CreateReference(RefKind, String),
     ChangeReference(ReferenceTarget, bool),
+    SwitchBranch(ReferenceTarget),
     Restore(Arc<RevisionComparison>),
 }
 
@@ -65,18 +68,36 @@ impl WriteDraft {
     }
 
     fn has_input(&self) -> bool {
-        !matches!(self, Self::ChangeReference(_, false) | Self::Restore(_))
+        !matches!(
+            self,
+            Self::ChangeReference(_, false) | Self::SwitchBranch(_) | Self::Restore(_)
+        )
+    }
+
+    fn refreshes_graph(&self) -> bool {
+        self.is_reference() || matches!(self, Self::SwitchBranch(_))
     }
 }
 
-pub fn can_restore_missing(comparison: &RevisionComparison) -> bool {
+pub fn restore_label(comparison: &RevisionComparison) -> Option<&'static str> {
     let ComparisonOrigin::Local(local) = &comparison.origin else {
-        return false;
+        return None;
     };
-    cfg!(windows)
-        && local.kind == PairKind::Worktree
-        && matches!(local.before, SourceIdentity::Present { mode: 0o100644, .. })
-        && local.after.is_absent()
+    if !cfg!(windows)
+        || local.kind != PairKind::Worktree
+        || !matches!(local.before, SourceIdentity::Present { mode: 0o100644, .. })
+    {
+        return None;
+    }
+    if local.after.is_absent() {
+        Some("Recuperar archivo")
+    } else if matches!(local.after, SourceIdentity::Present { mode: 0o100644, .. })
+        && comparison.can_export_patch()
+    {
+        Some("Restaurar archivo")
+    } else {
+        None
+    }
 }
 
 struct Job {
@@ -109,7 +130,10 @@ impl CommitView {
                 (RefKind::Branch, false) => "Eliminar rama",
                 (RefKind::Tag, false) => "Eliminar etiqueta",
             },
-            WriteDraft::Restore(_) => "Recuperar archivo borrado",
+            WriteDraft::SwitchBranch(_) => "Cambiar rama",
+            WriteDraft::Restore(comparison) => {
+                restore_label(comparison).unwrap_or("Restaurar archivo")
+            }
             WriteDraft::Commit if self.replaces.is_some() => "Modificar último commit",
             WriteDraft::Commit => "Crear commit",
         }
@@ -120,7 +144,8 @@ impl CommitView {
     pub fn pending_hint(&self) -> &'static str {
         match &self.draft {
             WriteDraft::Commit => "Leyendo el índice preparado… · Esc cancela",
-            WriteDraft::Restore(_) => "Comprobando el índice y el archivo borrado… · Esc cancela",
+            WriteDraft::Restore(_) => "Comprobando el índice y el archivo… · Esc cancela",
+            WriteDraft::SwitchBranch(_) => "Comprobando ambas ramas… · Esc cancela",
             _ => "Comprobando referencia… · Esc cancela",
         }
     }
@@ -145,6 +170,12 @@ impl CommitView {
     pub fn restore_review(&self) -> Option<&RestorePlan> {
         match &self.review {
             Some(WritePlan::Restore(plan)) => Some(plan),
+            _ => None,
+        }
+    }
+    pub fn branch_switch_review(&self) -> Option<&BranchSwitchPlan> {
+        match &self.review {
+            Some(WritePlan::BranchSwitch(plan)) => Some(plan),
             _ => None,
         }
     }
@@ -207,8 +238,13 @@ impl CommitController {
     pub fn open_reference_change(&mut self, root: PathBuf, target: ReferenceTarget, rename: bool) {
         self.open_write(root, None, WriteDraft::ChangeReference(target, rename));
     }
+    pub fn open_branch_switch(&mut self, root: PathBuf, target: ReferenceTarget) {
+        if cfg!(windows) && target.kind == RefKind::Branch {
+            self.open_write(root, None, WriteDraft::SwitchBranch(target));
+        }
+    }
     pub fn open_restore(&mut self, root: PathBuf, comparison: Arc<RevisionComparison>) {
-        if can_restore_missing(&comparison) {
+        if restore_label(&comparison).is_some() {
             self.open_write(root, None, WriteDraft::Restore(comparison));
         }
     }
@@ -361,8 +397,24 @@ impl CommitController {
                             }),
                         ),
                         Some(WritePlan::Restore(plan)) => Completion::Applied(
-                            apply_restore(*plan, cancelled)
-                                .map(|()| "Archivo recuperado desde el índice Git".into()),
+                            apply_restore(*plan, cancelled).map(|publication| {
+                                if let Some(backup) = publication.backup {
+                                    let name = backup.file_name().unwrap_or(backup.as_os_str());
+                                    format!(
+                                        "Respaldo en .git/{} · Archivo restaurado",
+                                        name.to_string_lossy()
+                                    )
+                                } else {
+                                    "Archivo recuperado desde el índice Git".into()
+                                }
+                            }),
+                        ),
+                        Some(WritePlan::BranchSwitch(plan)) => Completion::Applied(
+                            apply_branch_switch(*plan, cancelled).map(|publication| {
+                                publication.reflog_warning.unwrap_or_else(|| {
+                                    format!("Rama activa · {}", publication.destination)
+                                })
+                            }),
                         ),
                         None => Completion::Review(match (draft, replaces) {
                             (WriteDraft::CreateReference(kind, target), _) => {
@@ -379,6 +431,14 @@ impl CommitController {
                                 cancelled,
                             )
                             .map(|plan| WritePlan::ReferenceChange(Box::new(plan))),
+                            (WriteDraft::SwitchBranch(target), _) => prepare_branch_switch(
+                                &root,
+                                &target.name,
+                                &target.oid,
+                                LIMITS,
+                                cancelled,
+                            )
+                            .map(|plan| WritePlan::BranchSwitch(Box::new(plan))),
                             (WriteDraft::Restore(comparison), _) => {
                                 prepare_restore(&root, &comparison.path, LIMITS, cancelled)
                                     .and_then(|plan| {
@@ -448,7 +508,7 @@ impl CommitController {
             Completion::Review(Err(e)) => view.error = Some(e.to_string()),
             Completion::Applied(result) => {
                 let root = view.root.clone();
-                let reference = view.draft.is_reference();
+                let reference = view.draft.refreshes_graph();
                 let restore = matches!(view.draft, WriteDraft::Restore(_));
                 let result = result.map_err(|e| e.to_string());
                 if let Ok(message) = &result {
@@ -482,7 +542,7 @@ impl CommitController {
                         Some(CommitOutcome {
                             root: view.root.clone(),
                             result: Err(view.error.clone().unwrap()),
-                            reference: view.draft.is_reference(),
+                            reference: view.draft.refreshes_graph(),
                             restore: matches!(view.draft, WriteDraft::Restore(_)),
                         }),
                     );

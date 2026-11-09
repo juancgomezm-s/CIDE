@@ -720,6 +720,9 @@ impl TuiApp {
             } else if let Some(notice) = self.git_index_publication_notice() {
                 prepared.status = label(&notice, width);
             }
+            if let Some(action) = self.git_restore_label() {
+                prepared.status = label(&format!("U {action} · {}", prepared.status), width);
+            }
         }
         prepared.details.push(label(
             if self.git_history.local.is_some() {
@@ -730,11 +733,7 @@ impl TuiApp {
             width,
         ));
         prepared.details.push(label(
-            if self.git_restore_available() {
-                "U recuperar archivo · ↑↓ desplazar · E codificación · Esc volver"
-            } else {
-                "↑↓ desplazar · ←→ bloque · E codificación · Esc volver"
-            },
+            "↑↓ desplazar · ←→ bloque · E codificación · Esc volver",
             width,
         ));
         let Some(result) = self.git_revision.comparison() else {

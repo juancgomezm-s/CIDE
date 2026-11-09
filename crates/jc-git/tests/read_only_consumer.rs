@@ -290,10 +290,87 @@ fn restore_deleted_file_rejects_stale_index_and_unavailable_destination() {
     fs::write(&path, b"creado por otro proceso").unwrap();
     assert!(matches!(apply_restore(plan, || false), Err(Error::Stale)));
     assert_eq!(fs::read(&path).unwrap(), b"creado por otro proceso");
+    fs::write(&path, b"nuevo").unwrap();
     assert!(prepare_restore(&fixture.root, b"f.p", limits, || false).is_err());
     local_index(&repo, &[(b"missing/f.p", original, flags)]);
     assert!(prepare_restore(&fixture.root, b"missing/f.p", limits, || false).is_err());
     assert!(!fixture.root.join("missing").exists());
+}
+
+#[cfg(windows)]
+#[test]
+fn restore_existing_file_preserves_original_at_reported_backup() {
+    use gix::index::entry::Flags;
+    use jc_git::restore::{apply_restore, prepare_restore};
+    let fixture = Fixture::new();
+    let repo = gix::init(&fixture.root).unwrap();
+    let staged = b"primer bloque\r\n\xffsin salto final";
+    let edited = b"cambios locales\r\n\xfe";
+    let id = repo.write_blob(staged).unwrap().detach();
+    local_index(&repo, &[(b"nested/f.p", id, Flags::empty())]);
+    fs::create_dir(fixture.root.join("nested")).unwrap();
+    let target = fixture.root.join("nested/f.p");
+    fs::write(&target, edited).unwrap();
+    let before = image(&fixture.root.join(".git"));
+    let limits = Limits {
+        max_blob: 2 * 1024 * 1024,
+        max_entries: 128,
+        max_path: 1024,
+        max_bytes: 4 * 1024 * 1024,
+        timeout: Duration::from_secs(2),
+    };
+    let plan = prepare_restore(&fixture.root, b"nested/f.p", limits, || false).unwrap();
+    assert_eq!(plan.pair().before.bytes(), staged);
+    assert_eq!(plan.pair().after.bytes(), edited);
+    assert_eq!(fs::read(&target).unwrap(), edited);
+    assert_eq!(image(&fixture.root.join(".git")), before);
+    let backup = apply_restore(plan, || false).unwrap().backup.unwrap();
+    assert_eq!(backup.parent(), Some(fixture.root.join(".git").as_path()));
+    assert_eq!(fs::read(&target).unwrap(), staged);
+    assert_eq!(fs::read(&backup).unwrap(), edited);
+    let mut after = image(&fixture.root.join(".git"));
+    assert_eq!(
+        after.remove(Path::new(backup.file_name().unwrap())),
+        Some(edited.to_vec())
+    );
+    assert_eq!(after, before);
+    assert_eq!(fs::read_dir(target.parent().unwrap()).unwrap().count(), 1);
+}
+
+#[cfg(windows)]
+#[test]
+fn restore_existing_file_rejects_stale_worktree_and_hardlink() {
+    use gix::index::entry::Flags;
+    use jc_git::{
+        Error,
+        restore::{apply_restore, prepare_restore},
+    };
+    let fixture = Fixture::new();
+    let repo = gix::init(&fixture.root).unwrap();
+    let indexed = repo.write_blob(b"indexed").unwrap().detach();
+    local_index(&repo, &[(b"f.p", indexed, Flags::empty())]);
+    let target = fixture.root.join("f.p");
+    fs::write(&target, b"reviewed").unwrap();
+    let baseline = image(&fixture.root.join(".git"));
+    let limits = Limits {
+        max_blob: 2 * 1024 * 1024,
+        max_entries: 128,
+        max_path: 1024,
+        max_bytes: 4 * 1024 * 1024,
+        timeout: Duration::from_secs(2),
+    };
+    let plan = prepare_restore(&fixture.root, b"f.p", limits, || false).unwrap();
+    fs::write(&target, b"changed after preview").unwrap();
+    assert!(matches!(apply_restore(plan, || false), Err(Error::Stale)));
+    assert_eq!(fs::read(&target).unwrap(), b"changed after preview");
+    let alias = fixture.root.join("alias.p");
+    fs::hard_link(&target, &alias).unwrap();
+    assert!(matches!(
+        prepare_restore(&fixture.root, b"f.p", limits, || false),
+        Err(Error::Unsupported)
+    ));
+    assert_eq!(fs::read(&alias).unwrap(), b"changed after preview");
+    assert_eq!(image(&fixture.root.join(".git")), baseline);
 }
 
 #[cfg(windows)]

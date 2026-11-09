@@ -70,7 +70,7 @@ pub struct RefPublication {
     pub target: gix::ObjectId,
 }
 
-fn reference_name(kind: RefKind, name: &str, limits: Limits) -> Result<FullName, Error> {
+pub(super) fn reference_name(kind: RefKind, name: &str, limits: Limits) -> Result<FullName, Error> {
     if name.len() > REF_NAME_BYTES || name.len() + kind.prefix().len() > limits.max_path {
         return Err(Error::Limited);
     }
@@ -118,7 +118,7 @@ fn verify_target(
     Ok(())
 }
 
-fn namespace_conflicts(existing: &[u8], requested: &str) -> bool {
+pub(super) fn namespace_conflicts(existing: &[u8], requested: &str) -> bool {
     for (existing, requested) in existing
         .split(|byte| *byte == b'/')
         .zip(requested.split('/'))
@@ -164,7 +164,11 @@ fn destination_absent(
     ordinary_path_absent(&identity.git_dir, name, ctx)
 }
 
-fn ordinary_path_absent(root: &Path, name: &str, ctx: &Context<'_>) -> Result<bool, Error> {
+pub(super) fn ordinary_path_absent(
+    root: &Path,
+    name: &str,
+    ctx: &Context<'_>,
+) -> Result<bool, Error> {
     let mut path = root.to_owned();
     let mut parts = name.split('/').peekable();
     while let Some(part) = parts.next() {
@@ -843,6 +847,15 @@ mod tests {
             })
             .unwrap()
             .detach();
+        commit_at_tree(repo, tree, parents, message)
+    }
+
+    fn commit_at_tree(
+        repo: &gix::Repository,
+        tree: gix::ObjectId,
+        parents: &[gix::ObjectId],
+        message: &str,
+    ) -> gix::ObjectId {
         let actor = gix::actor::SignatureRef {
             name: b"Autor de prueba".as_bstr(),
             email: b"fixture@invalid".as_bstr(),
@@ -859,6 +872,202 @@ mod tests {
         })
         .unwrap()
         .detach()
+    }
+
+    #[cfg(windows)]
+    mod branch_switch {
+        use super::*;
+        use crate::branch_switch::{BranchSwitchPlan, apply_branch_switch, prepare_branch_switch};
+        use std::io::Write;
+
+        fn setup(fixture: &Fixture) -> (gix::Repository, gix::ObjectId, gix::ObjectId) {
+            let repo = gix::init(&fixture.root).unwrap();
+            let source = commit(&repo, &[], "antes");
+            let target = commit(&repo, &[source], "mismo árbol");
+            let git = fixture.git();
+            fs::write(git.join("HEAD"), b"ref: refs/heads/activa\n").unwrap();
+            fs::write(git.join("refs/heads/activa"), format!("{source}\n")).unwrap();
+            fs::write(git.join("refs/heads/destino"), format!("{target}\n")).unwrap();
+            fs::OpenOptions::new()
+                .append(true)
+                .open(git.join("config"))
+                .unwrap()
+                .write_all(b"\n[core]\nlogAllRefUpdates = true\n[user]\nname = Persona\nemail = persona@invalid\n")
+                .unwrap();
+            (repo, source, target)
+        }
+
+        fn review(fixture: &Fixture, target: gix::ObjectId) -> Result<BranchSwitchPlan, Error> {
+            prepare_branch_switch(
+                &fixture.root,
+                "destino",
+                &target.to_string(),
+                limits(),
+                || false,
+            )
+        }
+
+        #[test]
+        fn preserves_staged_unstaged_and_untracked_bytes_and_updates_head_reflog() {
+            let fixture = Fixture::new();
+            let (repo, source, target) = setup(&fixture);
+            let git = fixture.git();
+            let path = fixture.root.join("trabajo.p");
+            let blob = repo.write_blob(b"bytes preparados\n").unwrap().detach();
+            let mut index = gix::index::State::new(repo.object_hash());
+            index.dangerously_push_entry(
+                Default::default(),
+                blob,
+                gix::index::entry::Flags::empty(),
+                gix::index::entry::Mode::FILE,
+                b"trabajo.p".as_bstr(),
+            );
+            gix::index::File::from_state(index, git.join("index"))
+                .write(Default::default())
+                .unwrap();
+            let index = fs::read(git.join("index")).unwrap();
+            fs::write(&path, b"bytes no preparados\r\n").unwrap();
+            fs::write(fixture.root.join("nuevo"), b"archivo sin seguimiento").unwrap();
+            let log = git.join("logs/HEAD");
+            fs::create_dir(log.parent().unwrap()).unwrap();
+            let history = format!(
+                "{} {source} Autor <correo@invalid> 1 +0000\tcreada\n",
+                source.kind().null()
+            );
+            fs::write(&log, &history).unwrap();
+            let config = fs::read(git.join("config")).unwrap();
+            let plan = review(&fixture, target).unwrap();
+            assert_eq!(plan.source(), "activa");
+            assert_eq!(plan.destination(), "destino");
+            assert_eq!(plan.source_target(), source);
+            assert_eq!(plan.target(), target);
+            let published = apply_branch_switch(plan, || false).unwrap();
+            assert_eq!(published.target, target);
+            assert!(published.reflog_warning.is_none());
+            assert_eq!(
+                fs::read(git.join("HEAD")).unwrap(),
+                b"ref: refs/heads/destino\n"
+            );
+            assert_eq!(
+                fs::read_to_string(git.join("refs/heads/activa")).unwrap(),
+                format!("{source}\n")
+            );
+            assert_eq!(
+                fs::read_to_string(git.join("refs/heads/destino")).unwrap(),
+                format!("{target}\n")
+            );
+            assert_eq!(fs::read(git.join("index")).unwrap(), index);
+            assert_eq!(fs::read(&path).unwrap(), b"bytes no preparados\r\n");
+            assert_eq!(
+                fs::read(fixture.root.join("nuevo")).unwrap(),
+                b"archivo sin seguimiento"
+            );
+            assert_eq!(fs::read(git.join("config")).unwrap(), config);
+            let history_after = fs::read_to_string(&log).unwrap();
+            assert!(history_after.starts_with(&history));
+            assert!(
+                history_after.contains(&format!("{source} {target} Persona <persona@invalid> "))
+            );
+            assert!(history_after.ends_with("\tcheckout: moving from activa to destino\n"));
+        }
+
+        #[test]
+        fn rejects_different_trees_symbolic_destinations_and_other_worktrees() {
+            let fixture = Fixture::new();
+            let (repo, source, target) = setup(&fixture);
+            let git = fixture.git();
+            let tree = repo
+                .write_object(gix::objs::Tree {
+                    entries: vec![gix::objs::tree::Entry {
+                        mode: gix::objs::tree::EntryKind::Blob.into(),
+                        filename: "otro".into(),
+                        oid: repo
+                            .write_blob("cambia el árbol".as_bytes())
+                            .unwrap()
+                            .detach(),
+                    }],
+                })
+                .unwrap()
+                .detach();
+            let different = commit_at_tree(&repo, tree, &[source], "cambia");
+            let dest = git.join("refs/heads/destino");
+            fs::write(&dest, format!("{different}\n")).unwrap();
+            assert!(
+                matches!(review(&fixture, different), Err(Error::Engine(message)) if message.contains("otro árbol"))
+            );
+            fs::write(&dest, b"ref: refs/heads/activa\n").unwrap();
+            assert!(matches!(review(&fixture, source), Err(Error::Unsupported)));
+            fs::write(&dest, format!("{target}\n")).unwrap();
+            fs::create_dir(git.join("worktrees")).unwrap();
+            assert!(review(&fixture, target).is_err());
+            assert_eq!(
+                fs::read(git.join("HEAD")).unwrap(),
+                b"ref: refs/heads/activa\n"
+            );
+            assert!(!git.join("logs/HEAD").exists());
+        }
+
+        #[test]
+        fn stale_review_and_cancellation_cannot_publish_head() {
+            let fixture = Fixture::new();
+            let (repo, source, target) = setup(&fixture);
+            let git = fixture.git();
+            let dest = git.join("refs/heads/destino");
+            let plan = review(&fixture, target).unwrap();
+            fs::write(&dest, format!("{source}\n")).unwrap();
+            assert!(matches!(
+                apply_branch_switch(plan, || false),
+                Err(Error::Stale)
+            ));
+            fs::write(&dest, format!("{target}\n")).unwrap();
+            let plan = review(&fixture, target).unwrap();
+            gix::index::File::from_state(
+                gix::index::State::new(repo.object_hash()),
+                git.join("index"),
+            )
+            .write(Default::default())
+            .unwrap();
+            assert!(matches!(
+                apply_branch_switch(plan, || false),
+                Err(Error::Stale)
+            ));
+            let plan = review(&fixture, target).unwrap();
+            assert!(matches!(
+                apply_branch_switch(plan, || git.join("HEAD.lock").exists()),
+                Err(Error::Cancelled)
+            ));
+            assert_eq!(
+                fs::read(git.join("HEAD")).unwrap(),
+                b"ref: refs/heads/activa\n"
+            );
+            assert!(!git.join("HEAD.lock").exists());
+            assert!(!git.join("logs/HEAD").exists());
+            assert!(!git.join("refs/heads/destino.lock").exists());
+        }
+
+        #[test]
+        fn an_intervening_reflog_writer_is_not_overwritten() {
+            let fixture = Fixture::new();
+            let (_, _, target) = setup(&fixture);
+            let git = fixture.git();
+            let plan = review(&fixture, target).unwrap();
+            let log = git.join("logs/HEAD");
+            let published = apply_branch_switch(plan, || {
+                if git.join("logs/HEAD.lock").exists() {
+                    fs::write(&log, b"escritura concurrente\n").unwrap();
+                }
+                false
+            })
+            .unwrap();
+            assert!(published.reflog_warning.is_some());
+            assert_eq!(fs::read(&log).unwrap(), b"escritura concurrente\n");
+            assert_eq!(
+                fs::read(git.join("HEAD")).unwrap(),
+                b"ref: refs/heads/destino\n"
+            );
+            assert!(!git.join("HEAD.lock").exists());
+            assert!(!git.join("logs/HEAD.lock").exists());
+        }
     }
 
     #[test]

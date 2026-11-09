@@ -56,6 +56,13 @@ impl TuiApp {
         self.git_revision.graph()?.reference_write_target(row)
     }
 
+    fn graph_branch_target(&self, row: usize) -> Option<&jc_app::git_commit::ReferenceTarget> {
+        cfg!(windows)
+            .then(|| self.graph_write_target(row))
+            .flatten()
+            .filter(|target| target.kind == jc_app::git_commit::RefKind::Branch)
+    }
+
     pub(super) fn handle_git_graph_key(&mut self, key: KeyEvent) -> bool {
         let Some(view) = self.git_history.graph.as_ref() else {
             return false;
@@ -117,6 +124,18 @@ impl TuiApp {
                     let _ = self.git_index.discard_review();
                     self.git_commit
                         .open_reference_change(root, target, key.code == KeyCode::F(2));
+                }
+            }
+            KeyCode::Char('c' | 'C')
+                if view.reference_selected.is_some() && key.kind == KeyEventKind::Press =>
+            {
+                let target = view
+                    .reference_selected
+                    .and_then(|row| self.graph_branch_target(row))
+                    .cloned();
+                if let Some((root, target)) = self.project_root.clone().zip(target) {
+                    let _ = self.git_index.discard_review();
+                    self.git_commit.open_branch_switch(root, target);
                 }
             }
             KeyCode::Char('r' | 'R') if self.git_revision.graph().is_some() => {
@@ -239,7 +258,14 @@ impl TuiApp {
                 "Grafo de commits"
             }
             .into(),
-            message: if references && self.graph_write_target(view.selected_row()).is_some() {
+            message: if references && self.graph_branch_target(view.selected_row()).is_some() {
+                if cfg!(windows) {
+                    "C cambiar rama · Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
+                } else {
+                    "C cambiar rama · Intro abrir · Supr eliminar · Esc volver"
+                }
+                .into()
+            } else if references && self.graph_write_target(view.selected_row()).is_some() {
                 if cfg!(windows) {
                     "Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
                 } else {

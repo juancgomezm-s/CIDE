@@ -2,7 +2,7 @@
 use super::{git_history::opaque, TuiApp};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use jc_app::{
-    git_commit::can_restore_missing,
+    git_commit::restore_label,
     git_index::{IndexAction, IndexState},
     git_revision::{ComparisonOrigin, LocalComparisonOrigin, PairKind, RevisionComparison},
     BottomPanel, PrimaryFocus,
@@ -43,15 +43,14 @@ impl TuiApp {
             .is_some_and(|root| review.matches(root, comparison, self.git_history.hunk))
     }
 
-    pub(super) fn git_restore_available(&self) -> bool {
-        self.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    pub(super) fn git_restore_label(&self) -> Option<&'static str> {
+        let ready = self.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
             && !matches!(
                 self.git_index.state(),
                 IndexState::Preparing | IndexState::Reviewing | IndexState::Applying
-            )
-            && self
-                .git_index_comparison()
-                .is_some_and(|(comparison, _)| can_restore_missing(comparison))
+            );
+        let (comparison, _) = self.git_index_comparison()?;
+        ready.then(|| restore_label(comparison)).flatten()
     }
 
     pub(super) fn handle_git_index_key(&mut self, key: KeyEvent) -> bool {
@@ -60,7 +59,7 @@ impl TuiApp {
         }
         match key.code {
             KeyCode::Char('u' | 'U')
-                if key.modifiers.is_empty() && self.git_restore_available() =>
+                if key.modifiers.is_empty() && self.git_restore_label().is_some() =>
             {
                 if let Some((root, comparison)) = self
                     .project_root

@@ -304,7 +304,7 @@ impl State {
         }
         if code == b'R' as usize
             && modifiers == Modifiers::CTRL.union(Modifiers::ALT)
-            && self.git_restore_available()
+            && self.git_restore_label().is_some()
         {
             self.open_git_restore();
             return Action::None;

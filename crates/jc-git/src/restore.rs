@@ -1,4 +1,4 @@
-//! Reviewed recovery of one deleted tracked file from the index.
+//! Reviewed recovery and restoration of one tracked file from the index.
 
 use crate::{
     Context, Error, Limits, controlled, engine, index_write,
@@ -7,7 +7,7 @@ use crate::{
 use gix::bstr::ByteSlice;
 use std::{
     io,
-    path::Path,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicBool, AtomicU8},
     time::Instant,
 };
@@ -16,13 +16,23 @@ pub struct RestorePlan {
     pair: LocalPair,
     limits: Limits,
 }
+
+#[derive(Debug)]
+pub struct RestorePublication {
+    pub backup: Option<PathBuf>,
+}
 impl RestorePlan {
     pub fn pair(&self) -> &LocalPair {
         &self.pair
     }
 }
 
-fn missing_target(pair: &LocalPair) -> Result<&jc_fs::MissingToken, Error> {
+enum Target<'a> {
+    Missing(&'a jc_fs::MissingToken),
+    Existing(&'a jc_fs::FileToken),
+}
+
+fn target(pair: &LocalPair) -> Result<Target<'_>, Error> {
     if !matches!(
         pair.before.identity(),
         SourceIdentity::Present {
@@ -40,10 +50,26 @@ fn missing_target(pair: &LocalPair) -> Result<&jc_fs::MissingToken, Error> {
     } = pair.after.identity()
         && let Some(token) = token.missing().filter(|token| token.is_leaf())
     {
-        return Ok(token);
+        return Ok(Target::Missing(token));
+    }
+    if let SourceIdentity::Present {
+        origin: SourceOrigin::Worktree,
+        worktree: Some(token),
+        ..
+    } = pair.after.identity()
+        && let Some(token) = token.present()
+    {
+        let relative = gix::path::from_bstr(pair.path.as_bstr()).map_err(engine)?;
+        if !token.has_single_link() || token.path() != pair.repository.root.join(relative) {
+            return Err(Error::Unsupported);
+        }
+        if pair.before.bytes() == pair.after.bytes() {
+            return Err(Error::Engine("El archivo ya coincide con el índice".into()));
+        }
+        return Ok(Target::Existing(token));
     }
     Err(Error::Engine(
-        "La restauración requiere un archivo borrado y su carpeta existente".into(),
+        "La restauración requiere que exista la carpeta del archivo".into(),
     ))
 }
 
@@ -101,8 +127,8 @@ fn validate_index(
     index_write::reject_conversion(repo, pair)
 }
 
-/// Read the reviewed index and prove that the file, rather than an ancestor,
-/// is missing. Only ordinary Windows files with a raw checkout are admitted.
+/// Read the reviewed index and ordinary single-link Windows file, or prove
+/// its absence when the parent directory exists.
 pub fn prepare_restore(
     root: &Path,
     path: &[u8],
@@ -120,7 +146,7 @@ pub fn prepare_restore(
         return Err(Error::Unsupported);
     }
     let pair = local_pair::read_local_pair(root, path, PairKind::Worktree, limits, &mut cancelled)?;
-    missing_target(&pair)?;
+    target(&pair)?;
     controlled(limits.timeout, cancelled, |ctx| {
         let (repo, identity) = index_write::open_for_write(root, ctx)?;
         index_write::same_repository(&identity, &pair.repository)?;
@@ -138,13 +164,18 @@ fn publish_error(error: io::Error) -> Error {
     }
 }
 
-/// Publish exact indexed bytes as a new file while holding Git's index lock.
-/// The platform's create-only rename decides whether the name is still free.
-/// A competing writer cannot have an existing destination replaced.
+enum Pending {
+    Missing(jc_fs::PendingMissingFile),
+    Existing(jc_fs::PendingExistingFile),
+}
+
+/// Publish exact indexed bytes while holding Git's index lock. Replacing
+/// an existing file preserves its original object under the reported backup.
+/// A competing writer cannot have a newly created destination replaced.
 pub fn apply_restore(
     plan: RestorePlan,
     mut cancelled: impl FnMut() -> bool + Send,
-) -> Result<(), Error> {
+) -> Result<RestorePublication, Error> {
     if cancelled() {
         return Err(Error::Cancelled);
     }
@@ -166,12 +197,22 @@ pub fn apply_restore(
         0,
     )
     .map_err(engine)?;
-    let pending = jc_fs::stage_missing_file(
-        &identity.root,
-        missing_target(&pair)?,
-        pair.before.bytes(),
-        &mut || ctx.check().is_err() || cancelled(),
-    );
+    let mut stopped = || ctx.check().is_err() || cancelled();
+    let pending = match target(&pair)? {
+        Target::Missing(token) => {
+            jc_fs::stage_missing_file(&identity.root, token, pair.before.bytes(), &mut stopped)
+                .map(Pending::Missing)
+        }
+        Target::Existing(token) => jc_fs::stage_existing_file(
+            &identity.root,
+            token,
+            pair.after.bytes(),
+            pair.before.bytes(),
+            &identity.git_dir,
+            &mut stopped,
+        )
+        .map(Pending::Existing),
+    };
     ctx.check()?;
     if pending
         .as_ref()
@@ -188,5 +229,22 @@ pub fn apply_restore(
     if cancelled() {
         return Err(Error::Cancelled);
     }
-    pending.publish().map_err(publish_error)
+    match pending {
+        Pending::Missing(pending) => pending
+            .publish()
+            .map(|()| RestorePublication { backup: None })
+            .map_err(publish_error),
+        Pending::Existing(pending) => pending
+            .publish()
+            .map(|backup| RestorePublication {
+                backup: Some(backup),
+            })
+            .map_err(|error| match error {
+                jc_fs::ReplaceError::Io(error) => publish_error(error),
+                jc_fs::ReplaceError::Preserved { error, backup } => Error::Engine(format!(
+                    "No se publicó la restauración ({error}). El original se conserva en {}",
+                    backup.display()
+                )),
+            }),
+    }
 }

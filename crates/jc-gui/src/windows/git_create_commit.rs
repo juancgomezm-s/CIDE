@@ -289,7 +289,44 @@ impl State {
                 pair.before.bytes().len(),
                 pair.before.identity().oid().unwrap_or_default()
             )];
-            ("Recuperar archivo", 12)
+            if pair.after.identity().is_absent() {
+                ("Recuperar archivo", 12)
+            } else {
+                f.details.push(format!(
+                    "Se conservarán {} bytes actuales en un respaldo dentro de .git",
+                    pair.after.bytes().len()
+                ));
+                if let (WriteDraft::Restore(comparison), Some(encoding)) =
+                    (&view.draft, self.git_workspace.history_encoding)
+                {
+                    f.details.push("Vista previa · − índice · + disco".into());
+                    f.code = controls::project(
+                        &comparison.model,
+                        controls::ProjectionView {
+                            hunk: self.git_workspace.history_hunk,
+                            first: self.git_workspace.diff_first,
+                            encoding,
+                            geometry: (f.preview, f.preview.top + p(210), self.cell_height),
+                            mode: self.git_workspace.diff_mode(),
+                            column: self.git_workspace.diff_column,
+                            cell_width: self.cell_width,
+                        },
+                    )
+                    .cells;
+                }
+                ("Restaurar archivo", 12)
+            }
+        } else if let Some(plan) = view.branch_switch_review() {
+            f.summary = vec![
+                format!("{} → {}", plan.source(), plan.destination()),
+                "El índice y los archivos de trabajo se conservan".into(),
+            ];
+            f.details_top = p(132);
+            f.details = vec![
+                format!("Commit de origen · {}", plan.source_target()),
+                format!("Commit de destino · {}", plan.target()),
+            ];
+            ("Cambiar rama", 12)
         } else if let Some(plan) = view.reference_review() {
             f.summary = vec![format!("Referencia nueva · {}", plan.full_name())];
             f.details_top = p(132);
@@ -359,9 +396,12 @@ impl State {
         } else if let WriteDraft::ChangeReference(target, _) = &view.draft {
             f.summary = vec![format!("Referencia actual · {}", target.name)];
             ("Revisar referencia", 12)
+        } else if let WriteDraft::SwitchBranch(target) = &view.draft {
+            f.summary = vec![format!("Rama de destino · {}", target.name)];
+            ("Revisar cambio", 12)
         } else if let WriteDraft::Restore(comparison) = &view.draft {
             f.summary = vec![opaque(&comparison.path, 256)];
-            ("Revisar recuperación", 12)
+            ("Revisar archivo", 12)
         } else {
             f.summary = vec![if let Some(old) = &view.replaces {
                 format!(

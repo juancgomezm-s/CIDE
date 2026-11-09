@@ -30,6 +30,14 @@ pub struct FileToken {
     state: FileState,
 }
 impl FileToken {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn has_single_link(&self) -> bool {
+        self.state.links == 1
+    }
+
     /// Logical retained heap, excluding the containing value's inline size.
     pub fn memory_bytes(&self) -> usize {
         self.path.capacity() + self.ancestors.capacity() * std::mem::size_of::<ObjectIdentity>()
@@ -83,7 +91,8 @@ impl PendingMissingFile {
     pub fn publish(self) -> io::Result<()> {
         #[cfg(windows)]
         {
-            self.inner.publish()
+            let mut pending = self.inner;
+            pending.publish()
         }
         #[cfg(not(windows))]
         {
@@ -106,6 +115,56 @@ pub fn stage_missing_file(
     #[cfg(not(windows))]
     {
         let _ = (root, expected, bytes, cancelled);
+        Err(io::ErrorKind::Unsupported.into())
+    }
+}
+
+/// The reviewed original and a synchronized replacement, both pinned while
+/// the caller revalidates its other sources.
+pub struct PendingExistingFile {
+    #[cfg(windows)]
+    inner: windows::PendingExistingFile,
+}
+
+#[derive(Debug)]
+pub enum ReplaceError {
+    Io(io::Error),
+    Preserved { error: io::Error, backup: PathBuf },
+}
+
+impl PendingExistingFile {
+    pub fn publish(self) -> Result<PathBuf, ReplaceError> {
+        #[cfg(windows)]
+        {
+            self.inner.publish()
+        }
+        #[cfg(not(windows))]
+        {
+            Err(ReplaceError::Io(io::ErrorKind::Unsupported.into()))
+        }
+    }
+}
+
+/// Stage a replacement of the same single-link file and exact reviewed bytes.
+/// `backup_dir` must be a direct child of the pinned root on the same volume.
+/// Both publication renames are create-only. If the second fails, the original
+/// is put back if the name is still free, or retained at the reported backup.
+pub fn stage_existing_file(
+    root: &Path,
+    expected: &FileToken,
+    before: &[u8],
+    bytes: &[u8],
+    backup_dir: &Path,
+    cancelled: &mut dyn FnMut() -> bool,
+) -> io::Result<PendingExistingFile> {
+    #[cfg(windows)]
+    {
+        windows::stage_existing_file(root, expected, before, bytes, backup_dir, cancelled)
+            .map(|inner| PendingExistingFile { inner })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (root, expected, before, bytes, backup_dir, cancelled);
         Err(io::ErrorKind::Unsupported.into())
     }
 }
@@ -163,11 +222,16 @@ mod windows {
     const DIRECTORY: u32 = 0x10;
     const FLAGS: u32 = 0x0020_0000 | 0x0200_0000;
     const READ_ATTRIBUTES: u32 = 0x80;
+    const LIST_DIRECTORY: u32 = 0x01;
+    const SHARE_READ: u32 = 1;
+    const SHARE_WRITE: u32 = 2;
+    const GENERIC_READ: u32 = 0x8000_0000;
     const GENERIC_WRITE: u32 = 0x4000_0000;
     const DELETE: u32 = 0x0001_0000;
     const FILE_RENAME_INFO: i32 = 3;
     const FILE_DISPOSITION_INFO: i32 = 4;
     const MAX_DEPTH: usize = 256;
+    static NEXT: AtomicU64 = AtomicU64::new(0);
 
     #[repr(C)]
     struct FileTime {
@@ -305,13 +369,18 @@ mod windows {
             &buffer[..length as usize],
         )))
     }
-    fn open(path: &Path, payload: bool) -> io::Result<File> {
-        let mut options = OpenOptions::new();
-        options.read(true).share_mode(1).custom_flags(FLAGS);
-        if !payload {
-            options.access_mode(READ_ATTRIBUTES);
-        }
-        options.open(path)
+    fn open(path: &Path, access: u32) -> io::Result<File> {
+        OpenOptions::new()
+            .access_mode(access)
+            // A real directory handle denies renames. Adding a child name
+            // needs write sharing on the directory even when its name is pinned.
+            .share_mode(if access & LIST_DIRECTORY != 0 {
+                SHARE_READ | SHARE_WRITE
+            } else {
+                SHARE_READ
+            })
+            .custom_flags(FLAGS)
+            .open(path)
     }
     fn validate_dir(root: &Path, file: &File) -> io::Result<FileState> {
         let current = state(file)?;
@@ -340,16 +409,30 @@ mod windows {
         limit: usize,
         cancelled: &mut dyn FnMut() -> bool,
     ) -> io::Result<Capture> {
-        capture_with_missing(root, path, limit, cancelled, |_, _| Ok(()))
+        capture_with_handles(root, path, limit, CaptureAccess::Read, cancelled)
+            .map(|pinned| pinned.capture)
     }
 
-    fn capture_with_missing(
+    #[derive(PartialEq, Eq)]
+    enum CaptureAccess {
+        Read,
+        PublishMissing,
+        ReplaceExisting,
+    }
+
+    struct PinnedCapture {
+        capture: Capture,
+        dirs: Vec<File>,
+        file: Option<File>,
+    }
+
+    fn capture_with_handles(
         root: &Path,
         path: &Path,
         limit: usize,
+        access: CaptureAccess,
         cancelled: &mut dyn FnMut() -> bool,
-        on_missing: impl FnOnce(&MissingToken, Vec<File>) -> io::Result<()>,
-    ) -> io::Result<Capture> {
+    ) -> io::Result<PinnedCapture> {
         check(cancelled)?;
         if !root.is_absolute()
             || !path.is_absolute()
@@ -374,7 +457,19 @@ mod windows {
                 "La ruta de captura contiene componentes inválidos",
             ));
         }
-        let root_handle = open(root, false)?;
+        let dir_access = READ_ATTRIBUTES
+            | if access == CaptureAccess::Read {
+                0
+            } else {
+                LIST_DIRECTORY
+            };
+        let leaf_access = GENERIC_READ
+            | if access == CaptureAccess::ReplaceExisting {
+                DELETE
+            } else {
+                0
+            };
+        let root_handle = open(root, dir_access)?;
         let root_state = validate_dir(root, &root_handle)?;
         if final_path(&root_handle)? != root {
             return Err(excluded());
@@ -386,7 +481,7 @@ mod windows {
             check(cancelled)?;
             current.push(component.as_os_str());
             let leaf = ordinal + 1 == components.len();
-            let mut file = match open(&current, leaf) {
+            let mut file = match open(&current, if leaf { leaf_access } else { dir_access }) {
                 Ok(file) => file,
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {
                     validate_ancestors(root, &dirs, &initial)?;
@@ -402,8 +497,11 @@ mod windows {
                         missing_at: current,
                         ancestors: initial,
                     };
-                    on_missing(&token, dirs)?;
-                    return Ok(Capture::Absent { token });
+                    return Ok(PinnedCapture {
+                        capture: Capture::Absent { token },
+                        dirs,
+                        file: None,
+                    });
                 }
                 Err(error) => return Err(error),
             };
@@ -478,14 +576,18 @@ mod windows {
             validate_ancestors(root, &dirs, &initial)?;
             check(cancelled)?;
             let ancestors = initial.into_iter().map(|s| s.identity).collect();
-            return Ok(Capture::Present {
-                path: resolved.clone(),
-                bytes,
-                token: FileToken {
-                    path: resolved,
-                    ancestors,
-                    state: before,
+            return Ok(PinnedCapture {
+                capture: Capture::Present {
+                    path: resolved.clone(),
+                    bytes,
+                    token: FileToken {
+                        path: resolved,
+                        ancestors,
+                        state: before,
+                    },
                 },
+                dirs,
+                file: Some(file),
             });
         }
         Err(io::Error::new(
@@ -498,37 +600,52 @@ mod windows {
         file: File,
         target: PathBuf,
         published: bool,
-        _dirs: Vec<File>,
+        dirs: Vec<File>,
+    }
+    fn rename_new(file: &File, target: &Path) -> io::Result<()> {
+        let target: Vec<u16> = target.as_os_str().encode_wide().collect();
+        if target.len() >= 32768 {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        let name_offset = std::mem::offset_of!(RenameInfo, name);
+        let name_bytes = target.len() * size_of::<u16>();
+        let len = (name_offset + name_bytes + size_of::<u16>()).max(size_of::<RenameInfo>());
+        let mut buffer = vec![0usize; len.div_ceil(size_of::<usize>())];
+        // FILE_RENAME_INFO has a variable-length UTF-16 tail. The aligned
+        // allocation and zero initialization leave ReplaceIfExists false,
+        // RootDirectory null and a terminator after the counted name.
+        unsafe {
+            let raw = buffer.as_mut_ptr().cast::<RenameInfo>();
+            (*raw).name_length = name_bytes as u32;
+            std::ptr::copy_nonoverlapping(
+                target.as_ptr(),
+                raw.cast::<u8>().add(name_offset).cast::<u16>(),
+                target.len(),
+            );
+            if SetFileInformationByHandle(
+                file.as_raw_handle(),
+                FILE_RENAME_INFO,
+                raw.cast(),
+                len as u32,
+            ) == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        Ok(())
     }
     impl PendingMissingFile {
-        pub(super) fn publish(mut self) -> io::Result<()> {
-            let target: Vec<u16> = self.target.as_os_str().encode_wide().collect();
-            let name_offset = std::mem::offset_of!(RenameInfo, name);
-            let name_bytes = target.len() * size_of::<u16>();
-            let len = (name_offset + name_bytes + size_of::<u16>()).max(size_of::<RenameInfo>());
-            let mut buffer = vec![0usize; len.div_ceil(size_of::<usize>())];
-            // FILE_RENAME_INFO has a variable-length UTF-16 tail. The aligned
-            // allocation and zero initialization leave ReplaceIfExists false,
-            // RootDirectory null and a terminator after the counted name.
-            unsafe {
-                let raw = buffer.as_mut_ptr().cast::<RenameInfo>();
-                (*raw).name_length = name_bytes as u32;
-                std::ptr::copy_nonoverlapping(
-                    target.as_ptr(),
-                    raw.cast::<u8>().add(name_offset).cast::<u16>(),
-                    target.len(),
-                );
-                if SetFileInformationByHandle(
-                    self.file.as_raw_handle(),
-                    FILE_RENAME_INFO,
-                    raw.cast(),
-                    len as u32,
-                ) == 0
-                {
-                    return Err(io::Error::last_os_error());
-                }
-            }
+        pub(super) fn publish(&mut self) -> io::Result<()> {
+            self.check_dirs()?;
+            rename_new(&self.file, &self.target)?;
             self.published = true;
+            Ok(())
+        }
+
+        fn check_dirs(&self) -> io::Result<()> {
+            for dir in &self.dirs {
+                state(dir)?;
+            }
             Ok(())
         }
     }
@@ -556,11 +673,33 @@ mod windows {
         bytes: &[u8],
         cancelled: &mut dyn FnMut() -> bool,
     ) -> io::Result<PendingMissingFile> {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
         if !expected.is_leaf() {
             return Err(io::ErrorKind::NotFound.into());
         }
         let target = &expected.path;
+        validate_write_path(root, target)?;
+        let observed =
+            capture_with_handles(root, target, 0, CaptureAccess::PublishMissing, cancelled);
+        let dirs = match observed {
+            Ok(PinnedCapture {
+                capture: Capture::Absent { token },
+                dirs,
+                ..
+            }) if token == *expected => dirs,
+            Ok(PinnedCapture {
+                capture: Capture::Absent { .. },
+                ..
+            }) => return Err(changed()),
+            Ok(_) => return Err(io::ErrorKind::AlreadyExists.into()),
+            Err(error) if error.kind() == io::ErrorKind::FileTooLarge => {
+                return Err(io::ErrorKind::AlreadyExists.into());
+            }
+            Err(error) => return Err(error),
+        };
+        stage_sibling(target, bytes, dirs, cancelled)
+    }
+
+    fn validate_write_path(root: &Path, target: &Path) -> io::Result<()> {
         let relative = target.strip_prefix(root).map_err(|_| excluded())?;
         // NTFS streams and generated short names cannot be intended targets
         // for the exclusive staged sibling.
@@ -571,22 +710,15 @@ mod windows {
         {
             return Err(io::ErrorKind::InvalidInput.into());
         }
-        let mut pinned = Vec::new();
-        let observed = capture_with_missing(root, target, 0, cancelled, |token, dirs| {
-            if token != expected {
-                return Err(changed());
-            }
-            pinned = dirs;
-            Ok(())
-        });
-        match observed {
-            Ok(Capture::Absent { .. }) => {}
-            Ok(Capture::Present { .. }) => return Err(io::ErrorKind::AlreadyExists.into()),
-            Err(error) if error.kind() == io::ErrorKind::FileTooLarge => {
-                return Err(io::ErrorKind::AlreadyExists.into());
-            }
-            Err(error) => return Err(error),
-        }
+        Ok(())
+    }
+
+    fn stage_sibling(
+        target: &Path,
+        bytes: &[u8],
+        dirs: Vec<File>,
+        cancelled: &mut dyn FnMut() -> bool,
+    ) -> io::Result<PendingMissingFile> {
         let mut options = OpenOptions::new();
         options
             .write(true)
@@ -611,17 +743,23 @@ mod windows {
             {
                 continue;
             }
-            let file = match options.open(target.with_file_name(temp_name)) {
+            let temporary = target.with_file_name(&temp_name);
+            let file = match options.open(&temporary) {
                 Ok(file) => file,
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(error) => return Err(error),
             };
             let mut pending = PendingMissingFile {
                 file,
-                target: target.clone(),
+                target: target.to_path_buf(),
                 published: false,
-                _dirs: pinned,
+                dirs,
             };
+            let expected_parent = final_path(pending.dirs.last().ok_or_else(changed)?)?;
+            if final_path(&pending.file)? != expected_parent.join(&temp_name) {
+                return Err(changed());
+            }
+            pending.check_dirs()?;
             for chunk in bytes.chunks(64 * 1024) {
                 check(cancelled)?;
                 pending.file.write_all(chunk)?;
@@ -631,6 +769,132 @@ mod windows {
             return Ok(pending);
         }
         Err(io::ErrorKind::AlreadyExists.into())
+    }
+
+    pub(super) struct PendingExistingFile {
+        original: File,
+        expected: FileState,
+        replacement: PendingMissingFile,
+        backup_dir: PathBuf,
+        backup_handle: File,
+    }
+
+    impl PendingExistingFile {
+        fn preserve_original(&self) -> io::Result<PathBuf> {
+            let target = &self.replacement.target;
+            if state(&self.original)? != self.expected || final_path(&self.original)? != *target {
+                return Err(changed());
+            }
+            self.replacement.check_dirs()?;
+            state(&self.backup_handle)?;
+            if final_path(&self.backup_handle)? != self.backup_dir {
+                return Err(changed());
+            }
+            let name: String = target
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("archivo")
+                .chars()
+                .take(64)
+                .collect();
+            for _ in 0..16 {
+                let backup = self.backup_dir.join(format!(
+                    "cide-restore-{}-{}-{name}.bak",
+                    std::process::id(),
+                    NEXT.fetch_add(1, Ordering::Relaxed)
+                ));
+                match rename_new(&self.original, &backup) {
+                    Ok(()) => return Ok(backup),
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                    Err(error) => return Err(error),
+                }
+            }
+            Err(io::ErrorKind::AlreadyExists.into())
+        }
+
+        pub(super) fn publish(self) -> Result<PathBuf, ReplaceError> {
+            self.publish_with(PendingMissingFile::publish)
+        }
+
+        pub(super) fn publish_with(
+            self,
+            publish: impl FnOnce(&mut PendingMissingFile) -> io::Result<()>,
+        ) -> Result<PathBuf, ReplaceError> {
+            let mut this = self;
+            let backup = this.preserve_original().map_err(ReplaceError::Io)?;
+            match publish(&mut this.replacement) {
+                Ok(()) => Ok(backup),
+                Err(error) => {
+                    if this
+                        .replacement
+                        .check_dirs()
+                        .and_then(|()| rename_new(&this.original, &this.replacement.target))
+                        .is_ok()
+                    {
+                        Err(ReplaceError::Io(error))
+                    } else {
+                        Err(ReplaceError::Preserved { error, backup })
+                    }
+                }
+            }
+        }
+    }
+
+    pub(super) fn stage_existing_file(
+        root: &Path,
+        expected: &FileToken,
+        before: &[u8],
+        bytes: &[u8],
+        backup_dir: &Path,
+        cancelled: &mut dyn FnMut() -> bool,
+    ) -> io::Result<PendingExistingFile> {
+        if !expected.has_single_link() || backup_dir.parent() != Some(root) {
+            return Err(excluded());
+        }
+        let target = expected.path();
+        validate_write_path(root, target)?;
+        validate_write_path(root, backup_dir)?;
+        let pinned = capture_with_handles(
+            root,
+            target,
+            before.len(),
+            CaptureAccess::ReplaceExisting,
+            cancelled,
+        )
+        .map_err(|error| {
+            if error.kind() == io::ErrorKind::FileTooLarge {
+                changed()
+            } else {
+                error
+            }
+        })?;
+        let Capture::Present {
+            token,
+            bytes: captured,
+            ..
+        } = pinned.capture
+        else {
+            return Err(changed());
+        };
+        if token != *expected || captured != before {
+            return Err(changed());
+        }
+        let original = pinned.file.ok_or_else(changed)?;
+        let backup_handle = open(backup_dir, READ_ATTRIBUTES | LIST_DIRECTORY)?;
+        let backup_state = validate_dir(root, &backup_handle)?;
+        if final_path(&backup_handle)? != backup_dir
+            || backup_state.identity.volume != expected.state.identity.volume
+        {
+            return Err(excluded());
+        }
+        let replacement = stage_sibling(target, bytes, pinned.dirs, cancelled)?;
+        Ok(PendingExistingFile {
+            original,
+            expected: token.state,
+            replacement,
+            backup_dir: backup_dir.to_path_buf(),
+            backup_handle,
+        })
     }
 }
 
@@ -781,6 +1045,70 @@ mod tests {
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
         fs::remove_file(target).unwrap();
         fs::remove_dir(dir).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn existing_replacement_preserves_both_files_when_the_name_is_recreated() {
+        let root = fixture();
+        let dir = root.join("nested");
+        let backups = root.join(".git");
+        fs::create_dir(&dir).unwrap();
+        fs::create_dir(&backups).unwrap();
+        let target = dir.join("tracked.p");
+        let reviewed = b"edited\xff\r\nwithout newline";
+        fs::write(&target, reviewed).unwrap();
+        let (_, _, token) = present(&root, &target, reviewed.len());
+        let pending =
+            stage_existing_file(&root, &token, reviewed, b"index", &backups, &mut || false)
+                .unwrap();
+        assert!(fs::OpenOptions::new().write(true).open(&target).is_err());
+        assert!(fs::rename(&target, dir.join("external.p")).is_err());
+        assert!(fs::rename(&backups, root.join("outside")).is_err());
+        let result = pending.inner.publish_with(|replacement| {
+            fs::write(&target, b"new external file")?;
+            replacement.publish()
+        });
+        let Err(ReplaceError::Preserved { backup, .. }) = result else {
+            panic!("expected the original backup and the late external file: {result:?}");
+        };
+        assert_eq!(fs::read(&backup).unwrap(), reviewed);
+        assert_eq!(fs::read(&target).unwrap(), b"new external file");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(&backups).unwrap().count(), 1);
+        fs::remove_file(backup).unwrap();
+        fs::remove_file(target).unwrap();
+        fs::remove_dir(dir).unwrap();
+        fs::remove_dir(backups).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn existing_replacement_rolls_back_without_a_competing_destination() {
+        let root = fixture();
+        let backups = root.join(".git");
+        fs::create_dir(&backups).unwrap();
+        let target = root.join("tracked.p");
+        fs::write(&target, b"edited").unwrap();
+        let (_, _, token) = present(&root, &target, 6);
+        let pending =
+            stage_existing_file(&root, &token, b"edited", b"index", &backups, &mut || false)
+                .unwrap();
+        let result = pending
+            .inner
+            .publish_with(|_| Err(io::ErrorKind::PermissionDenied.into()));
+        assert!(
+            matches!(
+                result,
+                Err(ReplaceError::Io(ref error)) if error.kind() == io::ErrorKind::PermissionDenied
+            ),
+            "{result:?}"
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"edited");
+        assert_eq!(fs::read_dir(&backups).unwrap().count(), 0);
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 2);
+        fs::remove_file(target).unwrap();
+        fs::remove_dir(backups).unwrap();
         fs::remove_dir(root).unwrap();
     }
 }

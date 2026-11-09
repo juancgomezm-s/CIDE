@@ -85,7 +85,7 @@ pub struct Publication {
     pub reflog_warning: Option<String>,
 }
 
-fn local_identity(repo: &gix::Repository) -> Result<gix::actor::Signature, Error> {
+pub(super) fn local_identity(repo: &gix::Repository) -> Result<gix::actor::Signature, Error> {
     let config = repo.config_snapshot();
     let field = |key, maximum| {
         config
@@ -428,21 +428,36 @@ fn confined_path(root: &Path, relative: &Path, create_dirs: bool) -> Result<Path
 }
 
 fn stage_log(root: &Path, relative: &Path, line: &gix::refs::log::Line) -> Result<File, Error> {
+    Ok(stage_log_with_source(root, relative, line)?.0)
+}
+
+pub(super) fn capture_log(root: &Path, path: &Path) -> Result<jc_fs::Capture, Error> {
+    Ok(jc_fs::capture_in_root(root, path, LOG_BYTES, &mut || {
+        false
+    })?)
+}
+
+pub(super) fn stage_log_with_source(
+    root: &Path,
+    relative: &Path,
+    line: &gix::refs::log::Line,
+) -> Result<(File, Option<jc_fs::FileToken>), Error> {
     let path = confined_path(root, relative, true)?;
     let mut lock =
         File::acquire_to_update_resource(&path, Fail::Immediately, None, 0).map_err(engine)?;
-    match jc_fs::capture_in_root(root, &path, LOG_BYTES, &mut || false)? {
-        jc_fs::Capture::Present { bytes, .. } => {
+    let source = match capture_log(root, &path)? {
+        jc_fs::Capture::Present { token, bytes, .. } => {
             if !bytes.is_empty() && !bytes.ends_with(b"\n") {
                 return Err(Error::Unsupported);
             }
             lock.write_all(&bytes)?;
+            Some(token)
         }
-        jc_fs::Capture::Absent { .. } => {}
-    }
+        jc_fs::Capture::Absent { .. } => None,
+    };
     line.write_to(&mut lock)?;
     lock.with_mut(|file| file.sync_all())?;
-    Ok(lock)
+    Ok((lock, source))
 }
 
 fn store_object(

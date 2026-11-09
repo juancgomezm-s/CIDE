@@ -91,3 +91,18 @@ propia, alias simbólicos y repositorios con árboles vinculados quedan
 fuera de este flujo. En caso de error tardío de E/S al renombrar pueden
 quedar ambos nombres. El resultado indica que se debe actualizar el
 repositorio antes de reintentar.
+
+## Cambiar de rama local
+
+En **Referencias**, selecciona otra rama local y pulsa **C** o **Cambiar
+rama** en la GUI. **Intro** revisa los nombres y commits de origen y destino.
+Confirma con **Ctrl+Intro** en la GUI o **F2** en la TUI. **Esc** cierra la
+revisión. CIDE vuelve a leer el grafo y el estado después del cambio.
+
+Disponible en Windows entre ramas con el mismo árbol de archivos. Ambas
+pueden apuntar a commits distintos. CIDE cambia HEAD y conserva el índice,
+los archivos modificados y los archivos sin seguimiento. Los documentos
+del editor deben estar guardados. La confirmación comprueba HEAD, ambas
+ramas y el índice. Si cambió alguno, hay que volver a revisar. Con reflog
+habilitado, se usa la identidad local y se registra el cambio en HEAD.
+Un cambio que requiere actualizar el árbol de trabajo queda pendiente.

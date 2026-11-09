@@ -140,6 +140,7 @@ enum Intent {
     GraphReference(usize),
     GraphOpenReference,
     GraphChangeReference(bool),
+    GraphSwitchBranch,
     GraphCreateReference(jc_app::git_commit::RefKind),
     HistoryParent,
     CreateCommit,
@@ -148,7 +149,7 @@ enum Intent {
     CancelCommit,
     Index,
     IndexHunk,
-    RestoreMissing,
+    RestoreFile,
     Patch,
     SearchOpen,
     SearchRun,
@@ -473,20 +474,22 @@ impl State {
         self.add_git_commit_search_button(&mut frame);
         self.prepare_git_controls(&mut frame);
         self.add_git_patch_button(&mut frame);
-        if self.git_restore_available() {
+        let restore = self.git_restore_label();
+        let restoring_existing = restore == Some("Restaurar archivo");
+        if let Some(label) = restore {
             let p = |n| self.dpi.pixels(n);
-            let left = frame.preview.left + p(156);
+            let left = frame.preview.left + p(if restoring_existing { 12 } else { 156 });
             let top = frame.preview.top + p(156);
             let r = rect(left, top, left + p(140), top + p(24));
-            frame.footer = format!("Ctrl+Alt+R recuperar archivo · {}", frame.footer);
+            frame.footer = format!("Ctrl+Alt+R {label} · {}", frame.footer);
             if r.right <= frame.preview.right - p(8)
                 && r.bottom <= frame.preview.bottom
                 && frame.buttons.iter().all(|(b, _, _)| {
                     r.left >= b.right || r.right <= b.left || r.top >= b.bottom || r.bottom <= b.top
                 })
             {
-                frame.buttons.push((r, "Recuperar archivo".into(), false));
-                frame.hits.actions.push((r, Intent::RestoreMissing));
+                frame.buttons.push((r, label.into(), false));
+                frame.hits.actions.push((r, Intent::RestoreFile));
             }
         }
         for (block, shortcut, offset, intent) in [
@@ -503,7 +506,12 @@ impl State {
             };
             let p = |n| self.dpi.pixels(n);
             frame.footer = format!("{shortcut} {label} · {}", frame.footer);
-            let left = frame.preview.left + p(offset);
+            let left = frame.preview.left
+                + p(if restoring_existing {
+                    offset + 144
+                } else {
+                    offset
+                });
             let top = frame.preview.top + p(156);
             let candidate = rect(left, top, left + p(140), top + p(24));
             if candidate.right <= frame.preview.right - p(8)
@@ -936,6 +944,10 @@ impl State {
                 self.open_graph_reference_change(rename);
                 Action::None
             }
+            Some(Intent::GraphSwitchBranch) => {
+                self.open_graph_branch_switch();
+                Action::None
+            }
             Some(Intent::GraphCreateReference(kind)) => {
                 self.open_graph_reference_draft(kind);
                 Action::None
@@ -969,7 +981,7 @@ impl State {
                 self.git_index_action(true);
                 Action::None
             }
-            Some(Intent::RestoreMissing) => {
+            Some(Intent::RestoreFile) => {
                 self.open_git_restore();
                 Action::None
             }

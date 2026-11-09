@@ -287,7 +287,8 @@ mod tests {
                 && r.bottom == f.preview.top + s.dpi.pixels(120)
                 && r.right <= f.preview.right - s.dpi.pixels(12)
         }));
-        assert_eq!(f.details_top, s.dpi.pixels(164));
+        // Leave room for the local Git action row at 156–180 DIP.
+        assert_eq!(f.details_top, s.dpi.pixels(192));
         assert!(!f
             .hits
             .actions
