@@ -2,7 +2,7 @@ use super::{git_diff::model_rows, git_history::opaque, presentation::GitRowKind,
 use crate::input::is_plain_text;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use jc_app::{
-    git_commit::{file_flag, CommitOperation, ResetMode, WriteDraft},
+    git_commit::{file_flag, rebase_step_label, CommitOperation, ResetMode, WriteDraft},
     git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit,
 };
@@ -368,6 +368,41 @@ impl TuiApp {
                 )
             }));
             "F2 confirma el aborto · Esc cancela"
+        } else if let Some(plan) = view.merge_review().filter(|plan| plan.is_rebase()) {
+            let (active, onto) = plan.tips();
+            rows.extend([
+                format!("{} sobre {}", plan.active(), plan.incoming()),
+                plan.label().into(),
+                format!("Activa · {active}"),
+                format!("Nueva base · {onto}"),
+            ]);
+            if let Some(result) = plan.result() {
+                rows.push(format!("Resultado · {result}"));
+            }
+            let count = usize::from(height.saturating_sub(4))
+                .saturating_sub(rows.len())
+                .min(128);
+            let total = plan.rebase_steps().len() + plan.rows.len();
+            let first = view.first.min(total.saturating_sub(count));
+            rows.extend(
+                plan.rebase_steps()
+                    .iter()
+                    .map(rebase_step_label)
+                    .chain(plan.rows.iter().map(|row| {
+                        format!(
+                            "{} · {}",
+                            row.change.map_or("Conflicto", file_flag),
+                            opaque(&row.path, width.saturating_sub(3))
+                        )
+                    }))
+                    .skip(first)
+                    .take(count),
+            );
+            if plan.can_apply() {
+                "↑↓ recorre la revisión · F2 confirma el rebase · Esc cancela"
+            } else {
+                "↑↓ recorre la revisión · Esc vuelve al grafo"
+            }
         } else if let Some(plan) = view.merge_review() {
             let (active, incoming) = plan.tips();
             let origin = if plan.reset_mode().is_some() {
@@ -565,6 +600,9 @@ impl TuiApp {
             } else if let WriteDraft::SwitchBranch(target) = &view.draft {
                 rows.push(format!("Rama de destino · {}", target.name));
                 "Intro revisa el cambio · Esc cancela"
+            } else if let WriteDraft::RebaseBranch(target) = &view.draft {
+                rows.push(format!("Reaplicar la rama activa sobre {}", target.name));
+                "Intro revisa el rebase · Esc cancela"
             } else if let WriteDraft::MergeBranch(target) = &view.draft {
                 rows.push(format!("Rama a incorporar en la activa · {}", target.name));
                 "Intro revisa la fusión · Esc cancela"

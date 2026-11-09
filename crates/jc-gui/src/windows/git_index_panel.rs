@@ -995,6 +995,54 @@ mod tests {
             fs::read(backup.path().join("archivos/1")).unwrap(),
             b"cambio local para respaldar\n"
         );
+
+        let base_file = fixture.root.join("base-rebase.txt");
+        fs::write(&base_file, b"cambio de la nueva base\n").unwrap();
+        run(&["read-tree", &original]);
+        run(&["add", "--", "base-rebase.txt"]);
+        let tree = run(&["write-tree"]);
+        let onto = run(&["commit-tree", &tree, "-p", &original, "-m", "Nueva base"]);
+        run(&["update-ref", "refs/heads/rebase", &onto]);
+        run(&["read-tree", &applied]);
+        fs::remove_file(&base_file).unwrap();
+        let before = fs::read(&index).unwrap();
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x74);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama rebase"))
+            .unwrap();
+        state.key(b'R' as usize);
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'E' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let plan = view
+            .merge_review()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert!(plan.is_rebase() && plan.can_apply());
+        assert_eq!(plan.rebase_steps().len(), 1);
+        assert_eq!(plan.rebase_steps()[0].original.to_string(), applied);
+        assert_eq!(plan.rows[0].path, b"base-rebase.txt");
+        let result = plan.result().unwrap().to_string();
+        state.key(0x0d);
+        assert!(!base_file.exists());
+        assert_eq!(fs::read(&index).unwrap(), before);
+        assert_eq!(run(&["rev-parse", "HEAD"]), applied);
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert_eq!(run(&["rev-parse", "HEAD"]), result);
+        assert_eq!(run(&["rev-parse", "HEAD^"]), onto);
+        assert_eq!(fs::read(&base_file).unwrap(), b"cambio de la nueva base\n");
+        assert_eq!(fs::read(&incoming_path).unwrap(), b"cambio entrante\n");
     }
 
     #[test]

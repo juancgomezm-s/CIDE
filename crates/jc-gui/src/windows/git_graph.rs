@@ -126,14 +126,18 @@ impl State {
         }
     }
 
-    pub(super) fn open_graph_merge(&mut self) {
+    pub(super) fn open_graph_merge(&mut self, rebase: bool) {
         if let Some((root, target)) = self
             .project_root
             .clone()
             .zip(self.graph_merge_target().cloned())
         {
             let _ = self.git_index.discard_review();
-            self.git_commit.open_merge(root, target);
+            if rebase {
+                self.git_commit.open_rebase(root, target);
+            } else {
+                self.git_commit.open_merge(root, target);
+            }
             self.git_workspace.invalidate();
         }
     }
@@ -283,7 +287,7 @@ impl State {
             0x71 if view.reference_selected.is_some() => self.open_graph_reference_change(true),
             0x2e if view.reference_selected.is_some() => self.open_graph_reference_change(false),
             0x43 if view.reference_selected.is_some() => self.open_graph_branch_switch(),
-            0x4D if view.reference_selected.is_some() => self.open_graph_merge(),
+            0x45 | 0x4D if view.reference_selected.is_some() => self.open_graph_merge(code == 0x45),
             0x41 => self.open_graph_merge_abort(),
             0x50 => self.open_graph_commit_operation(Some(CommitOperation::CherryPick)),
             0x56 => self.open_graph_commit_operation(Some(CommitOperation::Revert)),
@@ -354,7 +358,7 @@ impl State {
         }
         .into();
         frame.footer = if references && self.graph_merge_target().is_some() {
-            "M fusionar · C cambiar · Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
+            "M fusionar · E rebase · C cambiar · Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
         } else if references && self.graph_branch_target().is_some() {
             "C cambiar rama · Intro abrir · Esc volver"
         } else if references && self.graph_write_target().is_some() {
@@ -480,6 +484,7 @@ impl State {
                 },
             ),
             (226, "Fusionar rama", Intent::GraphMergeBranch),
+            (654, "Rebase", Intent::GraphRebaseBranch),
             (
                 226,
                 "Cherry-pick",
@@ -500,7 +505,8 @@ impl State {
                     && self.graph_write_target().is_none()
                 || matches!(intent, Intent::GraphSwitchBranch)
                     && self.graph_branch_target().is_none()
-                || matches!(intent, Intent::GraphMergeBranch) && self.graph_merge_target().is_none()
+                || matches!(intent, Intent::GraphMergeBranch | Intent::GraphRebaseBranch)
+                    && self.graph_merge_target().is_none()
                 || matches!(intent, Intent::GraphAbortMerge) && references
                 || matches!(intent, Intent::GraphCommitOperation(_) | Intent::GraphReset)
                     && (references || graph.is_none_or(|page| page.entries.is_empty()))

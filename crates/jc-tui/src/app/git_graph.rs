@@ -161,15 +161,15 @@ impl TuiApp {
                         .open_reference_change(root, target, key.code == KeyCode::F(2));
                 }
             }
-            KeyCode::Char('c' | 'C' | 'm' | 'M')
+            KeyCode::Char('c' | 'C' | 'm' | 'M' | 'e' | 'E')
                 if view.reference_selected.is_some() && key.kind == KeyEventKind::Press =>
             {
-                let merge = matches!(key.code, KeyCode::Char('m' | 'M'));
+                let integrate = !matches!(key.code, KeyCode::Char('c' | 'C'));
                 let target = view
                     .reference_selected
                     .and_then(|row| {
                         let target = self.graph_branch_target(row)?;
-                        if merge {
+                        if integrate {
                             self.git_revision.graph()?.branch_merge_target(row)
                         } else {
                             Some(target)
@@ -178,7 +178,9 @@ impl TuiApp {
                     .cloned();
                 if let Some((root, target)) = self.project_root.clone().zip(target) {
                     let _ = self.git_index.discard_review();
-                    if merge {
+                    if matches!(key.code, KeyCode::Char('e' | 'E')) {
+                        self.git_commit.open_rebase(root, target);
+                    } else if integrate {
                         self.git_commit.open_merge(root, target);
                     } else {
                         self.git_commit.open_branch_switch(root, target);
@@ -307,7 +309,7 @@ impl TuiApp {
             .into(),
             message: if references && self.graph_branch_target(view.selected_row()).is_some() {
                 if page.branch_merge_target(view.selected_row()).is_some() {
-                    "M fusionar · C cambiar · Intro abrir · F2 renombrar · Supr eliminar · Esc"
+                    "M fusionar · E rebase · C cambiar · Intro abrir · F2 renombrar · Supr eliminar · Esc"
                 } else {
                     "C cambiar rama · Intro abrir · Esc volver"
                 }

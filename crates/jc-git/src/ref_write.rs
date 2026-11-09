@@ -2261,6 +2261,172 @@ mod tests {
             assert_eq!(fs::read(file).unwrap(), b"contenido no rastreado");
             assert!(!git.join(crate::branch_checkout::JOURNAL_NAME).exists());
         }
+        #[test]
+        fn rebase_replays_in_order_without_writing_preview_and_can_abort_publication() {
+            use crate::local_merge::{RebaseStepState, prepare_rebase};
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            let fixture = Fixture::new();
+            let (repo, first, onto) = scenario(&fixture, true, b"uno\r\ndos\r\ntres\r\nFIN");
+            let original = b"UNO\r\ndos\r\nTRES\r\nfin";
+            let blob = repo.write_blob(original).unwrap().detach();
+            let tree = repo
+                .write_object(Tree {
+                    entries: vec![Entry {
+                        mode: EntryKind::Blob.into(),
+                        filename: "a.txt".into(),
+                        oid: blob,
+                    }],
+                })
+                .unwrap()
+                .detach();
+            let active = commit_at_tree(&repo, tree, &[first], "Segundo cambio");
+            let git = fixture.git();
+            let branch = git.join("refs/heads/activa");
+            let index = git.join("index");
+            let pending = git.join(crate::branch_checkout::JOURNAL_NAME);
+            let file = fixture.root.join("a.txt");
+            fs::write(&branch, format!("{active}\n")).unwrap();
+            fs::write(&file, original).unwrap();
+            let mut staged = repo.open_index().unwrap();
+            let (entry, _) = staged
+                .entries_mut_with_paths()
+                .find(|(_, path)| path.as_bytes() == b"a.txt")
+                .unwrap();
+            entry.id = blob;
+            staged.write(Default::default()).unwrap();
+            let before = fs::read(&index).unwrap();
+            let rebase = || {
+                prepare_rebase(
+                    &fixture.root,
+                    "entrante",
+                    &onto.to_string(),
+                    limits(),
+                    || false,
+                )
+            };
+            let plan = rebase().unwrap();
+            assert!(plan.is_rebase() && plan.can_apply());
+            assert_eq!(
+                plan.rebase_steps()
+                    .iter()
+                    .map(|step| step.original)
+                    .collect::<Vec<_>>(),
+                [first, active]
+            );
+            let RebaseStepState::Replayed(rewritten_first) = plan.rebase_steps()[0].state else {
+                panic!("first commit not replayed")
+            };
+            let result = plan.result().unwrap();
+            assert!(
+                repo.find_commit(rewritten_first).is_err() && repo.find_commit(result).is_err()
+            );
+            assert!(!pending.exists());
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert_eq!(fs::read(&file).unwrap(), original);
+            let target_ref = format!("{result}\n");
+            assert!(
+                apply_merge(plan, || fs::read_to_string(&branch).unwrap() == target_ref).is_err()
+            );
+            assert!(pending.exists());
+            assert!(rebase().is_err());
+            let abort = prepare_merge_abort(&fixture.root, limits(), || false).unwrap();
+            assert!(abort.is_rebase() && abort.restores_index() && abort.restores_branch());
+            assert_eq!(apply_merge_abort(abort, || false).unwrap().id, active);
+            assert_eq!(fs::read(&file).unwrap(), original);
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert!(!pending.exists());
+
+            let plan = rebase().unwrap();
+            let RebaseStepState::Replayed(first_result) = plan.rebase_steps()[0].state else {
+                panic!("first commit not replayed")
+            };
+            let id = apply_merge(plan, || false).unwrap().id;
+            assert_eq!(fs::read(&file).unwrap(), b"UNO\r\ndos\r\nTRES\r\nFIN");
+            let replayed_first = repo.find_commit(first_result).unwrap();
+            assert_eq!(replayed_first.parent_ids().next().unwrap().detach(), onto);
+            let replayed_last = repo.find_commit(id).unwrap();
+            assert_eq!(
+                replayed_last
+                    .parent_ids()
+                    .map(|p| p.detach())
+                    .collect::<Vec<_>>(),
+                [first_result]
+            );
+            assert_eq!(
+                replayed_last.decode().unwrap().author,
+                repo.find_commit(active).unwrap().decode().unwrap().author
+            );
+            assert_eq!(
+                replayed_last.decode().unwrap().message.as_bytes(),
+                b"Segundo cambio"
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("sin-seguimiento")).unwrap(),
+                b"archivo privado"
+            );
+        }
+
+        #[test]
+        fn rebase_conflict_review_does_not_publish_and_local_overlap_blocks_a_clean_plan() {
+            use crate::local_merge::{RebaseStepState, prepare_rebase};
+            let fixture = Fixture::new();
+            let (_, active, onto) = scenario(&fixture, true, b"ENTRANTE\r\ndos\r\ntres\r\nfin");
+            let git = fixture.git();
+            let index = git.join("index");
+            let before = fs::read(&index).unwrap();
+            let plan = prepare_rebase(
+                &fixture.root,
+                "entrante",
+                &onto.to_string(),
+                limits(),
+                || false,
+            )
+            .unwrap();
+            assert_eq!(plan.kind, MergeKind::Conflicts);
+            assert_eq!(plan.rows[0].path, b"a.txt");
+            assert!(matches!(
+                plan.rebase_steps()[0].state,
+                RebaseStepState::Conflict
+            ));
+            assert!(!plan.can_apply());
+            assert!(apply_merge(plan, || false).is_err());
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert!(!git.join(crate::branch_checkout::JOURNAL_NAME).exists());
+            assert_eq!(
+                fs::read_to_string(git.join("refs/heads/activa"))
+                    .unwrap()
+                    .trim(),
+                active.to_string()
+            );
+
+            let clean_fixture = Fixture::new();
+            let (_, _, onto) = scenario(&clean_fixture, true, b"uno\r\ndos\r\ntres\r\nFIN");
+            let plan = prepare_rebase(
+                &clean_fixture.root,
+                "entrante",
+                &onto.to_string(),
+                limits(),
+                || false,
+            )
+            .unwrap();
+            let file = clean_fixture.root.join("a.txt");
+            fs::write(&file, b"edicion local posterior").unwrap();
+            assert!(apply_merge(plan, || false).is_err());
+            assert_eq!(fs::read(&file).unwrap(), b"edicion local posterior");
+            assert!(
+                !clean_fixture
+                    .git()
+                    .join(crate::branch_checkout::JOURNAL_NAME)
+                    .exists()
+            );
+        }
     }
 
     #[cfg(windows)]

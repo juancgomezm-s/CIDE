@@ -11,8 +11,8 @@ pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
 use jc_git::local_merge::{
     apply_merge, apply_merge_abort, prepare_commit_mainline, prepare_commit_operation,
-    prepare_merge, prepare_merge_abort, prepare_reset, prepare_resolved_merge, MergeAbortPlan,
-    MergeKind, MergePlan,
+    prepare_merge, prepare_merge_abort, prepare_rebase, prepare_reset, prepare_resolved_merge,
+    MergeAbortPlan, MergeKind, MergePlan, RebaseStep, RebaseStepState,
 };
 pub use jc_git::local_merge::{CommitOperation, ResetMode};
 use jc_git::local_pair::SourceIdentity;
@@ -69,6 +69,7 @@ pub enum WriteDraft {
     ChangeReference(ReferenceTarget, bool),
     SwitchBranch(ReferenceTarget),
     MergeBranch(ReferenceTarget),
+    RebaseBranch(ReferenceTarget),
     CommitOperation(CommitOperation, String),
     Reset(ResetMode, String),
     AbortMerge,
@@ -86,6 +87,7 @@ impl WriteDraft {
             Self::ChangeReference(_, false)
                 | Self::SwitchBranch(_)
                 | Self::MergeBranch(_)
+                | Self::RebaseBranch(_)
                 | Self::CommitOperation(..)
                 | Self::Reset(..)
                 | Self::AbortMerge
@@ -94,7 +96,10 @@ impl WriteDraft {
     }
 
     fn publishes_integration(&self) -> bool {
-        matches!(self, Self::MergeBranch(_) | Self::CommitOperation(..))
+        matches!(
+            self,
+            Self::MergeBranch(_) | Self::RebaseBranch(_) | Self::CommitOperation(..)
+        )
     }
 
     fn can_stop_publication(&self) -> bool {
@@ -178,6 +183,7 @@ impl CommitView {
             },
             WriteDraft::SwitchBranch(_) => "Cambiar rama",
             WriteDraft::MergeBranch(_) => "Fusionar rama",
+            WriteDraft::RebaseBranch(_) => "Rebase local",
             WriteDraft::CommitOperation(operation, _) => operation.title(),
             WriteDraft::Reset(..) => "Reset de commit",
             WriteDraft::AbortMerge => "Abortar operación Git",
@@ -197,6 +203,7 @@ impl CommitView {
             WriteDraft::Restore(_) => "Comprobando el índice y el archivo… · Esc cancela",
             WriteDraft::SwitchBranch(_) => "Comprobando ambas ramas… · Esc cancela",
             WriteDraft::MergeBranch(_) => "Calculando la fusión local… · Esc cancela",
+            WriteDraft::RebaseBranch(_) => "Revisando los commits del rebase… · Esc cancela",
             WriteDraft::CommitOperation(CommitOperation::CherryPick, _) => {
                 "Calculando el cherry-pick… · Esc cancela"
             }
@@ -249,7 +256,7 @@ impl CommitView {
     }
     pub fn merge_conflicts(&self) -> Option<&MergePlan> {
         self.merge_review()
-            .filter(|plan| plan.kind == MergeKind::Conflicts)
+            .filter(|plan| plan.kind == MergeKind::Conflicts && !plan.is_rebase())
     }
     pub fn choosing_mainline(&self) -> Option<&MergePlan> {
         self.merge_review()
@@ -363,6 +370,12 @@ impl CommitController {
     pub fn open_merge(&mut self, root: PathBuf, target: ReferenceTarget) {
         if cfg!(windows) && target.kind == RefKind::Branch {
             self.open_write(root, None, WriteDraft::MergeBranch(target));
+        }
+    }
+
+    pub fn open_rebase(&mut self, root: PathBuf, target: ReferenceTarget) {
+        if cfg!(windows) {
+            self.open_write(root, None, WriteDraft::RebaseBranch(target));
         }
     }
     pub fn open_merge_abort(&mut self, root: PathBuf) {
@@ -619,8 +632,9 @@ impl CommitController {
             .map(|plan| plan.files().len())
             .or_else(|| view.branch_switch_review().map(|plan| plan.files().len()))
             .or_else(|| {
-                view.merge_review()
-                    .map(|plan| plan.rows.len().max(plan.mainline_choices().len()))
+                view.merge_review().map(|plan| {
+                    (plan.rows.len() + plan.rebase_steps().len()).max(plan.mainline_choices().len())
+                })
             })
             .or_else(|| view.merge_abort_review().map(|plan| plan.rows.len()))
             .unwrap_or(0);
@@ -781,6 +795,7 @@ impl CommitController {
                                 Some(CommitOperation::CherryPick) => "Cherry-pick publicado",
                                 Some(CommitOperation::Revert) => "Reversión publicada",
                                 None if plan.reset_mode().is_some() => "Reset aplicado",
+                                None if plan.is_rebase() => "Rebase aplicado",
                                 None => "Fusión local publicada",
                             };
                             Completion::Applied(apply_merge(*plan, cancelled).map(|publication| {
@@ -819,6 +834,7 @@ impl CommitController {
                                 Some(CommitOperation::CherryPick) => "Cherry-pick abortado",
                                 Some(CommitOperation::Revert) => "Reversión abortada",
                                 None if plan.reset_mode().is_some() => "Reset abortado",
+                                None if plan.is_rebase() => "Rebase abortado",
                                 None => "Fusión abortada",
                             };
                             Completion::Applied(apply_merge_abort(*plan, cancelled).map(|result| {
@@ -862,6 +878,10 @@ impl CommitController {
                             .map(|plan| WritePlan::BranchSwitch(Box::new(plan))),
                             (WriteDraft::MergeBranch(target), _) => {
                                 prepare_merge(&root, &target.name, &target.oid, LIMITS, cancelled)
+                                    .map(|plan| WritePlan::Merge(Box::new(plan)))
+                            }
+                            (WriteDraft::RebaseBranch(target), _) => {
+                                prepare_rebase(&root, &target.name, &target.oid, LIMITS, cancelled)
                                     .map(|plan| WritePlan::Merge(Box::new(plan)))
                             }
                             (WriteDraft::CommitOperation(operation, commit), _) => {
@@ -1010,6 +1030,18 @@ pub struct CommitOutcome {
     pub result: Result<String, String>,
     pub reference: bool,
     pub refresh_files: bool,
+}
+
+pub fn rebase_step_label(step: &RebaseStep) -> String {
+    let original = step.original.to_hex_with_len(8);
+    match step.state {
+        RebaseStepState::Pending => format!("Pendiente · {original}"),
+        RebaseStepState::Replayed(id) => {
+            format!("Reaplicar · {original} → {}", id.to_hex_with_len(8))
+        }
+        RebaseStepState::AlreadyApplied => format!("Ya aplicado · {original}"),
+        RebaseStepState::Conflict => format!("Conflicto · {original}"),
+    }
 }
 
 pub fn file_flag(change: jc_git::Change) -> &'static str {

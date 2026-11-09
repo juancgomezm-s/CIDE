@@ -85,7 +85,7 @@ quedan bloqueadas mientras exista el registro. Si faltan pruebas de propiedad
 del cambio, por ejemplo en una fusión anterior a esta función o cuando falta
 un archivo y su ausencia también podría ser una eliminación local, CIDE
 conserva los respaldos y se detiene. El comando opera sobre fusiones pendientes
-iniciadas en CIDE, cherry-picks y reversiones. El reflog de la rama y
+iniciadas en CIDE, cherry-picks, reversiones, resets y rebases. El reflog de la rama y
 el de HEAD registran los movimientos cuando están habilitados. El estado Git,
 el grafo y el explorador se actualizan al terminar.
 
@@ -140,6 +140,39 @@ publicar el índice y mover la rama, la reanudación de un aborto interrumpido,
 las dos transiciones de archivo y carpeta, y la protección de una edición
 posterior y de un archivo ajeno con contenido idéntico. Las pruebas usaron
 repositorios temporales en segundo plano.
+
+## Rebase local
+
+En **Git → Grafo → Referencias**, selecciona otra rama local y pulsa **E**
+o el botón **Rebase** de la GUI. **Intro** abre una revisión con la rama
+activa, la nueva base, los commits en orden de reaplicación y los archivos
+que cambiarán. Confirma con **Ctrl+Intro** en la GUI o **F2** en la TUI.
+
+CIDE calcula toda la secuencia antes de escribir. Esta primera versión
+admite hasta 32 commits lineales sobre una base común única. Conserva
+autores y mensajes al generar los commits nuevos. Si un cambio ya está
+aplicado y la reaplicación queda vacía, la revisión lo indica. Si hay un
+conflicto, muestra el commit y las rutas afectadas. Pulsa **Esc** para volver
+al grafo sin cambiar el repositorio.
+
+Al confirmar, CIDE vuelve a verificar las dos ramas, el índice y los
+archivos afectados. Bloquea las colisiones con cambios locales y conserva
+las ediciones y las entradas preparadas de las rutas ajenas al rebase.
+Los documentos sin guardar bloquean la operación. Si se interrumpe la
+escritura, pulsa **A** en el grafo para revisar y confirmar el aborto antes
+de volver a intentar el rebase. CIDE restaura la rama, el índice y los
+archivos que alcanzó a cambiar. Si detecta una edición posterior, detiene
+el aborto y conserva los respaldos.
+
+En Windows pasaron formato, Clippy y 917 pruebas con
+`python scripts/check-local.py --steps fmt clippy test --jobs 2` y
+`RUST_TEST_THREADS=2`. Los tres auxiliares se ejecutaron desde sus
+pruebas padre. La GUI verificó la vista previa y la confirmación sobre
+otra rama. La TUI verificó la protección de una edición local y el aborto
+tras una escritura parcial. El núcleo comprobó la reaplicación de dos
+commits en orden, el conflicto sin escrituras y la restauración de la
+rama, el índice y los archivos. Las pruebas usaron repositorios temporales
+en segundo plano.
 
 ## Reset soft y mixed
 

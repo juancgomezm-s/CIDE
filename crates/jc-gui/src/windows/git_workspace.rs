@@ -142,6 +142,7 @@ enum Intent {
     GraphChangeReference(bool),
     GraphSwitchBranch,
     GraphMergeBranch,
+    GraphRebaseBranch,
     GraphCommitOperation(jc_app::git_commit::CommitOperation),
     GraphReset,
     ResetMode(jc_app::git_commit::ResetMode),
@@ -958,8 +959,8 @@ impl State {
                 self.open_graph_branch_switch();
                 Action::None
             }
-            Some(Intent::GraphMergeBranch) => {
-                self.open_graph_merge();
+            Some(intent @ (Intent::GraphMergeBranch | Intent::GraphRebaseBranch)) => {
+                self.open_graph_merge(matches!(intent, Intent::GraphRebaseBranch));
                 Action::None
             }
             Some(Intent::GraphCommitOperation(operation)) => {

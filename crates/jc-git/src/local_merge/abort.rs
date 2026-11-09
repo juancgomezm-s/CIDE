@@ -31,7 +31,13 @@ impl MergeAbortPlan {
     pub fn reset_mode(&self) -> Option<ResetMode> {
         self.journal.reset
     }
+    pub fn is_rebase(&self) -> bool {
+        self.journal.rebase
+    }
     pub fn label(&self) -> &'static str {
+        if self.is_rebase() {
+            return "Rebase pendiente";
+        }
         if let Some(mode) = self.reset_mode() {
             return match mode {
                 ResetMode::Soft => "Reset soft pendiente",
@@ -212,6 +218,7 @@ pub fn apply_merge_abort(
                 Some(CommitOperation::CherryPick) => "cherry-pick: abortar operación de CIDE",
                 Some(CommitOperation::Revert) => "revert: abortar operación de CIDE",
                 None if plan.journal.reset.is_some() => "reset: abortar operación de CIDE",
+                None if plan.is_rebase() => "rebase: abortar operación de CIDE",
                 None => "merge: abortar fusión de CIDE",
             }
             .into(),

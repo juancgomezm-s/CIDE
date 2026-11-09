@@ -1,6 +1,6 @@
 use super::*;
 use jc_app::{
-    git_commit::{file_flag, CommitOperation, ResetMode, WriteDraft},
+    git_commit::{file_flag, rebase_step_label, CommitOperation, ResetMode, WriteDraft},
     git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit, Modifiers,
 };
@@ -384,7 +384,14 @@ impl State {
             } else if view.choosing_mainline().is_some() {
                 "↑↓ elige padre · Intro muestra los cambios · Esc cancela".into()
             } else if let Some(plan) = view.merge_review() {
-                if plan.reset_mode().is_some() {
+                if plan.is_rebase() {
+                    if plan.can_apply() {
+                        "↑↓ recorre la revisión · Ctrl+Intro confirma el rebase · Esc cancela"
+                            .into()
+                    } else {
+                        "↑↓ recorre la revisión · Esc vuelve al grafo".into()
+                    }
+                } else if plan.reset_mode().is_some() {
                     if plan.can_apply() {
                         "Ctrl+Intro confirma · Esc vuelve a elegir modo".into()
                     } else {
@@ -558,6 +565,50 @@ impl State {
                 });
             }
             ("Confirmar aborto", 12)
+        } else if let Some(plan) = view.merge_review().filter(|plan| plan.is_rebase()) {
+            f.summary = vec![
+                format!("{} sobre {}", plan.active(), plan.incoming()),
+                plan.label().into(),
+            ];
+            let (active, onto) = plan.tips();
+            f.details_top = p(132);
+            f.details = vec![format!("Activa · {active}"), format!("Nueva base · {onto}")];
+            if let Some(result) = plan.result() {
+                f.details.push(format!("Resultado · {result}"));
+            }
+            let top = f.preview.top + p(207);
+            let height = p(23).max(1);
+            let count = ((f.preview.bottom - top) / height).clamp(0, 128) as usize;
+            let total = plan.rebase_steps().len() + plan.rows.len();
+            let first = view.first.min(total.saturating_sub(count));
+            let lines =
+                plan.rebase_steps()
+                    .iter()
+                    .map(rebase_step_label)
+                    .chain(plan.rows.iter().map(|row| {
+                        format!(
+                            "{} · {}",
+                            row.change.map_or("Conflicto", file_flag),
+                            opaque(&row.path, 256)
+                        )
+                    }));
+            for (index, line) in lines.skip(first).take(count).enumerate() {
+                let y = top + index as i32 * height;
+                f.code.push(CodeRow {
+                    rect: rect(
+                        f.preview.left + p(12),
+                        y,
+                        f.preview.right - p(12),
+                        y + height,
+                    ),
+                    old: String::new(),
+                    new: String::new(),
+                    text: line,
+                    kind: 0,
+                    parallel: false,
+                });
+            }
+            ("Confirmar rebase", 12)
         } else if let Some(plan) = view.merge_review() {
             f.summary = vec![
                 if let Some(mode) = plan.reset_mode() {
@@ -806,6 +857,9 @@ impl State {
         } else if let WriteDraft::SwitchBranch(target) = &view.draft {
             f.summary = vec![format!("Rama de destino · {}", target.name)];
             ("Revisar cambio", 12)
+        } else if let WriteDraft::RebaseBranch(target) = &view.draft {
+            f.summary = vec![format!("Reaplicar la rama activa sobre {}", target.name)];
+            ("Revisar rebase", 12)
         } else if let WriteDraft::MergeBranch(target) = &view.draft {
             f.summary = vec![format!("Rama a incorporar en la activa · {}", target.name)];
             ("Revisar fusión", 12)

@@ -29,7 +29,9 @@ use std::{
 const HEADS: &str = "refs/heads/";
 const MAX_PATHS: usize = 128;
 mod abort;
+mod rebase;
 pub use abort::{MergeAbortPlan, apply_merge_abort, prepare_merge_abort};
+pub use rebase::{RebaseStep, RebaseStepState};
 pub const MERGE_EDIT_BYTES: usize = 64 * 1024;
 type Entries = BTreeMap<Vec<u8>, Entry>;
 type Blobs = BTreeMap<ObjectId, Vec<u8>>;
@@ -180,7 +182,7 @@ impl CommitOperation {
 
 #[derive(Clone)]
 enum Source {
-    Branch(FullName),
+    Branch(FullName, bool),
     Reset(ResetMode, String),
     Commit {
         operation: CommitOperation,
@@ -192,7 +194,7 @@ enum Source {
 impl Source {
     fn label(&self) -> &str {
         match self {
-            Self::Branch(name) => &name_text(name)[HEADS.len()..],
+            Self::Branch(name, _) => &name_text(name)[HEADS.len()..],
             Self::Commit { id, .. } | Self::Reset(_, id) => id,
         }
     }
@@ -200,14 +202,14 @@ impl Source {
     fn operation(&self) -> Option<CommitOperation> {
         match self {
             Self::Commit { operation, .. } => Some(*operation),
-            Self::Branch(_) | Self::Reset(..) => None,
+            Self::Branch(..) | Self::Reset(..) => None,
         }
     }
 
     fn mainline(&self) -> Option<Mainline> {
         match self {
             Self::Commit { mainline, .. } => *mainline,
-            Self::Branch(_) | Self::Reset(..) => None,
+            Self::Branch(..) | Self::Reset(..) => None,
         }
     }
 
@@ -216,6 +218,10 @@ impl Source {
             Self::Reset(mode, _) => Some(*mode),
             _ => None,
         }
+    }
+
+    fn is_rebase(&self) -> bool {
+        matches!(self, Self::Branch(_, true))
     }
 }
 
@@ -236,6 +242,7 @@ pub struct MergePlan {
     pub rows: Vec<MergeRow>,
     conflicts: BTreeMap<Vec<u8>, MergeConflict>,
     mainline_choices: Vec<ObjectId>,
+    rebase_steps: Vec<RebaseStep>,
     repository: Identity,
     limits: Limits,
     active: FullName,
@@ -265,6 +272,15 @@ impl MergePlan {
         self.source.operation()
     }
     pub fn label(&self) -> &'static str {
+        if self.is_rebase() {
+            return match self.kind {
+                MergeKind::UpToDate => "La rama activa ya está basada en el destino",
+                MergeKind::Conflicts => {
+                    "Rebase detenido en la revisión · el repositorio sigue intacto"
+                }
+                _ => "Se actualizará la rama activa sobre la base elegida",
+            };
+        }
         if let Some(mode) = self.reset_mode() {
             return match (mode, self.can_apply()) {
                 (_, false) => "Sin cambios que aplicar",
@@ -289,6 +305,12 @@ impl MergePlan {
     }
     pub fn reset_mode(&self) -> Option<ResetMode> {
         self.source.reset_mode()
+    }
+    pub fn is_rebase(&self) -> bool {
+        self.source.is_rebase()
+    }
+    pub fn rebase_steps(&self) -> &[RebaseStep] {
+        &self.rebase_steps
     }
     pub fn hard_changes_file(&self, path: &[u8]) -> bool {
         self.reset_mode() == Some(ResetMode::Hard)
@@ -363,7 +385,7 @@ pub struct MergePublication {
 struct Objects {
     blobs: Blobs,
     trees: Vec<(ObjectId, Tree)>,
-    commit: Commit,
+    commits: Vec<(ObjectId, Commit)>,
 }
 
 fn open(root: &Path, ctx: &Context<'_>) -> Result<(gix::Repository, Identity), Error> {
@@ -538,6 +560,7 @@ struct Candidate {
 fn read_version(
     repo: &gix::Repository,
     entry: Option<&Entry>,
+    generated: &Blobs,
     limits: Limits,
     budget: &mut Budget,
     ctx: &Context<'_>,
@@ -545,6 +568,10 @@ fn read_version(
     let Some(entry) = entry else {
         return Ok(None);
     };
+    if let Some(bytes) = generated.get(&entry.id) {
+        budget.charge(bytes.len())?;
+        return Ok(Some(bytes.clone()));
+    }
     let mut blob = revision::verified(repo, entry.id, limits.max_blob, ctx)?;
     if blob.kind != Kind::Blob {
         return Err(Error::Unsupported);
@@ -687,9 +714,27 @@ fn combine(
             .map(Option::unwrap_or_default)
     });
     let (base, ours, theirs) = (base?, ours?, theirs?);
-    let added = [&ours, &theirs].map(|side| side.keys().any(|path| !base.contains_key(path)));
+    combine_entries(
+        repo,
+        [&base, &ours, &theirs],
+        &Blobs::new(),
+        limits,
+        &mut budget,
+        ctx,
+    )
+}
+
+fn combine_entries(
+    repo: &gix::Repository,
+    [base, ours, theirs]: [&Entries; 3],
+    generated: &Blobs,
+    limits: Limits,
+    budget: &mut Budget,
+    ctx: &Context<'_>,
+) -> Result<Candidate, Error> {
+    let added = [ours, theirs].map(|side| side.keys().any(|path| !base.contains_key(path)));
     let [left_moves, right_moves] =
-        [&ours, &theirs].map(|side| base.keys().any(|path| !side.contains_key(path)));
+        [ours, theirs].map(|side| base.keys().any(|path| !side.contains_key(path)));
     let (left_moves, right_moves) = (left_moves && added[0], right_moves && added[1]);
     let mut candidate = Candidate {
         entries: BTreeMap::new(),
@@ -697,7 +742,7 @@ fn combine(
         conflicts: BTreeMap::new(),
     };
     let mut structural = BTreeSet::new();
-    for (files, folders) in [(&ours, &theirs), (&theirs, &ours)] {
+    for (files, folders) in [(ours, theirs), (theirs, ours)] {
         for path in folders.keys() {
             ctx.check()?;
             for (offset, byte) in path.iter().enumerate() {
@@ -709,7 +754,7 @@ fn combine(
     }
     for path in structural {
         ctx.check()?;
-        let shapes = [&base, &ours, &theirs].map(|entries| subtree(entries, &path));
+        let shapes = [base, ours, theirs].map(|entries| subtree(entries, &path));
         if shapes[0] == shapes[1] || shapes[0] == shapes[2] {
             continue;
         }
@@ -733,7 +778,7 @@ fn combine(
     }
     let structural: Vec<_> = candidate.conflicts.keys().cloned().collect();
     let renames = if left_moves || right_moves {
-        rename_conflicts([&base, &ours, &theirs], added, &structural, limits, ctx)?
+        rename_conflicts([base, ours, theirs], added, &structural, limits, ctx)?
     } else {
         BTreeMap::new()
     };
@@ -749,6 +794,7 @@ fn combine(
         .chain(ours.keys())
         .chain(theirs.keys())
         .collect();
+    let different_sides = (left_moves || right_moves) && ours != theirs;
     for path in paths {
         ctx.check()?;
         if renamed_paths.contains(path) || structural.iter().any(|root| contains_path(root, path)) {
@@ -759,7 +805,7 @@ fn combine(
             && left != before
             && right != before
             && ((left_moves && left.is_none()) || (right_moves && right.is_none()))
-            && trees[1] != trees[2];
+            && different_sides;
         let entry = if !conflicting_move && (left == right || right == before) {
             left.copied()
         } else if !conflicting_move && left == before {
@@ -771,9 +817,9 @@ fn combine(
                 .all(|entry| entry.mode == 0o100644)
         {
             let versions = [
-                read_version(repo, before, limits, &mut budget, ctx)?,
-                read_version(repo, left, limits, &mut budget, ctx)?,
-                read_version(repo, right, limits, &mut budget, ctx)?,
+                read_version(repo, before, generated, limits, budget, ctx)?,
+                read_version(repo, left, generated, limits, budget, ctx)?,
+                read_version(repo, right, generated, limits, budget, ctx)?,
             ];
             let merged = match versions.each_ref().map(Option::as_deref) {
                 [Some(base), Some(current), Some(incoming)] => {
@@ -881,11 +927,25 @@ pub fn prepare_merge(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<MergePlan, Error> {
-    let source = Source::Branch(ref_write::reference_name(
-        RefKind::Branch,
-        incoming,
-        limits,
-    )?);
+    let source = Source::Branch(
+        ref_write::reference_name(RefKind::Branch, incoming, limits)?,
+        false,
+    );
+    let theirs = ObjectId::from_hex(expected_tip.as_bytes()).map_err(engine)?;
+    prepare(root, source, theirs, limits, None, cancelled)
+}
+
+pub fn prepare_rebase(
+    root: &Path,
+    onto: &str,
+    expected_tip: &str,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    let source = Source::Branch(
+        ref_write::reference_name(RefKind::Branch, onto, limits)?,
+        true,
+    );
     let theirs = ObjectId::from_hex(expected_tip.as_bytes()).map_err(engine)?;
     prepare(root, source, theirs, limits, None, cancelled)
 }
@@ -993,9 +1053,9 @@ fn prepare(
     controlled(limits.timeout, cancelled, |ctx| {
         let (repo, repository) = open(root, ctx)?;
         let (active, refs) = refs(&repo, limits, ctx)?;
-        if let Source::Branch(incoming) = &source {
+        if let Source::Branch(incoming, _) = &source {
             if ref_write::namespace_conflicts(active.as_bstr().as_bytes(), name_text(incoming)) {
-                return Err(Error::Engine("Elige otra rama local para fusionar".into()));
+                return Err(Error::Engine("Elige otra rama local".into()));
             }
             if direct_branch(&refs, incoming)? != theirs {
                 return Err(Error::Stale);
@@ -1018,6 +1078,7 @@ fn prepare(
             }
             if journal.source != active_short
                 || journal.commit_operation != source.operation()
+                || journal.rebase != source.is_rebase()
                 || journal.reset != source.reset_mode()
                 || journal.destination != source.label()
                 || journal.incoming != Some(theirs)
@@ -1041,6 +1102,11 @@ fn prepare(
                 return Err(Error::Engine(
                     "Hay un reset hard interrumpido. Elige Abortar antes de volver a intentarlo"
                         .into(),
+                ));
+            }
+            if journal.rebase {
+                return Err(Error::Engine(
+                    "Hay un rebase interrumpido. Elige Abortar antes de volver a intentarlo".into(),
                 ));
             }
         }
@@ -1073,6 +1139,7 @@ fn prepare(
             rows: Vec::new(),
             conflicts: BTreeMap::new(),
             mainline_choices: Vec::new(),
+            rebase_steps: Vec::new(),
             repository,
             limits,
             active,
@@ -1121,6 +1188,15 @@ fn prepare(
             plan.rows = rows;
             plan.checkout = Some(checkout);
             plan.result = Some((theirs, target_tree));
+            return Ok(plan);
+        }
+        if plan.is_rebase() {
+            rebase::review(
+                &repo,
+                &mut plan,
+                index_bytes.as_deref().ok_or(Error::Unsupported)?,
+                ctx,
+            )?;
             return Ok(plan);
         }
         let operation = plan.operation();
@@ -1354,7 +1430,7 @@ fn prepare(
                 plan.objects = Some(Objects {
                     blobs: blobs.clone(),
                     trees,
-                    commit,
+                    commits: vec![(id, commit)],
                 });
                 (id, tree, entries, blobs)
             }
@@ -1375,6 +1451,7 @@ fn prepare(
                 merge: Some(MergeCheckout {
                     incoming: theirs,
                     commit_operation: operation,
+                    rebase: false,
                     mainline: plan.source.mainline(),
                     entries: &entries,
                     blobs: &blobs,
@@ -1429,6 +1506,11 @@ pub fn apply_merge(
                         "{error}. Elige Abortar para recuperar el reset hard"
                     ));
                 }
+                _ if plan.is_rebase() => {
+                    return Error::Engine(format!(
+                        "{error}. Elige Abortar para recuperar el rebase"
+                    ));
+                }
                 _ => "Fusionar en la rama",
             };
             Error::Engine(format!(
@@ -1475,7 +1557,7 @@ fn publish(
         {
             return Err(Error::Stale);
         }
-        if let Source::Branch(incoming) = &plan.source
+        if let Source::Branch(incoming, _) = &plan.source
             && direct_branch(&refs, incoming)? != plan.theirs
         {
             return Err(Error::Stale);
@@ -1497,7 +1579,7 @@ fn publish(
     let _packed = hold("packed-refs", None)?;
     let active = name_text(&plan.active);
     ref_write::ordinary_path_absent(git, active, &ctx)?;
-    let _incoming = if let Source::Branch(incoming) = &plan.source {
+    let _incoming = if let Source::Branch(incoming, _) = &plan.source {
         let incoming = name_text(incoming);
         ref_write::ordinary_path_absent(git, incoming, &ctx)?;
         Some(hold(incoming, Some(git.join("refs")))?)
@@ -1529,9 +1611,9 @@ fn publish(
     if let Some(objects) = &plan.objects {
         commit_write::check_signing(&fresh)?;
         let signature = commit_write::local_identity(&fresh)?;
-        if signature.name != objects.commit.committer.name
-            || signature.email != objects.commit.committer.email
-        {
+        if objects.commits.iter().any(|(_, commit)| {
+            signature.name != commit.committer.name || signature.email != commit.committer.email
+        }) {
             return Err(Error::Stale);
         }
         for (id, bytes) in &objects.blobs {
@@ -1542,7 +1624,10 @@ fn publish(
             check()?;
             commit_write::store_object(&fresh, git, *id, tree)?;
         }
-        commit_write::store_object(&fresh, git, result, &objects.commit)?;
+        for (id, commit) in &objects.commits {
+            check()?;
+            commit_write::store_object(&fresh, git, *id, commit)?;
+        }
     }
     if tree_id(&fresh, result, plan.limits, &ctx)? != result_tree {
         return Err(Error::Stale);
@@ -1565,6 +1650,7 @@ fn publish(
                 }
                 (Some(CommitOperation::Revert), _) => format!("revert: {}", plan.incoming()),
                 (_, Some(mode)) => format!("reset --{}: {}", mode.label(), plan.incoming()),
+                _ if plan.is_rebase() => format!("rebase sobre {}", plan.incoming()),
                 _ => format!("merge {}: {}", plan.incoming(), plan.kind.label()),
             }
             .into(),
