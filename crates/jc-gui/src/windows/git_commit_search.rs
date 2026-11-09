@@ -205,7 +205,7 @@ impl State {
     }
     pub(super) fn back_git_commit_search(&mut self) {
         if self.git_workspace.history_file.is_some() {
-            self.git_workspace.history_file = None;
+            self.show_git_history_summary();
             self.git_workspace.active = Column::Files;
             self.git_workspace.focus_diff = false;
         } else {

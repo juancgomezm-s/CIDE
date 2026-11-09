@@ -302,6 +302,13 @@ impl State {
         if code == b'E' as usize && modifiers == Modifiers::CTRL.union(Modifiers::ALT) {
             return self.git_patch_action();
         }
+        if code == b'R' as usize
+            && modifiers == Modifiers::CTRL.union(Modifiers::ALT)
+            && self.git_restore_available()
+        {
+            self.open_git_restore();
+            return Action::None;
+        }
         if let Some(action) = self.git_commit_search_key(code, modifiers) {
             return action;
         }

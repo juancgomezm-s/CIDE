@@ -31,6 +31,36 @@ pub struct RevisionEntry {
     pub oid: String,
     pub mode: u32,
 }
+/// One directory of the immutable tree of a selected commit.
+pub struct RevisionDirectory {
+    pub repository: Identity,
+    pub commit: String,
+    pub path: Vec<u8>,
+    pub entries: Vec<DirectoryEntry>,
+}
+impl fmt::Debug for RevisionDirectory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RevisionDirectory")
+            .field("root", &self.repository.root)
+            .field("commit", &self.commit)
+            .field("path", &self.path)
+            .field("entries", &self.entries)
+            .finish()
+    }
+}
+#[derive(Debug)]
+pub struct DirectoryEntry {
+    pub name: Vec<u8>,
+    pub mode: u32,
+}
+impl DirectoryEntry {
+    pub fn is_directory(&self) -> bool {
+        self.mode == 0o40000
+    }
+    pub fn is_comparable(&self) -> bool {
+        matches!(self.mode, 0o100644 | 0o100755)
+    }
+}
 pub struct RevisionFilePair {
     pub repository: Identity,
     pub commit: String,
@@ -428,6 +458,88 @@ fn choose_parent(commit: &Commit, index: usize) -> Result<Option<gix::ObjectId>,
         Error::Engine("El padre elegido no pertenece a la revisión disponible".into())
     })
 }
+
+/// Lists immediate tree entries at a pinned commit. An empty path means the
+/// repository root. A quota or missing directory is an error, never an empty
+/// success. Only tree and commit objects are read.
+pub fn read_revision_directory(
+    root: &Path,
+    selected: &str,
+    path: &[u8],
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<RevisionDirectory, Error> {
+    limits.admit()?;
+    let id = commit_id(selected)?;
+    if !path.is_empty() {
+        path_valid(path, limits.max_path)?;
+    }
+    controlled(limits.timeout, cancelled, |ctx| {
+        let (repo, repository) = open(root, ctx)?;
+        let mut budget = Budget::new(limits);
+        budget.charge(path.len().saturating_add(128))?;
+        let selected = commit(&repo, id, limits, &mut budget, ctx)?;
+        let mut id = selected.tree;
+        if !path.is_empty() {
+            let components = path.split(|byte| *byte == b'/');
+            if components.clone().count() >= MAX_DEPTH {
+                return Err(Error::Limited);
+            }
+            for component in components {
+                let entry = find_tree_item(&repo, id, component, limits, &mut budget, ctx)?
+                    .ok_or(Error::Missing)?;
+                if entry.mode != 0o40000 {
+                    return Err(Error::Unsupported);
+                }
+                id = entry.id;
+            }
+        }
+        let mut entries = Vec::new();
+        if let Some(tree) = verified_tree(&repo, id, limits, &mut budget, ctx)? {
+            for entry in tree.iter() {
+                ctx.check()?;
+                budget.visit()?;
+                if entries.len() >= limits.max_entries {
+                    return Err(Error::Limited);
+                }
+                let entry = entry.map_err(engine)?;
+                let name = entry.filename().as_bytes();
+                if name.contains(&b'/') {
+                    return Err(Error::Unsupported);
+                }
+                path_valid(name, limits.max_path)?;
+                let length = path.len() + usize::from(!path.is_empty()) + name.len();
+                if length > limits.max_path {
+                    return Err(Error::Limited);
+                }
+                budget.charge(
+                    name.len()
+                        .saturating_add(2 * std::mem::size_of::<DirectoryEntry>()),
+                )?;
+                entries.push(DirectoryEntry {
+                    name: name.to_vec(),
+                    mode: entry.mode().value() as u32,
+                });
+            }
+        }
+        entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+        if entries.windows(2).any(|pair| pair[0].name == pair[1].name) {
+            return Err(Error::Engine("El árbol contiene rutas duplicadas".into()));
+        }
+        entries.sort_unstable_by(|a, b| {
+            b.is_directory()
+                .cmp(&a.is_directory())
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        ctx.check()?;
+        Ok(RevisionDirectory {
+            repository,
+            commit: selected.id.to_string(),
+            path: path.to_vec(),
+            entries,
+        })
+    })
+}
 fn push_file(
     files: &mut Vec<RevisionFile>,
     path: Vec<u8>,
@@ -464,26 +576,7 @@ pub(crate) fn tree_entry(
         return Err(Error::Limited);
     }
     for (ordinal, part) in parts.enumerate() {
-        ctx.check()?;
-        let Some(tree) = verified_tree(repo, id, limits, budget, ctx)? else {
-            return Ok(None);
-        };
-        let mut matched = None;
-        for entry in tree.iter() {
-            ctx.check()?;
-            budget.visit()?;
-            let entry = entry.map_err(engine)?;
-            if entry.filename().as_bytes() == part {
-                if matched.is_some() {
-                    return Err(Error::Engine("El árbol contiene rutas duplicadas".into()));
-                }
-                matched = Some(Entry {
-                    id: entry.object_id(),
-                    mode: entry.mode().value() as u32,
-                });
-            }
-        }
-        let Some(entry) = matched else {
+        let Some(entry) = find_tree_item(repo, id, part, limits, budget, ctx)? else {
             return Ok(None);
         };
         if ordinal + 1 == count {
@@ -498,6 +591,35 @@ pub(crate) fn tree_entry(
         id = entry.id;
     }
     Ok(None)
+}
+
+fn find_tree_item(
+    repo: &gix::Repository,
+    id: gix::ObjectId,
+    name: &[u8],
+    limits: Limits,
+    budget: &mut Budget,
+    ctx: &Context<'_>,
+) -> Result<Option<Entry>, Error> {
+    let Some(tree) = verified_tree(repo, id, limits, budget, ctx)? else {
+        return Ok(None);
+    };
+    let mut matched = None;
+    for entry in tree.iter() {
+        ctx.check()?;
+        budget.visit()?;
+        let entry = entry.map_err(engine)?;
+        if entry.filename().as_bytes() == name {
+            if matched.is_some() {
+                return Err(Error::Engine("El árbol contiene rutas duplicadas".into()));
+            }
+            matched = Some(Entry {
+                id: entry.object_id(),
+                mode: entry.mode().value() as u32,
+            });
+        }
+    }
+    Ok(matched)
 }
 pub(crate) fn blob(
     repo: &gix::Repository,
@@ -732,6 +854,53 @@ mod tests {
         let mut out = BTreeMap::new();
         visit(root, root, &mut out);
         out
+    }
+    #[test]
+    fn revision_directory_lists_pinned_immediate_entries_without_blobs_or_disk_reads() {
+        let fixture = Fixture::new();
+        let repo = gix::init(&fixture.root).unwrap();
+        let id = repo.write_blob(b"ignored content").unwrap().detach();
+        let nested = tree(&repo, &[(b"z\xff", 0o100644, id)]);
+        let original = tree(&repo, &[(b"aaa", 0o100644, id), (b"docs", 0o40000, nested)]);
+        let first = save_commit(&repo, original, &[]);
+        save_commit(
+            &repo,
+            gix::ObjectId::empty_tree(repo.object_hash()),
+            &[first],
+        );
+        fs::write(fixture.root.join("untracked"), b"worktree").unwrap();
+        let before = image(&fixture.root);
+
+        let commit = first.to_string();
+        let query =
+            |path: &[u8]| read_revision_directory(&fixture.root, &commit, path, limits(), || false);
+        let root = query(b"").unwrap();
+        assert_eq!(root.commit, commit);
+        assert_eq!(root.entries.len(), 2);
+        assert_eq!(root.entries[0].name, b"docs");
+        assert!(root.entries[0].is_directory());
+        assert_eq!(root.entries[1].name, b"aaa");
+        assert!(root.entries[1].is_comparable());
+        let docs = query(b"docs").unwrap();
+        assert_eq!(docs.path, b"docs");
+        assert_eq!(docs.entries[0].name, b"z\xff");
+        assert!(matches!(query(b"missing"), Err(Error::Missing)));
+        assert!(matches!(query(b"aaa"), Err(Error::Unsupported)));
+        assert!(matches!(query(b"../docs"), Err(Error::Unsupported)));
+        assert!(matches!(
+            read_revision_directory(
+                &fixture.root,
+                &commit,
+                b"",
+                Limits {
+                    max_entries: 1,
+                    ..limits()
+                },
+                || false
+            ),
+            Err(Error::Limited)
+        ));
+        assert_eq!(image(&fixture.root), before);
     }
     #[test]
     fn root_revision_has_typed_absence_empty_present_raw_paths_and_exact_bytes_without_writes() {

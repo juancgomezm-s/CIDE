@@ -19,9 +19,12 @@ use jc_git::patch_export::{export_unified, PatchOptions};
 use jc_git::path_history::read_path_history;
 pub use jc_git::path_history::{PathHistoryCursor, PathHistoryEntry, PathHistoryPage};
 use jc_git::revision::{
-    read_file_pair_parent, read_file_pair_paths, read_revision_parent, RevisionFilePair,
+    read_file_pair_parent, read_file_pair_paths, read_revision_directory, read_revision_parent,
+    RevisionFilePair,
 };
-pub use jc_git::revision::{Revision, RevisionEntry, RevisionFile};
+pub use jc_git::revision::{
+    DirectoryEntry, Revision, RevisionDirectory, RevisionEntry, RevisionFile,
+};
 pub use jc_git::{Change, CommitInfo, RepositoryInfo};
 use std::{
     path::{Path, PathBuf},
@@ -254,6 +257,11 @@ enum Query {
         commit: String,
         parent: usize,
     },
+    Directory {
+        commit: String,
+        parent: usize,
+        path: Vec<u8>,
+    },
     HistoricalFile {
         commit: String,
         path: Vec<u8>,
@@ -271,7 +279,9 @@ impl Query {
             Self::CommitSearch { start, .. } => Some(start),
             Self::Blame { start, .. } => Some(start),
             Self::PathHistory { start, .. } => Some(start),
-            Self::Revision { commit, .. } | Self::HistoricalFile { commit, .. } => Some(commit),
+            Self::Revision { commit, .. }
+            | Self::Directory { commit, .. }
+            | Self::HistoricalFile { commit, .. } => Some(commit),
             _ => None,
         }
     }
@@ -281,12 +291,15 @@ impl Query {
             | Self::LocalFile { path, .. }
             | Self::PathHistory { path, .. }
             | Self::Blame { path, .. } => Some(path),
+            Self::Directory { path, .. } if !path.is_empty() => Some(path),
             _ => None,
         }
     }
     fn parent(&self) -> Option<usize> {
         match self {
-            Self::Revision { parent, .. } | Self::HistoricalFile { parent, .. } => Some(*parent),
+            Self::Revision { parent, .. }
+            | Self::Directory { parent, .. }
+            | Self::HistoricalFile { parent, .. } => Some(*parent),
             _ => None,
         }
     }
@@ -329,6 +342,11 @@ impl Selection {
                         .is_none_or(|c| c.memory_bytes() <= PATH_BYTES * 4)
             }
             Query::Revision { commit, parent } => commit.capacity() <= 64 && *parent < 8,
+            Query::Directory {
+                commit,
+                parent,
+                path,
+            } => commit.capacity() <= 64 && *parent < 8 && path.capacity() <= PATH_BYTES,
             Query::HistoricalFile {
                 commit,
                 path,
@@ -371,6 +389,7 @@ enum Outcome {
     Blame(BlamePage),
     PathHistory(PathHistoryPage),
     Revision(Revision),
+    Directory(RevisionDirectory),
     Comparison(RevisionComparison),
 }
 enum Failure {
@@ -417,6 +436,7 @@ pub struct GitRevisionController {
     generation: u64,
     selection: Option<Selection>,
     revision: Option<Revision>,
+    directory: Option<RevisionDirectory>,
     parent_options: Vec<String>,
     graph: Option<CommitGraph>,
     path_history: Option<PathHistoryPage>,
@@ -443,6 +463,7 @@ impl GitRevisionController {
             generation: 0,
             selection: None,
             revision: None,
+            directory: None,
             parent_options: Vec::new(),
             graph: None,
             path_history: None,
@@ -457,6 +478,9 @@ impl GitRevisionController {
     }
     pub fn revision(&self) -> Option<&Revision> {
         self.revision.as_ref()
+    }
+    pub fn directory(&self) -> Option<&RevisionDirectory> {
+        self.directory.as_ref()
     }
     pub fn graph(&self) -> Option<&CommitGraph> {
         if matches!(
@@ -523,6 +547,7 @@ impl GitRevisionController {
         }
         self.invalidate_work();
         self.revision = None;
+        self.directory = None;
         self.parent_options.clear();
         self.state = GitRevisionState::Ready;
         true
@@ -684,6 +709,28 @@ impl GitRevisionController {
             query: Query::Revision { commit, parent },
         })
     }
+    pub fn request_directory(&mut self, root: PathBuf, path: Vec<u8>) -> Result<(), String> {
+        let commit = self
+            .revision
+            .as_ref()
+            .filter(|_| {
+                self.selection
+                    .as_ref()
+                    .is_some_and(|selected| selected.root == root)
+            })
+            .ok_or("La revisión del árbol ya no está disponible")?
+            .commit
+            .clone();
+        let parent = self.parent_options().0;
+        self.request(Selection {
+            root,
+            query: Query::Directory {
+                commit,
+                parent,
+                path,
+            },
+        })
+    }
     pub fn parent_options(&self) -> (usize, &[String]) {
         let index = self
             .selection
@@ -767,6 +814,12 @@ impl GitRevisionController {
         })
     }
     fn request(&mut self, mut selection: Selection) -> Result<(), String> {
+        let directory_query = matches!(selection.query, Query::Directory { .. });
+        let previous_comparison = if directory_query {
+            self.comparison.take()
+        } else {
+            None
+        };
         self.invalidate_work();
         let retain_graph = self
             .selection
@@ -774,7 +827,9 @@ impl GitRevisionController {
             .is_some_and(|current| current.root == selection.root)
             && match &selection.query {
                 Query::Graph { .. } => true,
-                Query::Revision { commit, .. } | Query::HistoricalFile { commit, .. } => {
+                Query::Revision { commit, .. }
+                | Query::Directory { commit, .. }
+                | Query::HistoricalFile { commit, .. } => {
                     self.graph.as_ref().is_some_and(|graph| {
                         graph.entries.iter().any(|entry| entry.commit.id == *commit)
                     })
@@ -789,7 +844,9 @@ impl GitRevisionController {
             .as_ref()
             .is_some_and(|current| current.root == selection.root)
             && match &selection.query {
-                Query::Revision { commit, .. } | Query::HistoricalFile { commit, .. } => {
+                Query::Revision { commit, .. }
+                | Query::Directory { commit, .. }
+                | Query::HistoricalFile { commit, .. } => {
                     self.commit_search.as_ref().is_some_and(|p| {
                         p.entries
                             .iter()
@@ -856,13 +913,19 @@ impl GitRevisionController {
             self.parent_options.clear();
         }
         let retain_revision = same_revision
-            && matches!(selection.query, Query::HistoricalFile { .. })
+            && matches!(
+                selection.query,
+                Query::HistoricalFile { .. } | Query::Directory { .. }
+            )
             && self
                 .selection
                 .as_ref()
                 .is_some_and(|current| current.query.parent() == selection.query.parent());
         if !retain_revision {
             self.revision = None;
+        }
+        if !retain_revision || directory_query {
+            self.directory = None;
         }
         self.selection = None;
         let Some(generation) = self.generation.checked_add(1) else {
@@ -872,11 +935,13 @@ impl GitRevisionController {
         self.generation = generation;
         if !selection.valid() {
             self.revision = None;
+            self.directory = None;
             self.state = GitRevisionState::Failed;
             return Err("La consulta necesita raíz absoluta, revisión y ruta Git válidas".into());
         }
         match &mut selection.query {
             Query::Revision { commit, .. }
+            | Query::Directory { commit, .. }
             | Query::HistoricalFile { commit, .. }
             | Query::PathHistory { start: commit, .. }
             | Query::Blame { start: commit, .. }
@@ -893,12 +958,16 @@ impl GitRevisionController {
                 Ok(worker) => self.worker = Some(worker),
                 Err(_) => {
                     self.revision = None;
+                    self.directory = None;
                     self.state = GitRevisionState::Failed;
                     return Err("No se pudo iniciar la consulta Git".into());
                 }
             }
         }
         self.selection = Some(selection.clone());
+        if retain_revision {
+            self.comparison = previous_comparison;
+        }
         let mut queue = self
             .shared
             .queue
@@ -924,6 +993,7 @@ impl GitRevisionController {
             self.invalidate_work();
             self.selection = None;
             self.revision = None;
+            self.directory = None;
             self.parent_options.clear();
             self.graph = None;
             self.path_history = None;
@@ -937,6 +1007,7 @@ impl GitRevisionController {
     pub fn cancel(&mut self) {
         self.invalidate_work();
         self.revision = None;
+        self.directory = None;
         self.parent_options.clear();
         self.graph = None;
         self.path_history = None;
@@ -1007,6 +1078,17 @@ impl GitRevisionController {
                 {
                     self.parent_options.clone_from(&revision.parents);
                     self.revision = Some(revision);
+                    self.state = GitRevisionState::Ready;
+                }
+                Ok(Outcome::Directory(directory))
+                    if matches!(&completion.selection.query, Query::Directory { commit, path, .. }
+                        if directory.commit == *commit && directory.path == *path)
+                        && self.revision.as_ref().is_some_and(|revision| {
+                            revision.repository.root == directory.repository.root
+                                && revision.repository.git_dir == directory.repository.git_dir
+                        }) =>
+                {
+                    self.directory = Some(directory);
                     self.state = GitRevisionState::Ready;
                 }
                 Ok(Outcome::Comparison(comparison))
@@ -1133,6 +1215,13 @@ fn run_provider(selection: &Selection, cancel: &Cancellation) -> Result<Outcome,
                 cancel.is_cancelled()
             })
             .map(Outcome::Revision)
+            .map_err(Failure::Provider)
+        }
+        Query::Directory { commit, path, .. } => {
+            read_revision_directory(&selection.root, commit, path, limits(), || {
+                cancel.is_cancelled()
+            })
+            .map(Outcome::Directory)
             .map_err(Failure::Provider)
         }
         Query::HistoricalFile {

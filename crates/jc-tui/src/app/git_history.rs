@@ -730,7 +730,11 @@ impl TuiApp {
             width,
         ));
         prepared.details.push(label(
-            "↑↓ desplazar · ←→ bloque · E codificación · Esc volver",
+            if self.git_restore_available() {
+                "U recuperar archivo · ↑↓ desplazar · E codificación · Esc volver"
+            } else {
+                "↑↓ desplazar · ←→ bloque · E codificación · Esc volver"
+            },
             width,
         ));
         let Some(result) = self.git_revision.comparison() else {

@@ -462,6 +462,96 @@ fn tui_graph_pages_to_merge_and_returns_from_commit_detail() {
     }
     assert_eq!(fs::read_to_string(tag).unwrap().trim(), merge);
     assert_eq!(fixture.disk(), before);
+
+    settle(&mut app);
+    key(&mut app, KeyCode::Char('r'));
+    let row = app
+        .prepare_frame(100, 24)
+        .graph
+        .unwrap()
+        .rows
+        .into_iter()
+        .find(|row| row.path == "Etiqueta integracion-verificada")
+        .unwrap()
+        .ordinal;
+    for _ in 0..row {
+        key(&mut app, KeyCode::Down);
+    }
+    key(&mut app, KeyCode::Delete);
+    key(&mut app, KeyCode::Enter);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.git_commit.busy() {
+        let ticket = wake.ticket();
+        app.poll_tasks();
+        assert!(Instant::now() < deadline, "{}", app.status);
+        wake.wait(ticket, Some(Duration::from_millis(10)));
+    }
+    let view = app.git_commit.view().unwrap();
+    assert!(view.reference_change_review().is_some(), "{:?}", view.error);
+    assert!(fixture
+        .path(".git/refs/tags/integracion-verificada")
+        .is_file());
+    key(&mut app, KeyCode::F(2));
+    while app.git_commit.busy() {
+        let ticket = wake.ticket();
+        app.poll_tasks();
+        assert!(Instant::now() < deadline, "{}", app.status);
+        wake.wait(ticket, Some(Duration::from_millis(10)));
+    }
+    assert!(
+        !fixture
+            .path(".git/refs/tags/integracion-verificada")
+            .exists(),
+        "{}",
+        app.status
+    );
+    assert_eq!(fixture.disk(), before);
+}
+
+#[test]
+fn tui_recovers_a_deleted_file_only_after_review() {
+    use jc_app::git_revision::GitRevisionState;
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let before = fixture.disk();
+    fs::remove_file(fixture.path(TRACKED)).unwrap();
+    let (mut app, wake) = fixture.app(false);
+    request_ready(&mut app, &wake);
+    key(&mut app, KeyCode::End);
+    assert_eq!(app.git_status.selected_path_ref(), Some(TRACKED.as_bytes()));
+    key(&mut app, KeyCode::Char('t'));
+    let wait = |app: &mut TuiApp, pending: fn(&TuiApp) -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while pending(app) {
+            let ticket = wake.ticket();
+            app.poll_tasks();
+            assert!(Instant::now() < deadline, "{}", app.status);
+            wake.wait(ticket, Some(Duration::from_millis(10)));
+        }
+    };
+    wait(&mut app, |app| {
+        matches!(
+            app.git_revision.state(),
+            GitRevisionState::Queued | GitRevisionState::Running
+        )
+    });
+    assert!(app.git_restore_available(), "{}", app.status);
+    key(&mut app, KeyCode::Char('u'));
+    key(&mut app, KeyCode::Enter);
+    wait(&mut app, |app| app.git_commit.busy());
+    let view = app.git_commit.view().unwrap();
+    assert!(view.restore_review().is_some(), "{:?}", view.error);
+    assert!(!fixture.path(TRACKED).exists());
+    key(&mut app, KeyCode::F(2));
+    wait(&mut app, |app| app.git_commit.busy());
+    assert_eq!(
+        fs::read(fixture.path(TRACKED)).unwrap(),
+        b"index content \x81\r\n"
+    );
+    let after = fixture.disk();
+    assert_eq!(after.index, before.index);
+    assert_eq!(after.head, before.head);
+    assert_eq!(after.untracked, before.untracked);
 }
 
 #[test]

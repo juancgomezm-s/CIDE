@@ -76,6 +76,7 @@ pub(super) struct Workspace {
     pub history_file: Option<usize>,
     pub history_hunk: usize,
     pub history_encoding: Option<TextEncoding>,
+    history_browser: history::HistoryBrowser,
     pub(super) path_query: Option<(String, Vec<u8>)>,
     pub(super) blame_query: Option<(String, Vec<u8>, usize)>,
     blame_selected: usize,
@@ -137,6 +138,8 @@ enum Intent {
     GraphCommit(usize),
     GraphReferences,
     GraphReference(usize),
+    GraphOpenReference,
+    GraphChangeReference(bool),
     GraphCreateReference(jc_app::git_commit::RefKind),
     HistoryParent,
     CreateCommit,
@@ -145,6 +148,7 @@ enum Intent {
     CancelCommit,
     Index,
     IndexHunk,
+    RestoreMissing,
     Patch,
     SearchOpen,
     SearchRun,
@@ -175,6 +179,11 @@ enum Intent {
     Navigate,
     Local,
     HistoryFile(usize),
+    HistoryFileMode(bool),
+    HistoryTreeEntry(usize),
+    HistoryTab(usize),
+    HistoryTabStep(isize),
+    HistoryTabClose,
     HistorySummary,
     HistoryEncoding,
     DistributionMenu,
@@ -243,6 +252,7 @@ pub(super) struct Frame {
     branch: String,
     count: String,
     historical: bool,
+    history_browser: bool,
     details_top: i32,
     message: String,
     subtitle: String,
@@ -463,6 +473,22 @@ impl State {
         self.add_git_commit_search_button(&mut frame);
         self.prepare_git_controls(&mut frame);
         self.add_git_patch_button(&mut frame);
+        if self.git_restore_available() {
+            let p = |n| self.dpi.pixels(n);
+            let left = frame.preview.left + p(156);
+            let top = frame.preview.top + p(156);
+            let r = rect(left, top, left + p(140), top + p(24));
+            frame.footer = format!("Ctrl+Alt+R recuperar archivo · {}", frame.footer);
+            if r.right <= frame.preview.right - p(8)
+                && r.bottom <= frame.preview.bottom
+                && frame.buttons.iter().all(|(b, _, _)| {
+                    r.left >= b.right || r.right <= b.left || r.top >= b.bottom || r.bottom <= b.top
+                })
+            {
+                frame.buttons.push((r, "Recuperar archivo".into(), false));
+                frame.hits.actions.push((r, Intent::RestoreMissing));
+            }
+        }
         for (block, shortcut, offset, intent) in [
             (false, "Ctrl+Mayús+I", 12, Intent::Index),
             (true, "Ctrl+Alt+B", 156, Intent::IndexHunk),
@@ -837,6 +863,7 @@ impl State {
             rails: Vec::new(),
             dividers: Vec::new(),
             historical: false,
+            history_browser: false,
             details_top: p(164),
             message,
             subtitle,
@@ -898,7 +925,15 @@ impl State {
                 Action::None
             }
             Some(Intent::GraphReference(index)) => {
-                self.choose_graph_reference(index);
+                self.select_graph_reference(index);
+                Action::None
+            }
+            Some(Intent::GraphOpenReference) => {
+                self.open_selected_graph_reference();
+                Action::None
+            }
+            Some(Intent::GraphChangeReference(rename)) => {
+                self.open_graph_reference_change(rename);
                 Action::None
             }
             Some(Intent::GraphCreateReference(kind)) => {
@@ -932,6 +967,10 @@ impl State {
             }
             Some(Intent::IndexHunk) => {
                 self.git_index_action(true);
+                Action::None
+            }
+            Some(Intent::RestoreMissing) => {
+                self.open_git_restore();
                 Action::None
             }
             Some(Intent::Patch) => self.git_patch_action(),
@@ -1023,7 +1062,7 @@ impl State {
                     self.request_git_local(kind);
                     Action::None
                 } else if let Some(commit) = self.git_workspace.history_commit.clone() {
-                    self.request_git_history(commit);
+                    self.request_git_history_parent(commit, self.git_revision.parent_options().0);
                     Action::None
                 } else {
                     self.request_git(self.git_panel.unwrap_or(GitIntent::Status))
@@ -1089,9 +1128,28 @@ impl State {
                 self.request_git_history_file(index);
                 Action::None
             }
+            Some(Intent::HistoryFileMode(tree)) => {
+                self.set_git_history_tree(tree);
+                Action::None
+            }
+            Some(Intent::HistoryTreeEntry(index)) => {
+                self.open_git_history_tree_entry(index);
+                Action::None
+            }
+            Some(Intent::HistoryTab(index)) => {
+                self.open_git_history_tab(index);
+                Action::None
+            }
+            Some(Intent::HistoryTabStep(delta)) => {
+                self.step_git_history_tab(delta);
+                Action::None
+            }
+            Some(Intent::HistoryTabClose) => {
+                self.close_git_history_tab();
+                Action::None
+            }
             Some(Intent::HistorySummary) => {
-                self.git_workspace.history_file = None;
-                self.git_workspace.invalidate();
+                self.show_git_history_summary();
                 Action::None
             }
             Some(Intent::HistoryEncoding) => {
@@ -1220,12 +1278,7 @@ impl State {
                 .min(total.saturating_sub(page));
         } else if inside(l.files, x, y) {
             if self.git_workspace.history_commit.is_some() {
-                let total = self.git_revision.revision().map_or(0, |r| r.files.len());
-                self.git_workspace.history_selected = self
-                    .git_workspace
-                    .history_selected
-                    .saturating_add_signed(steps)
-                    .min(total.saturating_sub(1));
+                self.move_git_history_files(steps);
             } else {
                 self.git_view.move_status(steps);
             }
@@ -1476,21 +1529,23 @@ pub(super) unsafe fn draw(
             ),
             HEADER,
         )?;
-        text(
-            dc,
-            rect(
-                f.files.left + p(12),
-                f.files.top + p(9),
-                f.files.right - p(10),
-                f.files.top + p(32),
-            ),
-            &format!(
-                "ARCHIVOS · {}",
-                f.count.strip_suffix(" archivos").unwrap_or(&f.count)
-            ),
-            MUTED,
-            HEADER,
-        )?;
+        if !f.history_browser {
+            text(
+                dc,
+                rect(
+                    f.files.left + p(12),
+                    f.files.top + p(9),
+                    f.files.right - p(10),
+                    f.files.top + p(32),
+                ),
+                &format!(
+                    "ARCHIVOS · {}",
+                    f.count.strip_suffix(" archivos").unwrap_or(&f.count)
+                ),
+                MUTED,
+                HEADER,
+            )?;
+        }
         for row in &f.rows {
             let bg = if row.selected {
                 SELECTION
@@ -1553,18 +1608,20 @@ pub(super) unsafe fn draw(
     if f.preview.right > f.preview.left {
         let a = f.preview;
         paint::fill(dc, rect(a.left, a.top, a.right, a.top + p(32)), PANEL)?;
-        text(
-            dc,
-            rect(
-                a.left + p(if f.historical { 280 } else { 14 }),
-                a.top + p(5),
-                a.right - p(10),
-                a.top + p(29),
-            ),
-            &f.subtitle,
-            MUTED,
-            PANEL,
-        )?;
+        if !f.history_browser {
+            text(
+                dc,
+                rect(
+                    a.left + p(if f.historical { 280 } else { 14 }),
+                    a.top + p(5),
+                    a.right - p(10),
+                    a.top + p(29),
+                ),
+                &f.subtitle,
+                MUTED,
+                PANEL,
+            )?;
+        }
         for (i, s) in f.summary.iter().take(2).enumerate() {
             text(
                 dc,

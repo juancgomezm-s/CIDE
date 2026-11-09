@@ -1,9 +1,9 @@
-//! Reviewed creation of local branches and lightweight tags.
+//! Reviewed local branch and tag mutations.
 
 use crate::{Context, Error, Identity, Limits, controlled, engine, graph, index_write, revision};
 use gix::{
     bstr::{BString, ByteSlice},
-    lock::acquire::Fail,
+    lock::{Marker, acquire::Fail},
     refs::{
         FullName, Target,
         store::WriteReflog,
@@ -18,6 +18,7 @@ use std::{
 
 pub const REF_NAME_BYTES: usize = 240;
 const COMMIT_BYTES: usize = 64 * 1024;
+const REFLOG_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RefKind {
@@ -143,6 +144,15 @@ fn destination_available(
     ctx: &Context<'_>,
 ) -> Result<bool, Error> {
     let (_, refs) = graph::references(repo, limits, &mut revision::Budget::new(limits), ctx)?;
+    destination_absent(identity, name, &refs, ctx)
+}
+
+fn destination_absent(
+    identity: &Identity,
+    name: &str,
+    refs: &[graph::RefEntry],
+    ctx: &Context<'_>,
+) -> Result<bool, Error> {
     if refs
         .iter()
         .any(|entry| namespace_conflicts(&entry.name, name))
@@ -151,7 +161,11 @@ fn destination_available(
     }
     // Also guard empty directories and filesystem aliases absent from gix's
     // ref enumeration. A transaction must not remove or reuse such a target.
-    let mut path = identity.git_dir.clone();
+    ordinary_path_absent(&identity.git_dir, name, ctx)
+}
+
+fn ordinary_path_absent(root: &Path, name: &str, ctx: &Context<'_>) -> Result<bool, Error> {
+    let mut path = root.to_owned();
     let mut parts = name.split('/').peekable();
     while let Some(part) = parts.next() {
         ctx.check()?;
@@ -160,11 +174,15 @@ fn destination_available(
             return Ok(true);
         }
         if parts.peek().is_none() {
+            index_write::ordinary(&path, false)?;
+            if path.canonicalize()? != path {
+                return Err(Error::Unsupported);
+            }
             return Ok(false);
         }
         index_write::ordinary(&path, true)?;
         if path.canonicalize()? != path {
-            return Ok(false);
+            return Err(Error::Unsupported);
         }
     }
     Ok(false)
@@ -283,12 +301,431 @@ pub fn apply_ref(
     Ok(publication)
 }
 
+/// A reviewed rename or removal of an existing direct reference.
+pub struct RefChangePlan {
+    repository: Identity,
+    limits: Limits,
+    kind: RefKind,
+    source: FullName,
+    destination: Option<FullName>,
+    target: gix::ObjectId,
+    deletion_head: Option<graph::Head>,
+    reflog: Option<jc_fs::FileToken>,
+}
+
+impl RefChangePlan {
+    pub fn kind(&self) -> RefKind {
+        self.kind
+    }
+
+    pub fn source(&self) -> &str {
+        &full_name(&self.source)[self.kind.prefix().len()..]
+    }
+
+    pub fn destination(&self) -> Option<&str> {
+        self.destination
+            .as_ref()
+            .map(|name| &full_name(name)[self.kind.prefix().len()..])
+    }
+
+    pub fn target(&self) -> gix::ObjectId {
+        self.target
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct RefChangePublication {
+    pub kind: RefKind,
+    pub source: String,
+    pub destination: Option<String>,
+    pub target: gix::ObjectId,
+}
+
+fn full_name(name: &FullName) -> &str {
+    name.as_bstr().to_str().expect("UTF-8 ref name")
+}
+
+fn reflog_name(name: &FullName) -> String {
+    format!("logs/{}", full_name(name))
+}
+
+fn capture_reflog(
+    plan: &RefChangePlan,
+    ctx: &Context<'_>,
+) -> Result<Option<(jc_fs::FileToken, Vec<u8>)>, Error> {
+    let git = &plan.repository.git_dir;
+    let name = reflog_name(&plan.source);
+    if ordinary_path_absent(git, &name, ctx)? {
+        return Ok(None);
+    }
+    let capture = jc_fs::capture_in_root(git, &git.join(name), REFLOG_BYTES, &mut || {
+        ctx.check().is_err()
+    });
+    ctx.check()?;
+    match capture? {
+        jc_fs::Capture::Present { token, bytes, .. } => Ok(Some((token, bytes))),
+        jc_fs::Capture::Absent { .. } => Err(Error::Stale),
+    }
+}
+
+fn stage_new_file(
+    git: &Path,
+    name: &str,
+    bytes: &[u8],
+    ctx: &Context<'_>,
+) -> Result<jc_fs::PendingMissingFile, Error> {
+    let mut cancelled = || ctx.check().is_err();
+    let token = jc_fs::capture_in_root(git, &git.join(name), bytes.len(), &mut cancelled);
+    ctx.check()?;
+    let jc_fs::Capture::Absent { token } = token? else {
+        return Err(Error::Stale);
+    };
+    let pending = jc_fs::stage_missing_file(git, &token, bytes, &mut cancelled);
+    ctx.check()?;
+    Ok(pending?)
+}
+
+impl RefChangePlan {
+    fn inspect(
+        &self,
+        repo: &gix::Repository,
+        identity: &Identity,
+        ctx: &Context<'_>,
+    ) -> Result<graph::Head, Error> {
+        index_write::same_repository(&self.repository, identity)?;
+        if index_write::exists(&identity.git_dir.join("worktrees"))? {
+            return Err(Error::Engine(
+                "Las referencias de repositorios con árboles vinculados requieren otro flujo"
+                    .into(),
+            ));
+        }
+        let (head, refs) = graph::references(
+            repo,
+            self.limits,
+            &mut revision::Budget::new(self.limits),
+            ctx,
+        )?;
+        let name = full_name(&self.source);
+        let index = refs
+            .binary_search_by(|entry| entry.name.as_slice().cmp(name.as_bytes()))
+            .map_err(|_| Error::Stale)?;
+        let expected = self.target.to_string();
+        if !matches!(&refs[index].target, graph::RefTarget::Direct(id) if id == &expected) {
+            return Err(Error::Stale);
+        }
+        let source_is_active = match &head {
+            graph::Head::Attached { name: active, .. } | graph::Head::Unborn { name: active } => {
+                namespace_conflicts(active, name)
+            }
+            graph::Head::Detached { .. } => false,
+        };
+        if source_is_active
+            || refs.iter().any(|entry| {
+                matches!(&entry.target, graph::RefTarget::Symbolic(target) if namespace_conflicts(target, name))
+            })
+        {
+            return Err(Error::Engine(
+                "La referencia está activa o es destino de una referencia simbólica".into(),
+            ));
+        }
+        if self.kind == RefKind::Branch {
+            let config = repo.config_snapshot();
+            if [Some(self.source()), self.destination()]
+                .into_iter()
+                .flatten()
+                .any(|name| {
+                    config
+                        .plumbing()
+                        .section("branch", Some(name.as_bytes().as_bstr()))
+                        .is_ok()
+                })
+            {
+                return Err(Error::Engine(
+                    "La rama tiene configuración propia. Su traslado requiere otro flujo".into(),
+                ));
+            }
+        }
+        if let Some(destination) = &self.destination {
+            if !destination_absent(identity, full_name(destination), &refs, ctx)?
+                || !ordinary_path_absent(&identity.git_dir, &reflog_name(destination), ctx)?
+            {
+                return Err(Error::Engine(
+                    "El destino o su historial ya existe o entra en conflicto con otra referencia"
+                        .into(),
+                ));
+            }
+        }
+        // Reject a loose source reached through a filesystem alias, including
+        // case-insensitive aliases that would not have matched the ref snapshot.
+        ordinary_path_absent(&identity.git_dir, name, ctx)?;
+        Ok(head)
+    }
+
+    fn check_branch_deletion(
+        &self,
+        repo: &gix::Repository,
+        head: &graph::Head,
+        ctx: &Context<'_>,
+    ) -> Result<(), Error> {
+        let merged = match head.target() {
+            Some(start) => graph::contains_ancestor(repo, start, self.target, self.limits, ctx)?,
+            None => false,
+        };
+        if !merged {
+            return Err(Error::Engine(
+                "La rama no está integrada en HEAD. Conserva su referencia".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Review an exact short source name and its observed raw object ID. An absent
+/// destination requests deletion. An annotated tag retains its tag object.
+pub fn prepare_ref_change(
+    root: &Path,
+    kind: RefKind,
+    source: &str,
+    expected_target: &str,
+    destination: Option<&str>,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<RefChangePlan, Error> {
+    if destination.is_some() && !cfg!(windows) {
+        return Err(Error::Unsupported);
+    }
+    limits.admit()?;
+    let source = reference_name(kind, source, limits)?;
+    let destination = destination
+        .map(|name| reference_name(kind, name, limits))
+        .transpose()?;
+    let target = gix::ObjectId::from_hex(expected_target.as_bytes()).map_err(engine)?;
+    controlled(limits.timeout, cancelled, |ctx| {
+        let (repo, repository) = index_write::open_for_write(root, ctx)?;
+        let mut plan = RefChangePlan {
+            repository,
+            limits,
+            kind,
+            source,
+            destination,
+            target,
+            deletion_head: None,
+            reflog: None,
+        };
+        let head = plan.inspect(&repo, &plan.repository, ctx)?;
+        if kind == RefKind::Branch {
+            if plan.destination.is_none() {
+                plan.check_branch_deletion(&repo, &head, ctx)?;
+                plan.deletion_head = Some(head);
+            } else {
+                verify_target(&repo, plan.target, plan.limits, ctx)?;
+            }
+        }
+        plan.reflog = capture_reflog(&plan, ctx)?.map(|(token, _)| token);
+        Ok(plan)
+    })
+}
+
+/// Publishes with source CAS and an absent destination. A rename creates
+/// the new reference before removing the old one. A late I/O error
+/// may leave both names and must be re-observed rather than retried blindly.
+pub fn apply_ref_change(
+    plan: RefChangePlan,
+    mut cancelled: impl FnMut() -> bool,
+) -> Result<RefChangePublication, Error> {
+    let stop = AtomicBool::new(false);
+    let reason = AtomicU8::new(0);
+    let ctx = Context {
+        stop: &stop,
+        reason: &reason,
+        deadline: Instant::now() + plan.limits.timeout,
+    };
+    let mut check = || {
+        if cancelled() {
+            Err(Error::Cancelled)
+        } else {
+            ctx.check()
+        }
+    };
+    let git = &plan.repository.git_dir;
+    let hold = |name: &str| {
+        Marker::acquire_to_hold_resource(git.join(name), Fail::Immediately, None, 0).map_err(engine)
+    };
+    check()?;
+    let (_, identity) = index_write::open_for_write(&plan.repository.root, &ctx)?;
+    index_write::same_repository(&plan.repository, &identity)?;
+    let _index = hold("index")?;
+    let _head = hold("HEAD")?;
+    let _config = hold("config")?;
+    let (mut repo, identity) = index_write::open_for_write(&plan.repository.root, &ctx)?;
+    let head = plan.inspect(&repo, &identity, &ctx)?;
+    if plan
+        .deletion_head
+        .as_ref()
+        .is_some_and(|reviewed| reviewed != &head)
+    {
+        return Err(Error::Stale);
+    }
+    let _head_tip = match &plan.deletion_head {
+        Some(graph::Head::Attached { name, .. }) => {
+            let name = std::str::from_utf8(name).map_err(|_| Error::Unsupported)?;
+            // Use the same confinement and Windows checks as source refs before
+            // letting the filesystem lock API open the reviewed HEAD name.
+            let short = name
+                .strip_prefix(RefKind::Branch.prefix())
+                .ok_or(Error::Unsupported)?;
+            reference_name(RefKind::Branch, short, plan.limits)?;
+            ordinary_path_absent(git, name, &ctx)?;
+            let active = repo.find_reference(name).map_err(engine)?;
+            if !matches!(active.target(), gix::refs::TargetRef::Object(_)) {
+                return Err(Error::Unsupported);
+            }
+            Some(
+                Marker::acquire_to_hold_resource(
+                    git.join(name),
+                    Fail::Immediately,
+                    Some(git.join("refs")),
+                    0,
+                )
+                .map_err(engine)?,
+            )
+        }
+        _ => None,
+    };
+    let _log = if plan.reflog.is_some() {
+        ordinary_path_absent(git, &reflog_name(&plan.source), &ctx)?;
+        Some(hold(&reflog_name(&plan.source))?)
+    } else {
+        None
+    };
+    let packed_exists = index_write::exists(&git.join("packed-refs"))?;
+    repo.refs.write_reflog = WriteReflog::Disable;
+    let delete = RefEdit::delete(
+        plan.source.clone(),
+        PreviousValue::MustExistAndMatch(Target::Object(plan.target)),
+    );
+    let transaction = repo
+        .refs
+        .transaction()
+        .prepare([delete], Fail::Immediately, Fail::Immediately)
+        .map_err(engine)?;
+    // Retain this independent destination lock even after publication. An
+    // ordinary Git writer cannot remove the new ref before the source CAS.
+    let _destination = plan
+        .destination
+        .as_ref()
+        .map(|name| {
+            Marker::acquire_to_hold_resource(
+                git.join(full_name(name)),
+                Fail::Immediately,
+                Some(git.join("refs")),
+                0,
+            )
+            .map_err(engine)
+        })
+        .transpose()?;
+    let packed_lock = git.join("packed-refs.lock");
+    let _packed = if packed_exists {
+        if !index_write::exists(&packed_lock)? || !index_write::exists(&git.join("packed-refs"))? {
+            return Err(Error::Stale);
+        }
+        None
+    } else {
+        // The embedded store has nothing packed to delete. Prevent pack-refs
+        // from creating a packed copy after validation and before loose removal.
+        let lock = hold("packed-refs")?;
+        if index_write::exists(&git.join("packed-refs"))? {
+            return Err(Error::Stale);
+        }
+        Some(lock)
+    };
+    let (fresh, identity) = index_write::open_for_write(&plan.repository.root, &ctx)?;
+    let head = plan.inspect(&fresh, &identity, &ctx)?;
+    if let Some(reviewed) = &plan.deletion_head {
+        if *reviewed != head {
+            return Err(Error::Stale);
+        }
+        plan.check_branch_deletion(&fresh, &head, &ctx)?;
+    } else if plan.kind == RefKind::Branch {
+        verify_target(&fresh, plan.target, plan.limits, &ctx)?;
+    }
+    let log = capture_reflog(&plan, &ctx)?;
+    if log.as_ref().map(|(token, _)| token) != plan.reflog.as_ref() {
+        return Err(Error::Stale);
+    }
+    let _destination_log = if let (Some(name), Some(_)) = (&plan.destination, &log) {
+        Some(
+            Marker::acquire_to_hold_resource(
+                git.join(reflog_name(name)),
+                Fail::Immediately,
+                Some(git.clone()),
+                0,
+            )
+            .map_err(engine)?,
+        )
+    } else {
+        None
+    };
+    let staged_log = match (&plan.destination, log) {
+        (Some(name), Some((_, bytes))) => {
+            Some(stage_new_file(git, &reflog_name(name), &bytes, &ctx)?)
+        }
+        _ => None,
+    };
+    let staged_destination = plan
+        .destination
+        .as_ref()
+        .map(|name| {
+            let contents = format!("{}\n", plan.target);
+            stage_new_file(git, full_name(name), contents.as_bytes(), &ctx)
+        })
+        .transpose()?;
+    let publication = RefChangePublication {
+        kind: plan.kind(),
+        source: plan.source().to_owned(),
+        destination: plan.destination().map(str::to_owned),
+        target: plan.target(),
+    };
+    check()?;
+    // Keep the old ref and reflog until their exact copies are durable. Once
+    // published, finish without cancellation; late errors may have effects.
+    let uncertain = |error: &dyn std::fmt::Display| {
+        Error::Engine(format!(
+            "Publicación de {} incierta. Actualiza el repositorio antes de reintentar ({})",
+            full_name(&plan.source),
+            engine(error)
+        ))
+    };
+    if let Some(destination) = staged_destination {
+        destination.publish().map_err(|error| uncertain(&error))?;
+    }
+    if let Some(log) = staged_log {
+        log.publish().map_err(|error| uncertain(&error))?;
+    }
+    transaction
+        .commit(None)
+        .map_err(|error| uncertain(&error))?;
+    let (fresh, identity) = index_write::open_for_write(&plan.repository.root, &ctx)
+        .map_err(|error| uncertain(&error))?;
+    index_write::same_repository(&plan.repository, &identity).map_err(|error| uncertain(&error))?;
+    let source = full_name(&plan.source);
+    if fresh
+        .try_find_reference(source)
+        .map_err(|error| uncertain(&error))?
+        .is_some_and(|reference| reference.name().as_bstr().as_bytes() == source.as_bytes())
+    {
+        return Err(uncertain(&"La referencia de origen sigue presente"));
+    }
+    Ok(publication)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::{
         fs,
         path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
@@ -299,6 +736,7 @@ mod tests {
 
     impl Fixture {
         fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
             let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .ancestors()
                 .nth(2)
@@ -310,12 +748,13 @@ mod tests {
             let parent = parent.canonicalize().unwrap();
             assert!(parent.starts_with(&workspace));
             let root = parent.join(format!(
-                "git-ref-write-{}-{}",
+                "git-ref-write-{}-{}-{}",
                 std::process::id(),
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
-                    .as_nanos()
+                    .as_nanos(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir(&root).unwrap();
             Self { root, parent }
@@ -336,6 +775,24 @@ mod tests {
                 &target.to_string(),
                 kind,
                 name,
+                limits(),
+                || false,
+            )
+        }
+
+        fn change(
+            &self,
+            target: gix::ObjectId,
+            kind: RefKind,
+            source: &str,
+            destination: Option<&str>,
+        ) -> Result<RefChangePlan, Error> {
+            prepare_ref_change(
+                &self.root,
+                kind,
+                source,
+                &target.to_string(),
+                destination,
                 limits(),
                 || false,
             )
@@ -575,5 +1032,194 @@ mod tests {
         fs::create_dir(&directory).unwrap();
         assert!(fixture.prepare(target, RefKind::Tag, "reservada").is_err());
         assert!(directory.is_dir());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn renaming_a_branch_preserves_reflog_and_never_touches_editor_sources() {
+        let fixture = Fixture::new();
+        let repo = gix::init(&fixture.root).unwrap();
+        let target = commit(&repo, &[], "original");
+        let git = fixture.git();
+        let branch = git.join("refs/heads/vieja");
+        let log = git.join("logs/refs/heads/vieja");
+        fs::create_dir_all(log.parent().unwrap()).unwrap();
+        fs::write(&branch, format!("{target}\n")).unwrap();
+        let history = format!(
+            "{} {target} Autor <correo@invalid> 1 +0000\tcreada\n",
+            target.kind().null()
+        );
+        fs::write(&log, &history).unwrap();
+        let head = fs::read(git.join("HEAD")).unwrap();
+        fs::write(git.join("index"), b"index fixtures").unwrap();
+        fs::write(fixture.root.join("archivo"), b"contenido usuario").unwrap();
+        let plan = fixture
+            .change(target, RefKind::Branch, "vieja", Some("tema/nueva"))
+            .unwrap();
+        assert_eq!(plan.source(), "vieja");
+        assert_eq!(plan.destination(), Some("tema/nueva"));
+        let destination = git.join("refs/heads/tema/nueva");
+        assert!(!destination.exists());
+        let publication = apply_ref_change(plan, || false).unwrap();
+        assert_eq!(publication.target, target);
+        assert!(!branch.exists());
+        assert!(!log.exists());
+        assert_eq!(
+            fs::read_to_string(destination).unwrap(),
+            format!("{target}\n")
+        );
+        assert_eq!(
+            fs::read_to_string(git.join("logs/refs/heads/tema/nueva")).unwrap(),
+            history
+        );
+        assert_eq!(fs::read(git.join("HEAD")).unwrap(), head);
+        assert_eq!(fs::read(git.join("index")).unwrap(), b"index fixtures");
+        assert_eq!(
+            fs::read(fixture.root.join("archivo")).unwrap(),
+            b"contenido usuario"
+        );
+        assert!(!git.join("packed-refs").exists());
+        assert!(!git.join("packed-refs.lock").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn renaming_and_removing_a_packed_tag_preserves_its_raw_object() {
+        let fixture = Fixture::new();
+        let repo = gix::init(&fixture.root).unwrap();
+        let target = commit(&repo, &[], "original");
+        let tag = repo
+            .write_object(gix::objs::Tag {
+                target,
+                target_kind: gix::objs::Kind::Commit,
+                name: "anotada".into(),
+                tagger: None,
+                message: "mensaje".into(),
+                signature: None,
+            })
+            .unwrap()
+            .detach();
+        let git = fixture.git();
+        let packed = git.join("packed-refs");
+        fs::write(&packed, format!("# pack-refs with: peeled sorted\n{tag} refs/tags/anotada\n^{target}\n{target} refs/tags/otra\n")).unwrap();
+        assert!(
+            fixture
+                .change(target, RefKind::Tag, "anotada", Some("nueva"))
+                .is_err()
+        );
+        let plan = fixture
+            .change(tag, RefKind::Tag, "anotada", Some("nueva"))
+            .unwrap();
+        apply_ref_change(plan, || false).unwrap();
+        let packed_contents = fs::read_to_string(&packed).unwrap();
+        assert!(!packed_contents.contains("refs/tags/anotada"));
+        assert!(packed_contents.contains(&format!("{target} refs/tags/otra")));
+        assert_eq!(
+            fs::read_to_string(git.join("refs/tags/nueva")).unwrap(),
+            format!("{tag}\n")
+        );
+        let plan = fixture.change(tag, RefKind::Tag, "nueva", None).unwrap();
+        apply_ref_change(plan, || false).unwrap();
+        assert!(!git.join("refs/tags/nueva").exists());
+        assert!(fixture.change(target, RefKind::Tag, "otra", None).is_ok());
+    }
+
+    #[test]
+    fn branch_deletion_requires_reachability_from_head_and_an_exact_review() {
+        let fixture = Fixture::new();
+        let repo = gix::init(&fixture.root).unwrap();
+        let target = commit(&repo, &[], "original");
+        let unrelated = commit(&repo, &[], "sin integrar");
+        let merge = commit(&repo, &[unrelated, target], "merge");
+        let git = fixture.git();
+        let active = git.join("refs/heads/activa");
+        let source = git.join("refs/heads/tema");
+        fs::write(git.join("HEAD"), b"ref: refs/heads/activa\n").unwrap();
+        fs::write(&active, format!("{unrelated}\n")).unwrap();
+        fs::write(&source, format!("{target}\n")).unwrap();
+        assert!(
+            fixture
+                .change(unrelated, RefKind::Branch, "activa", Some("nueva"))
+                .is_err()
+        );
+        assert!(
+            fixture
+                .change(target, RefKind::Branch, "tema", None)
+                .is_err()
+        );
+        fs::write(&active, format!("{merge}\n")).unwrap();
+        let plan = fixture
+            .change(target, RefKind::Branch, "tema", None)
+            .unwrap();
+        fs::write(&source, format!("{unrelated}\n")).unwrap();
+        assert!(matches!(
+            apply_ref_change(plan, || false),
+            Err(Error::Stale)
+        ));
+        assert_eq!(
+            fs::read_to_string(&source).unwrap(),
+            format!("{unrelated}\n")
+        );
+        fs::write(&source, format!("{target}\n")).unwrap();
+        let plan = fixture
+            .change(target, RefKind::Branch, "tema", None)
+            .unwrap();
+        fs::write(&active, format!("{unrelated}\n")).unwrap();
+        assert!(matches!(
+            apply_ref_change(plan, || false),
+            Err(Error::Stale)
+        ));
+        fs::write(&active, format!("{merge}\n")).unwrap();
+        let plan = fixture
+            .change(target, RefKind::Branch, "tema", None)
+            .unwrap();
+        apply_ref_change(plan, || false).unwrap();
+        assert!(!source.exists());
+        assert_eq!(fs::read_to_string(&active).unwrap(), format!("{merge}\n"));
+    }
+
+    #[test]
+    fn protected_references_and_interrupted_changes_preserve_sources() {
+        let fixture = Fixture::new();
+        let repo = gix::init(&fixture.root).unwrap();
+        let target = commit(&repo, &[], "original");
+        let git = fixture.git();
+        let source = git.join("refs/tags/origen");
+        fs::write(&source, format!("{target}\n")).unwrap();
+        fs::write(git.join("refs/tags/alias"), b"ref: refs/tags/origen\n").unwrap();
+        assert!(
+            fixture
+                .change(target, RefKind::Tag, "origen", None)
+                .is_err()
+        );
+        fs::remove_file(git.join("refs/tags/alias")).unwrap();
+        fs::create_dir(git.join("worktrees")).unwrap();
+        assert!(
+            fixture
+                .change(target, RefKind::Tag, "origen", None)
+                .is_err()
+        );
+        fs::remove_dir(git.join("worktrees")).unwrap();
+        let plan = fixture
+            .change(target, RefKind::Tag, "origen", None)
+            .unwrap();
+        let lock = git.join("refs/tags/origen.lock");
+        assert!(matches!(
+            apply_ref_change(plan, || lock.exists()),
+            Err(Error::Cancelled)
+        ));
+        assert!(!lock.exists());
+        assert_eq!(fs::read_to_string(&source).unwrap(), format!("{target}\n"));
+        #[cfg(windows)]
+        {
+            let plan = fixture
+                .change(target, RefKind::Tag, "origen", Some("ocupada"))
+                .unwrap();
+            let destination = git.join("refs/tags/ocupada");
+            fs::write(&destination, format!("{target}\n")).unwrap();
+            assert!(apply_ref_change(plan, || false).is_err());
+            assert!(source.exists());
+            assert!(destination.exists());
+        }
     }
 }

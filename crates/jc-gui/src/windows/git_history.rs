@@ -4,12 +4,16 @@ use super::*;
 use jc_app::diff_model::OwnedDiffModel;
 use jc_app::Modifiers;
 
+#[path = "git_history_browser.rs"]
+mod browser;
+pub(super) use browser::HistoryBrowser;
+
 impl State {
     pub(crate) fn request_git_history(&mut self, commit: String) {
         self.request_git_history_parent(commit, 0);
     }
 
-    fn request_git_history_parent(&mut self, commit: String, parent: usize) {
+    pub(super) fn request_git_history_parent(&mut self, commit: String, parent: usize) {
         let Some(root) = self.project_root.clone() else {
             return;
         };
@@ -21,6 +25,7 @@ impl State {
         self.git_workspace.focus_diff = false;
         self.git_workspace.history_selected = 0;
         self.git_workspace.history_file = None;
+        self.git_workspace.history_browser = HistoryBrowser::default();
         self.git_workspace.history_hunk = 0;
         self.git_workspace.diff_first = 0;
         self.git_workspace.history_encoding = self.git_workspace.history_encoding.or(self.encoding);
@@ -34,27 +39,15 @@ impl State {
         }
     }
     pub(crate) fn request_git_history_file(&mut self, index: usize) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(path) = self
+            .git_revision
+            .revision()
+            .and_then(|revision| revision.files.get(index))
+            .map(|file| file.path.clone())
+        else {
             return;
         };
-        let Some((commit, path)) = self.git_revision.revision().and_then(|r| {
-            r.files
-                .get(index)
-                .map(|f| (r.commit.clone(), f.path.clone()))
-        }) else {
-            return;
-        };
-        self.git_workspace.active = Column::Comparison;
-        self.git_workspace.diff_column = 0;
-        self.git_workspace.focus_diff = true;
-        self.git_workspace.history_selected = index;
-        self.git_workspace.history_file = Some(index);
-        self.git_workspace.history_hunk = 0;
-        self.git_workspace.diff_first = 0;
-        self.git_workspace.invalidate();
-        if let Err(error) = self.git_revision.request_revision_file(root, commit, path) {
-            self.git_workspace.notice = Some(error);
-        }
+        self.request_git_history_path(path);
     }
     pub(super) fn cycle_git_history_parent(&mut self) {
         let (current, parents) = self.git_revision.parent_options();
@@ -65,6 +58,9 @@ impl State {
         }
     }
     pub(crate) fn git_history_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
+        if self.git_history_browser_key(code, modifiers) {
+            return Action::None;
+        }
         if modifiers != Modifiers::NONE {
             return Action::None;
         }
@@ -82,7 +78,11 @@ impl State {
             0x09 => self.git_workspace.focus_diff = !self.git_workspace.focus_diff,
             0x50 => self.cycle_git_history_parent(),
             0x0d if !self.git_workspace.focus_diff => {
-                self.request_git_history_file(self.git_workspace.history_selected)
+                if self.git_workspace.history_browser.showing_tree() {
+                    self.open_selected_git_history_tree_entry();
+                } else {
+                    self.request_git_history_file(self.git_workspace.history_selected);
+                }
             }
             0x26 | 0x28 | 0x21 | 0x22 | 0x24 | 0x23 => {
                 let delta = match code {
@@ -110,12 +110,7 @@ impl State {
                             );
                     }
                 } else {
-                    let total = self.git_revision.revision().map_or(0, |r| r.files.len());
-                    self.git_workspace.history_selected = self
-                        .git_workspace
-                        .history_selected
-                        .saturating_add_signed(delta)
-                        .min(total.saturating_sub(1));
+                    self.move_git_history_files(delta);
                 }
             }
             _ => {}
@@ -140,10 +135,12 @@ impl State {
                 Intent::Refresh | Intent::Close | Intent::Commit(_) | Intent::Local
             )
         });
-        for (n, name, intent) in [
+        let browser = self.git_revision.revision().is_some();
+        let links = [
             (0, "Cambios locales", Intent::Local),
             (1, "Resumen", Intent::HistorySummary),
-        ] {
+        ];
+        for (n, name, intent) in links.into_iter().filter(|_| !browser) {
             let r = rect(
                 l.preview.left + p(12) + n * p(130),
                 l.preview.top + p(2),
@@ -167,7 +164,14 @@ impl State {
         let first = selected
             .saturating_sub(capacity.saturating_sub(1))
             .min(files.len().saturating_sub(capacity));
-        for (index, f) in files.iter().enumerate().skip(first).take(capacity) {
+        let showing_tree = browser && self.git_workspace.history_browser.showing_tree();
+        for (index, f) in files
+            .iter()
+            .enumerate()
+            .skip(first)
+            .take(capacity)
+            .filter(|_| !showing_tree)
+        {
             let top = l.files.top + l.head + (index - first) as i32 * l.row;
             let r = rect(
                 l.files.left,
@@ -259,6 +263,10 @@ impl State {
             frame.subtitle = self.git_revision.message().into();
             if let Some(c) = self.git_revision.comparison() {
                 frame.subtitle = format!("{} · revisión histórica", opaque(&c.path, 200));
+                if browser {
+                    frame.summary.truncate(1);
+                    frame.summary.push(opaque(&c.path, 240));
+                }
                 let r = rect(
                     l.preview.left + p(12),
                     l.preview.top + p(128),
@@ -322,6 +330,17 @@ impl State {
                         .details
                         .push("Elige la codificación para interpretar los bytes históricos".into());
                 }
+            } else if browser {
+                frame.details.push(self.git_revision.message().into());
+            }
+        }
+        if browser {
+            if showing_tree {
+                self.prepare_git_history_tree_rows(&mut frame, &l);
+            }
+            self.prepare_git_history_browser(&mut frame, &l);
+            if let Some(notice) = &self.git_workspace.notice {
+                frame.footer = format!("{notice} · {}", frame.footer);
             }
         }
         frame.hits.stamp = self.git_workspace_stamp();
@@ -355,7 +374,13 @@ fn historical_rows(
 mod tests {
     use super::*;
     use jc_app::diff_model::DiffLimits;
-    use std::sync::Arc;
+    use jc_app::git_revision::GitRevisionState;
+    use std::{
+        fs,
+        process::Command,
+        sync::Arc,
+        time::{Duration, Instant},
+    };
 
     #[test]
     fn historical_addition_and_deletion_render_exact_owned_sources_without_document() {
@@ -446,5 +471,173 @@ mod tests {
                 .revision(),
             revision
         );
+    }
+
+    #[test]
+    fn history_tree_and_tabs_switch_pinned_files_without_touching_editor() {
+        let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/test-temp");
+        fs::create_dir_all(&base).unwrap();
+        let base = base.canonicalize().unwrap();
+        let root = base.join(format!(
+            "gui-tree-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_CONFIG_GLOBAL", "NUL")
+                .env("GIT_AUTHOR_NAME", "CIDE fixture")
+                .env("GIT_AUTHOR_EMAIL", "fixture@invalid")
+                .env("GIT_COMMITTER_NAME", "CIDE fixture")
+                .env("GIT_COMMITTER_EMAIL", "fixture@invalid")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
+        };
+        git(&["init", "--quiet", "--template=", "--initial-branch=main"]);
+        fs::create_dir(root.join("src")).unwrap();
+        fs::write(root.join("src/estable.p"), b"permanente\r\n").unwrap();
+        fs::write(root.join("src/cambio.p"), b"anterior\r\n").unwrap();
+        git(&["add", "--", "src"]);
+        git(&[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "Inicial",
+        ]);
+        fs::write(root.join("src/cambio.p"), b"revisado\r\n").unwrap();
+        git(&["add", "--", "src/cambio.p"]);
+        git(&[
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "Cambio",
+        ]);
+        let commit = git(&["rev-parse", "HEAD"]);
+        fs::write(root.join("src/cambio.p"), b"solo en disco").unwrap();
+        let index = fs::read(root.join(".git/index")).unwrap();
+
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.width = 1450;
+        state.height = 840;
+        state.project_root = Some(root.clone());
+        state.git_panel = Some(GitIntent::Status);
+        state.git_workspace.history_encoding = Some(TextEncoding::Utf8);
+        let revision = state
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .revision();
+        let wait = |state: &mut State| {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while matches!(
+                state.git_revision.state(),
+                GitRevisionState::Queued | GitRevisionState::Running
+            ) {
+                state.poll_git();
+                assert!(Instant::now() < deadline, "history delivery timeout");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert_eq!(state.git_revision.state(), GitRevisionState::Ready);
+        };
+        let click = |state: &mut State, intent: fn(Intent) -> bool| {
+            let frame = state.prepare_git_workspace().unwrap();
+            let r = frame
+                .hits
+                .actions
+                .iter()
+                .find(|(_, action)| intent(*action))
+                .unwrap()
+                .0;
+            state.git_workspace.hits = Some(frame.hits.clone());
+            state.git_workspace_click((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        };
+
+        state.request_git_history(commit.clone());
+        wait(&mut state);
+        assert_eq!(state.git_revision.revision().unwrap().files.len(), 1);
+        click(&mut state, |a| matches!(a, Intent::HistoryFileMode(true)));
+        wait(&mut state);
+        click(&mut state, |a| matches!(a, Intent::HistoryTreeEntry(0)));
+        wait(&mut state);
+        let frame = state.prepare_git_workspace().unwrap();
+        assert!(frame.rows.iter().any(|row| row.name == "estable.p"));
+        assert!(frame.rows.iter().any(|row| row.name == "cambio.p"));
+        click(&mut state, |a| matches!(a, Intent::HistoryTreeEntry(2)));
+        wait(&mut state);
+        let unchanged = state.git_revision.comparison().unwrap();
+        assert_eq!(unchanged.path, b"src/estable.p");
+        assert_eq!(unchanged.model.hunks().count(), 0);
+        click(&mut state, |a| matches!(a, Intent::HistoryTreeEntry(1)));
+        wait(&mut state);
+        let changed = state.git_revision.comparison().unwrap();
+        assert_eq!(changed.model.source_bytes(DiffSide::Right), b"revisado\r\n");
+        click(&mut state, |a| matches!(a, Intent::HistorySummary));
+        assert!(state.prepare_git_workspace().unwrap().code.is_empty());
+        click(&mut state, |a| matches!(a, Intent::HistoryTab(0)));
+        wait(&mut state);
+        assert_eq!(
+            state.git_revision.comparison().unwrap().path,
+            b"src/estable.p"
+        );
+        click(&mut state, |a| matches!(a, Intent::HistoryTabClose));
+        wait(&mut state);
+        assert_eq!(
+            state.git_revision.comparison().unwrap().path,
+            b"src/cambio.p"
+        );
+        click(&mut state, |a| matches!(a, Intent::HistoryTreeEntry(0)));
+        wait(&mut state);
+        assert!(state.git_revision.directory().unwrap().path.is_empty());
+        assert_eq!(
+            state.git_revision.comparison().unwrap().path,
+            b"src/cambio.p"
+        );
+        state.request_git_history(commit);
+        wait(&mut state);
+        let frame = state.prepare_git_workspace().unwrap();
+        assert!(!frame
+            .hits
+            .actions
+            .iter()
+            .any(|(_, a)| matches!(a, Intent::HistoryTab(_))));
+        assert_eq!(
+            state
+                .workbench
+                .active_document()
+                .unwrap()
+                .session
+                .document()
+                .revision(),
+            revision
+        );
+        assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+        assert_eq!(
+            fs::read(root.join("src/cambio.p")).unwrap(),
+            b"solo en disco"
+        );
+        assert_eq!(root.parent(), Some(base.as_path()));
+        assert!(root.canonicalize().unwrap().starts_with(&base));
+        assert!(!root.is_symlink());
+        let _ = fs::remove_dir_all(root);
     }
 }

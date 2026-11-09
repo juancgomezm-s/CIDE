@@ -49,6 +49,10 @@ pub struct MissingToken {
     ancestors: Vec<FileState>,
 }
 impl MissingToken {
+    pub fn is_leaf(&self) -> bool {
+        self.path == self.missing_at
+    }
+
     /// Compare the missing component and directory identities after an owned
     /// sibling lock was created. Ordinary capture revalidation uses full equality.
     pub fn same_location_as(&self, other: &Self) -> bool {
@@ -66,6 +70,43 @@ impl MissingToken {
         self.path.capacity()
             + self.missing_at.capacity()
             + self.ancestors.capacity() * std::mem::size_of::<FileState>()
+    }
+}
+
+/// An unpublished sibling file with its destination directory chain pinned.
+/// Dropping it discards the staged file. Publication never replaces a name.
+pub struct PendingMissingFile {
+    #[cfg(windows)]
+    inner: windows::PendingMissingFile,
+}
+impl PendingMissingFile {
+    pub fn publish(self) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            self.inner.publish()
+        }
+        #[cfg(not(windows))]
+        {
+            Err(io::ErrorKind::Unsupported.into())
+        }
+    }
+}
+
+pub fn stage_missing_file(
+    root: &Path,
+    expected: &MissingToken,
+    bytes: &[u8],
+    cancelled: &mut dyn FnMut() -> bool,
+) -> io::Result<PendingMissingFile> {
+    #[cfg(windows)]
+    {
+        windows::stage_missing_file(root, expected, bytes, cancelled)
+            .map(|inner| PendingMissingFile { inner })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (root, expected, bytes, cancelled);
+        Err(io::ErrorKind::Unsupported.into())
     }
 }
 #[derive(Debug)]
@@ -109,18 +150,23 @@ mod windows {
     use std::{
         ffi::{c_void, OsString},
         fs::{self, File, OpenOptions},
-        io::Read,
+        io::{Read, Write},
         os::windows::{
             ffi::{OsStrExt, OsStringExt},
             fs::OpenOptionsExt,
             io::AsRawHandle,
         },
         path::Component,
+        sync::atomic::{AtomicU64, Ordering},
     };
     const REPARSE: u32 = 0x400;
     const DIRECTORY: u32 = 0x10;
     const FLAGS: u32 = 0x0020_0000 | 0x0200_0000;
     const READ_ATTRIBUTES: u32 = 0x80;
+    const GENERIC_WRITE: u32 = 0x4000_0000;
+    const DELETE: u32 = 0x0001_0000;
+    const FILE_RENAME_INFO: i32 = 3;
+    const FILE_DISPOSITION_INFO: i32 = 4;
     const MAX_DEPTH: usize = 256;
 
     #[repr(C)]
@@ -149,6 +195,13 @@ mod windows {
         change: i64,
         attributes: u32,
     }
+    #[repr(C)]
+    struct RenameInfo {
+        replace: u32,
+        root: *mut c_void,
+        name_length: u32,
+        name: [u16; 1],
+    }
     #[link(name = "kernel32")]
     extern "system" {
         fn GetFileInformationByHandle(handle: *mut c_void, info: *mut HandleInfo) -> i32;
@@ -165,6 +218,12 @@ mod windows {
             length: u32,
             flags: u32,
         ) -> u32;
+        fn SetFileInformationByHandle(
+            handle: *mut c_void,
+            class: i32,
+            info: *mut c_void,
+            size: u32,
+        ) -> i32;
     }
     fn changed() -> io::Error {
         io::Error::new(
@@ -281,6 +340,16 @@ mod windows {
         limit: usize,
         cancelled: &mut dyn FnMut() -> bool,
     ) -> io::Result<Capture> {
+        capture_with_missing(root, path, limit, cancelled, |_, _| Ok(()))
+    }
+
+    fn capture_with_missing(
+        root: &Path,
+        path: &Path,
+        limit: usize,
+        cancelled: &mut dyn FnMut() -> bool,
+        on_missing: impl FnOnce(&MissingToken, Vec<File>) -> io::Result<()>,
+    ) -> io::Result<Capture> {
         check(cancelled)?;
         if !root.is_absolute()
             || !path.is_absolute()
@@ -328,13 +397,13 @@ mod windows {
                     }
                     check(cancelled)?;
                     validate_ancestors(root, &dirs, &initial)?;
-                    return Ok(Capture::Absent {
-                        token: MissingToken {
-                            path: path.to_path_buf(),
-                            missing_at: current,
-                            ancestors: initial,
-                        },
-                    });
+                    let token = MissingToken {
+                        path: path.to_path_buf(),
+                        missing_at: current,
+                        ancestors: initial,
+                    };
+                    on_missing(&token, dirs)?;
+                    return Ok(Capture::Absent { token });
                 }
                 Err(error) => return Err(error),
             };
@@ -423,6 +492,145 @@ mod windows {
             io::ErrorKind::InvalidInput,
             "La captura no tiene un archivo de destino",
         ))
+    }
+
+    pub(super) struct PendingMissingFile {
+        file: File,
+        target: PathBuf,
+        published: bool,
+        _dirs: Vec<File>,
+    }
+    impl PendingMissingFile {
+        pub(super) fn publish(mut self) -> io::Result<()> {
+            let target: Vec<u16> = self.target.as_os_str().encode_wide().collect();
+            let name_offset = std::mem::offset_of!(RenameInfo, name);
+            let name_bytes = target.len() * size_of::<u16>();
+            let len = (name_offset + name_bytes + size_of::<u16>()).max(size_of::<RenameInfo>());
+            let mut buffer = vec![0usize; len.div_ceil(size_of::<usize>())];
+            // FILE_RENAME_INFO has a variable-length UTF-16 tail. The aligned
+            // allocation and zero initialization leave ReplaceIfExists false,
+            // RootDirectory null and a terminator after the counted name.
+            unsafe {
+                let raw = buffer.as_mut_ptr().cast::<RenameInfo>();
+                (*raw).name_length = name_bytes as u32;
+                std::ptr::copy_nonoverlapping(
+                    target.as_ptr(),
+                    raw.cast::<u8>().add(name_offset).cast::<u16>(),
+                    target.len(),
+                );
+                if SetFileInformationByHandle(
+                    self.file.as_raw_handle(),
+                    FILE_RENAME_INFO,
+                    raw.cast(),
+                    len as u32,
+                ) == 0
+                {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+            self.published = true;
+            Ok(())
+        }
+    }
+    impl Drop for PendingMissingFile {
+        fn drop(&mut self) {
+            if !self.published {
+                let mut delete = 1u8;
+                // Delete the exact unpublished object rather than a path that
+                // may have been substituted.
+                unsafe {
+                    SetFileInformationByHandle(
+                        self.file.as_raw_handle(),
+                        FILE_DISPOSITION_INFO,
+                        (&mut delete as *mut u8).cast(),
+                        size_of::<u8>() as u32,
+                    );
+                }
+            }
+        }
+    }
+
+    pub(super) fn stage_missing_file(
+        root: &Path,
+        expected: &MissingToken,
+        bytes: &[u8],
+        cancelled: &mut dyn FnMut() -> bool,
+    ) -> io::Result<PendingMissingFile> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        if !expected.is_leaf() {
+            return Err(io::ErrorKind::NotFound.into());
+        }
+        let target = &expected.path;
+        let relative = target.strip_prefix(root).map_err(|_| excluded())?;
+        // NTFS streams and generated short names cannot be intended targets
+        // for the exclusive staged sibling.
+        if relative
+            .as_os_str()
+            .encode_wide()
+            .any(|unit| unit == u16::from(b':') || unit == u16::from(b'~'))
+        {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+        let mut pinned = Vec::new();
+        let observed = capture_with_missing(root, target, 0, cancelled, |token, dirs| {
+            if token != expected {
+                return Err(changed());
+            }
+            pinned = dirs;
+            Ok(())
+        });
+        match observed {
+            Ok(Capture::Absent { .. }) => {}
+            Ok(Capture::Present { .. }) => return Err(io::ErrorKind::AlreadyExists.into()),
+            Err(error) if error.kind() == io::ErrorKind::FileTooLarge => {
+                return Err(io::ErrorKind::AlreadyExists.into());
+            }
+            Err(error) => return Err(error),
+        }
+        let mut options = OpenOptions::new();
+        options
+            .write(true)
+            .create_new(true)
+            .access_mode(GENERIC_WRITE | DELETE)
+            .share_mode(0)
+            .custom_flags(FLAGS);
+        for _ in 0..16 {
+            check(cancelled)?;
+            let temp_name = format!(
+                ".cide-restore-{}-{}.tmp",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            );
+            if target
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    name.eq_ignore_ascii_case(&temp_name)
+                        || name.to_uppercase() == temp_name.to_uppercase()
+                })
+            {
+                continue;
+            }
+            let file = match options.open(target.with_file_name(temp_name)) {
+                Ok(file) => file,
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            };
+            let mut pending = PendingMissingFile {
+                file,
+                target: target.clone(),
+                published: false,
+                _dirs: pinned,
+            };
+            for chunk in bytes.chunks(64 * 1024) {
+                check(cancelled)?;
+                pending.file.write_all(chunk)?;
+            }
+            pending.file.sync_all()?;
+            check(cancelled)?;
+            return Ok(pending);
+        }
+        Err(io::ErrorKind::AlreadyExists.into())
     }
 }
 
@@ -549,5 +757,30 @@ mod tests {
         assert!(rename_denied);
         assert!(matches!(captured, Capture::Present { .. }));
         assert_eq!(fs::read(alias).unwrap(), b"owned sharing fixture");
+    }
+
+    #[test]
+    fn create_only_publication_pins_ancestors_and_rejects_a_late_destination() {
+        let root = fixture();
+        let dir = root.join("nested");
+        fs::create_dir(&dir).unwrap();
+        let target = dir.join("deleted.p");
+        let token = match capture_in_root(&root, &target, 0, &mut || false).unwrap() {
+            Capture::Absent { token } => token,
+            Capture::Present { .. } => panic!("unexpected file"),
+        };
+        let pending = stage_missing_file(&root, &token, b"indexed", &mut || false).unwrap();
+        assert!(!target.exists());
+        assert!(fs::rename(&dir, root.join("other")).is_err());
+        fs::write(&target, b"created by another writer").unwrap();
+        assert_eq!(
+            pending.publish().unwrap_err().kind(),
+            io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"created by another writer");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_file(target).unwrap();
+        fs::remove_dir(dir).unwrap();
+        fs::remove_dir(root).unwrap();
     }
 }

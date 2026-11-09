@@ -73,3 +73,21 @@ El motor crea una referencia nueva bajo el bloqueo Git y comprueba
 colisiones con referencias sueltas o empaquetadas. La creación conserva
 la rama activa, HEAD, el índice, los archivos de trabajo y los reflogs.
 El grafo actualiza el selector al terminar.
+
+## Renombrar o eliminar una referencia
+
+Abre **Referencias** con **R** y selecciona una rama local o etiqueta.
+En la GUI puedes seleccionar la fila con el ratón y pulsar **Abrir**,
+**Renombrar** o **Eliminar**. Ambas interfaces ofrecen **Intro** para
+abrir el grafo de la referencia, **F2** para iniciar un renombrado en Windows y
+**Supr** para iniciar una eliminación. **Intro** prepara la revisión
+con el nombre y el objeto exactos. Confirma con **Ctrl+Intro** en la
+GUI o **F2** en la TUI. **Esc** descarta la revisión.
+
+La gestión local protege la rama activa y conserva el objeto original
+al renombrar, incluso en etiquetas anotadas. Eliminar una rama requiere
+demostrar que su punta está integrada en HEAD. Ramas con configuración
+propia, alias simbólicos y repositorios con árboles vinculados quedan
+fuera de este flujo. En caso de error tardío de E/S al renombrar pueden
+quedar ambos nombres. El resultado indica que se debe actualizar el
+repositorio antes de reintentar.

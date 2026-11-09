@@ -89,6 +89,13 @@ pub struct WorktreeToken {
     sha256: Option<[u8; 32]>,
 }
 impl WorktreeToken {
+    pub(super) fn missing(&self) -> Option<&jc_fs::MissingToken> {
+        match &self.capture {
+            CaptureIdentity::Absent(token) => Some(token),
+            CaptureIdentity::Present(_) => None,
+        }
+    }
+
     pub fn memory_bytes(&self) -> usize {
         self.capture.memory_bytes()
     }

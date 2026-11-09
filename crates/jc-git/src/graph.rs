@@ -32,7 +32,7 @@ pub enum Head {
 }
 
 impl Head {
-    fn target(&self) -> Option<&str> {
+    pub(super) fn target(&self) -> Option<&str> {
         match self {
             Self::Unborn { .. } => None,
             Self::Attached { target, .. } | Self::Detached { target } => Some(target),
@@ -473,6 +473,44 @@ fn graph_object<'a>(
     }
     budget.charge(size)?;
     verified(repo, id, MAX_OBJECT_BYTES, ctx)
+}
+
+pub(super) fn contains_ancestor(
+    repo: &gix::Repository,
+    start: &str,
+    target: gix::ObjectId,
+    limits: Limits,
+    ctx: &Context<'_>,
+) -> Result<bool, Error> {
+    let mut budget = Budget::new(limits);
+    let boundaries = shallow(repo, limits, &mut budget, ctx)?;
+    let start = parse_oid(start)?;
+    let mut visited = BTreeSet::from([start]);
+    let mut pending = VecDeque::from([start]);
+    while let Some(id) = pending.pop_front() {
+        let commit = graph_object(repo, id, &mut budget, ctx)?
+            .try_into_commit()
+            .map_err(engine)?;
+        if id == target {
+            return Ok(true);
+        }
+        if boundaries.contains(&id) {
+            continue;
+        }
+        let decoded = commit.decode().map_err(engine)?;
+        if decoded.parents.len() > MAX_PARENTS {
+            return Err(Error::Limited);
+        }
+        for parent in decoded.parents() {
+            if visited.insert(parent) {
+                if visited.len() > MAX_NODES.min(limits.max_entries) {
+                    return Err(Error::Limited);
+                }
+                pending.push_back(parent);
+            }
+        }
+    }
+    Ok(false)
 }
 
 fn peel_commit<'a>(

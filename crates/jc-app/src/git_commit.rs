@@ -1,10 +1,19 @@
 //! Shared draft, review and background publication for the two frontends.
-use crate::{edit_field, FieldEdit, Wakeup, Workbench};
+use crate::{
+    edit_field,
+    git_revision::{ComparisonOrigin, PairKind, RevisionComparison},
+    FieldEdit, Wakeup, Workbench,
+};
 pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
+use jc_git::local_pair::SourceIdentity;
 pub use jc_git::ref_write::RefKind;
-use jc_git::ref_write::{apply_ref, prepare_ref, RefPlan, REF_NAME_BYTES};
+use jc_git::ref_write::{
+    apply_ref, apply_ref_change, prepare_ref, prepare_ref_change, RefChangePlan, RefPlan,
+    REF_NAME_BYTES,
+};
+use jc_git::restore::{apply_restore, prepare_restore, RestorePlan};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -31,6 +40,43 @@ enum Completion {
 enum WritePlan {
     Commit(Box<CommitPlan>),
     Reference(Box<RefPlan>),
+    ReferenceChange(Box<RefChangePlan>),
+    Restore(Box<RestorePlan>),
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ReferenceTarget {
+    pub kind: RefKind,
+    pub name: String,
+    pub oid: String,
+}
+
+#[derive(Clone)]
+pub enum WriteDraft {
+    Commit,
+    CreateReference(RefKind, String),
+    ChangeReference(ReferenceTarget, bool),
+    Restore(Arc<RevisionComparison>),
+}
+
+impl WriteDraft {
+    fn is_reference(&self) -> bool {
+        matches!(self, Self::CreateReference(..) | Self::ChangeReference(..))
+    }
+
+    fn has_input(&self) -> bool {
+        !matches!(self, Self::ChangeReference(_, false) | Self::Restore(_))
+    }
+}
+
+pub fn can_restore_missing(comparison: &RevisionComparison) -> bool {
+    let ComparisonOrigin::Local(local) = &comparison.origin else {
+        return false;
+    };
+    cfg!(windows)
+        && local.kind == PairKind::Worktree
+        && matches!(local.before, SourceIdentity::Present { mode: 0o100644, .. })
+        && local.after.is_absent()
 }
 
 struct Job {
@@ -43,7 +89,7 @@ struct Job {
 pub struct CommitView {
     root: PathBuf,
     pub replaces: Option<AmendTarget>,
-    pub reference: Option<(RefKind, String)>,
+    pub draft: WriteDraft,
     pub message: String,
     pub cursor: usize,
     pub first: usize,
@@ -54,15 +100,28 @@ pub struct CommitView {
 
 impl CommitView {
     pub fn title(&self) -> &'static str {
-        if let Some((kind, _)) = self.reference {
-            match kind {
-                RefKind::Branch => "Crear rama",
-                RefKind::Tag => "Crear etiqueta",
-            }
-        } else if self.replaces.is_some() {
-            "Modificar último commit"
-        } else {
-            "Crear commit"
+        match &self.draft {
+            WriteDraft::CreateReference(RefKind::Branch, _) => "Crear rama",
+            WriteDraft::CreateReference(RefKind::Tag, _) => "Crear etiqueta",
+            WriteDraft::ChangeReference(target, rename) => match (target.kind, rename) {
+                (RefKind::Branch, true) => "Renombrar rama",
+                (RefKind::Tag, true) => "Renombrar etiqueta",
+                (RefKind::Branch, false) => "Eliminar rama",
+                (RefKind::Tag, false) => "Eliminar etiqueta",
+            },
+            WriteDraft::Restore(_) => "Recuperar archivo borrado",
+            WriteDraft::Commit if self.replaces.is_some() => "Modificar último commit",
+            WriteDraft::Commit => "Crear commit",
+        }
+    }
+    pub fn has_input(&self) -> bool {
+        self.draft.has_input()
+    }
+    pub fn pending_hint(&self) -> &'static str {
+        match &self.draft {
+            WriteDraft::Commit => "Leyendo el índice preparado… · Esc cancela",
+            WriteDraft::Restore(_) => "Comprobando el índice y el archivo borrado… · Esc cancela",
+            _ => "Comprobando referencia… · Esc cancela",
         }
     }
     pub fn review(&self) -> Option<&CommitPlan> {
@@ -77,11 +136,23 @@ impl CommitView {
             _ => None,
         }
     }
+    pub fn reference_change_review(&self) -> Option<&RefChangePlan> {
+        match &self.review {
+            Some(WritePlan::ReferenceChange(plan)) => Some(plan),
+            _ => None,
+        }
+    }
+    pub fn restore_review(&self) -> Option<&RestorePlan> {
+        match &self.review {
+            Some(WritePlan::Restore(plan)) => Some(plan),
+            _ => None,
+        }
+    }
     pub fn reviewing(&self) -> bool {
         self.review.is_some()
     }
     fn input_limit(&self) -> usize {
-        if self.reference.is_some() {
+        if self.draft.is_reference() {
             REF_NAME_BYTES
         } else {
             MESSAGE_BYTES - 1
@@ -128,22 +199,25 @@ impl CommitController {
     }
 
     pub fn open(&mut self, root: PathBuf, replaces: Option<AmendTarget>) {
-        self.open_write(root, replaces, None);
+        self.open_write(root, replaces, WriteDraft::Commit);
     }
     pub fn open_reference(&mut self, root: PathBuf, kind: RefKind, target: String) {
-        self.open_write(root, None, Some((kind, target)));
+        self.open_write(root, None, WriteDraft::CreateReference(kind, target));
     }
-    fn open_write(
-        &mut self,
-        root: PathBuf,
-        replaces: Option<AmendTarget>,
-        reference: Option<(RefKind, String)>,
-    ) {
+    pub fn open_reference_change(&mut self, root: PathBuf, target: ReferenceTarget, rename: bool) {
+        self.open_write(root, None, WriteDraft::ChangeReference(target, rename));
+    }
+    pub fn open_restore(&mut self, root: PathBuf, comparison: Arc<RevisionComparison>) {
+        if can_restore_missing(&comparison) {
+            self.open_write(root, None, WriteDraft::Restore(comparison));
+        }
+    }
+    fn open_write(&mut self, root: PathBuf, replaces: Option<AmendTarget>, draft: WriteDraft) {
         if self.job.is_none() && self.view.is_none() {
             self.view = Some(CommitView {
                 root,
                 replaces,
-                reference,
+                draft,
                 message: String::new(),
                 cursor: 0,
                 first: 0,
@@ -173,14 +247,14 @@ impl CommitController {
     pub fn input_token(&self) -> Option<Arc<()>> {
         self.view
             .as_ref()
-            .filter(|v| !self.busy() && v.review.is_none())
+            .filter(|v| v.has_input() && !self.busy() && v.review.is_none())
             .map(|v| v.input_token.clone())
     }
 
     pub fn paste_budget(&self) -> Option<usize> {
         self.view
             .as_ref()
-            .filter(|v| !self.busy() && v.review.is_none())
+            .filter(|v| v.has_input() && !self.busy() && v.review.is_none())
             .map(|v| v.input_limit().saturating_sub(v.message.len()).max(1))
     }
 
@@ -188,7 +262,11 @@ impl CommitController {
         if self.busy() {
             return;
         }
-        let Some(view) = self.view.as_mut().filter(|v| v.review.is_none()) else {
+        let Some(view) = self
+            .view
+            .as_mut()
+            .filter(|v| v.has_input() && v.review.is_none())
+        else {
             return;
         };
         if let FieldEdit::Insert(text) = edit {
@@ -227,7 +305,7 @@ impl CommitController {
             self.cancel();
             return;
         }
-        if view.reference.is_none() && crate::git_index::require_clean(bench).is_err() {
+        if !view.draft.is_reference() && crate::git_index::require_clean(bench).is_err() {
             view.error = Some("Guarda los documentos modificados antes de continuar".into());
             return;
         }
@@ -238,7 +316,7 @@ impl CommitController {
         let root = view.root.clone();
         let message = view.message.clone();
         let replaces = view.replaces.clone();
-        let reference = view.reference.clone();
+        let draft = view.draft.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let stop = cancelled.clone();
         let result = Arc::new(Mutex::new(None));
@@ -271,17 +349,63 @@ impl CommitController {
                                 format!("{label} · {} · {}", publication.name, publication.target)
                             }))
                         }
-                        None => Completion::Review(match (reference, replaces) {
-                            (Some((kind, target)), _) => {
+                        Some(WritePlan::ReferenceChange(plan)) => Completion::Applied(
+                            apply_ref_change(*plan, cancelled).map(|publication| match publication
+                                .destination
+                            {
+                                Some(name) => format!(
+                                    "Referencia renombrada · {} → {name}",
+                                    publication.source
+                                ),
+                                None => format!("Referencia eliminada · {}", publication.source),
+                            }),
+                        ),
+                        Some(WritePlan::Restore(plan)) => Completion::Applied(
+                            apply_restore(*plan, cancelled)
+                                .map(|()| "Archivo recuperado desde el índice Git".into()),
+                        ),
+                        None => Completion::Review(match (draft, replaces) {
+                            (WriteDraft::CreateReference(kind, target), _) => {
                                 prepare_ref(&root, &target, kind, &message, LIMITS, cancelled)
                                     .map(|plan| WritePlan::Reference(Box::new(plan)))
                             }
-                            (None, Some(head)) => {
+                            (WriteDraft::ChangeReference(target, rename), _) => prepare_ref_change(
+                                &root,
+                                target.kind,
+                                &target.name,
+                                &target.oid,
+                                rename.then_some(message.as_str()),
+                                LIMITS,
+                                cancelled,
+                            )
+                            .map(|plan| WritePlan::ReferenceChange(Box::new(plan))),
+                            (WriteDraft::Restore(comparison), _) => {
+                                prepare_restore(&root, &comparison.path, LIMITS, cancelled)
+                                    .and_then(|plan| {
+                                        let pair = plan.pair();
+                                        let ComparisonOrigin::Local(local) = &comparison.origin
+                                        else {
+                                            return Err(jc_git::Error::Stale);
+                                        };
+                                        if pair.repository.root != comparison.repository_root
+                                            || pair.path != comparison.path
+                                            || pair.index != local.index
+                                            || pair.before.identity() != &local.before
+                                            || pair.after.identity() != &local.after
+                                        {
+                                            return Err(jc_git::Error::Stale);
+                                        }
+                                        Ok(WritePlan::Restore(Box::new(plan)))
+                                    })
+                            }
+                            (WriteDraft::Commit, Some(head)) => {
                                 prepare_amend(&root, &message, &head, LIMITS, cancelled)
                                     .map(|plan| WritePlan::Commit(Box::new(plan)))
                             }
-                            (None, None) => prepare_commit(&root, &message, LIMITS, cancelled)
-                                .map(|plan| WritePlan::Commit(Box::new(plan))),
+                            (WriteDraft::Commit, None) => {
+                                prepare_commit(&root, &message, LIMITS, cancelled)
+                                    .map(|plan| WritePlan::Commit(Box::new(plan)))
+                            }
                         }),
                     }
                 }))
@@ -324,7 +448,8 @@ impl CommitController {
             Completion::Review(Err(e)) => view.error = Some(e.to_string()),
             Completion::Applied(result) => {
                 let root = view.root.clone();
-                let reference = view.reference.is_some();
+                let reference = view.draft.is_reference();
+                let restore = matches!(view.draft, WriteDraft::Restore(_));
                 let result = result.map_err(|e| e.to_string());
                 if let Ok(message) = &result {
                     self.notice = Some((root.clone(), message.clone()));
@@ -338,6 +463,7 @@ impl CommitController {
                         root,
                         result,
                         reference,
+                        restore,
                     }),
                 );
             }
@@ -356,7 +482,8 @@ impl CommitController {
                         Some(CommitOutcome {
                             root: view.root.clone(),
                             result: Err(view.error.clone().unwrap()),
-                            reference: view.reference.is_some(),
+                            reference: view.draft.is_reference(),
+                            restore: matches!(view.draft, WriteDraft::Restore(_)),
                         }),
                     );
                 }
@@ -370,6 +497,7 @@ pub struct CommitOutcome {
     pub root: PathBuf,
     pub result: Result<String, String>,
     pub reference: bool,
+    pub restore: bool,
 }
 
 pub fn file_flag(change: jc_git::Change) -> &'static str {

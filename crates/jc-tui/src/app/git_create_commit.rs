@@ -1,7 +1,10 @@
 use super::{git_history::opaque, TuiApp};
 use crate::input::is_plain_text;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
-use jc_app::{git_commit::file_flag, present_field, FieldEdit};
+use jc_app::{
+    git_commit::{file_flag, WriteDraft},
+    present_field, FieldEdit,
+};
 
 pub(crate) struct CommitPresentation {
     pub title: &'static str,
@@ -89,19 +92,22 @@ impl TuiApp {
         let (changed, outcome) = self.git_commit.poll();
         if let Some(outcome) = outcome {
             let refresh_graph = outcome.reference && outcome.result.is_ok() && self.graph_showing();
-            let notice = match outcome.result {
+            let notice = match &outcome.result {
                 Ok(_) => self
                     .git_commit
                     .notice(Some(&outcome.root))
                     .unwrap_or_default()
                     .into(),
-                Err(error) => error,
+                Err(error) => error.clone(),
             };
             if self.project_root.as_ref() == Some(&outcome.root) {
                 if refresh_graph {
                     self.open_git_graph();
                 } else if !outcome.reference {
                     self.git_revision.cancel();
+                }
+                if outcome.restore && outcome.result.is_ok() {
+                    self.refresh_explorer();
                 }
                 let _ = self.git_status.refresh_after_index_write(&outcome.root);
             }
@@ -118,27 +124,51 @@ impl TuiApp {
         let view = self.git_commit.view()?;
         let width = width.saturating_sub(4).min(256);
         let field = present_field(&view.message, view.cursor, usize::from(width), 1);
-        let mut rows = vec![field
-            .rows
-            .first()
-            .filter(|s| !s.is_empty())
-            .cloned()
-            .unwrap_or_else(|| {
-                if view.reference.is_some() {
-                    "Escribe el nombre de la referencia".into()
-                } else {
-                    "Escribe el mensaje del commit".into()
-                }
-            })];
+        let mut rows = view
+            .has_input()
+            .then(|| {
+                field
+                    .rows
+                    .first()
+                    .filter(|s| !s.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        if matches!(
+                            view.draft,
+                            WriteDraft::CreateReference(..) | WriteDraft::ChangeReference(..)
+                        ) {
+                            "Escribe el nombre de la referencia".into()
+                        } else {
+                            "Escribe el mensaje del commit".into()
+                        }
+                    })
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
         let mut caret = None;
         let hint = if self.git_commit.applying() {
             "Publicando operación Git…"
         } else if self.git_commit.busy() {
-            if view.reference.is_some() {
-                "Comprobando referencia… · Esc cancela"
-            } else {
-                "Leyendo el índice… · Esc cancela"
-            }
+            view.pending_hint()
+        } else if let Some(plan) = view.reference_change_review() {
+            rows.push(match plan.destination() {
+                Some(name) => format!("{} → {name}", plan.source()),
+                None => format!("Se eliminará la referencia {}", plan.source()),
+            });
+            rows.push(format!("Objeto actual · {}", plan.target()));
+            "F2 confirma el cambio · Esc cancela"
+        } else if let Some(plan) = view.restore_review() {
+            let pair = plan.pair();
+            rows.push(opaque(&pair.path, width));
+            rows.push(format!(
+                "Índice → disco · {} bytes",
+                pair.before.bytes().len()
+            ));
+            rows.push(format!(
+                "Objeto · {}",
+                pair.before.identity().oid().unwrap_or_default()
+            ));
+            "F2 recupera el archivo · Esc cancela"
         } else if let Some(plan) = view.reference_review() {
             rows.push(format!("Referencia nueva · {}", plan.full_name()));
             rows.push(format!("Commit de destino · {}", plan.target()));
@@ -176,12 +206,18 @@ impl TuiApp {
                 "↑↓ archivos · F2 confirma · Esc cancela"
             }
         } else {
-            if !view.message.is_empty() {
+            if view.has_input() && !view.message.is_empty() {
                 caret = Some(field.cursor_column as u16);
             }
-            if let Some((_, target)) = &view.reference {
+            if let WriteDraft::CreateReference(_, target) = &view.draft {
                 rows.push(format!("Commit de destino · {target}"));
                 "Intro revisa · Esc cancela"
+            } else if let WriteDraft::ChangeReference(target, _) = &view.draft {
+                rows.push(format!("Referencia actual · {}", target.name));
+                "Intro revisa · Esc cancela"
+            } else if let WriteDraft::Restore(comparison) = &view.draft {
+                rows.push(opaque(&comparison.path, width));
+                "Intro revisa recuperación · Esc cancela"
             } else if let Some(old) = &view.replaces {
                 rows.push(format!("Reemplaza {}", old.head));
                 "Vacío conserva mensaje · Intro revisa · Esc cancela"

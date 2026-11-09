@@ -3,7 +3,7 @@ use super::{
     git_status::{GitStatusPresentation, GitStatusRow},
     TuiApp,
 };
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use jc_app::{git_graph::GraphView, BottomPanel, PrimaryFocus, SidebarView};
 
 impl TuiApp {
@@ -47,6 +47,15 @@ impl TuiApp {
         }
     }
 
+    fn graph_write_target(&self, row: usize) -> Option<&jc_app::git_commit::ReferenceTarget> {
+        if self.git_revision.state() != jc_app::git_revision::GitRevisionState::Ready
+            || self.git_index.state() == jc_app::git_index::IndexState::Applying
+        {
+            return None;
+        }
+        self.git_revision.graph()?.reference_write_target(row)
+    }
+
     pub(super) fn handle_git_graph_key(&mut self, key: KeyEvent) -> bool {
         let Some(view) = self.git_history.graph.as_ref() else {
             return false;
@@ -78,6 +87,9 @@ impl TuiApp {
             }
             KeyCode::F(5) => self.open_git_graph(),
             KeyCode::Char('b' | 'B' | 't' | 'T') if view.reference_selected.is_none() => {
+                if self.git_index.state() == jc_app::git_index::IndexState::Applying {
+                    return true;
+                }
                 let target = self
                     .git_revision
                     .graph()
@@ -90,6 +102,21 @@ impl TuiApp {
                         jc_app::git_commit::RefKind::Tag
                     };
                     self.git_commit.open_reference(root, kind, target);
+                }
+            }
+            KeyCode::F(2) | KeyCode::Delete
+                if view.reference_selected.is_some()
+                    && key.kind == KeyEventKind::Press
+                    && (cfg!(windows) || key.code == KeyCode::Delete) =>
+            {
+                let target = view
+                    .reference_selected
+                    .and_then(|row| self.graph_write_target(row))
+                    .cloned();
+                if let Some((root, target)) = self.project_root.clone().zip(target) {
+                    let _ = self.git_index.discard_review();
+                    self.git_commit
+                        .open_reference_change(root, target, key.code == KeyCode::F(2));
                 }
             }
             KeyCode::Char('r' | 'R') if self.git_revision.graph().is_some() => {
@@ -212,7 +239,14 @@ impl TuiApp {
                 "Grafo de commits"
             }
             .into(),
-            message: if self.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready {
+            message: if references && self.graph_write_target(view.selected_row()).is_some() {
+                if cfg!(windows) {
+                    "Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
+                } else {
+                    "Intro abrir · Supr eliminar · Esc volver"
+                }
+                .into()
+            } else if self.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready {
                 page.heading()
             } else {
                 format!("{} · {}", self.git_revision.message(), page.heading())

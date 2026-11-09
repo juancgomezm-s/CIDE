@@ -59,6 +59,9 @@ impl State {
         self.request_git_history(id);
     }
     pub(super) fn open_graph_reference_draft(&mut self, kind: jc_app::git_commit::RefKind) {
+        if self.git_index.state() == jc_app::git_index::IndexState::Applying {
+            return;
+        }
         let Some(view) = self
             .git_workspace
             .graph
@@ -75,6 +78,46 @@ impl State {
         if let (Some(root), Some(target)) = (self.project_root.clone(), target) {
             self.git_commit.open_reference(root, kind, target);
             self.git_workspace.invalidate();
+        }
+    }
+
+    fn graph_write_target(&self) -> Option<&jc_app::git_commit::ReferenceTarget> {
+        let row = self.git_workspace.graph.as_ref()?.reference_selected?;
+        if self.git_revision.state() != GitRevisionState::Ready
+            || self.git_index.state() == jc_app::git_index::IndexState::Applying
+        {
+            return None;
+        }
+        self.git_revision.graph()?.reference_write_target(row)
+    }
+
+    pub(super) fn open_graph_reference_change(&mut self, rename: bool) {
+        if let Some((root, target)) = self
+            .project_root
+            .clone()
+            .zip(self.graph_write_target().cloned())
+        {
+            let _ = self.git_index.discard_review();
+            self.git_commit.open_reference_change(root, target, rename);
+            self.git_workspace.invalidate();
+        }
+    }
+
+    pub(super) fn select_graph_reference(&mut self, index: usize) {
+        if let Some(view) = &mut self.git_workspace.graph {
+            view.reference_selected = Some(index);
+            self.git_workspace.invalidate();
+        }
+    }
+
+    pub(super) fn open_selected_graph_reference(&mut self) {
+        if let Some(index) = self
+            .git_workspace
+            .graph
+            .as_ref()
+            .and_then(|view| view.reference_selected)
+        {
+            self.choose_graph_reference(index);
         }
     }
 
@@ -153,6 +196,8 @@ impl State {
             0x54 if view.reference_selected.is_none() => {
                 self.open_graph_reference_draft(jc_app::git_commit::RefKind::Tag)
             }
+            0x71 if view.reference_selected.is_some() => self.open_graph_reference_change(true),
+            0x2e if view.reference_selected.is_some() => self.open_graph_reference_change(false),
             0x0d if view.reference_selected.is_some() => {
                 self.choose_graph_reference(view.selected_row())
             }
@@ -218,7 +263,9 @@ impl State {
             "Grafo de commits"
         }
         .into();
-        frame.footer = if references {
+        frame.footer = if references && self.graph_write_target().is_some() {
+            "Intro abrir · F2 renombrar · Supr eliminar · Esc volver"
+        } else if references {
             "↑↓ seleccionar · Intro abrir referencia · Esc volver"
         } else {
             "Intro abrir · R referencias · B crear rama · T crear etiqueta · N más · Esc volver"
@@ -294,12 +341,36 @@ impl State {
                     Intent::GraphClose
                 },
             ),
-            (119, "Referencias", Intent::GraphReferences),
-            (226, "Más antiguos", Intent::GraphNext),
+            (
+                119,
+                if references { "Abrir" } else { "Referencias" },
+                if references {
+                    Intent::GraphOpenReference
+                } else {
+                    Intent::GraphReferences
+                },
+            ),
+            (
+                226,
+                if references {
+                    "Renombrar"
+                } else {
+                    "Más antiguos"
+                },
+                if references {
+                    Intent::GraphChangeReference(true)
+                } else {
+                    Intent::GraphNext
+                },
+            ),
             (
                 333,
-                "Crear rama",
-                Intent::GraphCreateReference(jc_app::git_commit::RefKind::Branch),
+                if references { "Eliminar" } else { "Crear rama" },
+                if references {
+                    Intent::GraphChangeReference(false)
+                } else {
+                    Intent::GraphCreateReference(jc_app::git_commit::RefKind::Branch)
+                },
             ),
             (
                 440,
@@ -309,7 +380,9 @@ impl State {
         ] {
             if matches!(intent, Intent::GraphNext)
                 && (references || !graph.is_some_and(|p| p.has_next()))
-                || offset == 119 && (references || graph.is_none())
+                || offset == 119 && graph.is_none()
+                || matches!(intent, Intent::GraphChangeReference(_))
+                    && self.graph_write_target().is_none()
                 || matches!(intent, Intent::GraphCreateReference(_))
                     && (references || graph.is_none_or(|page| page.entries.is_empty()))
             {

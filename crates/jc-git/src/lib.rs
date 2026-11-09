@@ -9,6 +9,7 @@ pub mod local_pair;
 pub mod patch_export;
 pub mod path_history;
 pub mod ref_write;
+pub mod restore;
 pub mod revision;
 use gix::bstr::ByteSlice;
 use std::{

@@ -211,10 +211,7 @@ fn source_mode(source: &Source) -> Option<u32> {
     }
 }
 
-fn stage_mode(repo: &gix::Repository, pair: &LocalPair) -> Result<Option<u32>, Error> {
-    let Some(mode) = source_mode(&pair.after) else {
-        return Ok(None);
-    };
+pub(super) fn reject_conversion(repo: &gix::Repository, pair: &LocalPair) -> Result<(), Error> {
     let config = repo.config_snapshot();
     if config.string("core.attributesFile").is_some()
         || config.string("core.eol").is_some()
@@ -234,10 +231,24 @@ fn stage_mode(repo: &gix::Repository, pair: &LocalPair) -> Result<Option<u32>, E
         }
         directory = parent.parent();
     }
-    if config.boolean("core.filemode").unwrap_or(cfg!(unix)) {
+    Ok(())
+}
+
+fn stage_mode(repo: &gix::Repository, pair: &LocalPair) -> Result<Option<u32>, Error> {
+    let Some(mode) = source_mode(&pair.after) else {
+        return Ok(None);
+    };
+    reject_conversion(repo, pair)?;
+    if repo
+        .config_snapshot()
+        .boolean("core.filemode")
+        .unwrap_or(cfg!(unix))
+    {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+            let relative = gix::path::from_bstr(pair.path.as_bstr()).map_err(engine)?;
+            let target = pair.repository.root.join(relative);
             let meta = fs::symlink_metadata(&target)?;
             if !meta.is_file() || meta.is_symlink() {
                 return Err(Error::Stale);

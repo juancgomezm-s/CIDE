@@ -1,5 +1,8 @@
 use super::*;
-use jc_app::{git_commit::file_flag, present_field, FieldEdit, Modifiers};
+use jc_app::{
+    git_commit::{file_flag, WriteDraft},
+    present_field, FieldEdit, Modifiers,
+};
 use std::sync::Arc;
 
 pub(in crate::windows) unsafe fn paste_message(hwnd: Hwnd, token: Arc<()>) {
@@ -136,19 +139,22 @@ impl State {
                     .graph
                     .as_ref()
                     .is_some_and(|view| view.showing);
-            self.status = match outcome.result {
+            self.status = match &outcome.result {
                 Ok(_) => self
                     .git_commit
                     .notice(Some(&outcome.root))
                     .unwrap_or_default()
                     .into(),
-                Err(error) => error,
+                Err(error) => error.clone(),
             };
             if self.project_root.as_ref() == Some(&outcome.root) {
                 if refresh_graph {
                     self.open_git_graph();
                 } else if !outcome.reference {
                     self.git_revision.cancel();
+                }
+                if outcome.restore && outcome.result.is_ok() {
+                    self.refresh_explorer();
                 }
                 self.schedule_git_status();
             }
@@ -241,13 +247,13 @@ impl State {
             if self.git_commit.applying() {
                 "Publicando operación Git…".into()
             } else if self.git_commit.busy() {
-                if view.reference.is_some() {
-                    "Comprobando referencia… · Esc cancela".into()
-                } else {
-                    "Leyendo el índice preparado… · Esc cancela".into()
-                }
+                view.pending_hint().into()
             } else if view.reviewing() {
-                "↑↓ recorrer archivos · Ctrl+Intro confirmar · Esc cancelar".into()
+                if view.review().is_some() {
+                    "↑↓ recorrer archivos · Ctrl+Intro confirmar · Esc cancelar".into()
+                } else {
+                    "Ctrl+Intro confirmar · Esc cancelar".into()
+                }
             } else {
                 "Intro revisar · Esc cancelar".into()
             }
@@ -260,13 +266,31 @@ impl State {
         );
         let width = ((r.right - r.left - p(16)) / self.cell_width.max(1)).clamp(1, 256) as usize;
         let field = present_field(&view.message, view.cursor, width, 1);
-        f.query = Some(QueryRow {
+        f.query = view.has_input().then(|| QueryRow {
             rect: r,
             text: field.rows.first().cloned().unwrap_or_default(),
             caret: (!self.git_commit.busy() && !view.reviewing())
                 .then_some(field.cursor_column as i32 * self.cell_width),
         });
-        let (label, offset) = if let Some(plan) = view.reference_review() {
+        let (label, offset) = if let Some(plan) = view.reference_change_review() {
+            f.summary = vec![match plan.destination() {
+                Some(name) => format!("{} → {name}", plan.source()),
+                None => format!("Se eliminará la referencia {}", plan.source()),
+            }];
+            f.details_top = p(132);
+            f.details = vec![format!("Objeto actual · {}", plan.target())];
+            ("Confirmar cambio", 12)
+        } else if let Some(plan) = view.restore_review() {
+            let pair = plan.pair();
+            f.summary = vec![opaque(&pair.path, 256)];
+            f.details_top = p(132);
+            f.details = vec![format!(
+                "Índice → disco · {} bytes · {}",
+                pair.before.bytes().len(),
+                pair.before.identity().oid().unwrap_or_default()
+            )];
+            ("Recuperar archivo", 12)
+        } else if let Some(plan) = view.reference_review() {
             f.summary = vec![format!("Referencia nueva · {}", plan.full_name())];
             f.details_top = p(132);
             f.details = vec![format!("Commit de destino · {}", plan.target())];
@@ -329,9 +353,15 @@ impl State {
                 },
                 150,
             )
-        } else if let Some((_, target)) = &view.reference {
+        } else if let WriteDraft::CreateReference(_, target) = &view.draft {
             f.summary = vec![format!("Nombre de la referencia · commit {target}")];
             ("Revisar referencia", 12)
+        } else if let WriteDraft::ChangeReference(target, _) = &view.draft {
+            f.summary = vec![format!("Referencia actual · {}", target.name)];
+            ("Revisar referencia", 12)
+        } else if let WriteDraft::Restore(comparison) = &view.draft {
+            f.summary = vec![opaque(&comparison.path, 256)];
+            ("Revisar recuperación", 12)
         } else {
             f.summary = vec![if let Some(old) = &view.replaces {
                 format!(

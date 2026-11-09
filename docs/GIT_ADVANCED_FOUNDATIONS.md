@@ -94,8 +94,25 @@ exportación, **X** solicita cancelar antes de publicar el archivo.
 La tarea usa el mismo par revisado y el mismo guardado seguro que la GUI.
 La exportación admite comparaciones de una sola ruta.
 
-Quedan pendientes la gestión de referencias existentes, la restauración
-de archivos, la integración de ramas y los remotos.
+## Recuperar un archivo borrado
+
+Selecciona un archivo rastreado que ya no exista en disco y abre la
+comparación **En disco**. En la GUI pulsa **Recuperar archivo** o
+**Ctrl+Alt+R**. En la TUI enfoca el diff y pulsa **U**. Usa **Intro**
+para revisar la ruta y el objeto del índice. Confirma con **Ctrl+Intro**
+en la GUI o **F2** en la TUI. **Esc** descarta la revisión.
+
+El flujo admite un archivo regular de modo 100644 en Windows, con su
+carpeta existente y sin conversión de Git. La recuperación exige que
+los documentos estén guardados y que el índice coincida con el revisado.
+El motor sincroniza un temporal exclusivo y lo publica mientras
+conserva el bloqueo del índice. Si otro proceso recrea el destino, la
+publicación lo conserva y devuelve un error. Un cierre abrupto puede
+dejar un temporal sin publicar. Los errores controlados limpian el
+temporal por su handle.
+
+Quedan pendientes el cambio de rama, la restauración de archivos
+existentes, la integración de ramas y los remotos.
 El [visor del grafo](G1_GRAPH_VIEW.md) recorre la ascendencia elegida y
 permite crear ramas y etiquetas ligeras.
 El commit local y su modificación tienen su propio recorrido de

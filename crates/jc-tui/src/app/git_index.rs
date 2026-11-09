@@ -2,6 +2,7 @@
 use super::{git_history::opaque, TuiApp};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use jc_app::{
+    git_commit::can_restore_missing,
     git_index::{IndexAction, IndexState},
     git_revision::{ComparisonOrigin, LocalComparisonOrigin, PairKind, RevisionComparison},
     BottomPanel, PrimaryFocus,
@@ -42,11 +43,34 @@ impl TuiApp {
             .is_some_and(|root| review.matches(root, comparison, self.git_history.hunk))
     }
 
+    pub(super) fn git_restore_available(&self) -> bool {
+        self.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+            && !matches!(
+                self.git_index.state(),
+                IndexState::Preparing | IndexState::Reviewing | IndexState::Applying
+            )
+            && self
+                .git_index_comparison()
+                .is_some_and(|(comparison, _)| can_restore_missing(comparison))
+    }
+
     pub(super) fn handle_git_index_key(&mut self, key: KeyEvent) -> bool {
         if self.focus.primary() != PrimaryFocus::BottomPanel || key.kind != KeyEventKind::Press {
             return false;
         }
         match key.code {
+            KeyCode::Char('u' | 'U')
+                if key.modifiers.is_empty() && self.git_restore_available() =>
+            {
+                if let Some((root, comparison)) = self
+                    .project_root
+                    .clone()
+                    .zip(self.git_revision.share_comparison())
+                {
+                    self.git_commit.open_restore(root, comparison);
+                }
+                true
+            }
             KeyCode::Char('i' | 'I' | 'k' | 'K') => {
                 let block = matches!(key.code, KeyCode::Char('k' | 'K'));
                 match self.git_index.state() {

@@ -1,3 +1,28 @@
+## Git · Gestión de referencias, recuperación y árbol histórico
+
+Pasaron 55 pruebas dirigidas, además de formato y Clippy de los cinco
+crates afectados. GUI y TUI verificaron la revisión y confirmación de
+cambios de referencias y de recuperación desde el índice. El núcleo
+conservó el objeto de una etiqueta anotada y el reflog de una rama al
+renombrar. Rechazó una rama activa o sin integrar, un índice obsoleto
+y un destino que reapareció. La GUI recorrió archivos modificados y
+sin cambios en el árbol de la revisión, alternó pestañas y conservó
+el contenido del editor, el índice y el disco.
+
+La corrida paralela inicial detectó dos casos usando el mismo nombre
+de carpeta de prueba. Se añadió un contador por proceso al fixture
+de referencias. La repetición pasó. Las pruebas usaron repositorios
+aislados y se ejecutaron en segundo plano.
+
+La compilación optimizada offline reutilizó `target/build-cache` y
+publicó los binarios en `target/git-manage-restore-tree-next/release`.
+Pasaron 26 comprobaciones de regresión con una ventana oculta. En un
+ConPTY privado la TUI optimizada renombró y eliminó una etiqueta y
+recuperó un archivo borrado con los bytes exactos del índice. Ambos
+procesos se probaron con PATH vacío. El primer intento de terminal
+envió una tecla durante la publicación. El guion ahora espera a que
+termine y a que se vuelva a mostrar el grafo antes de continuar.
+
 ## Git · Renombrados, parches TUI y creación de referencias — 2026-11-08
 
 Pasaron ocho casos de historial por archivo, cinco de creación de

@@ -73,8 +73,8 @@ rutas anteriores. No se añadió ninguna dependencia ni se cambió Cargo.lock.
 
 ## Alcance restante
 
-Este bloque cumple distribución flexible, divisores, preferencias y vista paralela.
-La expansión G2 aún puede añadir árbol Cambios/Archivos, pestañas por archivo y
+El bloque inicial cumplió distribución flexible, divisores, preferencias y vista paralela.
+En ese punto la expansión G2 aún podía añadir árbol Cambios/Archivos, pestañas por archivo y
 menús contextuales; G3 conserva historial por ruta, anotaciones y exportación de
 parches. No se declaran terminados G2/G3 completos. Escrituras y red Git siguen
 reservadas a M5. La TUI conserva su composición de consulta existente; este bloque
@@ -101,3 +101,25 @@ El cierre optimizado también aprobó 147 comprobaciones, después de generar la
 capturas de una, dos (izquierda/derecha) y tres columnas. Las capturas se revisaron
 sin solapamientos de controles. Informe final: work/g2-layout-native-summary.json.
 Evidencia resumida: [JSON](evidence/g2-git-layout-comparison-2026-11-06.json).
+
+## Árbol y pestañas de una revisión
+
+Abre un commit y elige **Cambios** para ver los archivos que difieren del
+padre elegido. **Archivos** abre el árbol del commit, incluidos los archivos
+sin cambios. En el árbol, **Intro** entra en la carpeta elegida o abre la
+comparación del archivo. **..** y **Retroceso** suben al directorio superior.
+**T** alterna las vistas. Las entradas especiales se identifican en la lista
+y quedan fuera de la comparación de archivos regulares.
+
+**Resumen** recupera los metadatos del commit. Cada archivo abierto tiene
+una pestaña, hasta ocho por revisión y padre. **Ctrl+RePág/AvPág** o las
+flechas recorren las pestañas y **Ctrl+W** cierra la activa. Cambiar de
+revisión o de padre comienza otro conjunto de pestañas. El visor conserva
+las rutas de las pestañas y vuelve a consultar el par histórico al abrirlas.
+En memoria mantiene una sola comparación y un directorio aceptado.
+
+El árbol lee solo objetos de commit y árbol, por directorio y con cuotas
+de entradas, profundidad y bytes. El mismo worker de revisiones publica
+los resultados tras comprobar raíz, commit, ruta y generación. El visor
+requiere una revisión aceptada y muestra un error cuando la consulta
+excede las cuotas. El árbol no consulta archivos del árbol de trabajo.

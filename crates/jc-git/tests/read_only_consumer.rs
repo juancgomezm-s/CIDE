@@ -221,6 +221,83 @@ fn local_index(
 
 #[cfg(windows)]
 #[test]
+fn restore_deleted_file_publishes_exact_index_bytes_and_keeps_git_metadata() {
+    use gix::index::entry::Flags;
+    use jc_git::restore::{apply_restore, prepare_restore};
+    let fixture = Fixture::new();
+    let repo = gix::init(&fixture.root).unwrap();
+    let bytes = b"primer bloque\r\n\xffsin salto final";
+    let id = repo.write_blob(bytes).unwrap().detach();
+    local_index(&repo, &[(b"fuentes/dato.p", id, Flags::empty())]);
+    fs::create_dir(fixture.root.join("fuentes")).unwrap();
+    let baseline = image(&fixture.root.join(".git"));
+    let limits = Limits {
+        max_blob: 2 * 1024 * 1024,
+        max_entries: 128,
+        max_path: 1024,
+        max_bytes: 4 * 1024 * 1024,
+        timeout: Duration::from_secs(2),
+    };
+    let plan = prepare_restore(&fixture.root, b"fuentes/dato.p", limits, || false).unwrap();
+    let target = fixture.root.join("fuentes/dato.p");
+    assert!(!target.exists());
+    assert_eq!(plan.pair().before.bytes(), bytes);
+    assert!(plan.pair().after.identity().is_absent());
+    apply_restore(plan, || false).unwrap();
+    assert_eq!(fs::read(&target).unwrap(), bytes);
+    assert_eq!(image(&fixture.root.join(".git")), baseline);
+    assert_eq!(fs::read_dir(target.parent().unwrap()).unwrap().count(), 1);
+}
+
+#[cfg(windows)]
+#[test]
+fn restore_deleted_file_rejects_stale_index_and_unavailable_destination() {
+    use gix::index::entry::Flags;
+    use jc_git::{
+        Error,
+        restore::{apply_restore, prepare_restore},
+    };
+    let fixture = Fixture::new();
+    let repo = gix::init(&fixture.root).unwrap();
+    let original = repo.write_blob(b"original").unwrap().detach();
+    let different = repo.write_blob(b"nuevo").unwrap().detach();
+    let flags = Flags::empty();
+    let limits = Limits {
+        max_blob: 2 * 1024 * 1024,
+        max_entries: 128,
+        max_path: 1024,
+        max_bytes: 4 * 1024 * 1024,
+        timeout: Duration::from_secs(2),
+    };
+    local_index(&repo, &[(b"f.p", original, flags)]);
+    let plan = prepare_restore(&fixture.root, b"f.p", limits, || false).unwrap();
+    local_index(&repo, &[(b"f.p", different, flags)]);
+    assert!(matches!(apply_restore(plan, || false), Err(Error::Stale)));
+    let path = fixture.root.join("f.p");
+    assert!(!path.exists());
+    let plan = prepare_restore(&fixture.root, b"f.p", limits, || false).unwrap();
+    let lock = fixture.root.join(".git/index.lock");
+    fs::write(&lock, b"ajeno").unwrap();
+    assert!(apply_restore(plan, || false).is_err());
+    assert_eq!(fs::read(&lock).unwrap(), b"ajeno");
+    fs::remove_file(lock).unwrap();
+    let plan = prepare_restore(&fixture.root, b"f.p", limits, || false).unwrap();
+    assert!(matches!(
+        apply_restore(plan, || true),
+        Err(Error::Cancelled)
+    ));
+    let plan = prepare_restore(&fixture.root, b"f.p", limits, || false).unwrap();
+    fs::write(&path, b"creado por otro proceso").unwrap();
+    assert!(matches!(apply_restore(plan, || false), Err(Error::Stale)));
+    assert_eq!(fs::read(&path).unwrap(), b"creado por otro proceso");
+    assert!(prepare_restore(&fixture.root, b"f.p", limits, || false).is_err());
+    local_index(&repo, &[(b"missing/f.p", original, flags)]);
+    assert!(prepare_restore(&fixture.root, b"missing/f.p", limits, || false).is_err());
+    assert!(!fixture.root.join("missing").exists());
+}
+
+#[cfg(windows)]
+#[test]
 fn public_local_pairs_keep_head_index_disk_and_absence_distinct_without_writes() {
     use gix::index::entry::Flags;
     use jc_git::{

@@ -1,6 +1,7 @@
 //! Confirm whole-file index changes from the currently displayed local diff.
 use super::State;
 use jc_app::{
+    git_commit::can_restore_missing,
     git_index::{IndexAction, IndexState},
     git_revision::{ComparisonOrigin, LocalComparisonOrigin, PairKind, RevisionComparison},
 };
@@ -15,6 +16,30 @@ impl State {
         (self.git_workspace.local_kind == Some(local.kind)
             && self.git_workspace.selected_path.as_deref() == Some(comparison.path.as_slice()))
         .then_some((comparison, local))
+    }
+
+    pub(super) fn git_restore_available(&self) -> bool {
+        self.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+            && !matches!(
+                self.git_index.state(),
+                IndexState::Preparing | IndexState::Reviewing | IndexState::Applying
+            )
+            && self
+                .index_comparison()
+                .is_some_and(|(comparison, _)| can_restore_missing(comparison))
+    }
+
+    pub(super) fn open_git_restore(&mut self) {
+        if self.git_restore_available() {
+            if let Some((root, comparison)) = self
+                .project_root
+                .clone()
+                .zip(self.git_revision.share_comparison())
+            {
+                self.git_commit.open_restore(root, comparison);
+                self.git_workspace.invalidate();
+            }
+        }
     }
 
     pub(super) fn git_index_button(&self, block: bool) -> Option<&'static str> {
@@ -309,9 +334,84 @@ mod tests {
         state.key_override = Some(jc_app::Modifiers::CTRL);
         state.key(0x0d);
         wait(&mut state, |s| !s.git_commit.busy());
-        assert_eq!(fs::read_to_string(new_branch).unwrap().trim(), merge);
+        assert_eq!(fs::read_to_string(&new_branch).unwrap().trim(), merge);
+        wait(&mut state, |s| s.git_revision.graph().is_some());
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(b'R' as usize);
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama desde-grafo"))
+            .unwrap();
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(0x71);
+        for unit in "rama-renombrada".encode_utf16() {
+            state.character(unit);
+        }
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        assert!(view.reference_change_review().is_some(), "{:?}", view.error);
+        let renamed = fixture.root.join(".git/refs/heads/rama-renombrada");
+        assert!(new_branch.exists() && !renamed.exists());
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(!new_branch.exists(), "{}", state.status);
+        assert_eq!(fs::read_to_string(renamed).unwrap().trim(), merge);
         assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
         assert_eq!(fs::read(source).unwrap(), b"segundo padre\n");
+    }
+
+    #[test]
+    fn gui_recovers_a_deleted_file_only_after_review() {
+        use jc_app::Modifiers;
+        let fixture = Fixture::new();
+        let path = fixture.root.join("recuperar.txt");
+        let bytes = b"primera\r\nultima";
+        fs::write(&path, bytes).unwrap();
+        let mut state = State::new(&GuiOptions {
+            project_root: Some(fixture.root.clone()),
+            ..Default::default()
+        })
+        .unwrap();
+        state.request_git(GitIntent::Status);
+        wait(&mut state, |s| {
+            s.git_status.state() == GitStatusTaskState::Ready
+        });
+        state.request_git_local(PairKind::Worktree);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        state.git_index_action(false);
+        wait(&mut state, |s| s.git_index.state() == IndexState::Reviewing);
+        state.git_index_action(false);
+        wait(&mut state, |s| s.git_index.state() == IndexState::Published);
+        let index_path = fixture.root.join(".git/index");
+        let index = fs::read(&index_path).unwrap();
+        fs::remove_file(&path).unwrap();
+        state.request_git(GitIntent::Status);
+        wait(&mut state, |s| {
+            s.git_status.state() == GitStatusTaskState::Ready
+        });
+        state.request_git_local(PairKind::Worktree);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        state.key_override = Some(Modifiers::CTRL.union(Modifiers::ALT));
+        state.key(b'R' as usize);
+        state.key_override = Some(Modifiers::NONE);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        assert!(view.restore_review().is_some(), "{:?}", view.error);
+        assert!(!path.exists());
+        state.key_override = Some(Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert_eq!(fs::read(path).unwrap(), bytes);
+        assert_eq!(fs::read(index_path).unwrap(), index);
     }
 
     #[test]

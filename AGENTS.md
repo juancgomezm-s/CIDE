@@ -1,3 +1,17 @@
+# Reviewed Git reference changes, file recovery and history browser
+
+Read docs/G1_GRAPH_VIEW.md, docs/GIT_ADVANCED_FOUNDATIONS.md and
+docs/G2_GIT_LAYOUT_COMPARISON.md. Reuse the shared Git write review for local
+reference changes and recovery. Keep source CAS, create-only destination,
+HEAD protection and the merged-branch requirement. An interrupted rename
+can leave both names and must be re-observed. Restore only a missing regular
+file from a pinned index, with its parent retained and no conversion.
+Keep the GUI tree pinned to its revision, eight paths per commit and parent,
+one accepted directory and one resident comparison. Checkout, overwriting
+restore, integration and remotes remain open. Directed tests, fmt, Clippy and
+offline release passed. Delivery target/git-manage-restore-tree-next/release.
+Validate off desktop and retain previous deliveries and caches.
+
 # Exact renames, TUI patches and local reference creation — 2026-11-08
 
 Read docs/G3_PATH_HISTORY_OUTLINE.md, docs/GIT_ADVANCED_FOUNDATIONS.md and

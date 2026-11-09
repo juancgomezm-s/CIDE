@@ -1,4 +1,5 @@
 //! Presentation of the bounded commit graph, with lane continuity across pages.
+use crate::git_commit::{RefKind as WriteRefKind, ReferenceTarget};
 use jc_git::graph::{Boundary, GraphCursor, GraphNode, GraphPage, Head, RefKind, RefTarget};
 use std::sync::Arc;
 
@@ -39,6 +40,7 @@ pub struct GraphEntry {
 pub struct GraphReference {
     pub label: String,
     pub(crate) oid: String,
+    write: Option<ReferenceTarget>,
 }
 
 pub struct CommitGraph {
@@ -67,6 +69,9 @@ impl CommitGraph {
 
     pub fn reference_count(&self) -> usize {
         self.references.len() + 1
+    }
+    pub fn reference_write_target(&self, row: usize) -> Option<&ReferenceTarget> {
+        self.references.get(row.checked_sub(1)?)?.write.as_ref()
     }
     pub fn has_next(&self) -> bool {
         self.next.is_some()
@@ -137,11 +142,25 @@ impl CommitGraph {
                             return None;
                         };
                         let name = entry.name.strip_prefix(prefix)?;
+                        let active = matches!(&page.head, Some(Head::Attached { name, .. } | Head::Unborn { name }) if name == &entry.name);
+                        let write = match entry.kind {
+                            RefKind::LocalBranch if !active => Some(WriteRefKind::Branch),
+                            RefKind::Tag => Some(WriteRefKind::Tag),
+                            _ => None,
+                        }
+                        .zip(std::str::from_utf8(name).ok())
+                        .filter(|(_, name)| !name.chars().any(char::is_control))
+                        .map(|(kind, name)| ReferenceTarget {
+                            kind,
+                            name: name.to_owned(),
+                            oid: oid.clone(),
+                        });
                         let name = String::from_utf8_lossy(name);
                         let name = crate::source_services::display_ui_label(&name, 160);
                         Some(GraphReference {
                             label: format!("{kind} {name}"),
                             oid: oid.clone(),
+                            write,
                         })
                     })
                     .collect::<Arc<[_]>>()
