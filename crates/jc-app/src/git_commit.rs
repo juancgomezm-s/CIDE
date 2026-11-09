@@ -9,8 +9,9 @@ use jc_git::branch_switch::{apply_branch_switch, prepare_branch_switch, BranchSw
 pub use jc_git::commit_write::AmendTarget;
 pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
+pub use jc_git::local_merge::CommitOperation;
 use jc_git::local_merge::{
-    apply_merge, apply_merge_abort, prepare_cherry_pick, prepare_cherry_pick_mainline,
+    apply_merge, apply_merge_abort, prepare_commit_mainline, prepare_commit_operation,
     prepare_merge, prepare_merge_abort, prepare_resolved_merge, MergeAbortPlan, MergeKind,
     MergePlan,
 };
@@ -68,7 +69,7 @@ pub enum WriteDraft {
     ChangeReference(ReferenceTarget, bool),
     SwitchBranch(ReferenceTarget),
     MergeBranch(ReferenceTarget),
-    CherryPick(String),
+    CommitOperation(CommitOperation, String),
     AbortMerge,
     Restore(Arc<RevisionComparison>),
 }
@@ -84,14 +85,14 @@ impl WriteDraft {
             Self::ChangeReference(_, false)
                 | Self::SwitchBranch(_)
                 | Self::MergeBranch(_)
-                | Self::CherryPick(_)
+                | Self::CommitOperation(..)
                 | Self::AbortMerge
                 | Self::Restore(_)
         )
     }
 
     fn publishes_integration(&self) -> bool {
-        matches!(self, Self::MergeBranch(_) | Self::CherryPick(_))
+        matches!(self, Self::MergeBranch(_) | Self::CommitOperation(..))
     }
 
     fn refreshes_graph(&self) -> bool {
@@ -165,7 +166,7 @@ impl CommitView {
             },
             WriteDraft::SwitchBranch(_) => "Cambiar rama",
             WriteDraft::MergeBranch(_) => "Fusionar rama",
-            WriteDraft::CherryPick(_) => "Cherry-pick",
+            WriteDraft::CommitOperation(operation, _) => operation.title(),
             WriteDraft::AbortMerge => "Abortar operación Git",
             WriteDraft::Restore(comparison) => {
                 restore_label(comparison).unwrap_or("Restaurar archivo")
@@ -183,7 +184,12 @@ impl CommitView {
             WriteDraft::Restore(_) => "Comprobando el índice y el archivo… · Esc cancela",
             WriteDraft::SwitchBranch(_) => "Comprobando ambas ramas… · Esc cancela",
             WriteDraft::MergeBranch(_) => "Calculando la fusión local… · Esc cancela",
-            WriteDraft::CherryPick(_) => "Calculando el cherry-pick… · Esc cancela",
+            WriteDraft::CommitOperation(CommitOperation::CherryPick, _) => {
+                "Calculando el cherry-pick… · Esc cancela"
+            }
+            WriteDraft::CommitOperation(CommitOperation::Revert, _) => {
+                "Calculando la reversión… · Esc cancela"
+            }
             WriteDraft::AbortMerge => "Revisando cambios de la operación… · Esc cancela",
             _ => "Comprobando referencia… · Esc cancela",
         }
@@ -350,9 +356,14 @@ impl CommitController {
             self.open_write(root, None, WriteDraft::AbortMerge);
         }
     }
-    pub fn open_cherry_pick(&mut self, root: PathBuf, commit: String) {
+    pub fn open_commit_operation(
+        &mut self,
+        root: PathBuf,
+        commit: String,
+        operation: CommitOperation,
+    ) {
         if cfg!(windows) {
-            self.open_write(root, None, WriteDraft::CherryPick(commit));
+            self.open_write(root, None, WriteDraft::CommitOperation(operation, commit));
         }
     }
     pub fn open_restore(&mut self, root: PathBuf, comparison: Arc<RevisionComparison>) {
@@ -642,7 +653,7 @@ impl CommitController {
                     let cancelled = || stop.load(Ordering::Acquire);
                     if let Some(review) = mainline {
                         return Completion::Review(
-                            prepare_cherry_pick_mainline(review, cancelled)
+                            prepare_commit_mainline(review, cancelled)
                                 .map(|plan| WritePlan::Merge(Box::new(plan))),
                         );
                     }
@@ -706,10 +717,10 @@ impl CommitController {
                             }),
                         ),
                         Some(WritePlan::Merge(plan)) => {
-                            let action = if plan.is_cherry_pick() {
-                                "Cherry-pick publicado"
-                            } else {
-                                "Fusión local publicada"
+                            let action = match plan.operation() {
+                                Some(CommitOperation::CherryPick) => "Cherry-pick publicado",
+                                Some(CommitOperation::Revert) => "Reversión publicada",
+                                None => "Fusión local publicada",
                             };
                             Completion::Applied(apply_merge(*plan, cancelled).map(|publication| {
                                 publication
@@ -718,10 +729,10 @@ impl CommitController {
                             }))
                         }
                         Some(WritePlan::MergeAbort(plan)) => {
-                            let action = if plan.is_cherry_pick() {
-                                "Cherry-pick abortado"
-                            } else {
-                                "Fusión abortada"
+                            let action = match plan.operation() {
+                                Some(CommitOperation::CherryPick) => "Cherry-pick abortado",
+                                Some(CommitOperation::Revert) => "Reversión abortada",
+                                None => "Fusión abortada",
                             };
                             Completion::Applied(apply_merge_abort(*plan, cancelled).map(|result| {
                                 result.reflog_warning.unwrap_or_else(|| action.into())
@@ -754,9 +765,11 @@ impl CommitController {
                                 prepare_merge(&root, &target.name, &target.oid, LIMITS, cancelled)
                                     .map(|plan| WritePlan::Merge(Box::new(plan)))
                             }
-                            (WriteDraft::CherryPick(commit), _) => {
-                                prepare_cherry_pick(&root, &commit, LIMITS, cancelled)
-                                    .map(|plan| WritePlan::Merge(Box::new(plan)))
+                            (WriteDraft::CommitOperation(operation, commit), _) => {
+                                prepare_commit_operation(
+                                    &root, &commit, operation, LIMITS, cancelled,
+                                )
+                                .map(|plan| WritePlan::Merge(Box::new(plan)))
                             }
                             (WriteDraft::AbortMerge, _) => {
                                 prepare_merge_abort(&root, LIMITS, cancelled)

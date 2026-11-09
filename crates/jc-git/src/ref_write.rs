@@ -1793,6 +1793,220 @@ mod tests {
             assert_eq!(fs::read(&file).unwrap(), bytes);
             assert!(!pending.exists());
         }
+
+        #[test]
+        fn revert_merge_uses_the_selected_parent_and_preserves_later_and_staged_changes() {
+            use crate::local_merge::{
+                CommitOperation, prepare_commit_mainline, prepare_commit_operation,
+            };
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            let fixture = Fixture::new();
+            let (repo, first, second) = scenario(&fixture, true, b"uno\r\nDOS\r\ntres\r\nfin");
+            let version = |bytes: &[u8]| {
+                let blob = repo.write_blob(bytes).unwrap().detach();
+                let tree = repo
+                    .write_object(Tree {
+                        entries: vec![Entry {
+                            mode: EntryKind::Blob.into(),
+                            filename: "a.txt".into(),
+                            oid: blob,
+                        }],
+                    })
+                    .unwrap()
+                    .detach();
+                (blob, tree)
+            };
+            let (_, tree) = version(b"UNO\r\nDOS\r\ntres\r\nfin");
+            let merge = commit_at_tree(&repo, tree, &[first, second], "Fusión original");
+            let bytes = b"UNO\r\nDOS\r\ntres\r\nFIN";
+            let (blob, tree) = version(bytes);
+            let head = commit_at_tree(&repo, tree, &[merge], "Edición posterior");
+            let git = fixture.git();
+            fs::write(git.join("refs/heads/activa"), format!("{head}\n")).unwrap();
+            fs::write(fixture.root.join("a.txt"), bytes).unwrap();
+            let staged = repo
+                .open_index()
+                .unwrap()
+                .entry_by_path(b"local".as_bstr())
+                .unwrap()
+                .id;
+            let mut state = gix::index::State::new(repo.object_hash());
+            for (path, id) in [(b"a.txt".as_slice(), blob), (b"local", staged)] {
+                state.dangerously_push_entry(
+                    Default::default(),
+                    id,
+                    gix::index::entry::Flags::empty(),
+                    gix::index::entry::Mode::FILE,
+                    path.as_bstr(),
+                );
+            }
+            let index = git.join("index");
+            gix::index::File::from_state(state, &index)
+                .write(Default::default())
+                .unwrap();
+            let before = fs::read(&index).unwrap();
+            let choose = || {
+                prepare_commit_operation(
+                    &fixture.root,
+                    &merge.to_string(),
+                    CommitOperation::Revert,
+                    limits(),
+                    || false,
+                )
+                .unwrap()
+            };
+            let selector = choose();
+            assert_eq!(selector.mainline_choices(), [first, second]);
+            let plan =
+                prepare_commit_mainline(selector.mainline_review(0).unwrap(), || false).unwrap();
+            assert_eq!(plan.operation(), Some(CommitOperation::Revert));
+            assert_eq!(plan.mainline(), Some((1, first)));
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert_eq!(fs::read(fixture.root.join("a.txt")).unwrap(), bytes);
+            let id = apply_merge(plan, || false).unwrap().id;
+            assert_eq!(
+                fs::read(fixture.root.join("a.txt")).unwrap(),
+                b"UNO\r\ndos\r\ntres\r\nFIN"
+            );
+            let commit = repo.find_commit(id).unwrap();
+            assert_eq!(
+                commit
+                    .parent_ids()
+                    .map(|parent| parent.detach())
+                    .collect::<Vec<_>>(),
+                [head]
+            );
+            assert!(
+                commit
+                    .decode()
+                    .unwrap()
+                    .message
+                    .as_bytes()
+                    .windows(40)
+                    .any(|s| s == merge.to_string().as_bytes())
+            );
+            assert!(
+                commit
+                    .tree()
+                    .unwrap()
+                    .lookup_entry_by_path("local")
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(
+                repo.open_index()
+                    .unwrap()
+                    .entry_by_path(b"local".as_bstr())
+                    .unwrap()
+                    .id,
+                staged
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+            assert_eq!(
+                fs::read(fixture.root.join("sin-seguimiento")).unwrap(),
+                b"archivo privado"
+            );
+            let repeated =
+                prepare_commit_mainline(choose().mainline_review(0).unwrap(), || false).unwrap();
+            assert_eq!(repeated.kind, MergeKind::UpToDate);
+        }
+
+        #[test]
+        fn revert_root_removes_its_paths_and_preserves_unrelated_files() {
+            use crate::local_merge::{CommitOperation, prepare_commit_operation};
+            let fixture = Fixture::new();
+            let (_, root, _) = scenario(&fixture, false, b"otra rama");
+            let plan = prepare_commit_operation(
+                &fixture.root,
+                &root.to_string(),
+                CommitOperation::Revert,
+                limits(),
+                || false,
+            )
+            .unwrap();
+            assert_eq!(plan.rows.len(), 1);
+            assert_eq!(plan.rows[0].change, Some(crate::Change::Deleted));
+            assert!(fixture.root.join("a.txt").exists());
+            apply_merge(plan, || false).unwrap();
+            assert!(!fixture.root.join("a.txt").exists());
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+        }
+
+        #[test]
+        fn revert_conflict_can_abort_an_interrupted_publication_and_preserve_local_edits() {
+            use crate::local_merge::{
+                CommitOperation, MergeResolution, MergeSide, prepare_commit_operation,
+                prepare_resolved_merge,
+            };
+            let fixture = Fixture::new();
+            let (_, active, selected) = scenario(&fixture, true, b"ENTRANTE\r\ndos\r\ntres\r\nfin");
+            let git = fixture.git();
+            let index = git.join("index");
+            let pending = git.join(crate::branch_checkout::JOURNAL_NAME);
+            let original = fs::read(&index).unwrap();
+            let file = fixture.root.join("a.txt");
+            let bytes = fs::read(&file).unwrap();
+            let revert = || {
+                prepare_commit_operation(
+                    &fixture.root,
+                    &selected.to_string(),
+                    CommitOperation::Revert,
+                    limits(),
+                    || false,
+                )
+            };
+            let draft = revert().unwrap();
+            assert_eq!(draft.kind, MergeKind::Conflicts);
+            assert_eq!(
+                draft.conflict(b"a.txt").unwrap().bytes(MergeSide::Base),
+                Some(b"ENTRANTE\r\ndos\r\ntres\r\nfin".as_slice())
+            );
+            assert_eq!(
+                draft.conflict(b"a.txt").unwrap().bytes(MergeSide::Incoming),
+                Some(b"uno\r\ndos\r\ntres\r\nfin".as_slice())
+            );
+            assert!(!pending.exists());
+            let plan = prepare_resolved_merge(
+                draft.resolution_review().unwrap(),
+                std::collections::BTreeMap::from([(
+                    b"a.txt".to_vec(),
+                    MergeResolution::Use(MergeSide::Incoming),
+                )]),
+                || false,
+            )
+            .unwrap();
+            assert!(apply_merge(plan, || fs::read(&index).unwrap() != original).is_err());
+            assert!(pending.exists());
+            assert!(
+                prepare_cherry_pick(&fixture.root, &selected.to_string(), limits(), || false)
+                    .is_err()
+            );
+            assert!(revert().unwrap().recovering());
+            let abort = || prepare_merge_abort(&fixture.root, limits(), || false);
+            let review = abort().unwrap();
+            assert_eq!(review.operation(), Some(CommitOperation::Revert));
+            let published = fs::read(&file).unwrap();
+            fs::write(&file, b"edicion local posterior").unwrap();
+            assert!(apply_merge_abort(review, || false).is_err());
+            assert_eq!(fs::read(&file).unwrap(), b"edicion local posterior");
+            fs::write(&file, published).unwrap();
+            assert_eq!(
+                apply_merge_abort(abort().unwrap(), || false).unwrap().id,
+                active
+            );
+            assert_eq!(fs::read(&index).unwrap(), original);
+            assert_eq!(fs::read(&file).unwrap(), bytes);
+            assert!(!pending.exists());
+        }
     }
 
     #[cfg(windows)]

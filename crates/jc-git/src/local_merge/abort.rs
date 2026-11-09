@@ -23,7 +23,17 @@ impl MergeAbortPlan {
         &self.journal.destination
     }
     pub fn is_cherry_pick(&self) -> bool {
-        self.journal.cherry_pick
+        self.operation() == Some(CommitOperation::CherryPick)
+    }
+    pub fn operation(&self) -> Option<CommitOperation> {
+        self.journal.commit_operation
+    }
+    pub fn label(&self) -> &'static str {
+        match self.operation() {
+            Some(CommitOperation::CherryPick) => "Cherry-pick pendiente",
+            Some(CommitOperation::Revert) => "Reversión pendiente",
+            None => "Fusión pendiente",
+        }
     }
     pub fn mainline(&self) -> Option<(usize, ObjectId)> {
         self.journal
@@ -52,7 +62,7 @@ pub fn prepare_merge_abort(
         let journal = Journal::read(&identity, ctx)?
             .filter(|journal| journal.incoming.is_some())
             .ok_or_else(|| {
-                Error::Engine("No hay una fusión ni un cherry-pick de CIDE pendiente".into())
+                Error::Engine("No hay una operación de integración de CIDE pendiente".into())
             })?;
         let (active, refs) = refs(&repo, limits, ctx)?;
         if name_text(&active)[HEADS.len()..] != journal.source {
@@ -176,10 +186,10 @@ pub fn apply_merge_abort(
             previous_oid: plan.head,
             new_oid: plan.journal.from,
             signature: commit_write::local_identity(&fresh)?,
-            message: if plan.is_cherry_pick() {
-                "cherry-pick: abortar operación de CIDE"
-            } else {
-                "merge: abortar fusión de CIDE"
+            message: match plan.operation() {
+                Some(CommitOperation::CherryPick) => "cherry-pick: abortar operación de CIDE",
+                Some(CommitOperation::Revert) => "revert: abortar operación de CIDE",
+                None => "merge: abortar fusión de CIDE",
             }
             .into(),
         };

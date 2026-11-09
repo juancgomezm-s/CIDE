@@ -1,4 +1,5 @@
 use super::*;
+use jc_app::git_commit::CommitOperation;
 use jc_app::{git_graph::GraphView, git_revision::GitRevisionState, Modifiers};
 
 impl State {
@@ -149,7 +150,7 @@ impl State {
         self.git_workspace.invalidate();
     }
 
-    pub(super) fn open_graph_cherry_pick(&mut self) {
+    pub(super) fn open_graph_commit_operation(&mut self, operation: CommitOperation) {
         let Some(view) = self
             .git_workspace
             .graph
@@ -170,7 +171,8 @@ impl State {
             .map(|entry| entry.commit.id.clone());
         if let (Some(root), Some(target)) = (self.project_root.clone(), target) {
             let _ = self.git_index.discard_review();
-            self.git_commit.open_cherry_pick(root, target);
+            self.git_commit
+                .open_commit_operation(root, target, operation);
             self.git_workspace.invalidate();
         }
     }
@@ -279,7 +281,8 @@ impl State {
             0x43 if view.reference_selected.is_some() => self.open_graph_branch_switch(),
             0x4D if view.reference_selected.is_some() => self.open_graph_merge(),
             0x41 => self.open_graph_merge_abort(),
-            0x50 => self.open_graph_cherry_pick(),
+            0x50 => self.open_graph_commit_operation(CommitOperation::CherryPick),
+            0x56 => self.open_graph_commit_operation(CommitOperation::Revert),
             0x0d if view.reference_selected.is_some() => {
                 self.choose_graph_reference(view.selected_row())
             }
@@ -354,7 +357,7 @@ impl State {
         } else if references {
             "↑↓ seleccionar · Intro abrir referencia · Esc volver"
         } else {
-            "Intro abrir · P cherry-pick · A abortar · R referencias · B rama · T etiqueta · N más"
+            "Intro abrir · P cherry-pick · V revertir · A abortar · R referencias · B rama · T etiqueta · N más"
         }
         .into();
         let graph = self.git_revision.graph();
@@ -437,7 +440,7 @@ impl State {
                 },
             ),
             (
-                440,
+                if references { 440 } else { 547 },
                 if references {
                     "Renombrar"
                 } else {
@@ -450,7 +453,7 @@ impl State {
                 },
             ),
             (
-                547,
+                if references { 547 } else { 654 },
                 if references { "Eliminar" } else { "Crear rama" },
                 if references {
                     Intent::GraphChangeReference(false)
@@ -459,7 +462,7 @@ impl State {
                 },
             ),
             (
-                if references { 333 } else { 654 },
+                if references { 333 } else { 761 },
                 if references {
                     "Cambiar rama"
                 } else {
@@ -472,8 +475,17 @@ impl State {
                 },
             ),
             (226, "Fusionar rama", Intent::GraphMergeBranch),
-            (226, "Cherry-pick", Intent::GraphCherryPick),
-            (333, "Abortar", Intent::GraphAbortMerge),
+            (
+                226,
+                "Cherry-pick",
+                Intent::GraphCommitOperation(CommitOperation::CherryPick),
+            ),
+            (
+                333,
+                "Revertir",
+                Intent::GraphCommitOperation(CommitOperation::Revert),
+            ),
+            (440, "Abortar", Intent::GraphAbortMerge),
         ] {
             if matches!(intent, Intent::GraphNext)
                 && (references || !graph.is_some_and(|p| p.has_next()))
@@ -484,7 +496,7 @@ impl State {
                     && self.graph_branch_target().is_none()
                 || matches!(intent, Intent::GraphMergeBranch) && self.graph_merge_target().is_none()
                 || matches!(intent, Intent::GraphAbortMerge) && references
-                || matches!(intent, Intent::GraphCherryPick)
+                || matches!(intent, Intent::GraphCommitOperation(_))
                     && (references || graph.is_none_or(|page| page.entries.is_empty()))
                 || matches!(intent, Intent::GraphCreateReference(_))
                     && (references || graph.is_none_or(|page| page.entries.is_empty()))

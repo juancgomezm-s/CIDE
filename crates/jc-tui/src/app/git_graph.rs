@@ -4,6 +4,7 @@ use super::{
     TuiApp,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use jc_app::git_commit::CommitOperation;
 use jc_app::{
     git_graph::GraphView, git_revision::GitRevisionState, BottomPanel, PrimaryFocus, SidebarView,
 };
@@ -106,7 +107,7 @@ impl TuiApp {
                     }
                 }
             }
-            KeyCode::Char('b' | 'B' | 't' | 'T' | 'p' | 'P')
+            KeyCode::Char('b' | 'B' | 't' | 'T' | 'p' | 'P' | 'v' | 'V')
                 if view.reference_selected.is_none() =>
             {
                 if self.git_index.state() == jc_app::git_index::IndexState::Applying {
@@ -118,12 +119,18 @@ impl TuiApp {
                     .and_then(|graph| graph.entries.get(view.selected))
                     .map(|entry| entry.commit.id.clone());
                 if let (Some(root), Some(target)) = (self.project_root.clone(), target) {
-                    if matches!(key.code, KeyCode::Char('p' | 'P')) {
+                    let operation = match key.code {
+                        KeyCode::Char('p' | 'P') => Some(CommitOperation::CherryPick),
+                        KeyCode::Char('v' | 'V') => Some(CommitOperation::Revert),
+                        _ => None,
+                    };
+                    if let Some(operation) = operation {
                         if self.git_revision.state() == GitRevisionState::Ready
                             && key.kind == KeyEventKind::Press
                         {
                             let _ = self.git_index.discard_review();
-                            self.git_commit.open_cherry_pick(root, target);
+                            self.git_commit
+                                .open_commit_operation(root, target, operation);
                         }
                         return true;
                     }

@@ -842,6 +842,77 @@ mod tests {
             run(&["rev-list", "--parents", "-n", "1", "HEAD"]),
             format!("{} {original}", run(&["rev-parse", "HEAD"]))
         );
+
+        use jc_app::git_commit::CommitOperation;
+        let applied = run(&["rev-parse", "HEAD"]);
+        let revert = |state: &mut State| {
+            state.key_override = Some(jc_app::Modifiers::NONE);
+            state.key(0x74);
+            wait(state, |s| s.git_revision.state() == GitRevisionState::Ready);
+            let row = state
+                .git_revision
+                .graph()
+                .unwrap()
+                .entries
+                .iter()
+                .position(|entry| entry.commit.id == applied)
+                .unwrap();
+            for _ in 0..row {
+                state.key(0x28);
+            }
+            state.key(b'V' as usize);
+            state.key(0x0d);
+            wait(state, |s| !s.git_commit.busy());
+        };
+        fs::write(&incoming_path, b"edicion posterior\n").unwrap();
+        run(&["add", "--", "nombre-entrante.txt"]);
+        let tree = run(&["write-tree"]);
+        let later = run(&[
+            "commit-tree",
+            &tree,
+            "-p",
+            &applied,
+            "-m",
+            "Edición posterior",
+        ]);
+        run(&["update-ref", "HEAD", &later]);
+        let before = fs::read(&index).unwrap();
+        revert(&mut state);
+        let view = state.git_commit.view().unwrap();
+        let conflict = view
+            .merge_conflicts()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(conflict.operation(), Some(CommitOperation::Revert));
+        state.key(0x1b);
+        assert!(state.git_commit.view().is_none());
+        assert!(!pending.exists() && added.exists());
+        assert_eq!(fs::read(&index).unwrap(), before);
+        assert_eq!(fs::read(&incoming_path).unwrap(), b"edicion posterior\n");
+        assert_eq!(run(&["rev-parse", "HEAD"]), later);
+
+        run(&["update-ref", "HEAD", &applied]);
+        run(&["read-tree", &applied]);
+        fs::write(&incoming_path, b"cambio entrante\n").unwrap();
+        revert(&mut state);
+        let view = state.git_commit.view().unwrap();
+        let preview = view
+            .merge_review()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(preview.operation(), Some(CommitOperation::Revert));
+        assert_eq!(preview.rows.len(), 2);
+        state.key(0x0d);
+        assert!(added.exists());
+        assert_eq!(run(&["rev-parse", "HEAD"]), applied);
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert!(!added.exists());
+        assert_eq!(fs::read(&incoming_path).unwrap(), b"mismo contenido\n");
+        assert_eq!(
+            run(&["rev-list", "--parents", "-n", "1", "HEAD"]),
+            format!("{} {applied}", run(&["rev-parse", "HEAD"]))
+        );
     }
 
     #[test]

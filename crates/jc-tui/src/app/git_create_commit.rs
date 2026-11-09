@@ -2,7 +2,7 @@ use super::{git_diff::model_rows, git_history::opaque, presentation::GitRowKind,
 use crate::input::is_plain_text;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use jc_app::{
-    git_commit::{file_flag, WriteDraft},
+    git_commit::{file_flag, CommitOperation, WriteDraft},
     git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit,
 };
@@ -202,10 +202,11 @@ impl TuiApp {
             let tabs = MergePane::ALL
                 .into_iter()
                 .map(|pane| {
+                    let label = pane.label_for(plan);
                     if pane == file.pane {
-                        format!("[{}]", pane.label())
+                        format!("[{label}]")
                     } else {
-                        pane.label().into()
+                        label.into()
                     }
                 })
                 .collect::<Vec<_>>()
@@ -329,12 +330,8 @@ impl TuiApp {
             "↑↓ elige padre · Intro muestra los cambios · Esc cancela"
         } else if let Some(plan) = view.merge_abort_review() {
             rows.push(format!(
-                "{} pendiente · {} → {}",
-                if plan.is_cherry_pick() {
-                    "Cherry-pick"
-                } else {
-                    "Fusión"
-                },
+                "{} · {} → {}",
+                plan.label(),
                 plan.incoming(),
                 plan.active()
             ));
@@ -362,15 +359,20 @@ impl TuiApp {
             "F2 confirma el aborto · Esc cancela"
         } else if let Some(plan) = view.merge_review() {
             let (active, incoming) = plan.tips();
+            let origin = if plan.operation() == Some(CommitOperation::Revert) {
+                "Commit a revertir"
+            } else {
+                "Entrante"
+            };
             rows.extend([
-                if plan.is_cherry_pick() {
+                if plan.operation().is_some() {
                     format!("Rama activa · {}", plan.active())
                 } else {
                     format!("{} → {}", plan.incoming(), plan.active())
                 },
                 plan.label().into(),
                 format!("Activa · {active}"),
-                format!("Entrante · {incoming}"),
+                format!("{origin} · {incoming}"),
             ]);
             if let Some(result) = plan.result() {
                 rows.push(format!("Resultado · {result}"));
@@ -522,9 +524,9 @@ impl TuiApp {
             } else if let WriteDraft::MergeBranch(target) = &view.draft {
                 rows.push(format!("Rama a incorporar en la activa · {}", target.name));
                 "Intro revisa la fusión · Esc cancela"
-            } else if let WriteDraft::CherryPick(target) = &view.draft {
+            } else if let WriteDraft::CommitOperation(_, target) = &view.draft {
                 rows.push(format!("Commit de origen · {target}"));
-                "Intro revisa el cherry-pick · Esc cancela"
+                "Intro muestra los cambios · Esc cancela"
             } else if matches!(view.draft, WriteDraft::AbortMerge) {
                 rows.push("Revisa qué se restaurará antes de abortar".into());
                 "Intro revisa el aborto · Esc cancela"

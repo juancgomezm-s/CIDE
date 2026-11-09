@@ -388,6 +388,62 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     assert!(!pending.exists() && !added.exists());
     assert_eq!(fs::read(&index).unwrap(), before);
     assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), original);
+
+    use jc_app::git_commit::CommitOperation;
+    fixture.git(&["update-ref", "HEAD", &incoming]);
+    fixture.git(&["read-tree", &incoming]);
+    fixture.create("aborto-nuevo.txt", b"archivo de la fusion");
+    fixture.rewrite("origen.txt", b"cambio entrante");
+    let before = fs::read(&index).unwrap();
+    key(&mut app, KeyCode::F(5));
+    wait_for(&mut app, |app| {
+        app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
+    });
+    assert_eq!(
+        app.git_revision.graph().unwrap().entries[0].commit.id,
+        incoming
+    );
+    key(&mut app, KeyCode::Char('v'));
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let view = app.git_commit.view().unwrap();
+    let plan = view
+        .merge_review()
+        .unwrap_or_else(|| panic!("{:?}", view.error));
+    assert_eq!(plan.operation(), Some(CommitOperation::Revert));
+    assert_eq!(plan.rows.len(), 2);
+    assert!(added.exists());
+    let block = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(fixture.path("origen.txt"))
+        .unwrap();
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    drop(block);
+    assert!(pending.exists() && !added.exists(), "{}", app.status);
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Char('a'));
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let view = app.git_commit.view().unwrap();
+    let abort = view
+        .merge_abort_review()
+        .unwrap_or_else(|| panic!("{:?}", view.error));
+    assert_eq!(abort.operation(), Some(CommitOperation::Revert));
+    assert_eq!(abort.rows[0].path, b"aborto-nuevo.txt");
+    assert!(!added.exists());
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    assert!(app.git_commit.view().is_none(), "{}", app.status);
+    assert!(!pending.exists());
+    assert_eq!(fs::read(&added).unwrap(), b"archivo de la fusion");
+    assert_eq!(fs::read(&index).unwrap(), before);
+    assert_eq!(
+        fs::read(fixture.path("origen.txt")).unwrap(),
+        b"cambio entrante"
+    );
+    assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), incoming);
 }
 
 fn installed_git() -> PathBuf {

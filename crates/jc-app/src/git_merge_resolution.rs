@@ -1,6 +1,8 @@
 //! A private merge draft. The editor and worktree remain separate from this buffer.
 use crate::{edit_field, FieldEdit};
-use jc_git::local_merge::{MergeConflict, MergePlan, MergeResolution, MergeSide, MERGE_EDIT_BYTES};
+use jc_git::local_merge::{
+    CommitOperation, MergeConflict, MergePlan, MergeResolution, MergeSide, MERGE_EDIT_BYTES,
+};
 use jc_text::grapheme::{self, MAX_CLUSTER_BYTES};
 use std::{borrow::Cow, collections::BTreeMap};
 
@@ -20,6 +22,13 @@ impl MergePane {
             Self::Current => "Actual",
             Self::Incoming => "Entrante",
             Self::Result => "Resultado",
+        }
+    }
+    pub fn label_for(self, plan: &MergePlan) -> &'static str {
+        match (plan.operation(), self) {
+            (Some(CommitOperation::Revert), Self::Base) => "Commit",
+            (Some(CommitOperation::Revert), Self::Incoming) => "Anterior",
+            _ => self.label(),
         }
     }
     fn side(self) -> Option<MergeSide> {

@@ -1,6 +1,6 @@
 use super::*;
 use jc_app::{
-    git_commit::{file_flag, WriteDraft},
+    git_commit::{file_flag, CommitOperation, WriteDraft},
     git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit, Modifiers,
 };
@@ -335,7 +335,7 @@ impl State {
                     &mut f,
                     12 + 80 * index as i32,
                     76,
-                    pane.label(),
+                    pane.label_for(plan),
                     pane == file.pane,
                     Intent::Merge(MergeAction::Pane(pane)),
                 );
@@ -505,16 +505,7 @@ impl State {
             ("Ver cambios", 12)
         } else if let Some(plan) = view.merge_abort_review() {
             f.summary = vec![
-                format!(
-                    "{} pendiente · {} → {}",
-                    if plan.is_cherry_pick() {
-                        "Cherry-pick"
-                    } else {
-                        "Fusión"
-                    },
-                    plan.incoming(),
-                    plan.active()
-                ),
+                format!("{} · {} → {}", plan.label(), plan.incoming(), plan.active()),
                 format!("{} archivos que se revertirán", plan.rows.len()),
             ];
             f.details_top = p(132);
@@ -555,7 +546,7 @@ impl State {
             ("Confirmar aborto", 12)
         } else if let Some(plan) = view.merge_review() {
             f.summary = vec![
-                if plan.is_cherry_pick() {
+                if plan.operation().is_some() {
                     format!("Rama activa · {}", plan.active())
                 } else {
                     format!("{} → {}", plan.incoming(), plan.active())
@@ -564,9 +555,14 @@ impl State {
             ];
             let (active, incoming) = plan.tips();
             f.details_top = p(132);
+            let origin = if plan.operation() == Some(CommitOperation::Revert) {
+                "Commit a revertir"
+            } else {
+                "Entrante"
+            };
             f.details = vec![
                 format!("Activa · {active}"),
-                format!("Entrante · {incoming}"),
+                format!("{origin} · {incoming}"),
             ];
             if let Some(result) = plan.result() {
                 f.details.push(format!("Resultado · {result}"));
@@ -638,10 +634,12 @@ impl State {
                     "Revisar resultado"
                 } else if plan.recovering() {
                     "Reanudar"
-                } else if plan.is_cherry_pick() {
-                    "Confirmar cherry-pick"
                 } else {
-                    "Confirmar fusión"
+                    match plan.operation() {
+                        Some(CommitOperation::CherryPick) => "Confirmar cherry-pick",
+                        Some(CommitOperation::Revert) => "Confirmar reversión",
+                        None => "Confirmar fusión",
+                    }
                 },
                 12,
             )
@@ -765,9 +763,9 @@ impl State {
         } else if let WriteDraft::MergeBranch(target) = &view.draft {
             f.summary = vec![format!("Rama a incorporar en la activa · {}", target.name)];
             ("Revisar fusión", 12)
-        } else if let WriteDraft::CherryPick(target) = &view.draft {
+        } else if let WriteDraft::CommitOperation(_, target) = &view.draft {
             f.summary = vec![format!("Commit de origen · {target}")];
-            ("Revisar cherry-pick", 12)
+            ("Ver cambios", 12)
         } else if matches!(view.draft, WriteDraft::AbortMerge) {
             f.summary = vec!["Revisa qué se restaurará antes de abortar".into()];
             ("Revisar aborto", 12)
@@ -806,7 +804,7 @@ impl State {
                     "Volver"
                 } else if view
                     .merge_conflicts()
-                    .is_some_and(|plan| plan.is_cherry_pick())
+                    .is_some_and(|plan| plan.operation().is_some())
                 {
                     "Abortar"
                 } else {

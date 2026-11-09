@@ -85,7 +85,7 @@ quedan bloqueadas mientras exista el registro. Si faltan pruebas de propiedad
 del cambio, por ejemplo en una fusión anterior a esta función o cuando falta
 un archivo y su ausencia también podría ser una eliminación local, CIDE
 conserva los respaldos y se detiene. El comando opera sobre fusiones pendientes
-iniciadas en CIDE y sobre el cherry-pick descrito abajo. El reflog de la rama y
+iniciadas en CIDE, cherry-picks y reversiones. El reflog de la rama y
 el de HEAD registran los movimientos cuando están habilitados. El estado Git,
 el grafo y el explorador se actualizan al terminar.
 
@@ -187,3 +187,36 @@ de un conflicto conservaba esa elección. La TUI comprobó el aborto tras una
 escritura parcial. El núcleo verificó que cada padre producía un delta
 distinto, rechazó el cambio de padre mientras había una operación pendiente
 y restauró el archivo, el índice y la rama tras interrumpir el propio aborto.
+
+## Revertir un commit
+
+En **Git → Grafo**, selecciona un commit y pulsa **V** o el botón **Revertir**
+de la GUI. **Intro** abre la revisión de los archivos que cambiarán. Para un
+commit de fusión, primero elige el padre principal. Confirma con **Ctrl+Intro**
+en la GUI o **F2** en la TUI.
+
+La operación aplica la diferencia inversa del commit respecto a su padre.
+Para un commit raíz, la versión anterior es un árbol vacío. El resultado
+es un commit nuevo sobre la rama activa y su mensaje identifica el original
+y el padre principal, cuando corresponda. Si el árbol activo ya refleja
+la reversión, CIDE muestra una revisión sin cambios.
+
+Si hay conflictos, **Commit** muestra el contenido que se quiere revertir,
+**Actual** muestra la versión de la rama activa y **Anterior** muestra la
+versión del padre. Puedes elegir una versión o editar **Resultado** y volver
+a revisar antes de confirmar. **Esc** descarta el borrador sin tocar el
+repositorio. Si se interrumpió una publicación ya confirmada, **A** abre
+la revisión del aborto. También puedes volver a ejecutar **Revertir** sobre
+el mismo commit para reanudar con el padre original. CIDE conserva los
+cambios locales y se detiene si detecta una edición posterior en una ruta
+que tendría que revertir.
+
+La validación en Windows pasó formato, Clippy y 910 pruebas mediante
+`python scripts/check-local.py --steps fmt clippy test --jobs 2`. Los tres
+auxiliares se ejecutaron desde sus pruebas padre. La GUI comprobó el descarte
+de un conflicto sin escrituras y la publicación con confirmación. La TUI
+restauró un archivo retirado antes de que un bloqueo interrumpiera la
+segunda escritura. El núcleo verificó las reversiones de commits raíz y de
+fusión, la conservación de cambios posteriores y preparados, y el rechazo
+de un aborto que sobrescribiría una edición local. Las pruebas usaron
+repositorios temporales en segundo plano.

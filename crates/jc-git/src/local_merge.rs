@@ -144,27 +144,49 @@ pub enum MergeResolution {
     Edit(String),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommitOperation {
+    CherryPick,
+    Revert,
+}
+
+impl CommitOperation {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::CherryPick => "Cherry-pick",
+            Self::Revert => "Revertir commit",
+        }
+    }
+}
+
 #[derive(Clone)]
 enum Source {
     Branch(FullName),
-    CherryPick(String, Option<Mainline>),
+    Commit {
+        operation: CommitOperation,
+        id: String,
+        mainline: Option<Mainline>,
+    },
 }
 
 impl Source {
     fn label(&self) -> &str {
         match self {
             Self::Branch(name) => &name_text(name)[HEADS.len()..],
-            Self::CherryPick(id, _) => id,
+            Self::Commit { id, .. } => id,
         }
     }
 
-    fn is_cherry_pick(&self) -> bool {
-        matches!(self, Self::CherryPick(..))
+    fn operation(&self) -> Option<CommitOperation> {
+        match self {
+            Self::Commit { operation, .. } => Some(*operation),
+            Self::Branch(_) => None,
+        }
     }
 
     fn mainline(&self) -> Option<Mainline> {
         match self {
-            Self::CherryPick(_, mainline) => *mainline,
+            Self::Commit { mainline, .. } => *mainline,
             Self::Branch(_) => None,
         }
     }
@@ -210,18 +232,22 @@ impl MergePlan {
         self.source.label()
     }
     pub fn is_cherry_pick(&self) -> bool {
-        self.source.is_cherry_pick()
+        self.operation() == Some(CommitOperation::CherryPick)
+    }
+    pub fn operation(&self) -> Option<CommitOperation> {
+        self.source.operation()
     }
     pub fn label(&self) -> &'static str {
-        if self.is_cherry_pick() {
-            match self.kind {
-                MergeKind::UpToDate => "Sin cambios que aplicar",
-                MergeKind::Conflicts => "Conflictos por resolver · borrador de cherry-pick",
-                MergeKind::ChooseMainline => self.kind.label(),
-                _ => "Se creará un commit con los cambios seleccionados",
+        match (self.operation(), self.kind) {
+            (Some(_), MergeKind::UpToDate) => "Sin cambios que aplicar",
+            (Some(_), MergeKind::Conflicts) => "Conflictos por resolver · borrador sin escrituras",
+            (Some(CommitOperation::CherryPick), MergeKind::Commit) => {
+                "Se creará un commit con los cambios seleccionados"
             }
-        } else {
-            self.kind.label()
+            (Some(CommitOperation::Revert), MergeKind::Commit) => {
+                "Se creará un commit que revierte los cambios"
+            }
+            _ => self.kind.label(),
         }
     }
     pub fn tips(&self) -> (ObjectId, ObjectId) {
@@ -250,13 +276,12 @@ impl MergePlan {
     pub fn mainline_review(&self, index: usize) -> Option<MergeReview> {
         let id = *self.mainline_choices.get(index)?;
         let mut review = self.review_identity();
-        review.source = Source::CherryPick(
-            self.incoming().into(),
-            Some(Mainline {
+        if let Source::Commit { mainline, .. } = &mut review.source {
+            *mainline = Some(Mainline {
                 number: index + 1,
                 id,
-            }),
-        );
+            });
+        }
         Some(review)
     }
     pub fn resolution_review(&self) -> Option<MergeReview> {
@@ -600,19 +625,17 @@ fn rename_conflicts(
 
 fn combine(
     repo: &gix::Repository,
-    base_tree: Option<ObjectId>,
-    sides: [ObjectId; 2],
+    trees: [Option<ObjectId>; 3],
     limits: Limits,
     ctx: &Context<'_>,
 ) -> Result<Candidate, Error> {
     let mut budget = Budget::new(limits);
-    let base = base_tree
-        .map(|id| revision::merge_tree_entries(repo, id, limits, &mut budget, ctx))
-        .transpose()?
-        .unwrap_or_default();
-    let [ours, theirs] =
-        sides.map(|id| revision::merge_tree_entries(repo, id, limits, &mut budget, ctx));
-    let (ours, theirs) = (ours?, theirs?);
+    let [base, ours, theirs] = trees.map(|id| {
+        id.map(|id| revision::merge_tree_entries(repo, id, limits, &mut budget, ctx))
+            .transpose()
+            .map(Option::unwrap_or_default)
+    });
+    let (base, ours, theirs) = (base?, ours?, theirs?);
     let added = [&ours, &theirs].map(|side| side.keys().any(|path| !base.contains_key(path)));
     let [left_moves, right_moves] =
         [&ours, &theirs].map(|side| base.keys().any(|path| !side.contains_key(path)));
@@ -685,7 +708,7 @@ fn combine(
             && left != before
             && right != before
             && ((left_moves && left.is_none()) || (right_moves && right.is_none()))
-            && sides[0] != sides[1];
+            && trees[1] != trees[2];
         let entry = if !conflicting_move && (left == right || right == before) {
             left.copied()
         } else if !conflicting_move && left == before {
@@ -822,10 +845,24 @@ pub fn prepare_cherry_pick(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<MergePlan, Error> {
+    prepare_commit_operation(root, commit, CommitOperation::CherryPick, limits, cancelled)
+}
+
+pub fn prepare_commit_operation(
+    root: &Path,
+    commit: &str,
+    operation: CommitOperation,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
     let theirs = ObjectId::from_hex(commit.as_bytes()).map_err(engine)?;
     prepare(
         root,
-        Source::CherryPick(theirs.to_string(), None),
+        Source::Commit {
+            operation,
+            id: theirs.to_string(),
+            mainline: None,
+        },
         theirs,
         limits,
         None,
@@ -834,7 +871,7 @@ pub fn prepare_cherry_pick(
 }
 
 /// Review the delta against the selected parent of a merge commit.
-pub fn prepare_cherry_pick_mainline(
+pub fn prepare_commit_mainline(
     review: MergeReview,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<MergePlan, Error> {
@@ -843,6 +880,8 @@ pub fn prepare_cherry_pick_mainline(
     }
     prepare_review(&review, None, cancelled)
 }
+
+pub use prepare_commit_mainline as prepare_cherry_pick_mainline;
 
 /// Build a fresh publication preview from explicit choices for all reviewed paths.
 pub fn prepare_resolved_merge(
@@ -909,17 +948,20 @@ fn prepare(
                 ));
             }
             if journal.source != active_short
-                || journal.cherry_pick != source.is_cherry_pick()
+                || journal.commit_operation != source.operation()
                 || journal.destination != source.label()
                 || journal.incoming != Some(theirs)
                 || (head != journal.from && head != journal.to)
             {
                 return Err(Error::Engine(format!(
-                    "Hay una operación pendiente con {}. Vuelve a elegir el mismo origen o selecciona Abortar operación",
+                    "Hay una operación pendiente con {}. Elige la misma operación y el mismo origen, o selecciona Abortar",
                     journal.destination
                 )));
             }
-            if let Source::CherryPick(_, parent) = &mut source {
+            if let Source::Commit {
+                mainline: parent, ..
+            } = &mut source
+            {
                 if parent.is_some() && *parent != journal.mainline {
                     return Err(Error::Stale);
                 }
@@ -965,7 +1007,8 @@ fn prepare(
             completed: false,
             write_reflog,
         };
-        let picked = if plan.is_cherry_pick() {
+        let operation = plan.operation();
+        let picked = if operation.is_some() {
             let commit = revision::commit(&repo, theirs, limits, &mut Budget::new(limits), ctx)?;
             if commit.limited {
                 return Err(Error::Limited);
@@ -996,7 +1039,7 @@ fn prepare(
         } else {
             Some(base(&repo, from, theirs, limits, ctx)?)
         };
-        if !plan.is_cherry_pick() && common == Some(theirs) {
+        if operation.is_none() && common == Some(theirs) {
             if pending.is_some() || resolution.is_some() {
                 return Err(Error::Stale);
             }
@@ -1008,7 +1051,7 @@ fn prepare(
         } else {
             tree_id(&repo, theirs, limits, ctx)?
         };
-        let (result, tree, entries, blobs) = if !plan.is_cherry_pick() && common == Some(from) {
+        let (result, tree, entries, blobs) = if operation.is_none() && common == Some(from) {
             if resolution.is_some() {
                 return Err(Error::Stale);
             }
@@ -1021,15 +1064,20 @@ fn prepare(
             let base_tree = common
                 .map(|id| tree_id(&repo, id, limits, ctx))
                 .transpose()?;
+            let (base_tree, target_tree) = if operation == Some(CommitOperation::Revert) {
+                (Some(their_tree), base_tree)
+            } else {
+                (base_tree, Some(their_tree))
+            };
             let mut parents = vec![from];
-            if !plan.is_cherry_pick() {
+            if operation.is_none() {
                 parents.push(theirs);
             }
             let Candidate {
                 mut entries,
                 mut blobs,
                 conflicts,
-            } = combine(&repo, base_tree, [old_tree, their_tree], limits, ctx)?;
+            } = combine(&repo, [base_tree, Some(old_tree), target_tree], limits, ctx)?;
             if let Some(journal) = &pending {
                 let commit =
                     revision::commit(&repo, journal.to, limits, &mut Budget::new(limits), ctx)?;
@@ -1131,7 +1179,7 @@ fn prepare(
                     return Ok(plan);
                 }
                 let (tree, trees) = make_trees(&repo, &entries, limits, ctx)?;
-                if plan.is_cherry_pick() && tree == old_tree {
+                if operation.is_some() && tree == old_tree {
                     plan.kind = MergeKind::UpToDate;
                     return Ok(plan);
                 }
@@ -1158,6 +1206,21 @@ fn prepare(
                         ..original
                     }
                 } else {
+                    let message = if operation == Some(CommitOperation::Revert) {
+                        let short = theirs.to_hex_with_len(12);
+                        let mut message =
+                            format!("Revertir {short}\n\nRevierte el commit {theirs}.\n");
+                        if let Some((number, parent)) = plan.mainline() {
+                            message.push_str(&format!("Padre principal {number}: {parent}.\n"));
+                        }
+                        message
+                    } else {
+                        format!(
+                            "Fusionar rama '{}' en '{}'\n",
+                            plan.incoming(),
+                            plan.active()
+                        )
+                    };
                     Commit {
                         tree,
                         parents: parents.into_iter().collect(),
@@ -1165,12 +1228,7 @@ fn prepare(
                         committer: signature,
                         encoding: None,
                         extra_headers: Vec::new(),
-                        message: format!(
-                            "Fusionar rama '{}' en '{}'\n",
-                            plan.incoming(),
-                            plan.active()
-                        )
-                        .into(),
+                        message: message.into(),
                     }
                 };
                 let mut bytes = Vec::new();
@@ -1200,7 +1258,7 @@ fn prepare(
                 trees: (old_tree, tree),
                 merge: Some(MergeCheckout {
                     incoming: theirs,
-                    cherry_pick: plan.is_cherry_pick(),
+                    commit_operation: operation,
                     mainline: plan.source.mainline(),
                     entries: &entries,
                     blobs: &blobs,
@@ -1245,13 +1303,13 @@ pub fn apply_merge(
             .join(crate::branch_checkout::JOURNAL_NAME)
             .exists()
         {
-            let origin = if plan.is_cherry_pick() {
-                "el commit"
-            } else {
-                "la rama"
+            let origin = match plan.operation() {
+                Some(CommitOperation::CherryPick) => "Cherry-pick en el commit",
+                Some(CommitOperation::Revert) => "Revertir en el commit",
+                None => "Fusionar en la rama",
             };
             Error::Engine(format!(
-                "{error}. Elige Abortar operación o vuelve a elegir {origin} {} para reanudar",
+                "{error}. Elige Abortar o vuelve a usar {origin} {} para reanudar",
                 plan.incoming()
             ))
         } else {
@@ -1379,10 +1437,10 @@ fn publish(
             previous_oid: plan.from,
             new_oid: result,
             signature: commit_write::local_identity(&fresh)?,
-            message: if plan.is_cherry_pick() {
-                format!("cherry-pick: {}", plan.incoming())
-            } else {
-                format!("merge {}: {}", plan.incoming(), plan.kind.label())
+            message: match plan.operation() {
+                Some(CommitOperation::CherryPick) => format!("cherry-pick: {}", plan.incoming()),
+                Some(CommitOperation::Revert) => format!("revert: {}", plan.incoming()),
+                None => format!("merge {}: {}", plan.incoming(), plan.kind.label()),
             }
             .into(),
         };

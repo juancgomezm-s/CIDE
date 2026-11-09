@@ -1,6 +1,7 @@
 //! Recoverable updates of the paths that differ between two pinned trees.
 use crate::{
-    Context, Error, Identity, Limits, engine, index_write, local_pair, ref_write, revision,
+    Context, Error, Identity, Limits, engine, index_write, local_merge::CommitOperation,
+    local_pair, ref_write, revision,
 };
 use gix::{
     ObjectId,
@@ -34,7 +35,7 @@ pub(super) struct Journal {
     pub from: ObjectId,
     pub to: ObjectId,
     pub incoming: Option<ObjectId>,
-    pub cherry_pick: bool,
+    pub commit_operation: Option<CommitOperation>,
     pub mainline: Option<Mainline>,
     pub aborting: bool,
     old_index: ObjectId,
@@ -54,14 +55,19 @@ impl Journal {
             return Err(Error::Unsupported);
         }
         let mut lines = std::str::from_utf8(&bytes).map_err(engine)?.lines();
-        let (integration, cherry_pick, aborting, has_mainline) = match lines.next() {
-            Some("CIDE-SWITCH-1") => (false, false, false, false),
-            Some("CIDE-MERGE-1") => (true, false, false, false),
-            Some("CIDE-MERGE-ABORT-1") => (true, false, true, false),
-            Some("CIDE-PICK-1") => (true, true, false, false),
-            Some("CIDE-PICK-ABORT-1") => (true, true, true, false),
-            Some("CIDE-PICK-2") => (true, true, false, true),
-            Some("CIDE-PICK-ABORT-2") => (true, true, true, true),
+        use CommitOperation::{CherryPick, Revert};
+        let (integration, commit_operation, aborting, has_mainline) = match lines.next() {
+            Some("CIDE-SWITCH-1") => (false, None, false, false),
+            Some("CIDE-MERGE-1") => (true, None, false, false),
+            Some("CIDE-MERGE-ABORT-1") => (true, None, true, false),
+            Some("CIDE-PICK-1") => (true, Some(CherryPick), false, false),
+            Some("CIDE-PICK-ABORT-1") => (true, Some(CherryPick), true, false),
+            Some("CIDE-PICK-2") => (true, Some(CherryPick), false, true),
+            Some("CIDE-PICK-ABORT-2") => (true, Some(CherryPick), true, true),
+            Some("CIDE-REVERT-1") => (true, Some(Revert), false, false),
+            Some("CIDE-REVERT-ABORT-1") => (true, Some(Revert), true, false),
+            Some("CIDE-REVERT-2") => (true, Some(Revert), false, true),
+            Some("CIDE-REVERT-ABORT-2") => (true, Some(Revert), true, true),
             _ => return Err(Error::Unsupported),
         };
         let source = lines.next().ok_or(Error::Unsupported)?.to_owned();
@@ -96,7 +102,7 @@ impl Journal {
             from,
             to,
             incoming,
-            cherry_pick,
+            commit_operation,
             mainline,
             aborting,
             old_index,
@@ -106,20 +112,25 @@ impl Journal {
     }
 
     fn bytes(&self) -> Vec<u8> {
+        use CommitOperation::{CherryPick, Revert};
         let mut data = format!(
             "{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
             match (
                 self.incoming.is_some(),
-                self.cherry_pick,
+                self.commit_operation,
                 self.aborting,
                 self.mainline.is_some()
             ) {
-                (true, true, true, true) => "CIDE-PICK-ABORT-2",
-                (true, true, false, true) => "CIDE-PICK-2",
-                (true, true, true, false) => "CIDE-PICK-ABORT-1",
-                (true, true, false, false) => "CIDE-PICK-1",
-                (true, false, true, _) => "CIDE-MERGE-ABORT-1",
-                (true, false, false, _) => "CIDE-MERGE-1",
+                (true, Some(CherryPick), true, true) => "CIDE-PICK-ABORT-2",
+                (true, Some(CherryPick), false, true) => "CIDE-PICK-2",
+                (true, Some(CherryPick), true, false) => "CIDE-PICK-ABORT-1",
+                (true, Some(CherryPick), false, false) => "CIDE-PICK-1",
+                (true, Some(Revert), true, true) => "CIDE-REVERT-ABORT-2",
+                (true, Some(Revert), false, true) => "CIDE-REVERT-2",
+                (true, Some(Revert), true, false) => "CIDE-REVERT-ABORT-1",
+                (true, Some(Revert), false, false) => "CIDE-REVERT-1",
+                (true, None, true, _) => "CIDE-MERGE-ABORT-1",
+                (true, None, false, _) => "CIDE-MERGE-1",
                 _ => "CIDE-SWITCH-1",
             },
             self.source,
@@ -346,7 +357,7 @@ pub(super) struct Transition<'a> {
 
 pub(super) struct MergeCheckout<'a> {
     pub incoming: ObjectId,
-    pub cherry_pick: bool,
+    pub commit_operation: Option<CommitOperation>,
     pub mainline: Option<Mainline>,
     pub entries: &'a BTreeMap<Vec<u8>, revision::Entry>,
     pub blobs: &'a BTreeMap<ObjectId, Vec<u8>>,
@@ -782,7 +793,7 @@ impl Checkout {
                     from: commits.0,
                     to: commits.1,
                     incoming: merge.as_ref().map(|merge| merge.incoming),
-                    cherry_pick: merge.as_ref().is_some_and(|merge| merge.cherry_pick),
+                    commit_operation: merge.as_ref().and_then(|merge| merge.commit_operation),
                     mainline: merge.and_then(|merge| merge.mainline),
                     aborting: false,
                     old_index: current_index,
