@@ -368,7 +368,10 @@ impl TuiApp {
                 )
             }));
             "F2 confirma el aborto · Esc cancela"
-        } else if let Some(plan) = view.merge_review().filter(|plan| plan.is_rebase()) {
+        } else if let Some(plan) = view
+            .merge_review()
+            .filter(|plan| plan.is_rebase() && view.merge_conflicts().is_none())
+        {
             let (active, onto) = plan.tips();
             rows.extend([
                 format!("{} sobre {}", plan.active(), plan.incoming()),
@@ -413,7 +416,14 @@ impl TuiApp {
                 "Entrante"
             };
             rows.extend([
-                if let Some(mode) = plan.reset_mode() {
+                if let Some(commit) = plan.rebase_conflict_commit() {
+                    format!(
+                        "Rebase de {} sobre {} · Conflicto en {}",
+                        plan.active(),
+                        plan.incoming(),
+                        commit.to_hex_with_len(8)
+                    )
+                } else if let Some(mode) = plan.reset_mode() {
                     format!("Reset {} · rama {}", mode.label(), plan.active())
                 } else if plan.operation().is_some() {
                     format!("Rama activa · {}", plan.active())
@@ -514,6 +524,12 @@ impl TuiApp {
                 }
             } else if plan.rows.is_empty() {
                 "Esc vuelve"
+            } else if plan.is_rebase() {
+                if view.all_merge_choices_saved() {
+                    "F2 continúa el rebase · Esc aborta el borrador"
+                } else {
+                    "↑↓ selecciona · Intro abre conflicto · Esc aborta el borrador"
+                }
             } else if view.all_merge_choices_saved() {
                 "Intro abre · F2 revisa el resultado · Esc vuelve"
             } else {

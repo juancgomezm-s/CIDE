@@ -384,7 +384,14 @@ impl State {
             } else if view.choosing_mainline().is_some() {
                 "↑↓ elige padre · Intro muestra los cambios · Esc cancela".into()
             } else if let Some(plan) = view.merge_review() {
-                if plan.is_rebase() {
+                if plan.is_rebase() && view.merge_conflicts().is_some() {
+                    if view.all_merge_choices_saved() {
+                        "Ctrl+Intro continúa el rebase · Esc aborta el borrador".into()
+                    } else {
+                        "↑↓ selecciona conflicto · Intro abre archivo · Esc aborta el borrador"
+                            .into()
+                    }
+                } else if plan.is_rebase() {
                     if plan.can_apply() {
                         "↑↓ recorre la revisión · Ctrl+Intro confirma el rebase · Esc cancela"
                             .into()
@@ -565,7 +572,10 @@ impl State {
                 });
             }
             ("Confirmar aborto", 12)
-        } else if let Some(plan) = view.merge_review().filter(|plan| plan.is_rebase()) {
+        } else if let Some(plan) = view
+            .merge_review()
+            .filter(|plan| plan.is_rebase() && view.merge_conflicts().is_none())
+        {
             f.summary = vec![
                 format!("{} sobre {}", plan.active(), plan.incoming()),
                 plan.label().into(),
@@ -611,7 +621,14 @@ impl State {
             ("Confirmar rebase", 12)
         } else if let Some(plan) = view.merge_review() {
             f.summary = vec![
-                if let Some(mode) = plan.reset_mode() {
+                if let Some(commit) = plan.rebase_conflict_commit() {
+                    format!(
+                        "Rebase de {} sobre {} · Conflicto en {}",
+                        plan.active(),
+                        plan.incoming(),
+                        commit.to_hex_with_len(8)
+                    )
+                } else if let Some(mode) = plan.reset_mode() {
                     format!("Reset {} · rama {}", mode.label(), plan.active())
                 } else if plan.operation().is_some() {
                     format!("Rama activa · {}", plan.active())
@@ -724,7 +741,11 @@ impl State {
             }
             (
                 if conflicts {
-                    "Revisar resultado"
+                    if plan.is_rebase() {
+                        "Continuar rebase"
+                    } else {
+                        "Revisar resultado"
+                    }
                 } else if plan.recovering() {
                     "Reanudar"
                 } else if plan.reset_mode() == Some(ResetMode::Hard) {

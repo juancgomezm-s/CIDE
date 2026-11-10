@@ -2427,6 +2427,123 @@ mod tests {
                     .exists()
             );
         }
+        #[test]
+        fn rebase_keeps_distinct_edits_for_successive_conflicts_on_one_path() {
+            use crate::local_merge::{
+                MergeResolution, MergeSide, RebaseStepState, prepare_rebase, prepare_resolved_merge,
+            };
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            let fixture = Fixture::new();
+            let (repo, first, onto) = scenario(&fixture, true, b"ENTRANTE\r\ndos\r\ntres\r\nfin");
+            let original = b"SEGUNDO\r\ndos\r\ntres\r\nfin";
+            let blob = repo.write_blob(original).unwrap().detach();
+            let tree = repo
+                .write_object(Tree {
+                    entries: vec![Entry {
+                        mode: EntryKind::Blob.into(),
+                        filename: "a.txt".into(),
+                        oid: blob,
+                    }],
+                })
+                .unwrap()
+                .detach();
+            let active = commit_at_tree(&repo, tree, &[first], "Segundo cambio");
+            let git = fixture.git();
+            let branch = git.join("refs/heads/activa");
+            let incoming = git.join("refs/heads/entrante");
+            let index = git.join("index");
+            let file = fixture.root.join("a.txt");
+            fs::write(&branch, format!("{active}\n")).unwrap();
+            fs::write(&file, original).unwrap();
+            let mut staged = repo.open_index().unwrap();
+            let (entry, _) = staged
+                .entries_mut_with_paths()
+                .find(|(_, path)| path.as_bytes() == b"a.txt")
+                .unwrap();
+            entry.id = blob;
+            staged.write(Default::default()).unwrap();
+            let before = fs::read(&index).unwrap();
+            let initial = prepare_rebase(
+                &fixture.root,
+                "entrante",
+                &onto.to_string(),
+                limits(),
+                || false,
+            )
+            .unwrap();
+            assert_eq!(initial.rebase_conflict_commit(), Some(first));
+            let choices = |text: &str| {
+                std::collections::BTreeMap::from([(
+                    b"a.txt".to_vec(),
+                    MergeResolution::Edit(text.into()),
+                )])
+            };
+            let first_text = "PRIMERA RESOLUCION\r\ndos\r\ntres\r\nfin";
+            let second_text = "SEGUNDA RESOLUCION\r\ndos\r\ntres\r\nfin";
+            let paused = prepare_resolved_merge(
+                initial.resolution_review().unwrap(),
+                choices(first_text),
+                || false,
+            )
+            .unwrap();
+            assert_eq!(paused.rebase_conflict_commit(), Some(active));
+            assert_eq!(
+                paused.conflict(b"a.txt").unwrap().bytes(MergeSide::Current),
+                Some(first_text.as_bytes())
+            );
+            assert!(!paused.can_apply());
+            let RebaseStepState::Replayed(rewritten_first) = paused.rebase_steps()[0].state else {
+                panic!("first resolution was not replayed");
+            };
+            fs::write(&incoming, format!("{first}\n")).unwrap();
+            assert!(
+                prepare_resolved_merge(
+                    paused.resolution_review().unwrap(),
+                    choices(second_text),
+                    || false
+                )
+                .is_err()
+            );
+            fs::write(&incoming, format!("{onto}\n")).unwrap();
+            let final_review = prepare_resolved_merge(
+                paused.resolution_review().unwrap(),
+                choices(second_text),
+                || false,
+            )
+            .unwrap();
+            assert!(final_review.can_apply());
+            assert!(
+                matches!(final_review.rebase_steps()[0].state, RebaseStepState::Replayed(id) if id == rewritten_first)
+            );
+            assert!(repo.find_commit(rewritten_first).is_err());
+            assert_eq!(fs::read(&file).unwrap(), original);
+            assert_eq!(fs::read(&index).unwrap(), before);
+            assert_eq!(
+                fs::read_to_string(&branch).unwrap().trim(),
+                active.to_string()
+            );
+            assert!(!git.join(crate::branch_checkout::JOURNAL_NAME).exists());
+            let result = apply_merge(final_review, || false).unwrap();
+            assert_eq!(fs::read(&file).unwrap(), second_text.as_bytes());
+            let parent = repo
+                .find_commit(result.id)
+                .unwrap()
+                .parent_ids()
+                .next()
+                .unwrap()
+                .detach();
+            assert_eq!(parent, rewritten_first);
+            let first_commit = repo.find_commit(parent).unwrap();
+            let first_tree = first_commit.tree().unwrap();
+            let entry = first_tree.lookup_entry_by_path("a.txt").unwrap().unwrap();
+            assert_eq!(
+                repo.find_blob(entry.object_id()).unwrap().data,
+                first_text.as_bytes()
+            );
+        }
     }
 
     #[cfg(windows)]

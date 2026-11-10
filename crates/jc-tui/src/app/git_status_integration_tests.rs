@@ -627,6 +627,63 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
         fs::read(fixture.path(disposable)).unwrap(),
         b"version en disco"
     );
+    fixture.git(&["read-tree", &original]);
+    fixture.rewrite("origen.txt", b"cambio de la rama activa");
+    fixture.git(&["add", "--", "origen.txt"]);
+    let tree = fixture.oid(&["write-tree"]);
+    let active = fixture.oid(&[
+        "commit-tree",
+        &tree,
+        "-p",
+        &original,
+        "-m",
+        "Cambio local confirmado",
+    ]);
+    fixture.git(&["update-ref", "HEAD", &active]);
+    let before = fs::read(&index).unwrap();
+    rebase(&mut app);
+    let view = app.git_commit.view().unwrap();
+    let conflict = view
+        .merge_conflicts()
+        .unwrap_or_else(|| panic!("{:?}", view.error));
+    assert_eq!(
+        conflict.rebase_conflict_commit().unwrap().to_string(),
+        active
+    );
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Tab);
+    key(&mut app, KeyCode::Tab);
+    app.handle_event(Event::Key(KeyEvent::new(
+        KeyCode::Char('u'),
+        KeyModifiers::CONTROL,
+    )));
+    for character in "TUI ".chars() {
+        key(&mut app, KeyCode::Char(character));
+    }
+    key(&mut app, KeyCode::F(2));
+    assert!(app.git_commit.view().unwrap().all_merge_choices_saved());
+    key(&mut app, KeyCode::F(2));
+    wait_for(&mut app, |app| !app.git_commit.busy());
+    let view = app.git_commit.view().unwrap();
+    assert!(
+        view.merge_review()
+            .is_some_and(|plan| plan.is_rebase() && plan.can_apply()),
+        "{:?}",
+        view.error
+    );
+    key(&mut app, KeyCode::Esc);
+    assert!(app.git_commit.view().is_none());
+    assert!(!pending.exists() && !added.exists());
+    assert_eq!(fixture.oid(&["rev-parse", "HEAD"]), active);
+    assert_eq!(fs::read(&index).unwrap(), before);
+    assert_eq!(
+        fs::read(fixture.path("origen.txt")).unwrap(),
+        b"cambio de la rama activa"
+    );
+    assert_eq!(
+        fs::read(fixture.path(disposable)).unwrap(),
+        b"version en disco"
+    );
 }
 
 fn installed_git() -> PathBuf {

@@ -1,7 +1,7 @@
 //! Replay a bounded linear sequence in memory before publishing its final tree.
 use super::{
-    Blobs, Checkout, MergeCheckout, MergeKind, MergePlan, MergeRow, Objects, Transition, base,
-    combine_entries, commit_write, make_trees, tree_id,
+    Blobs, Checkout, MergeCheckout, MergeKind, MergePlan, MergeRow, Objects, Resolutions,
+    Transition, base, combine_entries, commit_write, make_trees, resolve_candidate, tree_id,
 };
 use crate::{
     Context, Error, engine,
@@ -27,15 +27,26 @@ pub enum RebaseStepState {
     Conflict,
 }
 
+#[derive(Clone)]
+pub(super) struct ConflictReview {
+    pub current: ObjectId,
+    choices: BTreeMap<ObjectId, Resolutions>,
+    committer: gix::actor::Signature,
+}
+
 pub(super) fn review(
     repo: &gix::Repository,
     plan: &mut MergePlan,
     index_bytes: &[u8],
+    continuation: Option<(&ConflictReview, Resolutions)>,
     ctx: &Context<'_>,
 ) -> Result<(), Error> {
     let limits = plan.limits;
     let common = base(repo, plan.from, plan.theirs, limits, ctx)?;
     if common == plan.theirs {
+        if continuation.is_some() {
+            return Err(Error::Stale);
+        }
         return Ok(());
     }
 
@@ -77,16 +88,30 @@ pub(super) fn review(
     let mut blobs = Blobs::new();
     let mut trees = BTreeMap::new();
     let mut commits = Vec::new();
+    let mut decisions = BTreeMap::new();
+    let mut applied_decisions = 0;
     if !sequence.is_empty() {
         commit_write::check_signing(repo)?;
-        let signature = commit_write::local_identity(repo)?;
+        let local = commit_write::local_identity(repo)?;
+        let signature = if let Some((review, choices)) = continuation {
+            if review.committer.name != local.name || review.committer.email != local.email {
+                return Err(Error::Stale);
+            }
+            decisions = review.choices.clone();
+            if decisions.insert(review.current, choices).is_some() {
+                return Err(Error::Stale);
+            }
+            review.committer.clone()
+        } else {
+            local
+        };
         let base_tree = tree_id(repo, common, limits, ctx)?;
         let mut previous = revision::merge_tree_entries(repo, base_tree, limits, &mut budget, ctx)?;
         for (step, original) in plan.rebase_steps.iter_mut().zip(sequence) {
             ctx.check()?;
             let current =
                 revision::merge_tree_entries(repo, original.tree, limits, &mut budget, ctx)?;
-            let candidate = combine_entries(
+            let mut candidate = combine_entries(
                 repo,
                 [&previous, &rebased, &current],
                 &blobs,
@@ -94,14 +119,27 @@ pub(super) fn review(
                 &mut budget,
                 ctx,
             )?;
-            if !candidate.conflicts.is_empty() {
+            if let Some(choices) = decisions.get(&original.id) {
+                resolve_candidate(repo, &mut candidate, choices, limits, &mut budget, ctx)?;
+                applied_decisions += 1;
+            } else if !candidate.conflicts.is_empty() {
+                if applied_decisions != decisions.len() {
+                    return Err(Error::Stale);
+                }
                 step.state = RebaseStepState::Conflict;
                 plan.kind = MergeKind::Conflicts;
                 plan.rows = candidate
                     .conflicts
-                    .into_keys()
+                    .keys()
+                    .cloned()
                     .map(|path| MergeRow { path, change: None })
                     .collect();
+                plan.conflicts = candidate.conflicts;
+                plan.rebase_review = Some(ConflictReview {
+                    current: original.id,
+                    choices: decisions,
+                    committer: signature,
+                });
                 return Ok(());
             }
             let originally_empty = current == previous;
@@ -151,6 +189,9 @@ pub(super) fn review(
             commits.push((tip, commit));
             step.state = RebaseStepState::Replayed(tip);
         }
+    }
+    if applied_decisions != decisions.len() {
+        return Err(Error::Stale);
     }
     let checkout = Checkout::prepare(
         repo,

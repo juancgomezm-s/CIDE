@@ -235,6 +235,7 @@ pub struct MergeReview {
     theirs: ObjectId,
     head_file: jc_fs::FileToken,
     index: IndexToken,
+    rebase_review: Option<rebase::ConflictReview>,
 }
 
 pub struct MergePlan {
@@ -243,6 +244,7 @@ pub struct MergePlan {
     conflicts: BTreeMap<Vec<u8>, MergeConflict>,
     mainline_choices: Vec<ObjectId>,
     rebase_steps: Vec<RebaseStep>,
+    rebase_review: Option<rebase::ConflictReview>,
     repository: Identity,
     limits: Limits,
     active: FullName,
@@ -275,9 +277,7 @@ impl MergePlan {
         if self.is_rebase() {
             return match self.kind {
                 MergeKind::UpToDate => "La rama activa ya está basada en el destino",
-                MergeKind::Conflicts => {
-                    "Rebase detenido en la revisión · el repositorio sigue intacto"
-                }
+                MergeKind::Conflicts => "Resuelve los conflictos para continuar el rebase",
                 _ => "Se actualizará la rama activa sobre la base elegida",
             };
         }
@@ -311,6 +311,9 @@ impl MergePlan {
     }
     pub fn rebase_steps(&self) -> &[RebaseStep] {
         &self.rebase_steps
+    }
+    pub fn rebase_conflict_commit(&self) -> Option<ObjectId> {
+        self.rebase_review.as_ref().map(|review| review.current)
     }
     pub fn hard_changes_file(&self, path: &[u8]) -> bool {
         self.reset_mode() == Some(ResetMode::Hard)
@@ -370,6 +373,7 @@ impl MergePlan {
             theirs: self.theirs,
             head_file: self.head_file.clone(),
             index: self.index.clone(),
+            rebase_review: self.rebase_review.clone(),
         }
     }
 }
@@ -555,6 +559,59 @@ struct Candidate {
     entries: Entries,
     blobs: Blobs,
     conflicts: BTreeMap<Vec<u8>, MergeConflict>,
+}
+
+fn resolve_candidate(
+    repo: &gix::Repository,
+    candidate: &mut Candidate,
+    choices: &Resolutions,
+    limits: Limits,
+    budget: &mut Budget,
+    ctx: &Context<'_>,
+) -> Result<(), Error> {
+    if candidate.conflicts.is_empty() || choices.len() != candidate.conflicts.len() {
+        return Err(Error::Stale);
+    }
+    for (path, conflict) in &candidate.conflicts {
+        ctx.check()?;
+        if !conflict.can_resolve() {
+            return Err(Error::Unsupported);
+        }
+        let choice = choices.get(path).ok_or(Error::Stale)?;
+        if let Some(paths) = &conflict.paths {
+            let MergeResolution::Use(side) = choice else {
+                return Err(Error::Unsupported);
+            };
+            candidate
+                .entries
+                .extend(paths.alternatives[*side as usize].clone());
+            continue;
+        }
+        let bytes = match choice {
+            MergeResolution::Use(side) => conflict.bytes(*side),
+            MergeResolution::Edit(text) => {
+                if text.len() > MERGE_EDIT_BYTES.min(limits.max_blob)
+                    || text
+                        .chars()
+                        .any(|c| c.is_control() && !matches!(c, '\t' | '\r' | '\n'))
+                {
+                    return Err(Error::Unsupported);
+                }
+                Some(text.as_bytes())
+            }
+        };
+        if let Some(bytes) = bytes {
+            budget.charge(bytes.len())?;
+            let entry = add_result_blob(repo, &mut candidate.blobs, bytes.to_vec())?;
+            candidate.entries.insert(path.clone(), entry);
+        }
+    }
+    if path_collisions(&candidate.entries).next().is_some() {
+        return Err(Error::Engine(
+            "El resultado contiene una colisión entre un archivo y una carpeta".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn read_version(
@@ -1123,7 +1180,8 @@ fn prepare(
                 return Err(Error::Stale);
             }
         }
-        let resolution = review.and_then(|(_, choices)| choices);
+        let (review, resolution) =
+            review.map_or((None, None), |(review, choices)| (Some(review), choices));
         if !matches!(
             source.reset_mode(),
             Some(ResetMode::Mixed | ResetMode::Hard)
@@ -1140,6 +1198,7 @@ fn prepare(
             conflicts: BTreeMap::new(),
             mainline_choices: Vec::new(),
             rebase_steps: Vec::new(),
+            rebase_review: None,
             repository,
             limits,
             active,
@@ -1191,10 +1250,19 @@ fn prepare(
             return Ok(plan);
         }
         if plan.is_rebase() {
+            let continuation = resolution
+                .map(|choices| {
+                    let review = review
+                        .and_then(|review| review.rebase_review.as_ref())
+                        .ok_or(Error::Stale)?;
+                    Ok::<_, Error>((review, choices))
+                })
+                .transpose()?;
             rebase::review(
                 &repo,
                 &mut plan,
                 index_bytes.as_deref().ok_or(Error::Unsupported)?,
+                continuation,
                 ctx,
             )?;
             return Ok(plan);
@@ -1265,12 +1333,12 @@ fn prepare(
             if operation.is_none() {
                 parents.push(theirs);
             }
-            let Candidate {
-                mut entries,
-                mut blobs,
-                conflicts,
-            } = combine(&repo, [base_tree, Some(old_tree), target_tree], limits, ctx)?;
+            let mut candidate =
+                combine(&repo, [base_tree, Some(old_tree), target_tree], limits, ctx)?;
             if let Some(journal) = &pending {
+                let Candidate {
+                    entries, conflicts, ..
+                } = candidate;
                 let commit =
                     revision::commit(&repo, journal.to, limits, &mut Budget::new(limits), ctx)?;
                 if commit.parents != parents || commit.limited {
@@ -1317,59 +1385,27 @@ fn prepare(
                 }
                 (journal.to, commit.tree, stored, BTreeMap::new())
             } else {
-                if let Some(mut choices) = resolution {
-                    if conflicts.is_empty() || choices.len() != conflicts.len() {
-                        return Err(Error::Stale);
-                    }
-                    let mut budget = Budget::new(limits);
-                    for (path, conflict) in &conflicts {
-                        ctx.check()?;
-                        if !conflict.can_resolve() {
-                            return Err(Error::Unsupported);
-                        }
-                        let choice = choices.remove(path).ok_or(Error::Stale)?;
-                        if let Some(paths) = &conflict.paths {
-                            let MergeResolution::Use(side) = choice else {
-                                return Err(Error::Unsupported);
-                            };
-                            entries.extend(paths.alternatives[side as usize].clone());
-                            continue;
-                        }
-                        let bytes = match choice {
-                            MergeResolution::Use(side) => conflict.bytes(side).map(<[u8]>::to_vec),
-                            MergeResolution::Edit(text) => {
-                                if text.len() > MERGE_EDIT_BYTES.min(limits.max_blob)
-                                    || text
-                                        .chars()
-                                        .any(|c| c.is_control() && !matches!(c, '\t' | '\r' | '\n'))
-                                {
-                                    return Err(Error::Unsupported);
-                                }
-                                Some(text.into_bytes())
-                            }
-                        };
-                        if let Some(bytes) = bytes {
-                            budget.charge(bytes.len())?;
-                            let entry = add_result_blob(&repo, &mut blobs, bytes)?;
-                            entries.insert(path.clone(), entry);
-                        }
-                    }
-                    if path_collisions(&entries).next().is_some() {
-                        return Err(Error::Engine(
-                            "El resultado contiene una colisión entre un archivo y una carpeta"
-                                .into(),
-                        ));
-                    }
-                } else if !conflicts.is_empty() {
+                if let Some(choices) = resolution {
+                    resolve_candidate(
+                        &repo,
+                        &mut candidate,
+                        &choices,
+                        limits,
+                        &mut Budget::new(limits),
+                        ctx,
+                    )?;
+                } else if !candidate.conflicts.is_empty() {
                     plan.kind = MergeKind::Conflicts;
-                    plan.rows = conflicts
+                    plan.rows = candidate
+                        .conflicts
                         .keys()
                         .cloned()
                         .map(|path| MergeRow { path, change: None })
                         .collect();
-                    plan.conflicts = conflicts;
+                    plan.conflicts = candidate.conflicts;
                     return Ok(plan);
                 }
+                let Candidate { entries, blobs, .. } = candidate;
                 let (tree, trees) = make_trees(&repo, &entries, limits, ctx)?;
                 if operation.is_some() && tree == old_tree {
                     plan.kind = MergeKind::UpToDate;

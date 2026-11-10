@@ -151,9 +151,21 @@ que cambiarán. Confirma con **Ctrl+Intro** en la GUI o **F2** en la TUI.
 CIDE calcula toda la secuencia antes de escribir. Esta primera versión
 admite hasta 32 commits lineales sobre una base común única. Conserva
 autores y mensajes al generar los commits nuevos. Si un cambio ya está
-aplicado y la reaplicación queda vacía, la revisión lo indica. Si hay un
-conflicto, muestra el commit y las rutas afectadas. Pulsa **Esc** para volver
-al grafo sin cambiar el repositorio.
+aplicado y la reaplicación queda vacía, la revisión lo indica.
+
+Si hay un conflicto, selecciona una ruta y pulsa **Intro**. **Tab** recorre
+**Base**, **Actual**, **Entrante** y **Resultado**. **Actual** incluye los
+commits que ya se reaplicaron en el borrador. Puedes tomar la versión
+visible con **Ctrl+U** y editar **Resultado** en los conflictos de texto
+admitidos. Acepta el archivo con **Ctrl+Intro** en la GUI o **F2** en la TUI.
+En la lista, la misma tecla continúa el rebase cuando todas las rutas están
+resueltas. Si otro commit vuelve a entrar en conflicto con la misma ruta,
+CIDE conserva la resolución anterior y pide una nueva para ese commit.
+
+La última revisión requiere otra confirmación para escribir. **Esc** sale
+del editor de una ruta y vuelve a la lista. Desde la lista o desde la
+revisión final, **Esc** descarta todo el borrador en memoria. Durante el
+borrador, CIDE conserva la rama, el índice y los archivos locales.
 
 Al confirmar, CIDE vuelve a verificar las dos ramas, el índice y los
 archivos afectados. Bloquea las colisiones con cambios locales y conserva
@@ -173,6 +185,13 @@ tras una escritura parcial. El núcleo comprobó la reaplicación de dos
 commits en orden, el conflicto sin escrituras y la restauración de la
 rama, el índice y los archivos. Las pruebas usaron repositorios temporales
 en segundo plano.
+
+La resolución de conflictos pasó formato, Clippy y 918 pruebas locales en
+Windows con el mismo comando. La GUI editó y publicó una resolución tras
+la confirmación final. La TUI editó, continuó y descartó el borrador con la
+rama, el índice y el disco intactos. El núcleo verificó dos resoluciones
+distintas sobre la misma ruta y rechazó una continuación cuando cambió
+la rama de destino.
 
 ## Reset soft y mixed
 

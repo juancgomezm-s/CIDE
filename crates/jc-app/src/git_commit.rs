@@ -256,7 +256,7 @@ impl CommitView {
     }
     pub fn merge_conflicts(&self) -> Option<&MergePlan> {
         self.merge_review()
-            .filter(|plan| plan.kind == MergeKind::Conflicts && !plan.is_rebase())
+            .filter(|plan| plan.kind == MergeKind::Conflicts)
     }
     pub fn choosing_mainline(&self) -> Option<&MergePlan> {
         self.merge_review()
@@ -633,7 +633,12 @@ impl CommitController {
             .or_else(|| view.branch_switch_review().map(|plan| plan.files().len()))
             .or_else(|| {
                 view.merge_review().map(|plan| {
-                    (plan.rows.len() + plan.rebase_steps().len()).max(plan.mainline_choices().len())
+                    let steps = if plan.kind == MergeKind::Conflicts {
+                        0
+                    } else {
+                        plan.rebase_steps().len()
+                    };
+                    (plan.rows.len() + steps).max(plan.mainline_choices().len())
                 })
             })
             .or_else(|| view.merge_abort_review().map(|plan| plan.rows.len()))
@@ -962,7 +967,10 @@ impl CommitController {
         match result {
             Completion::Review(Ok(plan)) => {
                 if let Some(WritePlan::Merge(previous)) = view.review.replace(plan) {
-                    if previous.kind == MergeKind::ChooseMainline {
+                    if previous.is_rebase() {
+                        // A new paused commit starts with its own path choices.
+                        view.merge_draft = MergeDraft::default();
+                    } else if previous.kind == MergeKind::ChooseMainline {
                         view.saved_mainline_review = Some(previous);
                     } else {
                         view.saved_merge_review = Some(previous);

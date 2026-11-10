@@ -1043,6 +1043,69 @@ mod tests {
         assert_eq!(run(&["rev-parse", "HEAD^"]), onto);
         assert_eq!(fs::read(&base_file).unwrap(), b"cambio de la nueva base\n");
         assert_eq!(fs::read(&incoming_path).unwrap(), b"cambio entrante\n");
+
+        run(&["read-tree", &onto]);
+        fs::write(&incoming_path, b"contenido de base alterna\n").unwrap();
+        run(&["add", "--", "nombre-entrante.txt"]);
+        let tree = run(&["write-tree"]);
+        let conflicting_base = run(&["commit-tree", &tree, "-p", &onto, "-m", "Base alterna"]);
+        run(&["update-ref", "refs/heads/base-alterna", &conflicting_base]);
+        run(&["read-tree", &result]);
+        fs::write(&incoming_path, b"cambio entrante\n").unwrap();
+        let before = fs::read(&index).unwrap();
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        state.key(0x74);
+        wait(&mut state, |s| {
+            s.git_revision.state() == GitRevisionState::Ready
+        });
+        let graph = state.git_revision.graph().unwrap();
+        let row = (1..graph.reference_count())
+            .find(|&row| graph.reference_label(row) == Some("Rama base-alterna"))
+            .unwrap();
+        state.key(b'R' as usize);
+        for _ in 0..row {
+            state.key(0x28);
+        }
+        state.key(b'E' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let conflict = view
+            .merge_conflicts()
+            .unwrap_or_else(|| panic!("{:?}", view.error));
+        assert_eq!(
+            conflict.rebase_conflict_commit().unwrap().to_string(),
+            result
+        );
+        state.key(0x0d);
+        state.key(0x09);
+        state.key(0x09);
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(b'U' as usize);
+        state.key_override = Some(jc_app::Modifiers::NONE);
+        for unit in "GUI ".encode_utf16() {
+            state.character(unit);
+        }
+        state.key_override = Some(jc_app::Modifiers::CTRL);
+        state.key(0x0d);
+        assert!(state.git_commit.view().unwrap().all_merge_choices_saved());
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        assert!(
+            view.merge_review()
+                .is_some_and(|plan| plan.is_rebase() && plan.can_apply()),
+            "{:?}",
+            view.error
+        );
+        assert_eq!(run(&["rev-parse", "HEAD"]), result);
+        assert_eq!(fs::read(&index).unwrap(), before);
+        assert_eq!(fs::read(&incoming_path).unwrap(), b"cambio entrante\n");
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        assert!(state.git_commit.view().is_none(), "{}", state.status);
+        assert_eq!(run(&["rev-parse", "HEAD^"]), conflicting_base);
+        assert_eq!(fs::read(&incoming_path).unwrap(), b"GUI cambio entrante\n");
     }
 
     #[test]
