@@ -2535,6 +2535,128 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    #[ignore = "publica commits en un repositorio HTTPS de prueba autorizado"]
+    fn authenticated_https_clone_fetch_and_push() {
+        use std::io::{BufRead, Read};
+
+        let url =
+            std::env::var("CIDE_TEST_HTTPS_URL").expect("falta la URL del repositorio de prueba");
+        let branch = std::env::var("CIDE_TEST_HTTPS_BRANCH").expect("falta la rama de prueba");
+        let branch = format!("refs/heads/{branch}");
+        safe_ref(&branch).expect("rama de prueba inválida");
+        assert!(url.starts_with("https://"), "se requiere HTTPS");
+        let mut input = std::io::stdin().lock().take(16 * 1024).lines();
+        let mut read = || {
+            input
+                .next()
+                .and_then(Result::ok)
+                .filter(|value| !value.is_empty() && !value.chars().any(char::is_control))
+                .expect("se requieren dos líneas por stdin: usuario y secreto")
+        };
+        let credential = OperationCredential {
+            username: read(),
+            secret: SecretString::new(read()),
+            host_fingerprint_pin: None,
+            private_key: None,
+        };
+
+        let fixture = Fixture::new();
+        let limits = Limits {
+            timeout: Duration::from_secs(30),
+            ..limits()
+        };
+        let anonymous = fixture.p("anonymous");
+        let plan = prepare_network_worktree_clone(&url, &anonymous, limits, || false).unwrap();
+        assert!(
+            apply_network_worktree_clone(plan, None, || false).is_err() && !anonymous.exists(),
+            "la prueba exige un repositorio que requiera autenticación para clonar"
+        );
+        let clone = |name| {
+            let destination = fixture.p(name);
+            let plan =
+                prepare_network_worktree_clone(&url, &destination, limits, || false).unwrap();
+            let result = apply_network_worktree_clone(plan, Some(&credential), || false)
+                .expect("falló el clon autenticado");
+            assert!(
+                result.files > 0,
+                "el repositorio de prueba debe contener un archivo"
+            );
+            let repo = gix::open(destination).unwrap();
+            assert_eq!(
+                repo.head_name().unwrap().unwrap().as_bstr(),
+                branch.as_bytes()
+            );
+            repo
+        };
+        let mut writer = clone("writer");
+        let mut reader = clone("reader");
+        let original = writer.head_id().unwrap().detach();
+        assert_eq!(reader.head_id().unwrap().detach(), original);
+
+        let push = |repo: &gix::Repository, old: gix::ObjectId, new: gix::ObjectId| {
+            let plan = prepare_network_push(
+                repo.workdir().unwrap(),
+                "origin",
+                Some(&credential),
+                limits,
+                || false,
+            )
+            .expect("falló la vista previa de envío autenticado");
+            let [update] = push_preview(&plan).updates.as_slice() else {
+                panic!("se esperaba actualizar exactamente la rama de prueba");
+            };
+            assert_eq!(update.destination, branch);
+            assert_eq!(update.old.as_deref(), Some(old.to_string().as_str()));
+            assert_eq!(update.new, new.to_string());
+            let sent = apply_network_push(plan, Some(&credential), || false)
+                .expect("falló el envío autenticado");
+            assert_eq!(sent.updated, [branch.as_str()]);
+        };
+        let advance = |repo: &mut gix::Repository, base: gix::ObjectId, message| {
+            let tree = repo.find_commit(base).unwrap().tree_id().unwrap().detach();
+            let current = repo.head_id().unwrap().detach();
+            let next = commit_tree(repo, tree, Some(base), message);
+            ref_update(
+                repo,
+                &branch,
+                next,
+                PreviousValue::MustExistAndMatch(Target::Object(current)),
+            );
+            next
+        };
+        let fetch = |repo: &gix::Repository, expected: gix::ObjectId| {
+            let workdir = repo.workdir().unwrap();
+            let plan =
+                prepare_network_fetch(workdir, "origin", Some(&credential), limits, || false)
+                    .expect("falló la vista previa de obtención autenticada");
+            let tracking = format!(
+                "refs/remotes/origin/{}",
+                branch.strip_prefix("refs/heads/").unwrap()
+            );
+            assert!(
+                fetch_preview(&plan)
+                    .updates
+                    .iter()
+                    .any(|update| { update.destination == tracking && update.new == expected })
+            );
+            apply_network_fetch(plan, Some(&credential), || false)
+                .expect("falló la obtención autenticada");
+            assert_eq!(
+                repo.find_reference(&tracking).unwrap().id().detach(),
+                expected
+            );
+            assert!(repo.has_object(expected));
+        };
+        let first = advance(&mut writer, original, "Prueba CIDE de envío HTTPS");
+        push(&writer, original, first);
+        fetch(&reader, first);
+        let second = advance(&mut reader, first, "Prueba CIDE de obtención y envío HTTPS");
+        push(&reader, first, second);
+        fetch(&writer, second);
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn smart_http_clone_fetch_and_push_in_private_repositories() {
         let fixture = Fixture::new();
         let server_path = fixture.p("server.git");

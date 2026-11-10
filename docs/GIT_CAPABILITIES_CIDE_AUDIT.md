@@ -207,8 +207,44 @@ admisión de objetos y referencias y el push exige avance directo.
 
 Los casos locales de transporte usan un servidor Smart HTTP de prueba y un
 servidor SSH con credenciales sintéticas. Git de escritorio actúa como oráculo
-del lado del servidor HTTP. La validación de certificados y credenciales con
-un proveedor HTTPS externo queda pendiente de una prueba con ese proveedor.
+del lado del servidor HTTP.
+
+La prueba `authenticated_https_clone_fetch_and_push` se ejecuta de forma
+explícita porque publica dos commits sin cambios de archivos. Requiere un
+repositorio privado desechable con un archivo y una rama predeterminada
+autorizada para escritura. Lee la URL sin credenciales y la rama corta de
+`CIDE_TEST_HTTPS_URL` y `CIDE_TEST_HTTPS_BRANCH`. Recibe usuario y token o
+contraseña en dos líneas por la entrada estándar. El destino debe rechazar
+el clon anónimo y los dos clones autenticados deben coincidir en la rama y
+el commit de partida. La prueba fija el commit anterior en cada envío y
+confirma que el otro clon obtiene exactamente el nuevo commit.
+
+Con el ejecutable de pruebas de `jc-git` compilado en Windows, se puede
+obtener la credencial del gestor de Git sin mostrar el secreto:
+
+```powershell
+$env:CIDE_TEST_HTTPS_URL = '<URL HTTPS del repositorio privado autorizado>'
+$env:CIDE_TEST_HTTPS_BRANCH = '<rama predeterminada autorizada>'
+$env:GCM_INTERACTIVE = 'Never'
+$env:GIT_TERMINAL_PROMPT = '0'
+$record = "url=$env:CIDE_TEST_HTTPS_URL`n`n" | git -c credential.interactive=false credential fill
+try {
+    if ($LASTEXITCODE -ne 0) { throw 'Credencial de prueba no disponible' }
+    $login = @($record | Where-Object { $_ -match '^username=.' })
+    $secret = @($record | Where-Object { $_ -match '^password=.' })
+    if ($login.Count -ne 1 -or $secret.Count -ne 1) { throw 'Credencial incompleta' }
+    @($login[0].Substring(9), $secret[0].Substring(9)) | & $testExe `
+        remote::tests::authenticated_https_clone_fetch_and_push --exact --ignored --test-threads 1
+} finally {
+    Remove-Variable record, login, secret -ErrorAction SilentlyContinue
+}
+```
+
+`$testExe` es la ruta que muestra `cargo test -p jc-git --lib --no-run
+--locked --offline`. Una comprobación contra el repositorio público de
+demostración de GitHub completó el clon HTTPS anónimo y activó la barrera
+que impide enviar a ese destino. La comprobación autenticada requiere el
+destino privado autorizado.
 
 En Windows con Rust 1.88 se validaron el clon con directorio de trabajo, la
 confirmación de referencia del envío, la huella de servidor SSH, el ciclo de
