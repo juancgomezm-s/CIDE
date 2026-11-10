@@ -92,6 +92,8 @@ pub enum CommandId {
     ExplorerCancel,
     ViewToggleInvisibles,
     ViewMarkdownPreview,
+    ViewAppearance,
+    ViewEditorZoom,
     ViewDatabase,
     ViewGit,
     GitDiffHead,
@@ -160,6 +162,7 @@ pub enum CommandId {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommandContext {
     pub focus: PrimaryFocus,
+    pub gui_appearance: bool,
     /// The frontend's focused control targets source editing (including an
     /// editor-invoked menu/palette), rather than a modal field or read model.
     pub editor_input: bool,
@@ -221,6 +224,7 @@ impl Default for CommandContext {
     fn default() -> Self {
         Self {
             focus: PrimaryFocus::Editor,
+            gui_appearance: false,
             editor_input: true,
             field_input: false,
             has_document: false,
@@ -338,6 +342,9 @@ impl CommandRegistry {
 
 fn always(_: &CommandContext) -> bool {
     true
+}
+fn gui_appearance(ctx: &CommandContext) -> bool {
+    ctx.gui_appearance
 }
 fn document_search_running(ctx: &CommandContext) -> bool {
     ctx.document_search_running || ctx.rectangular_selection
@@ -745,6 +752,13 @@ pub fn default_registry() -> CommandRegistry {
             always
         ),
         spec!(ViewDatabase, View, "Base de datos/esquema", never),
+        spec!(
+            ViewAppearance,
+            View,
+            "Preferencias de apariencia",
+            gui_appearance
+        ),
+        spec!(ViewEditorZoom, View, "Zoom del editor", gui_appearance),
         spec!(
             ViewMarkdownPreview,
             View,

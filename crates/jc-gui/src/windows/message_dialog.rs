@@ -394,7 +394,7 @@ unsafe fn create<'a>(
     message: &'a str,
     accept: &'a str,
 ) -> Result<Dialog<'a>, String> {
-    let font = dpi::ui_font(dpi::for_window(parent));
+    let font = dpi::ui_font_size(dpi::for_window(parent), dpi::window_ui_size(parent));
     let brush = CreateSolidBrush(shell::RAISED);
     if font.is_null() || brush.is_null() {
         if !font.is_null() {

@@ -1,13 +1,17 @@
 //! Per-window DPI is sampled at creation and updated by WM_DPICHANGED.
 //! Win32 geometry is stored in physical pixels, independent of the text model.
-use super::{ffi::*, shell, wide, State};
+use super::{appearance, ffi::*, shell, wide, State};
 use std::{ffi::c_void, ptr::null_mut};
 
 pub(super) const CHANGED: u32 = 0x02e0;
 
 pub(super) unsafe fn ui_font(dpi: Dpi) -> Handle {
+    ui_font_size(dpi, appearance::DEFAULT_UI)
+}
+
+pub(super) unsafe fn ui_font_size(dpi: Dpi, size: u8) -> Handle {
     CreateFontW(
-        -dpi.pixels(14),
+        -dpi.pixels(i32::from(size)),
         0,
         0,
         0,
@@ -21,6 +25,38 @@ pub(super) unsafe fn ui_font(dpi: Dpi) -> Handle {
         5,
         0,
         wide("Segoe UI").as_ptr(),
+    )
+}
+
+pub(super) unsafe fn window_ui_size(hwnd: Hwnd) -> u8 {
+    super::owner(hwnd)
+        .and_then(|model| {
+            model
+                .state
+                .try_borrow()
+                .ok()
+                .map(|state| state.ui_text_size)
+        })
+        .unwrap_or(appearance::DEFAULT_UI)
+}
+
+pub(super) unsafe fn editor_font(dpi: Dpi, size: u8, zoom: u8) -> Handle {
+    let height = appearance::editor_pixels(dpi, size, zoom);
+    CreateFontW(
+        -height,
+        0,
+        0,
+        0,
+        400,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        5,
+        0x31,
+        wide("Consolas").as_ptr(),
     )
 }
 
@@ -120,68 +156,64 @@ impl State {
         super::chrome::Layout::at_dpi(self.width, self.height, self.maximized, self.dpi)
     }
 
-    pub(super) unsafe fn refresh_dpi(&mut self, hwnd: Hwnd, dpi: Dpi) {
-        if self.dpi != dpi {
-            let create = |size: i32, face: &str, pitch| {
-                CreateFontW(
-                    -dpi.pixels(size),
-                    0,
-                    0,
-                    0,
-                    400,
-                    0,
-                    0,
-                    0,
-                    1,
-                    0,
-                    0,
-                    5,
-                    pitch,
-                    wide(face).as_ptr(),
-                )
-            };
-            let editor = create(17, "Consolas", 0x31);
-            let ui = ui_font(dpi);
-            if !editor.is_null() && !ui.is_null() {
-                if self.owned_font {
-                    DeleteObject(self.font);
-                }
-                if self.owned_ui_font {
-                    DeleteObject(self.ui_font);
-                }
-                self.font = editor;
-                self.ui_font = ui;
-                self.owned_font = true;
-                self.owned_ui_font = true;
-            } else {
-                for created in [editor, ui] {
-                    if !created.is_null() {
-                        DeleteObject(created);
-                    }
-                }
-            }
-            self.dpi = dpi;
-            self.cancel_pointer();
-            self.interaction_epoch = self.interaction_epoch.saturating_add(1);
-            self.explorer_hits = None;
-            self.outline.hits = None;
-            self.bottom_hits = None;
-            self.tab_hits = None;
-            self.chrome_hover = None;
-        }
+    pub(super) fn invalidate_appearance(&mut self) {
+        self.cancel_pointer();
+        self.interaction_epoch = self.interaction_epoch.saturating_add(1);
+        self.explorer_hits = None;
+        self.outline.hits = None;
+        self.bottom_hits = None;
+        self.tab_hits = None;
+        self.chrome_hover = None;
+        self.git_workspace.invalidate();
+    }
 
+    pub(super) unsafe fn refresh_dpi(&mut self, hwnd: Hwnd, dpi: Dpi) -> Result<(), String> {
+        let editor = editor_font(dpi, self.editor_text_size, self.editor_zoom);
+        let ui = ui_font_size(dpi, self.ui_text_size);
         let dc = GetDC(hwnd);
-        if !dc.is_null() {
-            let old = SelectObject(dc, self.font);
+        let result = if !editor.is_null() && !ui.is_null() && !dc.is_null() {
+            let old = SelectObject(dc, editor);
             let mut metrics: TextMetric = std::mem::zeroed();
-            if GetTextMetricsW(dc, &mut metrics) != 0 {
-                // Use the same advance for glyphs and hit testing.
-                self.cell_width = metrics.average.saturating_add(dpi.pixels(1)).max(6);
-                self.cell_height = (metrics.height + metrics.external).max(12);
+            let result = if !old.is_null() && GetTextMetricsW(dc, &mut metrics) != 0 {
+                let width = metrics.average.saturating_add(dpi.pixels(1)).max(4);
+                let height = (metrics.height + metrics.external).max(8);
+                Some((width, height, shell::safe_ascii_runs(dc, width)))
+            } else {
+                None
+            };
+            if !old.is_null() {
+                SelectObject(dc, old);
             }
-            self.ascii_runs = shell::safe_ascii_runs(dc, self.cell_width);
-            SelectObject(dc, old);
+            result
+        } else {
+            None
+        };
+        if !dc.is_null() {
             ReleaseDC(hwnd, dc);
         }
+        let Some((width, height, runs)) = result else {
+            for created in [editor, ui] {
+                if !created.is_null() {
+                    DeleteObject(created);
+                }
+            }
+            return Err("No se pudo ajustar la tipografía de la ventana".into());
+        };
+        if self.owned_font {
+            DeleteObject(self.font);
+        }
+        if self.owned_ui_font {
+            DeleteObject(self.ui_font);
+        }
+        self.font = editor;
+        self.ui_font = ui;
+        self.owned_font = true;
+        self.owned_ui_font = true;
+        self.cell_width = width;
+        self.cell_height = height;
+        self.ascii_runs = runs;
+        self.dpi = dpi;
+        self.invalidate_appearance();
+        Ok(())
     }
 }

@@ -6,6 +6,9 @@ cambian. Las vistas reasignan sus ViewId y la tabla se remapea antes de publicar
 el Workbench recuperado. Las versiones antiguas no leen APP2; usar el binario
 vigente para las sesiones nuevas. Las generaciones/HEAD/BACKUP/GC no cambian.
 
+Los metadatos gráficos v6 guardan los tamaños de interfaz y editor, el zoom
+del editor y las preferencias del minimapa. Las sesiones v1–v5 conservan
+sus datos y usan los valores compactos iniciales para la apariencia.
 Los metadatos gráficos v5 añaden las [preferencias Git](G2_GIT_LAYOUT_COMPARISON.md)
 en siete bytes validados: distribución, proporciones y modo de comparación.
 El lector conserva v1–v4; no cambia el formato de documentos ni de generaciones.

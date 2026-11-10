@@ -62,6 +62,8 @@ pub(super) enum SelectorKind {
     Files,
     Encoding,
     OpenTabs,
+    Appearance,
+    Zoom,
 }
 
 pub(super) struct Selector {
@@ -112,6 +114,70 @@ fn visible(selected: usize, count: usize, max_rows: usize) -> std::ops::Range<us
     first..first + rows
 }
 impl Selector {
+    fn appearance_options(&self) -> &'static [(super::appearance::Choice, &'static str)] {
+        if self.kind == SelectorKind::Zoom {
+            super::appearance::ZOOMS
+        } else {
+            super::appearance::APPEARANCE
+        }
+    }
+    pub(super) fn appearance_target(&self) -> Option<super::appearance::Choice> {
+        let query = TabFilter::new(&self.input);
+        self.appearance_options()
+            .iter()
+            .filter(|(_, label)| query.matches(label))
+            .nth(self.selected)
+            .map(|(choice, _)| *choice)
+    }
+    pub(super) fn prepare_appearance(
+        &mut self,
+        current: &[super::appearance::Choice],
+        rows: usize,
+    ) -> SelectorPresentation {
+        let query = TabFilter::new(&self.input);
+        let entries = self.appearance_options();
+        let total = entries
+            .iter()
+            .filter(|(_, label)| query.matches(label))
+            .count();
+        self.normalize(total);
+        let range = visible(self.selected, total, rows);
+        let rows = entries
+            .iter()
+            .filter(|(_, label)| query.matches(label))
+            .enumerate()
+            .skip(range.start)
+            .take(range.len())
+            .map(|(ordinal, (choice, label))| SelectorRow {
+                label: format!(
+                    "{} {label}",
+                    if current.contains(choice) { "✓" } else { " " }
+                ),
+                enabled: true,
+                selected: ordinal == self.selected,
+                ordinal,
+            })
+            .collect();
+        let zoom = self.kind == SelectorKind::Zoom;
+        SelectorPresentation {
+            title: if zoom {
+                "Zoom del editor"
+            } else {
+                "Preferencias de apariencia"
+            },
+            query: self.input.clone(),
+            input_selection: self.input_selection,
+            message: if zoom {
+                "Escala del texto respecto al tamaño base".into()
+            } else {
+                "Tamaños base de interfaz, editor y minimapa".into()
+            },
+            footer: "↑↓ elegir · Intro aplicar · Esc volver",
+            rows,
+            total,
+            selected: self.selected,
+        }
+    }
     pub(super) fn prepare_tabs(
         &mut self,
         tabs: &jc_app::TabManager,

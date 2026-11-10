@@ -273,6 +273,8 @@ impl Workbench {
             | SnippetAccept
             | SnippetCancel
             | ViewToggleBottomPanel
+            | ViewAppearance
+            | ViewEditorZoom
             | ViewTerminal
             | ViewProblems
             | ViewOutput

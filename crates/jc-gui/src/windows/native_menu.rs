@@ -174,6 +174,10 @@ pub(super) fn definitions() -> Vec<MenuSpec> {
             NativeMenuGroup::Navigation,
             &[CommandId::TabPrevious, CommandId::TabNext][..],
         ),
+        (
+            NativeMenuGroup::View,
+            &[CommandId::ViewAppearance, CommandId::ViewEditorZoom][..],
+        ),
     ] {
         let items = &mut spec_mut(&mut specs, group).items;
         separator(items);

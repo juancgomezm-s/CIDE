@@ -155,6 +155,7 @@ pub(super) struct Theme {
     font: Handle,
     scaled_font: Cell<Handle>,
     dpi: Cell<super::dpi::Dpi>,
+    text_size: Cell<u8>,
     palette: Cell<Palette>,
     brushes: RefCell<Brushes>,
     menus: RefCell<Vec<(Handle, bool)>>,
@@ -214,6 +215,7 @@ impl Theme {
             font,
             scaled_font: Cell::new(null_mut()),
             dpi: Cell::new(super::dpi::Dpi::BASE),
+            text_size: Cell::new(super::appearance::DEFAULT_UI),
             palette: Cell::new(palette),
             brushes: RefCell::new(brushes),
             menus: RefCell::new(Vec::new()),
@@ -224,14 +226,18 @@ impl Theme {
             width_calculations: Cell::new(0),
         })
     }
-    pub(super) unsafe fn set_dpi(&self, dpi: super::dpi::Dpi) -> Result<(), String> {
-        if self.dpi.get() == dpi {
+    pub(super) unsafe fn set_text_scale(
+        &self,
+        dpi: super::dpi::Dpi,
+        size: u8,
+    ) -> Result<(), String> {
+        if self.dpi.get() == dpi && self.text_size.get() == size {
             return Ok(());
         }
-        let font = if dpi == super::dpi::Dpi::BASE {
+        let font = if dpi == super::dpi::Dpi::BASE && size == super::appearance::DEFAULT_UI {
             null_mut()
         } else {
-            let font = super::dpi::ui_font(dpi);
+            let font = super::dpi::ui_font_size(dpi, size);
             if font.is_null() {
                 return Err(
                     "No se pudo ajustar la tipografía del menú a la escala de la ventana".into(),
@@ -241,6 +247,7 @@ impl Theme {
         };
         let previous = self.scaled_font.replace(font);
         self.dpi.set(dpi);
+        self.text_size.set(size);
         if !previous.is_null() {
             DeleteObject(previous);
         }
@@ -488,12 +495,14 @@ impl Theme {
         if entry.kind == Kind::Item && item.item_id != entry.id as u32 {
             return Ok(false);
         }
+        let base = i32::from(super::appearance::DEFAULT_UI);
+        let scale = |width| (width * i32::from(self.text_size.get()) + base - 1) / base;
         (item.width, item.height) = match entry.kind {
-            Kind::Bar => ((entry.text_width + 24).clamp(24, 600) as u32, 25),
+            Kind::Bar => ((scale(entry.text_width) + 24).clamp(24, 600) as u32, 25),
             Kind::Separator => (20, 9),
             Kind::Item => (
-                (entry.text_width
-                    + entry.shortcut_width
+                (scale(entry.text_width)
+                    + scale(entry.shortcut_width)
                     + if entry.shortcut_width > 0 { 76 } else { 48 })
                 .clamp(100, 1200) as u32,
                 27,

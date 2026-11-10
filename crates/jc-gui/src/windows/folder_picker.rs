@@ -596,7 +596,10 @@ unsafe fn dialog_message(hwnd: Hwnd, message: u32, wp: usize, lp: isize) -> isiz
             1
         }
         dpi::CHANGED => {
-            let font = dpi::ui_font(dpi::Dpi::from_raw(wp as u16 as u32));
+            let font = dpi::ui_font_size(
+                dpi::Dpi::from_raw(wp as u16 as u32),
+                dpi::window_ui_size(picker.parent),
+            );
             if font.is_null() {
                 picker.failed.set(true);
                 EndDialog(hwnd, 0);
@@ -1047,7 +1050,7 @@ unsafe fn create(parent: Hwnd, initial: Option<&Path>, file: bool) -> Result<Pic
     register()?;
     let root = initial_directory(initial)?;
     let model = Model::new(root)?;
-    let font = dpi::ui_font(dpi::for_window(parent));
+    let font = dpi::ui_font_size(dpi::for_window(parent), dpi::window_ui_size(parent));
     let brush = CreateSolidBrush(shell::SURFACE);
     if font.is_null() || brush.is_null() {
         if !font.is_null() {

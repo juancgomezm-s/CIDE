@@ -29,6 +29,8 @@ pub(super) struct Frame {
     rect: Rect,
     left: Rect,
     right: Rect,
+    zoom: Rect,
+    zoom_label: Vec<u16>,
     explorer: bool,
     code: bool,
     summary: Vec<u16>,
@@ -41,7 +43,7 @@ fn region(s: &State) -> Rect {
         bottom: s.height.max(0),
     }
 }
-pub(super) fn prepare(s: &State) -> Frame {
+fn parts(s: &State) -> (Rect, Rect, Rect, Rect) {
     let rect = region(s);
     let button = s.dpi.pixels(76).min((rect.right / 3).max(0));
     let left = Rect {
@@ -52,6 +54,17 @@ pub(super) fn prepare(s: &State) -> Frame {
         left: rect.right - button,
         ..rect
     };
+    let available = right.left - left.right;
+    let summary_width = ((rect.bottom - rect.top) * 10).min(available / 2).max(0);
+    let zoom = Rect {
+        right: right.left - summary_width,
+        left: (right.left - summary_width - s.dpi.pixels(64)).max(left.right),
+        ..rect
+    };
+    (rect, left, right, zoom)
+}
+pub(super) fn prepare(s: &State) -> Frame {
+    let (rect, left, right, zoom) = parts(s);
     let language = s
         .workbench
         .context()
@@ -62,22 +75,31 @@ pub(super) fn prepare(s: &State) -> Frame {
         rect,
         left,
         right,
+        zoom,
+        zoom_label: wide(&format!("{} % ▾", s.editor_zoom)),
         explorer: s.explorer_visible,
         code: s.outline.visible,
         summary: wide(&format!("{language} · {git}")),
     }
 }
 impl State {
+    pub(super) fn status_zoom_click(&mut self, x: i32, y: i32) -> bool {
+        let (_, _, _, zoom) = parts(self);
+        if x < zoom.left || x >= zoom.right || y < zoom.top || y >= zoom.bottom {
+            return false;
+        }
+        if self.pointer_source_available() {
+            self.open_selector(super::selector::SelectorKind::Zoom);
+        }
+        true
+    }
     pub(super) fn status_git_click(&mut self, x: i32, y: i32) -> Option<super::Action> {
-        let f = prepare(self);
-        let width = ((f.rect.bottom - f.rect.top) * 10)
-            .min((f.right.left - f.left.right) / 2)
-            .max(0);
+        let (rect, _, right, zoom) = parts(self);
         if self.pointer_source_available()
-            && y >= f.rect.top
-            && y < f.rect.bottom
-            && x >= f.right.left - width
-            && x < f.right.left
+            && y >= rect.top
+            && y < rect.bottom
+            && x >= zoom.right
+            && x < right.left
         {
             Some(self.request_git(super::git_panel::GitIntent::Status))
         } else {
@@ -85,18 +107,18 @@ impl State {
         }
     }
     pub(super) fn status_click(&mut self, x: i32, y: i32) -> bool {
-        let frame = prepare(self);
-        if y < frame.rect.top || y >= frame.rect.bottom || x < 0 || x >= frame.rect.right {
+        let (rect, left, right, _) = parts(self);
+        if y < rect.top || y >= rect.bottom || x < 0 || x >= rect.right {
             return false;
         }
         if !self.pointer_source_available() {
             return true;
         }
-        if x < frame.left.right {
+        if x < left.right {
             self.explorer_visible = !self.explorer_visible;
             self.explorer_focused = false;
             self.explorer_hits = None;
-        } else if x >= frame.right.left {
+        } else if x >= right.left {
             self.set_outline_visible(!self.outline.visible);
         }
         self.tab_hits = None;
@@ -127,11 +149,16 @@ pub(super) unsafe fn draw(dc: Hdc, f: &Frame, status: &[u16]) -> Result<(), Stri
             background,
         )?;
     }
-    let available = f.right.left - f.left.right;
-    let summary_width = ((f.rect.bottom - f.rect.top) * 10)
-        .min(available / 2)
-        .max(0);
-    let split = f.right.left - summary_width;
+    paint::fill(dc, f.zoom, shell::RAISED)?;
+    label(
+        dc,
+        Rect {
+            left: f.zoom.left + 6,
+            ..f.zoom
+        },
+        &f.zoom_label,
+    )?;
+    let split = f.zoom.left;
     if split > f.left.right {
         label(
             dc,
@@ -144,11 +171,11 @@ pub(super) unsafe fn draw(dc: Hdc, f: &Frame, status: &[u16]) -> Result<(), Stri
             status,
         )?;
     }
-    if summary_width > 0 {
+    if f.zoom.right < f.right.left {
         label(
             dc,
             Rect {
-                left: split + 6,
+                left: f.zoom.right + 6,
                 right: f.right.left,
                 top: f.rect.top + 3,
                 ..f.rect
@@ -162,6 +189,21 @@ pub(super) unsafe fn draw(dc: Hdc, f: &Frame, status: &[u16]) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn zoom_control_opens_at_current_scale_and_preserves_the_editor() {
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.editor_zoom = 125;
+        let bytes = state.workbench.active_bytes().unwrap();
+        let frame = prepare(&state);
+        assert!(state.status_zoom_click(frame.zoom.left + 2, frame.zoom.top + 2));
+        let view = state.selector_presentation(12).unwrap();
+        assert_eq!(view.title, "Zoom del editor");
+        assert!(view
+            .rows
+            .iter()
+            .any(|row| row.selected && row.label == "✓ 125 %"));
+        assert_eq!(state.workbench.active_bytes().unwrap(), bytes);
+    }
     #[test]
     fn git_indicator_requests_embedded_status_without_configuration() {
         let mut s = State::new(&crate::GuiOptions::default()).unwrap();

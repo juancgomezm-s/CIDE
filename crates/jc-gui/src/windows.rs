@@ -1,3 +1,4 @@
+mod appearance;
 mod back_buffer;
 mod bottom_paint;
 mod bottom_panel;
@@ -173,6 +174,12 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         CommandId::ViewMarkdownPreview,
         "Vista previa de Markdown",
     ),
+    (
+        251,
+        CommandId::ViewAppearance,
+        "&Preferencias de apariencia…",
+    ),
+    (252, CommandId::ViewEditorZoom, "&Zoom del editor…"),
     (
         210,
         CommandId::ViewToggleBottomPanel,
@@ -373,6 +380,7 @@ enum Action {
     None,
     CapturePointer,
     NativeMenu(native_menu::NativeMenuGroup),
+    Appearance(appearance::Choice),
     Clipboard(CommandId),
     PasteSearch(u64),
     PasteGitSearch(std::sync::Arc<()>),
@@ -470,6 +478,11 @@ struct State {
     pub cell_width: i32,
     pub cell_height: i32,
     dpi: dpi::Dpi,
+    ui_text_size: u8,
+    editor_text_size: u8,
+    editor_zoom: u8,
+    minimap_visible: bool,
+    minimap_width: u16,
     pub font: Handle,
     pub ui_font: Handle,
     ascii_runs: [bool; 128],
@@ -513,9 +526,13 @@ impl State {
         let bridge = Arc::new(notify::Bridge::default());
         let callback = bridge.clone();
         let wakeup = Wakeup::with_notifier(move || callback.signal());
-        let face = wide("Consolas");
-        let created =
-            unsafe { CreateFontW(-17, 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0x31, face.as_ptr()) };
+        let created = unsafe {
+            dpi::editor_font(
+                dpi::Dpi::BASE,
+                appearance::DEFAULT_EDITOR,
+                appearance::DEFAULT_ZOOM,
+            )
+        };
         let font = if created.is_null() {
             unsafe { GetStockObject(16) }
         } else {
@@ -605,8 +622,13 @@ impl State {
             width: 1000,
             height: 650,
             cell_width: 9,
-            cell_height: 20,
+            cell_height: 18,
             dpi: dpi::Dpi::BASE,
+            ui_text_size: appearance::DEFAULT_UI,
+            editor_text_size: appearance::DEFAULT_EDITOR,
+            editor_zoom: appearance::DEFAULT_ZOOM,
+            minimap_visible: true,
+            minimap_width: appearance::DEFAULT_MINIMAP,
             font,
             ui_font,
             ascii_runs: [false; 128],
@@ -692,6 +714,7 @@ impl State {
     }
     fn context(&self) -> jc_app::CommandContext {
         let mut context = self.workbench.context();
+        context.gui_appearance = true;
         let explorer_focus = self.explorer_focused
             || (self.selector_explorer_focus
                 && self
@@ -784,6 +807,17 @@ impl State {
         }
         if let Some(group) = native_menu::group_for_command(command) {
             return Action::NativeMenu(group);
+        }
+        if matches!(
+            command,
+            CommandId::ViewAppearance | CommandId::ViewEditorZoom
+        ) {
+            self.open_selector(if command == CommandId::ViewAppearance {
+                SelectorKind::Appearance
+            } else {
+                SelectorKind::Zoom
+            });
+            return Action::None;
         }
         if self.selector.is_some() && selector_input::field_command(command) {
             return self.selector_field_action(command);
@@ -1532,9 +1566,13 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             // The previous frame stores font handles owned by State.
             owner.frame.borrow_mut().take();
             owner.frame_dirty.set(true);
-            state.refresh_dpi(hwnd, dpi::Dpi::from_raw((wparam >> 16) as u16 as u32));
+            if let Err(error) =
+                state.refresh_dpi(hwnd, dpi::Dpi::from_raw((wparam >> 16) as u16 as u32))
+            {
+                state.error(error);
+            }
             if let Some(theme) = owner.menu_theme.borrow().as_ref() {
-                if let Err(error) = theme.set_dpi(state.dpi) {
+                if let Err(error) = theme.set_text_scale(state.dpi, state.ui_text_size) {
                     state.error(error);
                 }
             }
@@ -1715,9 +1753,11 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                         state.error(error);
                     }
                 }
-                state.refresh_dpi(hwnd, dpi::for_window(hwnd));
+                if let Err(error) = state.refresh_dpi(hwnd, dpi::for_window(hwnd)) {
+                    state.error(error);
+                }
                 if let Some(theme) = owner.menu_theme.borrow().as_ref() {
-                    if let Err(error) = theme.set_dpi(state.dpi) {
+                    if let Err(error) = theme.set_text_scale(state.dpi, state.ui_text_size) {
                         state.error(error);
                     }
                 }
@@ -1860,6 +1900,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     };
                 } else if let Some(tab_action) = tab_action {
                     action = tab_action;
+                } else if state.status_zoom_click(x, y) {
+                    // The zoom selector owns the next input.
                 } else if let Some(git_action) = state.status_git_click(x, y) {
                     action = git_action;
                 } else if state.status_click(x, y) {
@@ -2099,6 +2141,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         return;
     }
     match action {
+        Action::Appearance(choice) => appearance::apply(hwnd, choice),
         Action::CapturePointer => {
             SetCapture(hwnd);
             if let Some(m) = owner(hwnd) {

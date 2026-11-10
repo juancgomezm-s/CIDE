@@ -285,7 +285,12 @@ pub(super) fn text_areas(state: &State) -> Vec<TextArea> {
             let view = state.workbench.panes().view(pane)?;
             let tab = view.location()?.tab;
             let count = state.workbench.line_count_for_tab(tab)?;
-            let geometry = editor_scroll::Geometry::new(rect, state.dpi);
+            let geometry = editor_scroll::Geometry::with_minimap(
+                rect,
+                state.dpi,
+                state.minimap_visible,
+                state.minimap_width,
+            );
             let rect = geometry.text;
             let digits = count.max(1).to_string().len().clamp(3, 7);
             let x = rect.left + (digits as i32 + 2) * cw + 8;
@@ -315,7 +320,13 @@ pub(super) fn text_areas(state: &State) -> Vec<TextArea> {
 
 pub(super) fn source_pane_at(state: &State, x: i32, y: i32) -> Option<(PaneId, usize)> {
     for (pane, rect) in areas(state) {
-        let text = editor_scroll::Geometry::new(rect, state.dpi).text;
+        let text = editor_scroll::Geometry::with_minimap(
+            rect,
+            state.dpi,
+            state.minimap_visible,
+            state.minimap_width,
+        )
+        .text;
         let top = text.top;
         let rows = ((text.bottom - top) / state.cell_height.clamp(1, 8192)).clamp(0, 128) as usize;
         if rows > 0
@@ -522,7 +533,6 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         let id = area.pane;
         let rect = area.geometry.text;
         let tab = area.tab;
-        let scroll_frame = editor_scroll::Frame::prepare(state, &area);
         let rectangle = state.workbench.rectangle_for_pane(id);
         let first = area.first;
         let invisible = state.workbench.invisibles_visible();
@@ -536,8 +546,9 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         let rows = area.capacity_rows;
         let selection = state.workbench.selection_for_pane(id);
         let syntax = state.workbench.syntax_rows(tab, first, rows);
+        let scroll_frame = editor_scroll::Frame::prepare(state, &area);
         state.syntax_targets[usize::from(id == PaneId::Secondary)] = Some((id, tab));
-        state.syntax_pending |= syntax.pending;
+        state.syntax_pending |= syntax.pending || scroll_frame.overview_pending;
         syntax_limited |= syntax.limited;
         if id == state.workbench.panes().active() {
             syntax_plain = syntax.profile == SyntaxProfile::Plain && syntax.encoding.is_some();
@@ -824,6 +835,26 @@ pub(super) unsafe fn fill_marks(
     }
     DeleteObject(brush);
     result
+}
+pub(super) unsafe fn fill_color_marks(
+    dc: Hdc,
+    rectangles: impl Iterator<Item = (Rect, u32)>,
+) -> Result<(), String> {
+    let mut groups = Vec::<(u32, Vec<Rect>)>::new();
+    for (rect, color) in rectangles {
+        if rect.right <= rect.left || rect.bottom <= rect.top || RectVisible(dc, &rect) == 0 {
+            continue;
+        }
+        if let Some((_, marks)) = groups.iter_mut().find(|(existing, _)| *existing == color) {
+            marks.push(rect);
+        } else if groups.len() < 16 {
+            groups.push((color, vec![rect]));
+        }
+    }
+    for (color, marks) in groups {
+        fill_marks(dc, marks.into_iter(), color)?;
+    }
+    Ok(())
 }
 pub(super) unsafe fn text(
     dc: Hdc,

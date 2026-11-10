@@ -6,12 +6,14 @@ use super::{
     shell, State,
 };
 use jc_app::{PaneId, TabId};
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 const RAIL: i32 = 10;
-const MAP_WIDTH: i32 = 62;
-const MAX_SAMPLES: usize = 192;
+#[cfg(test)]
+const MAP_WIDTH: i32 = 76;
+const MAX_SAMPLES: usize = 256;
 const PREFIX_BYTES: usize = 80;
+const MAX_MARKS_PER_ROW: usize = 16;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Axis {
@@ -27,16 +29,27 @@ pub(super) struct Geometry {
     map: Option<Rect>,
 }
 impl Geometry {
+    #[cfg(test)]
     pub fn new(pane: Rect, dpi: super::dpi::Dpi) -> Self {
+        Self::with_minimap(pane, dpi, true, MAP_WIDTH as u16)
+    }
+    pub fn with_minimap(
+        pane: Rect,
+        dpi: super::dpi::Dpi,
+        minimap_visible: bool,
+        minimap_width: u16,
+    ) -> Self {
         let top = (pane.top + dpi.pixels(shell::HEADER)).min(pane.bottom);
         let bottom = (pane.bottom - dpi.pixels(RAIL)).max(top);
         let right = (pane.right - dpi.pixels(RAIL)).max(pane.left);
-        let map = (right - pane.left >= dpi.pixels(320)).then_some(Rect {
-            left: right - dpi.pixels(MAP_WIDTH),
-            right,
-            top,
-            bottom,
-        });
+        let width = dpi.pixels(i32::from(minimap_width.clamp(60, 128)));
+        let map =
+            (minimap_visible && right - pane.left - width >= dpi.pixels(320)).then_some(Rect {
+                left: right - width,
+                right,
+                top,
+                bottom,
+            });
         let text = Rect {
             left: pane.left,
             right: map.map_or(right, |r| r.left),
@@ -135,26 +148,35 @@ fn contains(rect: Rect, x: i32, y: i32) -> bool {
     x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 struct SampleKey {
     identity: u64,
     revision: u64,
     count: usize,
+    tab: TabId,
+    path: PathBuf,
+    encoding: Option<jc_text::TextEncoding>,
 }
 #[derive(Clone, Copy)]
 struct Mark {
     start: u8,
     end: u8,
+    source_start: u8,
+    kind: jc_app::SyntaxKind,
 }
+type MapRow = Vec<Mark>;
 #[derive(Default)]
 pub(super) struct MapCache {
     key: Option<SampleKey>,
-    samples: Arc<[Mark]>,
+    samples: Arc<[MapRow]>,
+    lines: Vec<usize>,
+    colored: usize,
+    color_limited: bool,
 }
 impl MapCache {
-    fn prepare(&mut self, app: &jc_app::Workbench, tab: TabId, lines: usize, pixels: i32) {
+    fn prepare(&mut self, app: &jc_app::Workbench, tab: TabId, lines: usize, pixels: i32) -> bool {
         let Some(doc) = app.document_by_tab(tab) else {
-            return;
+            return false;
         };
         let source = doc.session.document();
         let count = lines.min(MAX_SAMPLES).min((pixels / 2).max(0) as usize);
@@ -162,52 +184,144 @@ impl MapCache {
             identity: source.recovery_identity(),
             revision: source.revision(),
             count,
+            tab,
+            path: doc.session.path().to_owned(),
+            encoding: doc.session.encoding(),
         };
-        if self.key == Some(key) {
-            return;
-        }
-        let marks = (0..count)
-            .map(|index| {
-                let line = if count <= 1 {
-                    0
-                } else {
-                    (index as u128 * lines.saturating_sub(1) as u128 / (count - 1) as u128) as usize
-                };
-                let Some((range, _)) = app.line_range_for_tab(tab, line) else {
-                    return Mark { start: 0, end: 0 };
-                };
-                let end = range.start + range.len().min(PREFIX_BYTES);
-                let Ok(bytes) = source.read_range(range.start..end) else {
-                    return Mark { start: 0, end: 0 };
-                };
-                let mut column = 0usize;
-                let mut mark = Mark { start: 0, end: 0 };
-                for byte in bytes {
-                    let next = if byte == b'\t' {
-                        column + 4 - column % 4
+        if self.key.as_ref() != Some(&key) {
+            self.lines = (0..count)
+                .map(|index| {
+                    if count <= 1 {
+                        0
                     } else {
-                        column + 1
-                    };
-                    if !byte.is_ascii_whitespace() {
-                        if mark.end == 0 {
-                            mark.start = column.min(PREFIX_BYTES - 1) as u8;
-                        }
-                        mark.end = next.min(PREFIX_BYTES) as u8;
+                        (index as u128 * lines.saturating_sub(1) as u128 / (count - 1) as u128)
+                            as usize
                     }
-                    column = next;
+                })
+                .collect();
+            self.colored = 0;
+            self.color_limited = false;
+            let marks = self
+                .lines
+                .iter()
+                .map(|&line| {
+                    let Some((range, _)) = app.line_range_for_tab(tab, line) else {
+                        return Vec::new();
+                    };
+                    let end = range.start + range.len().min(PREFIX_BYTES);
+                    let Ok(bytes) = source.read_range(range.start..end) else {
+                        return Vec::new();
+                    };
+                    let mut column = 0usize;
+                    let mut marks = Vec::<Mark>::with_capacity(8);
+                    let mut token_start: Option<(u8, u8, u8)> = None;
+                    for (byte_index, byte) in bytes.into_iter().enumerate() {
+                        let next = if byte == b'\t' {
+                            column + 4 - column % 4
+                        } else {
+                            column + 1
+                        };
+                        if byte.is_ascii_whitespace() {
+                            if let Some((start, end, source_start)) = token_start.take() {
+                                if marks.len() < MAX_MARKS_PER_ROW {
+                                    marks.push(Mark {
+                                        start,
+                                        end,
+                                        source_start,
+                                        kind: jc_app::SyntaxKind::Plain,
+                                    });
+                                }
+                            }
+                            column = next.min(PREFIX_BYTES);
+                            continue;
+                        }
+                        if let Some(start) = token_start.as_mut() {
+                            start.1 = next.min(PREFIX_BYTES) as u8;
+                        } else {
+                            token_start = Some((
+                                column.min(PREFIX_BYTES - 1) as u8,
+                                next.min(PREFIX_BYTES) as u8,
+                                byte_index.min(PREFIX_BYTES - 1) as u8,
+                            ));
+                        }
+                        column = next.min(PREFIX_BYTES);
+                    }
+                    if let Some((start, end, source_start)) = token_start {
+                        if marks.len() < MAX_MARKS_PER_ROW {
+                            marks.push(Mark {
+                                start,
+                                end,
+                                source_start,
+                                kind: jc_app::SyntaxKind::Plain,
+                            });
+                        }
+                    }
+                    marks
+                })
+                .collect::<Vec<_>>();
+            self.samples = marks.into();
+            self.key = Some(key);
+        }
+        if self.color_limited || self.colored >= self.samples.len() {
+            return false;
+        }
+        let finish = self.colored.saturating_add(24).min(self.samples.len());
+        let syntax = app.syntax_samples(tab, &self.lines[self.colored..finish], PREFIX_BYTES);
+        if syntax.limited {
+            self.color_limited = true;
+            self.colored = self.samples.len();
+            return false;
+        }
+        let mut updated = self.samples.to_vec();
+        for row in syntax.rows {
+            let Some(index) = self.lines[self.colored..finish]
+                .iter()
+                .position(|line| *line == row.line)
+                .map(|index| self.colored + index)
+            else {
+                continue;
+            };
+            if row.spans.is_empty() {
+                continue;
+            }
+            let marks = std::mem::take(&mut updated[index]);
+            for mark in marks {
+                let start = row.source.start + usize::from(mark.source_start);
+                let end = start + usize::from(mark.end - mark.start);
+                let mut cursor = start;
+                let mut piece = |from: usize, to: usize, kind| {
+                    if from < to && updated[index].len() < MAX_MARKS_PER_ROW {
+                        updated[index].push(Mark {
+                            start: mark.start + (from - start) as u8,
+                            end: mark.start + (to - start) as u8,
+                            source_start: (from - row.source.start) as u8,
+                            kind,
+                        });
+                    }
+                };
+                for span in &row.spans {
+                    let from = span.source.start.max(cursor);
+                    let to = span.source.end.min(end);
+                    if from < to {
+                        piece(cursor, from, jc_app::SyntaxKind::Plain);
+                        piece(from, to, span.kind);
+                        cursor = to;
+                    }
                 }
-                mark
-            })
-            .collect::<Vec<_>>();
-        self.samples = marks.into();
-        self.key = Some(key);
+                piece(cursor, end, jc_app::SyntaxKind::Plain);
+            }
+        }
+        self.samples = updated.into();
+        self.colored = finish;
+        self.colored < self.samples.len()
     }
 }
 
 pub(super) struct Frame {
     vertical: Track,
     horizontal: Track,
-    overview: Option<(Track, Arc<[Mark]>)>,
+    overview: Option<(Rect, Track, Arc<[MapRow]>)>,
+    pub(super) overview_pending: bool,
     dpi: super::dpi::Dpi,
 }
 impl Frame {
@@ -239,15 +353,33 @@ impl Frame {
             page: area.columns.max(1),
             minimum_thumb: state.dpi.pixels(12),
         };
+        let mut overview_pending = false;
         let overview = geometry.map.map(|rect| {
+            let mini_line = state.dpi.pixels(2).max(1);
+            let content_height =
+                area.count
+                    .saturating_mul(mini_line as usize)
+                    .min((rect.bottom - rect.top).max(0) as usize) as i32;
+            let channel = Rect {
+                bottom: rect.top + content_height,
+                ..rect
+            };
             let cache = &mut state.editor_maps[usize::from(area.pane == PaneId::Secondary)];
-            cache.prepare(app, area.tab, area.count, rect.bottom - rect.top);
-            (Track { rect, ..vertical }, Arc::clone(&cache.samples))
+            overview_pending = cache.prepare(app, area.tab, area.count, content_height);
+            (
+                rect,
+                Track {
+                    rect: channel,
+                    ..vertical
+                },
+                Arc::clone(&cache.samples),
+            )
         });
         Self {
             vertical,
             horizontal,
             overview,
+            overview_pending,
             dpi: state.dpi,
         }
     }
@@ -270,31 +402,59 @@ impl Frame {
                 paint::fill(dc, thumb, shell::MUTED)?;
             }
         }
-        if let Some((map, samples)) = &self.overview {
-            paint::fill(dc, map.rect, shell::SIDEBAR)?;
+        if let Some((channel, map, samples)) = &self.overview {
+            paint::fill(dc, *channel, shell::SURFACE)?;
             let window = map.thumb_rect();
             paint::fill(dc, window, shell::SELECTED)?;
-            let left = map.rect.left + self.dpi.pixels(5);
-            let width = map.rect.right - left - self.dpi.pixels(4);
-            let marks = samples
-                .iter()
-                .enumerate()
-                .filter(|(_, mark)| mark.end != 0)
-                .map(|(index, mark)| {
-                    let y = map.rect.top + scale(index, samples.len(), map.length());
+            let left = map.rect.left + self.dpi.pixels(3);
+            let width = map.rect.right - left - self.dpi.pixels(3);
+            let row_height = (map.length() / samples.len().max(1) as i32).clamp(1, 3);
+            let mut marks = Vec::with_capacity(samples.len().saturating_mul(MAX_MARKS_PER_ROW));
+            for (index, row) in samples.iter().enumerate() {
+                let y = map.rect.top + scale(index, samples.len(), map.length());
+                for mark in row {
                     let x = left + scale(usize::from(mark.start), PREFIX_BYTES, width);
                     let end = left + scale(usize::from(mark.end), PREFIX_BYTES, width);
-                    Rect {
-                        left: x,
-                        right: end.max(x + 1),
-                        top: y,
-                        bottom: y + 1,
-                    }
-                });
-            paint::fill_marks(dc, marks, shell::MUTED)?;
+                    marks.push((
+                        Rect {
+                            left: x,
+                            right: end.max(x + 1).min(map.rect.right),
+                            top: y,
+                            bottom: (y + row_height).min(map.rect.bottom),
+                        },
+                        syntax_color(mark.kind),
+                    ));
+                }
+            }
+            paint::fill_color_marks(dc, marks.into_iter())?;
+            // Keep the visible-range boundary clear above the miniature code.
+            paint::fill(
+                dc,
+                Rect {
+                    bottom: window.top + self.dpi.pixels(1),
+                    ..window
+                },
+                shell::ACCENT,
+            )?;
+            paint::fill(
+                dc,
+                Rect {
+                    top: window.bottom - self.dpi.pixels(1),
+                    ..window
+                },
+                shell::ACCENT,
+            )?;
         }
         Ok(())
     }
+}
+
+fn syntax_color(kind: jc_app::SyntaxKind) -> u32 {
+    if kind == jc_app::SyntaxKind::Plain {
+        return shell::MUTED;
+    }
+    let rgb = jc_app::syntax_theme::foreground(kind);
+    u32::from(rgb.r) | (u32::from(rgb.g) << 8) | (u32::from(rgb.b) << 16)
 }
 
 pub(super) struct Drag {
@@ -322,8 +482,14 @@ impl State {
             frame.vertical
         } else if contains(frame.horizontal.rect, x, y) {
             frame.horizontal
+        } else if let Some((_, track, _)) = frame
+            .overview
+            .as_ref()
+            .filter(|(_, track, _)| contains(track.rect, x, y))
+        {
+            *track
         } else {
-            frame.overview.as_ref().unwrap().0
+            return false;
         };
         let Some(context) = self.pointer_context(area.pane) else {
             return false;
@@ -415,7 +581,7 @@ mod tests {
         assert!(!state.update_editor_scroll(horizontal.left - 1, y));
         assert_eq!(state.workbench.horizontal_scroll_for_pane(pane), Some(0));
         state.cancel_pointer();
-        let overview = frame.overview.unwrap().0.rect;
+        let overview = frame.overview.unwrap().1.rect;
         let x = overview.left + 1;
         assert!(state.begin_editor_scroll(x, overview.bottom - 1));
         assert!(state.workbench.panes().view(pane).unwrap().scroll_line() > 0);
@@ -461,5 +627,47 @@ mod tests {
             assert!(compact.text.left <= compact.text.right);
             assert!(compact.text.top <= compact.text.bottom);
         }
+    }
+
+    #[test]
+    fn minimap_is_configurable_and_colors_bounded_samples_off_viewport() {
+        let dpi = super::super::dpi::Dpi::from_raw(96);
+        let pane = Rect {
+            left: 0,
+            top: 0,
+            right: 900,
+            bottom: 620,
+        };
+        let narrow = Geometry::with_minimap(pane, dpi, true, 60);
+        let wide = Geometry::with_minimap(pane, dpi, true, 96);
+        assert_eq!(narrow.map.unwrap().right - narrow.map.unwrap().left, 60);
+        assert_eq!(wide.map.unwrap().right - wide.map.unwrap().left, 96);
+        assert!(Geometry::with_minimap(pane, dpi, false, 96).map.is_none());
+
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.width = 1100;
+        state.height = 700;
+        state.workbench.new_file("overview.p", TextEncoding::Utf8);
+        let source = "IF condition THEN DISPLAY \"value\".\n".repeat(160);
+        state.workbench.insert_text(&source).unwrap();
+        let area = paint::text_areas(&state)
+            .into_iter()
+            .find(|area| area.pane == state.workbench.panes().active())
+            .unwrap();
+        // Several short owner-thread batches color the whole bounded overview,
+        // including samples far outside the currently visible editor rows.
+        for _ in 0..12 {
+            let frame = Frame::prepare(&mut state, &area);
+            if !frame.overview_pending {
+                break;
+            }
+        }
+        let rows = &state.editor_maps[0].samples;
+        assert!(rows.len() > area.capacity_rows);
+        assert!(rows
+            .iter()
+            .flatten()
+            .any(|mark| mark.kind == jc_app::SyntaxKind::Keyword));
+        assert!(state.editor_maps[0].colored >= rows.len());
     }
 }
