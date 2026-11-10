@@ -281,6 +281,14 @@ que también se había observado en otras ejecuciones.
 En GitHub, CIDE verificó la huella Ed25519 oficial y el servidor rechazó
 una clave de prueba sin registrar. Este caso no publica referencias.
 
+El 2026-11-10 pasó el recorrido autenticado por SSH en Windows contra
+`juancgomezm-s/RAG`. CIDE clonó dos veces, creó `cide-ssh-20261110`,
+obtuvo el primer commit desde el segundo clon, envió el segundo commit y
+lo obtuvo desde el clon inicial. GitHub confirmó dos commits y cero archivos
+cambiados. La rama de prueba quedó en `513d25bf` y `main` siguió en
+`7f23c096`. La clave temporal con acceso a `RAG` se retiró y GitHub confirmó
+su ausencia.
+
 En Windows con Rust 1.88 se validaron el clon con directorio de trabajo, la
 confirmación de referencia del envío, la huella de servidor SSH, el ciclo de
 cuarentena de worktrees y el rechazo de cambios locales o archivos ignorados
