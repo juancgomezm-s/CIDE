@@ -147,11 +147,13 @@ enum Intent {
     GraphReset,
     ResetMode(jc_app::git_commit::ResetMode),
     GraphAbortMerge,
+    GraphRepositoryMenu,
     GraphCreateReference(jc_app::git_commit::RefKind),
     HistoryParent,
     CreateCommit,
     AmendCommit,
     SubmitCommit,
+    SelectRepositoryAction(usize),
     CancelCommit,
     Merge(jc_app::git_merge_resolution::MergeAction),
     SelectMainline(usize),
@@ -981,6 +983,10 @@ impl State {
                 self.open_graph_merge_abort();
                 Action::None
             }
+            Some(Intent::GraphRepositoryMenu) => {
+                self.open_graph_repository_menu();
+                Action::None
+            }
             Some(Intent::GraphCreateReference(kind)) => {
                 self.open_graph_reference_draft(kind);
                 Action::None
@@ -999,6 +1005,11 @@ impl State {
             }
             Some(Intent::SubmitCommit) => {
                 self.submit_git_create_commit();
+                Action::None
+            }
+            Some(Intent::SelectRepositoryAction(index)) => {
+                self.git_commit.select_repository_action(index);
+                self.git_workspace.invalidate();
                 Action::None
             }
             Some(Intent::Merge(action)) => {

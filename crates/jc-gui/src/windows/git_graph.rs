@@ -228,6 +228,25 @@ impl State {
         self.git_workspace.invalidate();
     }
 
+    pub(super) fn open_graph_repository_menu(&mut self) {
+        let Some(root) = self.project_root.clone() else {
+            return;
+        };
+        if self.git_index.state() == jc_app::git_index::IndexState::Applying {
+            return;
+        }
+        let stash = self
+            .git_workspace
+            .graph
+            .as_ref()
+            .and_then(|view| view.reference_selected)
+            .filter(|_| self.git_revision.state() == GitRevisionState::Ready)
+            .and_then(|row| self.git_revision.graph()?.stash_target(row));
+        let _ = self.git_index.discard_review();
+        self.git_commit.open_repository_menu(root, stash);
+        self.git_workspace.invalidate();
+    }
+
     pub(super) fn toggle_graph_references(&mut self) {
         if self.git_revision.graph().is_some() {
             if let Some(view) = &mut self.git_workspace.graph {
@@ -278,6 +297,7 @@ impl State {
             0x1b => self.close_graph(),
             0x74 => self.open_git_graph(),
             0x52 => self.toggle_graph_references(),
+            0x4f => self.open_graph_repository_menu(),
             0x42 if view.reference_selected.is_none() => {
                 self.open_graph_reference_draft(jc_app::git_commit::RefKind::Branch)
             }
@@ -375,6 +395,7 @@ impl State {
             "Intro abrir · P cherry-pick · V revertir · X reset · A abortar · R referencias · B rama · T etiqueta · N más"
         }
         .into();
+        frame.footer.insert_str(0, "O operaciones · ");
         let graph = self.git_revision.graph();
         if let Some(graph) = graph {
             frame.summary.push(graph.heading());
@@ -454,6 +475,7 @@ impl State {
                     Intent::GraphReferences
                 },
             ),
+            (226, "Operaciones", Intent::GraphRepositoryMenu),
             (
                 if references { 440 } else { 654 },
                 if references {
@@ -524,6 +546,11 @@ impl State {
             {
                 continue;
             }
+            let offset = if offset >= 226 && !matches!(intent, Intent::GraphRepositoryMenu) {
+                offset + 107
+            } else {
+                offset
+            };
             let left = frame.preview.left + p(offset);
             let r = rect(left, top, left + p(102), top + p(24));
             if r.right <= frame.preview.right && r.bottom <= frame.preview.bottom {

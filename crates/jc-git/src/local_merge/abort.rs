@@ -35,6 +35,9 @@ impl MergeAbortPlan {
         self.journal.rebase
     }
     pub fn label(&self) -> &'static str {
+        if self.journal.stash {
+            return "Aplicación de stash pendiente";
+        }
         if self.is_rebase() {
             return "Rebase pendiente";
         }

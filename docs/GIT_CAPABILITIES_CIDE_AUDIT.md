@@ -14,7 +14,9 @@ capacidades CIDE ni prueban que CIDE ya implemente las funciones estudiadas.
 Las capturas del usuario definen expectativas de interfaz, no una autorización
 para ejecutar sus acciones sobre repositorios personales.
 
-## Qué está construido
+## Línea base de la auditoría del 5 de noviembre
+
+Las actualizaciones de implementación se registran en las secciones posteriores.
 
 | Herramienta | CIDE GUI actual | CIDE TUI actual | Diferencia por construir |
 |---|---|---|---|
@@ -150,12 +152,36 @@ reflog falta, es inválido o no coincide con la referencia, el grafo señala el
 historial parcial. Consultar reservas conserva intactos el índice, los archivos
 y el reflog.
 
-Quedan pendientes guardar, aplicar, extraer y eliminar reservas, además de
-fetch, pull, push, clone, configurar la rama de seguimiento, submódulos y
-worktrees. La versión fijada de gix tiene primitivas de negociación y fetch,
-pero CIDE todavía debe integrar un transporte autenticado y el protocolo de
-publicación. El transporte de archivos de gix puede invocar git-upload-pack,
-una ruta que queda fuera del requisito de motor embebido.
+## Operaciones del repositorio
+
+Pulsa **O** en el grafo o abre **Operaciones** en la GUI. **Intro** prepara
+la revisión. La publicación requiere **Ctrl+Intro** en la GUI o **F2** en
+la TUI. Selecciona una reserva en Referencias antes de abrir Operaciones
+para aplicarla, aplicarla y retirarla, o eliminarla.
+
+- Guardar una reserva incluye cambios rastreados, conserva los archivos sin
+  seguimiento y protege el respaldo antes de limpiar el árbol. Las dos formas
+  de aplicar muestran los conflictos en la vista de resolución de Git y
+  conservan el índice existente. El retiro depende del éxito de la aplicación.
+- La configuración local permite agregar y quitar un remoto y configurar o
+  quitar el seguimiento de la rama activa. Quitar la configuración conserva
+  las referencias de seguimiento existentes.
+- Fetch y push admiten repositorios bare locales dentro de las cuotas del
+  motor. El envío exige avance directo. Pull obtiene primero y luego pide
+  una segunda confirmación del avance directo en la rama activa. El clon
+  local publicado por la aplicación es bare y requiere un destino nuevo.
+- El inventario muestra árboles de trabajo, permite bloquear y desbloquear
+  registros enlazados y lista los submódulos del commit actual.
+
+El transporte HTTPS/SSH y sus credenciales, el clon con directorio de trabajo,
+la creación, traslado y retiro de árboles de trabajo y la inicialización y
+actualización de submódulos siguen pendientes. El transporte de archivos de
+gix puede invocar git-upload-pack, una ruta que queda fuera del requisito
+de motor embebido.
+
+La validación local en Windows cubrió 94 casos del núcleo y 17 de integración
+y consumo. Incluye preservar el índice al aplicar una reserva, rechazar envíos
+divergentes y publicar un clon bare en un destino nuevo.
 
 ## Propuesta para la TUI
 

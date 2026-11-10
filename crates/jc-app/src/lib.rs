@@ -34,6 +34,7 @@ pub mod git_graph;
 pub mod git_index;
 pub mod git_merge_resolution;
 pub mod git_read;
+pub mod git_repository;
 pub mod git_revision;
 pub mod git_status;
 pub mod git_status_tasks;

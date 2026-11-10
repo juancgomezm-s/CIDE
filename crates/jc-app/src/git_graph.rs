@@ -1,5 +1,6 @@
 //! Presentation of the bounded commit graph, with lane continuity across pages.
 use crate::git_commit::{RefKind as WriteRefKind, ReferenceTarget};
+use crate::git_repository::StashTarget;
 use jc_git::graph::{Boundary, GraphCursor, GraphNode, GraphPage, Head, RefKind, RefTarget};
 use std::sync::Arc;
 
@@ -42,6 +43,7 @@ pub struct GraphReference {
     pub(crate) oid: String,
     write: Option<ReferenceTarget>,
     active: bool,
+    stash_index: Option<usize>,
 }
 
 pub struct CommitGraph {
@@ -71,6 +73,13 @@ impl CommitGraph {
 
     pub fn reference_count(&self) -> usize {
         self.references.len() + 1
+    }
+    pub fn stash_target(&self, row: usize) -> Option<StashTarget> {
+        let reference = self.references.get(row.checked_sub(1)?)?;
+        Some(StashTarget {
+            index: reference.stash_index?,
+            oid: reference.oid.clone(),
+        })
     }
     pub fn reference_write_target(&self, row: usize) -> Option<&ReferenceTarget> {
         let reference = self.references.get(row.checked_sub(1)?)?;
@@ -184,6 +193,7 @@ impl CommitGraph {
                             oid: oid.clone(),
                             write,
                             active,
+                            stash_index: None,
                         })
                     })
                     .chain(page.stashes.entries.iter().enumerate().map(|(index, entry)| {
@@ -195,7 +205,10 @@ impl CommitGraph {
                             label.push_str(" · ");
                             label.push_str(&message);
                         }
-                        GraphReference { label, oid: entry.id.to_string(), write: None, active: false }
+                        GraphReference {
+                            label, oid: entry.id.to_string(), write: None, active: false,
+                            stash_index: Some(index),
+                        }
                     }))
                     .collect::<Arc<[_]>>()
             },
@@ -387,6 +400,13 @@ mod tests {
             Some("Reserva stash@{0} · cambios en reserva")
         );
         assert_eq!(graph.references[0].oid, id);
+        assert_eq!(
+            graph.stash_target(1),
+            Some(StashTarget {
+                index: 0,
+                oid: id.into()
+            })
+        );
         assert!(graph.reference_write_target(1).is_none());
         assert!(graph.heading().contains("historial de reservas parcial"));
     }

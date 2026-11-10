@@ -186,6 +186,9 @@ impl CommitOperation {
 enum Source {
     Branch(FullName, BranchIntegration),
     Reset(ResetMode, String),
+    Stash {
+        id: String,
+    },
     Commit {
         operation: CommitOperation,
         id: String,
@@ -198,27 +201,29 @@ enum BranchIntegration {
     Merge,
     Rebase,
     Interactive,
+    Tracking,
 }
 
 impl Source {
     fn label(&self) -> &str {
         match self {
+            Self::Branch(name, BranchIntegration::Tracking) => name_text(name),
             Self::Branch(name, _) => &name_text(name)[HEADS.len()..],
-            Self::Commit { id, .. } | Self::Reset(_, id) => id,
+            Self::Commit { id, .. } | Self::Reset(_, id) | Self::Stash { id, .. } => id,
         }
     }
 
     fn operation(&self) -> Option<CommitOperation> {
         match self {
             Self::Commit { operation, .. } => Some(*operation),
-            Self::Branch(..) | Self::Reset(..) => None,
+            Self::Branch(..) | Self::Reset(..) | Self::Stash { .. } => None,
         }
     }
 
     fn mainline(&self) -> Option<Mainline> {
         match self {
             Self::Commit { mainline, .. } => *mainline,
-            Self::Branch(..) | Self::Reset(..) => None,
+            Self::Branch(..) | Self::Reset(..) | Self::Stash { .. } => None,
         }
     }
 
@@ -242,9 +247,31 @@ impl Source {
     fn is_interactive(&self) -> bool {
         matches!(self, Self::Branch(_, BranchIntegration::Interactive))
     }
+
+    fn is_stash(&self) -> bool {
+        matches!(self, Self::Stash { .. })
+    }
+}
+
+fn validate_tracking(
+    repo: &gix::Repository,
+    active: &FullName,
+    tracking: &FullName,
+) -> Result<(), Error> {
+    if repo
+        .branch_remote_tracking_ref_name(active.as_ref(), gix::remote::Direction::Fetch)
+        .and_then(Result::ok)
+        .as_ref()
+        == Some(tracking)
+    {
+        Ok(())
+    } else {
+        Err(Error::Stale)
+    }
 }
 
 /// Identity of a reviewed integration, independent of the frontend draft.
+#[derive(Clone)]
 pub struct MergeReview {
     repository: Identity,
     limits: Limits,
@@ -1028,6 +1055,34 @@ pub fn prepare_merge(
     prepare(root, source, theirs, limits, None, cancelled)
 }
 
+/// Review an advance from the current branch to its configured tracking ref.
+/// The fetch phase is separate; this review never creates a merge commit.
+pub fn prepare_tracking_fast_forward(
+    root: &Path,
+    tracking: &str,
+    expected_tip: &str,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    let suffix = tracking
+        .strip_prefix("refs/remotes/")
+        .ok_or(Error::Unsupported)?;
+    if !suffix.contains('/') || tracking.len() > limits.max_path {
+        return Err(Error::Unsupported);
+    }
+    ref_write::reference_name(RefKind::Branch, suffix, limits)?;
+    let name = FullName::try_from(gix::bstr::BString::from(tracking)).map_err(engine)?;
+    let theirs = ObjectId::from_hex(expected_tip.as_bytes()).map_err(engine)?;
+    prepare(
+        root,
+        Source::Branch(name, BranchIntegration::Tracking),
+        theirs,
+        limits,
+        None,
+        cancelled,
+    )
+}
+
 pub fn prepare_rebase(
     root: &Path,
     onto: &str,
@@ -1089,6 +1144,29 @@ pub fn prepare_reset(
         root,
         Source::Reset(mode, target.to_string()),
         target,
+        limits,
+        None,
+        cancelled,
+    )
+}
+
+/// Preview applying the working-tree snapshot stored in a stash commit.
+/// The selected reflog position is carried into the journal for safe resume.
+pub fn prepare_stash(
+    root: &Path,
+    stash: &str,
+    _index: usize,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    let id = ObjectId::from_hex(stash.as_bytes()).map_err(engine)?;
+    if id.is_null() {
+        return Err(Error::Unsupported);
+    }
+    prepare(
+        root,
+        Source::Stash { id: id.to_string() },
+        id,
         limits,
         None,
         cancelled,
@@ -1171,12 +1249,15 @@ fn prepare(
     controlled(limits.timeout, cancelled, |ctx| {
         let (repo, repository) = open(root, ctx)?;
         let (active, refs) = refs(&repo, limits, ctx)?;
-        if let Source::Branch(incoming, _) = &source {
+        if let Source::Branch(incoming, mode) = &source {
             if ref_write::namespace_conflicts(active.as_bstr().as_bytes(), name_text(incoming)) {
                 return Err(Error::Engine("Elige otra rama local".into()));
             }
             if direct_branch(&refs, incoming)? != theirs {
                 return Err(Error::Stale);
+            }
+            if *mode == BranchIntegration::Tracking {
+                validate_tracking(&repo, &active, incoming)?;
             }
         }
         let head = direct_branch(&refs, &active)?;
@@ -1198,9 +1279,14 @@ fn prepare(
                 || journal.commit_operation != source.operation()
                 || journal.rebase != source.is_rebase()
                 || journal.reset != source.reset_mode()
+                || journal.stash != source.is_stash()
                 || journal.destination != source.label()
                 || journal.incoming != Some(theirs)
-                || (head != journal.from && head != journal.to)
+                || if source.is_stash() {
+                    head != journal.from
+                } else {
+                    head != journal.from && head != journal.to
+                }
             {
                 return Err(Error::Engine(format!(
                     "Hay una operación pendiente con {}. Elige la misma operación y el mismo origen, o selecciona Abortar",
@@ -1358,6 +1444,12 @@ fn prepare(
             } else {
                 commit.parents.first().copied()
             }
+        } else if plan.source.is_stash() {
+            let stash = revision::commit(&repo, theirs, limits, &mut Budget::new(limits), ctx)?;
+            if stash.limited || stash.parents.len() < 2 || stash.parents.len() > 3 {
+                return Err(Error::Unsupported);
+            }
+            Some(stash.parents[0])
         } else {
             Some(base(&repo, from, theirs, limits, ctx)?)
         };
@@ -1366,6 +1458,14 @@ fn prepare(
                 return Err(Error::Stale);
             }
             return Ok(plan);
+        }
+        if matches!(plan.source, Source::Branch(_, BranchIntegration::Tracking))
+            && common != Some(from)
+        {
+            return Err(Error::Engine(
+                "La rama local y su seguimiento divergieron; el pull sólo admite avance directo"
+                    .into(),
+            ));
         }
         let old_tree = tree_id(&repo, from, limits, ctx)?;
         let their_tree = if let Some(commit) = picked {
@@ -1392,7 +1492,7 @@ fn prepare(
                 (base_tree, Some(their_tree))
             };
             let mut parents = vec![from];
-            if operation.is_none() {
+            if operation.is_none() && !plan.source.is_stash() {
                 parents.push(theirs);
             }
             let mut candidate =
@@ -1473,9 +1573,7 @@ fn prepare(
                     plan.kind = MergeKind::UpToDate;
                     return Ok(plan);
                 }
-                commit_write::check_signing(&repo)?;
-                let signature = commit_write::local_identity(&repo)?;
-                let commit = if plan.is_cherry_pick() {
+                let commit = if plan.source.is_stash() {
                     let original = revision::verified(
                         &repo,
                         theirs,
@@ -1491,34 +1589,60 @@ fn prepare(
                     Commit {
                         tree,
                         parents: parents.into_iter().collect(),
-                        committer: signature,
+                        author: original.author,
+                        committer: original.committer,
                         extra_headers: Vec::new(),
-                        ..original
+                        encoding: None,
+                        message: format!("CIDE stash apply {theirs}\n").into(),
                     }
                 } else {
-                    let message = if operation == Some(CommitOperation::Revert) {
-                        let short = theirs.to_hex_with_len(12);
-                        let mut message =
-                            format!("Revertir {short}\n\nRevierte el commit {theirs}.\n");
-                        if let Some((number, parent)) = plan.mainline() {
-                            message.push_str(&format!("Padre principal {number}: {parent}.\n"));
+                    commit_write::check_signing(&repo)?;
+                    let signature = commit_write::local_identity(&repo)?;
+                    if plan.is_cherry_pick() {
+                        let original = revision::verified(
+                            &repo,
+                            theirs,
+                            limits.max_bytes.min(crate::OBJECT_BYTES as usize),
+                            ctx,
+                        )?
+                        .try_into_commit()
+                        .map_err(engine)?
+                        .decode()
+                        .map_err(engine)?
+                        .into_owned()
+                        .map_err(engine)?;
+                        Commit {
+                            tree,
+                            parents: parents.into_iter().collect(),
+                            committer: signature,
+                            extra_headers: Vec::new(),
+                            ..original
                         }
-                        message
                     } else {
-                        format!(
-                            "Fusionar rama '{}' en '{}'\n",
-                            plan.incoming(),
-                            plan.active()
-                        )
-                    };
-                    Commit {
-                        tree,
-                        parents: parents.into_iter().collect(),
-                        author: signature.clone(),
-                        committer: signature,
-                        encoding: None,
-                        extra_headers: Vec::new(),
-                        message: message.into(),
+                        let message = if operation == Some(CommitOperation::Revert) {
+                            let short = theirs.to_hex_with_len(12);
+                            let mut message =
+                                format!("Revertir {short}\n\nRevierte el commit {theirs}.\n");
+                            if let Some((number, parent)) = plan.mainline() {
+                                message.push_str(&format!("Padre principal {number}: {parent}.\n"));
+                            }
+                            message
+                        } else {
+                            format!(
+                                "Fusionar rama '{}' en '{}'\n",
+                                plan.incoming(),
+                                plan.active()
+                            )
+                        };
+                        Commit {
+                            tree,
+                            parents: parents.into_iter().collect(),
+                            author: signature.clone(),
+                            committer: signature,
+                            encoding: None,
+                            extra_headers: Vec::new(),
+                            message: message.into(),
+                        }
                     }
                 };
                 let mut bytes = Vec::new();
@@ -1550,6 +1674,7 @@ fn prepare(
                     incoming: theirs,
                     commit_operation: operation,
                     rebase: false,
+                    stash: plan.source.is_stash(),
                     mainline: plan.source.mainline(),
                     entries: &entries,
                     blobs: &blobs,
@@ -1560,7 +1685,7 @@ fn prepare(
             limits,
             ctx,
         )?;
-        plan.completed = head == result;
+        plan.completed = !plan.source.is_stash() && head == result;
         if plan.completed && !checkout.index_published(&plan.index) {
             return Err(Error::Stale);
         }
@@ -1602,6 +1727,11 @@ pub fn apply_merge(
                 (_, Some(ResetMode::Hard)) => {
                     return Error::Engine(format!(
                         "{error}. Elige Abortar para recuperar el reset hard"
+                    ));
+                }
+                _ if plan.source.is_stash() => {
+                    return Error::Engine(format!(
+                        "{error}. El stash se conserva; vuelve a aplicar el mismo stash para reanudar o aborta la operación"
                     ));
                 }
                 _ if plan.is_rebase() => {
@@ -1646,7 +1776,11 @@ fn publish(
         Marker::acquire_to_hold_resource(git.join(name), Fail::Immediately, boundary, 0)
             .map_err(engine)
     };
-    let expected_head = if plan.completed { result } else { plan.from };
+    let expected_head = if plan.completed && !plan.source.is_stash() {
+        result
+    } else {
+        plan.from
+    };
     let verify_refs = |repo: &gix::Repository, expected| -> Result<(), Error> {
         let (active, refs) = refs(repo, plan.limits, &ctx)?;
         if active != plan.active
@@ -1655,10 +1789,13 @@ fn publish(
         {
             return Err(Error::Stale);
         }
-        if let Source::Branch(incoming, _) = &plan.source
-            && direct_branch(&refs, incoming)? != plan.theirs
-        {
-            return Err(Error::Stale);
+        if let Source::Branch(incoming, mode) = &plan.source {
+            if direct_branch(&refs, incoming)? != plan.theirs {
+                return Err(Error::Stale);
+            }
+            if *mode == BranchIntegration::Tracking {
+                validate_tracking(repo, &active, incoming)?;
+            }
         }
         Ok(())
     };
@@ -1707,11 +1844,15 @@ fn publish(
     };
     checkout.validate(&fresh, &identity, original, plan.limits, &ctx)?;
     if let Some(objects) = &plan.objects {
-        commit_write::check_signing(&fresh)?;
+        if !plan.source.is_stash() {
+            commit_write::check_signing(&fresh)?;
+        }
         let signature = commit_write::local_identity(&fresh)?;
-        if objects.commits.iter().any(|(_, commit)| {
-            signature.name != commit.committer.name || signature.email != commit.committer.email
-        }) {
+        if !plan.source.is_stash()
+            && objects.commits.iter().any(|(_, commit)| {
+                signature.name != commit.committer.name || signature.email != commit.committer.email
+            })
+        {
             return Err(Error::Stale);
         }
         for (id, bytes) in &objects.blobs {
@@ -1737,7 +1878,7 @@ fn publish(
         &mut Budget::new(plan.limits),
         &ctx,
     )?;
-    let logs = if plan.write_reflog && !plan.completed {
+    let logs = if plan.write_reflog && !plan.completed && !plan.source.is_stash() {
         let line = gix::refs::log::Line {
             previous_oid: plan.from,
             new_oid: result,
@@ -1766,7 +1907,7 @@ fn publish(
     } else {
         None
     };
-    if !plan.completed {
+    if !plan.completed && !plan.source.is_stash() {
         writeln!(branch, "{result}")?;
         branch.with_mut(|file| file.sync_all())?;
     }
@@ -1800,7 +1941,7 @@ fn publish(
     }
     check()?;
     let _branch_again;
-    if !plan.completed {
+    if !plan.completed && !plan.source.is_stash() {
         branch.commit().map_err(engine)?;
         _branch_again = hold(active, Some(git.join("refs")))?;
         let (fresh, identity) = open(&plan.repository.root, &ctx)?;

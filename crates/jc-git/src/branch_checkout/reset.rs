@@ -159,6 +159,7 @@ impl Checkout {
                     incoming: Some(commits.1),
                     commit_operation: None,
                     rebase: false,
+                    stash: false,
                     reset: Some(mode),
                     hard_manifest: None,
                     mainline: None,

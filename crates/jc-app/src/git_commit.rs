@@ -2,6 +2,10 @@
 use crate::{
     edit_field,
     git_merge_resolution::{MergeAction, MergeDraft, MergeFile, MergePane},
+    git_repository::{
+        repository_actions, RepositoryAction, RepositoryDraft, RepositoryOutcome,
+        RepositoryResolution, RepositoryReview, StashTarget,
+    },
     git_revision::{ComparisonOrigin, PairKind, RevisionComparison},
     FieldEdit, Wakeup, Workbench,
 };
@@ -13,7 +17,7 @@ use jc_git::local_merge::{
     apply_merge, apply_merge_abort, prepare_commit_mainline, prepare_commit_operation,
     prepare_interactive_rebase, prepare_merge, prepare_merge_abort, prepare_rebase,
     prepare_rebase_todo, prepare_reset, prepare_resolved_merge, MergeAbortPlan, MergeKind,
-    MergePlan, RebaseStep, RebaseStepState,
+    MergePlan, MergeReview, RebaseStep, RebaseStepState,
 };
 pub use jc_git::local_merge::{CommitOperation, RebaseAction, ResetMode};
 use jc_git::local_pair::SourceIdentity;
@@ -44,6 +48,7 @@ const LIMITS: jc_git::Limits = jc_git::Limits {
 enum Completion {
     Review(Result<WritePlan, jc_git::Error>),
     Applied(Result<String, jc_git::Error>),
+    PullReview(Box<MergePlan>),
     Panic,
 }
 enum WritePlan {
@@ -54,6 +59,22 @@ enum WritePlan {
     Merge(Box<MergePlan>),
     MergeAbort(Box<MergeAbortPlan>),
     Restore(Box<RestorePlan>),
+    Repository(Box<RepositoryReview>),
+}
+
+impl WritePlan {
+    fn merge(&self) -> Option<&MergePlan> {
+        match self {
+            Self::Merge(plan) => Some(plan),
+            Self::Repository(plan) => plan.merge_plan(),
+            _ => None,
+        }
+    }
+}
+
+enum ResolutionReview {
+    Merge(Box<MergeReview>),
+    Repository(Box<RepositoryResolution>),
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -75,6 +96,8 @@ pub enum WriteDraft {
     Reset(ResetMode, String),
     AbortMerge,
     Restore(Arc<RevisionComparison>),
+    RepositoryMenu(Option<StashTarget>),
+    Repository(RepositoryDraft),
 }
 
 impl WriteDraft {
@@ -83,6 +106,9 @@ impl WriteDraft {
     }
 
     fn has_input(&self) -> bool {
+        if let Self::Repository(draft) = self {
+            return draft.action.prompt().is_some();
+        }
         !matches!(
             self,
             Self::ChangeReference(_, false)
@@ -93,6 +119,7 @@ impl WriteDraft {
                 | Self::Reset(..)
                 | Self::AbortMerge
                 | Self::Restore(_)
+                | Self::RepositoryMenu(_)
         )
     }
 
@@ -112,11 +139,14 @@ impl WriteDraft {
             || self.publishes_integration()
             || matches!(
                 self,
-                Self::SwitchBranch(_) | Self::AbortMerge | Self::Reset(..)
+                Self::SwitchBranch(_) | Self::AbortMerge | Self::Reset(..) | Self::Repository(_)
             )
     }
 
     fn refreshes_files(&self) -> bool {
+        if let Self::Repository(draft) = self {
+            return draft.action.changes_files();
+        }
         self.publishes_integration()
             || matches!(
                 self,
@@ -192,6 +222,8 @@ impl CommitView {
             WriteDraft::Restore(comparison) => {
                 restore_label(comparison).unwrap_or("Restaurar archivo")
             }
+            WriteDraft::RepositoryMenu(_) => "Operaciones del repositorio",
+            WriteDraft::Repository(draft) => draft.action.title(),
             WriteDraft::Commit if self.replaces.is_some() => "Modificar último commit",
             WriteDraft::Commit => "Crear commit",
         }
@@ -214,12 +246,25 @@ impl CommitView {
             }
             WriteDraft::AbortMerge => "Revisando cambios de la operación… · Esc cancela",
             WriteDraft::Reset(..) => "Calculando el reset… · Esc cancela",
+            WriteDraft::Repository(_) => "Revisando el repositorio… · Esc cancela",
             _ => "Comprobando referencia… · Esc cancela",
         }
     }
     pub fn review(&self) -> Option<&CommitPlan> {
         match &self.review {
             Some(WritePlan::Commit(plan)) => Some(plan),
+            _ => None,
+        }
+    }
+    pub fn repository_menu(&self) -> Option<impl Iterator<Item = RepositoryAction> + use<>> {
+        let WriteDraft::RepositoryMenu(target) = &self.draft else {
+            return None;
+        };
+        Some(repository_actions(target.is_some()))
+    }
+    pub fn repository_review(&self) -> Option<&RepositoryReview> {
+        match &self.review {
+            Some(WritePlan::Repository(plan)) => Some(plan),
             _ => None,
         }
     }
@@ -251,10 +296,7 @@ impl CommitView {
         self.review.is_some()
     }
     pub fn merge_review(&self) -> Option<&MergePlan> {
-        match &self.review {
-            Some(WritePlan::Merge(plan)) => Some(plan),
-            _ => None,
-        }
+        self.review.as_ref()?.merge()
     }
     pub fn merge_conflicts(&self) -> Option<&MergePlan> {
         self.merge_review()
@@ -433,6 +475,22 @@ impl CommitController {
             self.open_write(root, None, WriteDraft::Restore(comparison));
         }
     }
+    pub fn open_repository_menu(&mut self, root: PathBuf, stash: Option<StashTarget>) {
+        self.open_write(root, None, WriteDraft::RepositoryMenu(stash));
+    }
+    pub fn select_repository_action(&mut self, index: usize) {
+        if self.busy() {
+            return;
+        }
+        if let Some(view) = &mut self.view {
+            if view
+                .repository_menu()
+                .is_some_and(|mut actions| actions.nth(index).is_some())
+            {
+                view.first = index;
+            }
+        }
+    }
     fn open_write(&mut self, root: PathBuf, replaces: Option<AmendTarget>, draft: WriteDraft) {
         if self.job.is_none() && self.view.is_none() {
             self.view = Some(CommitView {
@@ -491,9 +549,10 @@ impl CommitController {
         let Some(view) = self.view.as_mut() else {
             return;
         };
-        if let (Some(WritePlan::Merge(plan)), Some(file)) =
-            (&view.review, &mut view.merge_draft.file)
-        {
+        if let (Some(plan), Some(file)) = (
+            view.review.as_ref().and_then(WritePlan::merge),
+            &mut view.merge_draft.file,
+        ) {
             view.error = file.edit(plan, edit).err().map(str::to_owned);
             view.input_token = Arc::new(());
             return;
@@ -519,7 +578,7 @@ impl CommitController {
             return;
         }
         let Some(view) = &mut self.view else { return };
-        let Some(WritePlan::Merge(plan)) = &view.review else {
+        let Some(plan) = view.review.as_ref().and_then(WritePlan::merge) else {
             return;
         };
         if plan.kind != MergeKind::Conflicts {
@@ -625,16 +684,23 @@ impl CommitController {
         let Some(view) = &mut self.view else {
             return;
         };
-        if let (Some(WritePlan::Merge(plan)), Some(file)) =
-            (&view.review, &mut view.merge_draft.file)
-        {
+        if let (Some(plan), Some(file)) = (
+            view.review.as_ref().and_then(WritePlan::merge),
+            &mut view.merge_draft.file,
+        ) {
             view.error = file.scroll(plan, delta).err().map(str::to_owned);
             view.input_token = Arc::new(());
             return;
         }
         let count = view
-            .review()
-            .map(|plan| plan.files().len())
+            .repository_menu()
+            .map(Iterator::count)
+            .or_else(|| {
+                view.repository_review()
+                    .filter(|_| view.merge_conflicts().is_none())
+                    .map(|plan| plan.rows.len())
+            })
+            .or_else(|| view.review().map(|plan| plan.files().len()))
             .or_else(|| view.branch_switch_review().map(|plan| plan.files().len()))
             .or_else(|| {
                 view.merge_review().map(|plan| {
@@ -705,6 +771,22 @@ impl CommitController {
             self.cancel();
             return;
         }
+        if let WriteDraft::RepositoryMenu(stash) = &view.draft {
+            if let Some(action) = repository_actions(stash.is_some()).nth(view.first) {
+                let stash = stash.clone().filter(|_| action.uses_stash());
+                view.draft = WriteDraft::Repository(RepositoryDraft { action, stash });
+                view.first = 0;
+                view.input_token = Arc::new(());
+            }
+            return;
+        }
+        if view
+            .repository_review()
+            .is_some_and(|review| !review.can_apply())
+            && view.merge_conflicts().is_none()
+        {
+            return;
+        }
         let mainline = if let Some(plan) = view.choosing_mainline() {
             let Some(review) = plan.mainline_review(view.first) else {
                 return;
@@ -718,7 +800,17 @@ impl CommitController {
             if view.merge_file().is_some() || !view.all_merge_choices_saved() {
                 return;
             }
-            let Some(review) = plan.resolution_review() else {
+            let review = if let Some(repository) = view.repository_review() {
+                repository
+                    .resolution_token()
+                    .map(Box::new)
+                    .map(ResolutionReview::Repository)
+            } else {
+                plan.resolution_review()
+                    .map(Box::new)
+                    .map(ResolutionReview::Merge)
+            };
+            let Some(review) = review else {
                 return;
             };
             Some((review, view.merge_draft.choices.clone()))
@@ -736,7 +828,8 @@ impl CommitController {
         ) || (matches!(view.draft, WriteDraft::AbortMerge)
             && view.merge_abort_review().is_none_or(|plan| {
                 matches!(plan.reset_mode(), Some(ResetMode::Soft | ResetMode::Mixed))
-            }));
+            }))
+            || matches!(&view.draft, WriteDraft::Repository(draft) if !draft.action.changes_files());
         if !view.draft.is_reference()
             && !preserves_worktree
             && crate::git_index::require_clean(bench).is_err()
@@ -780,12 +873,19 @@ impl CommitController {
                         );
                     }
                     if let Some((review, choices)) = resolution {
-                        return Completion::Review(
-                            prepare_resolved_merge(review, choices, cancelled)
+                        return Completion::Review(match review {
+                            ResolutionReview::Merge(review) => prepare_resolved_merge(*review, choices, cancelled)
                                 .map(|plan| WritePlan::Merge(Box::new(plan))),
-                        );
+                            ResolutionReview::Repository(review) => review.prepare(choices, cancelled)
+                                .map(|plan| WritePlan::Repository(Box::new(plan))),
+                        });
                     }
                     match plan {
+                        Some(WritePlan::Repository(plan)) => match plan.apply(cancelled) {
+                            Ok(RepositoryOutcome::Done(notice)) => Completion::Applied(Ok(notice)),
+                            Ok(RepositoryOutcome::PullReview(plan)) => Completion::PullReview(plan),
+                            Err(error) => Completion::Applied(Err(error)),
+                        },
                         Some(WritePlan::Commit(plan)) => {
                             Completion::Applied(apply_commit(*plan, cancelled).map(|publication| {
                                 publication.reflog_warning.unwrap_or_else(|| {
@@ -844,6 +944,7 @@ impl CommitController {
                                 Some(CommitOperation::Revert) => "Reversión publicada",
                                 None if plan.reset_mode().is_some() => "Reset aplicado",
                                 None if plan.is_rebase() => "Rebase aplicado",
+                                None if matches!(&draft, WriteDraft::Repository(draft) if draft.action == RepositoryAction::Pull) => "Avance directo aplicado",
                                 None => "Fusión local publicada",
                             };
                             Completion::Applied(apply_merge(*plan, cancelled).map(|publication| {
@@ -902,6 +1003,9 @@ impl CommitController {
                             }))
                         }
                         None => Completion::Review(match (draft, replaces) {
+                            (WriteDraft::Repository(draft), _) => crate::git_repository::prepare(&root, draft, &message, LIMITS, cancelled)
+                                .map(|plan| WritePlan::Repository(Box::new(plan))),
+                            (WriteDraft::RepositoryMenu(_), _) => Err(jc_git::Error::Unsupported),
                             (WriteDraft::CreateReference(kind, target), _) => {
                                 prepare_ref(&root, &target, kind, &message, LIMITS, cancelled)
                                     .map(|plan| WritePlan::Reference(Box::new(plan)))
@@ -1013,6 +1117,22 @@ impl CommitController {
             return (true, None);
         };
         match result {
+            Completion::PullReview(plan) => {
+                view.review = Some(WritePlan::Merge(plan));
+                view.first = 0;
+                let root = view.root.clone();
+                let notice = "Obtención completada · revisa el avance directo".to_owned();
+                self.notice = Some((root.clone(), notice.clone()));
+                return (
+                    true,
+                    Some(CommitOutcome {
+                        root,
+                        result: Ok(notice),
+                        reference: true,
+                        refresh_files: false,
+                    }),
+                );
+            }
             Completion::Review(Ok(plan)) => {
                 if let Some(WritePlan::Merge(previous)) = view.review.replace(plan) {
                     if previous.is_rebase() {

@@ -12,8 +12,13 @@ pub mod local_pair;
 pub mod patch_export;
 pub mod path_history;
 pub mod ref_write;
+pub mod remote;
+pub mod remote_config_write;
 pub mod restore;
 pub mod revision;
+pub mod stash;
+pub mod submodules;
+pub mod worktrees;
 use gix::bstr::ByteSlice;
 use std::{
     collections::BTreeMap,
@@ -654,6 +659,101 @@ mod repository_context_tests {
             max_bytes: 64 * 1024,
             timeout: Duration::from_secs(5),
         }
+    }
+    #[cfg(windows)]
+    #[test]
+    fn remote_config_reviews_exact_bytes_and_guards_upstream_head() {
+        use remote_config_write::{Change, apply, prepare};
+        let fixture = Fixture::new();
+        gix::init(&fixture.root).unwrap();
+        let git = fixture.root.join(".git");
+        let path = git.join("config");
+        let old = fs::read(&path).unwrap();
+        assert!(
+            prepare(
+                &fixture.root,
+                Change::AddRemote {
+                    name: "origin",
+                    location: "https://user:secret@example.invalid/project.git",
+                },
+                limits(),
+                || false
+            )
+            .is_err()
+        );
+        let review = prepare(
+            &fixture.root,
+            Change::AddRemote {
+                name: "origin",
+                location: "https://example.invalid/project.git",
+            },
+            limits(),
+            || false,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), old);
+        let mut concurrent = old.clone();
+        concurrent.extend_from_slice(b"\n# cambio concurrente\n");
+        fs::write(&path, &concurrent).unwrap();
+        assert!(matches!(apply(review, || false), Err(Error::Stale)));
+        assert_eq!(fs::read(&path).unwrap(), concurrent);
+        let review = prepare(
+            &fixture.root,
+            Change::AddRemote {
+                name: "origin",
+                location: "https://example.invalid/project.git",
+            },
+            limits(),
+            || false,
+        )
+        .unwrap();
+        apply(review, || false).unwrap();
+        let head_path = git.join("HEAD");
+        let head = fs::read(&head_path).unwrap();
+        let set = || {
+            prepare(
+                &fixture.root,
+                Change::SetUpstream {
+                    remote: "origin",
+                    branch: "main",
+                },
+                limits(),
+                || false,
+            )
+        };
+        let review = set().unwrap();
+        fs::write(&head_path, b"ref: refs/heads/otra\n").unwrap();
+        assert!(matches!(apply(review, || false), Err(Error::Stale)));
+        fs::write(&head_path, &head).unwrap();
+        apply(set().unwrap(), || false).unwrap();
+        let repo = gix::open(&fixture.root).unwrap();
+        let branch = repo.head_name().unwrap().unwrap();
+        assert_eq!(
+            repo.branch_remote_name(branch.shorten(), gix::remote::Direction::Fetch)
+                .unwrap()
+                .as_bstr()
+                .as_bytes(),
+            b"origin"
+        );
+        let review = prepare(
+            &fixture.root,
+            Change::RemoveRemote { name: "origin" },
+            limits(),
+            || false,
+        )
+        .unwrap();
+        apply(review, || false).unwrap();
+        let repo = gix::open(&fixture.root).unwrap();
+        assert!(repo.find_remote("origin").is_err());
+        assert!(
+            repo.branch_remote_name(branch.shorten(), gix::remote::Direction::Fetch)
+                .is_none()
+        );
+        assert!(
+            fs::read_to_string(&path)
+                .unwrap()
+                .contains("# cambio concurrente")
+        );
     }
     #[test]
     fn reviewed_commit_pins_staged_bytes_and_rejects_changed_index_and_head() {

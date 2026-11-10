@@ -298,6 +298,7 @@ pub(super) fn review(
                 incoming: plan.theirs,
                 commit_operation: None,
                 rebase: true,
+                stash: false,
                 mainline: None,
                 entries: &rebased,
                 blobs: &blobs,

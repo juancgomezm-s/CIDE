@@ -180,6 +180,14 @@ impl State {
         } else if mods == Modifiers::NONE {
             match code {
                 0x0d => self.submit_git_create_commit(),
+                0x26 | 0x28 | 0x21 | 0x22 if view.repository_menu().is_some() => {
+                    self.git_commit.scroll(match code {
+                        0x26 => -1,
+                        0x28 => 1,
+                        0x21 => -10,
+                        _ => 10,
+                    });
+                }
                 0x09 | 0x26 | 0x28 if matches!(view.draft, WriteDraft::Reset(..)) => {
                     self.git_commit
                         .step_reset_mode(if code == 0x26 { -1 } else { 1 });
@@ -320,6 +328,36 @@ impl State {
         f.buttons.clear();
         f.hits.actions.clear();
         f.subtitle = view.title().into();
+        if let Some(actions) = view.repository_menu() {
+            f.summary = vec!["Selecciona una operación de Git".into()];
+            f.footer = "↑↓ seleccionar · Intro abrir · Esc cerrar".into();
+            self.add_merge_button(&mut f, 12, 106, "Abrir", true, Intent::SubmitCommit);
+            let top = f.preview.top + p(132);
+            let height = p(23).max(1);
+            let count = ((f.preview.bottom - top) / height).clamp(0, 24) as usize;
+            let first = view.first.saturating_sub(count.saturating_sub(1));
+            for (row, (index, action)) in actions.enumerate().skip(first).take(count).enumerate() {
+                let y = top + row as i32 * height;
+                let rect = rect(
+                    f.preview.left + p(12),
+                    y,
+                    f.preview.right - p(12),
+                    y + height,
+                );
+                f.code.push(CodeRow {
+                    rect,
+                    old: String::new(),
+                    new: String::new(),
+                    text: action.title().into(),
+                    kind: if index == view.first { 2 } else { 0 },
+                    parallel: true,
+                });
+                f.hits
+                    .actions
+                    .push((rect, Intent::SelectRepositoryAction(index)));
+            }
+            return f;
+        }
         if let (Some(plan), Some(file)) = (view.merge_conflicts(), view.merge_file()) {
             f.subtitle = "Resolver conflicto".into();
             let row_height = self.cell_height.max(p(16));
@@ -399,6 +437,15 @@ impl State {
                     .into()
             } else if self.git_commit.busy() {
                 view.pending_hint().into()
+            } else if let Some(review) = view
+                .repository_review()
+                .filter(|_| view.merge_conflicts().is_none())
+            {
+                if review.can_apply() {
+                    "↑↓ recorrer · Ctrl+Intro confirmar · Esc cancelar".into()
+                } else {
+                    "↑↓ recorrer · Esc volver".into()
+                }
             } else if view.rebase_todo().is_some() {
                 "↑↓ elige · Ctrl+↑↓ mueve · P reaplica · S combina · D omite · Intro revisa".into()
             } else if view.choosing_mainline().is_some() {
@@ -461,13 +508,39 @@ impl State {
         );
         let width = ((r.right - r.left - p(16)) / self.cell_width.max(1)).clamp(1, 256) as usize;
         let field = present_field(&view.message, view.cursor, width, 1);
-        f.query = view.has_input().then(|| QueryRow {
+        f.query = (view.has_input() && view.repository_review().is_none()).then(|| QueryRow {
             rect: r,
             text: field.rows.first().cloned().unwrap_or_default(),
             caret: (!self.git_commit.busy() && !view.reviewing())
                 .then_some(field.cursor_column as i32 * self.cell_width),
         });
-        let (label, offset) = if let Some(plan) = view.reference_change_review() {
+        let (label, offset) = if let Some(review) = view
+            .repository_review()
+            .filter(|_| view.merge_conflicts().is_none())
+        {
+            f.summary = vec![format!("{} elementos", review.rows.len())];
+            let top = f.preview.top + p(132);
+            let height = p(23).max(1);
+            let count = ((f.preview.bottom - top) / height).clamp(0, 24) as usize;
+            let first = view.first.min(review.rows.len().saturating_sub(count));
+            for (row, text) in review.rows.iter().skip(first).take(count).enumerate() {
+                let y = top + row as i32 * height;
+                f.code.push(CodeRow {
+                    rect: rect(
+                        f.preview.left + p(12),
+                        y,
+                        f.preview.right - p(12),
+                        y + height,
+                    ),
+                    old: String::new(),
+                    new: String::new(),
+                    text: text.clone(),
+                    kind: 0,
+                    parallel: true,
+                });
+            }
+            ("Confirmar operación", 12)
+        } else if let Some(plan) = view.reference_change_review() {
             f.summary = vec![match plan.destination() {
                 Some(name) => format!("{} → {name}", plan.source()),
                 None => format!("Se eliminará la referencia {}", plan.source()),
@@ -1010,6 +1083,13 @@ impl State {
         } else if let WriteDraft::Restore(comparison) = &view.draft {
             f.summary = vec![opaque(&comparison.path, 256)];
             ("Revisar archivo", 12)
+        } else if let WriteDraft::Repository(draft) = &view.draft {
+            f.summary.extend(draft.action.prompt().map(str::to_owned));
+            if let Some(stash) = &draft.stash {
+                f.summary
+                    .push(format!("Reserva stash@{{{}}} · {}", stash.index, stash.oid));
+            }
+            ("Revisar operación", 12)
         } else {
             f.summary = vec![if let Some(old) = &view.replaces {
                 format!(
@@ -1022,6 +1102,10 @@ impl State {
             ("Revisar preparados", 12)
         };
         if !self.git_commit.busy()
+            && (view
+                .repository_review()
+                .is_none_or(|review| review.can_apply())
+                || view.all_merge_choices_saved())
             && (view.choosing_mainline().is_some()
                 || view.rebase_todo().is_some()
                 || view.all_merge_choices_saved()

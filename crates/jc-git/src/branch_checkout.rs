@@ -40,6 +40,7 @@ pub(super) struct Journal {
     pub incoming: Option<ObjectId>,
     pub commit_operation: Option<CommitOperation>,
     pub rebase: bool,
+    pub stash: bool,
     pub reset: Option<ResetMode>,
     hard_manifest: Option<ObjectId>,
     pub mainline: Option<Mainline>,
@@ -77,8 +78,10 @@ impl Journal {
                 "CIDE-RESET-SOFT-ABORT-1" | "CIDE-RESET-MIXED-ABORT-1" | "CIDE-RESET-HARD-ABORT-1",
             ) => (true, None, true, false),
             Some("CIDE-SWITCH-1") => (false, None, false, false),
-            Some("CIDE-MERGE-1" | "CIDE-REBASE-1") => (true, None, false, false),
-            Some("CIDE-MERGE-ABORT-1" | "CIDE-REBASE-ABORT-1") => (true, None, true, false),
+            Some("CIDE-MERGE-1" | "CIDE-REBASE-1" | "CIDE-STASH-1") => (true, None, false, false),
+            Some("CIDE-MERGE-ABORT-1" | "CIDE-REBASE-ABORT-1" | "CIDE-STASH-ABORT-1") => {
+                (true, None, true, false)
+            }
             Some("CIDE-PICK-1") => (true, Some(CherryPick), false, false),
             Some("CIDE-PICK-ABORT-1") => (true, Some(CherryPick), true, false),
             Some("CIDE-PICK-2") => (true, Some(CherryPick), false, true),
@@ -128,6 +131,7 @@ impl Journal {
             incoming,
             commit_operation,
             rebase: matches!(header, Some("CIDE-REBASE-1" | "CIDE-REBASE-ABORT-1")),
+            stash: matches!(header, Some("CIDE-STASH-1" | "CIDE-STASH-ABORT-1")),
             reset,
             hard_manifest,
             mainline,
@@ -149,6 +153,8 @@ impl Journal {
                 (Some(ResetMode::Mixed), true) => "CIDE-RESET-MIXED-ABORT-1",
                 (Some(ResetMode::Hard), false) => "CIDE-RESET-HARD-1",
                 (Some(ResetMode::Hard), true) => "CIDE-RESET-HARD-ABORT-1",
+                (None, false) if self.stash => "CIDE-STASH-1",
+                (None, true) if self.stash => "CIDE-STASH-ABORT-1",
                 (None, false) if self.rebase => "CIDE-REBASE-1",
                 (None, true) if self.rebase => "CIDE-REBASE-ABORT-1",
                 (None, _) => match (
@@ -421,6 +427,7 @@ pub(super) struct MergeCheckout<'a> {
     pub incoming: ObjectId,
     pub commit_operation: Option<CommitOperation>,
     pub rebase: bool,
+    pub stash: bool,
     pub mainline: Option<Mainline>,
     pub entries: &'a BTreeMap<Vec<u8>, revision::Entry>,
     pub blobs: &'a BTreeMap<ObjectId, Vec<u8>>,
@@ -669,9 +676,9 @@ impl Checkout {
             return Err(Error::Unsupported);
         }
         let current_index = index_id(bytes, ctx)?;
-        let index_applied = pending
-            .as_ref()
-            .is_some_and(|p| p.new_index == current_index);
+        let index_applied = pending.as_ref().is_some_and(|p| {
+            p.new_index == current_index && !(p.stash && p.old_index == p.new_index)
+        });
         if pending
             .as_ref()
             .is_some_and(|p| p.old_index != current_index && !index_applied)
@@ -802,42 +809,44 @@ impl Checkout {
             return Err(Error::Stale);
         }
 
-        let index_bytes = if index_applied || files.is_empty() {
-            None
-        } else {
-            index.remove_entries(|_, path, _| {
-                files
-                    .binary_search_by(|file| file.path.as_slice().cmp(path.as_bytes()))
-                    .is_ok()
-            });
-            for file in &files {
-                if let Some(entry) = new.get(&file.path) {
-                    index.dangerously_push_entry(
-                        Default::default(),
-                        entry.id,
-                        Flags::empty(),
-                        Mode::FILE,
-                        file.path.as_bstr(),
-                    );
-                }
-            }
-            if index.entries().len() > crate::INDEX_ENTRIES
-                || index.path_backing().len() > crate::TREE_PATH_BYTES
+        let index_bytes =
+            if merge.as_ref().is_some_and(|merge| merge.stash) || index_applied || files.is_empty()
             {
-                return Err(Error::Limited);
-            }
-            index.sort_entries();
-            index.remove_tree();
-            index.verify_entries().map_err(engine)?;
-            let mut output = Vec::new();
-            gix::index::File::from_state(index, repository.git_dir.join("index"))
-                .write_to(&mut output, Default::default())
-                .map_err(engine)?;
-            if output.len() > crate::INDEX_BYTES as usize {
-                return Err(Error::Limited);
-            }
-            Some(output)
-        };
+                None
+            } else {
+                index.remove_entries(|_, path, _| {
+                    files
+                        .binary_search_by(|file| file.path.as_slice().cmp(path.as_bytes()))
+                        .is_ok()
+                });
+                for file in &files {
+                    if let Some(entry) = new.get(&file.path) {
+                        index.dangerously_push_entry(
+                            Default::default(),
+                            entry.id,
+                            Flags::empty(),
+                            Mode::FILE,
+                            file.path.as_bstr(),
+                        );
+                    }
+                }
+                if index.entries().len() > crate::INDEX_ENTRIES
+                    || index.path_backing().len() > crate::TREE_PATH_BYTES
+                {
+                    return Err(Error::Limited);
+                }
+                index.sort_entries();
+                index.remove_tree();
+                index.verify_entries().map_err(engine)?;
+                let mut output = Vec::new();
+                gix::index::File::from_state(index, repository.git_dir.join("index"))
+                    .write_to(&mut output, Default::default())
+                    .map_err(engine)?;
+                if output.len() > crate::INDEX_BYTES as usize {
+                    return Err(Error::Limited);
+                }
+                Some(output)
+            };
         let new_index = index_bytes
             .as_ref()
             .map_or(Ok(current_index), |bytes| index_id(bytes, ctx))?;
@@ -858,6 +867,7 @@ impl Checkout {
                     incoming: merge.as_ref().map(|merge| merge.incoming),
                     commit_operation: merge.as_ref().and_then(|merge| merge.commit_operation),
                     rebase: merge.as_ref().is_some_and(|merge| merge.rebase),
+                    stash: merge.as_ref().is_some_and(|merge| merge.stash),
                     reset: None,
                     hard_manifest: None,
                     mainline: merge.and_then(|merge| merge.mainline),

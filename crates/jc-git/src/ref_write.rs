@@ -1447,6 +1447,63 @@ mod tests {
         }
 
         #[test]
+        fn pull_tracking_review_rejects_divergence_and_changed_upstream() {
+            use crate::local_merge::prepare_tracking_fast_forward;
+            for divergent in [true, false] {
+                let fixture = Fixture::new();
+                let (_, active, incoming) =
+                    scenario(&fixture, divergent, b"uno\r\ndos\r\ntres\r\nFIN");
+                let git = fixture.git();
+                let tracking = "refs/remotes/origin/main";
+                fs::create_dir_all(git.join("refs/remotes/origin")).unwrap();
+                fs::write(git.join(tracking), format!("{incoming}\n")).unwrap();
+                let config = git.join("config");
+                fs::OpenOptions::new().append(true).open(&config).unwrap()
+                    .write_all(b"\n[remote \"origin\"]\nurl = remote.git\nfetch = +refs/heads/*:refs/remotes/origin/*\n[branch \"activa\"]\nremote = origin\nmerge = refs/heads/main\n").unwrap();
+                let prepare = || {
+                    prepare_tracking_fast_forward(
+                        &fixture.root,
+                        tracking,
+                        &incoming.to_string(),
+                        limits(),
+                        || false,
+                    )
+                };
+                let branch = git.join("refs/heads/activa");
+                let before = fs::read(&branch).unwrap();
+                let original = fs::read(fixture.root.join("a.txt")).unwrap();
+                if divergent {
+                    assert!(prepare().is_err());
+                    assert_eq!(fs::read(&branch).unwrap(), before);
+                    assert_eq!(fs::read(fixture.root.join("a.txt")).unwrap(), original);
+                    continue;
+                }
+                let plan = prepare().unwrap();
+                assert_eq!(plan.kind, MergeKind::FastForward);
+                assert_eq!(plan.tips(), (active, incoming));
+                assert_eq!(fs::read(&branch).unwrap(), before);
+                let before_config = fs::read(&config).unwrap();
+                fs::OpenOptions::new()
+                    .append(true)
+                    .open(&config)
+                    .unwrap()
+                    .write_all(b"merge = refs/heads/otra\n")
+                    .unwrap();
+                assert!(matches!(apply_merge(plan, || false), Err(Error::Stale)));
+                fs::write(config, before_config).unwrap();
+                apply_merge(prepare().unwrap(), || false).unwrap();
+                assert_eq!(
+                    fs::read_to_string(branch).unwrap().trim(),
+                    incoming.to_string()
+                );
+                assert_eq!(
+                    fs::read(fixture.root.join("a.txt")).unwrap(),
+                    b"uno\r\ndos\r\ntres\r\nFIN"
+                );
+            }
+        }
+
+        #[test]
         fn merge_resumes_after_index_publication_without_replacing_a_later_edit() {
             let fixture = Fixture::new();
             let (_, active, incoming) = scenario(&fixture, true, b"uno\r\ndos\r\ntres\r\nFIN");

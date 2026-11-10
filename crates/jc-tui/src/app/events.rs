@@ -13,22 +13,22 @@ impl TuiApp {
             Event::Key(key) if is_action_event(key) => self.handle_key(key),
             Event::Paste(text) => self.handle_paste(&text),
             Event::Mouse(event) => {
-                if self.graph_showing() {
-                    use crossterm::event::MouseEventKind;
-                    match event.kind {
-                        MouseEventKind::ScrollUp => self.move_git_graph(-3),
-                        MouseEventKind::ScrollDown => self.move_git_graph(3),
-                        _ => {}
-                    }
-                } else if self.git_commit.view().is_none() {
-                    self.handle_mouse(event);
-                } else {
+                if self.git_commit.view().is_some() {
                     use crossterm::event::MouseEventKind;
                     match event.kind {
                         MouseEventKind::ScrollUp => self.git_commit.scroll(-3),
                         MouseEventKind::ScrollDown => self.git_commit.scroll(3),
                         _ => {}
                     }
+                } else if self.graph_showing() {
+                    use crossterm::event::MouseEventKind;
+                    match event.kind {
+                        MouseEventKind::ScrollUp => self.move_git_graph(-3),
+                        MouseEventKind::ScrollDown => self.move_git_graph(3),
+                        _ => {}
+                    }
+                } else {
+                    self.handle_mouse(event);
                 }
             }
             Event::Resize(_, _) | Event::FocusGained | Event::FocusLost => {}

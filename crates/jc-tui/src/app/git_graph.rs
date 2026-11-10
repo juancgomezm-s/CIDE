@@ -99,6 +99,18 @@ impl TuiApp {
                 self.git_revision.cancel();
             }
             KeyCode::F(5) => self.open_git_graph(),
+            KeyCode::Char('o' | 'O') if key.kind == KeyEventKind::Press => {
+                if self.git_index.state() != jc_app::git_index::IndexState::Applying {
+                    if let Some(root) = self.project_root.clone() {
+                        let stash = view
+                            .reference_selected
+                            .filter(|_| self.git_revision.state() == GitRevisionState::Ready)
+                            .and_then(|row| self.git_revision.graph()?.stash_target(row));
+                        let _ = self.git_index.discard_review();
+                        self.git_commit.open_repository_menu(root, stash);
+                    }
+                }
+            }
             KeyCode::Char('a' | 'A') if key.kind == KeyEventKind::Press => {
                 if self.git_index.state() != jc_app::git_index::IndexState::Applying {
                     if let Some(root) = self.project_root.clone() {

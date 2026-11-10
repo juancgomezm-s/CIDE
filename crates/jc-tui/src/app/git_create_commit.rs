@@ -58,6 +58,17 @@ impl TuiApp {
             if !self.git_commit.request_merge_stop() && !self.git_commit.back_merge() {
                 self.git_commit.cancel();
             }
+        } else if view.repository_menu().is_some() && plain {
+            match key.code {
+                KeyCode::Enter if key.kind == KeyEventKind::Press => self
+                    .git_commit
+                    .submit(&self.workbench, self.project_root.as_deref()),
+                KeyCode::Up => self.git_commit.scroll(-1),
+                KeyCode::Down => self.git_commit.scroll(1),
+                KeyCode::PageUp => self.git_commit.scroll(-10),
+                KeyCode::PageDown => self.git_commit.scroll(10),
+                _ => {}
+            }
         } else if view.merge_file().is_some() {
             let mut utf8 = [0; 4];
             let edit = match key.code {
@@ -221,6 +232,25 @@ impl TuiApp {
     ) -> Option<CommitPresentation> {
         let view = self.git_commit.view()?;
         let width = width.saturating_sub(4).min(256);
+        if let Some(actions) = view.repository_menu() {
+            let count = usize::from(height.saturating_sub(4));
+            let first = view.first.saturating_sub(count.saturating_sub(1));
+            let rows = actions
+                .enumerate()
+                .skip(first)
+                .take(count)
+                .map(|(index, action)| {
+                    let mark = if index == view.first { "› " } else { "  " };
+                    format!("{mark}{}", action.title())
+                })
+                .collect();
+            return Some(CommitPresentation {
+                title: view.title(),
+                rows,
+                hint: "↑↓ seleccionar · Intro abrir · Esc cerrar".into(),
+                caret: None,
+            });
+        }
         if let (Some(plan), Some(file)) = (view.merge_conflicts(), view.merge_file()) {
             let text = file.present(
                 plan,
@@ -292,8 +322,7 @@ impl TuiApp {
             });
         }
         let field = present_field(&view.message, view.cursor, usize::from(width), 1);
-        let mut rows = view
-            .has_input()
+        let mut rows = (view.has_input() && view.repository_review().is_none())
             .then(|| {
                 field
                     .rows
@@ -301,7 +330,9 @@ impl TuiApp {
                     .filter(|s| !s.is_empty())
                     .cloned()
                     .unwrap_or_else(|| {
-                        if matches!(
+                        if let WriteDraft::Repository(draft) = &view.draft {
+                            draft.action.prompt().unwrap_or_default().into()
+                        } else if matches!(
                             view.draft,
                             WriteDraft::CreateReference(..) | WriteDraft::ChangeReference(..)
                         ) {
@@ -320,6 +351,18 @@ impl TuiApp {
                 .unwrap_or("Publicando operación Git…")
         } else if self.git_commit.busy() {
             view.pending_hint()
+        } else if let Some(review) = view
+            .repository_review()
+            .filter(|_| view.merge_conflicts().is_none())
+        {
+            let count = usize::from(height.saturating_sub(4));
+            let first = view.first.min(review.rows.len().saturating_sub(count));
+            rows.extend(review.rows.iter().skip(first).take(count).cloned());
+            if review.can_apply() {
+                "↑↓ recorrer · F2 confirma · Esc cancela"
+            } else {
+                "↑↓ recorrer · Esc vuelve"
+            }
         } else if let Some(plan) = view.reference_change_review() {
             rows.push(match plan.destination() {
                 Some(name) => format!("{} → {name}", plan.source()),
@@ -703,6 +746,11 @@ impl TuiApp {
             } else if let WriteDraft::Restore(comparison) = &view.draft {
                 rows.push(opaque(&comparison.path, width));
                 "Intro revisa recuperación · Esc cancela"
+            } else if let WriteDraft::Repository(draft) = &view.draft {
+                if let Some(stash) = &draft.stash {
+                    rows.push(format!("Reserva stash@{{{}}} · {}", stash.index, stash.oid));
+                }
+                "Intro revisa operación · Esc cancela"
             } else if let Some(old) = &view.replaces {
                 rows.push(format!("Reemplaza {}", old.head));
                 "Vacío conserva mensaje · Intro revisa · Esc cancela"
