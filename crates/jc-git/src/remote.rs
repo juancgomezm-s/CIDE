@@ -2718,6 +2718,152 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    #[ignore = "consulta el repositorio público RAG en GitHub"]
+    fn rag_worktree_lifecycle() {
+        use crate::worktrees;
+
+        let fixture = Fixture::new();
+        let root = fixture.p("clone");
+        let limits = rag_limits();
+        let clone = prepare_network_worktree_clone(RAG_URL, &root, limits, || false).unwrap();
+        apply_network_worktree_clone(clone, None, || false).unwrap();
+        let mut repo = gix::open(&root).unwrap();
+        let original_head = repo.head_id().unwrap().detach();
+        let original_name = repo.head_name().unwrap();
+        let branch = "refs/heads/cide-rag-worktree";
+        let target = gix::ObjectId::from_hex(RAG_UPDATED.as_bytes()).unwrap();
+        ref_update(&mut repo, branch, target, PreviousValue::MustNotExist);
+        drop(repo);
+
+        let first = fixture.p("worktree-initial");
+        let moved = fixture.p("worktree-moved");
+        let review = worktrees::prepare_create(&root, &first, branch, limits, || false).unwrap();
+        assert_eq!(review.commit(), RAG_UPDATED);
+        let created = worktrees::apply_create(review, || false).unwrap();
+        assert_rag_license(&first);
+        std::fs::write(first.join("local.txt"), b"keep local bytes\n").unwrap();
+
+        let review = worktrees::prepare_move(&root, &created.id, &moved, limits, || false).unwrap();
+        let relocated = worktrees::apply_move(review, || false).unwrap();
+        assert_eq!(relocated.path, moved);
+        assert!(!first.exists());
+        assert_rag_license(&moved);
+        let review = worktrees::prepare_retire(&root, &created.id, limits, || false).unwrap();
+        let retired = worktrees::apply_retire(review, || false).unwrap();
+        assert!(retired.preserved_files && !moved.exists());
+        assert_eq!(
+            std::fs::read(retired.worktree.join("local.txt")).unwrap(),
+            b"keep local bytes\n"
+        );
+        let review =
+            worktrees::prepare_restore_retired(&root, &created.id, limits, || false).unwrap();
+        let restored = worktrees::apply_restore_retired(review, || false).unwrap();
+        assert_eq!(restored.path, moved);
+        assert_eq!(restored.head.as_deref(), Some(RAG_UPDATED));
+        assert_eq!(restored.branch.as_deref(), Some(branch));
+        assert_rag_license(&moved);
+        assert_eq!(
+            std::fs::read(moved.join("local.txt")).unwrap(),
+            b"keep local bytes\n"
+        );
+        let repo = gix::open(&root).unwrap();
+        assert_eq!(repo.head_id().unwrap().detach(), original_head);
+        assert_eq!(repo.head_name().unwrap(), original_name);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "consulta el repositorio público RAG en GitHub"]
+    fn rag_submodule_initialize_and_update() {
+        use crate::submodules;
+
+        let fixture = Fixture::new();
+        let root = fixture.p("superproject");
+        std::fs::create_dir(&root).unwrap();
+        let mut repo = gix::init(&root).unwrap();
+        let branch = "refs/heads/cide-rag-superproject";
+        head_to(&mut repo, branch);
+        let modules = format!("[submodule \"rag\"]\n\tpath = rag\n\turl = {RAG_URL}\n");
+        std::fs::write(root.join(".gitmodules"), &modules).unwrap();
+        let registration = repo.write_blob(modules.as_bytes()).unwrap().detach();
+        let limits = rag_limits();
+        let child = root.join("rag");
+        let mut parent = None;
+        for (previous, target) in [(None, RAG_INITIAL), (Some(RAG_INITIAL), RAG_UPDATED)] {
+            let gitlink = gix::ObjectId::from_hex(target.as_bytes()).unwrap();
+            let tree = repo
+                .write_object(gix::objs::Tree {
+                    entries: vec![
+                        gix::objs::tree::Entry {
+                            mode: gix::objs::tree::EntryKind::Blob.into(),
+                            filename: ".gitmodules".into(),
+                            oid: registration,
+                        },
+                        gix::objs::tree::Entry {
+                            mode: gix::objs::tree::EntryKind::Commit.into(),
+                            filename: "rag".into(),
+                            oid: gitlink,
+                        },
+                    ],
+                })
+                .unwrap()
+                .detach();
+            let next = commit_tree(&repo, tree, parent, "Gitlink de prueba para RAG");
+            let expected = parent.map_or(PreviousValue::MustNotExist, |oid| {
+                PreviousValue::MustExistAndMatch(Target::Object(oid))
+            });
+            ref_update(&mut repo, branch, next, expected);
+            repo.index_from_tree(&tree)
+                .unwrap()
+                .write(Default::default())
+                .unwrap();
+            if let Some(previous) = previous {
+                let review =
+                    submodules::prepare_update(&root, b"rag", previous, target, limits, || false)
+                        .unwrap();
+                assert_eq!(review.preview().previous_commit, previous);
+                assert_eq!(review.preview().target_commit, target);
+                submodules::apply_update(review, || false).unwrap();
+            } else {
+                let review =
+                    submodules::prepare_init(&root, b"rag", target, limits, || false).unwrap();
+                assert_eq!(review.preview().commit, target);
+                submodules::apply_init(review, || false).unwrap();
+            }
+            let nested = gix::open(&child).unwrap();
+            assert!(nested.head_name().unwrap().is_none());
+            assert_eq!(nested.head_id().unwrap().detach(), gitlink);
+            assert_rag_license(&child);
+            assert!(!root.join(".git/cide-submodule.pending").exists());
+            parent = Some(next);
+        }
+    }
+
+    #[cfg(windows)]
+    const RAG_URL: &str = "https://github.com/juancgomezm-s/RAG.git";
+    #[cfg(windows)]
+    const RAG_INITIAL: &str = "4fa213b32f96b309d4911a0d74a198b81db7b994";
+    #[cfg(windows)]
+    const RAG_UPDATED: &str = "513d25bf2635713fd26e373f9cab73d3959bb665";
+
+    #[cfg(windows)]
+    fn rag_limits() -> Limits {
+        Limits {
+            timeout: Duration::from_secs(30),
+            ..limits()
+        }
+    }
+
+    #[cfg(windows)]
+    fn assert_rag_license(root: &Path) {
+        let bytes = std::fs::read(root.join("LICENSE")).unwrap();
+        let blob =
+            gix::objs::compute_hash(gix::hash::Kind::Sha1, gix::objs::Kind::Blob, &bytes).unwrap();
+        assert_eq!(blob.to_string(), "d159169d1050894d3ea3b98e1c965c4058208fe1");
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn smart_http_clone_fetch_and_push_in_private_repositories() {
         let fixture = Fixture::new();
         let server_path = fixture.p("server.git");

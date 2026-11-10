@@ -289,6 +289,20 @@ cambiados. La rama de prueba quedó en `513d25bf` y `main` siguió en
 `7f23c096`. La clave temporal con acceso a `RAG` se retiró y GitHub confirmó
 su ausencia.
 
+El 2026-11-10 pasaron dos pruebas optativas en Windows con `RAG` por
+HTTPS. En un clon desechable, CIDE creó un worktree ligado a una rama
+local, lo movió, lo retiró a cuarentena y lo restauró. La prueba verificó
+el commit, el archivo `LICENSE` y un archivo local sin seguimiento.
+En un superproyecto local, CIDE inicializó `RAG` como submódulo en
+`4fa213b3` y lo actualizó a `513d25bf` según el gitlink del índice y del
+commit del superproyecto. Ambos commits de `RAG` contienen el mismo
+`LICENSE`. La prueba confirmó el nuevo HEAD y la integridad del archivo.
+`main` y las dos ramas remotas de prueba conservaron sus commits.
+
+```console
+cargo test -p jc-git --lib --locked --offline remote::tests::rag_ -- --ignored --test-threads 1
+```
+
 En Windows con Rust 1.88 se validaron el clon con directorio de trabajo, la
 confirmación de referencia del envío, la huella de servidor SSH, el ciclo de
 cuarentena de worktrees y el rechazo de cambios locales o archivos ignorados
