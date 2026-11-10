@@ -43,7 +43,7 @@ struct SessionGuard(Arc<client::Handle<HostKeyPin>>);
 struct BlockingRead<'ctx, 'scope, R> {
     runtime: Arc<tokio::runtime::Runtime>,
     session: Arc<SessionGuard>,
-    inner: R,
+    inner: Option<R>,
     ctx: &'ctx Context<'scope>,
     limit: usize,
     read: usize,
@@ -52,7 +52,7 @@ struct BlockingRead<'ctx, 'scope, R> {
 struct BlockingWrite<'ctx, 'scope, W> {
     runtime: Arc<tokio::runtime::Runtime>,
     session: Arc<SessionGuard>,
-    inner: W,
+    inner: Option<W>,
     ctx: &'ctx Context<'scope>,
     limit: usize,
     written: usize,
@@ -60,6 +60,21 @@ struct BlockingWrite<'ctx, 'scope, W> {
 
 fn io_cancel(error: Error) -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, error.to_string())
+}
+
+// The last stream half may schedule the SSH channel close when it is dropped.
+impl<R> Drop for BlockingRead<'_, '_, R> {
+    fn drop(&mut self) {
+        let _runtime = self.runtime.enter();
+        drop(self.inner.take());
+    }
+}
+
+impl<W> Drop for BlockingWrite<'_, '_, W> {
+    fn drop(&mut self) {
+        let _runtime = self.runtime.enter();
+        drop(self.inner.take());
+    }
 }
 
 impl<R: AsyncRead + Unpin> Read for BlockingRead<'_, '_, R> {
@@ -74,8 +89,9 @@ impl<R: AsyncRead + Unpin> Read for BlockingRead<'_, '_, R> {
         if timeout.is_zero() {
             return Err(io::ErrorKind::TimedOut.into());
         }
+        let inner = self.inner.as_mut().expect("SSH reader lives until drop");
         let result = self.runtime.block_on(async {
-            tokio::time::timeout(timeout, self.inner.read(&mut buffer[..count])).await
+            tokio::time::timeout(timeout, inner.read(&mut buffer[..count])).await
         });
         let read = result
             .map_err(|_| io::ErrorKind::TimedOut)?
@@ -104,9 +120,10 @@ impl<W: AsyncWrite + Unpin> Write for BlockingWrite<'_, '_, W> {
             return Err(io::ErrorKind::TimedOut.into());
         }
         let count = buffer.len().min(remaining);
-        let result = self.runtime.block_on(async {
-            tokio::time::timeout(timeout, self.inner.write(&buffer[..count])).await
-        });
+        let inner = self.inner.as_mut().expect("SSH writer lives until drop");
+        let result = self
+            .runtime
+            .block_on(async { tokio::time::timeout(timeout, inner.write(&buffer[..count])).await });
         let written = result
             .map_err(|_| io::ErrorKind::TimedOut)?
             .map_err(io::Error::other)?;
@@ -124,8 +141,9 @@ impl<W: AsyncWrite + Unpin> Write for BlockingWrite<'_, '_, W> {
         if timeout.is_zero() {
             return Err(io::ErrorKind::TimedOut.into());
         }
+        let inner = self.inner.as_mut().expect("SSH writer lives until drop");
         self.runtime
-            .block_on(tokio::time::timeout(timeout, self.inner.flush()))
+            .block_on(async { tokio::time::timeout(timeout, inner.flush()).await })
             .map_err(|_| io::ErrorKind::TimedOut)?
             .map_err(io::Error::other)
     }
@@ -174,7 +192,7 @@ fn block_on_before<T>(
         return Err(Error::TimedOut);
     }
     runtime
-        .block_on(tokio::time::timeout(remaining, future))
+        .block_on(async { tokio::time::timeout(remaining, future).await })
         .map_err(|_| Error::TimedOut)
 }
 
@@ -314,7 +332,7 @@ pub(super) fn connect<'ctx, 'scope>(
     let read = BlockingRead {
         runtime: Arc::clone(&runtime),
         session: Arc::clone(&session),
-        inner: read,
+        inner: Some(read),
         ctx,
         limit: limits.max_bytes.saturating_add(512 * 1024),
         read: 0,
@@ -322,7 +340,7 @@ pub(super) fn connect<'ctx, 'scope>(
     let write = BlockingWrite {
         runtime,
         session,
-        inner: write,
+        inner: Some(write),
         ctx,
         limit: limits.max_bytes.saturating_add(512 * 1024),
         written: 0,

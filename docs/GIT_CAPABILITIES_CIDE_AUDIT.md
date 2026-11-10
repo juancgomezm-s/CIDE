@@ -258,6 +258,29 @@ Pasaron formato, Clippy y las 12 pruebas locales de remotos en serie.
 El caso Smart HTTP local recibió una vez un error de acceso de Windows
 durante la tanda paralela y pasó tanto aislado como en serie.
 
+`authenticated_ssh_clone_fetch_and_push` usa el mismo recorrido desde dos
+clones, con una rama nueva `cide-ssh-*`. Requiere `CIDE_TEST_SSH_URL` en
+formato `ssh://usuario@host/ruta`, `CIDE_TEST_SSH_BRANCH` con el nombre corto,
+`CIDE_TEST_SSH_HOST_PIN` con la huella SHA256 verificada del servidor y
+`CIDE_TEST_SSH_KEY` con la ruta absoluta de la clave privada. Recibe la frase
+de la clave en una línea por la entrada estándar. Para una clave sin frase
+se puede canalizar una línea vacía.
+
+```powershell
+'' | & $testExe remote::tests::authenticated_ssh_clone_fetch_and_push --exact --ignored --test-threads 1
+```
+
+El cliente SSH crea los temporizadores y libera el canal dentro del
+runtime Tokio. La prueba local confirma el envío desde un hilo sin
+runtime previo, como los hilos de trabajo de CIDE. Pasaron formato,
+Clippy y las 12 pruebas locales de remotos en una ejecución en serie.
+La suite del núcleo registró 109 aprobadas y dos pruebas de proveedor
+omitidas. El caso Smart HTTP falló con un error de acceso de Windows
+que también se había observado en otras ejecuciones.
+
+En GitHub, CIDE verificó la huella Ed25519 oficial y el servidor rechazó
+una clave de prueba sin registrar. Este caso no publica referencias.
+
 En Windows con Rust 1.88 se validaron el clon con directorio de trabajo, la
 confirmación de referencia del envío, la huella de servidor SSH, el ciclo de
 cuarentena de worktrees y el rechazo de cambios locales o archivos ignorados

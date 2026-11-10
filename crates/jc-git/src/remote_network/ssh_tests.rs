@@ -38,15 +38,27 @@ fn server_fingerprint_pin_accepts_only_the_exact_key() {
 #[derive(Clone)]
 struct FixtureServer;
 
+const OLD_TIP: &str = "0123456789012345678901234567890123456789";
+const NEW_TIP: &str = "1234567890123456789012345678901234567890";
+
+fn packet(line: &str) -> Vec<u8> {
+    let mut data = format!("{:04x}", line.len() + 4).into_bytes();
+    data.extend_from_slice(line.as_bytes());
+    data
+}
+
 impl russh::server::Server for FixtureServer {
     type Handler = FixtureHandler;
 
     fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> Self::Handler {
-        FixtureHandler
+        FixtureHandler::default()
     }
 }
 
-struct FixtureHandler;
+#[derive(Default)]
+struct FixtureHandler {
+    input: Vec<u8>,
+}
 
 impl russh::server::Handler for FixtureHandler {
     type Error = russh::Error;
@@ -81,18 +93,40 @@ impl russh::server::Handler for FixtureHandler {
     ) -> Result<(), Self::Error> {
         assert_eq!(command, b"git-receive-pack '/fixture.git'");
         session.channel_success(channel)?;
-        let oid = "0123456789012345678901234567890123456789";
-        let line = format!("{oid} refs/heads/main\0report-status\n");
-        let mut packet = format!("{:04x}", line.len() + 4).into_bytes();
-        packet.extend_from_slice(line.as_bytes());
-        packet.extend_from_slice(b"0000");
-        session.data(channel, packet)?;
+        let mut advertisement = packet(&format!("{OLD_TIP} refs/heads/main\0report-status\n"));
+        advertisement.extend_from_slice(b"0000");
+        session.data(channel, advertisement)?;
+        Ok(())
+    }
+
+    async fn data(
+        &mut self,
+        channel: russh::ChannelId,
+        data: &[u8],
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        let command = packet(&format!(
+            "{OLD_TIP} {NEW_TIP} refs/heads/main\0 report-status\n"
+        ));
+        let header_len = command.len() + 4;
+        let expected = header_len + 32; // Empty SHA-1 pack header and checksum.
+        assert!(data.len() <= expected - self.input.len());
+        self.input.extend_from_slice(data);
+        if self.input.len() == expected {
+            assert!(self.input.starts_with(&command));
+            assert_eq!(&self.input[command.len()..header_len + 4], b"0000PACK");
+            let mut report = packet("unpack ok\n");
+            report.extend(packet("ok refs/heads/main\n"));
+            report.extend_from_slice(b"0000");
+            session.data(channel, report)?;
+            session.eof(channel)?;
+        }
         Ok(())
     }
 }
 
 #[test]
-fn ssh_loopback_authenticates_pins_host_and_reads_receive_pack_advertisement() {
+fn ssh_loopback_confirms_receive_pack_from_plain_thread() {
     use std::{
         sync::atomic::{AtomicBool, AtomicU8},
         time::{Duration, Instant},
@@ -123,7 +157,9 @@ fn ssh_loopback_authenticates_pins_host_and_reads_receive_pack_advertisement() {
             server.run_on_socket(server_config, &listener).await
         });
 
-        let check = tokio::task::spawn_blocking(move || {
+        // The application calls the blocking transport from a plain worker thread.
+        let (completed, done) = tokio::sync::oneshot::channel();
+        let check = std::thread::spawn(move || {
             let stop = AtomicBool::new(false);
             let reason = AtomicU8::new(0);
             let timeout = Duration::from_secs(5);
@@ -152,20 +188,23 @@ fn ssh_loopback_authenticates_pins_host_and_reads_receive_pack_advertisement() {
             )
             .unwrap();
             let mut transport = connect(&url, &credential, limits, &ctx, true).unwrap();
-            let advertised = super::super::send_pack::advertise(
+            let hash = gix::hash::Kind::Sha1;
+            let pack = super::super::send_pack::pack_v2(&[], hash, limits, &ctx).unwrap();
+            super::super::send_pack::push_pack(
                 &mut transport,
                 "refs/heads/main",
-                gix::hash::Kind::Sha1,
+                Some(gix::ObjectId::from_hex(OLD_TIP.as_bytes()).unwrap()),
+                gix::ObjectId::from_hex(NEW_TIP.as_bytes()).unwrap(),
+                &pack,
                 limits,
                 &ctx,
             )
             .unwrap();
-            assert_eq!(
-                advertised.unwrap().to_string(),
-                "0123456789012345678901234567890123456789"
-            );
+            completed.send(()).unwrap();
         });
-        check.await.unwrap();
+        let result = done.await;
+        check.join().unwrap();
+        result.unwrap();
         server_task.abort();
         let _ = server_task.await;
     });
