@@ -54,6 +54,7 @@ pub struct CommitGraph {
     pub metadata_limited: bool,
     pub lanes_limited: bool,
     pub window_limited: bool,
+    stashes_incomplete: bool,
     pub(crate) next: Option<GraphNext>,
 }
 
@@ -126,6 +127,9 @@ impl CommitGraph {
         if self.window_limited {
             text.push_str(" · ascendencia fuera del límite");
         }
+        if self.stashes_incomplete {
+            text.push_str(" · historial de reservas parcial");
+        }
         text
     }
 
@@ -182,6 +186,17 @@ impl CommitGraph {
                             active,
                         })
                     })
+                    .chain(page.stashes.entries.iter().enumerate().map(|(index, entry)| {
+                        let message = crate::source_services::display_ui_label(
+                            &String::from_utf8_lossy(&entry.message), 120,
+                        );
+                        let mut label = format!("Reserva stash@{{{index}}}");
+                        if !message.is_empty() {
+                            label.push_str(" · ");
+                            label.push_str(&message);
+                        }
+                        GraphReference { label, oid: entry.id.to_string(), write: None, active: false }
+                    }))
                     .collect::<Arc<[_]>>()
             },
             |next| next.0.references.clone(),
@@ -196,6 +211,7 @@ impl CommitGraph {
             metadata_limited: page.metadata_limited,
             lanes_limited,
             window_limited: page.window_limited,
+            stashes_incomplete: page.stashes.incomplete,
             next: page.next.map(|cursor| {
                 GraphNext(Arc::new(Continuation {
                     cursor,
@@ -336,6 +352,44 @@ fn lane(lanes: &mut Vec<Option<String>>, id: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stash_rows_open_the_pinned_commit_and_expose_no_reference_mutation() {
+        use jc_git::graph::{StashEntry, StashList};
+        let id = "1234567890abcdef1234567890abcdef12345678";
+        let graph = CommitGraph::project(
+            GraphPage {
+                repository: jc_git::Identity {
+                    root: Default::default(),
+                    git_dir: Default::default(),
+                },
+                start: None,
+                head: None,
+                refs: Arc::from([]),
+                stashes: Arc::new(StashList {
+                    entries: vec![StashEntry {
+                        id: id.parse().unwrap(),
+                        message: b"cambios en reserva".to_vec(),
+                    }],
+                    incomplete: true,
+                }),
+                nodes: Vec::new(),
+                next: None,
+                shallow: false,
+                metadata_limited: false,
+                window_limited: false,
+            },
+            None,
+            None,
+        );
+        assert_eq!(
+            graph.reference_label(1),
+            Some("Reserva stash@{0} · cambios en reserva")
+        );
+        assert_eq!(graph.references[0].oid, id);
+        assert!(graph.reference_write_target(1).is_none());
+        assert!(graph.heading().contains("historial de reservas parcial"));
+    }
 
     #[test]
     fn graph_rail_branches_and_joins_across_a_page_boundary() {

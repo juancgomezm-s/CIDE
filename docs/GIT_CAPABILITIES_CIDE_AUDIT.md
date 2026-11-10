@@ -140,6 +140,23 @@ coste de dependencias/licencias y pruebas propias. Credenciales no van en argv,
 logs, estado recuperable del editor ni capturas. No se presupone que el soporte
 actual de SHA-256 sea aceptación completa de todos los repositorios SHA-256.
 
+## Reservas existentes
+
+La GUI y la TUI muestran **Reserva stash@{n}** en **Git → Grafo → Referencias**.
+**Intro** abre el commit de la reserva por su identificador y permite revisar
+los archivos y compararlos contra el padre elegido. Se muestran las 24 más
+recientes a partir de un reflog de hasta 64 KiB. Si la lista queda truncada o el
+reflog falta, es inválido o no coincide con la referencia, el grafo señala el
+historial parcial. Consultar reservas conserva intactos el índice, los archivos
+y el reflog.
+
+Quedan pendientes guardar, aplicar, extraer y eliminar reservas, además de
+fetch, pull, push, clone, configurar la rama de seguimiento, submódulos y
+worktrees. La versión fijada de gix tiene primitivas de negociación y fetch,
+pero CIDE todavía debe integrar un transporte autenticado y el protocolo de
+publicación. El transporte de archivos de gix puede invocar git-upload-pack,
+una ruta que queda fuera del requisito de motor embebido.
+
 ## Propuesta para la TUI
 
 Compartir consultas y acciones, no comprimir cuatro columnas en una terminal.

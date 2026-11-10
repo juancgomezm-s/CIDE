@@ -23,6 +23,8 @@ const MAX_NODES: usize = 512;
 const MAX_PARENTS: usize = 8;
 const MAX_OBJECT_BYTES: usize = 64 * 1024;
 const PAGE: usize = 24;
+const STASH_LOG_BYTES: usize = 64 * 1024;
+const STASH_MESSAGE_BYTES: usize = 384;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Head {
@@ -70,6 +72,29 @@ pub struct RefEntry {
     pub name: Vec<u8>,
     pub kind: RefKind,
     pub target: RefTarget,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct StashEntry {
+    pub id: gix::ObjectId,
+    pub message: Vec<u8>,
+}
+
+#[derive(Default)]
+pub struct StashList {
+    pub entries: Vec<StashEntry>,
+    pub incomplete: bool,
+}
+
+impl StashList {
+    fn memory_bytes(&self) -> usize {
+        self.entries.capacity() * std::mem::size_of::<StashEntry>()
+            + self
+                .entries
+                .iter()
+                .map(|entry| entry.message.capacity())
+                .sum::<usize>()
+    }
 }
 
 pub struct RefSnapshot {
@@ -353,6 +378,7 @@ struct Snapshot {
     start: Option<String>,
     head: Option<Head>,
     refs: Arc<[RefEntry]>,
+    stashes: Arc<StashList>,
     nodes: Vec<GraphNode>,
     shallow: bool,
     metadata_limited: bool,
@@ -368,6 +394,7 @@ impl Snapshot {
             + self.start.as_ref().map_or(0, String::capacity)
             + self.head.as_ref().map_or(0, Head::memory_bytes)
             + ref_bytes(&self.refs)
+            + self.stashes.memory_bytes()
             + self.nodes.capacity() * std::mem::size_of::<GraphNode>()
             + self
                 .nodes
@@ -400,6 +427,7 @@ pub struct GraphPage {
     /// Present only when the initial call selected HEAD implicitly.
     pub head: Option<Head>,
     pub refs: Arc<[RefEntry]>,
+    pub stashes: Arc<StashList>,
     pub nodes: Vec<GraphNode>,
     pub next: Option<GraphCursor>,
     pub shallow: bool,
@@ -414,7 +442,7 @@ impl GraphPage {
             + self.start.as_ref().map_or(0, String::capacity)
             + self.head.as_ref().map_or(0, Head::memory_bytes)
             + if self.next.is_none() {
-                ref_bytes(&self.refs)
+                ref_bytes(&self.refs) + self.stashes.memory_bytes()
             } else {
                 0
             }
@@ -451,6 +479,73 @@ fn parse_oid(value: &str) -> Result<gix::ObjectId, Error> {
         return Err(Error::Unsupported);
     }
     Ok(id)
+}
+
+fn stash_list(
+    repo: &gix::Repository,
+    refs: &[RefEntry],
+    limits: Limits,
+    budget: &mut Budget,
+    ctx: &Context<'_>,
+) -> Result<StashList, Error> {
+    let Some(reference) = refs.iter().find(|entry| entry.kind == RefKind::Stash) else {
+        return Ok(StashList::default());
+    };
+    let RefTarget::Direct(id) = &reference.target else {
+        return Ok(StashList {
+            entries: Vec::new(),
+            incomplete: true,
+        });
+    };
+    let head = parse_oid(id)?;
+    let fallback = || StashList {
+        entries: vec![StashEntry {
+            id: head,
+            message: Vec::new(),
+        }],
+        incomplete: true,
+    };
+    let log = repo.common_dir().canonicalize().and_then(|root| {
+        jc_fs::read_in_root(
+            &root,
+            &root.join("logs/refs/stash"),
+            STASH_LOG_BYTES.min(limits.max_bytes),
+        )
+    });
+    ctx.check()?;
+    let Ok((_, bytes)) = log else {
+        return Ok(fallback());
+    };
+    budget.charge(bytes.len())?;
+    if !bytes.ends_with(b"\n") {
+        return Ok(fallback());
+    }
+    let mut entries = Vec::new();
+    let mut incomplete = false;
+    for line in bytes[..bytes.len() - 1].rsplit(|&byte| byte == b'\n') {
+        ctx.check()?;
+        if entries.len() == PAGE.min(limits.max_entries) {
+            incomplete = true;
+            break;
+        }
+        let Ok(line) = gix::refs::file::log::LineRef::from_bytes(line) else {
+            return Ok(fallback());
+        };
+        let id = line.new_oid();
+        if id.is_null() || id.kind() != head.kind() || (entries.is_empty() && id != head) {
+            return Ok(fallback());
+        }
+        let message = &line.message[..line.message.len().min(STASH_MESSAGE_BYTES)];
+        budget.charge(2 * std::mem::size_of::<StashEntry>() + message.len())?;
+        entries.push(StashEntry {
+            id,
+            message: message.to_vec(),
+        });
+    }
+    Ok(StashList {
+        entries,
+        incomplete,
+    })
 }
 
 fn graph_object<'a>(
@@ -672,12 +767,14 @@ fn snapshot(
         .and_then(Head::target)
         .map(parse_oid)
         .transpose()?);
+    let stashes = Arc::new(stash_list(repo, &refs, limits, &mut budget, ctx)?);
     let mut result = Snapshot {
         repository,
         requested,
         start: None,
         head,
         refs,
+        stashes,
         nodes: Vec::new(),
         shallow: false,
         metadata_limited: false,
@@ -752,6 +849,7 @@ fn page(snapshot: Arc<Snapshot>, offset: usize, limits: Limits) -> Result<GraphP
         start: snapshot.start.clone(),
         head: snapshot.head.clone(),
         refs: snapshot.refs.clone(),
+        stashes: snapshot.stashes.clone(),
         nodes: snapshot.nodes[offset..end].to_vec(),
         shallow: snapshot.shallow,
         metadata_limited: snapshot.metadata_limited,
@@ -958,6 +1056,54 @@ mod tests {
         })
         .unwrap()
         .detach()
+    }
+
+    #[test]
+    #[cfg(any(windows, target_os = "linux"))]
+    fn graph_lists_stashes_newest_first_and_reports_a_stale_log() {
+        let fixture = Fixture::new();
+        let repo = gix::init(&fixture.root).unwrap();
+        let base = commit(&repo, &[], 1, b"base");
+        let index = commit(&repo, &[base], 2, b"index");
+        let old = commit(&repo, &[base, index], 3, b"antigua");
+        let new = commit(&repo, &[base, index], 4, b"nueva");
+        fixture.set_head(base);
+        let git = fixture.git();
+        fs::write(git.join("refs/stash"), format!("{new}\n")).unwrap();
+        fs::create_dir_all(git.join("logs/refs")).unwrap();
+        let log = git.join("logs/refs/stash");
+        let bytes = format!(
+            "{} {old} Autor <fixture@invalid> 3 +0000\tantigua\n{old} {new} Autor <fixture@invalid> 4 +0000\tnueva\n",
+            gix::ObjectId::null(repo.object_hash()),
+        );
+        fs::write(&log, &bytes).unwrap();
+        let read = || read_graph_window(&fixture.root, None, limits(), || false).unwrap();
+        let page = read();
+        assert!(!page.stashes.incomplete);
+        assert_eq!(
+            page.stashes.entries,
+            [
+                StashEntry {
+                    id: new,
+                    message: b"nueva".to_vec()
+                },
+                StashEntry {
+                    id: old,
+                    message: b"antigua".to_vec()
+                },
+            ]
+        );
+        assert_eq!(fs::read_to_string(&log).unwrap(), bytes);
+        fs::write(git.join("refs/stash"), format!("{old}\n")).unwrap();
+        let page = read();
+        assert!(page.stashes.incomplete);
+        assert_eq!(
+            page.stashes.entries,
+            [StashEntry {
+                id: old,
+                message: Vec::new()
+            }]
+        );
     }
 
     #[test]
