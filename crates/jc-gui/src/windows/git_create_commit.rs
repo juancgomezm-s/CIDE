@@ -1,6 +1,9 @@
 use super::*;
 use jc_app::{
-    git_commit::{file_flag, rebase_step_label, CommitOperation, ResetMode, WriteDraft},
+    git_commit::{
+        file_flag, rebase_step_label, rebase_todo_label, CommitOperation, RebaseAction,
+        RebaseTodoEdit, ResetMode, WriteDraft,
+    },
     git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit, Modifiers,
 };
@@ -147,8 +150,23 @@ impl State {
         } else if view.reviewing() {
             match (code, mods) {
                 (0x0d, Modifiers::CTRL) => self.submit_git_create_commit(),
-                (0x0d, Modifiers::NONE) if view.choosing_mainline().is_some() => {
+                (0x0d, Modifiers::NONE)
+                    if view.choosing_mainline().is_some() || view.rebase_todo().is_some() =>
+                {
                     self.submit_git_create_commit();
+                }
+                (0x26 | 0x28, Modifiers::CTRL) if view.rebase_todo().is_some() => {
+                    self.git_commit
+                        .edit_rebase_todo(RebaseTodoEdit::Move(if code == 0x26 { -1 } else { 1 }));
+                }
+                (0x50 | 0x53 | 0x44, Modifiers::NONE) if view.rebase_todo().is_some() => {
+                    let action = match code {
+                        0x50 => RebaseAction::Pick,
+                        0x53 => RebaseAction::Squash,
+                        _ => RebaseAction::Drop,
+                    };
+                    self.git_commit
+                        .edit_rebase_todo(RebaseTodoEdit::Action(action));
                 }
                 (0x0d, Modifiers::NONE) if view.merge_conflicts().is_some() => {
                     self.git_commit.merge_action(MergeAction::Open(view.first));
@@ -381,6 +399,8 @@ impl State {
                     .into()
             } else if self.git_commit.busy() {
                 view.pending_hint().into()
+            } else if view.rebase_todo().is_some() {
+                "↑↓ elige · Ctrl+↑↓ mueve · P reaplica · S combina · D omite · Intro revisa".into()
             } else if view.choosing_mainline().is_some() {
                 "↑↓ elige padre · Intro muestra los cambios · Esc cancela".into()
             } else if let Some(plan) = view.merge_review() {
@@ -491,6 +511,75 @@ impl State {
                 }
                 ("Restaurar archivo", 12)
             }
+        } else if let Some(todo) = view.rebase_todo() {
+            f.summary = vec![
+                format!(
+                    "{} commits en el plan · {}",
+                    todo.len(),
+                    view.merge_review().unwrap().incoming()
+                ),
+                "Combinar conserva los mensajes en el commit anterior que se reaplique".into(),
+            ];
+            let top = f.preview.top + p(138);
+            let row_height = p(23).max(1);
+            let count = ((f.preview.bottom - top) / row_height).max(0) as usize;
+            let first = view.first.saturating_sub(count.saturating_sub(1));
+            for (index, item) in todo.iter().enumerate().skip(first).take(count) {
+                let y = top + (index - first) as i32 * row_height;
+                let r = rect(
+                    f.preview.left + p(12),
+                    y,
+                    f.preview.right - p(12),
+                    y + row_height,
+                );
+                f.code.push(CodeRow {
+                    rect: r,
+                    old: String::new(),
+                    new: String::new(),
+                    text: rebase_todo_label(item),
+                    kind: if index == view.first { 2 } else { 0 },
+                    parallel: false,
+                });
+                if !self.git_commit.busy() {
+                    f.hits
+                        .actions
+                        .push((r, Intent::RebaseTodo(RebaseTodoEdit::Select(index))));
+                }
+            }
+            if !self.git_commit.busy() {
+                for (offset, width, label, edit) in [
+                    (153, 27, "↑", RebaseTodoEdit::Move(-1)),
+                    (184, 27, "↓", RebaseTodoEdit::Move(1)),
+                    (
+                        215,
+                        72,
+                        "Reaplicar",
+                        RebaseTodoEdit::Action(RebaseAction::Pick),
+                    ),
+                    (
+                        291,
+                        76,
+                        "Combinar",
+                        RebaseTodoEdit::Action(RebaseAction::Squash),
+                    ),
+                    (
+                        371,
+                        60,
+                        "Omitir",
+                        RebaseTodoEdit::Action(RebaseAction::Drop),
+                    ),
+                ] {
+                    self.add_merge_button(
+                        &mut f,
+                        offset,
+                        width,
+                        label,
+                        false,
+                        Intent::RebaseTodo(edit),
+                    );
+                }
+            }
+            ("Ver cambios", 12)
         } else if let Some(plan) = view.choosing_mainline() {
             f.summary = vec![
                 format!("Commit de fusión · {}", plan.incoming()),
@@ -878,7 +967,7 @@ impl State {
         } else if let WriteDraft::SwitchBranch(target) = &view.draft {
             f.summary = vec![format!("Rama de destino · {}", target.name)];
             ("Revisar cambio", 12)
-        } else if let WriteDraft::RebaseBranch(target) = &view.draft {
+        } else if let WriteDraft::RebaseBranch(target, _) = &view.draft {
             f.summary = vec![format!("Reaplicar la rama activa sobre {}", target.name)];
             ("Revisar rebase", 12)
         } else if let WriteDraft::MergeBranch(target) = &view.draft {
@@ -934,6 +1023,7 @@ impl State {
         };
         if !self.git_commit.busy()
             && (view.choosing_mainline().is_some()
+                || view.rebase_todo().is_some()
                 || view.all_merge_choices_saved()
                 || view.merge_review().is_none_or(|plan| plan.can_apply()))
         {

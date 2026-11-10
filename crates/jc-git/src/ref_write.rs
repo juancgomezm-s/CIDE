@@ -2374,6 +2374,122 @@ mod tests {
         }
 
         #[test]
+        fn interactive_rebase_reorders_combines_and_omits_before_confirming() {
+            use crate::local_merge::{
+                RebaseAction, RebaseStepState, prepare_interactive_rebase, prepare_rebase_todo,
+            };
+            use gix::objs::{
+                Tree,
+                tree::{Entry, EntryKind},
+            };
+            let fixture = Fixture::new();
+            let (repo, first, onto) = scenario(&fixture, true, b"uno\r\ndos\r\ntres\r\nFIN");
+            let make = |parent, bytes: &[u8], message| {
+                let blob = repo.write_blob(bytes).unwrap().detach();
+                let tree = repo
+                    .write_object(Tree {
+                        entries: vec![Entry {
+                            mode: EntryKind::Blob.into(),
+                            filename: "a.txt".into(),
+                            oid: blob,
+                        }],
+                    })
+                    .unwrap()
+                    .detach();
+                (blob, commit_at_tree(&repo, tree, &[parent], message))
+            };
+            let (_, second) = make(first, b"UNO\r\ndos\r\nTRES\r\nfin", "Segundo cambio");
+            let original = b"UNO\r\nDOS\r\nTRES\r\nfin";
+            let (blob, third) = make(second, original, "Omitir este");
+            let git = fixture.git();
+            let active = git.join("refs/heads/activa");
+            let file = fixture.root.join("a.txt");
+            fs::write(&active, format!("{third}\n")).unwrap();
+            fs::write(&file, original).unwrap();
+            let mut index = repo.open_index().unwrap();
+            index
+                .entries_mut_with_paths()
+                .find(|(_, path)| path.as_bytes() == b"a.txt")
+                .unwrap()
+                .0
+                .id = blob;
+            index.write(Default::default()).unwrap();
+            let before = fs::read(git.join("index")).unwrap();
+            let open = || {
+                prepare_interactive_rebase(
+                    &fixture.root,
+                    "entrante",
+                    &onto.to_string(),
+                    limits(),
+                    || false,
+                )
+                .unwrap()
+            };
+            let mut draft = open();
+            assert!(!draft.can_apply());
+            let todo = draft.rebase_todo_mut().unwrap();
+            assert_eq!(todo[1].subject, "Segundo cambio");
+            todo.swap(0, 1);
+            todo[0].action = RebaseAction::Squash;
+            assert!(prepare_rebase_todo(draft.rebase_todo_review().unwrap(), || false).is_err());
+            let todo = draft.rebase_todo_mut().unwrap();
+            todo[0].action = RebaseAction::Pick;
+            todo[1].action = RebaseAction::Squash;
+            todo[2].action = RebaseAction::Drop;
+            let preview = || prepare_rebase_todo(draft.rebase_todo_review().unwrap(), || false);
+            let plan = preview().unwrap();
+            let tip = plan.result().unwrap();
+            assert!(matches!(
+                plan.rebase_steps(),
+                [
+                    crate::local_merge::RebaseStep { original: a, state: RebaseStepState::Replayed(x) },
+                    crate::local_merge::RebaseStep { original: b, state: RebaseStepState::Combined(y) },
+                    crate::local_merge::RebaseStep { original: c, state: RebaseStepState::Omitted },
+                ] if (*a, *b, *c, *x, *y) == (second, first, third, tip, tip)
+            ));
+            assert!(repo.find_commit(tip).is_err());
+            assert_eq!(fs::read(&file).unwrap(), original);
+            assert_eq!(fs::read(git.join("index")).unwrap(), before);
+            fs::write(&file, b"Cambio local").unwrap();
+            assert!(apply_merge(plan, || false).is_err());
+            assert_eq!(fs::read(&file).unwrap(), b"Cambio local");
+            fs::write(&file, original).unwrap();
+            let plan = preview().unwrap();
+            let target = format!("{}\n", plan.result().unwrap());
+            assert!(apply_merge(plan, || fs::read_to_string(&active).unwrap() == target).is_err());
+            let abort = prepare_merge_abort(&fixture.root, limits(), || false).unwrap();
+            assert!(abort.is_rebase());
+            assert_eq!(apply_merge_abort(abort, || false).unwrap().id, third);
+            assert_eq!(fs::read(&file).unwrap(), original);
+            assert_eq!(fs::read(git.join("index")).unwrap(), before);
+            assert!(matches!(preview(), Err(Error::Stale)));
+            let mut draft = open();
+            let todo = draft.rebase_todo_mut().unwrap();
+            todo.swap(0, 1);
+            todo[1].action = RebaseAction::Squash;
+            todo[2].action = RebaseAction::Drop;
+            let plan = prepare_rebase_todo(draft.rebase_todo_review().unwrap(), || false).unwrap();
+            let applied = apply_merge(plan, || false).unwrap().id;
+            let commit = repo.find_commit(applied).unwrap();
+            assert_eq!(
+                commit
+                    .parent_ids()
+                    .map(|id| id.detach())
+                    .collect::<Vec<_>>(),
+                [onto]
+            );
+            assert_eq!(
+                commit.decode().unwrap().message.as_bytes(),
+                b"Segundo cambio\n\nizquierda"
+            );
+            assert_eq!(fs::read(&file).unwrap(), b"UNO\r\ndos\r\nTRES\r\nFIN");
+            assert_eq!(
+                fs::read(fixture.root.join("local")).unwrap(),
+                b"no preparado local"
+            );
+        }
+
+        #[test]
         fn rebase_conflict_review_does_not_publish_and_local_overlap_blocks_a_clean_plan() {
             use crate::local_merge::{RebaseStepState, prepare_rebase};
             let fixture = Fixture::new();

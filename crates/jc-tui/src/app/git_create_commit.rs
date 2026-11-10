@@ -2,7 +2,10 @@ use super::{git_diff::model_rows, git_history::opaque, presentation::GitRowKind,
 use crate::input::is_plain_text;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use jc_app::{
-    git_commit::{file_flag, rebase_step_label, CommitOperation, ResetMode, WriteDraft},
+    git_commit::{
+        file_flag, rebase_step_label, rebase_todo_label, CommitOperation, RebaseAction,
+        RebaseTodoEdit, ResetMode, WriteDraft,
+    },
     git_merge_resolution::{MergeAction, MergePane},
     present_field, FieldEdit,
 };
@@ -115,7 +118,7 @@ impl TuiApp {
                 KeyCode::Enter
                     if plain
                         && key.kind == KeyEventKind::Press
-                        && view.choosing_mainline().is_some() =>
+                        && (view.choosing_mainline().is_some() || view.rebase_todo().is_some()) =>
                 {
                     self.git_commit
                         .submit(&self.workbench, self.project_root.as_deref())
@@ -126,6 +129,24 @@ impl TuiApp {
                         && view.merge_conflicts().is_some() =>
                 {
                     self.git_commit.merge_action(MergeAction::Open(view.first));
+                }
+                KeyCode::Up | KeyCode::Down
+                    if key.modifiers == KeyModifiers::CONTROL && view.rebase_todo().is_some() =>
+                {
+                    self.git_commit.edit_rebase_todo(RebaseTodoEdit::Move(
+                        if key.code == KeyCode::Up { -1 } else { 1 },
+                    ));
+                }
+                KeyCode::Char('p' | 'P' | 's' | 'S' | 'd' | 'D')
+                    if plain && view.rebase_todo().is_some() =>
+                {
+                    let action = match key.code {
+                        KeyCode::Char('p' | 'P') => RebaseAction::Pick,
+                        KeyCode::Char('s' | 'S') => RebaseAction::Squash,
+                        _ => RebaseAction::Drop,
+                    };
+                    self.git_commit
+                        .edit_rebase_todo(RebaseTodoEdit::Action(action));
                 }
                 KeyCode::Up if plain => self.git_commit.scroll(-1),
                 KeyCode::Down if plain => self.git_commit.scroll(1),
@@ -237,6 +258,37 @@ impl TuiApp {
                 caret: text
                     .caret
                     .map(|(row, col)| (col as u16 + 8, row as u16 + 3)),
+            });
+        }
+        if let Some(todo) = view.rebase_todo() {
+            let mut rows = vec![
+                format!("{} commits en el plan", todo.len()),
+                "Combinar conserva los mensajes en el commit anterior".into(),
+            ];
+            let count = usize::from(height.saturating_sub(4)).saturating_sub(rows.len());
+            let first = view.first.saturating_sub(count.saturating_sub(1));
+            rows.extend(
+                todo.iter()
+                    .enumerate()
+                    .skip(first)
+                    .take(count)
+                    .map(|(index, item)| {
+                        let selected = if index == view.first { "› " } else { "  " };
+                        format!("{selected}{}", rebase_todo_label(item))
+                    }),
+            );
+            return Some(CommitPresentation {
+                title: view.title(),
+                rows,
+                hint: view.error.clone().unwrap_or_else(|| {
+                    if self.git_commit.busy() {
+                        view.pending_hint().into()
+                    } else {
+                        "↑↓ elige · Ctrl+↑↓ mueve · P reaplica · S combina · D omite · Intro revisa"
+                            .into()
+                    }
+                }),
+                caret: None,
             });
         }
         let field = present_field(&view.message, view.cursor, usize::from(width), 1);
@@ -616,7 +668,7 @@ impl TuiApp {
             } else if let WriteDraft::SwitchBranch(target) = &view.draft {
                 rows.push(format!("Rama de destino · {}", target.name));
                 "Intro revisa el cambio · Esc cancela"
-            } else if let WriteDraft::RebaseBranch(target) = &view.draft {
+            } else if let WriteDraft::RebaseBranch(target, _) = &view.draft {
                 rows.push(format!("Reaplicar la rama activa sobre {}", target.name));
                 "Intro revisa el rebase · Esc cancela"
             } else if let WriteDraft::MergeBranch(target) = &view.draft {

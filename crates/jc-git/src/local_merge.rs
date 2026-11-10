@@ -31,7 +31,7 @@ const MAX_PATHS: usize = 128;
 mod abort;
 mod rebase;
 pub use abort::{MergeAbortPlan, apply_merge_abort, prepare_merge_abort};
-pub use rebase::{RebaseStep, RebaseStepState};
+pub use rebase::{RebaseAction, RebaseStep, RebaseStepState, RebaseTodo};
 pub const MERGE_EDIT_BYTES: usize = 64 * 1024;
 type Entries = BTreeMap<Vec<u8>, Entry>;
 type Blobs = BTreeMap<ObjectId, Vec<u8>>;
@@ -43,6 +43,7 @@ pub enum MergeKind {
     Commit,
     Conflicts,
     ChooseMainline,
+    RebaseTodo,
 }
 
 impl MergeKind {
@@ -53,6 +54,7 @@ impl MergeKind {
             Self::Commit => "Commit de fusión con dos padres",
             Self::Conflicts => "Conflictos por resolver · borrador de fusión",
             Self::ChooseMainline => "Elige el padre principal",
+            Self::RebaseTodo => "Edita el orden y las acciones del rebase",
         }
     }
 }
@@ -182,13 +184,20 @@ impl CommitOperation {
 
 #[derive(Clone)]
 enum Source {
-    Branch(FullName, bool),
+    Branch(FullName, BranchIntegration),
     Reset(ResetMode, String),
     Commit {
         operation: CommitOperation,
         id: String,
         mainline: Option<Mainline>,
     },
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BranchIntegration {
+    Merge,
+    Rebase,
+    Interactive,
 }
 
 impl Source {
@@ -221,7 +230,17 @@ impl Source {
     }
 
     fn is_rebase(&self) -> bool {
-        matches!(self, Self::Branch(_, true))
+        matches!(
+            self,
+            Self::Branch(
+                _,
+                BranchIntegration::Rebase | BranchIntegration::Interactive
+            )
+        )
+    }
+
+    fn is_interactive(&self) -> bool {
+        matches!(self, Self::Branch(_, BranchIntegration::Interactive))
     }
 }
 
@@ -236,6 +255,7 @@ pub struct MergeReview {
     head_file: jc_fs::FileToken,
     index: IndexToken,
     rebase_review: Option<rebase::ConflictReview>,
+    todo: Option<Vec<RebaseTodo>>,
 }
 
 pub struct MergePlan {
@@ -245,6 +265,7 @@ pub struct MergePlan {
     mainline_choices: Vec<ObjectId>,
     rebase_steps: Vec<RebaseStep>,
     rebase_review: Option<rebase::ConflictReview>,
+    todo: Option<Vec<RebaseTodo>>,
     repository: Identity,
     limits: Limits,
     active: FullName,
@@ -278,6 +299,7 @@ impl MergePlan {
             return match self.kind {
                 MergeKind::UpToDate => "La rama activa ya está basada en el destino",
                 MergeKind::Conflicts => "Resuelve los conflictos para continuar el rebase",
+                MergeKind::RebaseTodo => self.kind.label(),
                 _ => "Se actualizará la rama activa sobre la base elegida",
             };
         }
@@ -311,6 +333,19 @@ impl MergePlan {
     }
     pub fn rebase_steps(&self) -> &[RebaseStep] {
         &self.rebase_steps
+    }
+    pub fn rebase_todo(&self) -> Option<&[RebaseTodo]> {
+        self.todo
+            .as_deref()
+            .filter(|_| self.kind == MergeKind::RebaseTodo)
+    }
+    pub fn rebase_todo_mut(&mut self) -> Option<&mut [RebaseTodo]> {
+        self.todo
+            .as_deref_mut()
+            .filter(|_| self.kind == MergeKind::RebaseTodo)
+    }
+    pub fn rebase_todo_review(&self) -> Option<MergeReview> {
+        self.rebase_todo().map(|_| self.review_identity())
     }
     pub fn rebase_conflict_commit(&self) -> Option<ObjectId> {
         self.rebase_review.as_ref().map(|review| review.current)
@@ -374,6 +409,7 @@ impl MergePlan {
             head_file: self.head_file.clone(),
             index: self.index.clone(),
             rebase_review: self.rebase_review.clone(),
+            todo: self.todo.clone(),
         }
     }
 }
@@ -986,7 +1022,7 @@ pub fn prepare_merge(
 ) -> Result<MergePlan, Error> {
     let source = Source::Branch(
         ref_write::reference_name(RefKind::Branch, incoming, limits)?,
-        false,
+        BranchIntegration::Merge,
     );
     let theirs = ObjectId::from_hex(expected_tip.as_bytes()).map_err(engine)?;
     prepare(root, source, theirs, limits, None, cancelled)
@@ -1001,10 +1037,35 @@ pub fn prepare_rebase(
 ) -> Result<MergePlan, Error> {
     let source = Source::Branch(
         ref_write::reference_name(RefKind::Branch, onto, limits)?,
-        true,
+        BranchIntegration::Rebase,
     );
     let theirs = ObjectId::from_hex(expected_tip.as_bytes()).map_err(engine)?;
     prepare(root, source, theirs, limits, None, cancelled)
+}
+
+pub fn prepare_interactive_rebase(
+    root: &Path,
+    onto: &str,
+    expected_tip: &str,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    let source = Source::Branch(
+        ref_write::reference_name(RefKind::Branch, onto, limits)?,
+        BranchIntegration::Interactive,
+    );
+    let theirs = ObjectId::from_hex(expected_tip.as_bytes()).map_err(engine)?;
+    prepare(root, source, theirs, limits, None, cancelled)
+}
+
+pub fn prepare_rebase_todo(
+    review: MergeReview,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<MergePlan, Error> {
+    if !review.source.is_interactive() || review.todo.is_none() || review.rebase_review.is_some() {
+        return Err(Error::Stale);
+    }
+    prepare_review(&review, None, cancelled)
 }
 
 pub fn prepare_cherry_pick(
@@ -1199,6 +1260,7 @@ fn prepare(
             mainline_choices: Vec::new(),
             rebase_steps: Vec::new(),
             rebase_review: None,
+            todo: review.and_then(|review| review.todo.clone()),
             repository,
             limits,
             active,

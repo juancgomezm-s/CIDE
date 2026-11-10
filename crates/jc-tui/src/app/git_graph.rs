@@ -161,7 +161,7 @@ impl TuiApp {
                         .open_reference_change(root, target, key.code == KeyCode::F(2));
                 }
             }
-            KeyCode::Char('c' | 'C' | 'm' | 'M' | 'e' | 'E')
+            KeyCode::Char('c' | 'C' | 'm' | 'M' | 'e' | 'E' | 'i' | 'I')
                 if view.reference_selected.is_some() && key.kind == KeyEventKind::Press =>
             {
                 let integrate = !matches!(key.code, KeyCode::Char('c' | 'C'));
@@ -178,8 +178,12 @@ impl TuiApp {
                     .cloned();
                 if let Some((root, target)) = self.project_root.clone().zip(target) {
                     let _ = self.git_index.discard_review();
-                    if matches!(key.code, KeyCode::Char('e' | 'E')) {
-                        self.git_commit.open_rebase(root, target);
+                    if matches!(key.code, KeyCode::Char('e' | 'E' | 'i' | 'I')) {
+                        self.git_commit.open_rebase(
+                            root,
+                            target,
+                            matches!(key.code, KeyCode::Char('i' | 'I')),
+                        );
                     } else if integrate {
                         self.git_commit.open_merge(root, target);
                     } else {
@@ -309,7 +313,7 @@ impl TuiApp {
             .into(),
             message: if references && self.graph_branch_target(view.selected_row()).is_some() {
                 if page.branch_merge_target(view.selected_row()).is_some() {
-                    "M fusionar · E rebase · C cambiar · Intro abrir · F2 renombrar · Supr eliminar · Esc"
+                    "M fusionar · E rebase · I interactivo · C cambiar · Intro abrir · F2 renombrar · Supr eliminar"
                 } else {
                     "C cambiar rama · Intro abrir · Esc volver"
                 }

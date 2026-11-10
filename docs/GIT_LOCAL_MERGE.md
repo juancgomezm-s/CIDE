@@ -193,6 +193,30 @@ rama, el índice y el disco intactos. El núcleo verificó dos resoluciones
 distintas sobre la misma ruta y rechazó una continuación cuando cambió
 la rama de destino.
 
+### Rebase interactivo
+
+En **Git → Grafo → Referencias**, selecciona otra rama local y pulsa **I**
+o **Interactivo** en la GUI. Pulsa **Intro** para abrir el plan. Usa **↑/↓**
+para seleccionar y **Ctrl+↑/↓** para mover el commit. **P** lo reaplica,
+**S** lo combina con el commit anterior que se conserve y **D** lo omite.
+La GUI también ofrece estos controles con el ratón.
+
+**Intro** calcula los cambios, muestra los archivos afectados y abre la
+resolución habitual si encuentra conflictos. **Ctrl+Intro** en la GUI o
+**F2** en la TUI confirma la revisión final. **Esc** descarta el borrador.
+Si se interrumpe una escritura, usa **A** en el grafo para revisar el aborto.
+
+El límite es de 32 commits lineales. Al combinar, CIDE conserva el autor
+del primer commit y concatena los mensajes si comparten codificación.
+El plan admite omitir todos los commits y permite editar una secuencia
+aunque la rama de destino ya sea antecesora.
+
+Las pruebas locales de Windows cubren los cambios de orden, la combinación
+de mensajes, la omisión, el rechazo de cambios locales en una ruta afectada
+y el aborto tras una publicación parcial. La GUI verifica que omitir un
+commit en la vista previa conserva HEAD y el índice. La TUI verifica que
+un plan interactivo se puede continuar después de resolver un conflicto.
+
 ## Reset soft y mixed
 
 En **Git → Grafo**, selecciona el commit de destino y pulsa **X** o el

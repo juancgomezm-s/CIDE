@@ -142,7 +142,7 @@ enum Intent {
     GraphChangeReference(bool),
     GraphSwitchBranch,
     GraphMergeBranch,
-    GraphRebaseBranch,
+    GraphRebaseBranch(bool),
     GraphCommitOperation(jc_app::git_commit::CommitOperation),
     GraphReset,
     ResetMode(jc_app::git_commit::ResetMode),
@@ -155,6 +155,7 @@ enum Intent {
     CancelCommit,
     Merge(jc_app::git_merge_resolution::MergeAction),
     SelectMainline(usize),
+    RebaseTodo(jc_app::git_commit::RebaseTodoEdit),
     BackMerge,
     Index,
     IndexHunk,
@@ -959,8 +960,8 @@ impl State {
                 self.open_graph_branch_switch();
                 Action::None
             }
-            Some(intent @ (Intent::GraphMergeBranch | Intent::GraphRebaseBranch)) => {
-                self.open_graph_merge(matches!(intent, Intent::GraphRebaseBranch));
+            Some(intent @ (Intent::GraphMergeBranch | Intent::GraphRebaseBranch(_))) => {
+                self.open_graph_merge(intent);
                 Action::None
             }
             Some(Intent::GraphCommitOperation(operation)) => {
@@ -1007,6 +1008,11 @@ impl State {
             }
             Some(Intent::SelectMainline(index)) => {
                 self.git_commit.select_mainline(index);
+                self.git_workspace.invalidate();
+                Action::None
+            }
+            Some(Intent::RebaseTodo(edit)) => {
+                self.git_commit.edit_rebase_todo(edit);
                 self.git_workspace.invalidate();
                 Action::None
             }

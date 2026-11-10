@@ -564,7 +564,7 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     );
     assert_eq!(fs::read(&added).unwrap(), b"archivo de la fusion");
     fs::remove_file(&added).unwrap();
-    let rebase = |app: &mut TuiApp| {
+    let rebase = |app: &mut TuiApp, mode| {
         key(app, KeyCode::F(5));
         wait_for(app, |app| {
             app.git_revision.state() == jc_app::git_revision::GitRevisionState::Ready
@@ -577,11 +577,11 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
         for _ in 0..row {
             key(app, KeyCode::Down);
         }
-        key(app, KeyCode::Char('e'));
+        key(app, KeyCode::Char(mode));
         key(app, KeyCode::Enter);
         wait_for(app, |app| !app.git_commit.busy());
     };
-    rebase(&mut app);
+    rebase(&mut app, 'e');
     assert!(app.git_commit.view().unwrap().error.is_some());
     assert_eq!(
         fs::read(fixture.path("origen.txt")).unwrap(),
@@ -590,7 +590,7 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     assert!(!pending.exists());
     key(&mut app, KeyCode::Esc);
     fixture.rewrite("origen.txt", b"mismo contenido");
-    rebase(&mut app);
+    rebase(&mut app, 'e');
     let view = app.git_commit.view().unwrap();
     let plan = view
         .merge_review()
@@ -641,7 +641,18 @@ fn tui_local_merge_resolves_conflicts_and_only_applies_a_confirmed_preview() {
     ]);
     fixture.git(&["update-ref", "HEAD", &active]);
     let before = fs::read(&index).unwrap();
-    rebase(&mut app);
+    rebase(&mut app, 'i');
+    let view = app.git_commit.view().unwrap();
+    assert_eq!(view.title(), "Rebase interactivo");
+    assert_eq!(view.rebase_todo().unwrap()[0].original.to_string(), active);
+    key(&mut app, KeyCode::Char('d'));
+    assert_eq!(
+        app.git_commit.view().unwrap().rebase_todo().unwrap()[0].action,
+        jc_app::git_commit::RebaseAction::Drop
+    );
+    key(&mut app, KeyCode::Char('p'));
+    key(&mut app, KeyCode::Enter);
+    wait_for(&mut app, |app| !app.git_commit.busy());
     let view = app.git_commit.view().unwrap();
     let conflict = view
         .merge_conflicts()

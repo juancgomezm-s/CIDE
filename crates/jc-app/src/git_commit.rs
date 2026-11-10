@@ -11,10 +11,11 @@ pub use jc_git::commit_write::MESSAGE_BYTES;
 use jc_git::commit_write::{apply_commit, prepare_amend, prepare_commit, CommitPlan};
 use jc_git::local_merge::{
     apply_merge, apply_merge_abort, prepare_commit_mainline, prepare_commit_operation,
-    prepare_merge, prepare_merge_abort, prepare_rebase, prepare_reset, prepare_resolved_merge,
-    MergeAbortPlan, MergeKind, MergePlan, RebaseStep, RebaseStepState,
+    prepare_interactive_rebase, prepare_merge, prepare_merge_abort, prepare_rebase,
+    prepare_rebase_todo, prepare_reset, prepare_resolved_merge, MergeAbortPlan, MergeKind,
+    MergePlan, RebaseStep, RebaseStepState,
 };
-pub use jc_git::local_merge::{CommitOperation, ResetMode};
+pub use jc_git::local_merge::{CommitOperation, RebaseAction, ResetMode};
 use jc_git::local_pair::SourceIdentity;
 pub use jc_git::ref_write::RefKind;
 use jc_git::ref_write::{
@@ -69,7 +70,7 @@ pub enum WriteDraft {
     ChangeReference(ReferenceTarget, bool),
     SwitchBranch(ReferenceTarget),
     MergeBranch(ReferenceTarget),
-    RebaseBranch(ReferenceTarget),
+    RebaseBranch(ReferenceTarget, bool),
     CommitOperation(CommitOperation, String),
     Reset(ResetMode, String),
     AbortMerge,
@@ -87,7 +88,7 @@ impl WriteDraft {
             Self::ChangeReference(_, false)
                 | Self::SwitchBranch(_)
                 | Self::MergeBranch(_)
-                | Self::RebaseBranch(_)
+                | Self::RebaseBranch(..)
                 | Self::CommitOperation(..)
                 | Self::Reset(..)
                 | Self::AbortMerge
@@ -98,7 +99,7 @@ impl WriteDraft {
     fn publishes_integration(&self) -> bool {
         matches!(
             self,
-            Self::MergeBranch(_) | Self::RebaseBranch(_) | Self::CommitOperation(..)
+            Self::MergeBranch(_) | Self::RebaseBranch(..) | Self::CommitOperation(..)
         )
     }
 
@@ -183,7 +184,8 @@ impl CommitView {
             },
             WriteDraft::SwitchBranch(_) => "Cambiar rama",
             WriteDraft::MergeBranch(_) => "Fusionar rama",
-            WriteDraft::RebaseBranch(_) => "Rebase local",
+            WriteDraft::RebaseBranch(_, true) => "Rebase interactivo",
+            WriteDraft::RebaseBranch(_, false) => "Rebase local",
             WriteDraft::CommitOperation(operation, _) => operation.title(),
             WriteDraft::Reset(..) => "Reset de commit",
             WriteDraft::AbortMerge => "Abortar operación Git",
@@ -203,7 +205,7 @@ impl CommitView {
             WriteDraft::Restore(_) => "Comprobando el índice y el archivo… · Esc cancela",
             WriteDraft::SwitchBranch(_) => "Comprobando ambas ramas… · Esc cancela",
             WriteDraft::MergeBranch(_) => "Calculando la fusión local… · Esc cancela",
-            WriteDraft::RebaseBranch(_) => "Revisando los commits del rebase… · Esc cancela",
+            WriteDraft::RebaseBranch(..) => "Revisando los commits del rebase… · Esc cancela",
             WriteDraft::CommitOperation(CommitOperation::CherryPick, _) => {
                 "Calculando el cherry-pick… · Esc cancela"
             }
@@ -261,6 +263,9 @@ impl CommitView {
     pub fn choosing_mainline(&self) -> Option<&MergePlan> {
         self.merge_review()
             .filter(|plan| plan.kind == MergeKind::ChooseMainline)
+    }
+    pub fn rebase_todo(&self) -> Option<&[jc_git::local_merge::RebaseTodo]> {
+        self.merge_review()?.rebase_todo()
     }
     pub fn can_return_to_mainline(&self) -> bool {
         self.saved_mainline_review.is_some()
@@ -373,9 +378,9 @@ impl CommitController {
         }
     }
 
-    pub fn open_rebase(&mut self, root: PathBuf, target: ReferenceTarget) {
-        if cfg!(windows) {
-            self.open_write(root, None, WriteDraft::RebaseBranch(target));
+    pub fn open_rebase(&mut self, root: PathBuf, target: ReferenceTarget, interactive: bool) {
+        if cfg!(windows) && target.kind == RefKind::Branch {
+            self.open_write(root, None, WriteDraft::RebaseBranch(target, interactive));
         }
     }
     pub fn open_merge_abort(&mut self, root: PathBuf) {
@@ -638,7 +643,9 @@ impl CommitController {
                     } else {
                         plan.rebase_steps().len()
                     };
-                    (plan.rows.len() + steps).max(plan.mainline_choices().len())
+                    (plan.rows.len() + steps)
+                        .max(plan.mainline_choices().len())
+                        .max(plan.rebase_todo().map_or(0, <[_]>::len))
                 })
             })
             .or_else(|| view.merge_abort_review().map(|plan| plan.rows.len()))
@@ -661,6 +668,32 @@ impl CommitController {
         }
     }
 
+    pub fn edit_rebase_todo(&mut self, edit: RebaseTodoEdit) {
+        if self.busy() {
+            return;
+        }
+        let Some(view) = &mut self.view else {
+            return;
+        };
+        let Some(WritePlan::Merge(plan)) = &mut view.review else {
+            return;
+        };
+        let Some(todo) = plan.rebase_todo_mut() else {
+            return;
+        };
+        match edit {
+            RebaseTodoEdit::Select(index) if index < todo.len() => view.first = index,
+            RebaseTodoEdit::Select(_) => return,
+            RebaseTodoEdit::Move(delta) => {
+                let next = view.first.saturating_add_signed(delta).min(todo.len() - 1);
+                todo.swap(view.first, next);
+                view.first = next;
+            }
+            RebaseTodoEdit::Action(action) => todo[view.first].action = action,
+        }
+        view.error = None;
+    }
+
     pub fn submit(&mut self, bench: &Workbench, root: Option<&Path>) {
         if self.busy() {
             return;
@@ -680,6 +713,7 @@ impl CommitController {
         } else {
             None
         };
+        let todo = view.merge_review().and_then(MergePlan::rebase_todo_review);
         let resolution = if let Some(plan) = view.merge_conflicts() {
             if view.merge_file().is_some() || !view.all_merge_choices_saved() {
                 return;
@@ -688,7 +722,10 @@ impl CommitController {
                 return;
             };
             Some((review, view.merge_draft.choices.clone()))
-        } else if mainline.is_none() && view.merge_review().is_some_and(|plan| !plan.can_apply()) {
+        } else if mainline.is_none()
+            && todo.is_none()
+            && view.merge_review().is_some_and(|plan| !plan.can_apply())
+        {
             return;
         } else {
             None
@@ -709,7 +746,7 @@ impl CommitController {
         }
         view.error = None;
         view.input_token = Arc::new(());
-        let plan = if resolution.is_some() || mainline.is_some() {
+        let plan = if resolution.is_some() || mainline.is_some() || todo.is_some() {
             None
         } else {
             view.saved_mainline_review = None;
@@ -730,6 +767,12 @@ impl CommitController {
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let cancelled = || stop.load(Ordering::Acquire);
+                    if let Some(review) = todo {
+                        return Completion::Review(
+                            prepare_rebase_todo(review, cancelled)
+                                .map(|plan| WritePlan::Merge(Box::new(plan))),
+                        );
+                    }
                     if let Some(review) = mainline {
                         return Completion::Review(
                             prepare_commit_mainline(review, cancelled)
@@ -885,8 +928,13 @@ impl CommitController {
                                 prepare_merge(&root, &target.name, &target.oid, LIMITS, cancelled)
                                     .map(|plan| WritePlan::Merge(Box::new(plan)))
                             }
-                            (WriteDraft::RebaseBranch(target), _) => {
-                                prepare_rebase(&root, &target.name, &target.oid, LIMITS, cancelled)
+                            (WriteDraft::RebaseBranch(target, interactive), _) => {
+                                let prepare = if interactive {
+                                    prepare_interactive_rebase
+                                } else {
+                                    prepare_rebase
+                                };
+                                prepare(&root, &target.name, &target.oid, LIMITS, cancelled)
                                     .map(|plan| WritePlan::Merge(Box::new(plan)))
                             }
                             (WriteDraft::CommitOperation(operation, commit), _) => {
@@ -1040,6 +1088,26 @@ pub struct CommitOutcome {
     pub refresh_files: bool,
 }
 
+#[derive(Clone, Copy)]
+pub enum RebaseTodoEdit {
+    Select(usize),
+    Move(isize),
+    Action(RebaseAction),
+}
+
+pub fn rebase_todo_label(item: &jc_git::local_merge::RebaseTodo) -> String {
+    let action = match item.action {
+        RebaseAction::Pick => "Reaplicar",
+        RebaseAction::Squash => "Combinar",
+        RebaseAction::Drop => "Omitir",
+    };
+    format!(
+        "{action} · {} · {}",
+        item.original.to_hex_with_len(8),
+        item.subject
+    )
+}
+
 pub fn rebase_step_label(step: &RebaseStep) -> String {
     let original = step.original.to_hex_with_len(8);
     match step.state {
@@ -1048,6 +1116,10 @@ pub fn rebase_step_label(step: &RebaseStep) -> String {
             format!("Reaplicar · {original} → {}", id.to_hex_with_len(8))
         }
         RebaseStepState::AlreadyApplied => format!("Ya aplicado · {original}"),
+        RebaseStepState::Omitted => format!("Omitido · {original}"),
+        RebaseStepState::Combined(id) => {
+            format!("Combinado · {original} → {}", id.to_hex_with_len(8))
+        }
         RebaseStepState::Conflict => format!("Conflicto · {original}"),
     }
 }

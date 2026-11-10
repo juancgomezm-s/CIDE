@@ -1019,6 +1019,21 @@ mod tests {
         for _ in 0..row {
             state.key(0x28);
         }
+        state.key(b'I' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        assert_eq!(view.title(), "Rebase interactivo");
+        assert_eq!(view.rebase_todo().unwrap()[0].original.to_string(), applied);
+        state.key(b'D' as usize);
+        state.key(0x0d);
+        wait(&mut state, |s| !s.git_commit.busy());
+        let view = state.git_commit.view().unwrap();
+        let plan = view.merge_review().unwrap();
+        assert_eq!(plan.result().unwrap().to_string(), onto);
+        assert_eq!(fs::read(&index).unwrap(), before);
+        assert_eq!(run(&["rev-parse", "HEAD"]), applied);
+        state.key(0x1b);
         state.key(b'E' as usize);
         state.key(0x0d);
         wait(&mut state, |s| !s.git_commit.busy());
