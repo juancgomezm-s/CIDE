@@ -2541,8 +2541,12 @@ mod tests {
 
         let url =
             std::env::var("CIDE_TEST_HTTPS_URL").expect("falta la URL del repositorio de prueba");
-        let branch = std::env::var("CIDE_TEST_HTTPS_BRANCH").expect("falta la rama de prueba");
-        let branch = format!("refs/heads/{branch}");
+        let short = std::env::var("CIDE_TEST_HTTPS_BRANCH").expect("falta la rama de prueba");
+        assert!(
+            short.starts_with("cide-https-"),
+            "usa una rama nueva cide-https-*"
+        );
+        let branch = format!("refs/heads/{short}");
         safe_ref(&branch).expect("rama de prueba inválida");
         assert!(url.starts_with("https://"), "se requiere HTTPS");
         let mut input = std::io::stdin().lock().take(16 * 1024).lines();
@@ -2565,12 +2569,6 @@ mod tests {
             timeout: Duration::from_secs(30),
             ..limits()
         };
-        let anonymous = fixture.p("anonymous");
-        let plan = prepare_network_worktree_clone(&url, &anonymous, limits, || false).unwrap();
-        assert!(
-            apply_network_worktree_clone(plan, None, || false).is_err() && !anonymous.exists(),
-            "la prueba exige un repositorio que requiera autenticación para clonar"
-        );
         let clone = |name| {
             let destination = fixture.p(name);
             let plan =
@@ -2581,22 +2579,35 @@ mod tests {
                 result.files > 0,
                 "el repositorio de prueba debe contener un archivo"
             );
-            let repo = gix::open(destination).unwrap();
-            assert_eq!(
-                repo.head_name().unwrap().unwrap().as_bstr(),
-                branch.as_bytes()
+            let mut repo = gix::open(&destination).unwrap();
+            assert!(
+                repo.head_tree()
+                    .unwrap()
+                    .lookup_entry_by_path(".github/workflows")
+                    .unwrap()
+                    .is_none(),
+                "el repositorio de prueba no puede contener workflows"
             );
-            repo
+            assert_ne!(
+                repo.head_name().unwrap().unwrap().as_bstr(),
+                branch.as_bytes(),
+                "la rama de prueba no puede ser la predeterminada"
+            );
+            let original = repo.head_id().unwrap().detach();
+            ref_update(&mut repo, &branch, original, PreviousValue::MustNotExist);
+            set_clone_head(&repo, &CloneHead::Branch(branch.clone())).unwrap();
+            write_clone_config(&repo, &url, "cide-proof", Some(&branch)).unwrap();
+            gix::open(destination).unwrap()
         };
         let mut writer = clone("writer");
         let mut reader = clone("reader");
         let original = writer.head_id().unwrap().detach();
         assert_eq!(reader.head_id().unwrap().detach(), original);
 
-        let push = |repo: &gix::Repository, old: gix::ObjectId, new: gix::ObjectId| {
+        let push = |repo: &gix::Repository, old: Option<gix::ObjectId>, new: gix::ObjectId| {
             let plan = prepare_network_push(
                 repo.workdir().unwrap(),
-                "origin",
+                "cide-proof",
                 Some(&credential),
                 limits,
                 || false,
@@ -2606,7 +2617,7 @@ mod tests {
                 panic!("se esperaba actualizar exactamente la rama de prueba");
             };
             assert_eq!(update.destination, branch);
-            assert_eq!(update.old.as_deref(), Some(old.to_string().as_str()));
+            assert_eq!(update.old, old.map(|id| id.to_string()));
             assert_eq!(update.new, new.to_string());
             let sent = apply_network_push(plan, Some(&credential), || false)
                 .expect("falló el envío autenticado");
@@ -2627,12 +2638,9 @@ mod tests {
         let fetch = |repo: &gix::Repository, expected: gix::ObjectId| {
             let workdir = repo.workdir().unwrap();
             let plan =
-                prepare_network_fetch(workdir, "origin", Some(&credential), limits, || false)
+                prepare_network_fetch(workdir, "cide-proof", Some(&credential), limits, || false)
                     .expect("falló la vista previa de obtención autenticada");
-            let tracking = format!(
-                "refs/remotes/origin/{}",
-                branch.strip_prefix("refs/heads/").unwrap()
-            );
+            let tracking = format!("refs/remotes/cide-proof/{short}");
             assert!(
                 fetch_preview(&plan)
                     .updates
@@ -2648,10 +2656,21 @@ mod tests {
             assert!(repo.has_object(expected));
         };
         let first = advance(&mut writer, original, "Prueba CIDE de envío HTTPS");
-        push(&writer, original, first);
+        assert!(
+            prepare_network_push(
+                writer.workdir().unwrap(),
+                "cide-proof",
+                None,
+                limits,
+                || false
+            )
+            .is_err(),
+            "el servidor de prueba debe exigir credenciales para el envío"
+        );
+        push(&writer, None, first);
         fetch(&reader, first);
         let second = advance(&mut reader, first, "Prueba CIDE de obtención y envío HTTPS");
-        push(&reader, first, second);
+        push(&reader, Some(first), second);
         fetch(&writer, second);
     }
 

@@ -211,20 +211,22 @@ del lado del servidor HTTP.
 
 La prueba `authenticated_https_clone_fetch_and_push` se ejecuta de forma
 explícita porque publica dos commits sin cambios de archivos. Requiere un
-repositorio privado desechable con un archivo y una rama predeterminada
-autorizada para escritura. Lee la URL sin credenciales y la rama corta de
-`CIDE_TEST_HTTPS_URL` y `CIDE_TEST_HTTPS_BRANCH`. Recibe usuario y token o
-contraseña en dos líneas por la entrada estándar. El destino debe rechazar
-el clon anónimo y los dos clones autenticados deben coincidir en la rama y
-el commit de partida. La prueba fija el commit anterior en cada envío y
-confirma que el otro clon obtiene exactamente el nuevo commit.
+repositorio de prueba con un archivo y permiso para crear una rama nueva
+`cide-https-*`. El árbol inicial debe estar libre de workflows. Lee la URL
+sin credenciales y la rama corta de `CIDE_TEST_HTTPS_URL` y
+`CIDE_TEST_HTTPS_BRANCH`. Recibe usuario y token o
+contraseña en dos líneas por la entrada estándar. Los dos clones deben
+coincidir en el commit de partida. La prueba comprueba que la consulta de
+envío falla sin credenciales, exige que la rama de prueba esté ausente en el
+primer envío y fija el commit anterior en el segundo. Cada clon confirma
+que obtiene exactamente el commit que envió el otro.
 
 Con el ejecutable de pruebas de `jc-git` compilado en Windows, se puede
 obtener la credencial del gestor de Git sin mostrar el secreto:
 
 ```powershell
-$env:CIDE_TEST_HTTPS_URL = '<URL HTTPS del repositorio privado autorizado>'
-$env:CIDE_TEST_HTTPS_BRANCH = '<rama predeterminada autorizada>'
+$env:CIDE_TEST_HTTPS_URL = '<URL HTTPS del repositorio autorizado>'
+$env:CIDE_TEST_HTTPS_BRANCH = '<nombre nuevo cide-https-*>'
 $env:GCM_INTERACTIVE = 'Never'
 $env:GIT_TERMINAL_PROMPT = '0'
 $record = "url=$env:CIDE_TEST_HTTPS_URL`n`n" | git -c credential.interactive=false credential fill
@@ -241,10 +243,20 @@ try {
 ```
 
 `$testExe` es la ruta que muestra `cargo test -p jc-git --lib --no-run
---locked --offline`. Una comprobación contra el repositorio público de
-demostración de GitHub completó el clon HTTPS anónimo y activó la barrera
-que impide enviar a ese destino. La comprobación autenticada requiere el
-destino privado autorizado.
+--locked --offline`. Un servidor público puede permitir las lecturas anónimas
+aunque CIDE envíe la credencial configurada.
+
+El 2026-11-10 la prueba pasó en Windows contra `juancgomezm-s/RAG` en
+GitHub, con la credencial que proporcionó Git Credential Manager. GitHub
+rechazó la consulta de envío sin credencial. CIDE clonó dos veces, creó la
+rama `cide-https-20261110`, obtuvo el primer commit desde el otro clon,
+envió el segundo y lo obtuvo desde el clon inicial. GitHub confirmó dos
+commits y cero archivos cambiados. `main` quedó en `7f23c096`; la rama de
+prueba quedó en `2e3253f5`.
+
+Pasaron formato, Clippy y las 12 pruebas locales de remotos en serie.
+El caso Smart HTTP local recibió una vez un error de acceso de Windows
+durante la tanda paralela y pasó tanto aislado como en serie.
 
 En Windows con Rust 1.88 se validaron el clon con directorio de trabajo, la
 confirmación de referencia del envío, la huella de servidor SSH, el ciclo de
