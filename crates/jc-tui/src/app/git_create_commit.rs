@@ -7,7 +7,7 @@ use jc_app::{
         RebaseTodoEdit, ResetMode, WriteDraft,
     },
     git_merge_resolution::{MergeAction, MergePane},
-    present_field, FieldEdit,
+    FieldEdit,
 };
 
 pub(crate) struct CommitPresentation {
@@ -321,7 +321,7 @@ impl TuiApp {
                 caret: None,
             });
         }
-        let field = present_field(&view.message, view.cursor, usize::from(width), 1);
+        let field = view.present_input(usize::from(width));
         let mut rows = (view.has_input() && view.repository_review().is_none())
             .then(|| {
                 field
@@ -330,8 +330,8 @@ impl TuiApp {
                     .filter(|s| !s.is_empty())
                     .cloned()
                     .unwrap_or_else(|| {
-                        if let WriteDraft::Repository(draft) = &view.draft {
-                            draft.action.prompt().unwrap_or_default().into()
+                        if let Some(prompt) = view.repository_prompt() {
+                            prompt.into()
                         } else if matches!(
                             view.draft,
                             WriteDraft::CreateReference(..) | WriteDraft::ChangeReference(..)
@@ -699,7 +699,7 @@ impl TuiApp {
                 "↑↓ archivos · F2 confirma · Esc cancela"
             }
         } else {
-            if view.has_input() && !view.message.is_empty() {
+            if view.has_input() && (!view.message.is_empty() || view.presenting_secret()) {
                 caret = Some((field.cursor_column as u16, 0));
             }
             if let WriteDraft::CreateReference(_, target) = &view.draft {

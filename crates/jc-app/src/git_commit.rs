@@ -7,7 +7,7 @@ use crate::{
         RepositoryResolution, RepositoryReview, StashTarget,
     },
     git_revision::{ComparisonOrigin, PairKind, RevisionComparison},
-    FieldEdit, Wakeup, Workbench,
+    present_field, FieldEdit, FieldPresentation, Wakeup, Workbench,
 };
 use jc_git::branch_switch::{apply_branch_switch, prepare_branch_switch, BranchSwitchPlan};
 pub use jc_git::commit_write::AmendTarget;
@@ -26,6 +26,7 @@ use jc_git::ref_write::{
     apply_ref, apply_ref_change, prepare_ref, prepare_ref_change, RefChangePlan, RefPlan,
     REF_NAME_BYTES,
 };
+use jc_git::remote::{OperationCredential, SecretString};
 use jc_git::restore::{apply_restore, prepare_restore, RestorePlan};
 use std::{
     path::{Path, PathBuf},
@@ -194,11 +195,96 @@ pub struct CommitView {
     pub cursor: usize,
     pub first: usize,
     pub error: Option<String>,
+    secret: Option<SecretEntry>,
+    credentials: Option<Arc<OperationCredential>>,
     input_token: Arc<()>,
     review: Option<WritePlan>,
     merge_draft: MergeDraft,
     saved_merge_review: Option<Box<MergePlan>>,
     saved_mainline_review: Option<Box<MergePlan>>,
+}
+
+const SECRET_LIMIT: usize = 2048;
+
+fn split_network_identity(input: &str, action: RepositoryAction) -> Option<(&str, &str)> {
+    let delimiter = input
+        .match_indices('|')
+        .nth(usize::from(matches!(
+            action,
+            RepositoryAction::CloneWorktree
+                | RepositoryAction::InitSubmodule
+                | RepositoryAction::UpdateSubmodule
+        )))?
+        .0;
+    Some((&input[..delimiter], &input[delimiter + 1..]))
+}
+
+struct SecretEntry {
+    input: Vec<u8>,
+    username: String,
+    pin: Option<String>,
+    private_key: Option<PathBuf>,
+}
+
+impl SecretEntry {
+    fn new(username: String, pin: Option<String>, private_key: Option<PathBuf>) -> Self {
+        Self {
+            input: Vec::with_capacity(SECRET_LIMIT),
+            username,
+            pin,
+            private_key,
+        }
+    }
+
+    fn into_credentials(mut self) -> OperationCredential {
+        OperationCredential {
+            username: std::mem::take(&mut self.username),
+            secret: SecretString::new(
+                String::from_utf8(std::mem::take(&mut self.input))
+                    .expect("La entrada de credencial siempre es UTF-8"),
+            ),
+            host_fingerprint_pin: self.pin.take(),
+            private_key: self.private_key.take(),
+        }
+    }
+
+    fn edit(&mut self, edit: FieldEdit<'_>) -> Result<(), &'static str> {
+        match edit {
+            FieldEdit::Insert(text) => {
+                if text.len() > SECRET_LIMIT.saturating_sub(self.input.len())
+                    || text.chars().any(char::is_control)
+                {
+                    return Err("Credencial fuera del límite o con caracteres de control");
+                }
+                self.input.extend_from_slice(text.as_bytes());
+            }
+            FieldEdit::Backspace => {
+                if let Some((start, _)) = self.text().char_indices().next_back() {
+                    self.truncate(start);
+                }
+            }
+            FieldEdit::Clear => self.truncate(0),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn text(&self) -> &str {
+        std::str::from_utf8(&self.input).expect("La entrada de credencial siempre es UTF-8")
+    }
+
+    fn truncate(&mut self, start: usize) {
+        for byte in &mut self.input[start..] {
+            unsafe { std::ptr::write_volatile(byte, 0) };
+        }
+        self.input.truncate(start);
+    }
+}
+
+impl Drop for SecretEntry {
+    fn drop(&mut self) {
+        self.truncate(0);
+    }
 }
 
 impl CommitView {
@@ -230,6 +316,27 @@ impl CommitView {
     }
     pub fn has_input(&self) -> bool {
         self.draft.has_input()
+    }
+    pub fn presenting_secret(&self) -> bool {
+        self.secret.is_some()
+    }
+
+    pub fn present_input(&self, width: usize) -> FieldPresentation {
+        if let Some(secret) = &self.secret {
+            let masked = "*".repeat(secret.text().chars().count());
+            return present_field(&masked, masked.len(), width, 1);
+        }
+        present_field(&self.message, self.cursor, width, 1)
+    }
+
+    pub fn repository_prompt(&self) -> Option<&'static str> {
+        if self.presenting_secret() {
+            return Some("Contraseña, token o frase de la clave");
+        }
+        match &self.draft {
+            WriteDraft::Repository(draft) => draft.action.prompt(),
+            _ => None,
+        }
     }
     pub fn pending_hint(&self) -> &'static str {
         match &self.draft {
@@ -478,6 +585,16 @@ impl CommitController {
     pub fn open_repository_menu(&mut self, root: PathBuf, stash: Option<StashTarget>) {
         self.open_write(root, None, WriteDraft::RepositoryMenu(stash));
     }
+    pub fn open_worktree_clone(&mut self, root: PathBuf) {
+        self.open_write(
+            root,
+            None,
+            WriteDraft::Repository(RepositoryDraft {
+                action: RepositoryAction::CloneWorktree,
+                stash: None,
+            }),
+        );
+    }
     pub fn select_repository_action(&mut self, index: usize) {
         if self.busy() {
             return;
@@ -501,6 +618,8 @@ impl CommitController {
                 cursor: 0,
                 first: 0,
                 error: None,
+                secret: None,
+                credentials: None,
                 input_token: Arc::new(()),
                 review: None,
                 merge_draft: MergeDraft::default(),
@@ -538,6 +657,9 @@ impl CommitController {
         if let (Some(file), Some(plan)) = (view.merge_file(), view.merge_conflicts()) {
             return file.paste_budget(plan);
         }
+        if let Some(secret) = &view.secret {
+            return Some(SECRET_LIMIT.saturating_sub(secret.input.len()).max(1));
+        }
         (view.has_input() && view.review.is_none())
             .then(|| view.input_limit().saturating_sub(view.message.len()).max(1))
     }
@@ -560,6 +682,12 @@ impl CommitController {
         if !view.has_input() || view.review.is_some() {
             return;
         }
+        if let Some(secret) = &mut view.secret {
+            view.error = secret.edit(edit).err().map(str::to_owned);
+            view.input_token = Arc::new(());
+            return;
+        }
+        view.credentials = None;
         if let FieldEdit::Insert(text) = edit {
             if text.chars().any(char::is_control) {
                 view.error = Some("El campo debe ocupar una sola línea".into());
@@ -780,6 +908,45 @@ impl CommitController {
             }
             return;
         }
+        let identity_fields = match &view.draft {
+            WriteDraft::Repository(draft)
+                if view.review.is_none()
+                    && view.secret.is_none()
+                    && draft.action.accepts_network_credentials() =>
+            {
+                split_network_identity(&view.message, draft.action)
+            }
+            _ => None,
+        };
+        if let Some((target, identity)) = identity_fields {
+            let mut fields = identity.split('|').map(str::trim);
+            let username = fields.next().unwrap_or_default();
+            let pin = fields.next();
+            let private_key = fields.next().map(PathBuf::from);
+            if username.is_empty()
+                || username.len() > 256
+                || username.contains(':')
+                || pin.is_some_and(|pin| pin.is_empty() || pin.len() > 128)
+                || private_key
+                    .as_ref()
+                    .is_some_and(|path| !path.is_absolute() || path.as_os_str().len() > 4096)
+                || fields.next().is_some()
+            {
+                view.error = Some("Especifica usuario, huella SHA256 para SSH y ruta absoluta de la clave si se usa".into());
+                return;
+            }
+            let target = target.trim().to_owned();
+            view.secret = Some(SecretEntry::new(
+                username.to_owned(),
+                pin.map(str::to_owned),
+                private_key,
+            ));
+            view.message = target;
+            view.cursor = view.message.len();
+            view.input_token = Arc::new(());
+            view.error = None;
+            return;
+        }
         if view
             .repository_review()
             .is_some_and(|review| !review.can_apply())
@@ -839,6 +1006,9 @@ impl CommitController {
         }
         view.error = None;
         view.input_token = Arc::new(());
+        if let Some(secret) = view.secret.take() {
+            view.credentials = Some(Arc::new(secret.into_credentials()));
+        }
         let plan = if resolution.is_some() || mainline.is_some() || todo.is_some() {
             None
         } else {
@@ -850,6 +1020,7 @@ impl CommitController {
         let message = view.message.clone();
         let replaces = view.replaces.clone();
         let draft = view.draft.clone();
+        let credentials = view.credentials.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let stop = cancelled.clone();
         let result = Arc::new(Mutex::new(None));
@@ -881,7 +1052,7 @@ impl CommitController {
                         });
                     }
                     match plan {
-                        Some(WritePlan::Repository(plan)) => match plan.apply(cancelled) {
+                        Some(WritePlan::Repository(plan)) => match plan.apply(credentials.as_deref(), cancelled) {
                             Ok(RepositoryOutcome::Done(notice)) => Completion::Applied(Ok(notice)),
                             Ok(RepositoryOutcome::PullReview(plan)) => Completion::PullReview(plan),
                             Err(error) => Completion::Applied(Err(error)),
@@ -1003,7 +1174,7 @@ impl CommitController {
                             }))
                         }
                         None => Completion::Review(match (draft, replaces) {
-                            (WriteDraft::Repository(draft), _) => crate::git_repository::prepare(&root, draft, &message, LIMITS, cancelled)
+                            (WriteDraft::Repository(draft), _) => crate::git_repository::prepare(&root, draft, &message, credentials.as_deref(), LIMITS, cancelled)
                                 .map(|plan| WritePlan::Repository(Box::new(plan))),
                             (WriteDraft::RepositoryMenu(_), _) => Err(jc_git::Error::Unsupported),
                             (WriteDraft::CreateReference(kind, target), _) => {
@@ -1118,6 +1289,7 @@ impl CommitController {
         };
         match result {
             Completion::PullReview(plan) => {
+                view.credentials = None;
                 view.review = Some(WritePlan::Merge(plan));
                 view.first = 0;
                 let root = view.root.clone();
@@ -1134,6 +1306,11 @@ impl CommitController {
                 );
             }
             Completion::Review(Ok(plan)) => {
+                if matches!(&view.draft, WriteDraft::Repository(draft)
+                    if matches!(draft.action, RepositoryAction::InitSubmodule | RepositoryAction::UpdateSubmodule))
+                {
+                    view.credentials = None;
+                }
                 if let Some(WritePlan::Merge(previous)) = view.review.replace(plan) {
                     if previous.is_rebase() {
                         // A new paused commit starts with its own path choices.
@@ -1146,8 +1323,12 @@ impl CommitController {
                 }
                 view.first = 0;
             }
-            Completion::Review(Err(e)) => view.error = Some(e.to_string()),
+            Completion::Review(Err(e)) => {
+                view.credentials = None;
+                view.error = Some(e.to_string());
+            }
             Completion::Applied(result) => {
+                view.credentials = None;
                 let root = view.root.clone();
                 let reference = view.draft.refreshes_graph();
                 let refresh_files = view.draft.refreshes_files();
@@ -1176,6 +1357,7 @@ impl CommitController {
                 );
             }
             Completion::Panic => {
+                view.credentials = None;
                 view.error = Some(
                     if job.applying {
                         "Publicación incierta. Actualiza el repositorio antes de reintentar"
@@ -1260,5 +1442,36 @@ impl Drop for CommitController {
             }
             let _ = job.thread.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clone_credential_is_separate_from_metadata_and_masked_until_cancelled() {
+        let root = PathBuf::from("repo-fixture");
+        let mut controller = CommitController::new(Wakeup::default());
+        controller.open_worktree_clone(root.clone());
+        controller.edit(FieldEdit::Insert(
+            "https://example.invalid/repo | C:/destino | usuario",
+        ));
+        controller.submit(&Workbench::default(), Some(&root));
+        assert!(controller.view().unwrap().presenting_secret());
+        assert!(!controller.busy());
+        controller.edit(FieldEdit::Insert("secreto-sintético"));
+        let view = controller.view().unwrap();
+        assert_eq!(view.message, "https://example.invalid/repo | C:/destino");
+        let shown = view.present_input(80).rows.join("");
+        assert!(!shown.contains("secreto"));
+        assert!(shown.contains('*'));
+        controller.edit(FieldEdit::Backspace);
+        assert_eq!(
+            controller.view().unwrap().secret.as_ref().unwrap().text(),
+            "secreto-sintétic"
+        );
+        controller.cancel();
+        assert!(controller.view().is_none());
     }
 }

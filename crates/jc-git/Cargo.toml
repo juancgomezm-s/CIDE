@@ -9,4 +9,10 @@ license = "MIT"
 
 [dependencies]
 jc-fs = { path = "../jc-fs" }
-gix = { version = "=0.90.0", default-features = false, features = ["status", "revision", "sha1", "sha256"] }
+gix = { version = "=0.90.0", default-features = false, features = ["status", "revision", "sha1", "sha256", "blocking-network-client", "worktree-mutation"] }
+gix-transport = { version = "=0.62.0", default-features = false, features = ["http-client"] }
+russh = { version = "=0.63.1", default-features = false, features = ["ring", "flate2", "rsa"] }
+tokio = { version = "=1.54.1", default-features = false, features = ["rt", "net", "time", "io-util", "sync"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Networking_WinHttp"] }

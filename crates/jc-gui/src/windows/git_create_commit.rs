@@ -5,7 +5,7 @@ use jc_app::{
         RebaseTodoEdit, ResetMode, WriteDraft,
     },
     git_merge_resolution::{MergeAction, MergePane},
-    present_field, FieldEdit, Modifiers,
+    FieldEdit, Modifiers,
 };
 use std::sync::Arc;
 
@@ -507,7 +507,7 @@ impl State {
             f.preview.top + p(93),
         );
         let width = ((r.right - r.left - p(16)) / self.cell_width.max(1)).clamp(1, 256) as usize;
-        let field = present_field(&view.message, view.cursor, width, 1);
+        let field = view.present_input(width);
         f.query = (view.has_input() && view.repository_review().is_none()).then(|| QueryRow {
             rect: r,
             text: field.rows.first().cloned().unwrap_or_default(),
@@ -1084,7 +1084,8 @@ impl State {
             f.summary = vec![opaque(&comparison.path, 256)];
             ("Revisar archivo", 12)
         } else if let WriteDraft::Repository(draft) = &view.draft {
-            f.summary.extend(draft.action.prompt().map(str::to_owned));
+            f.summary
+                .extend(view.repository_prompt().map(str::to_owned));
             if let Some(stash) = &draft.stash {
                 f.summary
                     .push(format!("Reserva stash@{{{}}} · {}", stash.index, stash.oid));

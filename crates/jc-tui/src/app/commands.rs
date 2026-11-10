@@ -231,6 +231,12 @@ impl TuiApp {
             }
             GitConfigureExecutable => self.configure_git_executable(),
             GitRepositoryStatus | GitStatusRefresh => self.open_git_repository_status(),
+            GitCloneWorktree => {
+                if let Some(root) = self.project_root.clone() {
+                    self.open_git_repository_status();
+                    self.git_commit.open_worktree_clone(root);
+                }
+            }
             GitStatusCancel => {
                 if self.git_history.immutable() {
                     self.git_revision.cancel();

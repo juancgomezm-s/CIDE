@@ -248,6 +248,7 @@ impl Workbench {
             | GitDiffCancel
             | GitConfigureExecutable
             | GitRepositoryStatus
+            | GitCloneWorktree
             | GitStatusRefresh
             | GitStatusCancel
             | DiffCompareOpen

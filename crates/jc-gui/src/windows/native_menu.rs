@@ -91,6 +91,7 @@ fn git_command(command: CommandId) -> bool {
             | CommandId::GitDiffCancel
             | CommandId::GitConfigureExecutable
             | CommandId::GitRepositoryStatus
+            | CommandId::GitCloneWorktree
             | CommandId::GitStatusRefresh
             | CommandId::GitStatusCancel
     )

@@ -262,6 +262,7 @@ pub fn default_menu_model() -> MenuModel {
                 command(GitDiffRefresh),
                 command(GitDiffCancel),
                 command(GitRepositoryStatus),
+                command(GitCloneWorktree),
                 command(GitStatusRefresh),
                 command(GitStatusCancel),
                 SEP,

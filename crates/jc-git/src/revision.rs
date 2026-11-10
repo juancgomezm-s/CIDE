@@ -306,7 +306,7 @@ pub(super) fn tree_entries(
     budget: &mut Budget,
     ctx: &Context<'_>,
 ) -> Result<Entries, Error> {
-    collect_tree_entries(repo, id, limits, budget, ctx, false)
+    collect_tree_entries(repo, id, limits, budget, ctx, false, false)
 }
 
 pub(super) fn merge_tree_entries(
@@ -316,7 +316,17 @@ pub(super) fn merge_tree_entries(
     budget: &mut Budget,
     ctx: &Context<'_>,
 ) -> Result<Entries, Error> {
-    collect_tree_entries(repo, id, limits, budget, ctx, true)
+    collect_tree_entries(repo, id, limits, budget, ctx, true, false)
+}
+
+pub(super) fn checkout_tree_entries(
+    repo: &gix::Repository,
+    id: gix::ObjectId,
+    limits: Limits,
+    budget: &mut Budget,
+    ctx: &Context<'_>,
+) -> Result<Entries, Error> {
+    collect_tree_entries(repo, id, limits, budget, ctx, true, true)
 }
 
 fn collect_tree_entries(
@@ -326,6 +336,7 @@ fn collect_tree_entries(
     budget: &mut Budget,
     ctx: &Context<'_>,
     reject_empty_subtrees: bool,
+    allow_gitlinks: bool,
 ) -> Result<Entries, Error> {
     let mut entries = Entries::new();
     let mut pending = vec![(Vec::new(), id, 0usize)];
@@ -362,7 +373,10 @@ fn collect_tree_entries(
                     path.push(b'/');
                     pending.push((path, entry.object_id(), depth + 1));
                 }
-                0o100644 | 0o100755 | 0o120000 => {
+                0o100644 | 0o100755 | 0o120000 | 0o160000 => {
+                    if mode == 0o160000 && !allow_gitlinks {
+                        return Err(Error::Unsupported);
+                    }
                     if entries
                         .insert(
                             path,

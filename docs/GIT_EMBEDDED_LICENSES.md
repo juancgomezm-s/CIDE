@@ -49,6 +49,12 @@ Tras esa conservación no quedan paquetes del conjunto sin archivos de licencia.
 
 ## Distribución y cambios posteriores
 
+La ampliación de transportes y árboles de trabajo conserva avisos para 289
+identidades del lock, con 580 archivos verificados. En seis paquetes cuyos
+archivos de registro omitían los avisos se conservaron los textos del
+repositorio de origen en el commit registrado por el paquete. El inventario
+documenta esa procedencia y verifica los checksums de los archivos de registro.
+
 Incluir `third_party/gitoxide` con el paquete distribuido de CIDE. No se requiere
 insertar estos textos en el editor, menús o paneles. Cualquier modificación del
 lock exige revisar/regenerar el inventario y conservar nuevos avisos. El script

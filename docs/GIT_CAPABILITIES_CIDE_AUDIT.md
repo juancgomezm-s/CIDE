@@ -128,10 +128,10 @@ como `Repository::write_object`/`commit_as` en `repository/object.rs`,
 prueba que stage parcial, checkout seguro, rebase, stash o push estén resueltos.
 
 Su `Cargo.toml` declara features opcionales `blame`, `merge`,
-`worktree-mutation`, `credentials` y transportes de red. No están habilitadas por
-la selección actual de CIDE. No se descargó ni compiló ninguna de ellas en esta
-auditoría. Debe revisarse cobertura real de cada operación antes de elegir qué
-parte adaptar y qué parte construir en Rust propio. No habilitar `extras` por
+`worktree-mutation`, `credentials` y transportes de red. La selección de CIDE
+al inicio de esta auditoría no las habilitaba. Debe revisarse la cobertura
+real de cada operación antes de elegir qué parte adaptar y qué parte
+construir en Rust propio. No habilitar `extras` por
 comodidad ni prometer paridad porque exista una feature con nombre parecido.
 
 Para HTTPS/SSH embebido hay que evaluar transporte, TLS y autenticación sin
@@ -173,15 +173,48 @@ para aplicarla, aplicarla y retirarla, o eliminarla.
 - El inventario muestra árboles de trabajo, permite bloquear y desbloquear
   registros enlazados y lista los submódulos del commit actual.
 
-El transporte HTTPS/SSH y sus credenciales, el clon con directorio de trabajo,
-la creación, traslado y retiro de árboles de trabajo y la inicialización y
-actualización de submódulos siguen pendientes. El transporte de archivos de
-gix puede invocar git-upload-pack, una ruta que queda fuera del requisito
-de motor embebido.
-
 La validación local en Windows cubrió 94 casos del núcleo y 17 de integración
 y consumo. Incluye preservar el índice al aplicar una reserva, rechazar envíos
 divergentes y publicar un clon bare en un destino nuevo.
+
+### Transporte autenticado y directorios de trabajo
+
+- **Obtener**, **Obtener e integrar** y **Enviar** admiten remotos HTTPS y SSH.
+  En HTTPS se puede usar un usuario y un token o contraseña. Para SSH se
+  indica la huella SHA256 del servidor. Se admite una contraseña o una clave
+  privada con su frase opcional. El campo secreto aparece después de los
+  datos del remoto y se muestra enmascarado.
+- **Clonar con directorio de trabajo** admite repositorios locales y URL HTTPS
+  o SSH. Con una carpeta abierta en CIDE, se introduce `origen | carpeta nueva`.
+  El destino y los orígenes locales se indican con rutas absolutas. Para
+  autenticar, se añaden `| usuario`, `| huella SHA256` y
+  `| ruta absoluta de la clave` según el protocolo. El directorio se publica
+  tras completar el índice y el árbol.
+- **Crear árbol de trabajo** fija una rama o un SHA. **Trasladar** conserva el
+  árbol completo en el mismo volumen y actualiza sus enlaces administrativos.
+  **Retirar** conserva el árbol y el índice en cuarentena.
+  **Restaurar árbol retirado** devuelve ambos a sus
+  rutas originales si siguen disponibles. Las acciones de reanudación
+  comprueban el registro pendiente antes de continuar.
+- **Inicializar submódulo** y **Actualizar submódulo** toman la ruta del
+  gitlink y muestran los commits antes de confirmar. La actualización exige
+  un índice y árbol limpios. **Reanudar operación de submódulo** recupera la
+  inicialización o actualización fijada en el registro de recuperación.
+
+HTTPS usa la validación de certificados de Windows. SSH compara la huella
+indicada antes de enviar la credencial. El motor conserva las cuotas de
+admisión de objetos y referencias y el push exige avance directo.
+
+Los casos locales de transporte usan un servidor Smart HTTP de prueba y un
+servidor SSH con credenciales sintéticas. Git de escritorio actúa como oráculo
+del lado del servidor HTTP. La validación de certificados y credenciales con
+un proveedor HTTPS externo queda pendiente de una prueba con ese proveedor.
+
+En Windows con Rust 1.88 se validaron el clon con directorio de trabajo, la
+confirmación de referencia del envío, la huella de servidor SSH, el ciclo de
+cuarentena de worktrees y el rechazo de cambios locales o archivos ignorados
+al actualizar un submódulo. Las suites de la aplicación y ambas interfaces
+se ejecutaron en segundo plano.
 
 ## Propuesta para la TUI
 

@@ -18,6 +18,7 @@ pub mod restore;
 pub mod revision;
 pub mod stash;
 pub mod submodules;
+mod worktree_materialize;
 pub mod worktrees;
 use gix::bstr::ByteSlice;
 use std::{

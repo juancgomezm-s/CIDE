@@ -359,6 +359,11 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     ),
     (145, CommandId::GitDiffCancel, "&Cancelar comparación"),
     (
+        148,
+        CommandId::GitCloneWorktree,
+        "C&lonar con directorio de trabajo…",
+    ),
+    (
         146,
         CommandId::GitStatusRefresh,
         "Actualizar es&tado del repositorio",
@@ -923,6 +928,15 @@ impl State {
             }
             CommandId::GitRepositoryStatus | CommandId::GitStatusRefresh => {
                 return self.request_git(git_panel::GitIntent::Status)
+            }
+            CommandId::GitCloneWorktree => {
+                if let Some(root) = self.project_root.clone() {
+                    let action = self.request_git(git_panel::GitIntent::Status);
+                    self.git_commit.open_worktree_clone(root);
+                    self.git_workspace.invalidate();
+                    return action;
+                }
+                return Action::None;
             }
             CommandId::ViewGit | CommandId::GitDiffRefresh => {
                 return self.request_git(git_panel::GitIntent::Diff(self.git_source));

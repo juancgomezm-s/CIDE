@@ -102,6 +102,7 @@ pub enum CommandId {
     GitDiffCancel,
     GitConfigureExecutable,
     GitRepositoryStatus,
+    GitCloneWorktree,
     GitStatusRefresh,
     GitStatusCancel,
     DiffCompareOpen,
@@ -447,6 +448,9 @@ fn git_diff_running(ctx: &CommandContext) -> bool {
 }
 fn git_repository(ctx: &CommandContext) -> bool {
     ctx.git_repository_available
+}
+fn git_clone(ctx: &CommandContext) -> bool {
+    cfg!(windows) && ctx.has_project
 }
 fn git_status_running(ctx: &CommandContext) -> bool {
     ctx.git_status_running
@@ -802,6 +806,12 @@ pub fn default_registry() -> CommandRegistry {
             View,
             "Git: actualizar estado del repositorio",
             git_repository
+        ),
+        spec!(
+            GitCloneWorktree,
+            View,
+            "Git: clonar con directorio de trabajo",
+            git_clone
         ),
         spec!(
             GitStatusCancel,
