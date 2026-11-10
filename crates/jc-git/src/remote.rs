@@ -703,6 +703,7 @@ pub fn apply_network_worktree_clone(
         }
         std::fs::create_dir(&plan.staging)?;
         let result = (|| {
+            let staging = jc_fs::directory_token_in_root(parent, &plan.staging)?;
             drop(gix::init(&plan.staging).map_err(engine)?);
             let (mut target, _) = open(&plan.staging, ctx)?;
             target.refs.write_reflog = gix::refs::store::WriteReflog::Disable;
@@ -748,27 +749,56 @@ pub fn apply_network_worktree_clone(
                 (0, 0)
             };
             drop(target);
-            ctx.check()?;
-            if !plan
-                .destination_pin
-                .same_location_as(&clone_destination_pin(&plan.destination, ctx)?)
-            {
-                return Err(Error::Stale);
-            }
-            publish_directory_create_only(&plan.staging, &plan.destination)?;
-            Ok(NetworkCloneResult {
-                destination: plan.destination,
-                files,
-                bytes,
-            })
+            publish_network_clone(&plan, &staging, ctx, publish_directory_create_only)?;
+            Ok((files, bytes))
         })();
-        result.map_err(|error: Error| {
+        let (files, bytes) = result.map_err(|error: Error| {
             Error::Engine(format!(
                 "{error}. Se conservó la preparación en {}",
                 plan.staging.display()
             ))
+        })?;
+        Ok(NetworkCloneResult {
+            destination: plan.destination,
+            files,
+            bytes,
         })
     })
+}
+
+fn publish_network_clone(
+    plan: &NetworkClonePlan,
+    staging: &jc_fs::DirectoryToken,
+    ctx: &Context<'_>,
+    mut rename: impl FnMut(&Path, &Path) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let parent = plan.destination.parent().ok_or(Error::InvalidRoot)?;
+    let mut backoff = [25, 50, 100, 200].into_iter();
+    loop {
+        ctx.check()?;
+        if jc_fs::directory_token_in_root(parent, &plan.staging)? != *staging
+            || !plan
+                .destination_pin
+                .same_location_as(&clone_destination_pin(&plan.destination, ctx)?)
+        {
+            return Err(Error::Stale);
+        }
+        ctx.check()?;
+        match rename(&plan.staging, &plan.destination) {
+            // Windows can report access denied when a child is temporarily
+            // open without delete sharing. Retry only the create-only rename.
+            Err(Error::Io(error)) if matches!(error.raw_os_error(), Some(5 | 32)) => {
+                let Some(ms) = backoff.next() else {
+                    return Err(error.into());
+                };
+                let remaining = ctx
+                    .deadline
+                    .saturating_duration_since(std::time::Instant::now());
+                std::thread::sleep(std::time::Duration::from_millis(ms).min(remaining));
+            }
+            result => return result,
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -2864,6 +2894,75 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn network_clone_retries_a_locked_stage_and_never_replaces_a_new_destination() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        for occupied_during_retry in [false, true] {
+            let fixture = Fixture::new();
+            let destination = fixture.p("clone");
+            let plan = prepare_network_worktree_clone(
+                "https://example.invalid/repo.git",
+                &destination,
+                limits(),
+                || false,
+            )
+            .unwrap();
+            let _parents = jc_fs::pin_tree_parents(&fixture.0, &destination).unwrap();
+            std::fs::create_dir(&plan.staging).unwrap();
+            let staging = jc_fs::directory_token_in_root(&fixture.0, &plan.staging).unwrap();
+            let staged_file = plan.staging.join("payload.txt");
+            std::fs::write(&staged_file, b"cloned content").unwrap();
+            let mut lock = Some(
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(1) // FILE_SHARE_READ, without FILE_SHARE_DELETE.
+                    .open(&staged_file)
+                    .unwrap(),
+            );
+            let mut attempts = 0;
+            let result = controlled(
+                limits().timeout,
+                || false,
+                |ctx| {
+                    publish_network_clone(&plan, &staging, ctx, |from, to| {
+                        attempts += 1;
+                        let result = publish_directory_create_only(from, to);
+                        if attempts == 1 {
+                            assert!(
+                                matches!(&result, Err(Error::Io(error)) if matches!(error.raw_os_error(), Some(5 | 32)))
+                            );
+                            drop(lock.take());
+                            if occupied_during_retry {
+                                std::fs::create_dir(to).unwrap();
+                                std::fs::write(to.join("payload.txt"), b"local content").unwrap();
+                            }
+                        }
+                        result
+                    })
+                },
+            );
+            if occupied_during_retry {
+                assert!(matches!(result, Err(Error::Stale)));
+                assert_eq!(attempts, 1);
+                assert_eq!(std::fs::read(staged_file).unwrap(), b"cloned content");
+                assert_eq!(
+                    std::fs::read(destination.join("payload.txt")).unwrap(),
+                    b"local content"
+                );
+            } else {
+                result.unwrap();
+                assert_eq!(attempts, 2);
+                assert!(!plan.staging.exists());
+                assert_eq!(
+                    std::fs::read(destination.join("payload.txt")).unwrap(),
+                    b"cloned content"
+                );
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn smart_http_clone_fetch_and_push_in_private_repositories() {
         let fixture = Fixture::new();
         let server_path = fixture.p("server.git");
@@ -2879,7 +2978,8 @@ mod tests {
             })
             .unwrap()
             .detach();
-        let first = commit_tree(&server, tree, None, "base");
+        let fixture_id = fixture.0.file_name().unwrap().to_str().unwrap();
+        let first = commit_tree(&server, tree, None, &format!("base {fixture_id}"));
         ref_update(
             &mut server,
             "refs/heads/main",

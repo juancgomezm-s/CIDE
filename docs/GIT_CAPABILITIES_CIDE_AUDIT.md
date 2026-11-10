@@ -303,6 +303,25 @@ commit del superproyecto. Ambos commits de `RAG` contienen el mismo
 cargo test -p jc-git --lib --locked --offline remote::tests::rag_ -- --ignored --test-threads 1
 ```
 
+El fallo intermitente de Smart HTTP en Windows se reprodujo al publicar
+la carpeta del clon. La descarga, el índice y los archivos ya estaban
+preparados cuando Windows devolvió el error 5 al renombrar. Un archivo
+abierto sin permiso para renombrarlo reprodujo el mismo error. CIDE
+reintenta solo ese renombrado cuando Windows devuelve acceso denegado o
+un conflicto de uso compartido. Antes de cada intento verifica la
+identidad de la carpeta preparada y la ausencia del destino. Hace hasta
+cuatro reintentos con 375 ms de espera acumulada como máximo dentro del
+plazo de la operación. Si el destino aparece, conserva ambas carpetas.
+
+Pasaron la regresión con bloqueo real, 80 recorridos Smart HTTP con
+paquetes distintos y 128 pruebas de `jc-git`. Las cuatro pruebas contra
+proveedores externos quedan optativas y tienen evidencia separada arriba.
+
+Esto cierra el alcance funcional de Git acordado para CIDE en Windows.
+Firma y LFS siguen como extensiones opcionales. La integración con
+OmniCore y OmniCoder y la validación en otros sistemas conservan su
+propio alcance.
+
 En Windows con Rust 1.88 se validaron el clon con directorio de trabajo, la
 confirmación de referencia del envío, la huella de servidor SSH, el ciclo de
 cuarentena de worktrees y el rechazo de cambios locales o archivos ignorados

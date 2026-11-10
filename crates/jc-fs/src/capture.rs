@@ -230,6 +230,17 @@ pub enum TreeNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DirectoryToken(ObjectIdentity);
 
+/// Observe a directory's identity without enumerating its contents.
+pub fn directory_token_in_root(root: &Path, target: &Path) -> io::Result<DirectoryToken> {
+    #[cfg(windows)]
+    return windows::directory_token_in_root(root, target);
+    #[cfg(not(windows))]
+    {
+        let _ = (root, target);
+        Err(io::ErrorKind::Unsupported.into())
+    }
+}
+
 pub struct TreeParents {
     _handles: Vec<std::fs::File>,
 }
@@ -558,6 +569,19 @@ mod windows {
             dirs.push(dir);
         }
         Ok(dirs)
+    }
+
+    pub(super) fn directory_token_in_root(
+        root: &Path,
+        target: &Path,
+    ) -> io::Result<DirectoryToken> {
+        let _parents = pin_tree_parent(root, target)?;
+        let directory = open(target, READ_ATTRIBUTES | LIST_DIRECTORY)?;
+        let identity = validate_dir(root, &directory)?.identity;
+        if final_path(&directory)? != target {
+            return Err(excluded());
+        }
+        Ok(DirectoryToken(identity))
     }
 
     pub(super) fn inspect_tree(
