@@ -15,6 +15,7 @@ mod explorer_scroll;
 mod explorer_smoke;
 mod ffi;
 mod folder;
+mod git_code;
 mod git_index_panel;
 mod git_panel;
 mod git_patch;
@@ -350,8 +351,12 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "&Estado del repositorio (solo lectura)",
     ),
     (141, CommandId::ViewGit, "&Diferencias del archivo activo"),
-    (142, CommandId::GitDiffHead, "Comparar captura de &HEAD"),
-    (143, CommandId::GitDiffIndex, "Comparar captura del &índice"),
+    (142, CommandId::GitDiffHead, "Comparar en Código con &HEAD"),
+    (
+        143,
+        CommandId::GitDiffIndex,
+        "Comparar en Código con el &índice",
+    ),
     (
         144,
         CommandId::GitDiffRefresh,
@@ -462,6 +467,7 @@ struct State {
     git_source: jc_app::git_read::GitBlobSource,
     git_panel: Option<git_panel::GitIntent>,
     git_workspace: git_workspace::Workspace,
+    git_code: git_code::View,
     git_patch: git_patch::Controller,
     git_index: jc_app::git_index::GitIndexController,
     git_commit: jc_app::git_commit::CommitController,
@@ -607,6 +613,7 @@ impl State {
             git_source: jc_app::git_read::GitBlobSource::Head,
             git_panel: None,
             git_workspace: Default::default(),
+            git_code: Default::default(),
             git_patch: Default::default(),
             git_index: jc_app::git_index::GitIndexController::new(wakeup.clone()),
             git_commit: jc_app::git_commit::CommitController::new(wakeup.clone()),
@@ -796,8 +803,9 @@ impl State {
         self.open_diff_context(&mut context);
         self.source_context(&mut context);
         self.snippet_context(&mut context);
-        if self.markdown_gui.is_some() {
+        if self.markdown_gui.is_some() || self.git_code.active {
             context.editor_input = false;
+            context.has_selection = false;
         }
         context
     }
@@ -938,18 +946,23 @@ impl State {
                 }
                 return Action::None;
             }
-            CommandId::ViewGit | CommandId::GitDiffRefresh => {
+            CommandId::ViewGit => {
+                if self.git_panel.is_some() && !self.git_code.active {
+                    return self.open_git_code_from_workspace();
+                }
+                return self.open_git_code(self.git_source);
+            }
+            CommandId::GitDiffRefresh => {
+                if self.git_code.active {
+                    return self.open_git_code(self.git_source);
+                }
                 return self.request_git(git_panel::GitIntent::Diff(self.git_source));
             }
             CommandId::GitDiffHead => {
-                return self.request_git(git_panel::GitIntent::Diff(
-                    jc_app::git_read::GitBlobSource::Head,
-                ))
+                return self.open_git_code(jc_app::git_read::GitBlobSource::Head)
             }
             CommandId::GitDiffIndex => {
-                return self.request_git(git_panel::GitIntent::Diff(
-                    jc_app::git_read::GitBlobSource::Index,
-                ))
+                return self.open_git_code(jc_app::git_read::GitBlobSource::Index)
             }
             CommandId::GitDiffCancel => {
                 self.cancel_git(git_panel::GitIntent::Diff(
@@ -1272,6 +1285,9 @@ impl State {
             return (true, self.markdown_key(code, modifiers));
         }
         if self.git_panel.is_some() {
+            if self.git_code.active {
+                return (true, self.git_code_key(code, modifiers));
+            }
             return (true, self.git_key(code, modifiers));
         }
         if self.replace_panel.is_some() {
@@ -1692,6 +1708,11 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     } else {
                         None
                     });
+                    state.git_code.hits = if result.is_ok() && composed {
+                        frame.git_code_hits()
+                    } else {
+                        None
+                    };
                 }
             }
             if let Err(error) = result {
@@ -1920,6 +1941,12 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     action = git_action;
                 } else if state.status_click(x, y) {
                     // Status controls consume the click before source hit-testing.
+                } else if state.git_code.active {
+                    if message == WM_LBUTTONDOWN && state.begin_explorer_scroll(x, y) {
+                        action = Action::CapturePointer;
+                    } else if !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK) {
+                        action = state.git_code_click(x, y);
+                    }
                 } else if state.git_panel.is_some() {
                     action = state.git_workspace_click(x, y);
                 } else if state.markdown_gui.is_some() {
@@ -1956,6 +1983,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_MOUSEMOVE | WM_LBUTTONUP => {
                 redraw = state.git_workspace.dragging()
+                    || state.git_code.dragging()
                     || state.explorer_scroll.drag.is_some()
                     || state.rectangle_drag.is_some()
                     || state.linear_drag.is_some()
@@ -1973,7 +2001,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 if wparam & 1 != 0 || message == WM_LBUTTONUP {
                     let x = (lparam as u16) as i16 as i32;
                     let y = ((lparam as usize >> 16) as u16) as i16 as i32;
-                    if state.git_workspace.dragging() {
+                    if state.git_code.dragging() {
+                        redraw = state.update_git_code_drag(x, y) || hover_changed;
+                    } else if state.git_workspace.dragging() {
                         redraw = state.update_git_drag(x, y) || hover_changed;
                     } else if state.explorer_scroll.drag.is_some() {
                         redraw = state.update_explorer_scroll(x, y) || hover_changed;
@@ -2129,6 +2159,7 @@ unsafe fn release_idle_capture(hwnd: Hwnd) {
         }
         let state = m.state.borrow();
         !state.git_workspace.dragging()
+            && !state.git_code.dragging()
             && state.rectangle_drag.is_none()
             && state.linear_drag.is_none()
             && state.editor_scroll_drag.is_none()

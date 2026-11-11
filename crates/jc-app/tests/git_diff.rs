@@ -223,6 +223,55 @@ fn gated(_: &TaskSnapshot, cancel: &Cancellation, _: &mut TaskOutput) -> Result<
 }
 
 #[test]
+fn selected_commit_compares_dirty_buffer_after_head_moves_and_rejects_stale_result() {
+    let _serial = SERIAL.lock().unwrap();
+    let fixture = Fixture::new(b"anterior\r\nigual\n", b"nuevo HEAD\r\nigual\n");
+    let old = String::from_utf8(fixture.git(&["rev-parse", "HEAD"]))
+        .unwrap()
+        .trim()
+        .to_owned();
+    let source = GitBlobSource::Commit(jc_app::git_read::GitCommitId::from_hex(&old).unwrap());
+    let tree = String::from_utf8(fixture.git(&["write-tree"])).unwrap();
+    let next =
+        String::from_utf8(fixture.git(&["commit-tree", tree.trim(), "-p", &old, "-m", "nuevo"]))
+            .unwrap();
+    fixture.git(&["update-ref", "HEAD", next.trim()]);
+    let index = fs::read(fixture.root.join(".git/index")).unwrap();
+    let disk = fs::read(&fixture.path).unwrap();
+    let mut app = fixture.app();
+    app.insert_text("sin guardar ").unwrap();
+    let dirty = app.active_bytes().unwrap();
+    let mut jobs = jobs();
+    let mut controller = GitDiffController::new();
+    controller
+        .request(&app, &mut jobs, fixture.options(source))
+        .unwrap();
+    pump(&app, &mut jobs, &mut controller);
+    assert_eq!(
+        controller.state(),
+        GitDiffState::Ready,
+        "{}",
+        controller.message()
+    );
+    let result = controller.result().unwrap();
+    assert_eq!(result.identity.source, source);
+    assert_eq!(result.identity.commit.as_ref().unwrap().as_str(), old);
+    assert_eq!(
+        result.model.source_bytes(DiffSide::Left),
+        b"anterior\r\nigual\n"
+    );
+    assert_eq!(result.model.source_bytes(DiffSide::Right), dirty);
+    assert_eq!(fs::read(&fixture.path).unwrap(), disk);
+    assert_eq!(fs::read(fixture.root.join(".git/index")).unwrap(), index);
+    app.insert_text("otra edición").unwrap();
+    controller.tick(&app, &mut jobs);
+    assert_eq!(controller.state(), GitDiffState::Stale);
+    assert!(controller.result().is_none());
+    assert!(jc_app::git_read::GitCommitId::from_hex("HEAD~1").is_err());
+    assert!(jc_app::git_read::GitCommitId::from_hex(&"0".repeat(40)).is_err());
+}
+
+#[test]
 fn dirty_document_snapshot_compares_head_or_index_and_hunk_navigation_preserves_bytes_and_undo() {
     let _serial = SERIAL.lock().unwrap();
     let head = b"\xef\xbb\xbfold \xff\r\nlast";

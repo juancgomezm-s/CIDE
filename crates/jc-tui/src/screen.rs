@@ -17,6 +17,8 @@ pub enum CellStyle {
     Status,
     Accent,
     Border,
+    DiffAdded,
+    DiffDeleted,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

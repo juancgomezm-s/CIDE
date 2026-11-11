@@ -19,6 +19,7 @@ pub(super) struct GitFrame {
 }
 impl State {
     pub(super) fn clear_git(&mut self) {
+        self.git_code = Default::default();
         let _ = self.git_index.discard_review();
         self.git_commit.cancel();
         self.git_revision.cancel();
@@ -61,6 +62,8 @@ impl State {
         }
     }
     pub(super) fn request_git(&mut self, intent: GitIntent) -> Action {
+        self.git_code.active = false;
+        self.git_code.invalidate();
         self.git_workspace.graph = None;
         self.git_workspace.path_query = None;
         self.git_workspace.blame_query = None;
@@ -166,6 +169,10 @@ impl State {
         }
         diff_changed |= self.git_diff.tick(&self.workbench, &mut self.jobs);
         changed |= diff_changed;
+        if self.git_code.active && (diff_changed || revision_changed) {
+            self.git_code.end_drag();
+            self.git_code.invalidate();
+        }
         changed |= self.open_diff.tick(&self.workbench, &mut self.jobs);
         changed |= self.tick_source();
         changed |= self.tick_outline();
@@ -429,6 +436,9 @@ impl State {
         Action::None
     }
     pub(super) fn git_presentation(&mut self) -> Option<super::git_workspace::Frame> {
+        if self.git_code.active {
+            return None;
+        }
         self.prepare_git_workspace()
     }
     pub(super) fn git_diff_running(&self) -> bool {

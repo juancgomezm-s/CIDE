@@ -29,6 +29,14 @@ pub(crate) fn style(role: CellStyle) -> Style {
     };
     match role {
         CellStyle::Normal => {}
+        CellStyle::DiffAdded => {
+            s.background = rgb(35, 68, 49);
+            s.foreground = rgb(192, 239, 200);
+        }
+        CellStyle::DiffDeleted => {
+            s.background = rgb(80, 43, 49);
+            s.foreground = rgb(255, 202, 204);
+        }
         CellStyle::Dim => s.foreground = rgb(150, 172, 192),
         CellStyle::Reverse => {
             s.background = palette(ui_theme::SELECTED);

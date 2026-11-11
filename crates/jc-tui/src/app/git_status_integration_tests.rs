@@ -2257,6 +2257,88 @@ fn status_selection_enter_and_repeated_composition_preserve_shared_editor_and_di
 }
 
 #[test]
+fn tui_code_diff_selects_commit_keeps_editor_and_blocks_hidden_edits() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let fixture = Fixture::new();
+    let before = fixture.disk();
+    let (mut app, wake) = fixture.app(true);
+    app.workbench.insert_text("sin guardar ").unwrap();
+    let dirty = app.workbench.active_bytes().unwrap();
+    let cursor = app.workbench.active_editor().unwrap().cursor;
+    app.dispatch(CommandId::GitDiffHead);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while app.git_diff.state() != GitDiffState::Ready {
+        app.poll_tasks();
+        assert!(Instant::now() < deadline, "{}", app.git_diff.message());
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(app.git_code.active);
+    assert_eq!(app.panels.sidebar(), SidebarView::Explorer);
+    assert!(!app.panels.bottom_visible());
+    let screen = app.frame(160, 30);
+    assert!(screen.row_text(2).contains("HEAD"));
+    assert!(
+        (3..26).any(|y| (30..160).any(|x| screen.cell(x, y).style == crate::CellStyle::DiffAdded))
+    );
+    assert!((3..26)
+        .any(|y| (30..160).any(|x| screen.cell(x, y).style == crate::CellStyle::DiffDeleted)));
+    key(&mut app, KeyCode::Char('x'));
+    app.handle_event(Event::Paste("no insertar".into()));
+    assert_eq!(app.workbench.active_bytes().unwrap(), dirty);
+    key(&mut app, KeyCode::Char('v'));
+    assert!(app.git_code.unified);
+    key(&mut app, KeyCode::F(4));
+    while app.git_revision.state() != jc_app::git_revision::GitRevisionState::Ready {
+        app.poll_tasks();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(app.graph_showing());
+    key(&mut app, KeyCode::Esc);
+    assert!(!app.graph_showing());
+    assert!(app.git_code.active);
+    key(&mut app, KeyCode::F(4));
+    while app.git_revision.state() != jc_app::git_revision::GitRevisionState::Ready {
+        app.poll_tasks();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let id = app.git_revision.graph().unwrap().entries[0]
+        .commit
+        .id
+        .clone();
+    key(&mut app, KeyCode::Enter);
+    while app.git_diff.state() != GitDiffState::Ready {
+        app.poll_tasks();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(!app.graph_showing());
+    assert_eq!(
+        app.git_diff
+            .result()
+            .unwrap()
+            .identity
+            .commit
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        id
+    );
+    assert!(matches!(
+        app.git_source,
+        jc_app::git_read::GitBlobSource::Commit(_)
+    ));
+    key(&mut app, KeyCode::Esc);
+    assert!(!app.git_code.active);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
+    assert_eq!(app.workbench.active_editor().unwrap().cursor, cursor);
+    assert_eq!(app.workbench.active_bytes().unwrap(), dirty);
+    assert_eq!(fixture.disk(), before);
+    drop(wake);
+}
+
+#[test]
 fn embedded_git_opens_status_and_diff_without_an_executable_prompt() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let fixture = Fixture::new();

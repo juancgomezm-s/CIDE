@@ -153,6 +153,28 @@ fn markdown_media_source_frame_releases_pixels_without_waiting_for_task_poll() {
     }
 }
 #[test]
+fn markdown_media_image_after_heading_stays_loaded_at_high_dpi() {
+    let fixture = Fixture::new();
+    fixture.bmp("large.bmp", 1024, 1024);
+    for raw in [96, 144, 192] {
+        let mut state = fixture.state("# Encabezado\n\n![Imagen](large.bmp)\n", 1000, 650);
+        state.dpi = super::super::dpi::Dpi::from_raw(raw);
+        state.cell_height = state.dpi.pixels(20);
+        state.cell_width = state.dpi.pixels(10);
+        let original = state.workbench.active_bytes().unwrap();
+        state.toggle_markdown();
+        for _ in 0..10 {
+            let frame = settle(&mut state);
+            assert_eq!(frame.images.len(), 1, "DPI {raw}");
+            assert!(frame.images[0].decoded.is_some(), "DPI {raw}");
+            assert_eq!(state.markdown_gui.as_ref().unwrap().wanted.len(), 1);
+            assert!(!state.markdown_images.loading());
+        }
+        assert_eq!(state.workbench.active_bytes().unwrap(), original);
+    }
+}
+
+#[test]
 fn markdown_media_reflow_retains_geometry_after_payload_eviction_without_reload_loop() {
     let fixture = Fixture::new();
     fixture.bmp("a.bmp", 80, 400);

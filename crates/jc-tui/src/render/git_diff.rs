@@ -202,6 +202,12 @@ pub(super) fn unified(
             }
         };
         let badge = format!("[{}]", line.eol);
+        let row_style = match line.kind {
+            GitRowKind::Deleted => CellStyle::DiffDeleted,
+            GitRowKind::Added => CellStyle::DiffAdded,
+            _ => CellStyle::Normal,
+        };
+        area.fill_row(screen, row, row_style);
         // Keep the +/- marker even in a one-cell area. EOL takes priority over
         // the end of source text, so long lines cannot hide an EOL-only change.
         let badge_width = (badge.chars().count() as u16).min(area.width.saturating_sub(1));
@@ -214,24 +220,10 @@ pub(super) fn unified(
         } else {
             format!("{sign} ")
         };
-        let column = area.write(
-            screen,
-            row,
-            0,
-            body_width.max(1),
-            &prefix,
-            CellStyle::Normal,
-        );
-        area.write(
-            screen,
-            row,
-            column,
-            body_width,
-            &line.text,
-            CellStyle::Normal,
-        );
+        let column = area.write(screen, row, 0, body_width.max(1), &prefix, row_style);
+        area.write(screen, row, column, body_width, &line.text, row_style);
         if badge_width > 0 {
-            area.write(screen, row, badge_x, area.width, &badge, CellStyle::Dim);
+            area.write(screen, row, badge_x, area.width, &badge, row_style);
         }
         row += 1;
     }

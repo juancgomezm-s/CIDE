@@ -8,6 +8,7 @@
 mod command;
 mod dialog;
 pub mod diff_model;
+pub mod diff_rows;
 pub mod markdown_preview;
 pub mod open_diff;
 pub mod open_diff_view;

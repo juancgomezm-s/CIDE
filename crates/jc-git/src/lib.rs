@@ -431,7 +431,23 @@ pub fn read_blob(
     limits: Limits,
     cancelled: impl FnMut() -> bool + Send,
 ) -> Result<Blob, Error> {
+    read_blob_source(root, from_index, None, path, limits, cancelled)
+}
+
+/// Read HEAD, the index, or an exact observed commit without resolving a ref.
+pub fn read_blob_source(
+    root: &Path,
+    from_index: bool,
+    selected: Option<&str>,
+    path: &str,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<Blob, Error> {
     limits.admit()?;
+    let selected = selected.map(revision::commit_id).transpose()?;
+    if from_index && selected.is_some() {
+        return Err(Error::Unsupported);
+    }
     if path.len() > limits.max_path
         || path.contains(['\\', '\0', '\r', '\n', ':'])
         || path
@@ -462,7 +478,10 @@ pub fn read_blob(
             }
             (entry.id, entry.mode.bits(), None)
         } else {
-            let head = repo.head_id().map_err(|_| Error::Missing)?.detach();
+            let head = match selected {
+                Some(id) => id,
+                None => repo.head_id().map_err(|_| Error::Missing)?.detach(),
+            };
             let commit_obj = object(&repo, head, OBJECT_BYTES)?
                 .try_into_commit()
                 .map_err(engine)?;

@@ -187,6 +187,7 @@ pub(crate) struct EditorText {
     pub cursor_column: Option<usize>,
 }
 pub(crate) struct Presentation<'a> {
+    pub code_diff: Option<super::git_code::CodeDiffPresentation>,
     pub markdown: Option<jc_app::markdown_preview::MarkdownPresentation>,
     pub app: &'a TuiApp,
     pub layout: FrameLayout,
@@ -250,6 +251,7 @@ impl TuiApp {
             && layout.height >= 10
             && !self.open_diff_visible
             && self.markdown_ui.is_none()
+            && !self.git_code.active
         {
             let number_width = self
                 .workbench
@@ -513,7 +515,12 @@ impl TuiApp {
         );
         let commit = self.prepare_git_create_commit(layout.width, layout.height);
         let graph = self.prepare_git_graph(layout.width, layout.height.saturating_sub(3));
+        let code_diff = self
+            .git_code
+            .active
+            .then(|| self.prepare_git_code(layout.editor_width, layout.content_height));
         Presentation {
+            code_diff,
             markdown,
             snippet,
             source,

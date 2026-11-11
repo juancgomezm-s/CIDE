@@ -1,4 +1,5 @@
 mod file_browser;
+mod git_code;
 mod git_diff;
 mod git_status;
 mod markdown;
@@ -62,10 +63,12 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
         screen.text_styled(
             1,
             height - 1,
-            &clip(if graph.title == "Ramas y etiquetas" {
+            &clip(if app.git_code.choose_commit {
+                "↑↓ elegir revisión · Intro comparar en Código · R ramas/etiquetas · N más · Esc volver"
+            } else if graph.title == "Ramas y etiquetas" {
                 "O operaciones · ↑↓ seleccionar · Intro abrir · A abortar · Esc volver"
             } else {
-                "O operaciones · ↑↓ · Intro abrir · P cherry-pick · V revertir · X reset · A abortar · R refs · B rama · T etiqueta · N más"
+                "C comparar en Código · ↑↓ · Intro archivos · O operaciones · P cherry-pick · V revertir · R refs · N más"
             }, width - 2),
             CellStyle::Accent,
         );
@@ -96,7 +99,16 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
     let editor_width = frame.layout.editor_width;
     let two_columns = frame.layout.two_columns;
     let pane_width = frame.layout.pane_width;
-    if two_columns {
+    if let Some(diff) = &frame.code_diff {
+        git_code::draw(
+            &mut screen,
+            diff,
+            editor_x,
+            content_top,
+            editor_width,
+            content_height,
+        );
+    } else if two_columns {
         draw_editor(
             frame,
             &mut screen,

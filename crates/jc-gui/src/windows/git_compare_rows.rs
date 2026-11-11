@@ -16,7 +16,11 @@ const TEXT: usize = 4096;
 /// Interpret a bounded source prefix without modifying or cloning the source.
 /// Unicode clipping is atomic per grapheme; a partially hidden wide cluster is
 /// represented by spaces, keeping subsequent text at its original visual column.
-pub(super) fn text(bytes: &[u8], encoding: TextEncoding, scroll: usize) -> (String, usize) {
+pub(in crate::windows) fn text(
+    bytes: &[u8],
+    encoding: TextEncoding,
+    scroll: usize,
+) -> (String, usize) {
     let bytes = bytes
         .strip_suffix(b"\r\n")
         .or_else(|| bytes.strip_suffix(b"\n"))

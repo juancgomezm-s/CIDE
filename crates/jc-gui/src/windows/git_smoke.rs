@@ -27,7 +27,7 @@ const SOURCE: &[u8] = b"alpha\r\nbeta\r\n";
 const HEAD: &[u8] = b"base\r\nbeta\r\n";
 const DIRTY: &[u8] = b"Qalpha\r\nbeta\r\n";
 
-unsafe fn one_task(hwnd: Hwnd) -> Result<(), String> {
+pub(super) unsafe fn one_task(hwnd: Hwnd) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let mut message: Msg = std::mem::zeroed();
@@ -58,7 +58,7 @@ unsafe fn status_ready(hwnd: Hwnd) -> Result<(), String> {
         one_task(hwnd)?;
     }
 }
-unsafe fn diff_ready(hwnd: Hwnd) -> Result<(), String> {
+pub(super) unsafe fn diff_ready(hwnd: Hwnd) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         {
@@ -157,6 +157,7 @@ unsafe fn accepted(hwnd: Hwnd, source: GitBlobSource, right: &[u8]) -> Result<St
     let left = match source {
         GitBlobSource::Head => HEAD,
         GitBlobSource::Index => SOURCE,
+        GitBlobSource::Commit(_) => return Err("This smoke expects HEAD or index".into()),
     };
     if result.identity.source != source
         || result.model.source_bytes(DiffSide::Left) != left
@@ -168,6 +169,17 @@ unsafe fn accepted(hwnd: Hwnd, source: GitBlobSource, right: &[u8]) -> Result<St
         return Err("Git HEAD/index commit identity is incorrect".into());
     }
     Ok(result.identity.blob.as_str().to_owned())
+}
+
+// Exercise the repository workspace through the same source intention as its
+// HEAD/index buttons. The menu commands now open comparison inside Code.
+unsafe fn workspace_diff(hwnd: Hwnd, source: GitBlobSource) -> Result<(), String> {
+    owner(hwnd)
+        .ok_or("Git smoke lost HWND")?
+        .state
+        .borrow_mut()
+        .request_git(GitIntent::Diff(source));
+    Ok(())
 }
 
 pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'static str>, String> {
@@ -265,7 +277,8 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     }
     checks.push("git_status_native_delivery_comparison_reuses_dirty_document");
 
-    command(hwnd, CommandId::GitDiffHead)?;
+    super::git_code::smoke(hwnd, options.bitmap.as_deref(), &mut checks)?;
+    workspace_diff(hwnd, GitBlobSource::Head)?;
     // Request may already admit its first snapshot. Painting must not add one
     // or consume a completion; only TASKS_MESSAGE below accepts worker output.
     readonly_frame(hwnd, None)?;
@@ -447,7 +460,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             (0..147).map(|_| format!("/* {} */\n", "Texto de prueba acotado. ".repeat(40))).collect::<String>());
         s.workbench.insert_text(&text).map_err(|e| e.to_string())?;
     }
-    command(hwnd, CommandId::GitDiffHead)?;
+    workspace_diff(hwnd, GitBlobSource::Head)?;
     diff_ready(hwnd)?;
     super::git_workspace::smoke_layout(hwnd, options.bitmap.as_deref(), &mut checks)?;
     owner(hwnd)
@@ -459,7 +472,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         .map_err(|e| e.to_string())?;
     expected(hwnd, DIRTY)?;
 
-    command(hwnd, CommandId::GitDiffIndex)?;
+    workspace_diff(hwnd, GitBlobSource::Index)?;
     diff_ready(hwnd)?;
     checks.push("git_head_index_distinct_oid_exact_dirty_sources");
     checks.push("git_prepare_and_gdi_no_snapshot_admission_or_completion_consumption");
@@ -475,7 +488,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     expected(hwnd, DIRTY)?;
     checks.push("git_hunk_enter_navigation_without_edit");
 
-    command(hwnd, CommandId::GitDiffHead)?;
+    workspace_diff(hwnd, GitBlobSource::Head)?;
     diff_ready(hwnd)?;
     // Simulate another shared editor view undoing the source while this modal
     // read model is visible. It uses the real transaction/history owner.
@@ -505,7 +518,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     expected(hwnd, SOURCE)?;
     checks.push("git_shared_undo_stale_enter_denied_explicit_refresh");
 
-    command(hwnd, CommandId::GitDiffIndex)?;
+    workspace_diff(hwnd, GitBlobSource::Index)?;
     key(hwnd, 0x1b, Modifiers::NONE)?;
     drain_cancelled(hwnd)?;
     {
@@ -520,7 +533,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     expected(hwnd, SOURCE)?;
     checks.push("git_cancel_late_notifications_no_result_revival");
 
-    command(hwnd, CommandId::GitDiffHead)?;
+    workspace_diff(hwnd, GitBlobSource::Head)?;
     diff_ready(hwnd)?;
     accepted(hwnd, GitBlobSource::Head, SOURCE)?;
     command(hwnd, CommandId::GitRepositoryStatus)?;

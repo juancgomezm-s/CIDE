@@ -90,11 +90,36 @@ impl TuiApp {
         if !key.modifiers.is_empty() {
             return true;
         }
+        if self.git_code.choose_commit
+            && !matches!(
+                key.code,
+                KeyCode::Esc
+                    | KeyCode::Enter
+                    | KeyCode::F(5)
+                    | KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+                    | KeyCode::Home
+                    | KeyCode::End
+                    | KeyCode::Char('r' | 'R' | 'n' | 'N' | 'c' | 'C')
+            )
+        {
+            return true;
+        }
         match key.code {
             KeyCode::Esc if view.reference_selected.is_some() => {
                 self.git_history.graph.as_mut().unwrap().reference_selected = None;
             }
             KeyCode::Esc => {
+                if self.git_code.choose_commit {
+                    self.git_code.choose_commit = false;
+                    self.git_history = Default::default();
+                    self.git_revision.cancel();
+                    self.panels.show_sidebar(SidebarView::Explorer);
+                    let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+                    return true;
+                }
                 self.git_history = Default::default();
                 self.git_revision.cancel();
             }
@@ -238,6 +263,12 @@ impl TuiApp {
                     view.selected = 0;
                 }
             }
+            KeyCode::Char('c' | 'C') if view.reference_selected.is_none() => {
+                self.compare_graph_commit();
+            }
+            KeyCode::Enter if self.git_code.choose_commit => {
+                self.compare_graph_commit();
+            }
             KeyCode::Enter => {
                 let commit = self
                     .git_revision
@@ -264,6 +295,26 @@ impl TuiApp {
             _ => {}
         }
         true
+    }
+
+    fn compare_graph_commit(&mut self) {
+        if self.workbench.active_document().is_none() {
+            self.status = "Abre el archivo que quieres comparar con el commit seleccionado".into();
+            return;
+        }
+        let selected = self.git_history.graph.as_ref().map(|view| view.selected);
+        let id = selected
+            .and_then(|row| self.git_revision.graph()?.entries.get(row))
+            .map(|entry| entry.commit.id.clone());
+        if let Some(id) = id {
+            match jc_app::git_read::GitCommitId::from_hex(&id) {
+                Ok(id) => {
+                    self.git_source = jc_app::git_read::GitBlobSource::Commit(id);
+                    self.open_git_diff();
+                }
+                Err(error) => self.status = error.to_string(),
+            }
+        }
     }
 
     pub(super) fn prepare_git_graph(

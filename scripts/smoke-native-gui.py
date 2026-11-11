@@ -81,6 +81,8 @@ REQUIRED = {
 }
 GIT_REQUIRED = {name for name in REQUIRED if name.startswith("git_")}
 GIT_REQUIRED |= {
+    "git_code_native_menu_painted_history_click_selected_commit_and_return",
+    "git_code_native_parallel_unified_readonly_source_and_view_preserved",
     "startup_shared_open_bytes", "cide_native_window_title",
     "cide_native_gui_icon_resource", "no_child_edit_control",
     "native_dpi_changes_96_144_192_preserve_document",

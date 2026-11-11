@@ -10,7 +10,7 @@ use jc_text::{DecodedScalars, TextEncoding};
 use std::path::PathBuf;
 
 #[path = "git_compare_rows.rs"]
-mod compare_rows;
+pub(super) mod compare_rows;
 #[path = "git_workspace_controls.rs"]
 mod controls;
 #[path = "git_workspace_smoke.rs"]
@@ -307,7 +307,7 @@ fn inside(r: Rect, x: i32, y: i32) -> bool {
 fn label(s: &str, n: usize) -> String {
     jc_app::source_services::display_ui_label(s, n.min(512))
 }
-fn opaque(bytes: &[u8], n: usize) -> String {
+pub(super) fn opaque(bytes: &[u8], n: usize) -> String {
     let mut out = String::new();
     for scalar in
         DecodedScalars::new(&bytes[..bytes.len().min(1024)], TextEncoding::Utf8, 0).take(n.min(256))
@@ -1144,13 +1144,7 @@ impl State {
                     self.request_git(self.git_panel.unwrap_or(GitIntent::Status))
                 }
             }
-            Some(Intent::Close) => {
-                self.git_panel = None;
-                self.git_revision.cancel();
-                self.git_workspace.history_commit = None;
-                self.git_workspace.invalidate();
-                Action::None
-            }
+            Some(Intent::Close) => self.open_git_code_from_workspace(),
             Some(Intent::Folder) => Action::ChooseFolder,
             Some(Intent::File(index)) => {
                 self.git_view.select_status(index);
@@ -1272,36 +1266,41 @@ impl State {
         self.git_workspace.notice = None;
         self.git_workspace.invalidate();
         self.git_diff.clear(&mut self.jobs);
-        let result = (|| -> Result<(), String> {
-            let relative = std::str::from_utf8(&path)
-                .map_err(|_| "La ruta Git no se puede abrir en Windows")?;
-            if relative.contains(['\\', '\0', ':'])
-                || std::path::Path::new(relative)
-                    .components()
-                    .any(|c| !matches!(c, std::path::Component::Normal(_)))
-            {
-                return Err("La ruta Git no es una ruta relativa válida".into());
+        match self.open_git_working_path(&path) {
+            Ok(()) => {
+                self.request_git(GitIntent::Diff(self.git_source));
             }
-            let root = self
-                .project_root
-                .clone()
-                .ok_or("Abre la carpeta del repositorio")?;
-            self.workbench
-                .open_project_file(
-                    &root,
-                    root.join(relative),
-                    self.encoding,
-                    false,
-                    16 * 1024 * 1024,
-                )
-                .map_err(|e| e.to_string())?;
-            self.ensure_encoding_selector();
-            self.request_git(GitIntent::Diff(self.git_source));
-            Ok(())
-        })();
-        if let Err(error) = result {
-            self.git_workspace.notice = Some(format!("No se pudo comparar este archivo: {error}"));
+            Err(error) => {
+                self.git_workspace.notice =
+                    Some(format!("No se pudo comparar este archivo: {error}"))
+            }
         }
+    }
+    pub(in crate::windows) fn open_git_working_path(&mut self, path: &[u8]) -> Result<(), String> {
+        let relative =
+            std::str::from_utf8(path).map_err(|_| "La ruta Git no se puede abrir en Windows")?;
+        if relative.contains(['\\', '\0', ':'])
+            || std::path::Path::new(relative)
+                .components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            return Err("La ruta Git no es una ruta relativa válida".into());
+        }
+        let root = self
+            .project_root
+            .clone()
+            .ok_or("Abre la carpeta del repositorio")?;
+        self.workbench
+            .open_project_file(
+                &root,
+                root.join(relative),
+                self.encoding,
+                false,
+                16 * 1024 * 1024,
+            )
+            .map_err(|e| e.to_string())?;
+        self.ensure_encoding_selector();
+        Ok(())
     }
     pub(super) fn git_workspace_wheel(&mut self, x: i32, y: i32, delta: i32) -> bool {
         let l = Layout::new(self);
@@ -2035,7 +2034,8 @@ mod tests {
         let frame = s.prepare_git_workspace().unwrap();
         s.git_workspace.hits = Some(frame.hits);
         s.git_workspace_click(target.left + 1, target.top + 1);
-        assert!(s.git_panel.is_none());
+        assert!(!s.git_code.active);
+        assert!(s.status.contains("carpeta del repositorio"));
         assert_eq!(
             before,
             s.workbench

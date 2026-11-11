@@ -27,6 +27,19 @@ impl TuiApp {
                         MouseEventKind::ScrollDown => self.move_git_graph(3),
                         _ => {}
                     }
+                } else if self.git_code.active
+                    && matches!(
+                        event.kind,
+                        crossterm::event::MouseEventKind::ScrollUp
+                            | crossterm::event::MouseEventKind::ScrollDown
+                    )
+                {
+                    self.git_diff_scroll =
+                        if event.kind == crossterm::event::MouseEventKind::ScrollUp {
+                            self.git_diff_scroll.saturating_sub(3)
+                        } else {
+                            self.git_diff_scroll.saturating_add(3)
+                        };
                 } else {
                     self.handle_mouse(event);
                 }
@@ -53,6 +66,34 @@ impl TuiApp {
             return;
         }
         if self.handle_git_graph_key(key) {
+            return;
+        }
+        if self.git_code.active {
+            if let Some(stroke) = to_stroke(key) {
+                let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
+                if let Resolution::Enabled(command) =
+                    self.keymap
+                        .resolve(scope, stroke, &self.registry, &self.command_context())
+                {
+                    if matches!(
+                        command,
+                        jc_app::CommandId::MenuFile
+                            | jc_app::CommandId::MenuEdit
+                            | jc_app::CommandId::MenuSearch
+                            | jc_app::CommandId::MenuProject
+                            | jc_app::CommandId::MenuBuild
+                            | jc_app::CommandId::MenuTools
+                            | jc_app::CommandId::MenuView
+                            | jc_app::CommandId::MenuHelp
+                            | jc_app::CommandId::PaletteOpen
+                            | jc_app::CommandId::FileExit
+                    ) {
+                        self.dispatch(command);
+                        return;
+                    }
+                }
+            }
+            self.git_code_key(key);
             return;
         }
         if self.showing_markdown() {
@@ -312,6 +353,10 @@ impl TuiApp {
             return;
         }
         if self.graph_showing() {
+            return;
+        }
+        if self.git_code.active {
+            self.status = "Comparación de lectura · Esc vuelve a editar el documento".into();
             return;
         }
         if self.paste_commit_search(text) {

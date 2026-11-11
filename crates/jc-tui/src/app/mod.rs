@@ -10,6 +10,7 @@ pub(crate) mod file_browser;
 #[cfg(test)]
 mod file_browser_tests;
 mod git_blame;
+pub(crate) mod git_code;
 mod git_commit_search;
 mod git_create_commit;
 mod git_diff;
@@ -138,6 +139,7 @@ pub struct TuiApp {
     pub(crate) git_cwd: PathBuf,
     pub(crate) git_source: jc_app::git_read::GitBlobSource,
     pub(crate) git_diff_scroll: usize,
+    pub(crate) git_code: git_code::CodeDiffView,
     pub(crate) project_search: jc_app::ProjectSearch,
     pub(crate) project_results: bool,
     pub(crate) project_draft: Option<jc_app::ProjectSearchOptions>,
@@ -223,6 +225,7 @@ impl TuiApp {
             quick_open_root: None,
             git_cwd: std::env::current_dir().unwrap_or_default(),
             git_source: jc_app::git_read::GitBlobSource::Head,
+            git_code: git_code::CodeDiffView::default(),
             git_diff_scroll: 0,
             project_search: jc_app::ProjectSearch::new(wakeup.clone()),
             project_results: false,
@@ -422,8 +425,9 @@ impl TuiApp {
         self.open_diff_context(&mut context);
         self.source_context(&mut context);
         self.snippet_context(&mut context);
-        if self.markdown_ui.is_some() {
+        if self.markdown_ui.is_some() || self.git_code.active {
             context.editor_input = false;
+            context.has_selection = false;
         }
         if self.git_history.immutable() && context.focus != jc_app::PrimaryFocus::Editor {
             context.can_open_to_side = false;

@@ -28,6 +28,8 @@ FIXED = [
     "assets/branding/cide-tui-256.png", "assets/branding/cide-gui-256.png",
     "assets/branding/provenance.json", "README.md", "LICENSE", "LICENSING.md",
     "docs/GIT_EMBEDDED_ENGINE.md", "docs/GIT_EMBEDDED_LICENSES.md",
+    "docs/GIT_CAPABILITIES_CIDE_AUDIT.md",
+    "docs/GIT_UX_REA_20261110.md",
     "docs/M2_SIDEBAR_NAVIGATION.md",
     "docs/M2_SELECTION_HISTORY.md",
     "docs/M2_GIT_WORKSPACE_NATIVE.md",
@@ -46,8 +48,9 @@ Run bin/cide-gui.exe for the native GUI, bin/cide-tui.exe for the TUI,
 or bin/cide.exe --help for the headless CLI.
 Legacy aliases: jc-ide-gui.exe, jc-ide-tui.exe and jc-ide.exe respectively.
 Canonical and legacy commands use the same implementation.
-Git status and HEAD/index comparisons use the embedded Rust engine; git.exe
-is not required. Git writes and network operations remain outside this block.
+The GUI and TUI use the embedded Rust Git engine for status, history, local
+writes and HTTPS/SSH operations. See docs/GIT_CAPABILITIES_CIDE_AUDIT.md for
+validated workflows and scope. The editor does not require git.exe.
 
 Use --encoding utf8 explicitly for UTF-8 source when appropriate. Legacy
 encodings are explicit choices; the owner's actual legacy page is unconfirmed.
@@ -104,7 +107,7 @@ def notice_sources(workspace: Path, preserved: set[str]) -> tuple[list[tuple[Pat
         raise PackagingError("Cargo.lock exceeds inventory budget")
     with lock.open("rb") as stream:
         packages = tomllib.load(stream).get("package", [])
-    if not isinstance(packages, list) or len(packages) > 256:
+    if not isinstance(packages, list) or len(packages) > 512:
         raise PackagingError("unexpected Cargo.lock package inventory")
     roots = []
     for relative in ("work/toolchain/cargo/registry/src", ".cargo/registry/src"):

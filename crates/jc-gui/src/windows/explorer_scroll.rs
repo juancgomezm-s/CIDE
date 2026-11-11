@@ -117,7 +117,8 @@ impl State {
     }
     pub(super) fn validate_explorer_scroll(&mut self) {
         if self.explorer_scroll.drag.as_ref().is_some_and(|drag| {
-            !self.pointer_source_available() || self.explorer_scroll_stamp() != Some(drag.stamp)
+            (!self.pointer_source_available() && !self.git_code.active)
+                || self.explorer_scroll_stamp() != Some(drag.stamp)
         }) {
             self.explorer_scroll.drag = None;
         }

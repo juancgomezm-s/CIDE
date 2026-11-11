@@ -268,7 +268,7 @@ impl State {
             self.syntax_targets[0] = Some((self.workbench.panes().active(), tab));
             self.wakeup.signal();
         }
-        let images = interaction::prepare_images(
+        let mut images = interaction::prepare_images(
             &presentation,
             interaction::ImageLayout {
                 cache: &self.markdown_images,
@@ -288,6 +288,16 @@ impl State {
             .iter()
             .enumerate()
             .take_while(|(index, row)| {
+                // Fit decoded images into the space left after preceding rows.
+                // Otherwise reflow can drop a visible placeholder's whole row
+                // and cancel the image immediately after its pixels arrive.
+                let image_count = images.iter().filter(|image| image.row == *index).count();
+                let image_height = ((available - used - row_height(row, self.dpi))
+                    / image_count.max(1) as i32)
+                    .max(1);
+                for image in images.iter_mut().filter(|image| image.row == *index) {
+                    image.height = image.height.min(image_height);
+                }
                 used += row_height(row, self.dpi)
                     + images
                         .iter()

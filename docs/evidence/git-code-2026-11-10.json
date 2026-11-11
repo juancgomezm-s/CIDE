@@ -1,0 +1,39 @@
+{
+  "platform": "Windows MSVC x64",
+  "rust": "1.88.0",
+  "delivery": "target/git-code-next/release",
+  "checks": {
+    "gui_library_passed": 146,
+    "tui_library_passed": 184,
+    "tui_library_ignored": 1,
+    "app_git_diff_passed": 10,
+    "git_core_passed": 111,
+    "git_core_ignored": 4,
+    "fmt": true,
+    "workspace_all_targets_clippy": true,
+    "offline_workspace_release": true,
+    "optimized_gui_native_checks": 28,
+    "optimized_gui_paints": 27,
+    "optimized_conpty": true,
+    "archive_crc_and_payload_sha256": true
+  },
+  "full_workspace_runtime_rerun": false,
+  "desktop_used": false,
+  "personal_recovery_used": false,
+  "gui_evidence": "work\\native-gui-smoke\\20261111T000910Z-ea7e5b4c2875",
+  "tui_evidence": "work\\test-temp\\git-code-conpty-8da027967108400294c1ad86d9e5fe5b\\report.json",
+  "binaries_sha256": {
+    "cide-gui.exe": "ad4f7e22a7b543e33dbda045f29f1f8004c472cd6eaf52639e0068d806baeb09",
+    "cide-tui.exe": "d357b8b745d36c93dfd25295f31ccf916af59b3d5a463e9ea044f95df712537f"
+  },
+  "package_missing_notices": [
+    {
+      "package": "winapi-i686-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    },
+    {
+      "package": "winapi-x86_64-pc-windows-gnu-0.4.0",
+      "reason": "no matching notices in offline source"
+    }
+  ]
+}

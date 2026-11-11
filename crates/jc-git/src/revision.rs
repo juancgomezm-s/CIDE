@@ -208,7 +208,7 @@ pub(super) fn verified_tree<'a>(
     .map(Some)
     .map_err(engine)
 }
-fn commit_id(commit: &str) -> Result<gix::ObjectId, Error> {
+pub(super) fn commit_id(commit: &str) -> Result<gix::ObjectId, Error> {
     if ![40, 64].contains(&commit.len()) || !commit.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(Error::Unsupported);
     }

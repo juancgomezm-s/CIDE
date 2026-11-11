@@ -35,6 +35,31 @@ pub(in crate::windows) unsafe fn run(
     bitmap: Option<&Path>,
     checks: &mut Vec<&'static str>,
 ) -> Result<(), String> {
+    let geometry = {
+        let mut s = owner(hwnd).ok_or("No layout HWND")?.state.borrow_mut();
+        let previous = (s.width, s.height);
+        // This scenario exercises the full toolbar and all four arrangements.
+        // Keep its logical viewport independent of the host's display scale.
+        s.width = s.dpi.pixels(1000).min(8192);
+        s.height = s.dpi.pixels(650).min(8192);
+        s.git_workspace.invalidate();
+        previous
+    };
+    let result = run_layout(hwnd, bitmap, checks);
+    {
+        let mut s = owner(hwnd).ok_or("No layout HWND")?.state.borrow_mut();
+        (s.width, s.height) = geometry;
+        s.git_workspace.invalidate();
+    }
+    publish(hwnd);
+    result
+}
+
+unsafe fn run_layout(
+    hwnd: Hwnd,
+    bitmap: Option<&Path>,
+    checks: &mut Vec<&'static str>,
+) -> Result<(), String> {
     publish(hwnd); // Settle the first paint after the deliberately injected long fixture.
     let before = snapshot(hwnd)?;
     let prefs = owner(hwnd)

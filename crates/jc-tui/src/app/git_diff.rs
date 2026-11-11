@@ -6,7 +6,7 @@ use jc_app::{
     diff_model::{DiffKind, DiffLine, DiffSide, DiffSpan, OwnedDiffModel},
     git_diff::GitDiffOptions,
     git_read::GitBlobSource,
-    BottomPanel, PrimaryFocus, SidebarView,
+    PrimaryFocus, SidebarView,
 };
 use jc_text::{DecodedScalars, TextEncoding};
 
@@ -40,9 +40,11 @@ impl TuiApp {
     }
 
     pub(crate) fn open_git_diff(&mut self) {
-        self.panels.show_sidebar(SidebarView::Git);
-        self.panels.show_bottom(BottomPanel::Diff);
-        let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
+        self.git_code.active = true;
+        self.git_code.choose_commit = false;
+        self.panels.show_sidebar(SidebarView::Explorer);
+        self.panels.hide_bottom();
+        let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
         self.request_git_diff(self.git_source);
     }
 
@@ -68,6 +70,7 @@ impl TuiApp {
             let source = match self.git_source {
                 GitBlobSource::Head => "HEAD",
                 GitBlobSource::Index => "índice",
+                GitBlobSource::Commit(_) => "commit elegido",
             };
             prepared.details.push(plain_prefix(
                 &format!("{source} frente al documento activo; solo lectura"),
@@ -84,6 +87,7 @@ impl TuiApp {
         let source = match identity.source {
             GitBlobSource::Head => "Copia de HEAD",
             GitBlobSource::Index => "Copia del índice",
+            GitBlobSource::Commit(_) => "Copia del commit elegido",
         };
         prepared
             .details

@@ -48,6 +48,7 @@ impl State {
         })
     }
     pub(super) fn cancel_pointer(&mut self) {
+        self.git_code.end_drag();
         self.git_workspace.end_drag();
         self.linear_drag = None;
         self.rectangle_drag = None;
@@ -151,6 +152,22 @@ impl State {
         self.editor_scroll_drag = None;
         self.explorer_scroll.drag = None;
         let modifiers = self.modifiers();
+        if self.git_code.active
+            && self.selector.is_none()
+            && !modifiers.contains(Modifiers::CTRL)
+            && !modifiers.contains(Modifiers::ALT)
+        {
+            if let Some(region) = super::explorer_panel::region(self) {
+                if x < region.right {
+                    return self.explorer_wheel(x, y, delta, lines).unwrap_or(false);
+                }
+            }
+            return self.git_code_wheel(
+                delta,
+                modifiers.contains(Modifiers::SHIFT) || flags & 0x04 != 0,
+                lines,
+            );
+        }
         if self.markdown_gui.is_some()
             && self.selector.is_none()
             && modifiers == Modifiers::NONE

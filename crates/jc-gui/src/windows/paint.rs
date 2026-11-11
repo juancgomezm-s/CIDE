@@ -132,6 +132,7 @@ pub(super) struct Frame {
     project: Option<super::project_panel::ProjectPresentation>,
     replacement: Option<super::replace_panel::ReplaceFrame>,
     git: Option<super::git_workspace::Frame>,
+    git_code: Option<super::git_code::Frame>,
     comparison: Option<super::open_diff_panel::ComparisonFrame>,
     source: Option<super::git_panel::GitFrame>,
     snippet: Option<super::git_panel::GitFrame>,
@@ -141,6 +142,9 @@ pub(super) struct Frame {
     bottom: Option<super::bottom_panel::BottomFrame>,
 }
 impl Frame {
+    pub(super) fn git_code_hits(&self) -> Option<super::git_code::Hits> {
+        self.git_code.as_ref().map(|frame| frame.hits.clone())
+    }
     pub(super) fn markdown_hits(&self) -> Option<super::markdown_panel::MarkdownHits> {
         self.markdown.as_ref().map(|frame| frame.hits.clone())
     }
@@ -509,7 +513,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
     state.syntax_pending = false;
     state.syntax_targets = [None, None];
     state.validate_project_search();
-    let covered = state.open_diff_visible || state.markdown_gui.is_some();
+    let covered = state.open_diff_visible || state.markdown_gui.is_some() || state.git_code.active;
     if !covered {
         if let Some(area) = text_areas(state)
             .into_iter()
@@ -776,6 +780,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         project: state.project_presentation(),
         replacement: state.replace_presentation(),
         git: state.git_presentation(),
+        git_code: state.prepare_git_code(),
         comparison: state.open_diff_presentation(),
         source: state.source_presentation(),
         snippet: state.snippet_presentation(),
@@ -1102,6 +1107,9 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
     if let Some(git) = &frame.git {
         SelectObject(dc, frame.ui_font);
         super::git_workspace::draw(dc, git, frame.font, frame.ui_font)?;
+    }
+    if let Some(code) = &frame.git_code {
+        super::git_code::draw(dc, code, frame.font, frame.ui_font)?;
     }
     if let Some(p) = &frame.comparison {
         SelectObject(dc, frame.font);

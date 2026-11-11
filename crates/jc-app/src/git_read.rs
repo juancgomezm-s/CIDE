@@ -9,6 +9,28 @@ use std::{
 pub enum GitBlobSource {
     Head,
     Index,
+    Commit(GitCommitId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GitCommitId {
+    hex: [u8; 64],
+    len: u8,
+}
+impl GitCommitId {
+    pub fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.hex[..usize::from(self.len)])
+            .expect("Git object IDs contain validated ASCII hex")
+    }
+    pub fn from_hex(hex: &str) -> Result<Self, GitReadError> {
+        let id = GitObjectId::parse(hex.as_bytes())?;
+        let mut hex = [0; 64];
+        hex[..id.as_str().len()].copy_from_slice(id.as_str().as_bytes());
+        Ok(Self {
+            hex,
+            len: id.as_str().len() as u8,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,9 +213,13 @@ impl GitReader {
             return Err(GitReadError::InvalidLimits);
         }
         let path = validate_path(path)?;
-        let blob = jc_git::read_blob(
+        let blob = jc_git::read_blob_source(
             repository_root,
             source == GitBlobSource::Index,
+            match &source {
+                GitBlobSource::Commit(id) => Some(id.as_str()),
+                _ => None,
+            },
             &path,
             engine_limits(limits),
             cancelled,

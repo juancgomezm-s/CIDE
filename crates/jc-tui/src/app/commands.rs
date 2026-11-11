@@ -14,6 +14,24 @@ impl TuiApp {
                 .unwrap_or_else(|| "Comando no disponible".to_owned());
             return;
         }
+        if !matches!(
+            command,
+            CommandId::MenuFile
+                | CommandId::MenuEdit
+                | CommandId::MenuSearch
+                | CommandId::MenuProject
+                | CommandId::MenuBuild
+                | CommandId::MenuTools
+                | CommandId::MenuView
+                | CommandId::MenuHelp
+                | CommandId::PaletteOpen
+                | CommandId::GitDiffHead
+                | CommandId::GitDiffIndex
+                | CommandId::GitDiffRefresh
+                | CommandId::ViewGit
+        ) {
+            self.git_code.active = false;
+        }
         if command == CommandId::ViewMarkdownPreview {
             self.toggle_markdown();
             return;
