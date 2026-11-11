@@ -139,6 +139,10 @@ fn code_page(value: &str, field: &str) -> Result<(), BridgeError> {
 
 impl BridgeRequest {
     pub fn encode(&self) -> Result<Vec<u8>, BridgeError> {
+        self.encode_request(None)
+    }
+
+    fn encode_request(&self, aliases: Option<&str>) -> Result<Vec<u8>, BridgeError> {
         let output = path_line(&self.output_dir, "output_dir")?;
         let source = match (&self.action, &self.source) {
             (Action::Schema, None) => "",
@@ -149,16 +153,16 @@ impl BridgeRequest {
             (_, None) => return Err(config_error("check/compile/run requests require source")),
         };
         let propath = ascii_line(self.propath.as_deref().unwrap_or(""), "propath")?;
-        Ok(format!(
-            "JCIDE/1
-{}
-{source}
-{output}
-{propath}
-",
+        let version = if aliases.is_some() { 2 } else { 1 };
+        let mut data = format!(
+            "JCIDE/{version}\n{}\n{source}\n{output}\n{propath}\n",
             self.action.as_str()
-        )
-        .into_bytes())
+        );
+        if let Some(aliases) = aliases {
+            data.push_str(ascii_line(aliases, "aliases")?);
+            data.push('\n');
+        }
+        Ok(data.into_bytes())
     }
 
     pub fn response_path(&self) -> PathBuf {
@@ -227,6 +231,9 @@ pub struct Diagnostic {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchemaRecord {
+    Database {
+        name: EncodedText,
+    },
     Table {
         database: EncodedText,
         table: EncodedText,
@@ -388,6 +395,9 @@ pub fn parse_response(bytes: &[u8]) -> Result<BridgeResponse, BridgeError> {
                 column: position(p[3], line_number)?,
                 file: optional_text(p[4], line_number)?,
                 message: text(p[5], line_number)?,
+            }),
+            "DATABASE" if p.len() == 2 => schema.push(SchemaRecord::Database {
+                name: text(p[1], line_number)?,
             }),
             "TABLE" if p.len() == 3 => schema.push(SchemaRecord::Table {
                 database: text(p[1], line_number)?,

@@ -15,6 +15,7 @@ impl State {
         }
         self.explorer.set_root(root.clone())?;
         self.jobs.cancel_all();
+        self.progress_schema.clear();
         self.workbench.reset_task_panels();
         self.bottom_hits = None;
         self.explorer_view = Default::default();
@@ -173,6 +174,7 @@ impl State {
         changed |= self.project_search.poll(&self.workbench, 2);
         changed |= self.apply_project_replace_step();
         changed |= self.poll_git();
+        changed |= self.poll_progress_schema();
         changed |= self.poll_explorer();
         changed |= self.poll_markdown();
         if self.project_search.take_recovery() {

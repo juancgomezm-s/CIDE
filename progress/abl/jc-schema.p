@@ -1,4 +1,4 @@
-/* JC-IDE schema reader. Original implementation, experimental/unverified AVM.
+/* JC-IDE schema reader. Original implementation.
    Called only by jc-bridge.p after a connected DB receives the DICTDB alias.
    Output inherits the caller's ASCII protocol stream. No database writes. */
 

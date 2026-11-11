@@ -14,7 +14,9 @@ impl TuiApp {
         }
         self.explorer.set_root(root.clone())?;
         self.tasks.cancel_all();
+        self.progress_schema.clear();
         self.workbench.reset_task_panels();
+        self.bottom_output_anchor = None;
         self.explorer_view = Default::default();
         self.project_search.clear();
         self.cancel_project_replace();

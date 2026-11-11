@@ -802,7 +802,6 @@ impl Workbench {
             document_search_running: self.search_running(),
             search_history_available: !self.search.history.is_empty(),
             active_language: language,
-            has_progress_profile: false,
             has_database_schema: false,
             can_reopen_closed_tab: self.tabs.can_reopen() && !self.closed_documents.is_empty(),
             terminal_available: false,

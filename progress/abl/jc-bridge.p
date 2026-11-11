@@ -17,6 +17,10 @@ DEFINE VARIABLE cDatabase     AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cErrorFile    AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cSeverity     AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cProgram      AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cAliases      AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cAlias        AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cAliasPair    AS CHARACTER NO-UNDO.
+DEFINE VARIABLE iAlias        AS INTEGER   NO-UNDO.
 DEFINE VARIABLE iSlash        AS INTEGER   NO-UNDO.
 DEFINE VARIABLE iMessage      AS INTEGER   NO-UNDO.
 DEFINE VARIABLE iMessages     AS INTEGER   NO-UNDO.
@@ -64,10 +68,12 @@ DO ON ERROR UNDO, LEAVE ON ENDKEY UNDO, LEAVE:
     IMPORT STREAM requestInput UNFORMATTED cSource.
     IMPORT STREAM requestInput UNFORMATTED cOutputDir.
     IMPORT STREAM requestInput UNFORMATTED cProjectPath.
+    IF cHeader = "JCIDE/2" THEN
+        IMPORT STREAM requestInput UNFORMATTED cAliases.
     INPUT STREAM requestInput CLOSE.
     lRead = TRUE.
 END.
-IF NOT lRead OR cHeader <> "JCIDE/1" OR cOutputDir = "" THEN QUIT.
+IF NOT lRead OR (cHeader <> "JCIDE/1" AND cHeader <> "JCIDE/2") OR cOutputDir = "" THEN QUIT.
 
 cResponse = cOutputDir + "/response.txt".
 FILE-INFO:FILE-NAME = cResponse.
@@ -82,7 +88,32 @@ OUTPUT TO VALUE(cResponse) NO-CONVERT.
 PUT UNFORMATTED "JCIDE|1|" HexText(SESSION:CPINTERNAL)
     "|" HexText(SESSION:CPSTREAM) SKIP.
 
-CASE cAction:
+DO iAlias = 1 TO NUM-ENTRIES(cAliases):
+    cAliasPair = ENTRY(iAlias, cAliases).
+    IF NUM-ENTRIES(cAliasPair, "=") <> 2 THEN DO:
+        lFailed = TRUE.
+        PUT UNFORMATTED "DIAG|error|-|-|-|" HexText("Alias ABL invalido.") SKIP.
+        LEAVE.
+    END.
+    ASSIGN cAlias = ENTRY(1, cAliasPair, "=")
+           cDatabase = ENTRY(2, cAliasPair, "=").
+    IF cAlias = "DICTDB" OR cAlias = "" OR cDatabase = ""
+        OR LDBNAME(cDatabase) = ? OR LDBNAME(cDatabase) <> cDatabase THEN DO:
+        lFailed = TRUE.
+        PUT UNFORMATTED "DIAG|error|-|-|-|"
+            HexText("Alias " + cAlias + ": base logica no disponible o alias reservado: " + cDatabase) SKIP.
+        LEAVE.
+    END.
+    CREATE ALIAS VALUE(cAlias) FOR DATABASE VALUE(cDatabase) NO-ERROR.
+    IF ERROR-STATUS:ERROR OR LDBNAME(cAlias) = ? OR LDBNAME(cAlias) <> cDatabase THEN DO:
+        lFailed = TRUE.
+        PUT UNFORMATTED "DIAG|error|-|-|-|"
+            HexText("No se pudo crear el alias " + cAlias + " para " + cDatabase + ".") SKIP.
+        LEAVE.
+    END.
+END.
+
+IF NOT lFailed THEN CASE cAction:
     WHEN "check" OR WHEN "compile" OR WHEN "run" THEN DO:
         IF cSource = "" THEN DO:
             lFailed = TRUE.
@@ -130,12 +161,22 @@ CASE cAction:
         IF cSource <> "" OR NUM-DBS = 0 THEN DO:
             lFailed = TRUE.
             PUT UNFORMATTED "DIAG|error|-|-|-|"
-                HexText("Schema requires connected databases and no source path.") SKIP.
+                    HexText("Se requieren bases conectadas y una solicitud sin fuente.") SKIP.
         END.
         ELSE DO iDatabase = 1 TO NUM-DBS:
             cDatabase = LDBNAME(iDatabase).
-            DELETE ALIAS "DICTDB".
-            CREATE ALIAS "DICTDB" FOR DATABASE VALUE(cDatabase).
+            IF cDatabase <> "DICTDB" THEN DO:
+                DELETE ALIAS "DICTDB".
+                CREATE ALIAS "DICTDB" FOR DATABASE VALUE(cDatabase) NO-ERROR.
+            END.
+            IF LDBNAME("DICTDB") = ? OR LDBNAME("DICTDB") <> cDatabase THEN DO:
+                lFailed = TRUE.
+                PUT UNFORMATTED "DIAG|error|-|-|-|"
+                    HexText("No se pudo vincular DICTDB a " + cDatabase + ".") SKIP.
+                NEXT.
+            END.
+            IF cHeader = "JCIDE/2" THEN
+                PUT UNFORMATTED "DATABASE|" HexText(cDatabase) SKIP.
             lSchemaEncodingFailed = FALSE.
             RUN VALUE(cHelperDir + "jc-schema.p")
                 (INPUT cDatabase, OUTPUT lSchemaEncodingFailed) NO-ERROR.

@@ -576,12 +576,7 @@ fn draw_bottom(
         BottomPanel::Diff => unreachable!(),
     };
     let available = usize::from(height.saturating_sub(1));
-    let selected = app.bottom_selected.min(count.saturating_sub(1));
-    let start = if focused {
-        selected.saturating_sub(available.saturating_sub(1))
-    } else {
-        count.saturating_sub(available)
-    };
+    let (start, selected) = app.bottom_window(count, available);
     let rows: Vec<String> = match app.panels.bottom() {
         BottomPanel::Problems => app
             .workbench

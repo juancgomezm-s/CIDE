@@ -243,6 +243,7 @@ pub fn default_menu_model() -> MenuModel {
                 command(ProgressCheck),
                 command(ProgressCompile),
                 command(ProgressRun),
+                command(ProgressRefreshSchema),
                 command(ProgressCancel),
             ],
         ),
@@ -258,6 +259,7 @@ pub fn default_menu_model() -> MenuModel {
                 SEP,
                 command(ViewProblems),
                 command(ViewOutput),
+                command(ViewDatabase),
                 command(ViewSearchResults),
                 command(ViewToggleBottomPanel),
                 SEP,
@@ -313,8 +315,6 @@ mod tests {
             CommandId::SearchHistoryNext,
             CommandId::SnippetNext,
             CommandId::ViewTerminal,
-            CommandId::ViewDatabase,
-            CommandId::ProgressRefreshSchema,
         ] {
             assert!(registry.contains(command));
             assert!(!commands.contains(&command));
@@ -322,6 +322,8 @@ mod tests {
         assert!(commands.contains(&CommandId::SourceIncoming));
         assert!(commands.contains(&CommandId::SourceDependencies));
         assert!(commands.contains(&CommandId::ProgressCompile));
+        assert!(commands.contains(&CommandId::ProgressRefreshSchema));
+        assert!(commands.contains(&CommandId::ViewDatabase));
         assert!(commands.contains(&CommandId::SourceRename));
     }
 }

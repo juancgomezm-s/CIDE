@@ -171,6 +171,10 @@ impl TuiApp {
             CommandOutcome::View(command) => self.handle_view(command),
             CommandOutcome::Progress(command) => {
                 if let Some(action) = jc_progress::editor::action(command) {
+                    if self.progress_schema.busy() {
+                        self.status = "Ya hay una actualización de esquema en curso".into();
+                        return;
+                    }
                     match jc_progress::editor::submit(
                         action,
                         &self.workbench,
@@ -184,9 +188,14 @@ impl TuiApp {
                         Err(error) => self.status = error,
                     }
                 } else if command == CommandId::ProgressCancel {
-                    self.status = jc_progress::editor::cancel(&mut self.tasks).into();
-                } else {
-                    self.status = "La actualización del esquema ABL queda pendiente".into();
+                    self.status = if self.progress_schema.cancel() {
+                        "Cancelando actualización de esquema ABL…"
+                    } else {
+                        jc_progress::editor::cancel(&mut self.tasks)
+                    }
+                    .into();
+                } else if command == CommandId::ProgressRefreshSchema {
+                    self.request_progress_schema();
                 }
             }
             CommandOutcome::NeedsCloseDecision(tab) => {
@@ -241,7 +250,13 @@ impl TuiApp {
                 self.cancel_explorer();
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
             }
-            ViewDatabase => self.show_sidebar(SidebarView::Database),
+            ViewDatabase => {
+                if let Some(first) = self.progress_schema.show(&mut self.workbench) {
+                    self.show_bottom(BottomPanel::Output);
+                    self.select_schema_output(first);
+                    self.status = "Esquema ABL · consulta Salida".into();
+                }
+            }
             ViewGit => {
                 self.open_git_diff();
                 if self.git_code.active {
@@ -333,11 +348,74 @@ impl TuiApp {
 
     fn show_bottom(&mut self, panel: BottomPanel) {
         self.panels.show_bottom(panel);
+        self.bottom_output_anchor = None;
         self.bottom_selected = match panel {
             BottomPanel::SearchResults => self.workbench.search().current.unwrap_or(0),
             _ => 0,
         };
         let _ = self.focus.focus(PrimaryFocus::BottomPanel, &self.panels);
+    }
+
+    fn request_progress_schema(&mut self) {
+        if self.tasks.has_job(jc_progress::editor::JOB_KEY) {
+            self.status = "Ya hay una tarea Progress en curso".into();
+            return;
+        }
+        match self
+            .progress_schema
+            .request(self.project_root.as_deref(), self.syntax_wakeup.clone())
+        {
+            Ok(()) => {
+                self.show_bottom(BottomPanel::Output);
+                self.status = "Leyendo esquema ABL…".into();
+            }
+            Err(error) => self.status = error,
+        }
+    }
+
+    fn select_schema_output(&mut self, first: u64) {
+        self.bottom_output_anchor = Some(first);
+        self.bottom_selected = self
+            .workbench
+            .output()
+            .partition_point(|row| row.id < first);
+    }
+
+    pub(crate) fn bottom_window(&self, count: usize, available: usize) -> (usize, usize) {
+        let selected = self.bottom_selected.min(count.saturating_sub(1));
+        if self.focus.primary() != PrimaryFocus::BottomPanel {
+            return (count.saturating_sub(available), selected);
+        }
+        let mut start = selected.saturating_sub(available.saturating_sub(1));
+        if let Some(id) = self
+            .bottom_output_anchor
+            .filter(|_| self.panels.bottom() == BottomPanel::Output)
+        {
+            let anchor = self.workbench.output().partition_point(|row| row.id < id);
+            if anchor <= selected {
+                start = start.max(anchor.min(count.saturating_sub(available)));
+            }
+        }
+        (start, selected)
+    }
+
+    pub(super) fn poll_progress_schema(&mut self) -> bool {
+        let Some(update) = self
+            .progress_schema
+            .poll(self.project_root.as_deref(), &mut self.workbench)
+        else {
+            return false;
+        };
+        self.status = update.message.into();
+        if self.panels.bottom_visible() && self.panels.bottom() == BottomPanel::Output {
+            if update.problems {
+                self.panels.show_bottom(BottomPanel::Problems);
+                self.bottom_selected = self.workbench.problems().len().saturating_sub(1);
+            } else if let Some(first) = update.first_output_row {
+                self.select_schema_output(first);
+            }
+        }
+        true
     }
 }
 
@@ -385,4 +463,48 @@ fn progress_real_tui_command_routes_to_output_and_problems() {
         .problems()
         .iter()
         .any(|r| r.contains("ausente.i") && r.target.is_some()));
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "requiere el proyecto sintético de esquema de OpenEdge"]
+fn progress_real_schema_tui_refreshes_and_reopens_the_catalog() {
+    use std::{
+        path::PathBuf,
+        thread,
+        time::{Duration, Instant},
+    };
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let mut app = TuiApp::new(Default::default());
+    app.set_explorer_root(root).unwrap();
+    app.dispatch(CommandId::ProgressRefreshSchema);
+    assert!(app.progress_schema.busy(), "{}", app.status);
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while app.progress_schema.busy() {
+        app.poll_tasks();
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(15));
+    }
+    assert!(
+        app.command_context().has_database_schema,
+        "{:?}",
+        app.workbench.problems()
+    );
+    assert_eq!(app.panels.bottom(), BottomPanel::Output);
+    assert!(app
+        .workbench
+        .output()
+        .iter()
+        .any(|r| r.contains("Tabla devlogica.customer")));
+    app.dispatch(CommandId::ViewDatabase);
+    assert!(app
+        .workbench
+        .output()
+        .iter()
+        .any(|r| r.contains("Base vacia")));
+    let (first, selected) = app.bottom_window(app.workbench.output().len(), 7);
+    assert!(first > 0);
+    assert_eq!(first, selected);
+    assert!(app.workbench.output()[first + 1].contains("Base devlogica"));
+    assert_eq!(app.status, "Esquema ABL · consulta Salida");
 }

@@ -114,10 +114,12 @@ pub struct TuiApp {
     pub(crate) explorer: jc_app::explorer::ProjectExplorer,
     pub(crate) explorer_view: jc_app::explorer::ExplorerView,
     pub(crate) bottom_selected: usize,
+    bottom_output_anchor: Option<u64>,
     pub(crate) tasks: jc_app::JobSystem,
     pub(crate) syntax_pending: bool,
     pub(crate) syntax_targets: [Option<(jc_app::PaneId, jc_app::TabId)>; 2],
     pub(crate) syntax_wakeup: jc_app::Wakeup,
+    pub(crate) progress_schema: jc_progress::editor::SchemaController,
     pub(crate) git_diff: jc_app::git_diff::GitDiffController,
     pub(crate) git_revision: jc_app::git_revision::GitRevisionController,
     pub(crate) git_index: jc_app::git_index::GitIndexController,
@@ -202,9 +204,11 @@ impl TuiApp {
                 .expect("valid Explorer quotas"),
             explorer_view: Default::default(),
             bottom_selected: 0,
+            bottom_output_anchor: None,
             syntax_pending: false,
             syntax_targets: [None, None],
             syntax_wakeup: wakeup.clone(),
+            progress_schema: Default::default(),
             git_diff: jc_app::git_diff::GitDiffController::new(),
             git_revision: jc_app::git_revision::GitRevisionController::new(wakeup.clone()),
             git_index: jc_app::git_index::GitIndexController::new(wakeup.clone()),
@@ -350,6 +354,7 @@ impl TuiApp {
             self.project_root.as_deref(),
             &mut self.tasks,
         );
+        update.changed |= self.poll_progress_schema();
         update.changed |= self.open_diff.tick(&self.workbench, &mut self.tasks);
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
         let revision_changed = self.git_revision.poll(self.project_root.as_deref());
@@ -397,6 +402,7 @@ impl TuiApp {
             UiOverlay::None | UiOverlay::Menu { .. } | UiOverlay::Palette { .. }
         );
         context.has_project = self.project_root.is_some();
+        context.has_database_schema = self.progress_schema.has_catalog();
         context.explorer_focused = self.focus.primary() == jc_app::PrimaryFocus::Sidebar
             && self.panels.sidebar() == jc_app::SidebarView::Explorer;
         if context.explorer_focused {

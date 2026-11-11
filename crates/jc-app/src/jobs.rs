@@ -107,13 +107,13 @@ pub struct Cancellation {
     deadline: Instant,
 }
 impl Cancellation {
-    pub(crate) fn new(timeout: Duration) -> Self {
+    pub fn new(timeout: Duration) -> Self {
         Self {
             flag: Arc::new(AtomicBool::new(false)),
             deadline: Instant::now() + timeout,
         }
     }
-    pub(crate) fn cancel(&self) {
+    pub fn cancel(&self) {
         self.flag.store(true, Ordering::Release);
     }
     pub fn is_cancelled(&self) -> bool {

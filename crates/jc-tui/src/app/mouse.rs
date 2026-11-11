@@ -703,12 +703,7 @@ impl TuiApp {
                     BottomPanel::Diff => 0,
                 };
                 let available = usize::from(area.height.saturating_sub(1));
-                let selected = self.bottom_selected.min(count.saturating_sub(1));
-                let start = if self.focus.primary() == PrimaryFocus::BottomPanel {
-                    selected.saturating_sub(available.saturating_sub(1))
-                } else {
-                    count.saturating_sub(available)
-                };
+                let (start, _) = self.bottom_window(count, available);
                 for (row, index) in (start..count).take(available).enumerate() {
                     frame.hits.push(Hit {
                         area: area.row(1 + row as u16),

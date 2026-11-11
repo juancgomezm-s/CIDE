@@ -187,6 +187,12 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (255, CommandId::ProgressRun, "ABL: ejecutar"),
     (256, CommandId::ProgressCancel, "Cancelar tarea ABL"),
     (
+        257,
+        CommandId::ProgressRefreshSchema,
+        "Actualizar esquema de base de datos",
+    ),
+    (258, CommandId::ViewDatabase, "Ver esquema ABL"),
+    (
         210,
         CommandId::ViewToggleBottomPanel,
         "Mostrar/ocultar panel &inferior",
@@ -486,6 +492,7 @@ struct State {
     git_revision: jc_app::git_revision::GitRevisionController,
     git_status_options: Option<jc_app::git_status_tasks::GitStatusOptions>,
     jobs: jc_app::JobSystem,
+    progress_schema: jc_progress::editor::SchemaController,
     encoding_target: Option<(jc_app::DocumentId, u64, Option<TextEncoding>)>,
     smoke_clipboard: Option<String>,
     quick_open: QuickOpenController,
@@ -634,6 +641,7 @@ impl State {
             git_status_options: None,
             jobs: jc_app::JobSystem::new(Default::default(), wakeup.clone())
                 .map_err(|e| format!("Admisión de tarea nativa: {e:?}"))?,
+            progress_schema: Default::default(),
             encoding_target: None,
             smoke_clipboard: None,
             quick_open: QuickOpenController::new(wakeup.clone()),
@@ -781,6 +789,7 @@ impl State {
             };
         }
         context.has_project = self.project_root.is_some();
+        context.has_database_schema = self.progress_schema.has_catalog();
         context.project_search_running =
             self.project_search.state == jc_app::ProjectSearchState::Running;
         context.project_replace_ready = self.project_root.as_deref() == self.project_search.root()
@@ -877,10 +886,27 @@ impl State {
         }
         match command {
             CommandId::ProgressCancel => {
-                self.status = jc_progress::editor::cancel(&mut self.jobs).into();
+                self.status = if self.progress_schema.cancel() {
+                    "Cancelando actualización de esquema ABL…"
+                } else {
+                    jc_progress::editor::cancel(&mut self.jobs)
+                }
+                .into();
+                return Action::None;
+            }
+            CommandId::ProgressRefreshSchema => {
+                self.request_progress_schema();
+                return Action::None;
+            }
+            CommandId::ViewDatabase => {
+                self.show_progress_schema();
                 return Action::None;
             }
             command if jc_progress::editor::action(command).is_some() => {
+                if self.progress_schema.busy() {
+                    self.error("Ya hay una actualización de esquema en curso");
+                    return Action::None;
+                }
                 let action = jc_progress::editor::action(command).unwrap();
                 match jc_progress::editor::submit(
                     action,

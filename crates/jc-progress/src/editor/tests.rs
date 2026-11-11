@@ -154,3 +154,100 @@ fn progress_real_propath_compile_run_diagnostics_and_cancel() {
     assert!(app.output().iter().any(|r| r.contains("cancelada")));
     assert_eq!(fs::read(root.join("programa.p")).unwrap(), b"{valor.i}\n");
 }
+
+#[test]
+#[ignore = "requiere el proyecto sintético de esquema de OpenEdge"]
+fn progress_real_schema_with_aliases_and_failed_refresh_preserves_catalog() {
+    let reference = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let fixture = JobDir::create().unwrap();
+    let root = &fixture.path;
+    fs::create_dir(root.join(".cide")).unwrap();
+    let profile = fs::read_to_string(reference.join(PROFILE)).unwrap();
+    let pf = reference.join(".cide/desarrollo.local.pf");
+    // The test owns the profile it modifies; it only reads the fixture databases.
+    let profile = profile.replace(
+        "pf=.cide/desarrollo.local.pf",
+        &format!("pf={}", pf.display()),
+    );
+    fs::write(root.join(PROFILE), &profile).unwrap();
+    let mut app = Workbench::default();
+    let mut jobs = JobSystem::new(JobLimits::default(), Wakeup::default()).unwrap();
+    let mut schema = SchemaController::default();
+    let refresh = |schema: &mut SchemaController, app: &mut Workbench| {
+        schema.request(Some(root), Wakeup::default()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            if let Some(update) = schema.poll(Some(root), app) {
+                return update;
+            }
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(15));
+        }
+    };
+    assert!(app.active_document().is_none());
+    assert!(
+        refresh(&mut schema, &mut app).first_output_row.is_some(),
+        "{:?}",
+        app.problems()
+    );
+    for expected in [
+        "bases 2",
+        "Base devlogica · aliases negocio",
+        "Tabla devlogica.customer",
+        "Base vacia · aliases archivo",
+    ] {
+        assert!(
+            app.output().iter().any(|row| row.contains(expected)),
+            "{expected}"
+        );
+    }
+    assert!(!app.output().iter().any(|row| row.contains("Tabla vacia.")));
+    open(&mut app, root, "alias.p",
+        "FIND FIRST negocio.customer NO-LOCK NO-ERROR.\nIF AVAILABLE negocio.customer THEN PUT UNFORMATTED \"ALIAS-CIDE\" SKIP.\n");
+    submit(Action::Run, &app, &mut jobs, Some(root)).unwrap();
+    assert!(
+        !completion(&complete(&mut app, &mut jobs)).1,
+        "{:?}",
+        app.problems()
+    );
+    assert!(app.output().iter().any(|r| r.text == "ALIAS-CIDE"));
+
+    fs::write(
+        root.join(PROFILE),
+        profile.replace("negocio:devlogica", "negocio:noexiste"),
+    )
+    .unwrap();
+    assert!(refresh(&mut schema, &mut app).problems);
+    assert!(app.problems().iter().any(|row| row.contains("noexiste")));
+    app.reset_task_panels();
+    assert!(schema.show(&mut app).is_some());
+    assert!(app
+        .output()
+        .iter()
+        .any(|row| row.contains("Tabla devlogica.customer")));
+    assert!(!app.output().iter().any(|row| row.contains("noexiste")));
+
+    let profile_without_aliases = profile
+        .lines()
+        .filter(|line| !line.starts_with("aliases="))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(root.join(PROFILE), profile_without_aliases).unwrap();
+    app.reset_task_panels();
+    assert!(
+        refresh(&mut schema, &mut app).first_output_row.is_some(),
+        "{:?}",
+        app.problems()
+    );
+    assert!(app.output().iter().any(|row| row.text == "Base vacia"));
+
+    schema.request(Some(root), Wakeup::default()).unwrap();
+    schema.clear();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while schema.busy() {
+        assert!(schema.poll(Some(&reference), &mut app).is_none());
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(15));
+    }
+    assert!(!schema.has_catalog());
+}

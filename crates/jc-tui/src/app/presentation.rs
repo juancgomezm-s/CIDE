@@ -1,6 +1,6 @@
 //! Preparing text may update caches/viewports; composing this borrowed presentation cannot.
 use super::TuiApp;
-use jc_app::{BottomPanel, PaneId, PrimaryFocus};
+use jc_app::{BottomPanel, PaneId};
 use jc_text::TextPosition;
 
 #[derive(Debug, Default)]
@@ -414,12 +414,7 @@ impl TuiApp {
             {
                 let count = self.workbench.search().matches.len();
                 let available = usize::from(layout.bottom_height.saturating_sub(2));
-                let selected = self.bottom_selected.min(count.saturating_sub(1));
-                let start = if self.focus.primary() == PrimaryFocus::BottomPanel {
-                    selected.saturating_sub(available.saturating_sub(1))
-                } else {
-                    count.saturating_sub(available)
-                };
+                let (start, _) = self.bottom_window(count, available);
                 search_positions = (start..count.min(start + available))
                     .map(|i| (i, self.workbench.search_match_position(i)))
                     .collect();

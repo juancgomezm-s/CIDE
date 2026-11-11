@@ -1,4 +1,5 @@
 //! Explicit batch AVM jobs shared by both editors.
+mod schema;
 #[cfg(test)]
 mod tests;
 use crate::{
@@ -11,6 +12,7 @@ use jc_app::{
 };
 use jc_files::read_in_root;
 use jc_text::{DecodedScalars, TextEncoding};
+pub use schema::{SchemaController, SchemaUpdate};
 use std::{
     fs::{self, File},
     io::{self, Read},
@@ -25,6 +27,8 @@ pub const JOB_KEY: JobKey = JobKey(0x4a43_5052_4f47_0001);
 const PROFILE: &str = ".cide/progress.local.ini";
 const OUTPUT_LIMIT: u64 = 128 * 1024;
 const HELPER: &[u8] = include_bytes!("../../../progress/abl/jc-bridge.p");
+const SCHEMA_HELPER: &[u8] = include_bytes!("../../../progress/abl/jc-schema.p");
+const SCHEMA_LIMIT: u64 = 1024 * 1024;
 
 pub fn action(command: CommandId) -> Option<Action> {
     match command {
@@ -122,7 +126,47 @@ pub fn submit(
     .map_err(|e| e.to_string())
 }
 
-fn load_profile(root: &Path) -> Result<ProgressProfile, String> {
+struct EditorProfile {
+    avm: ProgressProfile,
+    aliases: Vec<DatabaseAlias>,
+}
+
+struct DatabaseAlias {
+    name: String,
+    database: String,
+}
+
+fn parse_aliases(value: &str) -> Result<Vec<DatabaseAlias>, String> {
+    fn valid(name: &str) -> bool {
+        name.len() <= 32
+            && name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+    }
+    let mut aliases: Vec<DatabaseAlias> = Vec::new();
+    for pair in value.split(',') {
+        let (name, database) = pair
+            .split_once(':')
+            .ok_or("Usa aliases=alias:base_logica en el perfil Progress")?;
+        let (name, database) = (name.trim(), database.trim());
+        if aliases.len() == 32
+            || !valid(name)
+            || !valid(database)
+            || name.eq_ignore_ascii_case("DICTDB")
+            || aliases.iter().any(|a| a.name.eq_ignore_ascii_case(name))
+        {
+            return Err("Alias ABL inválido, duplicado, reservado o fuera de cuota".into());
+        }
+        aliases.push(DatabaseAlias {
+            name: name.to_owned(),
+            database: database.to_owned(),
+        });
+    }
+    Ok(aliases)
+}
+
+fn load_profile(root: &Path) -> Result<EditorProfile, String> {
     let (_, bytes) = read_in_root(root, &root.join(PROFILE), 8192).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             format!("Configura {PROFILE} para usar el AVM del proyecto")
@@ -136,6 +180,7 @@ fn load_profile(root: &Path) -> Result<ProgressProfile, String> {
     let mut ini_file = None;
     let mut cpstream = None;
     let mut cpinternal = None;
+    let mut aliases = None;
     for (index, line) in text.trim_start_matches('\u{feff}').lines().enumerate() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -153,18 +198,26 @@ fn load_profile(root: &Path) -> Result<ProgressProfile, String> {
             "ini" => ini_file.replace(root.join(value)).is_some(),
             "cpstream" => cpstream.replace(value.to_owned()).is_some(),
             "cpinternal" => cpinternal.replace(value.to_owned()).is_some(),
+            "aliases" => aliases.replace(parse_aliases(value)?).is_some(),
             _ => return Err(invalid()),
         };
         if repeated {
             return Err(invalid());
         }
     }
-    Ok(ProgressProfile {
-        executable: executable.ok_or(format!("Falta executable en {PROFILE}"))?,
-        parameter_file: parameter_file.map(|p| avm_path(&p)),
-        ini_file: ini_file.map(|p| avm_path(&p)),
-        cpstream: cpstream.ok_or(format!("Falta cpstream en {PROFILE}"))?,
-        cpinternal: cpinternal.ok_or(format!("Falta cpinternal en {PROFILE}"))?,
+    let executable = executable
+        .ok_or(format!("Falta executable en {PROFILE}"))?
+        .canonicalize()
+        .map_err(|e| format!("Ejecutable Progress: {e}"))?;
+    Ok(EditorProfile {
+        avm: ProgressProfile {
+            executable: avm_path(&executable),
+            parameter_file: parameter_file.map(|p| avm_path(&p)),
+            ini_file: ini_file.map(|p| avm_path(&p)),
+            cpstream: cpstream.ok_or(format!("Falta cpstream en {PROFILE}"))?,
+            cpinternal: cpinternal.ok_or(format!("Falta cpinternal en {PROFILE}"))?,
+        },
+        aliases: aliases.unwrap_or_default(),
     })
 }
 
@@ -264,17 +317,17 @@ fn execute(
     output: &mut TaskOutput,
 ) -> Result<(), String> {
     let source = verify_source(root, path, snapshot.bytes())?;
-    let mut profile = load_profile(root)?;
-    profile.executable = avm_path(
-        &profile
-            .executable
-            .canonicalize()
-            .map_err(|e| format!("Ejecutable Progress: {e}"))?,
-    );
+    let profile = load_profile(root)?;
     let propath = project_propath(root, &source)?;
     let mut job = JobDir::create()
         .map_err(|e| format!("No se pudo crear el directorio de trabajo ABL: {e}"))?;
-    let result = invoke(action, root, &source, &profile, propath, &job.path, cancel)?;
+    let request = BridgeRequest {
+        action,
+        source: Some(avm_path(&source)),
+        output_dir: avm_path(&job.path),
+        propath: Some(propath),
+    };
+    let result = invoke(request, root, &profile, cancel)?;
     verify_source(root, path, snapshot.bytes())?;
     if cancel.is_cancelled() {
         return Err("Tarea Progress cancelada".into());
@@ -304,41 +357,45 @@ struct AvmResult {
 }
 
 fn invoke(
-    action: Action,
+    request: BridgeRequest,
     root: &Path,
-    source: &Path,
-    profile: &ProgressProfile,
-    propath: String,
-    dir: &Path,
+    profile: &EditorProfile,
     cancel: &Cancellation,
 ) -> Result<AvmResult, String> {
-    let dir = avm_path(dir);
+    let dir = &request.output_dir;
     let helper = dir.join("jc-bridge.p");
     let request_path = dir.join("request.txt");
     let log = dir.join("avm.txt");
-    let request = BridgeRequest {
-        action,
-        source: Some(avm_path(source)),
-        output_dir: dir.clone(),
-        propath: Some(propath),
-    };
-    let spec = build_command(profile, &helper, &request_path).map_err(|e| e.to_string())?;
-    let data = request.encode().map_err(|e| e.to_string())?;
+    let spec = build_command(&profile.avm, &helper, &request_path).map_err(|e| e.to_string())?;
+    let aliases = profile
+        .aliases
+        .iter()
+        .map(|a| format!("{}={}", a.name, a.database))
+        .collect::<Vec<_>>()
+        .join(",");
+    let editor_aliases =
+        (request.action == Action::Schema || !aliases.is_empty()).then_some(aliases.as_str());
+    let data = request
+        .encode_request(editor_aliases)
+        .map_err(|e| e.to_string())?;
     let start = || -> io::Result<Child> {
         fs::write(&helper, HELPER)?;
+        if request.action == Action::Schema {
+            fs::write(dir.join("jc-schema.p"), SCHEMA_HELPER)?;
+        }
         fs::write(&request_path, data)?;
         let log = File::create(&log)?;
         let mut command = spec.to_command();
         command
             .current_dir(avm_path(root))
             .arg("-T")
-            .arg(&dir)
+            .arg(dir)
             .env_remove("PROPATH")
             .env_remove("PROSTARTUP")
             .stdin(Stdio::null())
             .stdout(log.try_clone()?)
             .stderr(log);
-        if let Some(dlc) = profile.executable.parent().and_then(Path::parent) {
+        if let Some(dlc) = profile.avm.executable.parent().and_then(Path::parent) {
             command.env("DLC", dlc);
         }
         #[cfg(windows)]
@@ -356,7 +413,16 @@ fn invoke(
     };
     let mut child = start().map_err(|e| format!("No se pudo iniciar el AVM: {e}"))?;
     let response = request.response_path();
-    let status = match wait(&mut child, [&log, &response], cancel) {
+    let response_limit = if request.action == Action::Schema {
+        SCHEMA_LIMIT
+    } else {
+        OUTPUT_LIMIT
+    };
+    let status = match wait(
+        &mut child,
+        [(&log, OUTPUT_LIMIT), (&response, response_limit)],
+        cancel,
+    ) {
         Ok(status) => status,
         Err(error) => {
             let _ = child.kill();
@@ -366,24 +432,28 @@ fn invoke(
     };
     Ok(AvmResult {
         status,
-        log: bounded_read(&log)?,
-        response: bounded_read(&response).and_then(|bytes| {
+        log: bounded_read(&log, OUTPUT_LIMIT)?,
+        response: bounded_read(&response, response_limit).and_then(|bytes| {
             parse_response(&bytes).map_err(|error| format!("Respuesta del AVM inválida: {error}"))
         }),
-        cpstream: profile.cpstream.clone(),
+        cpstream: profile.avm.cpstream.clone(),
     })
 }
 
-fn wait(child: &mut Child, files: [&Path; 2], cancel: &Cancellation) -> Result<ExitStatus, String> {
+fn wait(
+    child: &mut Child,
+    files: [(&Path, u64); 2],
+    cancel: &Cancellation,
+) -> Result<ExitStatus, String> {
     loop {
         if cancel.is_cancelled() {
             return Err("Tarea Progress cancelada".into());
         }
         if files
             .iter()
-            .any(|path| fs::metadata(path).is_ok_and(|m| m.len() > OUTPUT_LIMIT))
+            .any(|(path, limit)| fs::metadata(path).is_ok_and(|m| m.len() > *limit))
         {
-            return Err("El AVM superó la cuota de salida (128 KiB por archivo)".into());
+            return Err("El AVM superó la cuota de salida".into());
         }
         if let Some(status) = child
             .try_wait()
@@ -395,18 +465,18 @@ fn wait(child: &mut Child, files: [&Path; 2], cancel: &Cancellation) -> Result<E
     }
 }
 
-fn bounded_read(path: &Path) -> Result<Vec<u8>, String> {
+fn bounded_read(path: &Path, limit: u64) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
     File::open(path)
-        .and_then(|f| f.take(OUTPUT_LIMIT + 1).read_to_end(&mut bytes))
+        .and_then(|f| f.take(limit + 1).read_to_end(&mut bytes))
         .map_err(|e| {
             format!(
                 "No se pudo leer {}: {e}",
                 path.file_name().unwrap_or_default().to_string_lossy()
             )
         })?;
-    if bytes.len() as u64 > OUTPUT_LIMIT {
-        return Err("El AVM superó la cuota de salida (128 KiB por archivo)".into());
+    if bytes.len() as u64 > limit {
+        return Err("El AVM superó la cuota de salida".into());
     }
     Ok(bytes)
 }

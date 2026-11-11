@@ -12,9 +12,10 @@ interfaz de PIEW.
 - `examples/manual-smoke.ps1`: prepara una solicitud de comprobación para una
   AVM explícita.
 
-**Estado:** el flujo de comprobación, compilación y ejecución por lotes se
-probó con OpenEdge 11.7 x86 en Windows. La consulta de esquema y la
-compatibilidad con OpenEdge 10.0B quedan pendientes de validación.
+**Estado:** el flujo de comprobación, compilación, ejecución por lotes y
+consulta de esquema se probó con OpenEdge 11.7 x86 en Windows. La prueba de
+esquema usó dos copias locales en solo lectura con aliases. La compatibilidad
+con OpenEdge 10.0B queda pendiente de validación.
 
 Contrato, limitaciones y comprobaciones pendientes:
 [PROGRESS_BRIDGE.md](../docs/PROGRESS_BRIDGE.md).

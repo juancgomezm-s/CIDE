@@ -114,6 +114,61 @@ fn safe_label(text: &str, columns: usize) -> String {
     result
 }
 impl State {
+    pub(super) fn request_progress_schema(&mut self) {
+        if self.jobs.has_job(jc_progress::editor::JOB_KEY) {
+            self.error("Ya hay una tarea Progress en curso");
+            return;
+        }
+        match self
+            .progress_schema
+            .request(self.project_root.as_deref(), self.wakeup.clone())
+        {
+            Ok(()) => {
+                self.show_bottom(CommandId::ViewOutput);
+                self.status = "Leyendo esquema ABL…".into();
+            }
+            Err(error) => self.error(error),
+        }
+    }
+
+    pub(super) fn show_progress_schema(&mut self) {
+        if let Some(first) = self.progress_schema.show(&mut self.workbench) {
+            self.show_bottom(CommandId::ViewOutput);
+            self.select_schema_output(first);
+            self.status = "Esquema ABL · consulta Salida".into();
+        }
+    }
+
+    fn select_schema_output(&mut self, first: u64) {
+        self.bottom.output.selected = Some(first);
+        self.bottom.output.scroll = self
+            .workbench
+            .output()
+            .partition_point(|row| row.id < first);
+    }
+
+    pub(super) fn poll_progress_schema(&mut self) -> bool {
+        let Some(update) = self
+            .progress_schema
+            .poll(self.project_root.as_deref(), &mut self.workbench)
+        else {
+            return false;
+        };
+        self.status = update.message.into();
+        if self.bottom.visible && self.bottom.kind == PanelKind::Output {
+            if update.problems {
+                self.bottom.kind = PanelKind::Problems;
+                self.bottom
+                    .problems
+                    .last(self.workbench.task_panels(), PanelKind::Problems);
+            } else if let Some(first) = update.first_output_row {
+                self.select_schema_output(first);
+            }
+            self.bottom_hits = None;
+        }
+        true
+    }
+
     pub(super) fn show_bottom(&mut self, command: CommandId) {
         self.close_selector();
         if command == CommandId::ViewToggleBottomPanel {
@@ -396,4 +451,51 @@ fn progress_real_gui_command_routes_to_output_and_problems() {
         .problems()
         .iter()
         .any(|r| r.contains("ausente.i") && r.target.is_some()));
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "requiere el proyecto sintético de esquema de OpenEdge"]
+fn progress_real_schema_gui_refreshes_and_reopens_the_catalog() {
+    use std::{
+        path::PathBuf,
+        thread,
+        time::{Duration, Instant},
+    };
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let mut state = State::new(&crate::GuiOptions {
+        project_root: Some(root),
+        ..Default::default()
+    })
+    .unwrap();
+    assert!(!state.context().has_database_schema);
+    state.execute_menu(CommandId::ProgressRefreshSchema);
+    assert!(state.progress_schema.busy(), "{}", state.status);
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while state.progress_schema.busy() {
+        state.poll_tasks();
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(15));
+    }
+    assert!(
+        state.context().has_database_schema,
+        "{:?}",
+        state.workbench.problems()
+    );
+    assert_eq!(state.bottom.kind, PanelKind::Output);
+    assert!(state
+        .workbench
+        .output()
+        .iter()
+        .any(|r| r.contains("Tabla devlogica.customer")));
+    state.execute_menu(CommandId::ViewDatabase);
+    assert!(state
+        .workbench
+        .output()
+        .iter()
+        .any(|r| r.contains("Base vacia")));
+    assert!(state.bottom.output.selected.is_some());
+    assert!(state.bottom.output.scroll > 0);
+    assert!(state.workbench.output()[state.bottom.output.scroll + 1].contains("Base devlogica"));
+    assert_eq!(state.status, "Esquema ABL · consulta Salida");
 }

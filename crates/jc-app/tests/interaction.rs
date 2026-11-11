@@ -11,7 +11,6 @@ fn editor_context() -> CommandContext {
         clipboard_has_text: true,
         has_project: true,
         active_language: Some("abl".into()),
-        has_progress_profile: true,
         has_database_schema: true,
         can_reopen_closed_tab: true,
         terminal_available: true,

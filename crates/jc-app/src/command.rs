@@ -187,7 +187,6 @@ pub struct CommandContext {
     pub document_search_running: bool,
     pub search_history_available: bool,
     pub active_language: Option<String>,
-    pub has_progress_profile: bool,
     pub has_database_schema: bool,
     pub can_reopen_closed_tab: bool,
     pub terminal_available: bool,
@@ -245,7 +244,6 @@ impl Default for CommandContext {
             document_search_running: false,
             search_history_available: false,
             active_language: None,
-            has_progress_profile: false,
             has_database_schema: false,
             can_reopen_closed_tab: false,
             terminal_available: false,
@@ -353,9 +351,6 @@ fn document_search_running(ctx: &CommandContext) -> bool {
 }
 fn search_history(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.search_history_available
-}
-fn never(_: &CommandContext) -> bool {
-    false
 }
 fn has_document(ctx: &CommandContext) -> bool {
     ctx.has_document
@@ -542,7 +537,10 @@ fn abl(ctx: &CommandContext) -> bool {
     ctx.has_document && ctx.is_abl() && ctx.has_project
 }
 fn abl_project(ctx: &CommandContext) -> bool {
-    ctx.has_project && ctx.has_progress_profile
+    ctx.has_project
+}
+fn database_schema(ctx: &CommandContext) -> bool {
+    ctx.has_database_schema
 }
 
 macro_rules! spec {
@@ -757,7 +755,7 @@ pub fn default_registry() -> CommandRegistry {
             "Mostrar caracteres invisibles",
             always
         ),
-        spec!(ViewDatabase, View, "Base de datos/esquema", never),
+        spec!(ViewDatabase, View, "Ver esquema ABL", database_schema),
         spec!(
             ViewAppearance,
             View,
