@@ -2276,7 +2276,7 @@ fn tui_code_diff_selects_commit_keeps_editor_and_blocks_hidden_edits() {
     assert_eq!(app.panels.sidebar(), SidebarView::Explorer);
     assert!(!app.panels.bottom_visible());
     let screen = app.frame(160, 30);
-    assert!(screen.row_text(2).contains("HEAD"));
+    assert!(screen.row_text(4).contains("HEAD"));
     assert!(
         (3..26).any(|y| (30..160).any(|x| screen.cell(x, y).style == crate::CellStyle::DiffAdded))
     );
@@ -2287,7 +2287,15 @@ fn tui_code_diff_selects_commit_keeps_editor_and_blocks_hidden_edits() {
     assert_eq!(app.workbench.active_bytes().unwrap(), dirty);
     key(&mut app, KeyCode::Char('v'));
     assert!(app.git_code.unified);
-    key(&mut app, KeyCode::F(4));
+    let painted = app.frame(160, 30);
+    let row = painted.row_text(2);
+    let at = row.find("[Elegir commit]").unwrap();
+    app.handle_event(Event::Mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: jc_text::grapheme::width(&row[..at]) as u16,
+        row: 2,
+        modifiers: KeyModifiers::NONE,
+    }));
     while app.git_revision.state() != jc_app::git_revision::GitRevisionState::Ready {
         app.poll_tasks();
         assert!(Instant::now() < deadline);
@@ -2307,7 +2315,13 @@ fn tui_code_diff_selects_commit_keeps_editor_and_blocks_hidden_edits() {
         .commit
         .id
         .clone();
-    key(&mut app, KeyCode::Enter);
+    app.frame(160, 30);
+    app.handle_event(Event::Mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: 10,
+        row: 2,
+        modifiers: KeyModifiers::NONE,
+    }));
     while app.git_diff.state() != GitDiffState::Ready {
         app.poll_tasks();
         assert!(Instant::now() < deadline);
@@ -2329,7 +2343,19 @@ fn tui_code_diff_selects_commit_keeps_editor_and_blocks_hidden_edits() {
         app.git_source,
         jc_app::git_read::GitBlobSource::Commit(_)
     ));
-    key(&mut app, KeyCode::Esc);
+    assert!(app
+        .registry
+        .is_enabled(CommandId::GitDiffCancel, &app.command_context()));
+    let screen = app.frame(160, 30);
+    let row = screen.row_text(2);
+    let at = row.find("[Cerrar comparación]").unwrap();
+    let column = jc_text::grapheme::width(&row[..at]) as u16;
+    app.handle_event(Event::Mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column,
+        row: 2,
+        modifiers: KeyModifiers::NONE,
+    }));
     assert!(!app.git_code.active);
     assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
     assert_eq!(app.workbench.active_editor().unwrap().cursor, cursor);

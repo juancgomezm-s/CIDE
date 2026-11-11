@@ -772,7 +772,7 @@ pub fn default_registry() -> CommandRegistry {
         spec!(
             ViewGit,
             View,
-            "Git: diferencias del archivo activo",
+            "Comparar este archivo con un commit…",
             git_diff
         ),
         spec!(GitDiffHead, View, "Git: comparar copia de HEAD", git_diff),
@@ -783,12 +783,7 @@ pub fn default_registry() -> CommandRegistry {
             git_diff
         ),
         spec!(GitDiffRefresh, View, "Git: actualizar copia", git_diff),
-        spec!(
-            GitDiffCancel,
-            View,
-            "Git: cancelar comparación",
-            git_diff_running
-        ),
+        spec!(GitDiffCancel, View, "Cerrar comparación", git_diff_running),
         spec!(
             GitConfigureExecutable,
             View,

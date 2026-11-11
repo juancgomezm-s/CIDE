@@ -28,6 +28,7 @@ impl TuiApp {
                 | CommandId::GitDiffHead
                 | CommandId::GitDiffIndex
                 | CommandId::GitDiffRefresh
+                | CommandId::GitDiffCancel
                 | CommandId::ViewGit
         ) {
             self.git_code.active = false;
@@ -228,7 +229,12 @@ impl TuiApp {
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
             }
             ViewDatabase => self.show_sidebar(SidebarView::Database),
-            ViewGit => self.open_git_diff(),
+            ViewGit => {
+                self.open_git_diff();
+                if self.git_code.active {
+                    self.git_code_control(super::git_code::Control::History);
+                }
+            }
             GitDiffHead => {
                 self.git_source = jc_app::git_read::GitBlobSource::Head;
                 self.open_git_diff();
@@ -239,6 +245,10 @@ impl TuiApp {
             }
             GitDiffRefresh => self.open_git_diff(),
             GitDiffCancel => {
+                if self.git_code.active {
+                    self.git_code_control(super::git_code::Control::Close);
+                    return;
+                }
                 if self.git_history.immutable() {
                     self.git_revision.cancel();
                     self.status = self.git_revision.message().into();

@@ -41,6 +41,7 @@ impl TuiApp {
 
     pub(crate) fn open_git_diff(&mut self) {
         self.git_code.active = true;
+        self.git_code.reveal_change = true;
         self.git_code.choose_commit = false;
         self.panels.show_sidebar(SidebarView::Explorer);
         self.panels.hide_bottom();

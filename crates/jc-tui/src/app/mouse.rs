@@ -127,6 +127,8 @@ impl SourceArea {
 }
 #[derive(Clone, PartialEq, Eq)]
 struct FrameStamp {
+    code: (bool, bool, bool, usize),
+    graph_start: Option<String>,
     root: Option<PathBuf>,
     overlay: UiOverlay,
     focus: PrimaryFocus,
@@ -141,6 +143,13 @@ struct FrameStamp {
 impl FrameStamp {
     fn capture(app: &TuiApp) -> Self {
         Self {
+            code: (
+                app.git_code.active,
+                app.git_code.choose_commit,
+                app.git_code.unified,
+                app.git_diff_scroll,
+            ),
+            graph_start: app.git_revision.graph().and_then(|g| g.start.clone()),
             root: app.project_root.clone(),
             overlay: app.overlay.clone(),
             focus: app.focus.primary(),
@@ -187,6 +196,9 @@ impl FrameStamp {
 }
 #[derive(Clone, Copy)]
 enum Action {
+    Code(super::git_code::Control),
+    CodeCommit(usize),
+    CodeBack,
     Menu(MenuId),
     Command(CommandId),
     Tab(usize, TabId),
@@ -515,6 +527,59 @@ impl TuiApp {
         if !matches!(self.overlay, UiOverlay::None) {
             self.mouse.frame = Some(Box::new(frame));
             return;
+        }
+        if self.git_code.active && self.graph_showing() {
+            if let Some(graph) =
+                self.prepare_git_graph(layout.width, layout.height.saturating_sub(3))
+            {
+                for (offset, row) in graph.rows.iter().enumerate() {
+                    frame.hits.push(Hit {
+                        area: Rect {
+                            x: 0,
+                            y: 2 + offset as u16,
+                            width: layout.width,
+                            height: 1,
+                        },
+                        action: Action::CodeCommit(row.ordinal),
+                    });
+                }
+            }
+            frame.hits.push(Hit {
+                area: Rect {
+                    x: 0,
+                    y: layout.height - 1,
+                    width: 9,
+                    height: 1,
+                },
+                action: Action::CodeBack,
+            });
+            frame.hits.push(Hit {
+                area: Rect {
+                    x: 10,
+                    y: layout.height - 1,
+                    width: 20,
+                    height: 1,
+                },
+                action: Action::Code(super::git_code::Control::Close),
+            });
+            self.mouse.frame = Some(Box::new(frame));
+            return;
+        }
+        if self.git_code.active {
+            for (x, y, label, control) in super::git_code::controls(
+                layout.editor_width,
+                self.git_code.unified || layout.editor_width < 65,
+            ) {
+                frame.hits.push(Hit {
+                    area: Rect {
+                        x: layout.editor_x + x,
+                        y: 2 + y,
+                        width: jc_text::grapheme::width(&label) as u16,
+                        height: 1,
+                    },
+                    action: Action::Code(control),
+                });
+            }
         }
         for tab in tab_labels(self, layout.width) {
             frame.hits.push(Hit {
@@ -964,6 +1029,25 @@ impl TuiApp {
                         .select_relative(index as isize - self.git_diff.selected() as isize);
                     self.navigate_git_hunk();
                 }
+                true
+            }
+            Some(Action::Code(control)) => {
+                self.git_code_control(control);
+                true
+            }
+            Some(Action::CodeCommit(row)) => {
+                if let Some(view) = self.git_history.graph.as_mut() {
+                    if view.reference_selected.is_some() {
+                        view.reference_selected = Some(row);
+                    } else {
+                        view.selected = row;
+                    }
+                    self.handle_git_graph_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                }
+                true
+            }
+            Some(Action::CodeBack) => {
+                self.handle_git_graph_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
                 true
             }
             Some(Action::Focus(focus)) => {

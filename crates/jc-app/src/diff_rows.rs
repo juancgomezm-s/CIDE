@@ -23,6 +23,44 @@ fn count(span: &DiffSpan, parallel: bool) -> usize {
     }
 }
 
+/// Navigate accepted change metadata without decoding source text.
+pub fn change_target(
+    model: &OwnedDiffModel,
+    current: usize,
+    forward: bool,
+    parallel: bool,
+) -> usize {
+    let mut row = 0;
+    let mut previous = None;
+    for span in model.spans() {
+        if span.kind == DiffKind::Changed {
+            if forward && row > current {
+                return row;
+            }
+            if row < current {
+                previous = Some(row);
+            }
+        }
+        row += count(span, parallel);
+    }
+    if forward {
+        current
+    } else {
+        previous.unwrap_or(current)
+    }
+}
+
+pub fn first_change(model: &OwnedDiffModel, parallel: bool) -> Option<usize> {
+    let mut row = 0;
+    for span in model.spans() {
+        if span.kind == DiffKind::Changed {
+            return Some(row);
+        }
+        row += count(span, parallel);
+    }
+    None
+}
+
 pub fn page(model: &OwnedDiffModel, first: usize, limit: usize, parallel: bool) -> DiffPage {
     let limit = limit.min(128);
     let total = model

@@ -12,6 +12,52 @@ pub(crate) struct CodeDiffView {
     pub active: bool,
     pub choose_commit: bool,
     pub unified: bool,
+    pub reveal_change: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Control {
+    History,
+    Toggle,
+    Change(bool),
+    Close,
+}
+pub(crate) fn controls(width: u16, unified: bool) -> Vec<(u16, u16, String, Control)> {
+    let close = "[Cerrar comparación]";
+    let mode = if unified {
+        "[Dividir pantalla]"
+    } else {
+        "[Ver en línea]"
+    };
+    let previous = if width < 65 {
+        "[Anterior]"
+    } else {
+        "[Cambio anterior]"
+    };
+    let next = if width < 65 {
+        "[Siguiente]"
+    } else {
+        "[Cambio siguiente]"
+    };
+    let mut result = vec![
+        (0, 0, "[Elegir commit]".into(), Control::History),
+        (
+            width.saturating_sub(jc_text::grapheme::width(close) as u16),
+            0,
+            close.into(),
+            Control::Close,
+        ),
+    ];
+    let mut x = 0;
+    for (label, control) in [
+        (mode, Control::Toggle),
+        (previous, Control::Change(false)),
+        (next, Control::Change(true)),
+    ] {
+        result.push((x, 1, label.into(), control));
+        x += jc_text::grapheme::width(label) as u16 + 1;
+    }
+    result
 }
 
 pub(crate) struct CodeDiffRow {
@@ -98,6 +144,37 @@ pub(super) fn project(
 }
 
 impl TuiApp {
+    pub(crate) fn git_code_control(&mut self, control: Control) {
+        match control {
+            Control::History => {
+                self.git_code.choose_commit = true;
+                self.open_git_graph();
+            }
+            Control::Toggle => {
+                self.git_code.unified = !self.git_code.unified;
+                self.git_code.reveal_change = true;
+            }
+            Control::Change(forward) => {
+                if let Some(result) = self.git_diff.result() {
+                    self.git_diff_scroll = jc_app::diff_rows::change_target(
+                        &result.model,
+                        self.git_diff_scroll,
+                        forward,
+                        !self.git_code.unified,
+                    );
+                }
+            }
+            Control::Close => {
+                self.git_code.active = false;
+                self.git_code.choose_commit = false;
+                self.git_diff.cancel(&mut self.tasks);
+                self.git_revision.cancel();
+                self.git_history = Default::default();
+                let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+                self.status = "Comparación cerrada · edición del documento".into();
+            }
+        }
+    }
     pub(super) fn prepare_git_code(&mut self, width: u16, height: u16) -> CodeDiffPresentation {
         let unified = self.git_code.unified || width < 65;
         let mut frame = CodeDiffPresentation {
@@ -138,6 +215,10 @@ impl TuiApp {
             frame.message = "Elige la codificación del documento para comparar".into();
             return frame;
         };
+        if self.git_code.reveal_change {
+            self.git_diff_scroll = jc_app::diff_rows::first_change(model, !unified).unwrap_or(0);
+            self.git_code.reveal_change = false;
+        }
         let columns = if unified {
             width
         } else {
@@ -146,7 +227,7 @@ impl TuiApp {
         let (rows, scroll) = project(
             model,
             self.git_diff_scroll,
-            usize::from(height.saturating_sub(3)),
+            usize::from(height.saturating_sub(5)),
             columns.saturating_sub(15),
             encoding,
             unified,
@@ -162,9 +243,7 @@ impl TuiApp {
         }
         match key.code {
             KeyCode::Esc => {
-                self.git_code.active = false;
-                let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-                self.status = "Edición del documento · comparación cerrada".into();
+                self.git_code_control(Control::Close);
             }
             KeyCode::F(4) => {
                 self.git_code.choose_commit = true;

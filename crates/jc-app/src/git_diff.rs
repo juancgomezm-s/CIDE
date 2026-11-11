@@ -57,6 +57,7 @@ impl GitDiffState {
 }
 #[derive(Debug)]
 pub struct GitDiffResult {
+    pub simplified: bool,
     pub identity: GitBlobIdentity,
     pub model: OwnedDiffModel,
 }
@@ -415,10 +416,15 @@ impl GitDiffController {
         match reply.result {
             Ok(result) => match result.model.status() {
                 DiffStatus::Exact => {
+                    let message = if result.simplified {
+                        "Comparación completa simplificada: se agrupan los cambios para limitar memoria"
+                    } else {
+                        "Comparación de captura Git lista"
+                    };
                     self.selected = 0;
                     self.accepted = Some(flight.intent);
                     self.result = Some(result);
-                    self.status(GitDiffState::Ready, "Comparación de captura Git lista");
+                    self.status(GitDiffState::Ready, message);
                 }
                 DiffStatus::Limited(limit) => {
                     self.status(
@@ -579,7 +585,7 @@ fn compute(
             other => bounded_error(other),
         })?;
     let (identity, bytes) = blob.into_parts();
-    let model = OwnedDiffModel::compute(
+    let (model, simplified) = OwnedDiffModel::compute_display(
         Arc::new(bytes),
         snapshot.shared_bytes(),
         DiffLimits {
@@ -589,7 +595,11 @@ fn compute(
         },
         || cancel.is_cancelled(),
     );
-    Ok(GitDiffResult { identity, model })
+    Ok(GitDiffResult {
+        identity,
+        model,
+        simplified,
+    })
 }
 pub(crate) fn run(
     work: GitDiffWork,

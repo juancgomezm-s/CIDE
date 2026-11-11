@@ -25,6 +25,9 @@ impl TuiApp {
                     match event.kind {
                         MouseEventKind::ScrollUp => self.move_git_graph(-3),
                         MouseEventKind::ScrollDown => self.move_git_graph(3),
+                        _ if self.git_code.choose_commit => {
+                            self.handle_mouse(event);
+                        }
                         _ => {}
                     }
                 } else if self.git_code.active

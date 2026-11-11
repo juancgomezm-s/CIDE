@@ -11,6 +11,7 @@ use std::{path::PathBuf, rc::Rc};
 pub(super) struct View {
     pub active: bool,
     unified: bool,
+    reveal_change: bool,
     first: usize,
     column: usize,
     selecting: bool,
@@ -53,6 +54,7 @@ enum Intent {
     Next,
     References,
     Reference(usize),
+    Change(bool),
 }
 
 #[derive(Clone)]
@@ -183,6 +185,7 @@ impl State {
         let action = self.request_git(GitIntent::Diff(source));
         self.git_code = View {
             active: self.git_panel.is_some(),
+            reveal_change: true,
             unified,
             ..Default::default()
         };
@@ -256,7 +259,7 @@ impl State {
         }
         self.open_git_code(source)
     }
-    fn choose_code_revision(&mut self) {
+    pub(super) fn choose_code_revision(&mut self) {
         if self.git_code.selecting {
             self.git_code.selecting = false;
             self.git_revision.cancel();
@@ -275,6 +278,16 @@ impl State {
     fn code_action(&mut self, intent: Intent) -> Action {
         self.git_code.end_drag();
         match intent {
+            Intent::Change(forward) => {
+                if let Some(result) = self.git_diff.result() {
+                    self.git_code.first = jc_app::diff_rows::change_target(
+                        &result.model,
+                        self.git_code.first,
+                        forward,
+                        !self.git_code.unified,
+                    );
+                }
+            }
             Intent::History => self.choose_code_revision(),
             Intent::Toggle => {
                 self.git_code.unified = !self.git_code.unified;
@@ -326,6 +339,9 @@ impl State {
         }
         self.git_code.invalidate();
         Action::None
+    }
+    pub(super) fn close_git_code(&mut self) -> Action {
+        self.code_action(Intent::Close)
     }
     pub(super) fn git_code_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
         if modifiers != Modifiers::NONE {
@@ -447,8 +463,7 @@ impl State {
             .rev()
             .find(|(r, _)| inside(*r, x, y))
             .map(|(_, i)| i.clone());
-        if self.git_code.selecting && matches!(intent, None | Some(Intent::Toggle | Intent::Close))
-        {
+        if self.git_code.selecting && matches!(intent, None | Some(Intent::Toggle)) {
             return self.code_action(Intent::History);
         }
         match intent {
@@ -576,7 +591,7 @@ impl State {
             unified,
             message: format!(
                 "{} · F4 revisión · V vista · Esc editar",
-                self.git_diff.state().label()
+                self.git_diff.message()
             ),
             cells: Vec::new(),
             buttons: Vec::new(),
@@ -593,13 +608,17 @@ impl State {
         };
         let slot = ((area.right - area.left - p(16)) / 3).min(p(132));
         for (i, label, intent) in [
-            (0, "Revisión ▾", Intent::History),
+            (0, "Elegir commit ▾", Intent::History),
             (
                 1,
-                if unified { "Unificada" } else { "Paralela" },
+                if unified {
+                    "Dividir pantalla"
+                } else {
+                    "Ver en línea"
+                },
                 Intent::Toggle,
             ),
-            (2, "Volver a editar", Intent::Close),
+            (2, "Cerrar comparación ×", Intent::Close),
         ] {
             let left = area.left + p(8) + i * (slot + p(4));
             let r = rect(
@@ -613,13 +632,40 @@ impl State {
         }
         let body = rect(
             area.left,
-            area.top + p(58),
+            area.top + p(84),
             area.right - p(9),
             area.bottom - p(30),
         );
         frame.divider = (!unified).then_some(body.left + (body.right - body.left) / 2);
         let page_size = ((body.bottom - body.top).max(0) / frame.row) as usize;
         if let Some(result) = self.git_diff.result() {
+            frame.left = format!("{} · {}", frame.right, frame.left);
+            frame.right = format!("{} · Actual", frame.right);
+            if result.model.hunks().next().is_none() {
+                frame.message =
+                    "Sin diferencias entre estas versiones · Cerrar comparación vuelve a editar"
+                        .into();
+            }
+            if self.git_code.reveal_change {
+                self.git_code.first =
+                    jc_app::diff_rows::first_change(&result.model, !unified).unwrap_or(0);
+                self.git_code.reveal_change = false;
+            }
+            for (i, label, intent) in [
+                (0, "← Cambio", Intent::Change(false)),
+                (1, "Cambio →", Intent::Change(true)),
+            ] {
+                let r = rect(
+                    area.left + p(8) + i * p(112),
+                    area.top + p(34),
+                    area.left + p(116) + i * p(112),
+                    area.top + p(56),
+                );
+                if r.right < area.right {
+                    frame.buttons.push((r, label.into()));
+                    frame.hits.targets.push((r, intent));
+                }
+            }
             let page =
                 jc_app::diff_rows::page(&result.model, self.git_code.first, page_size, !unified);
             self.git_code.first = page.first;
@@ -803,6 +849,15 @@ pub(super) unsafe fn draw(
         )?;
     }
     let left = area.left + p(8);
+    if frame.cells.is_empty() {
+        paint::text(
+            dc,
+            rect(left, area.top + p(94), area.right - p(8), area.top + p(160)),
+            &wide(&frame.message),
+            shell::TEXT,
+            shell::BACKGROUND,
+        )?;
+    }
     let middle = frame.divider.unwrap_or(area.right);
     let heading = if frame.unified {
         format!("{} → {}", frame.left, frame.right)
@@ -813,9 +868,9 @@ pub(super) unsafe fn draw(
         dc,
         rect(
             left,
-            area.top + p(34),
+            area.top + p(60),
             if frame.unified { area.right } else { middle },
-            area.top + p(56),
+            area.top + p(82),
         ),
         &wide(&heading),
         shell::MUTED,
@@ -826,9 +881,9 @@ pub(super) unsafe fn draw(
             dc,
             rect(
                 middle + p(8),
-                area.top + p(34),
+                area.top + p(60),
                 area.right,
-                area.top + p(56),
+                area.top + p(82),
             ),
             &wide(&frame.right),
             shell::MUTED,
@@ -870,7 +925,7 @@ pub(super) unsafe fn draw(
     if !frame.unified {
         paint::fill(
             dc,
-            rect(middle, area.top + p(34), middle + unit, area.bottom - p(30)),
+            rect(middle, area.top + p(60), middle + unit, area.bottom - p(30)),
             0x00594b42,
         )?;
     }
@@ -1083,7 +1138,16 @@ pub(super) unsafe fn smoke(
             Some(&path.with_file_name("native-git-code-unified.bmp")),
         )?;
     }
-    key(hwnd, 0x1b, Modifiers::NONE)?;
+    if !owner(hwnd)
+        .unwrap()
+        .state
+        .borrow()
+        .context()
+        .git_diff_running
+    {
+        return Err("Close comparison is disabled after delivery".into());
+    }
+    command(hwnd, CommandId::GitDiffCancel)?;
     if owner(hwnd).unwrap().state.borrow().git_code.active || snapshot(hwnd)? != before {
         return Err("Returning from Code comparison changed the editor".into());
     }

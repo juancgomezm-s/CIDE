@@ -190,6 +190,125 @@ pub struct OwnedDiffModel {
     stats: DiffStats,
 }
 impl OwnedDiffModel {
+    /// Read-only presentation can retain a complete, non-minimal replacement
+    /// when the detailed trace exceeds its budget. Strict callers keep compute.
+    pub fn compute_display(
+        left: Arc<Vec<u8>>,
+        right: Arc<Vec<u8>>,
+        limits: DiffLimits,
+        mut cancelled: impl FnMut() -> bool,
+    ) -> (Self, bool) {
+        let detailed_limits = DiffLimits {
+            max_work: limits.max_work / 2,
+            ..limits
+        };
+        let detailed = Self::compute(left.clone(), right.clone(), detailed_limits, &mut cancelled);
+        if !matches!(
+            detailed.status(),
+            DiffStatus::Limited(DiffLimit::Metadata | DiffLimit::Work)
+        ) {
+            return (detailed, false);
+        }
+        let previous_stats = detailed.stats();
+        drop(detailed);
+        let mut budget = Budget {
+            limits: DiffLimits {
+                max_work: limits.max_work.saturating_sub(previous_stats.work_units),
+                ..limits
+            },
+            stats: DiffStats::default(),
+            lines: 0,
+            cancelled,
+        };
+        let result = (|| {
+            budget.check()?;
+            if left
+                .len()
+                .checked_add(right.len())
+                .is_none_or(|n| n > limits.max_input_bytes)
+            {
+                return Err(DiffStatus::Limited(DiffLimit::InputBytes));
+            }
+            let a = index_lines(&left, &mut budget)?;
+            let b = index_lines(&right, &mut budget)?;
+            let mut prefix = 0;
+            while prefix < a.len().min(b.len())
+                && equal(
+                    line(&left, &a, prefix),
+                    line(&right, &b, prefix),
+                    &mut budget,
+                )?
+            {
+                prefix += 1;
+            }
+            let mut suffix = 0;
+            while suffix < (a.len() - prefix).min(b.len() - prefix)
+                && equal(
+                    line(&left, &a, a.len() - suffix - 1),
+                    line(&right, &b, b.len() - suffix - 1),
+                    &mut budget,
+                )?
+            {
+                suffix += 1;
+            }
+            let mut spans = Vec::new();
+            let mut hunks = 0;
+            if suffix > 0 {
+                push_span(
+                    &mut spans,
+                    DiffKind::Equal,
+                    a.len() - suffix..a.len(),
+                    b.len() - suffix..b.len(),
+                    &mut hunks,
+                    &mut budget,
+                )?;
+            }
+            if prefix < a.len() - suffix || prefix < b.len() - suffix {
+                push_span(
+                    &mut spans,
+                    DiffKind::Changed,
+                    prefix..a.len() - suffix,
+                    prefix..b.len() - suffix,
+                    &mut hunks,
+                    &mut budget,
+                )?;
+            }
+            if prefix > 0 {
+                push_span(
+                    &mut spans,
+                    DiffKind::Equal,
+                    0..prefix,
+                    0..prefix,
+                    &mut hunks,
+                    &mut budget,
+                )?;
+            }
+            spans.reverse();
+            Ok((a, b, spans))
+        })();
+        let (left_ends, right_ends, spans, status) = match result {
+            Ok((a, b, s)) => (a, b, s, DiffStatus::Exact),
+            Err(status) => (Vec::new(), Vec::new(), Vec::new(), status),
+        };
+        budget.stats.work_units += previous_stats.work_units;
+        budget.stats.compared_bytes += previous_stats.compared_bytes;
+        budget.stats.peak_metadata_bytes = budget
+            .stats
+            .peak_metadata_bytes
+            .max(previous_stats.peak_metadata_bytes);
+        (
+            Self {
+                left,
+                right,
+                left_ends,
+                right_ends,
+                spans,
+                status,
+                stats: budget.stats,
+            },
+            true,
+        )
+    }
     pub fn compute(
         left: Arc<Vec<u8>>,
         right: Arc<Vec<u8>>,
@@ -547,6 +666,42 @@ fn push_span(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn display_dense_eol_changes_stay_visible_with_bounded_complete_sources() {
+        let a = Arc::new(
+            (0..1200)
+                .map(|n| format!("linea {n}\n"))
+                .collect::<String>()
+                .into_bytes(),
+        );
+        let b = Arc::new(
+            (0..1200)
+                .map(|n| format!("linea {n}\r\n"))
+                .collect::<String>()
+                .into_bytes(),
+        );
+        let limits = DiffLimits {
+            max_metadata_bytes: 4 * 1024 * 1024,
+            ..Default::default()
+        };
+        assert_eq!(
+            OwnedDiffModel::compute(a.clone(), b.clone(), limits, || false).status(),
+            DiffStatus::Limited(DiffLimit::Metadata)
+        );
+        let (model, simplified) =
+            OwnedDiffModel::compute_display(a.clone(), b.clone(), limits, || false);
+        assert!(simplified);
+        assert_eq!(model.status(), DiffStatus::Exact);
+        assert_eq!(model.source_bytes(DiffSide::Left), &**a);
+        assert_eq!(model.source_bytes(DiffSide::Right), &**b);
+        assert_eq!(
+            model.line_bytes(DiffSide::Right, DiffLine(1199)).unwrap(),
+            b"linea 1199\r\n"
+        );
+        assert!(model.stats().peak_metadata_bytes <= limits.max_metadata_bytes);
+        let (cancelled, _) = OwnedDiffModel::compute_display(a, b, limits, || true);
+        assert_eq!(cancelled.status(), DiffStatus::Cancelled);
+    }
     #[test]
     fn owned_alignment_retains_original_sources_and_exact_line_mapping() {
         let left = Arc::new(b"\xef\xbb\xbfa\xff\r\nb\nlast".to_vec());

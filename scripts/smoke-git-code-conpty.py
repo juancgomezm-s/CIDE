@@ -84,9 +84,17 @@ def main():
             return {(35, 68, 49), (80, 43, 49)} <= colors
 
         session.wait(colors_present)
-        session.send("\x1bOS")
+        def click_label(label):
+            with session.sync:
+                points = [(row.index(label), y) for y, cells in enumerate(session.cells)
+                          if label in (row := "".join(cells))]
+            assert len(points) == 1, (label, points)
+            x, y = points[0]
+            session.send(f"\x1b[<0;{x + 2};{y + 1}M\x1b[<0;{x + 2};{y + 1}m")
+
+        click_label("[Elegir commit]")
         session.wait(lambda: session.contains("Primera revision") and session.contains("Segunda revision"))
-        session.send("\x1b[F\r")
+        click_label("Primera revision")
         session.wait(lambda: session.contains("Commit " + initial[:8]) and session.contains("antes")
                      and session.contains("despues") and session.contains("F4 historial"))
         session.wait(colors_present)
@@ -101,7 +109,7 @@ def main():
         session.send("v")
         session.wait(lambda: session.contains("antes") and session.contains("despues"))
         session.send("\x1b[200~IGNORAR\x1b[201~")
-        session.send("\x1b[27;1;27;1;0;1_\x1b[27;1;27;0;0;1_")
+        click_label("[Cerrar comparación]")
         session.wait(lambda: session.contains("Qcabecera") and not session.contains("F4 historial"))
         session.send("\x1a")
         session.wait(lambda: session.contains("cabecera") and session.contains("despues")
@@ -113,6 +121,7 @@ def main():
                       row_backgrounds_verified=True, linked_scroll_verified=True,
                       compact_fallback_verified=True, normal_exit_verified=True,
                       selected_commit_and_dirty_buffer_verified=True, one_undo_verified=True)
+        report["visible_controls_mouse_verified"] = True
     except BaseException as error:
         report["error"] = repr(error)
         if session:

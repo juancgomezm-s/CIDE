@@ -506,6 +506,10 @@ impl TuiApp {
             usize::from(layout.height.saturating_sub(7)),
             usize::from(layout.width.saturating_sub(6)),
         );
+        let code_diff = self
+            .git_code
+            .active
+            .then(|| self.prepare_git_code(layout.editor_width, layout.content_height));
         self.prepare_mouse(
             layout,
             &primary,
@@ -515,10 +519,6 @@ impl TuiApp {
         );
         let commit = self.prepare_git_create_commit(layout.width, layout.height);
         let graph = self.prepare_git_graph(layout.width, layout.height.saturating_sub(3));
-        let code_diff = self
-            .git_code
-            .active
-            .then(|| self.prepare_git_code(layout.editor_width, layout.content_height));
         Presentation {
             code_diff,
             markdown,

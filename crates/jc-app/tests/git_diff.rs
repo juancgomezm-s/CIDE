@@ -21,6 +21,49 @@ use std::{
 static SERIAL: Mutex<()> = Mutex::new(());
 static NEXT: AtomicU64 = AtomicU64::new(0);
 static GATE: AtomicBool = AtomicBool::new(true);
+#[test]
+#[ignore = "explicit read-only workspace probe; requires CIDE_GIT_CODE_PROBE_ROOT"]
+fn real_workspace_agents_comparison_remains_visible_without_writing_sources() {
+    let root = PathBuf::from(std::env::var_os("CIDE_GIT_CODE_PROBE_ROOT").unwrap())
+        .canonicalize()
+        .unwrap();
+    let path = root.join("AGENTS.md");
+    let disk = fs::read(&path).unwrap();
+    let index = fs::read(root.join(".git/index")).unwrap();
+    let mut app = Workbench::default();
+    app.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+    let mut jobs = jobs();
+    let mut controller = GitDiffController::default();
+    controller
+        .request(
+            &app,
+            &mut jobs,
+            GitDiffOptions {
+                root: root.clone(),
+                cwd: root.clone(),
+                source: GitBlobSource::Head,
+            },
+        )
+        .unwrap();
+    pump(&app, &mut jobs, &mut controller);
+    assert_eq!(
+        controller.state(),
+        GitDiffState::Ready,
+        "{}",
+        controller.message()
+    );
+    assert!(!controller.result().unwrap().model.spans().is_empty());
+    assert_eq!(
+        controller
+            .result()
+            .unwrap()
+            .model
+            .source_bytes(DiffSide::Right),
+        disk
+    );
+    assert_eq!(fs::read(path).unwrap(), disk);
+    assert_eq!(fs::read(root.join(".git/index")).unwrap(), index);
+}
 fn installed_git() -> PathBuf {
     if let Some(path) = std::env::var_os("JC_GIT_TEST_EXE") {
         return PathBuf::from(path).canonicalize().unwrap();

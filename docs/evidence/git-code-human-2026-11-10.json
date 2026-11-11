@@ -1,0 +1,31 @@
+{
+  "platform": "Windows MSVC x64",
+  "rust": "1.88.0",
+  "delivery": "target/git-code-human-next/release",
+  "binaries_sha256": {
+    "cide-gui.exe": "1d4ef096de3431e9c4aa46af675d7d543c59702854eb5d85967cd63900b159ad",
+    "cide-tui.exe": "8dd30691b934091603ecb2a17efa66024845249f46fe7a5eb8fd00feaccd5935"
+  },
+  "checks": {
+    "strict_and_display_diff_model_passed": 8,
+    "git_controller_passed": 10,
+    "explicit_real_workspace_agents_readonly_passed": 1,
+    "gui_control_unit_passed": 2,
+    "tui_code_control_passed": 3,
+    "optimized_gui_native_checks": 28,
+    "optimized_tui_mouse_choose_commit_close_and_undo": true,
+    "fmt": true,
+    "workspace_all_targets_clippy": true,
+    "offline_workspace_release": true
+  },
+  "original_gui_desktop_failure_reproduced": true,
+  "original_gui_close_button_verified": true,
+  "corrected_gui_physical_review_passed": false,
+  "physical_review_error": "GetCursorPos: Acceso denegado (0x80070005) after fresh window selection",
+  "own_isolated_review_window_normal_exit_pending": true,
+  "original_user_session_preserved": true,
+  "sources_and_git_fixture_unchanged": true,
+  "gui_evidence": "work/native-gui-smoke/20261111T005108Z-ea07cf347dc7",
+  "tui_evidence": "work/test-temp/git-code-conpty-aeeded1a533444dc856beb4e99f91c27/report.json",
+  "remote_ci_used": false
+}

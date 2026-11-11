@@ -64,7 +64,7 @@ pub(crate) fn render(frame: &Presentation<'_>) -> Screen {
             1,
             height - 1,
             &clip(if app.git_code.choose_commit {
-                "↑↓ elegir revisión · Intro comparar en Código · R ramas/etiquetas · N más · Esc volver"
+                "[Volver] [Cerrar comparación] · Clic en un commit para comparar · R ramas · N más"
             } else if graph.title == "Ramas y etiquetas" {
                 "O operaciones · ↑↓ seleccionar · Intro abrir · A abortar · Esc volver"
             } else {

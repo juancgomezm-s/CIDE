@@ -56,28 +56,44 @@ pub(super) fn draw(
             screen.put_styled(column, row, ' ', CellStyle::Normal);
         }
     }
+    for (cx, cy, label, _) in crate::app::git_code::controls(width, frame.unified) {
+        screen.text_styled_in(
+            x + cx,
+            y + cy,
+            width.saturating_sub(cx),
+            &label,
+            CellStyle::PanelTitle,
+        );
+    }
+    let title_y = y + 2;
     let left_width = width.saturating_sub(1) / 2;
     if frame.unified {
         screen.text_styled_in(
             x,
-            y,
+            title_y,
             width,
             &format!("{} → {}", frame.left_title, frame.right_title),
             CellStyle::PanelTitle,
         );
     } else {
-        screen.text_styled_in(x, y, left_width, &frame.left_title, CellStyle::PanelTitle);
+        screen.text_styled_in(
+            x,
+            title_y,
+            left_width,
+            &frame.left_title,
+            CellStyle::PanelTitle,
+        );
         screen.text_styled_in(
             x + left_width + 1,
-            y,
+            title_y,
             width - left_width - 1,
             &frame.right_title,
             CellStyle::PanelTitle,
         );
-        screen.vline(x + left_width, y, height - 1, '│');
+        screen.vline(x + left_width, title_y, height.saturating_sub(4), '│');
     }
-    for (index, pair) in frame.rows.iter().take(usize::from(height - 3)).enumerate() {
-        let row = y + 1 + index as u16;
+    for (index, pair) in frame.rows.iter().take(usize::from(height - 5)).enumerate() {
+        let row = y + 3 + index as u16;
         if frame.unified {
             line(
                 screen,
@@ -98,7 +114,7 @@ pub(super) fn draw(
         }
     }
     if frame.rows.is_empty() {
-        screen.text_styled_in(x, y + 1, width, &frame.message, CellStyle::Dim);
+        screen.text_styled_in(x, y + 3, width, &frame.message, CellStyle::Dim);
     }
     screen.text_styled_in(
         x,
@@ -111,7 +127,14 @@ pub(super) fn draw(
         x,
         y + height - 1,
         width,
-        "↑↓/Pág desplazar ambas versiones · F5 actualizar",
+        if frame
+            .message
+            .starts_with("Comparación completa simplificada")
+        {
+            &frame.message
+        } else {
+            "↑↓/Pág desplazar ambas versiones · F5 actualizar"
+        },
         CellStyle::Dim,
     );
 }

@@ -350,7 +350,11 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         CommandId::GitRepositoryStatus,
         "&Estado del repositorio (solo lectura)",
     ),
-    (141, CommandId::ViewGit, "&Diferencias del archivo activo"),
+    (
+        141,
+        CommandId::ViewGit,
+        "&Comparar este archivo con un commit…",
+    ),
     (142, CommandId::GitDiffHead, "Comparar en Código con &HEAD"),
     (
         143,
@@ -362,7 +366,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         CommandId::GitDiffRefresh,
         "&Actualizar comparación activa",
     ),
-    (145, CommandId::GitDiffCancel, "&Cancelar comparación"),
+    (145, CommandId::GitDiffCancel, "&Cerrar comparación"),
     (
         148,
         CommandId::GitCloneWorktree,
@@ -785,7 +789,7 @@ impl State {
                 .workbench
                 .active_document()
                 .is_some_and(|d| d.session.encoding().is_some());
-        context.git_diff_running = self.git_diff_running();
+        context.git_diff_running = self.git_code.active || self.git_diff_running();
         context.git_status_running = matches!(
             self.git_status.state(),
             jc_app::git_status_tasks::GitStatusTaskState::Queued
@@ -950,7 +954,11 @@ impl State {
                 if self.git_panel.is_some() && !self.git_code.active {
                     return self.open_git_code_from_workspace();
                 }
-                return self.open_git_code(self.git_source);
+                let action = self.open_git_code(self.git_source);
+                if self.git_code.active {
+                    self.choose_code_revision();
+                }
+                return action;
             }
             CommandId::GitDiffRefresh => {
                 if self.git_code.active {
@@ -965,6 +973,9 @@ impl State {
                 return self.open_git_code(jc_app::git_read::GitBlobSource::Index)
             }
             CommandId::GitDiffCancel => {
+                if self.git_code.active {
+                    return self.close_git_code();
+                }
                 self.cancel_git(git_panel::GitIntent::Diff(
                     jc_app::git_read::GitBlobSource::Head,
                 ));

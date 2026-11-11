@@ -398,10 +398,11 @@ impl TuiApp {
             && context.has_project
             && context.has_document
             && self.workbench.active_encoding().is_some();
-        context.git_diff_running = matches!(
-            self.git_diff.state(),
-            jc_app::git_diff::GitDiffState::Queued | jc_app::git_diff::GitDiffState::Running
-        );
+        context.git_diff_running = self.git_code.active
+            || matches!(
+                self.git_diff.state(),
+                jc_app::git_diff::GitDiffState::Queued | jc_app::git_diff::GitDiffState::Running
+            );
         context.git_repository_available = cfg!(windows) && context.has_project;
         context.git_status_running = matches!(
             self.git_status.state(),
