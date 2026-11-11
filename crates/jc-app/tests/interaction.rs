@@ -71,7 +71,7 @@ fn save_binding_remains_visible_but_disabled_when_document_is_clean() {
 }
 
 #[test]
-fn progress_shortcuts_require_abl_and_a_progress_profile() {
+fn progress_shortcuts_require_abl_and_a_project() {
     let registry = default_registry();
     let keymap = default_keymap();
     let mut ctx = editor_context();
@@ -95,7 +95,7 @@ fn progress_shortcuts_require_abl_and_a_progress_profile() {
         Resolution::Disabled(CommandId::ProgressCheck)
     );
     ctx.active_language = Some("abl".into());
-    ctx.has_progress_profile = false;
+    ctx.has_project = false;
     assert_eq!(
         keymap.resolve(
             KeyScope::Editor,

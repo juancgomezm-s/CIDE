@@ -233,7 +233,19 @@ pub fn default_menu_model() -> MenuModel {
                 command(SourceDependencies),
             ],
         ),
-        menu(Tools, "Herramientas", 'h', &[command(PaletteOpen)]),
+        menu(
+            Tools,
+            "Herramientas",
+            'h',
+            &[
+                command(PaletteOpen),
+                SEP,
+                command(ProgressCheck),
+                command(ProgressCompile),
+                command(ProgressRun),
+                command(ProgressCancel),
+            ],
+        ),
         menu(
             View,
             "Ver",
@@ -302,9 +314,6 @@ mod tests {
             CommandId::SnippetNext,
             CommandId::ViewTerminal,
             CommandId::ViewDatabase,
-            CommandId::ProgressCheck,
-            CommandId::ProgressCompile,
-            CommandId::ProgressRun,
             CommandId::ProgressRefreshSchema,
         ] {
             assert!(registry.contains(command));
@@ -312,6 +321,7 @@ mod tests {
         }
         assert!(commands.contains(&CommandId::SourceIncoming));
         assert!(commands.contains(&CommandId::SourceDependencies));
+        assert!(commands.contains(&CommandId::ProgressCompile));
         assert!(commands.contains(&CommandId::SourceRename));
     }
 }

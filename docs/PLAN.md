@@ -560,6 +560,13 @@ Elegir tecnología gráfica con mediciones y consumir el mismo `jc-app`. Iniciar
 
 ## M3 — Entorno Progress funcional
 
+**Avance 2026-11-11.** GUI y TUI comparten los trabajos ABL de comprobación,
+compilación y ejecución por lotes. OpenEdge 11.7 validó PROPATH ordenado,
+inclusiones anidadas, diagnósticos en Problemas, captura en Salida y
+cancelación. El siguiente bloque es validar un perfil con base y aliases de
+desarrollo y conectar la actualización de esquema. OpenEdge 10.0B sigue
+pendiente. [Configuración y evidencia](PROGRESS_BRIDGE.md)
+
 Estabilizar el contrato interno de capacidades para vincular proveedores de lenguaje sin introducir una runtime genérica de plugins; comenzar el paquete integrado opcional `progress.abl`, manteniendo el puente existente `jc-progress`. Validar OpenEdge 10.0B y 11.7, includes, PROPATH, aliases, code pages, compilación y ejecución en contexto real. Resolver includes `{...}` y RUN estáticos desde el perfil del proyecto sin ejecutar el programa para navegar; señalar destinos dinámicos como inciertos. La AVM solo se ejecutará a petición del usuario. Conectar Check/Compile/Run/Schema a Problems/Output a través de los jobs de M2-F; comprobar cancelación y que resultados de otra revisión no se apliquen silenciosamente.
 
 ## M4 — Esquema y asistencia ABL

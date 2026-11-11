@@ -1175,7 +1175,8 @@ fn resolve_ordered(
     Ok(paths)
 }
 
-fn load_propath(root: &Path) -> Result<Option<Vec<PathBuf>>, String> {
+/// Reads the ordered project directories shared by static navigation and the AVM.
+pub fn load_propath(root: &Path) -> Result<Option<Vec<PathBuf>>, String> {
     let config = root.join(".cide").join("propath");
     let bytes = match jc_files::read_in_root(root, &config, 8192) {
         Ok((_, bytes)) => bytes,
@@ -1191,8 +1192,11 @@ fn load_propath(root: &Path) -> Result<Option<Vec<PathBuf>>, String> {
         if parents.len() == 32
             || !project_relative(Path::new(entry))
             || entry.chars().any(char::is_control)
+            || entry.contains(',')
         {
-            return Err("PROPATH admite hasta 32 directorios relativos al proyecto".into());
+            return Err(
+                "PROPATH admite hasta 32 directorios relativos al proyecto, sin comas".into(),
+            );
         }
         parents.push(root.join(entry));
     }

@@ -1,7 +1,7 @@
 /* JC-IDE experimental ABL bridge. Original implementation.
    The editor starts a NEW batch AVM with project .pf/.ini and explicit
    -cpstream/-cpinternal. -param contains ONE absolute ASCII request path.
-   See docs/PROGRESS_BRIDGE.md. This helper has not been run in an AVM yet.
+   See docs/PROGRESS_BRIDGE.md.
    Source bytes are read by the installed compiler, never transcoded here. */
 
 DEFINE STREAM requestInput.
@@ -16,6 +16,7 @@ DEFINE VARIABLE cHelperDir    AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cDatabase     AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cErrorFile    AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cSeverity     AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cProgram      AS CHARACTER NO-UNDO.
 DEFINE VARIABLE iSlash        AS INTEGER   NO-UNDO.
 DEFINE VARIABLE iMessage      AS INTEGER   NO-UNDO.
 DEFINE VARIABLE iMessages     AS INTEGER   NO-UNDO.
@@ -44,7 +45,7 @@ FUNCTION HexText RETURNS CHARACTER (INPUT pcText AS CHARACTER):
     DO i = 1 TO iLength:
         iByte = GET-BYTE(mText, i).
         cHex = cHex
-             + SUBSTRING("0123456789ABCDEF", TRUNCATE(iByte / 16, 0) + 1, 1)
+             + SUBSTRING("0123456789ABCDEF", INTEGER(TRUNCATE(iByte / 16, 0)) + 1, 1)
              + SUBSTRING("0123456789ABCDEF", (iByte MODULO 16) + 1, 1).
     END.
     SET-SIZE(mText) = 0.
@@ -82,7 +83,7 @@ PUT UNFORMATTED "JCIDE|1|" HexText(SESSION:CPINTERNAL)
     "|" HexText(SESSION:CPSTREAM) SKIP.
 
 CASE cAction:
-    WHEN "check" OR WHEN "compile" THEN DO:
+    WHEN "check" OR WHEN "compile" OR WHEN "run" THEN DO:
         IF cSource = "" THEN DO:
             lFailed = TRUE.
             PUT UNFORMATTED "DIAG|error|-|-|-|" HexText("Source path is required.") SKIP.
@@ -105,6 +106,24 @@ CASE cAction:
             IF lFailed AND iMessages = 0 THEN
                 PUT UNFORMATTED "DIAG|error|-|-|-|"
                     HexText("Compilation failed without a diagnostic message.") SKIP.
+            IF cAction = "run" AND NOT lFailed THEN DO:
+                iSlash = MAXIMUM(R-INDEX(cSource, "/"), R-INDEX(cSource, CHR(92))).
+                cProgram = SUBSTRING(cSource, iSlash + 1).
+                cProgram = cOutputDir + "/" + SUBSTRING(cProgram, 1, R-INDEX(cProgram, ".") - 1) + ".r".
+                OUTPUT CLOSE.
+                RUN VALUE(cProgram) NO-ERROR.
+                ASSIGN lFailed = ERROR-STATUS:ERROR OR ERROR-STATUS:NUM-MESSAGES > 0
+                       iMessages = ERROR-STATUS:NUM-MESSAGES.
+                OUTPUT TO VALUE(cResponse) APPEND NO-CONVERT.
+                DO iMessage = 1 TO iMessages:
+                    PUT UNFORMATTED "DIAG|error|-|-|-|"
+                        HexText(ERROR-STATUS:GET-MESSAGE(iMessage)) SKIP.
+                END.
+                IF lFailed AND iMessages = 0 THEN
+                    PUT UNFORMATTED "DIAG|error|-|-|-|"
+                        HexText(IF RETURN-VALUE = "" OR RETURN-VALUE = ? THEN
+                            "Execution failed." ELSE RETURN-VALUE) SKIP.
+            END.
         END.
     END.
     WHEN "schema" THEN DO:
@@ -133,7 +152,7 @@ CASE cAction:
     OTHERWISE DO:
         lFailed = TRUE.
         PUT UNFORMATTED "DIAG|error|-|-|-|"
-            HexText("Unknown action. Supported: check, compile, schema.") SKIP.
+            HexText("Unknown action. Supported: check, compile, run, schema.") SKIP.
     END.
 END CASE.
 

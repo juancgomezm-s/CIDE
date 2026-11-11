@@ -182,6 +182,10 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "&Preferencias de apariencia…",
     ),
     (252, CommandId::ViewEditorZoom, "&Zoom del editor…"),
+    (253, CommandId::ProgressCheck, "ABL: comprobar sintaxis"),
+    (254, CommandId::ProgressCompile, "ABL: compilar"),
+    (255, CommandId::ProgressRun, "ABL: ejecutar"),
+    (256, CommandId::ProgressCancel, "Cancelar tarea ABL"),
     (
         210,
         CommandId::ViewToggleBottomPanel,
@@ -872,6 +876,26 @@ impl State {
             self.markdown_gui = None;
         }
         match command {
+            CommandId::ProgressCancel => {
+                self.status = jc_progress::editor::cancel(&mut self.jobs).into();
+                return Action::None;
+            }
+            command if jc_progress::editor::action(command).is_some() => {
+                let action = jc_progress::editor::action(command).unwrap();
+                match jc_progress::editor::submit(
+                    action,
+                    &self.workbench,
+                    &mut self.jobs,
+                    self.project_root.as_deref(),
+                ) {
+                    Ok(()) => {
+                        self.show_bottom(CommandId::ViewOutput);
+                        self.status = "Tarea ABL en curso".into();
+                    }
+                    Err(error) => self.error(error),
+                }
+                return Action::None;
+            }
             CommandId::ViewToggleBottomPanel | CommandId::ViewProblems | CommandId::ViewOutput => {
                 self.show_bottom(command);
                 return Action::None;

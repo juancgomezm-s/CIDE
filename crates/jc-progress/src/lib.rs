@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 
 #[cfg(feature = "source-services")]
+pub mod editor;
+#[cfg(feature = "source-services")]
 pub mod rename;
 #[cfg(feature = "source-services")]
 pub mod snippets;
@@ -19,6 +21,7 @@ use std::process::Command;
 pub enum Action {
     Check,
     Compile,
+    Run,
     Schema,
 }
 
@@ -27,6 +30,7 @@ impl Action {
         match self {
             Self::Check => "check",
             Self::Compile => "compile",
+            Self::Run => "run",
             Self::Schema => "schema",
         }
     }
@@ -142,7 +146,7 @@ impl BridgeRequest {
                 return Err(config_error("schema requests must not specify source"))
             }
             (_, Some(path)) => path_line(path, "source")?,
-            (_, None) => return Err(config_error("check/compile requests require source")),
+            (_, None) => return Err(config_error("check/compile/run requests require source")),
         };
         let propath = ascii_line(self.propath.as_deref().unwrap_or(""), "propath")?;
         Ok(format!(

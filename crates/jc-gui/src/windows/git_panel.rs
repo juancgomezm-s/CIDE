@@ -165,6 +165,15 @@ impl State {
                 changed = true;
             } else {
                 changed |= self.workbench.accept_task_completion(&completion);
+                if completion.key == jc_progress::editor::JOB_KEY {
+                    let (message, problems) = jc_progress::editor::completion(&completion);
+                    self.status = message;
+                    if problems && self.bottom.visible {
+                        self.bottom.kind = jc_app::task_panels::PanelKind::Problems;
+                        self.bottom_hits = None;
+                    }
+                    changed = true;
+                }
             }
         }
         diff_changed |= self.git_diff.tick(&self.workbench, &mut self.jobs);

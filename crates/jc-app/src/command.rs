@@ -148,6 +148,7 @@ pub enum CommandId {
     ProgressCheck,
     ProgressCompile,
     ProgressRun,
+    ProgressCancel,
     ProgressRefreshSchema,
 
     MenuFile,
@@ -537,7 +538,8 @@ fn terminal(ctx: &CommandContext) -> bool {
     ctx.terminal_available
 }
 fn abl(ctx: &CommandContext) -> bool {
-    ctx.has_document && ctx.is_abl() && ctx.has_progress_profile
+    // Profile validation can touch disk and belongs to the explicit AVM job.
+    ctx.has_document && ctx.is_abl() && ctx.has_project
 }
 fn abl_project(ctx: &CommandContext) -> bool {
     ctx.has_project && ctx.has_progress_profile
@@ -947,9 +949,10 @@ pub fn default_registry() -> CommandRegistry {
         spec!(NavigateForward, Navigation, "Navegar adelante", nav_forward),
         spec!(FocusNext, Navigation, "Enfocar área siguiente", always),
         spec!(FocusPrevious, Navigation, "Enfocar área anterior", always),
-        spec!(ProgressCheck, Build, "Comprobar sintaxis", abl),
-        spec!(ProgressCompile, Build, "Compilar", abl),
-        spec!(ProgressRun, Build, "Ejecutar", abl),
+        spec!(ProgressCheck, Build, "ABL: comprobar sintaxis", abl),
+        spec!(ProgressCompile, Build, "ABL: compilar", abl),
+        spec!(ProgressRun, Build, "ABL: ejecutar", abl),
+        spec!(ProgressCancel, Build, "Cancelar tarea ABL", always),
         spec!(
             ProgressRefreshSchema,
             Build,

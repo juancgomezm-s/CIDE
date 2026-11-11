@@ -282,9 +282,11 @@ impl Workbench {
             | ViewSearchResults
             | FocusNext
             | FocusPrevious => Ok(CommandOutcome::View(command)),
-            ProgressCheck | ProgressCompile | ProgressRun | ProgressRefreshSchema => {
-                Ok(CommandOutcome::Progress(command))
-            }
+            ProgressCheck
+            | ProgressCompile
+            | ProgressRun
+            | ProgressCancel
+            | ProgressRefreshSchema => Ok(CommandOutcome::Progress(command)),
             FileChooseEncoding | FileQuickOpen | FileOpenFolder | SearchProject
             | SearchCancelProject | SearchReplaceProject | ExplorerRefresh | ExplorerCancel => {
                 Ok(CommandOutcome::View(command))

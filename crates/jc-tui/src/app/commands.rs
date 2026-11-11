@@ -170,11 +170,24 @@ impl TuiApp {
             CommandOutcome::OpenMenu(command) => self.open_menu(command),
             CommandOutcome::View(command) => self.handle_view(command),
             CommandOutcome::Progress(command) => {
-                let label = self
-                    .registry
-                    .get(command)
-                    .map_or("Comando Progress", |spec| spec.label);
-                self.status = format!("{label} requiere un perfil Progress configurado (M3)");
+                if let Some(action) = jc_progress::editor::action(command) {
+                    match jc_progress::editor::submit(
+                        action,
+                        &self.workbench,
+                        &mut self.tasks,
+                        self.project_root.as_deref(),
+                    ) {
+                        Ok(()) => {
+                            self.show_bottom(BottomPanel::Output);
+                            self.status = "Tarea ABL en curso".into();
+                        }
+                        Err(error) => self.status = error,
+                    }
+                } else if command == CommandId::ProgressCancel {
+                    self.status = jc_progress::editor::cancel(&mut self.tasks).into();
+                } else {
+                    self.status = "La actualización del esquema ABL queda pendiente".into();
+                }
             }
             CommandOutcome::NeedsCloseDecision(tab) => {
                 self.open_focus_overlay(Overlay::Dialog);
@@ -326,4 +339,50 @@ impl TuiApp {
         };
         let _ = self.focus.focus(PrimaryFocus::BottomPanel, &self.panels);
     }
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "requiere un proyecto de prueba con un AVM local configurado"]
+fn progress_real_tui_command_routes_to_output_and_problems() {
+    use std::{
+        path::PathBuf,
+        thread,
+        time::{Duration, Instant},
+    };
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_PROJECT").unwrap());
+    let mut app = TuiApp::new(crate::state::LaunchOptions {
+        files: vec![root.join("valido.p")],
+        ..Default::default()
+    });
+    app.set_explorer_root(root.clone()).unwrap();
+    let poll = |app: &mut TuiApp| {
+        assert!(
+            app.tasks.has_job(jc_progress::editor::JOB_KEY),
+            "{}",
+            app.status
+        );
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while app.tasks.has_job(jc_progress::editor::JOB_KEY) {
+            app.poll_tasks();
+            assert!(Instant::now() < deadline, "{}", app.status);
+            thread::sleep(Duration::from_millis(15));
+        }
+    };
+    app.dispatch(CommandId::ProgressRun);
+    poll(&mut app);
+    assert!(app.panels.bottom_visible());
+    assert_eq!(app.panels.bottom(), BottomPanel::Output);
+    assert!(app.workbench.output().iter().any(|r| r.text == "CIDE-M3"));
+    app.workbench
+        .open_file(root.join("invalido.p"), None)
+        .unwrap();
+    app.dispatch(CommandId::ProgressCompile);
+    poll(&mut app);
+    assert_eq!(app.panels.bottom(), BottomPanel::Problems);
+    assert!(app
+        .workbench
+        .problems()
+        .iter()
+        .any(|r| r.contains("ausente.i") && r.target.is_some()));
 }

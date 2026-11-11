@@ -177,12 +177,9 @@ fn progress_plan(args: &[OsString]) -> Result<(), Box<dyn Error>> {
     let action = match required("--action")? {
         "check" => Action::Check,
         "compile" => Action::Compile,
+        "run" => Action::Run,
         "schema" => Action::Schema,
-        _ => {
-            return Err(
-                invalid("action must be check, compile or schema; run is not implemented").into(),
-            )
-        }
+        _ => return Err(invalid("action must be check, compile, run or schema").into()),
     };
     let profile = ProgressProfile {
         executable: PathBuf::from(required("--exe")?),
@@ -233,7 +230,7 @@ Commands:\n\
   cide edit INPUT START_BYTE END_BYTE HEX_OR_DASH NEW_OUTPUT\n\
   cide demo\n\
   cide progress-result RESPONSE_FILE\n\
-  cide progress-plan --action check|compile|schema --exe PATH --helper PATH\n\
+  cide progress-plan --action check|compile|run|schema --exe PATH --helper PATH\n\
       --output-dir NEW_DIR --cpstream PAGE --cpinternal PAGE\n\
       [--source FILE] [--pf FILE] [--ini FILE] [--propath PATHS]\n\
 All edit offsets are bytes. Existing output files are never overwritten.\n\

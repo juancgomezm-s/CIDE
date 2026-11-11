@@ -22,7 +22,7 @@ FUNCTION HexText RETURNS CHARACTER (INPUT pcText AS CHARACTER):
     DO i = 1 TO iLength:
         iByte = GET-BYTE(mText, i).
         cHex = cHex
-             + SUBSTRING("0123456789ABCDEF", TRUNCATE(iByte / 16, 0) + 1, 1)
+             + SUBSTRING("0123456789ABCDEF", INTEGER(TRUNCATE(iByte / 16, 0)) + 1, 1)
              + SUBSTRING("0123456789ABCDEF", (iByte MODULO 16) + 1, 1).
     END.
     SET-SIZE(mText) = 0.

@@ -127,6 +127,7 @@ pub enum TaskItem {
         range: Range<usize>,
         message: String,
     },
+    Problem(String),
     Message(String),
     ProposedEdit {
         range: Range<usize>,
@@ -138,7 +139,9 @@ impl TaskItem {
         std::mem::size_of::<Self>()
             + match self {
                 Self::Source(item) => item.allocation(),
-                Self::Diagnostic { message, .. } | Self::Message(message) => message.capacity(),
+                Self::Diagnostic { message, .. }
+                | Self::Problem(message)
+                | Self::Message(message) => message.capacity(),
                 Self::ProposedEdit { text, .. } => text.capacity(),
             }
     }
@@ -146,7 +149,7 @@ impl TaskItem {
         match self {
             Self::Source(item) => Some(&item.range),
             Self::Diagnostic { range, .. } | Self::ProposedEdit { range, .. } => Some(range),
-            Self::Message(_) => None,
+            Self::Problem(_) | Self::Message(_) => None,
         }
     }
 }
@@ -296,6 +299,9 @@ impl TaskOutput {
 }
 pub type TaskProvider =
     fn(&TaskSnapshot, &Cancellation, &mut TaskOutput) -> Result<(), TaskFailure>;
+type DocumentProvider = Box<
+    dyn FnOnce(&TaskSnapshot, &Cancellation, &mut TaskOutput) -> Result<(), TaskFailure> + Send,
+>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct JobLimits {
@@ -405,6 +411,7 @@ struct Job {
 }
 enum Provider {
     Plain(TaskProvider),
+    Document(DocumentProvider),
     Source(crate::source_services::SourceJob),
     GitDiff(crate::git_diff::GitDiffWork),
     OpenDiff(crate::open_diff::OpenDiffWork),
@@ -495,6 +502,9 @@ impl JobSystem {
     pub fn outstanding(&self) -> usize {
         self.records.len()
     }
+    pub fn has_job(&self, key: JobKey) -> bool {
+        self.records.values().any(|record| record.key == key)
+    }
     pub fn snapshot_bytes(&self) -> usize {
         self.bytes
     }
@@ -539,6 +549,32 @@ impl JobSystem {
                 provider: Provider::Plain(provider),
                 artifact_limit: 0,
                 timeout: self.shared.limits.timeout,
+                expected: None,
+                second: None,
+            },
+        )
+    }
+    pub fn submit_document(
+        &mut self,
+        app: &Workbench,
+        key: JobKey,
+        document: DocumentId,
+        range: Range<usize>,
+        timeout: Duration,
+        provider: impl FnOnce(&TaskSnapshot, &Cancellation, &mut TaskOutput) -> Result<(), TaskFailure>
+            + Send
+            + 'static,
+    ) -> Result<JobId, SubmitError> {
+        self.submit_internal(
+            app,
+            key,
+            Capture {
+                document,
+                view: None,
+                range,
+                provider: Provider::Document(Box::new(provider)),
+                artifact_limit: 0,
+                timeout,
                 expected: None,
                 second: None,
             },
@@ -947,6 +983,7 @@ fn worker(shared: Arc<Shared>) {
         } else {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match job.provider {
                 Provider::Plain(provider) => provider(&job.snapshot, &job.cancel, &mut output),
+                Provider::Document(provider) => provider(&job.snapshot, &job.cancel, &mut output),
                 Provider::Source(work) => work.run(&job.snapshot, &job.cancel, &mut output),
                 Provider::GitDiff(work) => {
                     crate::git_diff::run(work, &job.snapshot, &job.cancel, &mut output)

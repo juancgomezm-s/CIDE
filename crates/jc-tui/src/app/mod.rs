@@ -335,6 +335,15 @@ impl TuiApp {
                 continue;
             }
             update.changed |= self.workbench.accept_task_completion(&completion);
+            if completion.key == jc_progress::editor::JOB_KEY {
+                let (message, problems) = jc_progress::editor::completion(&completion);
+                self.status = message;
+                if problems && self.panels.bottom_visible() {
+                    self.panels.show_bottom(jc_app::BottomPanel::Problems);
+                    self.bottom_selected = 0;
+                }
+                update.changed = true;
+            }
         }
         update.changed |= self.source.tick(
             &self.workbench,

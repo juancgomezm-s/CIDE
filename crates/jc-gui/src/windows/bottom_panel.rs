@@ -349,3 +349,51 @@ impl State {
         true
     }
 }
+
+#[cfg(test)]
+#[test]
+#[ignore = "requiere un proyecto de prueba con un AVM local configurado"]
+fn progress_real_gui_command_routes_to_output_and_problems() {
+    use std::{
+        path::PathBuf,
+        thread,
+        time::{Duration, Instant},
+    };
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_PROJECT").unwrap());
+    let mut state = State::new(&crate::GuiOptions {
+        paths: vec![root.join("valido.p")],
+        project_root: Some(root.clone()),
+        ..Default::default()
+    })
+    .unwrap();
+    let poll = |state: &mut State| {
+        assert!(
+            state.jobs.has_job(jc_progress::editor::JOB_KEY),
+            "{}",
+            state.status
+        );
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while state.jobs.has_job(jc_progress::editor::JOB_KEY) {
+            state.poll_tasks();
+            assert!(Instant::now() < deadline, "{}", state.status);
+            thread::sleep(Duration::from_millis(15));
+        }
+    };
+    state.execute_menu(CommandId::ProgressRun);
+    poll(&mut state);
+    assert!(state.bottom.visible);
+    assert_eq!(state.bottom.kind, PanelKind::Output);
+    assert!(state.workbench.output().iter().any(|r| r.text == "CIDE-M3"));
+    state
+        .workbench
+        .open_file(root.join("invalido.p"), None)
+        .unwrap();
+    state.execute_menu(CommandId::ProgressCompile);
+    poll(&mut state);
+    assert_eq!(state.bottom.kind, PanelKind::Problems);
+    assert!(state
+        .workbench
+        .problems()
+        .iter()
+        .any(|r| r.contains("ausente.i") && r.target.is_some()));
+}

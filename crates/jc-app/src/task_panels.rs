@@ -361,6 +361,11 @@ impl Workbench {
                         }),
                     )
                 }
+                TaskItem::Problem(message) => {
+                    changed |= self
+                        .task_panels
+                        .push_borrowed(PanelKind::Problems, message, None);
+                }
                 TaskItem::ProposedEdit { range, text } => {
                     changed |= self.task_panels.push_borrowed(
                         PanelKind::Output,
