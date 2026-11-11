@@ -1,0 +1,22 @@
+# Instalador de CIDE para Windows x64
+
+El MSI instala CIDE en `Archivos de programa\CIDE`, requiere permisos de administrador y agrega **CIDE** y **CIDE Terminal** al menú Inicio. Incluye la CLI, los nombres de ejecutable de compatibilidad y los avisos de terceros. La recuperación y la configuración del usuario quedan fuera de los archivos administrados por el MSI.
+
+## Construcción local
+
+Usar Python 3.11 o posterior, WiX 6.0.2 y `WixToolset.UI.wixext` 6.0.2. Los argumentos de WiX apuntan al ejecutable y a la DLL de la extensión ya disponibles. Ejecutar desde la raíz del proyecto con `work/packages` creado y rutas de salida nuevas.
+
+```powershell
+python -B scripts/build-cide-local.py --output target/installer-next/release
+python -B scripts/package-cide.py --bin-dir target/installer-next/release --output work/packages/CIDE-input.zip
+python -B scripts/build-cide-installer.py --package work/packages/CIDE-input.zip --wix $wixExe --ui-extension $wixUiDll --output work/packages/CIDE-0.1.0-windows-x64.msi
+& $wixExe msi validate work/packages/CIDE-0.1.0-windows-x64.msi
+```
+
+Para comprobar el contenido, usar `msiexec /a` con `TARGETDIR` apuntando a una carpeta de pruebas. Comparar la extracción con el manifiesto del ZIP, aplicando la selección de archivos de `build-cide-installer.py`. El MSI actual se construye sin firma digital.
+
+## Validación de v0.1.0-preview.1
+
+El 11 de noviembre de 2026, Windows Installer devolvió `0` en los cuatro pasos con permisos de administrador: instalación, desinstalación, reinstalación y desinstalación final. Se verificaron el registro del producto, los archivos instalados y los destinos de ambos accesos del menú Inicio. La prueba abrió la GUI en una ventana oculta y la TUI en una pseudoconsola privada desde `Archivos de programa`.
+
+Ambas interfaces cerraron normalmente con cambios sin guardar. El depósito de recuperación, situado en un `LOCALAPPDATA` de prueba, conservó sus archivos byte por byte después de desinstalar y reinstalar. Ambas interfaces restauraron los cambios y el historial de edición. Los documentos originales conservaron sus bytes. La última desinstalación retiró el registro, los accesos y la carpeta de instalación. Los registros locales quedaron en `work/packages/cide-msi-lifecycle-19c54cc7`.
