@@ -24,13 +24,14 @@ pub(super) struct WheelState {
 }
 impl State {
     pub(super) fn pointer_source_available(&self) -> bool {
+        self.pointer_overlays_clear() && self.git_panel.is_none() && !self.open_diff_visible
+    }
+    pub(super) fn pointer_overlays_clear(&self) -> bool {
         self.selector.is_none()
             && self.navigation_panel.is_none()
             && self.search_panel.is_none()
             && !self.project_visible()
             && self.replace_panel.is_none()
-            && self.git_panel.is_none()
-            && !self.open_diff_visible
             && !self.source_visible()
             && self.snippet_gui.is_none()
             && self.markdown_gui.is_none()

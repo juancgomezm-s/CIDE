@@ -18,6 +18,7 @@ struct Geometry {
     cw: i32,
     ch: i32,
     epoch: u64,
+    comparing: bool,
 }
 impl Geometry {
     fn current(s: &State) -> Self {
@@ -27,6 +28,7 @@ impl Geometry {
             cw: s.cell_width,
             ch: s.cell_height,
             epoch: s.interaction_epoch,
+            comparing: s.git_code.active,
         }
     }
 }
@@ -73,6 +75,11 @@ fn inside(r: Rect, x: i32, y: i32) -> bool {
 
 pub(super) fn prepare(s: &mut State) -> Bars {
     let mut bars = Bars::default();
+    let comparison_tab = if s.git_code.active {
+        s.workbench.active_document().map(|doc| doc.tab_id)
+    } else {
+        None
+    };
     for (pane, area) in paint::areas(s) {
         let rect = Rect {
             left: area.left,
@@ -107,7 +114,8 @@ pub(super) fn prepare(s: &mut State) -> Bars {
         scroll.first = scroll.first.min(tabs.len().saturating_sub(capacity));
         if capacity == 0 {
             scroll.observed = None;
-        } else if scroll.observed != active
+        } else if comparison_tab.is_some()
+            || scroll.observed != active
             || scroll.capacity != capacity
             || scroll.catalog_len != tabs.len()
         {
@@ -180,7 +188,11 @@ pub(super) fn prepare(s: &mut State) -> Bars {
                     right: full.right,
                     ..rect
                 },
-                label: wide(if tab.dirty { "●" } else { "×" }),
+                label: wide(if tab.dirty && comparison_tab != Some(tab.id) {
+                    "●"
+                } else {
+                    "×"
+                }),
                 selected,
                 dirty: tab.dirty,
                 target: Target::Close(tab.id, document.id, revision),
@@ -277,7 +289,9 @@ impl State {
     pub(super) fn tab_click(&mut self, x: i32, y: i32) -> Option<Action> {
         let bars = self.tab_hits.as_ref()?;
         let strip = bars.strips.iter().find(|strip| inside(strip.rect, x, y))?;
-        if !self.pointer_source_available() {
+        let comparison_can_close =
+            self.git_code.active && self.pointer_overlays_clear() && !self.open_diff_visible;
+        if !(self.pointer_source_available() || comparison_can_close) {
             return Some(Action::None);
         }
         if !strip.current(self) {
@@ -294,6 +308,9 @@ impl State {
         else {
             return Some(Action::None);
         };
+        if self.git_code.active && !matches!(target, Target::Close(..)) {
+            return Some(Action::None);
+        }
         match target {
             Target::New => {
                 self.workbench.focus_editor_pane(pane);
@@ -323,6 +340,16 @@ impl State {
                     self.status = "Cambió el documento de la pestaña; vuelve a seleccionar".into();
                     self.tab_hits = None;
                     return Some(Action::None);
+                }
+                if self.git_code.active {
+                    return Some(
+                        if self.workbench.active_document().map(|doc| doc.tab_id) == Some(tab) {
+                            self.tab_hits = None;
+                            self.close_git_code()
+                        } else {
+                            Action::None
+                        },
+                    );
                 }
                 let position = self
                     .workbench

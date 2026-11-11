@@ -1,6 +1,6 @@
 //! Pixel geometry and proportional interface chrome, independent of the code grid.
 use super::{ffi::*, paint};
-pub(super) const TABS: i32 = super::chrome::TOP + 36;
+pub(super) const TABS: i32 = super::chrome::TOP + 26;
 pub(super) const HEADER: i32 = 8;
 pub(super) const TREE_ROW: i32 = 25;
 pub(super) const TREE_HEAD: i32 = 62;

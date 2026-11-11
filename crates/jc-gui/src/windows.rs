@@ -1931,7 +1931,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 let chrome_action = chrome::action_at(state.chrome_layout(), x, y);
                 let tab_action = if message == WM_LBUTTONDOWN
                     && chrome_action.is_none()
-                    && state.git_panel.is_none()
+                    && (state.git_panel.is_none() || state.git_code.active)
                 {
                     state.tab_click(x, y)
                 } else {

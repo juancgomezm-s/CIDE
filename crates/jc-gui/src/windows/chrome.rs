@@ -9,9 +9,7 @@ use super::{
 };
 use std::{ffi::c_void, ptr::null_mut, sync::OnceLock};
 
-pub(super) const TITLE_HEIGHT: i32 = 32;
-pub(super) const MENU_HEIGHT: i32 = 28;
-pub(super) const TOP: i32 = TITLE_HEIGHT + MENU_HEIGHT;
+pub(super) const TOP: i32 = 32;
 const BUTTON_WIDTH: i32 = 46;
 // Keep an accessible inside edge after extending the client over the native
 // frame. Five pixels were too narrow to reliably acquire at normal scale.
@@ -59,8 +57,63 @@ impl Layout {
             left: (self.width - slot * button_width).max(0),
             right: (self.width - (slot - 1) * button_width).clamp(0, self.width),
             top: 0,
-            bottom: self.dpi.pixels(TITLE_HEIGHT).min(self.height),
+            bottom: self.top().min(self.height),
         }
+    }
+
+    fn menu_space(self) -> (i32, i32, MenuDensity) {
+        let px = |value| self.dpi.pixels(value);
+        let controls = self.button(Action::Minimize).left;
+        let left = px(32).min(controls);
+        let available = (controls - left - px(40)).max(0);
+        let full = groups()
+            .iter()
+            .map(|(group, _)| px(preferred_width(*group)))
+            .sum();
+        let compact = px(54) * groups().len() as i32;
+        let (width, density) = if available >= full {
+            (full, MenuDensity::Full)
+        } else if available >= compact {
+            (compact, MenuDensity::Compact)
+        } else {
+            (available, MenuDensity::Initials)
+        };
+        (left, width, density)
+    }
+
+    fn title_rect(self) -> Rect {
+        let (menu_left, menu_width, _) = self.menu_space();
+        Rect {
+            left: menu_left + menu_width + self.dpi.pixels(8),
+            right: self.button(Action::Minimize).left - self.dpi.pixels(8),
+            top: 0,
+            bottom: self.top().min(self.height),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum MenuDensity {
+    Full,
+    Compact,
+    Initials,
+}
+
+fn menu_caption(group: NativeMenuGroup, title: &'static str, density: MenuDensity) -> &'static str {
+    use NativeMenuGroup::*;
+    match density {
+        MenuDensity::Full => title,
+        MenuDensity::Compact => match group {
+            File => "&Arch.",
+            Edit => "&Edit.",
+            Search => "&Buscar",
+            Project => "&Proy.",
+            Tools => "&Herr.",
+            View => "&Ver",
+            Navigation => "&Nav.",
+            Git => "&Git",
+        },
+        MenuDensity::Initials => title.get(..2).unwrap_or(title),
     }
 }
 fn groups() -> &'static [(NativeMenuGroup, &'static str)] {
@@ -87,33 +140,24 @@ fn preferred_width(group: NativeMenuGroup) -> i32 {
 /// The same stable pixel rectangles are used by draw, click and popup anchoring.
 /// Compact windows compress padding/labels but retain a target for every group.
 pub(super) fn menu_rect(layout: Layout, group: NativeMenuGroup) -> Rect {
-    let width = layout.width;
-    let left = layout.dpi.pixels(8).min(width);
-    let available = (width - 2 * left).max(0);
-    let total = groups()
-        .iter()
-        .map(|(group, _)| layout.dpi.pixels(preferred_width(*group)))
-        .sum::<i32>()
-        .max(1);
-    let mut from = 0;
-    for (candidate, _) in groups() {
-        let to = from + layout.dpi.pixels(preferred_width(*candidate));
+    let (left, width, density) = layout.menu_space();
+    let mut offset = 0;
+    for (index, (candidate, _)) in groups().iter().enumerate() {
+        let end = match density {
+            MenuDensity::Full => offset + layout.dpi.pixels(preferred_width(*candidate)),
+            _ => width * (index as i32 + 1) / groups().len() as i32,
+        };
         if *candidate == group {
             return Rect {
-                left: left + from * available.min(total) / total,
-                right: left + to * available.min(total) / total,
-                top: layout.dpi.pixels(TITLE_HEIGHT),
-                bottom: layout.top(),
+                left: left + offset,
+                right: left + end,
+                top: 0,
+                bottom: layout.top().min(layout.height),
             };
         }
-        from = to;
+        offset = end;
     }
-    Rect {
-        left: width,
-        right: width,
-        top: layout.dpi.pixels(TITLE_HEIGHT),
-        bottom: layout.top(),
-    }
+    Rect::default()
 }
 fn inside(rect: Rect, x: i32, y: i32) -> bool {
     x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
@@ -127,7 +171,7 @@ pub(super) fn action_at(layout: Layout, x: i32, y: i32) -> Option<Action> {
             return Some(action);
         }
     }
-    if (layout.dpi.pixels(TITLE_HEIGHT)..layout.top()).contains(&y) {
+    if y < layout.top() {
         return groups()
             .iter()
             .find(|(group, _)| inside(menu_rect(layout, *group), x, y))
@@ -245,7 +289,7 @@ fn local_hit(layout: Layout, x: i32, y: i32) -> isize {
             _ => {}
         }
     }
-    if y < layout.dpi.pixels(TITLE_HEIGHT) && action_at(layout, x, y).is_none() {
+    if y < layout.top() && action_at(layout, x, y).is_none() {
         2
     } else {
         1
@@ -315,7 +359,7 @@ impl Frame {
                 .iter()
                 .map(|(group, title)| MenuLabel {
                     rect: menu_rect(layout, *group),
-                    text: wide(title),
+                    text: wide(menu_caption(*group, title, layout.menu_space().2)),
                     action: Action::Menu(*group),
                 })
                 .collect(),
@@ -372,12 +416,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         {
             return Err("No se pudo dibujar el icono del marco".into());
         }
-        let mut title = Rect {
-            left: px(36),
-            top: 0,
-            right: (frame.layout.width - 3 * px(BUTTON_WIDTH) - px(10)).max(px(36)),
-            bottom: px(TITLE_HEIGHT).min(frame.layout.height),
-        };
+        let mut title = frame.layout.title_rect();
         if title.right > title.left
             && DrawTextW(
                 dc,
@@ -412,7 +451,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                     )?;
                 }
                 let x = (rect.left + rect.right) / 2;
-                let y = px(TITLE_HEIGHT) / 2;
+                let y = frame.layout.top() / 2;
                 match action {
                     Action::Minimize => line(dc, (x - px(5), y + px(3)), (x + px(6), y + px(3)))?,
                     Action::Exit => {
@@ -450,18 +489,14 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
             if frame.hover == Some(menu.action) {
                 paint::fill(dc, menu.rect, shell::SELECTED)?;
             }
-            let mut rect = Rect {
-                left: menu.rect.left + px(8),
-                right: (menu.rect.right - px(6)).max(menu.rect.left + px(8)),
-                ..menu.rect
-            };
+            let mut rect = menu.rect;
             if rect.right > rect.left
                 && DrawTextW(
                     dc,
                     menu.text.as_ptr(),
                     (menu.text.len() - 1) as i32,
                     &mut rect,
-                    0x20 | 4 | 0x8000,
+                    0x20 | 4 | 1 | 0x8000,
                 ) == 0
             {
                 return Err("No se pudo dibujar la barra de menús de CIDE".into());
@@ -566,7 +601,11 @@ mod tests {
             assert_eq!(local_hit(layout, outside, 500), 1);
             assert_eq!(local_hit(layout, 1599 - outside, 500), 1);
             assert_eq!(local_hit(layout, 800, 999 - outside), 1);
-            assert_eq!(local_hit(layout, 800, outside), 2);
+            let title = layout.title_rect();
+            assert_eq!(
+                local_hit(layout, (title.left + title.right) / 2, outside),
+                2
+            );
             assert_eq!(local_hit(layout, -1, 500), 0);
             assert_eq!(local_hit(layout, 1600, 500), 0);
         }
@@ -575,7 +614,7 @@ mod tests {
     fn scaled_chrome_keeps_draw_hit_and_popup_origins_aligned() {
         for dpi in [96, 144, 192] {
             let layout = Layout::at_dpi(1400, 900, false, Dpi::from_raw(dpi));
-            assert_eq!(layout.top(), 60 * dpi as i32 / 96);
+            assert_eq!(layout.top(), 32 * dpi as i32 / 96);
             let button = layout.button(Action::Exit);
             let (x, y) = ((button.left + button.right) / 2, button.bottom / 2);
             assert_eq!(action_at(layout, x, y), Some(Action::Exit));
@@ -583,7 +622,9 @@ mod tests {
             assert_eq!(local_hit(layout, 1, 1), 13);
             for (group, _) in groups() {
                 let rect = menu_rect(layout, *group);
+                assert_eq!(rect.top, 0);
                 assert_eq!(rect.bottom, layout.top());
+                assert!(rect.right <= layout.title_rect().left);
                 let x = (rect.left + rect.right) / 2;
                 let y = (rect.top + rect.bottom) / 2;
                 assert_eq!(action_at(layout, x, y), Some(Action::Menu(*group)));
@@ -602,7 +643,7 @@ mod tests {
                 let rect = menu_rect(layout, *group);
                 assert!(rect.left < rect.right && rect.left >= 0 && rect.right <= width);
                 assert_eq!(
-                    action_at(layout, (rect.left + rect.right) / 2, 46),
+                    action_at(layout, (rect.left + rect.right) / 2, 16),
                     Some(Action::Menu(*group))
                 );
             }
@@ -618,7 +659,8 @@ mod tests {
         assert_eq!(local_hit(normal, 999, 649), 17);
         assert_eq!(local_hit(normal, 500, 1), 12);
         assert_eq!(local_hit(normal, 500, 649), 15);
-        assert_eq!(local_hit(normal, 100, 16), 2);
+        assert_eq!(local_hit(normal, 800, 16), 2);
+        assert_eq!(local_hit(normal, 100, 16), 1);
         assert_eq!(local_hit(normal, 980, 16), 1);
         assert_eq!(local_hit(normal, 100, 45), 1);
         assert_eq!(local_hit(normal, 100, 100), 1);

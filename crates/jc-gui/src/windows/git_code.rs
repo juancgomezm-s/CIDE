@@ -1180,10 +1180,37 @@ pub(super) unsafe fn smoke(
             return Err("Workspace Code action lost the selected revision or dirty file".into());
         }
     }
-    key(hwnd, 0x1b, Modifiers::NONE)?;
-    if snapshot(hwnd)? != before {
-        return Err("Workspace Code action changed the original view".into());
+    key(hwnd, b'V' as usize, Modifiers::NONE)?;
+    owner(hwnd).unwrap().frame_dirty.set(true);
+    InvalidateRect(hwnd, std::ptr::null(), 0);
+    SendMessageW(hwnd, WM_PAINT, 0, 0);
+    let (x, y) = {
+        let mut state = owner(hwnd).unwrap().state.borrow_mut();
+        let tab = state
+            .workbench
+            .active_document()
+            .ok_or("Missing compared document")?
+            .tab_id;
+        state.smoke_close_decisions.push_back(false);
+        state
+            .tab_hits
+            .as_ref()
+            .and_then(|bars| bars.tab_pixel(state.workbench.panes().active(), tab, true))
+            .ok_or("Missing close button on the compared tab")?
+    };
+    let packed = (x as u16 as usize | ((y as u16 as usize) << 16)) as isize;
+    SendMessageW(hwnd, WM_LBUTTONDOWN, 1, packed);
+    SendMessageW(hwnd, WM_LBUTTONUP, 0, packed);
+    if owner(hwnd).unwrap().state.borrow().git_code.active || snapshot(hwnd)? != before {
+        return Err("The compared tab close button did not return to the original editor".into());
     }
+    owner(hwnd)
+        .unwrap()
+        .state
+        .borrow_mut()
+        .smoke_close_decisions
+        .pop_back();
+    checks.push("git_code_native_tab_close_keeps_dirty_document");
     checks.push("git_code_native_menu_painted_history_click_selected_commit_and_return");
     checks.push("git_code_native_parallel_unified_readonly_source_and_view_preserved");
     Ok(())
