@@ -67,6 +67,8 @@ pub(super) fn is_command(command: CommandId) -> bool {
         command,
         CommandId::ViewSymbols
             | CommandId::SourceReferences
+            | CommandId::SourceDefinition
+            | CommandId::SourceLspReferences
             | CommandId::SourceCalls
             | CommandId::SourceIncoming
             | CommandId::SourceDependencies
@@ -124,6 +126,8 @@ impl State {
         let controller = &self.source_gui.controller;
         context.source_incoming_available =
             registry.supports_incoming(&self.workbench, self.project_root.as_deref());
+        context.source_lsp_available =
+            registry.supports_lsp(&self.workbench, self.project_root.as_deref());
         let rename = self.source_gui.rename.is_some();
         let can_accept = !rename && controller.mode() != Some(SourceMode::Rename);
         context.source_active = rename
@@ -163,6 +167,8 @@ impl State {
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
+            CommandId::SourceDefinition => self.request_source(SourceMode::Definition),
+            CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
             CommandId::SourceCalls => self.request_source(SourceMode::Calls),
             CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
             CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
@@ -226,7 +232,17 @@ impl State {
                         self.bottom.focused = false;
                         self.explorer_focused = false;
                         self.ensure_encoding_selector();
-                        self.status = "Elemento aceptado; solo evidencia léxica".into();
+                        self.status = if self
+                            .source_gui
+                            .controller
+                            .mode()
+                            .is_some_and(SourceMode::is_lsp)
+                        {
+                            "Ubicación LSP abierta"
+                        } else {
+                            "Elemento aceptado; solo evidencia léxica"
+                        }
+                        .into();
                     }
                     Err(error) => self.error(error),
                 }
@@ -586,6 +602,61 @@ mod tests {
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
         }
+    }
+    #[test]
+    #[ignore = "requires a configured local LSP server and fixture project"]
+    fn source_gui_lsp_navigation() {
+        let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());
+        let path = root.join(std::env::var_os("CIDE_LSP_TEST_FILE").unwrap());
+        let on_disk = path.clone();
+        let destination = root.join(std::env::var_os("CIDE_LSP_TEST_DEST").unwrap());
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![path],
+            project_root: Some(root),
+            encoding: Some(TextEncoding::Utf8),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        let tab = state.workbench.tabs().active_id().unwrap();
+        let pane = state.workbench.panes().active();
+        assert!(state
+            .workbench
+            .jump_to_pane_location(pane, tab, text.rfind("calcular").unwrap()));
+        state.execute(CommandId::SourceLspReferences);
+        finish(&mut state);
+        assert!(
+            state.source_gui.controller.items().len() >= 2,
+            "{}",
+            state.source_gui.controller.message()
+        );
+        assert!(
+            state
+                .source_presentation()
+                .unwrap()
+                .panel
+                .results
+                .unwrap()
+                .rows
+                .len()
+                >= 2
+        );
+        state.workbench.insert_text("/* 😀😀😀😀😀😀 */ ").unwrap();
+        state.execute(CommandId::SourceDefinition);
+        finish(&mut state);
+        assert_eq!(
+            state.source_gui.controller.items().len(),
+            1,
+            "{}",
+            state.source_gui.controller.message()
+        );
+        state.execute(CommandId::SourceOpenToSide);
+        assert!(state.workbench.panes().is_split());
+        assert_eq!(
+            state.workbench.active_path().unwrap(),
+            destination.canonicalize().unwrap()
+        );
+        assert_eq!(std::fs::read_to_string(on_disk).unwrap(), text);
     }
     #[test]
     fn source_gui_symbols_deliver_without_input_and_navigation_preserves_bytes() {

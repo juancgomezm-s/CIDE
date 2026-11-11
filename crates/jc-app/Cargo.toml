@@ -13,3 +13,4 @@ jc-languages = { path = "../jc-languages" }
 jc-text = { path = "../jc-text" }
 jc-git = { path = "../jc-git" }
 regex-automata = { version = "=0.4.18", default-features = false, features = ["std", "syntax", "dfa-build", "unicode"] }
+serde_json = "=1.0.145"

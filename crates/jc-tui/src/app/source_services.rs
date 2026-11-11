@@ -14,6 +14,8 @@ pub(crate) fn is_command(command: CommandId) -> bool {
         command,
         CommandId::ViewSymbols
             | CommandId::SourceReferences
+            | CommandId::SourceDefinition
+            | CommandId::SourceLspReferences
             | CommandId::SourceCalls
             | CommandId::SourceIncoming
             | CommandId::SourceDependencies
@@ -87,6 +89,9 @@ impl TuiApp {
         context.source_incoming_available = self
             .source_registry
             .supports_incoming(&self.workbench, self.project_root.as_deref());
+        context.source_lsp_available = self
+            .source_registry
+            .supports_lsp(&self.workbench, self.project_root.as_deref());
         context.source_side_ready = self
             .source
             .side_ready(&self.workbench, self.project_root.as_deref());
@@ -154,6 +159,8 @@ impl TuiApp {
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
+            CommandId::SourceDefinition => self.request_source(SourceMode::Definition),
+            CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
             CommandId::SourceCalls => self.request_source(SourceMode::Calls),
             CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
             CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
@@ -211,6 +218,8 @@ impl TuiApp {
                         self.ensure_encoding_choice();
                         self.status = if self.source.mode() == Some(SourceMode::Rename) {
                             "Símbolo renombrado · un paso para deshacer".into()
+                        } else if self.source.mode().is_some_and(SourceMode::is_lsp) {
+                            "Ubicación LSP abierta".into()
                         } else {
                             "Elemento del documento aceptado · solo evidencia léxica".into()
                         };

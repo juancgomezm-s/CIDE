@@ -112,6 +112,8 @@ pub enum CommandId {
     DiffOpenNavigateRight,
     ViewSymbols,
     SourceReferences,
+    SourceDefinition,
+    SourceLspReferences,
     SourceCalls,
     SourceIncoming,
     SourceDependencies,
@@ -199,6 +201,7 @@ pub struct CommandContext {
     pub open_diff_ready: bool,
     pub source_symbols_available: bool,
     pub source_references_available: bool,
+    pub source_lsp_available: bool,
     pub source_calls_available: bool,
     pub source_incoming_available: bool,
     pub source_dependencies_available: bool,
@@ -256,6 +259,7 @@ impl Default for CommandContext {
             open_diff_ready: false,
             source_symbols_available: false,
             source_references_available: false,
+            source_lsp_available: false,
             source_calls_available: false,
             source_incoming_available: false,
             source_dependencies_available: false,
@@ -482,6 +486,9 @@ fn source_symbols(ctx: &CommandContext) -> bool {
 }
 fn source_references(ctx: &CommandContext) -> bool {
     ctx.source_references_available
+}
+fn source_lsp(ctx: &CommandContext) -> bool {
+    ctx.source_lsp_available && !ctx.rectangular_selection
 }
 fn source_calls(ctx: &CommandContext) -> bool {
     ctx.source_calls_available
@@ -878,6 +885,18 @@ pub fn default_registry() -> CommandRegistry {
             source_references
         ),
         spec!(SourceCalls, Navigation, "Llama a", source_calls),
+        spec!(
+            SourceDefinition,
+            Navigation,
+            "Ir a definición (LSP)",
+            source_lsp
+        ),
+        spec!(
+            SourceLspReferences,
+            Navigation,
+            "Buscar referencias (LSP)",
+            source_lsp
+        ),
         spec!(SourceIncoming, Navigation, "Llamado por", source_incoming),
         spec!(
             SourceDependencies,

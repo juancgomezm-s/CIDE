@@ -3,6 +3,7 @@ use crate::{render, state::LaunchOptions};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{source_services::SourceState, CommandId, PrimaryFocus, SidebarView};
 use jc_text::{TextEncoding, TextPosition};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 fn key(a: &mut TuiApp, code: KeyCode, mods: KeyModifiers) {
     a.handle_event(Event::Key(KeyEvent::new(code, mods)));
@@ -22,6 +23,37 @@ fn editor(text: &str, path: &str) -> TuiApp {
     a.workbench.new_file(path, TextEncoding::Utf8);
     a.workbench.insert_text(text).unwrap();
     a
+}
+
+#[test]
+#[ignore = "requires a configured local LSP server and fixture project"]
+fn source_tui_lsp_navigation() {
+    let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());
+    let path = root.join(std::env::var_os("CIDE_LSP_TEST_FILE").unwrap());
+    let destination = root.join(std::env::var_os("CIDE_LSP_TEST_DEST").unwrap());
+    let text = std::fs::read_to_string(&path).unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![path],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root).unwrap();
+    let tab = app.workbench.tabs().active_id().unwrap();
+    let pane = app.workbench.panes().active();
+    assert!(app
+        .workbench
+        .jump_to_pane_location(pane, tab, text.rfind("calcular").unwrap()));
+    key(&mut app, KeyCode::F(12), KeyModifiers::SHIFT);
+    finish(&mut app);
+    assert!(app.source.items().len() >= 2, "{}", app.source.message());
+    app.dispatch(CommandId::SourceDefinition);
+    finish(&mut app);
+    assert_eq!(app.source.items().len(), 1, "{}", app.source.message());
+    app.dispatch(CommandId::SourceOpenToSide);
+    assert!(app.workbench.panes().is_split());
+    assert_eq!(
+        app.workbench.active_path().unwrap(),
+        destination.canonicalize().unwrap()
+    );
 }
 
 #[test]

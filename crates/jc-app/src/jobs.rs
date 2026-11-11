@@ -865,6 +865,7 @@ impl JobSystem {
         if len > limits.total_snapshot_bytes.saturating_sub(self.bytes) {
             return Err(SubmitError::Busy);
         }
+        let timeout = work.timeout(limits.timeout);
         self.submit_internal(
             app,
             key,
@@ -874,7 +875,7 @@ impl JobSystem {
                 range: 0..len,
                 provider: Provider::Source(work),
                 artifact_limit: 0,
-                timeout: limits.timeout,
+                timeout,
                 expected: Some(stamp),
                 second: None,
             },

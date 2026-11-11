@@ -140,6 +140,12 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (237, CommandId::SourceCalls, "Llama a"),
     (239, CommandId::SourceIncoming, "Llamado por"),
     (246, CommandId::SourceRename, "Renombrar símbolo ABL"),
+    (247, CommandId::SourceDefinition, "Ir a definición (LSP)"),
+    (
+        248,
+        CommandId::SourceLspReferences,
+        "Buscar referencias (LSP)",
+    ),
     (
         238,
         CommandId::SourceDependencies,

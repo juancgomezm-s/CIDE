@@ -21,6 +21,7 @@ mod unicode_layout_tests;
 pub use unicode_layout::{
     Glyph, VisualAtom, MAX_PRESENTATION_TEXT_BYTES, MAX_VISUAL_ROW_TEXT_BYTES,
 };
+mod lsp;
 pub mod session;
 pub mod source_services;
 pub mod syntax_theme;

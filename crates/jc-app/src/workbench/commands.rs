@@ -258,6 +258,8 @@ impl Workbench {
             | DiffOpenNavigateRight
             | ViewSymbols
             | SourceReferences
+            | SourceDefinition
+            | SourceLspReferences
             | SourceCalls
             | SourceIncoming
             | SourceDependencies

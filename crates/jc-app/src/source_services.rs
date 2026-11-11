@@ -23,6 +23,8 @@ pub enum SourceMode {
     Dependencies,
     Completion,
     Rename,
+    Definition,
+    LspReferences,
 }
 impl SourceMode {
     pub fn label(self) -> &'static str {
@@ -34,7 +36,21 @@ impl SourceMode {
             Self::Dependencies => "Dependencias",
             Self::Completion => "Completado",
             Self::Rename => "Renombrar símbolo ABL",
+            Self::Definition => "Ir a definición (LSP)",
+            Self::LspReferences => "Buscar referencias (LSP)",
         }
+    }
+
+    fn lsp_query(self) -> Option<crate::lsp::Query> {
+        match self {
+            Self::Definition => Some(crate::lsp::Query::Definition),
+            Self::LspReferences => Some(crate::lsp::Query::References),
+            _ => None,
+        }
+    }
+
+    pub fn is_lsp(self) -> bool {
+        self.lsp_query().is_some()
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +63,12 @@ pub enum SourceAction {
         path: PathBuf,
         offset: usize,
         relative: String,
+        encoding: jc_text::TextEncoding,
+        version: jc_files::ContentFingerprint,
+    },
+    LspLocation {
+        path: PathBuf,
+        offset: usize,
         encoding: jc_text::TextEncoding,
         version: jc_files::ContentFingerprint,
     },
@@ -63,6 +85,7 @@ impl SourceItem {
             + self.label.capacity()
             + match &self.action {
                 SourceAction::Navigate => 0,
+                SourceAction::LspLocation { path, .. } => path.capacity(),
                 SourceAction::RelativeFile(s)
                 | SourceAction::Unresolved(s)
                 | SourceAction::Replace(s) => s.capacity(),
@@ -80,7 +103,9 @@ impl SourceItem {
                     SourceMode::Symbols
                     | SourceMode::References
                     | SourceMode::Calls
-                    | SourceMode::Dependencies,
+                    | SourceMode::Dependencies
+                    | SourceMode::Definition
+                    | SourceMode::LspReferences,
                 ) => true,
                 (
                     SourceAction::RelativeFile(path),
@@ -92,9 +117,11 @@ impl SourceItem {
                 ) => reason.len() <= 512,
                 (SourceAction::Replace(text), SourceMode::Completion) => text.len() <= 4096,
                 (SourceAction::Replace(text), SourceMode::Rename) => text.len() <= 64,
-                (SourceAction::Caller { path, .. }, SourceMode::Incoming) => {
-                    path.is_absolute() && path.as_os_str().len() <= 4096
-                }
+                (SourceAction::Caller { path, .. }, SourceMode::Incoming)
+                | (
+                    SourceAction::LspLocation { path, .. },
+                    SourceMode::Definition | SourceMode::LspReferences,
+                ) => path.is_absolute() && path.as_os_str().len() <= 4096,
                 _ => false,
             }
     }
@@ -113,6 +140,7 @@ pub type RenameProvider =
 
 pub(crate) enum SourceJob {
     Plain(TaskProvider),
+    Lsp(crate::lsp::Work),
     Incoming(IncomingScan),
     Rename {
         provider: RenameProvider,
@@ -122,6 +150,13 @@ pub(crate) enum SourceJob {
 }
 
 impl SourceJob {
+    pub(crate) fn timeout(&self, default: std::time::Duration) -> std::time::Duration {
+        match self {
+            Self::Lsp(_) => crate::lsp::TIMEOUT,
+            _ => default,
+        }
+    }
+
     pub(crate) fn run(
         &self,
         snapshot: &TaskSnapshot,
@@ -130,6 +165,7 @@ impl SourceJob {
     ) -> Result<(), TaskFailure> {
         match self {
             Self::Plain(provider) => provider(snapshot, cancel, output),
+            Self::Lsp(work) => work.run(snapshot, cancel, output),
             Self::Incoming(scan) => scan.run(snapshot.stamp, cancel, output),
             Self::Rename {
                 provider,
@@ -211,7 +247,7 @@ impl SourceProviderDescriptor {
             SourceMode::Incoming => self.dependencies.and(self.references),
             SourceMode::Dependencies => self.dependencies,
             SourceMode::Completion => self.completion,
-            SourceMode::Rename => None,
+            SourceMode::Rename | SourceMode::Definition | SourceMode::LspReferences => None,
         }
     }
     fn supports(self, mode: SourceMode) -> bool {
@@ -252,6 +288,20 @@ impl Default for SourceRegistry {
     }
 }
 impl SourceRegistry {
+    pub fn supports_lsp(&self, app: &Workbench, root: Option<&Path>) -> bool {
+        root.is_some()
+            && app.active_document().is_some_and(|doc| {
+                let path = doc.session.path();
+                !doc.session.is_new()
+                    && doc.session.encoding().is_some()
+                    && crate::lsp::language_id(
+                        jc_languages::detect(&path.to_string_lossy()).id,
+                        path,
+                    )
+                    .is_some()
+            })
+    }
+
     pub fn supports_incoming(&self, app: &Workbench, root: Option<&Path>) -> bool {
         root.is_some()
             && app
@@ -422,7 +472,8 @@ impl Origin {
                 .active_document()
                 .is_some_and(|d| d.id == self.stamp.document && d.session.path() == self.path)
             && app.active_editor().is_some_and(|e| {
-                !matches!(mode, SourceMode::Completion | SourceMode::Rename)
+                (!matches!(mode, SourceMode::Completion | SourceMode::Rename)
+                    && mode.lsp_query().is_none())
                     || e.cursor == self.cursor
                         && e.anchor == self.anchor
                         && app.rectangle_for_pane(self.pane).is_none()
@@ -434,7 +485,7 @@ struct Request {
     generation: u64,
     origin: Origin,
     mode: SourceMode,
-    provider: SourceProviderDescriptor,
+    provider: Option<SourceProviderDescriptor>,
     rename: Option<String>,
 }
 struct Flight {
@@ -455,6 +506,7 @@ pub struct SourceController {
     mode: Option<SourceMode>,
     outline: bool,
     outline_attempt: Option<Origin>,
+    lsp: crate::lsp::Client,
 }
 pub struct SourceRow {
     pub index: usize,
@@ -580,6 +632,7 @@ impl SourceController {
                 .get(self.selected)
                 .is_some_and(|item| match item.action {
                     SourceAction::Navigate => true,
+                    SourceAction::LspLocation { .. } => root.is_some(),
                     SourceAction::RelativeFile(_) | SourceAction::Caller { .. } => self
                         .accepted
                         .as_ref()
@@ -599,6 +652,9 @@ impl SourceController {
                     Some(SourceMode::Incoming) => "Llamado por (fuentes en disco)",
                     Some(SourceMode::Rename) => "Vista previa del renombrado",
                     Some(SourceMode::Dependencies) => "Dependencias",
+                    Some(mode @ (SourceMode::Definition | SourceMode::LspReferences)) => {
+                        mode.label()
+                    }
                     _ => "Completado (palabras locales)",
                 },
                 columns,
@@ -696,8 +752,11 @@ impl SourceController {
         if mode == SourceMode::Rename && rename.is_none() {
             return Err("Escribe primero el nombre nuevo".into());
         }
-        if self.outline && matches!(mode, SourceMode::Completion | SourceMode::Rename) {
-            return Err("El panel de código solo admite consultas de lectura".into());
+        if self.outline
+            && (matches!(mode, SourceMode::Completion | SourceMode::Rename)
+                || mode.lsp_query().is_some())
+        {
+            return Err("Usa el comando de navegación en la vista de código".into());
         }
         if self.generation == u64::MAX {
             return Err("Se agotó la generación de código".into());
@@ -725,9 +784,18 @@ impl SourceController {
         if self.outline {
             self.outline_attempt = Some(origin.clone());
         }
-        let provider = registry
-            .resolve(&origin.language, mode)
-            .ok_or("No hay proveedor para esta capacidad de código")?;
+        let provider = if mode.lsp_query().is_some() {
+            if !registry.supports_lsp(app, root) {
+                return Err("LSP requiere un archivo guardado de un lenguaje admitido y una carpeta de proyecto".into());
+            }
+            None
+        } else {
+            Some(
+                registry
+                    .resolve(&origin.language, mode)
+                    .ok_or("No hay proveedor para esta capacidad de código")?,
+            )
+        };
         self.pending = Some(Request {
             generation: self.generation,
             origin,
@@ -792,18 +860,31 @@ impl SourceController {
                 "La captura del servicio de código excede2MiB",
             );
         }
-        let work = match r.mode {
-            SourceMode::Incoming => SourceJob::Incoming(IncomingScan {
-                root: r.origin.root.clone().unwrap(),
-                target: r.origin.path.clone(),
-                provider: r.provider,
-            }),
-            SourceMode::Rename => SourceJob::Rename {
-                provider: r.provider.rename.unwrap(),
+        let lsp = r.mode.lsp_query();
+        let work = if let Some(query) = lsp {
+            SourceJob::Lsp(crate::lsp::Work {
+                client: self.lsp.clone(),
+                root: r.origin.root.clone().expect("admitted project root"),
+                path: r.origin.path.clone(),
+                profile: r.origin.language.clone(),
                 cursor: r.origin.cursor,
-                name: r.rename.clone().unwrap(),
-            },
-            mode => SourceJob::Plain(r.provider.provider(mode).unwrap()),
+                query,
+            })
+        } else {
+            let provider = r.provider.expect("admitted source provider");
+            match r.mode {
+                SourceMode::Incoming => SourceJob::Incoming(IncomingScan {
+                    root: r.origin.root.clone().unwrap(),
+                    target: r.origin.path.clone(),
+                    provider,
+                }),
+                SourceMode::Rename => SourceJob::Rename {
+                    provider: provider.rename.unwrap(),
+                    cursor: r.origin.cursor,
+                    name: r.rename.clone().unwrap(),
+                },
+                mode => SourceJob::Plain(provider.provider(mode).unwrap()),
+            }
         };
         match jobs.submit_source(app, self.job_key(), r.origin.stamp, len, work) {
             Ok(id) => {
@@ -815,7 +896,11 @@ impl SourceController {
                 });
                 changed |= self.status(
                     SourceState::Running,
-                    "Leyendo captura acotada del fuente; solo evidencia léxica",
+                    if lsp.is_some() {
+                        "Consultando servidor LSP"
+                    } else {
+                        "Leyendo captura acotada del fuente; solo evidencia léxica"
+                    },
                 );
             }
             Err(SubmitError::Busy) => {
@@ -885,7 +970,22 @@ impl SourceController {
             .unwrap()
             .tab_id;
         let mut items = Vec::new();
+        let is_lsp = request.mode.lsp_query().is_some();
+        let mut notice = None;
         for item in task.output.take_items() {
+            if is_lsp {
+                match item {
+                    TaskItem::Problem(message) => {
+                        self.status(SourceState::Failed, message);
+                        return true;
+                    }
+                    TaskItem::Message(message) => {
+                        notice = Some(message);
+                        continue;
+                    }
+                    _ => (),
+                }
+            }
             if let TaskItem::Message(message) = &item {
                 if request.mode == SourceMode::Rename {
                     self.status(SourceState::Failed, message.clone());
@@ -902,9 +1002,11 @@ impl SourceController {
             if !item.valid_for(request.mode)
                 || request.mode == SourceMode::Completion
                     && (item.range.end != request.origin.cursor || item.range.len() > 512)
-                || request.mode != SourceMode::Incoming
-                    && (app.position_for_tab(tab, item.range.start).is_none()
-                        || app.position_for_tab(tab, item.range.end).is_none())
+                || !matches!(
+                    item.action,
+                    SourceAction::Caller { .. } | SourceAction::LspLocation { .. }
+                ) && (app.position_for_tab(tab, item.range.start).is_none()
+                    || app.position_for_tab(tab, item.range.end).is_none())
             {
                 self.status(
                     SourceState::Failed,
@@ -914,7 +1016,10 @@ impl SourceController {
             }
             items.push(item);
         }
-        self.selected = if request.provider.id == crate::document_links::ID {
+        self.selected = if request
+            .provider
+            .is_some_and(|provider| provider.id == crate::document_links::ID)
+        {
             items
                 .iter()
                 .position(|item| item.range.contains(&request.origin.cursor))
@@ -923,15 +1028,21 @@ impl SourceController {
             0
         };
         self.items = items;
-        let provider = request.provider.id;
-        self.accepted = Some(request);
-        self.status(
-            SourceState::Ready,
+        let message = if let Some(provider) = request.provider {
             format!(
-                "{provider}: {} resultados léxicos (sin verificación del compilador)",
+                "{}: {} resultados léxicos (sin verificación del compilador)",
+                provider.id,
                 self.items.len()
-            ),
-        );
+            )
+        } else {
+            let mut message = format!("LSP: {} resultados", self.items.len());
+            if let Some(notice) = notice {
+                message.push_str(&format!(" · {notice}"));
+            }
+            message
+        };
+        self.accepted = Some(request);
+        self.status(SourceState::Ready, message);
         true
     }
     pub fn activate(
@@ -1004,7 +1115,7 @@ impl SourceController {
                     &canonical_root,
                     path,
                     relative,
-                    request.provider.file_resolution,
+                    request.provider.expect("incoming provider").file_resolution,
                     SourceMode::Incoming,
                 )?;
                 if !paths
@@ -1027,6 +1138,28 @@ impl SourceController {
                     .map_err(|error| error.to_string())?;
                 if !app.jump_to_pane_location(app.panes().active(), tab, *offset) {
                     return Err("El destino de la referencia no es una posición válida".into());
+                }
+                Ok(None)
+            }
+            SourceAction::LspLocation {
+                path,
+                offset,
+                encoding,
+                version,
+            } => {
+                let root = root.ok_or("Abre una carpeta de proyecto")?;
+                let tab = app
+                    .open_project_file_at_version(
+                        root,
+                        path.clone(),
+                        Some(*encoding),
+                        to_side,
+                        SNAPSHOT,
+                        *version,
+                    )
+                    .map_err(|error| error.to_string())?;
+                if !app.jump_to_pane_location(app.panes().active(), tab, *offset) {
+                    return Err("El destino LSP no es una posición válida".into());
                 }
                 Ok(None)
             }
@@ -1113,10 +1246,12 @@ impl SourceController {
 }
 fn reference_root<'a>(root: Option<&'a Path>, request: &'a Request) -> Result<&'a Path, String> {
     root.or_else(|| {
-        if matches!(
-            request.provider.file_resolution,
-            FileResolution::DocumentRelative | FileResolution::RelativeModule
-        ) && request.origin.path.is_absolute()
+        if request.provider.is_some_and(|provider| {
+            matches!(
+                provider.file_resolution,
+                FileResolution::DocumentRelative | FileResolution::RelativeModule
+            )
+        }) && request.origin.path.is_absolute()
         {
             request.origin.path.parent()
         } else {
@@ -1132,7 +1267,10 @@ fn resolve_file(root: &Path, request: &Request, relative: &str) -> Result<Vec<Pa
         &root,
         &request.origin.path,
         relative,
-        request.provider.file_resolution,
+        request
+            .provider
+            .ok_or("No hay proveedor de referencias léxicas")?
+            .file_resolution,
         request.mode,
     )
 }
