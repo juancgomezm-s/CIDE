@@ -67,17 +67,7 @@ impl State {
             self.error("Se agotó la generación del selector");
             return;
         }
-        let mut selector = Selector::new(kind);
-        if kind == SelectorKind::Zoom {
-            use super::appearance::{Choice, ZOOMS};
-            if let Some(index) = ZOOMS
-                .iter()
-                .position(|(choice, _)| *choice == Choice::Zoom(self.editor_zoom))
-            {
-                selector.move_selection(index as isize);
-            }
-        }
-        self.selector = Some(selector);
+        self.selector = Some(Selector::new(kind));
         self.selector_explorer_focus = explorer_focus;
         self.selector_search_panel = search;
         self.selector_editor_input = kind == SelectorKind::Palette && editor_input;
@@ -202,7 +192,6 @@ impl State {
         let current = [
             Choice::Ui(self.ui_text_size),
             Choice::Editor(self.editor_text_size),
-            Choice::Zoom(self.editor_zoom),
             Choice::Minimap(self.minimap_visible),
             Choice::MinimapWidth(self.minimap_width),
         ];
@@ -214,9 +203,7 @@ impl State {
             SelectorKind::Files => selector.prepare_files(&self.quick_open, rows),
             SelectorKind::Encoding => selector.prepare_encoding(rows),
             SelectorKind::OpenTabs => selector.prepare_tabs(self.workbench.tabs(), rows),
-            SelectorKind::Appearance | SelectorKind::Zoom => {
-                selector.prepare_appearance(&current, rows)
-            }
+            SelectorKind::Appearance => selector.prepare_appearance(&current, rows),
         })
     }
     pub(super) fn selector_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
@@ -309,7 +296,7 @@ impl State {
             return Action::None;
         };
         match selector.kind() {
-            SelectorKind::Appearance | SelectorKind::Zoom => selector
+            SelectorKind::Appearance => selector
                 .appearance_target()
                 .map_or(Action::None, Action::Appearance),
             SelectorKind::OpenTabs => {

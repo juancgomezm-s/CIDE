@@ -75,7 +75,6 @@ unsafe fn open(hwnd: Hwnd, kind: SelectorKind) -> Result<(), String> {
             SelectorKind::Files => CommandId::FileQuickOpen,
             SelectorKind::Encoding => CommandId::FileChooseEncoding,
             SelectorKind::Appearance => CommandId::ViewAppearance,
-            SelectorKind::Zoom => CommandId::ViewEditorZoom,
             SelectorKind::OpenTabs => {
                 return Err("La lista de documentos se abre desde su botón gráfico".into())
             }

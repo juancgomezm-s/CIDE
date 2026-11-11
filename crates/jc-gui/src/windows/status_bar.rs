@@ -10,13 +10,32 @@ extern "system" {
     fn SetBkMode(dc: Hdc, mode: i32) -> i32;
 }
 
-unsafe fn label(dc: Hdc, mut rect: Rect, text: &[u16]) -> Result<(), String> {
+unsafe fn label(dc: Hdc, rect: Rect, text: &[u16]) -> Result<(), String> {
+    aligned_label(dc, rect, text, 0)
+}
+
+pub(super) unsafe fn label_centered(dc: Hdc, rect: Rect, text: &[u16]) -> Result<(), String> {
+    aligned_label(dc, rect, text, 1)
+}
+
+unsafe fn aligned_label(
+    dc: Hdc,
+    mut rect: Rect,
+    text: &[u16],
+    alignment: u32,
+) -> Result<(), String> {
     if rect.right <= rect.left || rect.bottom <= rect.top {
         return Ok(());
     }
     SetTextColor(dc, shell::TEXT);
     let previous = SetBkMode(dc, 1);
-    let result = DrawTextW(dc, text.as_ptr(), -1, &mut rect, 0x8000 | 0x800 | 0x20 | 4);
+    let result = DrawTextW(
+        dc,
+        text.as_ptr(),
+        -1,
+        &mut rect,
+        0x8000 | 0x800 | 0x20 | 4 | alignment,
+    );
     SetBkMode(dc, previous);
     if result == 0 {
         Err("No se pudo dibujar la barra de estado".into())
@@ -83,16 +102,6 @@ pub(super) fn prepare(s: &State) -> Frame {
     }
 }
 impl State {
-    pub(super) fn status_zoom_click(&mut self, x: i32, y: i32) -> bool {
-        let (_, _, _, zoom) = parts(self);
-        if x < zoom.left || x >= zoom.right || y < zoom.top || y >= zoom.bottom {
-            return false;
-        }
-        if self.pointer_source_available() {
-            self.open_selector(super::selector::SelectorKind::Zoom);
-        }
-        true
-    }
     pub(super) fn status_git_click(&mut self, x: i32, y: i32) -> Option<super::Action> {
         let (rect, _, right, zoom) = parts(self);
         if self.pointer_source_available()
@@ -124,6 +133,9 @@ impl State {
         self.tab_hits = None;
         true
     }
+}
+pub(super) fn zoom_anchor(state: &State) -> Rect {
+    parts(state).3
 }
 pub(super) unsafe fn draw(dc: Hdc, f: &Frame, status: &[u16]) -> Result<(), String> {
     paint::fill(dc, f.rect, shell::SURFACE)?;
@@ -189,21 +201,6 @@ pub(super) unsafe fn draw(dc: Hdc, f: &Frame, status: &[u16]) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn zoom_control_opens_at_current_scale_and_preserves_the_editor() {
-        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
-        state.editor_zoom = 125;
-        let bytes = state.workbench.active_bytes().unwrap();
-        let frame = prepare(&state);
-        assert!(state.status_zoom_click(frame.zoom.left + 2, frame.zoom.top + 2));
-        let view = state.selector_presentation(12).unwrap();
-        assert_eq!(view.title, "Zoom del editor");
-        assert!(view
-            .rows
-            .iter()
-            .any(|row| row.selected && row.label == "✓ 125 %"));
-        assert_eq!(state.workbench.active_bytes().unwrap(), bytes);
-    }
     #[test]
     fn git_indicator_requests_embedded_status_without_configuration() {
         let mut s = State::new(&crate::GuiOptions::default()).unwrap();

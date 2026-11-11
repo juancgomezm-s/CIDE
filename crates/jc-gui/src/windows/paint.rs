@@ -125,6 +125,7 @@ pub(super) struct Frame {
     chrome: super::chrome::Frame,
     status: Vec<u16>,
     status_bar: super::status_bar::Frame,
+    zoom: Option<super::zoom::Popup>,
     panes: Vec<Pane>,
     selector: Option<super::selector::SelectorPresentation>,
     search: Option<super::search_panel::SearchPresentation>,
@@ -774,6 +775,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         ),
         status,
         status_bar: super::status_bar::prepare(state),
+        zoom: super::zoom::prepare(state),
         panes,
         search: state.search_presentation(),
         navigation: state.navigation_presentation(),
@@ -1143,6 +1145,10 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             frame.cell_width,
             frame.cell_height,
         )?;
+    }
+    if let Some(zoom) = &frame.zoom {
+        SelectObject(dc, frame.ui_font);
+        super::zoom::draw(dc, zoom)?;
     }
     super::chrome::draw(dc, &frame.chrome)?;
     drop(selected);

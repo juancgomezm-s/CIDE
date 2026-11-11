@@ -31,32 +31,18 @@ pub(super) const APPEARANCE: &[(Choice, &str)] = &[
     (Choice::MinimapWidth(96), "Ancho del minimapa · 96 px"),
 ];
 
-pub(super) const ZOOMS: &[(Choice, &str)] = &[
-    (Choice::Zoom(60), "60 %"),
-    (Choice::Zoom(75), "75 %"),
-    (Choice::Zoom(90), "90 %"),
-    (Choice::Zoom(100), "100 %"),
-    (Choice::Zoom(110), "110 %"),
-    (Choice::Zoom(125), "125 %"),
-    (Choice::Zoom(150), "150 %"),
-    (Choice::Zoom(175), "175 %"),
-    (Choice::Zoom(200), "200 %"),
-];
+pub(super) const ZOOMS: [u8; 9] = [60, 75, 90, 100, 110, 125, 150, 175, 200];
 
 pub(super) fn valid(ui: u8, editor: u8, zoom: u8, visible: u8, width: u16) -> bool {
     [
         Choice::Ui(ui),
         Choice::Editor(editor),
-        Choice::Zoom(zoom),
         Choice::MinimapWidth(width),
     ]
     .into_iter()
-    .all(|choice| {
-        APPEARANCE
-            .iter()
-            .chain(ZOOMS)
-            .any(|(entry, _)| *entry == choice)
-    }) && visible <= 1
+    .all(|choice| APPEARANCE.iter().any(|(entry, _)| *entry == choice))
+        && ZOOMS.contains(&zoom)
+        && visible <= 1
 }
 
 pub(super) unsafe fn apply(hwnd: Hwnd, choice: Choice) {

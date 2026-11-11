@@ -286,6 +286,8 @@ def main():
                 GIT_REQUIRED if args.section == "git" else
                 SAVE_REQUIRED if args.section == "save" else
                 REQUIRED | NAVIGATION_REQUIRED | LINE_EDIT_REQUIRED | SELECTION_REOPEN_REQUIRED | RECTANGLE_REQUIRED | PARITY_REQUIRED | BOTTOM_REQUIRED | SELECTOR_INPUT_REQUIRED | INTERACTION_REQUIRED | MENU_INVOKER_REQUIRED | SYNTAX_REQUIRED)
+    if args.section == "shell":
+        required.add("shell_zoom_slider_mouse_keyboard_and_menu_preserve_document")
     if payload.get("ok") is not True or not required.issubset(payload.get("checks", [])):
         raise RuntimeError(f"native smoke checks missing/failed: {payload}")
     if payload.get("backend") != "Win32/GDI" or payload.get("window") != "own_hidden_hwnd" or payload.get("native_paints", 0) < 1:

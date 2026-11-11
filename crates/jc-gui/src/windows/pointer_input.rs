@@ -49,6 +49,7 @@ impl State {
         })
     }
     pub(super) fn cancel_pointer(&mut self) {
+        self.zoom.preview = None;
         self.git_code.end_drag();
         self.git_workspace.end_drag();
         self.linear_drag = None;

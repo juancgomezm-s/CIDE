@@ -78,6 +78,7 @@ mod tab_bar;
 mod uia;
 mod untitled;
 mod workflow_smoke;
+mod zoom;
 use crate::GuiOptions;
 use ffi::*;
 use jc_app::quick_open::QuickOpenController;
@@ -496,6 +497,7 @@ struct State {
     ui_text_size: u8,
     editor_text_size: u8,
     editor_zoom: u8,
+    zoom: zoom::Zoom,
     minimap_visible: bool,
     minimap_width: u16,
     pub font: Handle,
@@ -643,6 +645,7 @@ impl State {
             ui_text_size: appearance::DEFAULT_UI,
             editor_text_size: appearance::DEFAULT_EDITOR,
             editor_zoom: appearance::DEFAULT_ZOOM,
+            zoom: Default::default(),
             minimap_visible: true,
             minimap_width: appearance::DEFAULT_MINIMAP,
             font,
@@ -807,7 +810,7 @@ impl State {
         self.open_diff_context(&mut context);
         self.source_context(&mut context);
         self.snippet_context(&mut context);
-        if self.markdown_gui.is_some() || self.git_code.active {
+        if self.markdown_gui.is_some() || self.git_code.active || self.zoom.open {
             context.editor_input = false;
             context.has_selection = false;
         }
@@ -825,15 +828,14 @@ impl State {
         if let Some(group) = native_menu::group_for_command(command) {
             return Action::NativeMenu(group);
         }
-        if matches!(
-            command,
-            CommandId::ViewAppearance | CommandId::ViewEditorZoom
-        ) {
-            self.open_selector(if command == CommandId::ViewAppearance {
-                SelectorKind::Appearance
-            } else {
-                SelectorKind::Zoom
-            });
+        if command == CommandId::ViewEditorZoom {
+            self.close_selector();
+            self.toggle_zoom();
+            return Action::None;
+        }
+        self.zoom.open = false;
+        if command == CommandId::ViewAppearance {
+            self.open_selector(SelectorKind::Appearance);
             return Action::None;
         }
         if self.selector.is_some() && selector_input::field_command(command) {
@@ -1211,6 +1213,18 @@ impl State {
         }
         self.pending_surrogate = None;
         let modifiers = self.modifiers();
+        if self.zoom.open {
+            if let Some(group) = native_menu::mnemonic(code, modifiers) {
+                self.zoom.open = false;
+                return (true, Action::NativeMenu(group));
+            }
+            let action = if modifiers == Modifiers::NONE {
+                self.zoom_key(code)
+            } else {
+                Action::None
+            };
+            return (true, action);
+        }
         if self.git_panel.is_some() && self.git_commit.view().is_some() {
             if code == b'V' as usize && modifiers == Modifiers::CTRL {
                 return (
@@ -1415,6 +1429,9 @@ impl State {
         }
     }
     fn insert_character(&mut self, ch: char) {
+        if self.zoom.open {
+            return;
+        }
         self.cancel_pointer();
         if ch.is_control() {
             return;
@@ -1817,6 +1834,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_SIZE => {
                 state.cancel_pointer();
+                state.zoom.open = false;
                 state.interaction_epoch = state.interaction_epoch.saturating_add(1);
                 state.explorer_hits = None;
                 state.outline.hits = None;
@@ -1841,6 +1859,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_KILLFOCUS => {
                 state.cancel_pointer();
+                state.zoom.open = false;
                 state.interaction_epoch = state.interaction_epoch.saturating_add(1);
                 state.focused = false;
                 state.pending_surrogate = None;
@@ -1911,7 +1930,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_MOUSEWHEEL => {
                 redraw = false;
-                if let Some((point, lines)) = wheel {
+                if state.zoom.open {
+                    action = state.zoom_step(((wparam >> 16) as u16 as i16 as i32).signum());
+                } else if let Some((point, lines)) = wheel {
                     let lines = state.smoke_wheel_lines.unwrap_or(lines);
                     redraw = state.pointer_wheel(
                         point.x,
@@ -1929,8 +1950,15 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
                 state.cancel_pointer();
                 let chrome_action = chrome::action_at(state.chrome_layout(), x, y);
+                let zoom_action = if chrome_action.is_none() {
+                    state.zoom_down(x, y)
+                } else {
+                    state.zoom.open = false;
+                    None
+                };
                 let tab_action = if message == WM_LBUTTONDOWN
                     && chrome_action.is_none()
+                    && zoom_action.is_none()
                     && (state.git_panel.is_none() || state.git_code.active)
                 {
                     state.tab_click(x, y)
@@ -1944,10 +1972,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                         chrome::Action::Exit => Action::Exit,
                         chrome::Action::Menu(group) => Action::NativeMenu(group),
                     };
+                } else if let Some(zoom_action) = zoom_action {
+                    action = zoom_action;
                 } else if let Some(tab_action) = tab_action {
                     action = tab_action;
-                } else if state.status_zoom_click(x, y) {
-                    // The zoom selector owns the next input.
                 } else if let Some(git_action) = state.status_git_click(x, y) {
                     action = git_action;
                 } else if state.status_click(x, y) {
@@ -1993,7 +2021,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
             }
             WM_MOUSEMOVE | WM_LBUTTONUP => {
-                redraw = state.git_workspace.dragging()
+                redraw = state.zoom.preview.is_some()
+                    || state.git_workspace.dragging()
                     || state.git_code.dragging()
                     || state.explorer_scroll.drag.is_some()
                     || state.rectangle_drag.is_some()
@@ -2012,7 +2041,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 if wparam & 1 != 0 || message == WM_LBUTTONUP {
                     let x = (lparam as u16) as i16 as i32;
                     let y = ((lparam as usize >> 16) as u16) as i16 as i32;
-                    if state.git_code.dragging() {
+                    if state.zoom.preview.is_some() {
+                        action = state.zoom_drag(y, message == WM_LBUTTONUP);
+                    } else if state.git_code.dragging() {
                         redraw = state.update_git_code_drag(x, y) || hover_changed;
                     } else if state.git_workspace.dragging() {
                         redraw = state.update_git_drag(x, y) || hover_changed;
@@ -2035,6 +2066,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     owner.client_capture.set(false);
                 }
                 state.cancel_pointer();
+                if message == WM_CANCELMODE {
+                    state.zoom.open = false;
+                }
             }
             WM_CLOSE => action = Action::Exit,
             _ => handled = false,
@@ -2169,7 +2203,8 @@ unsafe fn release_idle_capture(hwnd: Hwnd) {
             return false;
         }
         let state = m.state.borrow();
-        !state.git_workspace.dragging()
+        state.zoom.preview.is_none()
+            && !state.git_workspace.dragging()
             && !state.git_code.dragging()
             && state.rectangle_drag.is_none()
             && state.linear_drag.is_none()

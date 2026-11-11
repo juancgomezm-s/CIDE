@@ -102,6 +102,8 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     let mut checks = Vec::new();
     let resize = super::interaction_smoke::Resize::new(hwnd)?;
     resize.set(1500, 960)?;
+    super::zoom::smoke(hwnd, options.bitmap.as_deref())?;
+    checks.push("shell_zoom_slider_mouse_keyboard_and_menu_preserve_document");
     let initial = {
         let s = owner(hwnd).unwrap().state.borrow();
         let d = s.workbench.active_document().unwrap();

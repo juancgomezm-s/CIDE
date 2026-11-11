@@ -136,12 +136,9 @@ pub(super) struct Frame {
     unit: i32,
     row: i32,
     gutter: i32,
-    left: String,
-    right: String,
-    unified: bool,
     message: String,
     cells: Vec<Cell>,
-    buttons: Vec<(Rect, String)>,
+    header: Vec<(Rect, String, u32)>,
     picker: Option<Rect>,
     choices: Vec<(Rect, String, bool)>,
     pub hits: Hits,
@@ -565,36 +562,41 @@ impl State {
             super::outline_panel::region(self).map_or(self.width, |r| r.left - 1),
             super::bottom_panel::region(self).map_or(self.height - self.cell_height - 5, |r| r.top),
         );
-        if area.right - area.left < p(80) || area.bottom - area.top < p(100) {
+        if area.right - area.left < p(80) || area.bottom - area.top < p(72) {
             return None;
         }
         let unit = p(1).max(1);
-        let unified = self.git_code.unified || area.right - area.left < p(420);
-        let caption = match self.git_source {
+        let can_split = area.right - area.left >= p(420);
+        let unified = self.git_code.unified || !can_split;
+        let caption: String = match self.git_source {
             GitBlobSource::Head => "HEAD".into(),
             GitBlobSource::Index => "Índice".into(),
             GitBlobSource::Commit(id) => format!("Commit {}", &id.as_str()[..8]),
         };
+        let file = doc
+            .session
+            .path()
+            .file_name()
+            .map_or_else(|| "Documento".into(), |v| v.to_string_lossy().into_owned());
+        let body = rect(
+            area.left,
+            area.top + p(28),
+            area.right - p(9),
+            area.bottom - p(30),
+        );
         let mut frame = Frame {
             area,
             dpi: self.dpi,
-            divider: None,
+            divider: (!unified).then_some(body.left + (body.right - body.left) / 2),
             unit,
             row: self.cell_height.max(p(12)),
             gutter: (self.cell_width * 7).max(p(40)) + p(8),
-            left: caption,
-            right: doc
-                .session
-                .path()
-                .file_name()
-                .map_or_else(|| "Documento".into(), |v| v.to_string_lossy().into_owned()),
-            unified,
             message: format!(
                 "{} · F4 revisión · V vista · Esc editar",
                 self.git_diff.message()
             ),
             cells: Vec::new(),
-            buttons: Vec::new(),
+            header: Vec::new(),
             picker: None,
             choices: Vec::new(),
             hits: Hits {
@@ -606,11 +608,15 @@ impl State {
                 rails: Vec::new(),
             },
         };
-        let slot = ((area.right - area.left - p(16)) / 3).min(p(132));
-        for (i, label, intent) in [
-            (0, "Elegir commit ▾", Intent::History),
+        let header = |left, right| rect(left, area.top + p(5), right, body.top - unit);
+        let header_start = frame.divider.unwrap_or(area.left) + p(8);
+        let mut header_end = body.right - p(8);
+        let result = self.git_diff.result();
+        let has_changes = result.is_some_and(|r| r.model.hunks().next().is_some());
+        for (visible, width, label, intent) in [
             (
-                1,
+                can_split,
+                100,
                 if unified {
                     "Dividir pantalla"
                 } else {
@@ -618,53 +624,43 @@ impl State {
                 },
                 Intent::Toggle,
             ),
-            (2, "Cerrar comparación ×", Intent::Close),
+            (has_changes, 20, "↓", Intent::Change(true)),
+            (has_changes, 20, "↑", Intent::Change(false)),
         ] {
-            let left = area.left + p(8) + i * (slot + p(4));
-            let r = rect(
-                left,
-                area.top + p(4),
-                (left + slot).min(area.right - p(4)),
-                area.top + p(30),
-            );
-            frame.buttons.push((r, label.into()));
-            frame.hits.targets.push((r, intent));
+            let start = header_end - p(width);
+            if visible && start >= header_start + p(62) {
+                let r = header(start, header_end);
+                frame.header.push((r, label.into(), shell::TEXT));
+                frame.hits.targets.push((r, intent));
+                header_end = start - p(4);
+            }
         }
-        let body = rect(
-            area.left,
-            area.top + p(84),
-            area.right - p(9),
-            area.bottom - p(30),
-        );
-        frame.divider = (!unified).then_some(body.left + (body.right - body.left) / 2);
+        let revision = if unified {
+            format!("{caption} ▾ → Actual · {file}")
+        } else {
+            format!("{caption} ▾ · {file}")
+        };
+        let revision_end = frame.divider.map_or(header_end, |x| x - p(8));
+        let revision_rect = header(area.left + p(8), revision_end);
+        frame.header.push((revision_rect, revision, shell::ACCENT));
+        frame.hits.targets.push((revision_rect, Intent::History));
+        if !unified {
+            frame.header.push((
+                header(header_start, header_end),
+                format!("Actual · {file}"),
+                shell::MUTED,
+            ));
+        }
         let page_size = ((body.bottom - body.top).max(0) / frame.row) as usize;
-        if let Some(result) = self.git_diff.result() {
-            frame.left = format!("{} · {}", frame.right, frame.left);
-            frame.right = format!("{} · Actual", frame.right);
-            if result.model.hunks().next().is_none() {
+        if let Some(result) = result {
+            if !has_changes {
                 frame.message =
-                    "Sin diferencias entre estas versiones · Cerrar comparación vuelve a editar"
-                        .into();
+                    "Sin diferencias entre estas versiones · × cierra la comparación".into();
             }
             if self.git_code.reveal_change {
                 self.git_code.first =
                     jc_app::diff_rows::first_change(&result.model, !unified).unwrap_or(0);
                 self.git_code.reveal_change = false;
-            }
-            for (i, label, intent) in [
-                (0, "← Cambio", Intent::Change(false)),
-                (1, "Cambio →", Intent::Change(true)),
-            ] {
-                let r = rect(
-                    area.left + p(8) + i * p(112),
-                    area.top + p(34),
-                    area.left + p(116) + i * p(112),
-                    area.top + p(56),
-                );
-                if r.right < area.right {
-                    frame.buttons.push((r, label.into()));
-                    frame.hits.targets.push((r, intent));
-                }
             }
             let page =
                 jc_app::diff_rows::page(&result.model, self.git_code.first, page_size, !unified);
@@ -742,7 +738,7 @@ impl State {
             });
         }
         if self.git_code.selecting {
-            let top = area.top + p(34);
+            let top = body.top;
             let height = frame.row + p(4);
             let count = ((area.bottom - top - p(54)).max(0) / height).clamp(1, 12) as usize;
             let mut bottom = top + height;
@@ -838,55 +834,31 @@ pub(super) unsafe fn draw(
     let p = |n| frame.dpi.pixels(n);
     paint::fill(dc, area, shell::BACKGROUND)?;
     SelectObject(dc, ui_font);
-    for (r, label) in &frame.buttons {
-        paint::fill(dc, *r, shell::RAISED)?;
-        paint::text(
-            dc,
-            rect(r.left + p(4), r.top + p(3), r.right - p(3), r.bottom),
-            &wide(label),
-            shell::TEXT,
-            shell::RAISED,
-        )?;
+    for (r, label, color) in &frame.header {
+        paint::text(dc, *r, &wide(label), *color, shell::BACKGROUND)?;
     }
+    paint::fill(
+        dc,
+        rect(
+            area.left,
+            area.top + p(28) - unit,
+            area.right,
+            area.top + p(28),
+        ),
+        shell::SIDEBAR,
+    )?;
     let left = area.left + p(8);
     if frame.cells.is_empty() {
         paint::text(
             dc,
-            rect(left, area.top + p(94), area.right - p(8), area.top + p(160)),
+            rect(
+                left,
+                area.top + p(38),
+                area.right - p(8),
+                area.bottom - p(30),
+            ),
             &wide(&frame.message),
             shell::TEXT,
-            shell::BACKGROUND,
-        )?;
-    }
-    let middle = frame.divider.unwrap_or(area.right);
-    let heading = if frame.unified {
-        format!("{} → {}", frame.left, frame.right)
-    } else {
-        frame.left.clone()
-    };
-    paint::text(
-        dc,
-        rect(
-            left,
-            area.top + p(60),
-            if frame.unified { area.right } else { middle },
-            area.top + p(82),
-        ),
-        &wide(&heading),
-        shell::MUTED,
-        shell::BACKGROUND,
-    )?;
-    if !frame.unified {
-        paint::text(
-            dc,
-            rect(
-                middle + p(8),
-                area.top + p(60),
-                area.right,
-                area.top + p(82),
-            ),
-            &wide(&frame.right),
-            shell::MUTED,
             shell::BACKGROUND,
         )?;
     }
@@ -922,11 +894,11 @@ pub(super) unsafe fn draw(
             background,
         )?;
     }
-    if !frame.unified {
+    if let Some(middle) = frame.divider {
         paint::fill(
             dc,
-            rect(middle, area.top + p(60), middle + unit, area.bottom - p(30)),
-            0x00594b42,
+            rect(middle, area.top, middle + unit, area.bottom - p(30)),
+            shell::SIDEBAR,
         )?;
     }
     for rail in &frame.hits.rails {
