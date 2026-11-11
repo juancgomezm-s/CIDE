@@ -840,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn right_code_dependencies_open_to_side_using_propath_and_javascript_relative_paths() {
+    fn right_code_dependencies_open_to_side_across_languages() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
@@ -858,13 +858,44 @@ mod tests {
         std::fs::create_dir_all(root.join("inc")).unwrap();
         std::fs::create_dir_all(root.join(".cide")).unwrap();
         std::fs::write(root.join(".cide/propath"), b"inc\n").unwrap();
+        std::fs::write(root.join(".cide/source-roots"), b".\nsources\n").unwrap();
         for (name, source, target) in [
             ("main.p", "{common.i}\r\n", "inc/common.i"),
-            ("main.js", "import './other.js';\n", "other.js"),
+            (
+                "main.js",
+                "import './other.js';\nfunction ejemplo() {}\n",
+                "other.js",
+            ),
+            (
+                "main.cjs",
+                "const dato = require('./common');\n",
+                "common/index.js",
+            ),
+            (
+                "main.ts",
+                "import type { Model } from './model.js';\ninterface Consulta {}\n",
+                "model.ts",
+            ),
+            (
+                "main.php",
+                "<?php require __DIR__ . '/vista.php';\nfunction ejemplo() {}\n",
+                "vista.php",
+            ),
+            (
+                "Main.java",
+                "import modelo.Item;\nclass Main { void ejemplo() {} }\n",
+                "sources/modelo/Item.java",
+            ),
+            (
+                "Main.cs",
+                "using static App.Util;\nclass Main { void ejemplo() {} }\n",
+                "sources/App/Util.cs",
+            ),
         ] {
             let path = root.join(name);
             let destination = root.join(target);
             std::fs::write(&path, source).unwrap();
+            std::fs::create_dir_all(destination.parent().unwrap()).unwrap();
             std::fs::write(&destination, b"// destino\n").unwrap();
             let mut s = State::new(&GuiOptions::default()).unwrap();
             s.width = 1400;
@@ -873,6 +904,20 @@ mod tests {
             s.workbench
                 .open_file(&path, Some(TextEncoding::Utf8))
                 .unwrap();
+            let tab = s.workbench.tabs().active_id().unwrap();
+            assert_eq!(
+                s.workbench
+                    .syntax_rows(tab, 0, 1)
+                    .kind_at(usize::from(name.ends_with(".php")) * 6),
+                match name {
+                    "main.p" => jc_app::SyntaxKind::Preprocessor,
+                    _ => jc_app::SyntaxKind::Keyword,
+                }
+            );
+            if name != "main.p" {
+                finish(&mut s);
+                assert!(!s.outline_presentation().unwrap().rows.is_empty(), "{name}");
+            }
             let r = region(&s).unwrap();
             let (button, _) = tools(r, s.dpi)
                 .into_iter()
@@ -890,6 +935,7 @@ mod tests {
             assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
             assert_eq!(s.workbench.active_bytes().unwrap(), b"// destino\n");
         }
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn right_code_symbol_side_open_shares_document_and_keeps_origin_caret() {

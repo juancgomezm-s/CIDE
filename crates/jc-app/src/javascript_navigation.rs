@@ -6,15 +6,35 @@ use crate::{
 use jc_text::{decode_fragment, TextEncoding};
 use std::ops::Range;
 
-pub(crate) fn descriptor() -> SourceProviderDescriptor {
+pub(crate) fn descriptor(typescript: bool) -> SourceProviderDescriptor {
     SourceProviderDescriptor {
-        id: "core.javascript",
-        language: "javascript",
-        symbols: Some(symbols),
-        references: Some(dependencies),
+        id: if typescript {
+            "core.typescript"
+        } else {
+            "core.javascript"
+        },
+        language: if typescript {
+            "typescript"
+        } else {
+            "javascript"
+        },
+        symbols: Some(if typescript {
+            symbols::<true>
+        } else {
+            symbols::<false>
+        }),
+        references: Some(if typescript {
+            dependencies::<true>
+        } else {
+            dependencies::<false>
+        }),
         calls: None,
-        dependencies: Some(dependencies),
-        file_resolution: FileResolution::DocumentRelative,
+        dependencies: Some(if typescript {
+            dependencies::<true>
+        } else {
+            dependencies::<false>
+        }),
+        file_resolution: FileResolution::RelativeModule,
         completion: None,
         rename: None,
         snippets: &[],
@@ -40,6 +60,8 @@ struct Lexer<'a> {
     bytes: &'a [u8],
     at: usize,
     previous: Option<Kind>,
+    typescript: bool,
+    regex_prefix: bool,
 }
 
 fn word_byte(b: u8) -> bool {
@@ -91,20 +113,33 @@ impl Lexer<'_> {
             b'/' => {
                 // After other tokens the slash may be division or a regular expression.
                 // Stop the prefix scan when its lexical goal cannot be established.
-                if !matches!(
+                if !self.regex_prefix
+                    && matches!(
+                        self.previous,
+                        Some(Kind::Word | Kind::String | Kind::Other | Kind::Punct(b']'))
+                    )
+                {
+                    Kind::Punct(b'/')
+                } else if matches!(
                     self.previous,
                     None | Some(Kind::Punct(b'=' | b'(' | b'[' | b',' | b':' | b'?' | b'!'))
-                ) || !self.regexp()
+                ) || self.regex_prefix
                 {
+                    if !self.regexp() {
+                        self.at = self.bytes.len();
+                        return None;
+                    }
+                    Kind::Other
+                } else {
                     self.at = self.bytes.len();
                     return None;
                 }
-                Kind::Other
             }
-            b'<' if self
-                .bytes
-                .get(self.at)
-                .is_some_and(|&b| word_byte(b) || b == b'>') =>
+            b'<' if !(self.typescript && start > 0 && word_byte(self.bytes[start - 1]))
+                && self
+                    .bytes
+                    .get(self.at)
+                    .is_some_and(|&b| word_byte(b) || b == b'>') =>
             {
                 // JSX text uses a different grammar and may contain apparent imports.
                 self.at = self.bytes.len();
@@ -113,6 +148,23 @@ impl Lexer<'_> {
             b => Kind::Punct(b),
         };
         self.previous = Some(kind);
+        self.regex_prefix = kind == Kind::Word
+            && matches!(
+                &self.bytes[start..self.at],
+                b"return"
+                    | b"throw"
+                    | b"case"
+                    | b"yield"
+                    | b"await"
+                    | b"delete"
+                    | b"void"
+                    | b"typeof"
+                    | b"in"
+                    | b"of"
+                    | b"instanceof"
+                    | b"else"
+                    | b"do"
+            );
         Some(Token {
             kind,
             range: start..self.at,
@@ -254,7 +306,7 @@ fn dependency(bytes: &[u8], encoding: TextEncoding, token: Token) -> SourceItem 
     }
 }
 
-fn scan(
+fn scan<const TYPESCRIPT: bool>(
     bytes: &[u8],
     encoding: TextEncoding,
     cancel: &Cancellation,
@@ -276,6 +328,8 @@ fn scan(
         bytes,
         at,
         previous: None,
+        typescript: TYPESCRIPT,
+        regex_prefix: false,
     };
     let mut depth = 0usize;
     let mut previous = None;
@@ -290,7 +344,18 @@ fn scan(
             Kind::Punct(b')' | b']' | b'}') => depth = depth.saturating_sub(1),
             Kind::Word if !is_member => {
                 let word = &bytes[token.range.clone()];
-                if want_symbols && depth == 0 && matches!(word, b"function" | b"class") {
+                let symbol = match word {
+                    b"function" => Some("Función"),
+                    b"class" => Some("Clase"),
+                    b"const" => Some("Constante"),
+                    b"let" | b"var" => Some("Variable"),
+                    b"interface" if TYPESCRIPT => Some("Interfaz"),
+                    b"type" if TYPESCRIPT => Some("Tipo"),
+                    b"enum" if TYPESCRIPT => Some("Enumeración"),
+                    b"namespace" if TYPESCRIPT => Some("Espacio de nombres"),
+                    _ => None,
+                };
+                if let Some(kind) = symbol.filter(|_| want_symbols && depth == 0) {
                     let mut lookahead = lexer.clone();
                     let Some(mut name) = lookahead.next() else {
                         continue;
@@ -307,6 +372,13 @@ fn scan(
                     {
                         continue;
                     }
+                    if word == b"type"
+                        && lookahead
+                            .next()
+                            .is_none_or(|token| !matches!(token.kind, Kind::Punct(b'=' | b'<')))
+                    {
+                        continue;
+                    }
                     let value =
                         decode_fragment(&bytes[name.range.clone()], encoding, name.range.start);
                     if value.issues.is_empty()
@@ -316,22 +388,32 @@ fn scan(
                             .next()
                             .is_some_and(|ch| ch.is_alphabetic() || matches!(ch, '_' | '$'))
                     {
-                        let kind = if word == b"function" {
-                            "Función"
-                        } else {
-                            "Clase"
-                        };
                         emit(SourceItem {
                             range: name.range,
                             label: format!("{kind}: {}", value.text),
                             action: SourceAction::Navigate,
                         })?;
                     }
+                } else if !want_symbols && word == b"require" {
+                    let mut lookahead = lexer.clone();
+                    if let Some(target) = require_target(&mut lookahead) {
+                        emit(dependency(bytes, encoding, target))?;
+                    }
                 } else if !want_symbols && (word == b"import" || word == b"export" && depth == 0) {
                     let mut lookahead = lexer.clone();
-                    let Some(first) = lookahead.next() else {
+                    let Some(mut first) = lookahead.next() else {
                         continue;
                     };
+                    if TYPESCRIPT && word_is(&lookahead, &first, b"type") {
+                        let mut after_type = lookahead.clone();
+                        if let Some(next) = after_type
+                            .next()
+                            .filter(|next| !word_is(&after_type, next, b"from"))
+                        {
+                            first = next;
+                            lookahead = after_type;
+                        }
+                    }
                     if word == b"import" && first.kind == Kind::Punct(b'(') {
                         // A property or method named import is legal. Admit the
                         // literal-argument form, which cannot be a declaration.
@@ -362,12 +444,20 @@ fn scan(
     Ok(())
 }
 
-fn symbols(
+fn require_target(lexer: &mut Lexer<'_>) -> Option<Token> {
+    if lexer.next()?.kind != Kind::Punct(b'(') {
+        return None;
+    }
+    let target = lexer.next().filter(|token| token.kind == Kind::String)?;
+    (lexer.next()?.kind == Kind::Punct(b')')).then_some(target)
+}
+
+fn symbols<const TYPESCRIPT: bool>(
     snapshot: &TaskSnapshot,
     cancel: &Cancellation,
     output: &mut TaskOutput,
 ) -> Result<(), TaskFailure> {
-    scan(
+    scan::<TYPESCRIPT>(
         snapshot.bytes(),
         snapshot.stamp.encoding,
         cancel,
@@ -376,12 +466,12 @@ fn symbols(
     )
 }
 
-fn dependencies(
+fn dependencies<const TYPESCRIPT: bool>(
     snapshot: &TaskSnapshot,
     cancel: &Cancellation,
     output: &mut TaskOutput,
 ) -> Result<(), TaskFailure> {
-    scan(
+    scan::<TYPESCRIPT>(
         snapshot.bytes(),
         snapshot.stamp.encoding,
         cancel,
@@ -397,7 +487,7 @@ mod tests {
 
     fn scan_js(bytes: &[u8], symbols: bool) -> Vec<SourceItem> {
         let mut items = Vec::new();
-        scan(
+        scan::<false>(
             bytes,
             TextEncoding::Utf8,
             &Cancellation::new(Duration::from_secs(5)),

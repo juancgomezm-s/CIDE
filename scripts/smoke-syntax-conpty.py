@@ -43,7 +43,7 @@ def main():
     root=Path(__file__).resolve().parents[1];parent=root/'work/syntax-conpty';parent.mkdir(exist_ok=True)
     if parent.is_symlink() or getattr(parent.lstat(),'st_file_attributes',0)&0x400 or not parent.resolve().is_relative_to(root):raise RuntimeError('owned output path escaped workspace')
     output=parent/(dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ-')+uuid.uuid4().hex[:8]);output.mkdir()
-    source=output/'syntax.p';data=output/'data.json';rust=output/'module.rs';plain=output/'fallback.cs'
+    source=output/'syntax.p';data=output/'data.json';rust=output/'module.rs';plain=output/'fallback.py'
     original=('\ufeffDEFINE VARIABLE n AS INTEGER NO-UNDO.\r\n/* outer\r\n'+'inside comment\r\n'*60+'*/\r\nDISPLAY "color" 42.\r\n').encode('utf8')
     fixtures={source:original,data:b'{ "name": "color", "enabled": true, "number": 42 }\r\n',rust:b'fn borrow<\'a>(x: &\'a str) {\r\nlet raw = r##"first\r\nsecond"##;\r\nlet ch = \'x\'; let n = 0xff_u8;\r\n/* outer /* inner */ keep */\r\n}\r\n',plain:b'DEFINE 42\r\n'}
     for path,value in fixtures.items():

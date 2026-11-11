@@ -57,6 +57,30 @@ pub static PROFILES: &[LanguageProfile] = &[
         tooling_plan: ToolingPlan::OptionalLsp,
     },
     LanguageProfile {
+        id: "php",
+        name: "PHP",
+        extensions: &["php", "phtml", "inc"],
+        filenames: &[],
+        line_comment: Some("//"),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
+        tooling_plan: ToolingPlan::OptionalLsp,
+    },
+    LanguageProfile {
+        id: "java",
+        name: "Java",
+        extensions: &["java"],
+        filenames: &[],
+        line_comment: Some("//"),
+        block_comment: Some(BlockComment {
+            start: "/*",
+            end: "*/",
+        }),
+        tooling_plan: ToolingPlan::OptionalLsp,
+    },
+    LanguageProfile {
         id: "rust",
         name: "Rust",
         extensions: &["rs"],
@@ -241,6 +265,11 @@ impl LanguageProfile {
             "jsonc" => syntax::SyntaxProfile::Jsonc,
             "rust" => syntax::SyntaxProfile::Rust,
             "markdown" => syntax::SyntaxProfile::Markdown,
+            "csharp" => syntax::SyntaxProfile::CSharp,
+            "javascript" => syntax::SyntaxProfile::JavaScript,
+            "typescript" => syntax::SyntaxProfile::TypeScript,
+            "php" => syntax::SyntaxProfile::Php,
+            "java" => syntax::SyntaxProfile::Java,
             _ => syntax::SyntaxProfile::Plain,
         }
     }
@@ -315,7 +344,7 @@ mod tests {
         );
         assert_eq!(
             detect("module.cs").syntax_profile(),
-            syntax::SyntaxProfile::Plain
+            syntax::SyntaxProfile::CSharp
         );
     }
 

@@ -5,6 +5,7 @@
 //! ad-hoc widget code. Raw text entry and low-level cursor movement remain the
 //! responsibility of the editor surface.
 
+mod code_navigation;
 mod command;
 mod dialog;
 pub mod diff_model;

@@ -25,6 +25,127 @@ fn editor(text: &str, path: &str) -> TuiApp {
 }
 
 #[test]
+fn source_tui_multilanguage_outline_and_side_navigation() {
+    let root = std::env::temp_dir().join(format!(
+        "cide-outline-languages-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&root).unwrap();
+    std::fs::create_dir(root.join(".cide")).unwrap();
+    std::fs::write(root.join(".cide/source-roots"), b"sources\n").unwrap();
+    for (name, text, symbol, target) in [
+        (
+            "code.mjs",
+            "import './mod.js';\nfunction calcular() {}\n",
+            "Función: calcular",
+            "mod.js",
+        ),
+        (
+            "code.cjs",
+            "const calcular = require('./lib');\n",
+            "Constante: calcular",
+            "lib/index.js",
+        ),
+        (
+            "code.tsx",
+            "import type { Item } from './item.js';\ninterface Consulta {}\n",
+            "Interfaz: Consulta",
+            "item.ts",
+        ),
+        (
+            "code.php",
+            "<p>class Falsa</p>\n<?php $ejemplo = <<<'FIN'\nclass Falsa2\nFIN;\nrequire_once __DIR__ . '/vista.php';\nfunction calcular() {}\n",
+            "Función: calcular",
+            "vista.php",
+        ),
+        (
+            "Main.java",
+            "import pkg.Item;\nclass Main { void calcular() {} }\n",
+            "Método: calcular",
+            "sources/pkg/Item.java",
+        ),
+        (
+            "Main.cs",
+            "using static App.Util;\nclass Main { int Calcular() => 2; }\n",
+            "Método: Calcular",
+            "sources/App/Util.cs",
+        ),
+    ] {
+        let source = root.join(name);
+        let dest = root.join(target);
+        std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        std::fs::write(&source, text).unwrap();
+        std::fs::write(&dest, b"// destino\n").unwrap();
+        let mut app = TuiApp::new(LaunchOptions {
+            files: vec![source.clone()],
+            encoding: Some(TextEncoding::Utf8),
+        });
+        app.set_explorer_root(root.clone()).unwrap();
+        let tab = app.workbench.tabs().active_id().unwrap();
+        let keyword = text.find("require_once").unwrap_or(0);
+        assert_eq!(
+            app.workbench.syntax_rows(tab, 0, 8).kind_at(keyword),
+            jc_app::SyntaxKind::Keyword,
+            "{name}"
+        );
+        app.dispatch(CommandId::ViewSymbols);
+        finish(&mut app);
+        assert!(!app.source.items().iter().any(|item| item.label.contains("Falsa")));
+        assert!(
+            app.source.items().iter().any(|item| item.label == symbol),
+            "{name}: {:?}",
+            app.source.items()
+        );
+        app.dispatch(CommandId::SourceDependencies);
+        finish(&mut app);
+        assert_eq!(
+            app.source.items().len(),
+            1,
+            "{name}: {}",
+            app.source.message()
+        );
+        app.dispatch(CommandId::SourceOpenToSide);
+        assert!(app.workbench.panes().is_split(), "{name}: {}", app.status);
+        assert_eq!(
+            app.workbench.active_path().unwrap(),
+            dest.canonicalize().unwrap(),
+            "{name}"
+        );
+        assert_eq!(std::fs::read(&source).unwrap(), text.as_bytes());
+    }
+    std::fs::write(root.join("reverse.js"), b"import './item.ts';\n").unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![root.join("item.ts")],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root.clone()).unwrap();
+    app.dispatch(CommandId::SourceIncoming);
+    finish(&mut app);
+    assert_eq!(
+        app.source.state(),
+        SourceState::Ready,
+        "{}",
+        app.source.message()
+    );
+    assert!(app
+        .source
+        .items()
+        .iter()
+        .any(|item| item.label == "reverse.js:1"));
+    assert!(app
+        .source
+        .items()
+        .iter()
+        .any(|item| item.label == "code.tsx:1"));
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn source_tui_renames_internal_procedures_and_functions_after_preview() {
     let text = "FUNCTION total RETURNS INTEGER() FORWARD.\r\nDISPLAY total().\r\nFUNCTION total RETURNS INTEGER():\r\nRETURN 1.\r\nEND FUNCTION.\r\nPROCEDURE report:\r\nDISPLAY total().\r\nEND PROCEDURE.\r\nRUN report.";
     let mut a = editor(text, "routines.p");

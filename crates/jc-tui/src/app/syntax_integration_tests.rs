@@ -152,7 +152,7 @@ fn syntax_tui_selection_search_invisibles_document_switch_and_plain_fallback() {
         CellStyle::Syntax(SyntaxKind::Keyword)
     );
     assert_eq!(style(&frame, "\\t"), CellStyle::Dim);
-    app.workbench.new_file("unsupported.cs", TextEncoding::Utf8);
+    app.workbench.new_file("unsupported.py", TextEncoding::Utf8);
     app.workbench
         .insert_text("DEFINE 123 /* comment */")
         .unwrap();

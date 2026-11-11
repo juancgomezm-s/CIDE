@@ -732,7 +732,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
     memory(
         hwnd,
         options,
-        "syntax-fallback.cs",
+        "syntax-fallback.py",
         "DISPLAY \"plain\".\r\n/* plain */\r\n",
         TextEncoding::Utf8,
     )?;
@@ -774,6 +774,63 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         TextEncoding::Utf8,
     )?;
     kind(hwnd, &ready(hwnd)?, PaneId::Primary, 3, SyntaxKind::Comment)?;
+    for (path, source, keyword_at, literal) in [
+        (
+            "syntax-modern.cs",
+            "class Demo { string x = @\"hola\"; }\r\n",
+            0,
+            "hola",
+        ),
+        (
+            "syntax-modern.java",
+            "class Demo { String x = \"hola\"; }\r\n",
+            0,
+            "hola",
+        ),
+        (
+            "syntax-modern.cjs",
+            "const x = require(\"./hola\");\r\n",
+            0,
+            "hola",
+        ),
+        (
+            "syntax-modern.tsx",
+            "interface Demo { x: \"hola\" }\r\n",
+            0,
+            "hola",
+        ),
+        (
+            "syntax-modern.php",
+            "<?php function demo() { return \"hola\"; }\r\n",
+            6,
+            "hola",
+        ),
+    ] {
+        memory(hwnd, options, path, source, TextEncoding::Utf8)?;
+        let frame = ready(hwnd)?;
+        kind(
+            hwnd,
+            &frame,
+            PaneId::Primary,
+            keyword_at,
+            SyntaxKind::Keyword,
+        )?;
+        kind(
+            hwnd,
+            &frame,
+            PaneId::Primary,
+            source.find(literal).unwrap(),
+            SyntaxKind::String,
+        )?;
+        owner(hwnd)
+            .unwrap()
+            .state
+            .borrow_mut()
+            .workbench
+            .close_active(true)
+            .map_err(|e| e.to_string())?;
+    }
+    checks.push("syntax_native_modern_languages_keyword_and_string");
     for _ in 0..4 {
         owner(hwnd)
             .unwrap()

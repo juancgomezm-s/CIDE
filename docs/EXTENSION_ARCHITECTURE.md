@@ -1,5 +1,58 @@
 # Arquitectura de capacidades y extensiones multilenguaje
 
+## Resaltado y navegación multilenguaje
+
+La GUI y la TUI comparten los perfiles y proveedores. La detección se hace
+al abrir el archivo. El panel **Esquema** muestra símbolos y dependencias
+según el perfil. Desde una dependencia local se puede abrir el destino
+en el editor o al lado. **Llamado por** localiza archivos que hacen una
+referencia estática en el proyecto.
+
+| Perfil | Símbolos y dependencias en este bloque |
+|---|---|
+| C# | Espacios de nombres, tipos y métodos de declaración simple. Importaciones `using static` y aliases con ruta local por nombre calificado. Un `using` de espacio de nombres se lista sin destino directo. |
+| Java | Paquetes, tipos y métodos de declaración simple. Importaciones de clases y miembros estáticos. Una importación de paquete con comodín se lista sin destino directo. |
+| JavaScript, JSX y Node.js | Funciones, clases y declaraciones de variables de nivel superior. Importaciones y reexportaciones ES y llamadas literales `require()`. |
+| TypeScript y TSX | Lo anterior, más interfaces, tipos, enumeraciones, espacios de nombres e importaciones de tipos. Se buscan fuentes TypeScript que correspondan a especificadores `.js`, `.mjs` y `.cjs`. |
+| PHP | Espacios de nombres, clases, interfaces, traits y funciones. Inclusiones literales de archivo y rutas con `__DIR__`. El resaltado distingue las regiones PHP de la plantilla exterior. |
+
+En C# y Java, **ambas interfaces** leen opcionalmente `.cide/source-roots`
+en UTF-8. Escribe una carpeta relativa al proyecto por línea, hasta 32.
+`#` inicia una línea de comentario y `.` incluye la raíz. Por ejemplo:
+
+```text
+.
+src/main/java
+src/test/java
+src
+```
+
+Esas son también las raíces predeterminadas. Un nombre como
+`ventas.Reporte` busca `ventas/Reporte.java` o `ventas/Reporte.cs`
+según el perfil. Si hay varios candidatos válidos, CIDE pide elegir.
+Los módulos JavaScript/TypeScript y las inclusiones PHP se buscan desde
+el directorio del archivo, dentro del proyecto. La búsqueda de módulos
+relativos admite candidatos por extensión y archivos `index`.
+
+El análisis es léxico y acotado. La navegación puede detenerse antes
+de construcciones ambiguas como JSX o plantillas JavaScript anidadas.
+Los módulos de paquetes, los aliases de `tsconfig`, los autoloaders
+de Composer y las referencias calculadas requieren resolución adicional.
+LSP, refactorización semántica, compilación y depuración de estos perfiles
+quedan fuera de este bloque. [C#](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure) ·
+[Java](https://docs.oracle.com/javase/specs/jls/se21/html/jls-7.html) ·
+[Node.js](https://nodejs.org/api/modules.html) ·
+[TypeScript](https://www.typescriptlang.org/docs/handbook/modules/reference.html) ·
+[PHP](https://www.php.net/manual/en/function.include.php)
+
+Validación local en Windows. Pasaron 14 pruebas de perfiles y resaltado,
+dos de navegación JavaScript, tres del Esquema de GUI, ocho de servicios
+TUI, cinco de resaltado TUI, formato y Clippy. Los recorridos abrieron
+dependencias locales al lado y comprobaron referencias inversas de JS y TS
+al mismo archivo. La entrega optimizada `target/m3-languages-next/release`
+pasó 13 comprobaciones en una ventana GUI oculta y seis recorridos de color
+y Esquema en una terminal TUI privada.
+
 **Estado:** contrato de diseño para M2-M5. El sistema de carga de plugins externos aún NO está implementado; se reserva para el anexo post-M5. No confundir una extensión interna de lenguaje con un plugin externo instalable.
 
 ## Regla central

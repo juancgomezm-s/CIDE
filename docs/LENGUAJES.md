@@ -1,10 +1,10 @@
 # Soporte de lenguajes
 
-## Qué existe en M0
+## Perfiles de archivo
 
 El buffer acepta bytes de cualquier documento sin imponer el lenguaje ni la codificación.
-`jc-languages` ofrece 18 perfiles y detección por nombre/extensión. El resultado es una
-**sugerencia de perfil**, no un análisis del contenido ni una certificación de sintaxis.
+`jc-languages` ofrece 20 perfiles y detección por nombre/extensión. El resultado es una
+**sugerencia de perfil** que activa las capacidades del editor.
 Un perfil explícito de documento o proyecto debe tener prioridad cuando exista la UI.
 
 | Perfil | Ejemplos |
@@ -14,6 +14,8 @@ Un perfil explícito de documento o proyecto debe tener prioridad cuando exista 
 | Rust | `.rs` |
 | JavaScript / JSX | `.js`, `.jsx`, `.mjs`, `.cjs` |
 | TypeScript / TSX | `.ts`, `.tsx`, `.mts`, `.cts` |
+| PHP | `.php`, `.phtml`, `.inc` |
+| Java | `.java` |
 | Python | `.py`, `.pyw`, `.pyi` |
 | HTML | `.html`, `.htm` |
 | CSS | `.css` |
@@ -38,14 +40,16 @@ cargo run -p jc-cli --offline -- languages
 cargo run -p jc-cli --offline -- inspect programa.p
 ```
 
-## Lo que falta
+## Capacidades actuales
 
-El registro incluye resaltado léxico compartido para ABL, Rust, JSON y JSONC en TUI y GUI.
-Los otros perfiles usan Plain. Son subconjuntos léxicos acotados, no gramáticas completas;
-[contrato, límites y evidencia](M2_SYNTAX_HIGHLIGHTING.md). No incluye parseo incremental,
-completado semántico, diagnósticos de C#/Rust/etc., procesos LSP, compiladores genéricos ni depuración.
-El autocompletado de BD también está pendiente: hay un contrato y exportador experimental,
-pero no una interfaz que lo consuma en tiempo real.
+GUI y TUI resaltan ABL, Rust, JSON, JSONC, Markdown, C#, JavaScript/JSX,
+TypeScript/TSX, Java y PHP. C#, JavaScript, TypeScript, Java y PHP aportan
+símbolos y dependencias estáticas al panel Esquema. Node.js comparte el
+perfil JavaScript y aporta referencias literales CommonJS. [Configuración y alcance](EXTENSION_ARCHITECTURE.md#resaltado-y-navegación-multilenguaje).
+
+ABL tiene además comprobación, compilación, ejecución por lotes y consulta
+del catálogo de bases. LSP, completado semántico, compiladores genéricos y
+depuración siguen pendientes. [Perfil Progress](PROGRESS_BRIDGE.md).
 
 ## Contrato de arquitectura
 

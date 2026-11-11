@@ -34,7 +34,13 @@ pub enum SyntaxProfile {
     Jsonc,
     Rust,
     Markdown,
+    CSharp,
+    JavaScript,
+    TypeScript,
+    Php,
+    Java,
 }
+mod modern;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Mode {
     #[default]
@@ -52,6 +58,17 @@ enum Mode {
     RawIdentifier,
     Character,
     Lifetime,
+    AtPrefix,
+    QuotePrefix,
+    QuoteBlock,
+    HashPrefix,
+    PhpOpen,
+    PhpClose,
+    PhpLineQuestion,
+    PhpLess,
+    PhpHeredocHeader,
+    PhpHeredocBody,
+    Regex,
 }
 /// Delimiter cap for this lexical presentation subset, independent of Rust's
 /// grammar/compiler limits. Exceeding it explicitly limits the entire viewport.
@@ -79,6 +96,10 @@ pub struct LexerState {
     raw_seen: u8,
     raw_close: bool,
     byte_character: bool,
+    verbatim: bool,
+    php_code: bool,
+    regex_allowed: bool,
+    regex_class: bool,
 }
 impl Default for LexerState {
     fn default() -> Self {
@@ -101,6 +122,10 @@ impl Default for LexerState {
             raw_seen: 0,
             raw_close: false,
             byte_character: false,
+            verbatim: false,
+            php_code: false,
+            regex_allowed: true,
+            regex_class: false,
         }
     }
 }
@@ -122,6 +147,11 @@ impl LexerState {
         end: usize,
         emit: &mut impl FnMut(TokenSpan),
     ) {
+        if profile.ecmascript() {
+            self.regex_allowed = !self.overflow
+                && self.mode == Mode::Word
+                && modern::regex_prefix(&self.word[..usize::from(self.length)]);
+        }
         if !self.overflow {
             let word = &self.word[..usize::from(self.length)];
             if self.mode == Mode::Number
@@ -145,6 +175,8 @@ impl LexerState {
             let kind = if self.mode == Mode::Number
                 && (if profile == SyntaxProfile::Rust {
                     rust_number(word)
+                } else if profile.modern() {
+                    modern::number(profile, word)
                 } else {
                     number(word, profile != SyntaxProfile::Abl)
                 }) {
@@ -301,15 +333,32 @@ pub fn scan(
                             kind: SyntaxKind::Comment,
                         });
                     } else if byte == b'/'
-                        && matches!(profile, SyntaxProfile::Jsonc | SyntaxProfile::Rust)
+                        && (profile.modern()
+                            || matches!(profile, SyntaxProfile::Jsonc | SyntaxProfile::Rust))
                     {
                         state.mode = Mode::Line;
                         emit(TokenSpan {
                             source: state.start..end,
                             kind: SyntaxKind::Comment,
                         });
+                    } else if profile.ecmascript()
+                        && state.regex_allowed
+                        && !matches!(byte, b'\r' | b'\n')
+                    {
+                        state.mode = Mode::Regex;
+                        state.escape = false;
+                        state.regex_class = false;
+                        state.regex_allowed = false;
+                        emit(TokenSpan {
+                            source: state.start..offset,
+                            kind: SyntaxKind::String,
+                        });
+                        again = true;
                     } else {
                         state.mode = Mode::Normal;
+                        if profile.ecmascript() {
+                            state.regex_allowed = true;
+                        }
                         emit(TokenSpan {
                             source: state.start..offset,
                             kind: SyntaxKind::Operator,
@@ -346,7 +395,10 @@ pub fn scan(
                     }
                 }
                 Mode::Line => {
-                    if matches!(byte, b'\r' | b'\n') {
+                    if profile == SyntaxProfile::Php && byte == b'?' {
+                        state.mode = Mode::PhpLineQuestion;
+                        state.start = offset;
+                    } else if matches!(byte, b'\r' | b'\n') {
                         state.mode = Mode::Normal;
                         state.line_start = true;
                         emit(TokenSpan {
@@ -363,7 +415,8 @@ pub fn scan(
                 Mode::String => {
                     if state.quote_end {
                         state.quote_end = false;
-                        if byte == state.quote && profile == SyntaxProfile::Abl {
+                        if byte == state.quote && (profile == SyntaxProfile::Abl || state.verbatim)
+                        {
                             emit(TokenSpan {
                                 source: offset..end,
                                 kind: SyntaxKind::String,
@@ -393,12 +446,13 @@ pub fn scan(
                         });
                         continue;
                     }
-                    if byte
-                        == if profile == SyntaxProfile::Abl {
-                            b'~'
-                        } else {
-                            b'\\'
-                        }
+                    if !state.verbatim
+                        && byte
+                            == if profile == SyntaxProfile::Abl {
+                                b'~'
+                            } else {
+                                b'\\'
+                            }
                     {
                         state.escape = true;
                         emit(TokenSpan {
@@ -410,13 +464,16 @@ pub fn scan(
                             source: offset..end,
                             kind: SyntaxKind::String,
                         });
-                        if profile == SyntaxProfile::Abl {
+                        if profile == SyntaxProfile::Abl || state.verbatim {
                             state.quote_end = true;
                         } else {
                             state.mode = Mode::Normal;
                         }
                     } else if matches!(byte, b'\r' | b'\n') {
-                        if profile == SyntaxProfile::Rust {
+                        if matches!(profile, SyntaxProfile::Rust | SyntaxProfile::Php)
+                            || state.verbatim
+                            || state.quote == b'\x60'
+                        {
                             emit(TokenSpan {
                                 source: offset..end,
                                 kind: SyntaxKind::String,
@@ -631,7 +688,273 @@ pub fn scan(
                         }
                     }
                 }
+                Mode::AtPrefix => {
+                    state.mode = Mode::Normal;
+                    if byte == b'"' {
+                        state.mode = Mode::String;
+                        state.quote = byte;
+                        state.escape = false;
+                        state.quote_end = false;
+                        state.verbatim = true;
+                        emit(TokenSpan {
+                            source: state.start..end,
+                            kind: SyntaxKind::String,
+                        });
+                    } else {
+                        emit(TokenSpan {
+                            source: state.start..offset,
+                            kind: SyntaxKind::Operator,
+                        });
+                        if identifier_start(byte) {
+                            state.begin_word(Mode::Word, offset, byte);
+                            state.overflow = true;
+                            emit(TokenSpan {
+                                source: offset..end,
+                                kind: SyntaxKind::Plain,
+                            });
+                        } else {
+                            again = true;
+                        }
+                    }
+                }
+                Mode::QuotePrefix => {
+                    if byte == b'"' && state.raw_hashes < RUST_RAW_HASH_LIMIT {
+                        state.raw_hashes += 1;
+                        emit(TokenSpan {
+                            source: offset..end,
+                            kind: SyntaxKind::String,
+                        });
+                    } else {
+                        state.mode = match state.raw_hashes {
+                            1 => Mode::String,
+                            2 => Mode::Normal,
+                            _ => Mode::QuoteBlock,
+                        };
+                        state.raw_seen = 0;
+                        again = true;
+                    }
+                }
+                Mode::QuoteBlock => {
+                    emit(TokenSpan {
+                        source: offset..end,
+                        kind: SyntaxKind::String,
+                    });
+                    if profile == SyntaxProfile::Java && state.escape {
+                        state.escape = false;
+                        state.raw_seen = 0;
+                    } else if byte == b'"' {
+                        state.raw_seen += 1;
+                        if state.raw_seen == state.raw_hashes {
+                            state.mode = Mode::Normal;
+                        }
+                    } else {
+                        state.raw_seen = 0;
+                        state.escape = profile == SyntaxProfile::Java && byte == b'\\';
+                    }
+                }
+                Mode::HashPrefix => {
+                    if profile.ecmascript() {
+                        state.mode = if byte == b'!' {
+                            Mode::Line
+                        } else {
+                            Mode::Normal
+                        };
+                        emit(TokenSpan {
+                            source: state.start..if byte == b'!' { end } else { offset },
+                            kind: if byte == b'!' {
+                                SyntaxKind::Comment
+                            } else {
+                                SyntaxKind::Operator
+                            },
+                        });
+                        again = byte != b'!';
+                    } else if byte == b'[' {
+                        state.mode = Mode::Normal;
+                        emit(TokenSpan {
+                            source: state.start..end,
+                            kind: SyntaxKind::Operator,
+                        });
+                    } else {
+                        state.mode = Mode::Line;
+                        emit(TokenSpan {
+                            source: state.start..offset,
+                            kind: SyntaxKind::Comment,
+                        });
+                        again = true;
+                    }
+                }
+                Mode::PhpOpen => {
+                    let marker = b"<?php";
+                    let prefix = usize::from(state.raw_seen);
+                    if prefix == 2 && byte == b'='
+                        || prefix == marker.len() && byte.is_ascii_whitespace()
+                    {
+                        state.php_code = true;
+                        state.mode = Mode::Normal;
+                        again = prefix == marker.len();
+                        emit(TokenSpan {
+                            source: state.start..if again { offset } else { end },
+                            kind: SyntaxKind::Preprocessor,
+                        });
+                    } else if marker
+                        .get(prefix)
+                        .is_some_and(|expected| byte.eq_ignore_ascii_case(expected))
+                    {
+                        state.raw_seen += 1;
+                    } else {
+                        state.mode = Mode::Normal;
+                        emit(TokenSpan {
+                            source: state.start..offset,
+                            kind: SyntaxKind::Plain,
+                        });
+                        again = true;
+                    }
+                }
+                Mode::PhpClose | Mode::PhpLineQuestion => {
+                    let comment = state.mode == Mode::PhpLineQuestion;
+                    state.mode = Mode::Normal;
+                    if byte == b'>' {
+                        state.php_code = false;
+                        emit(TokenSpan {
+                            source: state.start..end,
+                            kind: SyntaxKind::Preprocessor,
+                        });
+                    } else {
+                        if comment {
+                            state.mode = Mode::Line;
+                        }
+                        emit(TokenSpan {
+                            source: state.start..offset,
+                            kind: if comment {
+                                SyntaxKind::Comment
+                            } else {
+                                SyntaxKind::Operator
+                            },
+                        });
+                        again = true;
+                    }
+                }
+                Mode::PhpLess => {
+                    if byte == b'<' {
+                        state.raw_seen += 1;
+                        if state.raw_seen == 3 {
+                            state.mode = Mode::PhpHeredocHeader;
+                            state.length = 0;
+                            state.quote = 0;
+                            state.quote_end = false;
+                            state.overflow = false;
+                            emit(TokenSpan {
+                                source: state.start..end,
+                                kind: SyntaxKind::String,
+                            });
+                        }
+                    } else {
+                        state.mode = Mode::Normal;
+                        emit(TokenSpan {
+                            source: state.start..offset,
+                            kind: SyntaxKind::Operator,
+                        });
+                        again = true;
+                    }
+                }
+                Mode::PhpHeredocHeader => {
+                    emit(TokenSpan {
+                        source: offset..end,
+                        kind: SyntaxKind::String,
+                    });
+                    if matches!(byte, b'\r' | b'\n') {
+                        state.mode = if state.length > 0 && !state.overflow && state.quote == 0 {
+                            Mode::PhpHeredocBody
+                        } else {
+                            Mode::Normal
+                        };
+                        state.raw_seen = 0;
+                        state.line_start = true;
+                    } else if state.length == 0 && state.quote == 0 && matches!(byte, b'\'' | b'"')
+                    {
+                        state.quote = byte;
+                    } else if byte == state.quote && state.length > 0 {
+                        state.quote = 0;
+                        state.quote_end = true;
+                    } else if !state.quote_end
+                        && (byte.is_ascii_alphabetic()
+                            || byte == b'_'
+                            || state.length > 0 && byte.is_ascii_digit())
+                        && usize::from(state.length) < state.word.len()
+                    {
+                        state.word[usize::from(state.length)] = byte;
+                        state.length += 1;
+                    } else if matches!(byte, b' ' | b'\t') && state.quote == 0 {
+                        state.quote_end |= state.length > 0;
+                    } else {
+                        state.overflow = true;
+                    }
+                }
+                Mode::PhpHeredocBody => {
+                    if state.line_start
+                        && state.raw_seen == state.length
+                        && !word_byte(byte, profile)
+                    {
+                        state.mode = Mode::Normal;
+                        state.line_start = false;
+                        again = true;
+                        continue;
+                    }
+                    if matches!(byte, b'\r' | b'\n') {
+                        state.line_start = true;
+                        state.raw_seen = 0;
+                    } else if state.line_start {
+                        if state.raw_seen == 0 && matches!(byte, b' ' | b'\t') {
+                            // The closing marker may be indented.
+                        } else if state.raw_seen < state.length
+                            && byte == state.word[usize::from(state.raw_seen)]
+                        {
+                            state.raw_seen += 1;
+                        } else {
+                            state.line_start = false;
+                        }
+                    }
+                    emit(TokenSpan {
+                        source: offset..end,
+                        kind: SyntaxKind::String,
+                    });
+                }
+                Mode::Regex => {
+                    if matches!(byte, b'\r' | b'\n') {
+                        state.mode = Mode::Normal;
+                        again = true;
+                        continue;
+                    }
+                    if state.escape {
+                        state.escape = false;
+                    } else {
+                        match byte {
+                            b'\\' => state.escape = true,
+                            b'[' => state.regex_class = true,
+                            b']' => state.regex_class = false,
+                            b'/' if !state.regex_class => state.mode = Mode::Normal,
+                            _ => {}
+                        }
+                    }
+                    emit(TokenSpan {
+                        source: offset..end,
+                        kind: SyntaxKind::String,
+                    });
+                }
                 Mode::Normal => {
+                    if profile == SyntaxProfile::Php && !state.php_code {
+                        if byte == b'<' {
+                            state.mode = Mode::PhpOpen;
+                            state.start = offset;
+                            state.raw_seen = 1;
+                        } else {
+                            emit(TokenSpan {
+                                source: offset..end,
+                                kind: SyntaxKind::Plain,
+                            });
+                        }
+                        continue;
+                    }
                     if state.continuation_cr {
                         state.continuation_cr = false;
                         if byte == b'\n' {
@@ -666,7 +989,12 @@ pub fn scan(
                         });
                         continue;
                     }
-                    if profile == SyntaxProfile::Abl && byte == b'&' && state.line_start {
+                    if state.line_start
+                        && matches!(
+                            (profile, byte),
+                            (SyntaxProfile::Abl, b'&') | (SyntaxProfile::CSharp, b'#')
+                        )
+                    {
                         state.mode = Mode::Directive;
                         state.line_start = false;
                         emit(TokenSpan {
@@ -676,17 +1004,35 @@ pub fn scan(
                         continue;
                     }
                     state.line_start = false;
-                    if byte == b'~' && profile == SyntaxProfile::Abl {
+                    if profile == SyntaxProfile::CSharp && byte == b'@' {
+                        state.mode = Mode::AtPrefix;
+                        state.start = offset;
+                    } else if profile == SyntaxProfile::Php && matches!(byte, b'#' | b'?') {
+                        state.mode = if byte == b'#' {
+                            Mode::HashPrefix
+                        } else {
+                            Mode::PhpClose
+                        };
+                        state.start = offset;
+                    } else if profile == SyntaxProfile::Php && byte == b'<' {
+                        state.mode = Mode::PhpLess;
+                        state.raw_seen = 1;
+                        state.start = offset;
+                    } else if profile.ecmascript() && byte == b'#' && offset == 0 {
+                        state.mode = Mode::HashPrefix;
+                        state.start = offset;
+                    } else if byte == b'~' && profile == SyntaxProfile::Abl {
                         state.escape = true;
                         emit(TokenSpan {
                             source: offset..end,
                             kind: SyntaxKind::Operator,
                         });
                     } else if byte == b'/'
-                        && matches!(
-                            profile,
-                            SyntaxProfile::Abl | SyntaxProfile::Jsonc | SyntaxProfile::Rust
-                        )
+                        && (profile.modern()
+                            || matches!(
+                                profile,
+                                SyntaxProfile::Abl | SyntaxProfile::Jsonc | SyntaxProfile::Rust
+                            ))
                     {
                         state.mode = Mode::Slash;
                         state.start = offset;
@@ -696,11 +1042,26 @@ pub fn scan(
                         state.word[0] = byte;
                         state.length = 1;
                         state.byte_character = false;
-                    } else if byte == b'"' || (byte == b'\'' && profile == SyntaxProfile::Abl) {
-                        state.mode = Mode::String;
+                    } else if byte == b'"'
+                        || byte == b'\'' && (profile.modern() || profile == SyntaxProfile::Abl)
+                        || byte == b'\x60'
+                            && (profile.ecmascript() || profile == SyntaxProfile::Php)
+                    {
+                        state.mode = if byte == b'"'
+                            && matches!(profile, SyntaxProfile::CSharp | SyntaxProfile::Java)
+                        {
+                            state.raw_hashes = 1;
+                            Mode::QuotePrefix
+                        } else {
+                            Mode::String
+                        };
                         state.quote = byte;
                         state.escape = false;
                         state.quote_end = false;
+                        state.verbatim = false;
+                        if profile.ecmascript() {
+                            state.regex_allowed = false;
+                        }
                         emit(TokenSpan {
                             source: offset..end,
                             kind: SyntaxKind::String,
@@ -721,9 +1082,13 @@ pub fn scan(
                     {
                         state.begin_word(Mode::Number, offset, byte);
                         state.last = byte;
-                    } else if byte.is_ascii_alphabetic() || byte == b'_' || byte >= 0x80 {
+                    } else if identifier_start(byte) || byte == b'$' && profile.dollar_identifier()
+                    {
                         state.begin_word(Mode::Word, offset, byte);
                     } else {
+                        if profile.ecmascript() {
+                            state.regex_allowed = b"=([{,;:!?+-*%&|^~".contains(&byte);
+                        }
                         emit(TokenSpan {
                             source: offset..end,
                             kind: if b"+-*/=<>():.,;[]{}!?|&".contains(&byte) {
@@ -748,6 +1113,23 @@ pub fn scan(
                 emit(TokenSpan {
                     source: state.start..end,
                     kind: SyntaxKind::Operator,
+                });
+                state.mode = Mode::Normal;
+            }
+            Mode::AtPrefix
+            | Mode::HashPrefix
+            | Mode::PhpOpen
+            | Mode::PhpClose
+            | Mode::PhpLess
+            | Mode::PhpLineQuestion => {
+                emit(TokenSpan {
+                    source: state.start..end,
+                    kind: match state.mode {
+                        Mode::HashPrefix if profile == SyntaxProfile::Php => SyntaxKind::Comment,
+                        Mode::PhpLineQuestion => SyntaxKind::Comment,
+                        Mode::PhpOpen => SyntaxKind::Plain,
+                        _ => SyntaxKind::Operator,
+                    },
                 });
                 state.mode = Mode::Normal;
             }
@@ -793,6 +1175,7 @@ fn word_byte(byte: u8, profile: SyntaxProfile) -> bool {
         || byte == b'_'
         || byte >= 0x80
         || (byte == b'-' && profile == SyntaxProfile::Abl)
+        || (byte == b'$' && profile.dollar_identifier())
 }
 fn identifier_start(byte: u8) -> bool {
     byte.is_ascii_alphabetic() || byte == b'_' || byte >= 0x80
@@ -1020,6 +1403,9 @@ fn number(bytes: &[u8], strict: bool) -> bool {
     i == bytes.len()
 }
 fn keyword(profile: SyntaxProfile, bytes: &[u8]) -> bool {
+    if profile.modern() {
+        return modern::keyword(profile, bytes);
+    }
     if profile == SyntaxProfile::Rust {
         return matches!(
             bytes,
@@ -1208,6 +1594,48 @@ fn keyword(profile: SyntaxProfile, bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn modern_profiles_keep_lexical_state_across_every_byte_boundary() {
+        type Case<'a> = (SyntaxProfile, &'a [u8], &'a [(&'a [u8], SyntaxKind)]);
+        let cases: &[Case<'_>] = &[
+            (SyntaxProfile::CSharp, b"#nullable enable\nclass Test { string s = @\"dos \"\"x\"\"\nliteral\"; var raw = \"\"\"\nraw // test\n\"\"\"; int @class = 0x2Au; }",
+                &[(b"#nullable", SyntaxKind::Preprocessor), (b"class Test", SyntaxKind::Keyword),
+                    (b"literal", SyntaxKind::String), (b"raw // test", SyntaxKind::String), (b"0x2A", SyntaxKind::Number)]),
+            (SyntaxProfile::Java, b"record Datos(int n) { String t = \"\"\"\n// dato\n\"\"\"; int m = 0b1010; }",
+                &[(b"record", SyntaxKind::Keyword), (b"// dato", SyntaxKind::String), (b"0b1010", SyntaxKind::Number)]),
+            (SyntaxProfile::JavaScript, b"#!/usr/bin/env node\nconst text = \x60a\nb\x60; const re = /[a/]+/; const div = n / 2n;\n",
+                &[(b"#!/", SyntaxKind::Comment), (b"const", SyntaxKind::Keyword), (b"a\nb", SyntaxKind::String),
+                    (b"/[a/", SyntaxKind::String), (b"/ 2n", SyntaxKind::Operator), (b"2n", SyntaxKind::Number)]),
+            (SyntaxProfile::TypeScript, b"export interface Item { clave: string }\nconst item = {} satisfies Item;",
+                &[(b"interface", SyntaxKind::Keyword), (b"string", SyntaxKind::Keyword), (b"satisfies", SyntaxKind::Keyword)]),
+            (SyntaxProfile::Php, b"<p>class Falso</p>\n<?php #[Tag] FUNCTION real() { $s = <<<'DOC'\r\nclass Falso2\r\n  DOC;\nreturn 0x1f; # comentario ?>\nclass Fuera\n<?= 42 ?>",
+                &[(b"class Falso<", SyntaxKind::Plain), (b"<?php", SyntaxKind::Preprocessor), (b"FUNCTION", SyntaxKind::Keyword),
+                    (b"class Falso2", SyntaxKind::String), (b"return", SyntaxKind::Keyword), (b"# comentario", SyntaxKind::Comment),
+                    (b"class Fuera", SyntaxKind::Plain), (b"42", SyntaxKind::Number)]),
+        ];
+        for &(profile, source, expected) in cases {
+            let whole = kinds(profile, source, source.len());
+            for chunk in 1..=source.len() {
+                assert_eq!(
+                    kinds(profile, source, chunk),
+                    whole,
+                    "{profile:?}, chunk {chunk}"
+                );
+            }
+            for &(needle, kind) in expected {
+                let offset = source
+                    .windows(needle.len())
+                    .position(|bytes| bytes == needle)
+                    .unwrap();
+                assert_eq!(
+                    whole[offset],
+                    kind,
+                    "{profile:?}: {}",
+                    String::from_utf8_lossy(needle)
+                );
+            }
+        }
+    }
     use super::*;
     fn kinds(profile: SyntaxProfile, bytes: &[u8], chunk: usize) -> Vec<SyntaxKind> {
         let mut result = vec![SyntaxKind::Plain; bytes.len()];

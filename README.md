@@ -177,11 +177,13 @@ El CI remoto se reserva para **M5 (hardening)**. Durante M2–M4 GitHub Actions 
 
 ## Varios lenguajes
 
-Perfiles iniciales: **ABL, C#, Rust, JavaScript/JSX, TypeScript/TSX, Python, HTML, CSS,
+Perfiles disponibles: **ABL, C#, Rust, JavaScript/JSX, TypeScript/TSX, PHP, Java, Python, HTML, CSS,
 SQL, XML, JSON, JSON con comentarios, Markdown, TOML, YAML, PowerShell, Shell y texto**.
 
 Actualmente se reconocen los perfiles y se pueden editar sus archivos como bytes.
-El resaltado léxico de **ABL, Rust, JSON y JSONC** está integrado en TUI y GUI; los demás perfiles conservan texto plano. Véase [contrato y evidencia local](docs/M2_SYNTAX_HIGHLIGHTING.md). Parsers, completado semántico, LSP y depuración siguen pendientes.
+La GUI y la TUI resaltan **ABL, C#, JavaScript/JSX, TypeScript/TSX, PHP,
+Java, Rust, JSON, JSONC y Markdown**. El panel Esquema usa proveedores
+locales para ABL, C#, Java, PHP, JavaScript y TypeScript. [Navegación y configuración compartida](docs/EXTENSION_ARCHITECTURE.md#resaltado-y-navegación-multilenguaje).
 El núcleo es independiente del lenguaje y la codificación se elegirá por documento;
 véase [docs/LENGUAJES.md](docs/LENGUAJES.md).
 

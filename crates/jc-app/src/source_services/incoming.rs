@@ -27,7 +27,8 @@ impl IncomingScan {
         if !target.starts_with(&root) {
             return Err(TaskFailure::Failed);
         }
-        let provider = self.provider.references.ok_or(TaskFailure::Failed)?;
+        let default_provider = self.provider.references.ok_or(TaskFailure::Failed)?;
+        let ecmascript = matches!(self.provider.language, "javascript" | "typescript");
         let propath = if matches!(
             self.provider.file_resolution,
             FileResolution::OrderedProjectPath
@@ -35,6 +36,14 @@ impl IncomingScan {
             load_propath(&root).map_err(|_| TaskFailure::Failed)?
         } else {
             None
+        };
+        let source_roots = if matches!(
+            self.provider.file_resolution,
+            FileResolution::ProjectImports
+        ) {
+            load_source_roots(&root).map_err(|_| TaskFailure::Failed)?
+        } else {
+            Vec::new()
         };
         let mut dirs = VecDeque::from([root.clone()]);
         let mut directories = 1;
@@ -77,9 +86,16 @@ impl IncomingScan {
                     dirs.push_back(path);
                     continue;
                 }
-                if jc_languages::detect(&path.to_string_lossy()).id != self.provider.language {
+                let language = jc_languages::detect(&path.to_string_lossy()).id;
+                let provider = if language == self.provider.language {
+                    default_provider
+                } else if ecmascript && matches!(language, "javascript" | "typescript") {
+                    crate::javascript_navigation::descriptor(language == "typescript")
+                        .references
+                        .ok_or(TaskFailure::Failed)?
+                } else {
                     continue;
-                }
+                };
                 files += 1;
                 if files > FILES || remaining == 0 {
                     return Err(TaskFailure::LimitExceeded);
@@ -104,6 +120,9 @@ impl IncomingScan {
                     let paths = match self.provider.file_resolution {
                         FileResolution::OrderedProjectPath => {
                             resolve_ordered(&root, &path, &relative, propath.as_deref(), false)
+                        }
+                        FileResolution::ProjectImports => {
+                            resolve_import(&root, &relative, &source_roots)
                         }
                         resolution => {
                             resolve_from(&root, &path, &relative, resolution, SourceMode::Incoming)

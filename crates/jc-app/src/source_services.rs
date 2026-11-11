@@ -103,6 +103,8 @@ impl SourceItem {
 pub enum FileResolution {
     ProjectCandidates,
     DocumentRelative,
+    RelativeModule,
+    ProjectImports,
     OrderedProjectPath,
 }
 
@@ -228,7 +230,8 @@ impl Default for SourceRegistry {
         Self {
             providers: vec![
                 crate::document_links::descriptor(),
-                crate::javascript_navigation::descriptor(),
+                crate::javascript_navigation::descriptor(false),
+                crate::javascript_navigation::descriptor(true),
                 SourceProviderDescriptor {
                     id: "core.words",
                     language: "*",
@@ -241,7 +244,10 @@ impl Default for SourceRegistry {
                     rename: None,
                     snippets: &[],
                 },
-            ],
+            ]
+            .into_iter()
+            .chain(crate::code_navigation::descriptors())
+            .collect(),
         }
     }
 }
@@ -1109,7 +1115,7 @@ fn reference_root<'a>(root: Option<&'a Path>, request: &'a Request) -> Result<&'
     root.or_else(|| {
         if matches!(
             request.provider.file_resolution,
-            FileResolution::DocumentRelative
+            FileResolution::DocumentRelative | FileResolution::RelativeModule
         ) && request.origin.path.is_absolute()
         {
             request.origin.path.parent()
@@ -1145,6 +1151,11 @@ fn resolve_from(
         FileResolution::DocumentRelative => {
             find_reference_candidates(root, source, relative, false)
         }
+        FileResolution::RelativeModule => resolve_module(root, source, relative),
+        FileResolution::ProjectImports => {
+            let parents = load_source_roots(root)?;
+            resolve_import(root, relative, &parents)
+        }
         FileResolution::OrderedProjectPath => {
             let propath = load_propath(root)?;
             resolve_ordered(
@@ -1177,13 +1188,21 @@ fn resolve_ordered(
 
 /// Reads the ordered project directories shared by static navigation and the AVM.
 pub fn load_propath(root: &Path) -> Result<Option<Vec<PathBuf>>, String> {
-    let config = root.join(".cide").join("propath");
+    load_project_paths(root, "propath", "PROPATH")
+}
+
+fn load_project_paths(
+    root: &Path,
+    file: &str,
+    label: &str,
+) -> Result<Option<Vec<PathBuf>>, String> {
+    let config = root.join(".cide").join(file);
     let bytes = match jc_files::read_in_root(root, &config, 8192) {
         Ok((_, bytes)) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("No se pudo leer PROPATH: {error}")),
+        Err(error) => return Err(format!("No se pudo leer {label}: {error}")),
     };
-    let config = std::str::from_utf8(&bytes).map_err(|_| "PROPATH debe estar en UTF-8")?;
+    let config = std::str::from_utf8(&bytes).map_err(|_| format!("{label} debe estar en UTF-8"))?;
     let mut parents = Vec::new();
     for entry in config.trim_start_matches('\u{feff}').lines().map(str::trim) {
         if entry.is_empty() || entry.starts_with('#') {
@@ -1194,13 +1213,73 @@ pub fn load_propath(root: &Path) -> Result<Option<Vec<PathBuf>>, String> {
             || entry.chars().any(char::is_control)
             || entry.contains(',')
         {
-            return Err(
-                "PROPATH admite hasta 32 directorios relativos al proyecto, sin comas".into(),
-            );
+            return Err(format!(
+                "{label} admite hasta 32 directorios relativos al proyecto, sin comas"
+            ));
         }
         parents.push(root.join(entry));
     }
     Ok(Some(parents))
+}
+
+fn load_source_roots(root: &Path) -> Result<Vec<PathBuf>, String> {
+    Ok(
+        load_project_paths(root, "source-roots", "Raíces de código")?.unwrap_or_else(|| {
+            [".", "src/main/java", "src/test/java", "src"]
+                .map(|path| root.join(path))
+                .to_vec()
+        }),
+    )
+}
+
+fn resolve_import(
+    root: &Path,
+    relative: &str,
+    parents: &[PathBuf],
+) -> Result<Vec<PathBuf>, String> {
+    candidates_from(root, relative, parents.iter().map(PathBuf::as_path), false)
+}
+
+fn resolve_module(root: &Path, source: &Path, relative: &str) -> Result<Vec<PathBuf>, String> {
+    let typescript = jc_languages::detect(&source.to_string_lossy()).id == "typescript";
+    let mut candidates = Vec::with_capacity(10);
+    let path = Path::new(relative);
+    if typescript {
+        match path.extension().and_then(|part| part.to_str()) {
+            Some("js") => {
+                candidates.extend([path.with_extension("ts"), path.with_extension("tsx")])
+            }
+            Some("mjs") => candidates.push(path.with_extension("mts")),
+            Some("cjs") => candidates.push(path.with_extension("cts")),
+            _ => {}
+        }
+    }
+    candidates.push(path.to_owned());
+    if path.extension().is_none() {
+        let extensions: &[&str] = if typescript {
+            &["ts", "tsx", "js", "json"]
+        } else {
+            &["js", "json"]
+        };
+        if !relative.ends_with('/') {
+            candidates.extend(extensions.iter().map(|ext| path.with_extension(ext)));
+        }
+        candidates.extend(
+            extensions
+                .iter()
+                .map(|ext| path.join("index").with_extension(ext)),
+        );
+    }
+    for candidate in candidates {
+        let Some(candidate) = candidate.to_str() else {
+            continue;
+        };
+        let found = find_reference_candidates(root, source, candidate, false)?;
+        if !found.is_empty() {
+            return Ok(found);
+        }
+    }
+    Ok(Vec::new())
 }
 
 fn project_relative(path: &Path) -> bool {
