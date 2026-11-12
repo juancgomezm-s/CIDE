@@ -31,6 +31,7 @@ struct Catalog {
     records: Vec<SchemaRecord>,
     codec: String,
     aliases: Vec<DatabaseAlias>,
+    version: String,
 }
 
 pub struct SchemaUpdate {
@@ -205,6 +206,9 @@ fn load(root: &Path, cancel: &Cancellation) -> Result<Catalog, String> {
         records: response.schema,
         codec: response.cpinternal,
         aliases: profile.aliases,
+        version: response
+            .avm_version
+            .ok_or("Falta la versión del AVM en el catálogo")?,
     })
 }
 
@@ -276,7 +280,7 @@ impl Catalog {
                 SchemaRecord::IndexField { .. } => {}
             }
         }
-        app.push_output(format!("Esquema ABL · bases {databases} · tablas {tables} · campos {fields} · índices {indexes}"));
+        app.push_output(format!("Esquema ABL · bases {databases} · tablas {tables} · campos {fields} · índices {indexes} · OpenEdge AVM {}", self.version));
         let first = app.output().last().map(|row| row.id);
         for record in self.records.iter().take(PANEL_RECORDS) {
             app.push_output(self.line(record));

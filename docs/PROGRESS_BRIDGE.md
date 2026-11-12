@@ -12,6 +12,7 @@ instalación y las páginas de códigos del proyecto. Por ejemplo:
 executable=C:/Progressx86/OpenEdge/bin/_progres.exe
 cpinternal=iso8859-1
 cpstream=ibm850
+# version=10.0B
 # pf=config/desarrollo.local.pf
 # ini=config/progress.local.ini
 # aliases=negocio:devlogica,archivo:vacia
@@ -23,6 +24,12 @@ Configura aquí solo ejecutables y parámetros de un entorno de desarrollo de
 confianza. La sesión por lotes puede acceder a los recursos que declaren el
 programa y su `.pf`. Las páginas de códigos verificadas en este bloque son
 ISO-8859-1 para diagnósticos y IBM850 para salida.
+
+`version` es opcional. Fija el valor exacto de `PROVERSION` que esperas del
+ejecutable, por ejemplo `10.0B` o `11.7`. **Salida** informa la versión que
+ejecutó el auxiliar. Si difiere de la configurada, el puente registra el error
+en **Problemas** antes de compilar, ejecutar un programa o leer el catálogo.
+Las conexiones que declare el `.pf` forman parte del arranque del AVM.
 
 Para usar una base de desarrollo, declara sus conexiones en el `.pf`.
 Usa `-ld` para fijar el nombre lógico y `-RO` para abrir una base local
@@ -72,6 +79,10 @@ respuesta viajan en hexadecimal, con su página de códigos de origen.
 solicitud. Las consultas de esquema con `JCIDE/2` incluyen el registro
 `DATABASE`, que identifica también bases sin tablas de usuario. Las respuestas
 de `JCIDE/1` mantienen los registros de la versión anterior.
+
+GUI y TUI envían `JCIDE/3`, con la versión esperada o una línea vacía después
+de los aliases. Su cabecera `JCIDE|2` incluye la versión efectiva en hexadecimal.
+Las solicitudes `JCIDE/1` y `JCIDE/2` siguen devolviendo `JCIDE|1`.
 Los otros registros son `DIAG`, `TABLE`, `FIELD`, `INDEX`, `INDEX_FIELD`
 y el terminador `END|OK` o `END|ERROR`.
 
@@ -103,7 +114,8 @@ la TUI de esa entrega ejecutó el procedimiento desde Herramientas, mostró
 su texto en Salida y abrió Problemas al compilar con una inclusión ausente.
 
 La prueba real compartida genera su propio proyecto de prueba. Define
-`CIDE_TEST_PROGRESS_EXE` con la ruta al AVM y ejecuta:
+`CIDE_TEST_PROGRESS_EXE` con la ruta al AVM y `CIDE_TEST_PROGRESS_EXPECT_VERSION`
+con la versión que quieres confirmar. Ejecuta:
 
 ```console
 cargo test -p jc-progress --features source-services --lib progress_real_ --locked --offline -- --ignored
@@ -139,4 +151,31 @@ en una terminal privada, mostró el alias inválido en Problemas y reabrió
 el último catálogo válido desde su encabezado. Se verificaron los hashes
 de los diez archivos de datos y control de las bases de prueba.
 
-Queda por verificar OpenEdge 10.0B y aplicar el perfil a una base del ERP.
+## Compatibilidad con OpenEdge 10.0B y perfil del ERP
+
+Los auxiliares se compilan como fuente procedural con el AVM configurado.
+Los `.r` se generan para ese mismo AVM. Para la prueba en 10.0B, usa su
+`_progres.exe`, configura `version=10.0B` y prepara bases de desarrollo
+compatibles con esa versión. El recorrido de 10.0B cubre `.p` y `.w`. Las
+clases ABL se prueban con una versión que admita ese lenguaje. [Compatibilidad del código r](https://progress.my.salesforce-sites.com/ProgressKB/articles/Article/20922) · [Historial de versiones de Progress](https://community-archive.progress.com/forums/00026/08003.html)
+
+Para validar un perfil del ERP, abre la raíz que contenga `.cide/progress.local.ini`
+con un `.pf` de desarrollo autorizado para consultar el diccionario en solo lectura.
+Define `CIDE_TEST_PROGRESS_ERP_PROJECT` con esa raíz y ejecuta:
+
+```console
+cargo test -p jc-gui -p jc-tui --lib progress_real_erp_ --locked --offline -- --ignored --test-threads=1
+```
+
+Los recorridos actualizan el esquema, comprueban que **Salida** identifique
+el AVM y muestre tablas, y vuelven a abrir el catálogo desde la caché. El
+auxiliar consulta metadatos del diccionario con `NO-LOCK`. El perfil y sus
+credenciales deben quedar en archivos locales del entorno de prueba.
+
+En este equipo está instalada la AVM 11.7. Pasaron seis recorridos con esa
+AVM, dos por cada capa de prueba: adaptador, GUI y TUI. Se comprobó el rechazo
+de una versión configurada incompatible antes de ejecutar el procedimiento,
+y las dos versiones anteriores del protocolo conservaron sus respuestas.
+Las bases de muestra conservaron sus hashes. También pasaron 22 pruebas
+ordinarias de `jc-progress`, formato y Clippy del workspace. La ejecución en
+10.0B y la consulta de un perfil real del ERP quedan pendientes de esos entornos.

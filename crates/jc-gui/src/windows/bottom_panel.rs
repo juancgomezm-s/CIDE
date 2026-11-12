@@ -457,12 +457,24 @@ fn progress_real_gui_command_routes_to_output_and_problems() {
 #[test]
 #[ignore = "requiere el proyecto sintético de esquema de OpenEdge"]
 fn progress_real_schema_gui_refreshes_and_reopens_the_catalog() {
+    let root = std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap();
+    exercise_progress_schema_gui(root.into(), true);
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "requiere CIDE_TEST_PROGRESS_ERP_PROJECT con un perfil de desarrollo autorizado"]
+fn progress_real_erp_gui_refreshes_and_reopens_the_catalog() {
+    let root = std::env::var_os("CIDE_TEST_PROGRESS_ERP_PROJECT").unwrap();
+    exercise_progress_schema_gui(root.into(), false);
+}
+
+#[cfg(test)]
+fn exercise_progress_schema_gui(root: std::path::PathBuf, synthetic: bool) {
     use std::{
-        path::PathBuf,
         thread,
         time::{Duration, Instant},
     };
-    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
     let mut state = State::new(&crate::GuiOptions {
         project_root: Some(root),
         ..Default::default()
@@ -471,31 +483,37 @@ fn progress_real_schema_gui_refreshes_and_reopens_the_catalog() {
     assert!(!state.context().has_database_schema);
     state.execute_menu(CommandId::ProgressRefreshSchema);
     assert!(state.progress_schema.busy(), "{}", state.status);
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let deadline = Instant::now() + Duration::from_secs(if synthetic { 8 } else { 35 });
     while state.progress_schema.busy() {
         state.poll_tasks();
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(15));
     }
-    assert!(
-        state.context().has_database_schema,
-        "{:?}",
-        state.workbench.problems()
-    );
+    assert!(state.context().has_database_schema, "{}", state.status);
     assert_eq!(state.bottom.kind, PanelKind::Output);
-    assert!(state
-        .workbench
-        .output()
+    let output = state.workbench.output();
+    assert!(output
         .iter()
-        .any(|r| r.contains("Tabla devlogica.customer")));
+        .any(|row| row.starts_with("Esquema ABL") && row.contains("OpenEdge AVM ")));
+    assert!(output.iter().any(|row| row.starts_with("Tabla ")));
+    if synthetic {
+        assert!(output
+            .iter()
+            .any(|row| row.contains("Tabla devlogica.customer")));
+    }
+    let old_count = output.len();
     state.execute_menu(CommandId::ViewDatabase);
-    assert!(state
-        .workbench
-        .output()
-        .iter()
-        .any(|r| r.contains("Base vacia")));
+    assert!(state.workbench.output().len() > old_count);
+    assert!(!state.progress_schema.busy());
     assert!(state.bottom.output.selected.is_some());
     assert!(state.bottom.output.scroll > 0);
-    assert!(state.workbench.output()[state.bottom.output.scroll + 1].contains("Base devlogica"));
+    assert!(state.workbench.output()[state.bottom.output.scroll + 1].starts_with("Base "));
+    if synthetic {
+        assert!(state
+            .workbench
+            .output()
+            .iter()
+            .any(|row| row.starts_with("Base vacia")));
+    }
     assert_eq!(state.status, "Esquema ABL · consulta Salida");
 }

@@ -65,6 +65,12 @@ fn progress_real_propath_compile_run_diagnostics_and_cancel() {
         .output()
         .iter()
         .any(|r| r.contains("Sintaxis ABL comprobada")));
+    if let Ok(expected) = std::env::var("CIDE_TEST_PROGRESS_EXPECT_VERSION") {
+        assert!(app
+            .output()
+            .iter()
+            .any(|row| row.text == format!("OpenEdge AVM {expected}")));
+    }
     assert!(!root.join("programa.r").exists());
     submit(Action::Compile, &app, &mut jobs, Some(root)).unwrap();
     assert!(
@@ -124,6 +130,21 @@ fn progress_real_propath_compile_run_diagnostics_and_cancel() {
     open(
         &mut app,
         root,
+        "ventana.w",
+        "DEFINE VARIABLE cTexto AS CHARACTER NO-UNDO.\ncTexto = \"CIDE\".\n",
+    );
+    submit(Action::Check, &app, &mut jobs, Some(root)).unwrap();
+    assert!(
+        !completion(&complete(&mut app, &mut jobs)).1,
+        "{:?}",
+        app.problems()
+    );
+    assert!(!root.join("ventana.r").exists());
+
+    app.reset_task_panels();
+    open(
+        &mut app,
+        root,
         "error.p",
         "RETURN ERROR \"fallo de prueba\".\n",
     );
@@ -153,6 +174,28 @@ fn progress_real_propath_compile_run_diagnostics_and_cancel() {
     assert!(app.problems().is_empty());
     assert!(app.output().iter().any(|r| r.contains("cancelada")));
     assert_eq!(fs::read(root.join("programa.p")).unwrap(), b"{valor.i}\n");
+
+    app.reset_task_panels();
+    let profile_path = root.join(PROFILE);
+    let profile = fs::read_to_string(&profile_path).unwrap();
+    fs::write(&profile_path, format!("{profile}version=99.0\n")).unwrap();
+    open(&mut app, root, "version.p",
+        "OUTPUT TO \"version-ejecutada.txt\".\nPUT UNFORMATTED \"ejecutado\" SKIP.\nOUTPUT CLOSE.\n");
+    submit(Action::Run, &app, &mut jobs, Some(root)).unwrap();
+    assert!(completion(&complete(&mut app, &mut jobs)).1);
+    assert!(app
+        .problems()
+        .iter()
+        .any(|row| row.contains("requiere 99.0")));
+    assert!(app
+        .output()
+        .iter()
+        .any(|row| row.starts_with("OpenEdge AVM ")));
+    assert!(!root.join("version-ejecutada.txt").exists());
+    fs::write(&profile_path, profile).unwrap();
+    submit(Action::Run, &app, &mut jobs, Some(root)).unwrap();
+    assert!(!completion(&complete(&mut app, &mut jobs)).1);
+    assert!(root.join("version-ejecutada.txt").is_file());
 }
 
 #[test]

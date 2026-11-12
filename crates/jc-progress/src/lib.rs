@@ -139,10 +139,14 @@ fn code_page(value: &str, field: &str) -> Result<(), BridgeError> {
 
 impl BridgeRequest {
     pub fn encode(&self) -> Result<Vec<u8>, BridgeError> {
-        self.encode_request(None)
+        self.encode_request(None, None)
     }
 
-    fn encode_request(&self, aliases: Option<&str>) -> Result<Vec<u8>, BridgeError> {
+    fn encode_request(
+        &self,
+        aliases: Option<&str>,
+        version: Option<&str>,
+    ) -> Result<Vec<u8>, BridgeError> {
         let output = path_line(&self.output_dir, "output_dir")?;
         let source = match (&self.action, &self.source) {
             (Action::Schema, None) => "",
@@ -153,13 +157,26 @@ impl BridgeRequest {
             (_, None) => return Err(config_error("check/compile/run requests require source")),
         };
         let propath = ascii_line(self.propath.as_deref().unwrap_or(""), "propath")?;
-        let version = if aliases.is_some() { 2 } else { 1 };
+        let protocol = if version.is_some() {
+            3
+        } else if aliases.is_some() {
+            2
+        } else {
+            1
+        };
         let mut data = format!(
-            "JCIDE/{version}\n{}\n{source}\n{output}\n{propath}\n",
+            "JCIDE/{protocol}\n{}\n{source}\n{output}\n{propath}\n",
             self.action.as_str()
         );
-        if let Some(aliases) = aliases {
-            data.push_str(ascii_line(aliases, "aliases")?);
+        if protocol >= 2 {
+            data.push_str(ascii_line(aliases.unwrap_or_default(), "aliases")?);
+            data.push('\n');
+        }
+        if let Some(version) = version {
+            if !version.is_empty() && !valid_avm_version(version) {
+                return Err(config_error("Versión esperada de OpenEdge inválida"));
+            }
+            data.push_str(version);
             data.push('\n');
         }
         Ok(data.into_bytes())
@@ -274,9 +291,19 @@ pub enum CompletionStatus {
 pub struct BridgeResponse {
     pub cpinternal: String,
     pub cpstream: String,
+    pub avm_version: Option<String>,
     pub diagnostics: Vec<Diagnostic>,
     pub schema: Vec<SchemaRecord>,
     pub status: CompletionStatus,
+}
+
+fn valid_avm_version(value: &str) -> bool {
+    value.len() <= 64
+        && value.as_bytes().first().is_some_and(u8::is_ascii_digit)
+        && value.contains('.')
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
 }
 
 fn nibble(byte: u8) -> Option<u8> {
@@ -359,12 +386,12 @@ pub fn parse_response(bytes: &[u8]) -> Result<BridgeResponse, BridgeError> {
     if header.len() > 128 * 1024 {
         return Err(parse_error(1, "record exceeds 128 KiB"));
     }
-    let parts: Vec<_> = header.splitn(5, '|').collect();
-    if parts.len() != 4 || parts[0] != "JCIDE" || parts[1] != "1" {
-        return Err(parse_error(
-            1,
-            "expected JCIDE|1|cpinternal_hex|cpstream_hex",
-        ));
+    let parts: Vec<_> = header.splitn(6, '|').collect();
+    if !matches!(
+        parts.as_slice(),
+        ["JCIDE", "1", _, _] | ["JCIDE", "2", _, _, _]
+    ) {
+        return Err(parse_error(1, "invalid JCIDE response header"));
     }
     let cpinternal = String::from_utf8(text(parts[2], 1)?.0)
         .map_err(|_| parse_error(1, "non-ASCII code-page name"))?;
@@ -372,6 +399,16 @@ pub fn parse_response(bytes: &[u8]) -> Result<BridgeResponse, BridgeError> {
         .map_err(|_| parse_error(1, "non-ASCII code-page name"))?;
     code_page(&cpinternal, "cpinternal")?;
     code_page(&cpstream, "cpstream")?;
+    let avm_version = if let Some(field) = parts.get(4) {
+        let version = String::from_utf8(text(field, 1)?.0)
+            .map_err(|_| parse_error(1, "versión del AVM inválida"))?;
+        if !valid_avm_version(&version) {
+            return Err(parse_error(1, "versión del AVM inválida"));
+        }
+        Some(version)
+    } else {
+        None
+    };
     let mut diagnostics = Vec::new();
     let mut schema = Vec::new();
     let mut status = None;
@@ -449,6 +486,7 @@ pub fn parse_response(bytes: &[u8]) -> Result<BridgeResponse, BridgeError> {
     Ok(BridgeResponse {
         cpinternal,
         cpstream,
+        avm_version,
         diagnostics,
         schema,
         status,

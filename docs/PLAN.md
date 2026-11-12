@@ -566,7 +566,10 @@ inclusiones anidadas, diagnósticos en Problemas, captura en Salida y
 cancelación. El segundo bloque validó un perfil `.pf` con dos bases de
 desarrollo aisladas y aliases reales. GUI y TUI actualizan y reabren el
 catálogo de esquema; una falla conserva la última lectura válida.
-OpenEdge 10.0B y un perfil del ERP siguen pendientes.
+El perfil puede fijar la versión del AVM y **Salida** registra la versión
+efectiva. Los recorridos de validación del perfil ERP están preparados para
+ambas interfaces. Queda ejecutar las pruebas con OpenEdge 10.0B y con un
+perfil autorizado del ERP de desarrollo.
 [Configuración y evidencia](PROGRESS_BRIDGE.md)
 
 Por prioridad del usuario, se adelantó la primera integración LSP de GUI y TUI.

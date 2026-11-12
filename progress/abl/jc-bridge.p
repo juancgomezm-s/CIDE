@@ -20,6 +20,8 @@ DEFINE VARIABLE cProgram      AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cAliases      AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cAlias        AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cAliasPair    AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cExpectedVersion AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cAvmVersion   AS CHARACTER NO-UNDO.
 DEFINE VARIABLE iAlias        AS INTEGER   NO-UNDO.
 DEFINE VARIABLE iSlash        AS INTEGER   NO-UNDO.
 DEFINE VARIABLE iMessage      AS INTEGER   NO-UNDO.
@@ -68,12 +70,15 @@ DO ON ERROR UNDO, LEAVE ON ENDKEY UNDO, LEAVE:
     IMPORT STREAM requestInput UNFORMATTED cSource.
     IMPORT STREAM requestInput UNFORMATTED cOutputDir.
     IMPORT STREAM requestInput UNFORMATTED cProjectPath.
-    IF cHeader = "JCIDE/2" THEN
+    IF cHeader = "JCIDE/2" OR cHeader = "JCIDE/3" THEN
         IMPORT STREAM requestInput UNFORMATTED cAliases.
+    IF cHeader = "JCIDE/3" THEN
+        IMPORT STREAM requestInput UNFORMATTED cExpectedVersion.
     INPUT STREAM requestInput CLOSE.
     lRead = TRUE.
 END.
-IF NOT lRead OR (cHeader <> "JCIDE/1" AND cHeader <> "JCIDE/2") OR cOutputDir = "" THEN QUIT.
+IF NOT lRead OR (cHeader <> "JCIDE/1" AND cHeader <> "JCIDE/2" AND cHeader <> "JCIDE/3")
+    OR cOutputDir = "" THEN QUIT.
 
 cResponse = cOutputDir + "/response.txt".
 FILE-INFO:FILE-NAME = cResponse.
@@ -85,7 +90,19 @@ cHelperDir = SUBSTRING(cSelf, 1, iSlash).
 IF cProjectPath <> "" THEN PROPATH = cProjectPath.
 
 OUTPUT TO VALUE(cResponse) NO-CONVERT.
-PUT UNFORMATTED "JCIDE|1|" HexText(SESSION:CPINTERNAL)
+IF cHeader = "JCIDE/3" THEN DO:
+    cAvmVersion = PROVERSION.
+    PUT UNFORMATTED "JCIDE|2|" HexText(SESSION:CPINTERNAL)
+        "|" HexText(SESSION:CPSTREAM) "|" HexText(cAvmVersion) SKIP.
+    IF cExpectedVersion <> "" AND cExpectedVersion <> cAvmVersion THEN DO:
+        PUT UNFORMATTED "DIAG|error|-|-|-|"
+            HexText("Version del AVM: " + cAvmVersion + ". El perfil requiere " + cExpectedVersion + ".") SKIP.
+        PUT UNFORMATTED "END|ERROR" SKIP.
+        OUTPUT CLOSE.
+        QUIT.
+    END.
+END.
+ELSE PUT UNFORMATTED "JCIDE|1|" HexText(SESSION:CPINTERNAL)
     "|" HexText(SESSION:CPSTREAM) SKIP.
 
 DO iAlias = 1 TO NUM-ENTRIES(cAliases):
@@ -175,7 +192,7 @@ IF NOT lFailed THEN CASE cAction:
                     HexText("No se pudo vincular DICTDB a " + cDatabase + ".") SKIP.
                 NEXT.
             END.
-            IF cHeader = "JCIDE/2" THEN
+            IF cHeader = "JCIDE/2" OR cHeader = "JCIDE/3" THEN
                 PUT UNFORMATTED "DATABASE|" HexText(cDatabase) SKIP.
             lSchemaEncodingFailed = FALSE.
             RUN VALUE(cHelperDir + "jc-schema.p")

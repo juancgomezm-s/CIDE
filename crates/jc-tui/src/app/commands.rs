@@ -469,42 +469,60 @@ fn progress_real_tui_command_routes_to_output_and_problems() {
 #[test]
 #[ignore = "requiere el proyecto sintético de esquema de OpenEdge"]
 fn progress_real_schema_tui_refreshes_and_reopens_the_catalog() {
+    let root = std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap();
+    exercise_progress_schema_tui(root.into(), true);
+}
+
+#[cfg(test)]
+#[test]
+#[ignore = "requiere CIDE_TEST_PROGRESS_ERP_PROJECT con un perfil de desarrollo autorizado"]
+fn progress_real_erp_tui_refreshes_and_reopens_the_catalog() {
+    let root = std::env::var_os("CIDE_TEST_PROGRESS_ERP_PROJECT").unwrap();
+    exercise_progress_schema_tui(root.into(), false);
+}
+
+#[cfg(test)]
+fn exercise_progress_schema_tui(root: std::path::PathBuf, synthetic: bool) {
     use std::{
-        path::PathBuf,
         thread,
         time::{Duration, Instant},
     };
-    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
     let mut app = TuiApp::new(Default::default());
     app.set_explorer_root(root).unwrap();
     app.dispatch(CommandId::ProgressRefreshSchema);
     assert!(app.progress_schema.busy(), "{}", app.status);
-    let deadline = Instant::now() + Duration::from_secs(8);
+    let deadline = Instant::now() + Duration::from_secs(if synthetic { 8 } else { 35 });
     while app.progress_schema.busy() {
         app.poll_tasks();
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(15));
     }
-    assert!(
-        app.command_context().has_database_schema,
-        "{:?}",
-        app.workbench.problems()
-    );
+    assert!(app.command_context().has_database_schema, "{}", app.status);
     assert_eq!(app.panels.bottom(), BottomPanel::Output);
-    assert!(app
-        .workbench
-        .output()
+    let output = app.workbench.output();
+    assert!(output
         .iter()
-        .any(|r| r.contains("Tabla devlogica.customer")));
+        .any(|row| row.starts_with("Esquema ABL") && row.contains("OpenEdge AVM ")));
+    assert!(output.iter().any(|row| row.starts_with("Tabla ")));
+    if synthetic {
+        assert!(output
+            .iter()
+            .any(|row| row.contains("Tabla devlogica.customer")));
+    }
+    let old_count = output.len();
     app.dispatch(CommandId::ViewDatabase);
-    assert!(app
-        .workbench
-        .output()
-        .iter()
-        .any(|r| r.contains("Base vacia")));
+    assert!(app.workbench.output().len() > old_count);
+    assert!(!app.progress_schema.busy());
     let (first, selected) = app.bottom_window(app.workbench.output().len(), 7);
     assert!(first > 0);
     assert_eq!(first, selected);
-    assert!(app.workbench.output()[first + 1].contains("Base devlogica"));
+    assert!(app.workbench.output()[first + 1].starts_with("Base "));
+    if synthetic {
+        assert!(app
+            .workbench
+            .output()
+            .iter()
+            .any(|row| row.starts_with("Base vacia")));
+    }
     assert_eq!(app.status, "Esquema ABL · consulta Salida");
 }

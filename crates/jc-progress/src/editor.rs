@@ -129,6 +129,7 @@ pub fn submit(
 struct EditorProfile {
     avm: ProgressProfile,
     aliases: Vec<DatabaseAlias>,
+    version: Option<String>,
 }
 
 struct DatabaseAlias {
@@ -181,6 +182,7 @@ fn load_profile(root: &Path) -> Result<EditorProfile, String> {
     let mut cpstream = None;
     let mut cpinternal = None;
     let mut aliases = None;
+    let mut version = None;
     for (index, line) in text.trim_start_matches('\u{feff}').lines().enumerate() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -199,6 +201,9 @@ fn load_profile(root: &Path) -> Result<EditorProfile, String> {
             "cpstream" => cpstream.replace(value.to_owned()).is_some(),
             "cpinternal" => cpinternal.replace(value.to_owned()).is_some(),
             "aliases" => aliases.replace(parse_aliases(value)?).is_some(),
+            "version" if crate::valid_avm_version(value) => {
+                version.replace(value.to_owned()).is_some()
+            }
             _ => return Err(invalid()),
         };
         if repeated {
@@ -218,6 +223,7 @@ fn load_profile(root: &Path) -> Result<EditorProfile, String> {
             cpinternal: cpinternal.ok_or(format!("Falta cpinternal en {PROFILE}"))?,
         },
         aliases: aliases.unwrap_or_default(),
+        version,
     })
 }
 
@@ -373,10 +379,11 @@ fn invoke(
         .map(|a| format!("{}={}", a.name, a.database))
         .collect::<Vec<_>>()
         .join(",");
-    let editor_aliases =
-        (request.action == Action::Schema || !aliases.is_empty()).then_some(aliases.as_str());
     let data = request
-        .encode_request(editor_aliases)
+        .encode_request(
+            Some(&aliases),
+            Some(profile.version.as_deref().unwrap_or_default()),
+        )
         .map_err(|e| e.to_string())?;
     let start = || -> io::Result<Child> {
         fs::write(&helper, HELPER)?;
@@ -434,7 +441,21 @@ fn invoke(
         status,
         log: bounded_read(&log, OUTPUT_LIMIT)?,
         response: bounded_read(&response, response_limit).and_then(|bytes| {
-            parse_response(&bytes).map_err(|error| format!("Respuesta del AVM inválida: {error}"))
+            let response = parse_response(&bytes)
+                .map_err(|error| format!("Respuesta del AVM inválida: {error}"))?;
+            let version = response
+                .avm_version
+                .as_deref()
+                .ok_or("El auxiliar ABL no informó la versión del AVM")?;
+            if response.status == CompletionStatus::Ok
+                && profile
+                    .version
+                    .as_deref()
+                    .is_some_and(|expected| !expected.eq_ignore_ascii_case(version))
+            {
+                return Err("La versión informada del AVM no coincide con el perfil".into());
+            }
+            Ok(response)
         }),
         cpstream: profile.avm.cpstream.clone(),
     })
@@ -527,6 +548,9 @@ fn publish(
             return Ok(false);
         }
     };
+    if let Some(version) = &response.avm_version {
+        output.push(TaskItem::Message(format!("OpenEdge AVM {version}")))?;
+    }
     if !result.status.success() {
         output.push(TaskItem::Problem(format!(
             "El AVM terminó con {}",

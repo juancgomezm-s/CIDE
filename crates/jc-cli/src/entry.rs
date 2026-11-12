@@ -94,6 +94,9 @@ fn run(args: Vec<OsString>) -> Result<(), Box<dyn Error>> {
             let response = parse_response(&bytes)?;
             println!("Status: {:?}", response.status);
             println!("CPINTERNAL: {}", response.cpinternal);
+            if let Some(version) = &response.avm_version {
+                println!("OpenEdge AVM: {version}");
+            }
             println!("CPSTREAM: {}", response.cpstream);
             println!("Diagnostics: {}", response.diagnostics.len());
             println!("Schema records: {}", response.schema.len());

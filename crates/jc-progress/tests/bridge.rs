@@ -2,6 +2,18 @@ use jc_progress::{
     build_command, parse_response, Action, BridgeRequest, CompletionStatus, ProgressProfile,
     SchemaRecord, Severity,
 };
+
+#[test]
+fn response_reports_avm_version_without_changing_legacy_header() {
+    let old = parse_response(b"JCIDE|1|7574662d38|7574662d38\r\nEND|OK\r\n").unwrap();
+    assert_eq!(old.avm_version, None);
+    let new = parse_response(b"JCIDE|2|7574662d38|7574662d38|31302e3042\r\nEND|OK\r\n").unwrap();
+    assert_eq!(new.avm_version.as_deref(), Some("10.0B"));
+    for invalid in ["", "31302e30327c", "31302e300a", "2e", "ff"] {
+        let response = format!("JCIDE|2|7574662d38|7574662d38|{invalid}\nEND|OK\n");
+        assert!(parse_response(response.as_bytes()).is_err());
+    }
+}
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
