@@ -74,6 +74,29 @@ fn push_reference(model: &mut Model, item: SourceItem) {
     }
 }
 
+pub(crate) fn definition_kind(keyword: &[u8]) -> Option<&'static str> {
+    let options: &[(&[u8], &str)] = &[
+        (b"VARIABLE", "Variable"),
+        (b"VAR", "Variable"),
+        (b"PARAMETER", "Parámetro"),
+        (b"BUFFER", "Búfer"),
+        (b"TEMP-TABLE", "Tabla temporal"),
+        (b"WORK-TABLE", "Tabla de trabajo"),
+        (b"DATASET", "Conjunto de datos"),
+        (b"QUERY", "Consulta"),
+        (b"FRAME", "Marco"),
+        (b"BUTTON", "Botón"),
+        (b"BROWSE", "Explorador de datos"),
+        (b"RECTANGLE", "Rectángulo"),
+        (b"IMAGE", "Imagen"),
+        (b"MENU", "Menú"),
+        (b"SUB-MENU", "Submenú"),
+    ];
+    options
+        .iter()
+        .find_map(|(name, kind)| keyword.eq_ignore_ascii_case(name).then_some(*kind))
+}
+
 fn definition(snapshot: &TaskSnapshot, after_define: usize) -> Option<Symbol> {
     let bytes = snapshot.bytes();
     let limit = after_define.saturating_add(1024).min(bytes.len());
@@ -95,28 +118,8 @@ fn definition(snapshot: &TaskSnapshot, after_define: usize) -> Option<Symbol> {
     let kind = loop {
         let range = word()?;
         let token = &bytes[range];
-        let options: &[(&[u8], &str)] = &[
-            (b"VARIABLE", "Variable"),
-            (b"VAR", "Variable"),
-            (b"PARAMETER", "Parámetro"),
-            (b"BUFFER", "Búfer"),
-            (b"TEMP-TABLE", "Tabla temporal"),
-            (b"WORK-TABLE", "Tabla de trabajo"),
-            (b"DATASET", "Conjunto de datos"),
-            (b"QUERY", "Consulta"),
-            (b"FRAME", "Marco"),
-            (b"BUTTON", "Botón"),
-            (b"BROWSE", "Explorador de datos"),
-            (b"RECTANGLE", "Rectángulo"),
-            (b"IMAGE", "Imagen"),
-            (b"MENU", "Menú"),
-            (b"SUB-MENU", "Submenú"),
-        ];
-        if let Some((_, kind)) = options
-            .iter()
-            .find(|(keyword, _)| token.eq_ignore_ascii_case(keyword))
-        {
-            break *kind;
+        if let Some(kind) = definition_kind(token) {
+            break kind;
         }
         let modifiers: &[&[u8]] = &[
             b"INPUT",

@@ -1,6 +1,6 @@
 use super::references::{binding_context, ReferenceScan};
 use super::{fold, Catalog, Context, Site, SourceItem, Target, Token, MAX_LOCAL_NAMES};
-use jc_app::TaskFailure;
+use jc_app::{TaskFailure, TaskItem, TaskOutput};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone)]
@@ -68,6 +68,40 @@ struct Routine {
     scope: Scope,
 }
 
+const MAX_OUTLINE_ROWS: usize = 63;
+
+#[derive(Default)]
+struct Outline {
+    rows: Vec<(Site, String)>,
+    truncated: bool,
+    skipped_include: bool,
+}
+
+impl Outline {
+    fn add(&mut self, kind: &str, name: &str, site: Site) {
+        if self.truncated {
+            return;
+        }
+        if self
+            .rows
+            .iter()
+            .any(|(existing, _)| existing.offset == site.offset && existing.file == site.file)
+        {
+            return;
+        }
+        if self.rows.len() == MAX_OUTLINE_ROWS {
+            self.truncated = true;
+            return;
+        }
+        let name: String = name
+            .chars()
+            .filter(|ch| !ch.is_control())
+            .take(64)
+            .collect();
+        self.rows.push((site, format!("{name} · {kind}")));
+    }
+}
+
 #[derive(Default)]
 pub(super) struct Symbols {
     global: Scope,
@@ -75,9 +109,55 @@ pub(super) struct Symbols {
     tables: Vec<TempTable>,
     declarations: usize,
     references: Option<ReferenceScan>,
+    outline: Option<Outline>,
 }
 
 impl Symbols {
+    pub(super) fn track_outline(&mut self) {
+        self.outline = Some(Outline::default());
+    }
+
+    pub(super) fn publish_outline(self, output: &mut TaskOutput) -> Result<(), TaskFailure> {
+        let outline = self.outline.expect("active outline");
+        for (site, label) in outline.rows {
+            output.push(TaskItem::Source(site.item(label, 0..0)))?;
+        }
+        let notice = match (outline.truncated, outline.skipped_include) {
+            (true, true) => Some(format!(
+                "Primeros {MAX_OUTLINE_ROWS} · inclusiones omitidas"
+            )),
+            (true, false) => Some(format!("Se muestran los primeros {MAX_OUTLINE_ROWS}")),
+            (false, true) => Some("Hay inclusiones que no se pudieron leer".into()),
+            (false, false) => None,
+        };
+        if let Some(notice) = notice {
+            output.push(TaskItem::Message(notice))?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn skip_outline_include(&mut self) -> bool {
+        if let Some(outline) = &mut self.outline {
+            outline.skipped_include = true;
+            return true;
+        }
+        false
+    }
+
+    pub(super) fn outline_include(&mut self, context: &Context<'_>, offset: usize, path: &str) {
+        if let Some(outline) = &mut self.outline {
+            outline.add(
+                "Inclusión",
+                path,
+                Site {
+                    offset,
+                    file: context.file.clone(),
+                    expansion: context.expansion,
+                },
+            );
+        }
+    }
+
     fn scope(&mut self) -> &mut Scope {
         self.local
             .as_mut()
@@ -117,6 +197,19 @@ impl Symbols {
     }
 
     fn register(&mut self, binding: Binding) -> Result<(), TaskFailure> {
+        if let Some(outline) = &mut self.outline {
+            outline.add(binding.kind, &binding.name, binding.site);
+            if let Some(Record::Temp(_)) = binding.record {
+                let table = self.tables.pop().expect("just declared temp-table");
+                for (kind, members) in [("Campo", table.fields), ("Índice", table.indexes)] {
+                    for member in members {
+                        let name = format!("{}.{}", binding.name, member.name);
+                        outline.add(kind, &name, member.site);
+                    }
+                }
+            }
+            return Ok(());
+        }
         self.declarations += 1;
         if self.declarations > MAX_LOCAL_NAMES {
             return Err(TaskFailure::LimitExceeded);
@@ -368,6 +461,30 @@ impl Symbols {
         let tokens = &context.tokens;
         let word = |index| tokens.get(index).and_then(|token| context.word(token));
         let is = |index, keyword| at(context, tokens, index, keyword);
+        if let Some(outline) = &mut self.outline {
+            let header = [
+                (b"CLASS".as_slice(), "Clase"),
+                (b"INTERFACE", "Interfaz"),
+                (b"ENUM", "Enumeración"),
+                (b"METHOD", "Método"),
+                (b"CONSTRUCTOR", "Constructor"),
+                (b"DESTRUCTOR", "Destructor"),
+            ]
+            .into_iter()
+            .find(|(keyword, _)| is(0, keyword));
+            if let Some((keyword, kind)) = header {
+                let name_at = if matches!(keyword, b"METHOD" | b"CONSTRUCTOR" | b"DESTRUCTOR") {
+                    (1..tokens.len())
+                        .find(|&i| is(i, b"("))
+                        .map_or(1, |i| i - 1)
+                } else {
+                    1
+                };
+                if let Some(name) = word(name_at) {
+                    outline.add(kind, &name, context.site(&tokens[name_at]));
+                }
+            }
+        }
         if is(0, b"END") {
             if let Some(routine) = &mut self.local {
                 if is(1, routine.kind.as_bytes()) || tokens.len() == 1 && routine.blocks == 0 {
@@ -440,12 +557,15 @@ impl Symbols {
                 b"PRIVATE",
                 b"PROTECTED",
                 b"PUBLIC",
+                b"PACKAGE-PRIVATE",
+                b"PACKAGE-PROTECTED",
                 b"STATIC",
                 b"SERIALIZABLE",
                 b"NON-SERIALIZABLE",
                 b"INPUT",
                 b"OUTPUT",
                 b"INPUT-OUTPUT",
+                b"RETURN",
             ]
             .iter()
             .any(|keyword| is(index, keyword))
@@ -507,11 +627,17 @@ impl Symbols {
             ("Tabla temporal", Some(record))
         } else if is(index, b"WORK-TABLE") {
             ("Tabla de trabajo", None)
-        } else if is(index, b"VARIABLE") {
+        } else if is(index, b"VARIABLE") || is(index, b"VAR") {
             ("Variable", None)
         } else if is(index, b"PARAMETER") && (is(start, b"AS") || is(start, b"LIKE")) {
             ("Parámetro", None)
         } else {
+            if let (Some(outline), Some(kind)) = (
+                &mut self.outline,
+                crate::source_services::definition_kind(context.bytes(&tokens[index])),
+            ) {
+                outline.add(kind, &name, context.site(&tokens[index + 1]));
+            }
             return Ok(());
         };
         self.register(Binding {

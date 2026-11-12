@@ -88,17 +88,17 @@ impl<'a> Includes<'a> {
 
     fn visit(
         &mut self,
-        directive: &str,
+        target: &str,
         encoding: TextEncoding,
         symbols: &mut Symbols,
         catalog: &Catalog,
         cancel: &Cancellation,
     ) -> Result<(), TaskFailure> {
-        let Some(target) = static_target(directive) else {
-            return Ok(());
-        };
-        let Some((path, bytes)) = self.read(target)? else {
-            return Ok(());
+        let (path, bytes) = match self.read(target) {
+            Ok(Some(result)) => result,
+            Ok(None) => return Ok(()),
+            Err(_) if symbols.skip_outline_include() => return Ok(()),
+            Err(error) => return Err(error),
         };
         let encoding = if std::str::from_utf8(&bytes).is_ok() {
             TextEncoding::Utf8
@@ -148,7 +148,10 @@ impl<'a> Includes<'a> {
                     } else if keyword.eq_ignore_ascii_case("&ENDIF") {
                         conditional = conditional.saturating_sub(1);
                     } else if conditional == 0 && standalone {
-                        self.visit(text, context.encoding, symbols, catalog, cancel)?;
+                        if let Some(path) = static_target(text) {
+                            symbols.outline_include(context, range.start, path);
+                            self.visit(path, context.encoding, symbols, catalog, cancel)?;
+                        }
                     }
                 }
             }

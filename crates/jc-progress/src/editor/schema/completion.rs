@@ -50,6 +50,15 @@ impl SchemaController {
         root.and_then(|root| project_source(app, root)).is_some()
     }
 
+    pub fn outline(&self, app: &Workbench, root: Option<&Path>) -> Option<Arc<dyn CatalogSource>> {
+        let root = root?;
+        Some(Arc::new(Provider {
+            catalog: None,
+            root: root.to_owned(),
+            source: project_source(app, root)?.to_owned(),
+        }))
+    }
+
     pub fn source(
         &self,
         app: &Workbench,
@@ -81,6 +90,17 @@ struct Provider {
 }
 
 impl Provider {
+    fn empty_catalog(&self) -> Catalog {
+        Catalog {
+            root: self.root.clone(),
+            live: true.into(),
+            records: Vec::new(),
+            codec: String::new(),
+            aliases: Vec::new(),
+            version: String::new(),
+        }
+    }
+
     fn live_catalog(&self) -> Option<Arc<Catalog>> {
         self.catalog
             .as_ref()?
@@ -117,19 +137,26 @@ impl CatalogSource for Provider {
                     output.push(TaskItem::Source(item))?;
                 }
             }
+            CatalogQuery::Symbols => {
+                let catalog = self.empty_catalog();
+                let mut symbols = Symbols::default();
+                symbols.track_outline();
+                Includes::new(&self.root, &self.source)
+                    .with_locations()
+                    .scan(
+                        &mut Context::new(snapshot.bytes(), snapshot.stamp.encoding),
+                        &mut symbols,
+                        &catalog,
+                        cancel,
+                    )?;
+                symbols.publish_outline(output)?;
+            }
             CatalogQuery::Definition { cursor } | CatalogQuery::References { cursor } => {
                 let empty;
                 let catalog = if let Some(catalog) = catalog.as_deref() {
                     catalog
                 } else {
-                    empty = Catalog {
-                        root: self.root.clone(),
-                        live: true.into(),
-                        records: Vec::new(),
-                        codec: String::new(),
-                        aliases: Vec::new(),
-                        version: String::new(),
-                    };
+                    empty = self.empty_catalog();
                     &empty
                 };
                 if matches!(query, CatalogQuery::References { .. }) {
@@ -275,9 +302,16 @@ impl<'a> Context<'a> {
                         || after.starts_with(b"/*")
                         || after.is_empty()
                             && self.tokens.first().is_some_and(|first| {
-                                [b"DEFINE".as_slice(), b"DEF", b"END", b"FUNCTION"]
-                                    .iter()
-                                    .any(|word| self.bytes(first).eq_ignore_ascii_case(word))
+                                [
+                                    b"DEFINE".as_slice(),
+                                    b"DEF",
+                                    b"END",
+                                    b"FUNCTION",
+                                    b"PROCEDURE",
+                                    b"METHOD",
+                                ]
+                                .iter()
+                                .any(|word| self.bytes(first).eq_ignore_ascii_case(word))
                             })))
         {
             if certain && !self.overflow {

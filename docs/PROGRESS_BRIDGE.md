@@ -189,6 +189,25 @@ el aviso de recorte y la apertura al lado en ambas interfaces. OpenEdge
 11.7 comprobó la sintaxis del ejemplo con un uso de la misma variable en
 el programa y en una inclusión anidada.
 
+### Esquema del archivo y sus inclusiones
+
+En la GUI, abre **Esquema → Símbolos**. En la TUI, elige **Proyecto →
+Símbolos**. En un proyecto ABL, la lista reúne las declaraciones del
+documento activo y de las inclusiones estáticas que resuelve por PROPATH.
+Los símbolos de una inclusión muestran el nombre del archivo. Los
+campos e índices de tablas temporales muestran el nombre de la tabla.
+
+Selecciona una fila y pulsa **Intro** para ir a la declaración o
+**Ctrl+Intro** para abrirla al lado. **F5**, con el panel enfocado, vuelve
+a leer las inclusiones guardadas. La lista muestra hasta 63 entradas y
+avisa si la recorta. El destino de una inclusión se verifica antes del salto.
+
+Las pruebas de GUI y TUI mostraron declaraciones de `asistencia.p` y
+de `primero/detalle.i`. Ambas abrieron al lado la posición exacta de
+`pIncluido` y descartaron los símbolos de la copia homónima en el segundo
+directorio de PROPATH. OpenEdge 11.7 comprobó la sintaxis del ejemplo con
+ese orden de búsqueda.
+
 ## Validación local — 2026-11-11
 
 OpenEdge 11.7 x86 en Windows. Se probó el orden de dos directorios con una

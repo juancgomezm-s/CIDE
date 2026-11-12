@@ -236,6 +236,48 @@ fn progress_real_references_tui_uses_shift_f12_and_opens_the_selected_result() {
 }
 
 #[test]
+#[ignore = "requiere el proyecto sintético de OpenEdge con el ejemplo de asistencia"]
+fn progress_real_outline_tui_lists_program_and_nested_include_and_opens_to_side() {
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let path = root.join("asistencia.p");
+    let include = root.join("primero/detalle.i");
+    let declarations = std::fs::read_to_string(&include).unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![path],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root).unwrap();
+    app.dispatch(CommandId::ViewSymbols);
+    finish(&mut app);
+    assert_eq!(app.panels.sidebar(), SidebarView::Symbols);
+    let items = app.source.items();
+    assert!(items.iter().any(|item| item.label.contains("vPrograma")));
+    assert!(items
+        .iter()
+        .any(|item| item.label.contains("ttTrabajo.Codigo")));
+    assert!(!items.iter().any(|item| item.label.contains("vIncorrecto")));
+    let index = items
+        .iter()
+        .position(|item| item.label.contains("pIncluido"))
+        .unwrap();
+    app.source.select_relative(index as isize);
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    assert!(app.workbench.panes().is_split());
+    assert_eq!(
+        app.workbench.active_path().unwrap(),
+        include.canonicalize().unwrap()
+    );
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        declarations.find("pIncluido").unwrap()
+    );
+    assert_eq!(
+        app.workbench.active_bytes().unwrap(),
+        declarations.as_bytes()
+    );
+}
+
+#[test]
 #[ignore = "requires a configured local LSP server and fixture project"]
 fn source_tui_lsp_language_services() {
     let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());

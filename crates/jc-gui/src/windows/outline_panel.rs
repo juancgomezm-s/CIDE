@@ -175,9 +175,27 @@ impl State {
         }
     }
 
+    fn request_outline(&mut self, mode: SourceMode) -> Result<(), String> {
+        let root = self.project_root.as_deref();
+        let registry = self.source_gui.registry();
+        let controller = &mut self.outline.controller;
+        if mode == SourceMode::Symbols {
+            if let Some(provider) = self.progress_schema.outline(&self.workbench, root) {
+                return controller.request_catalog(
+                    mode,
+                    provider,
+                    registry,
+                    &self.workbench,
+                    root,
+                    &mut self.jobs,
+                );
+            }
+        }
+        controller.request(mode, registry, &self.workbench, root, &mut self.jobs)
+    }
+
     pub(super) fn tick_outline(&mut self) -> bool {
         let wanted = region(self).is_some() && provider(self);
-        let controller = &mut self.outline.controller;
         if !wanted {
             if self.outline.focused {
                 self.explorer_focused = false;
@@ -185,31 +203,35 @@ impl State {
             }
             self.outline.hits = None;
             if matches!(
-                controller.state(),
+                self.outline.controller.state(),
                 SourceState::Idle | SourceState::Cancelled
             ) {
                 return false;
             }
-            controller.cancel(&mut self.jobs);
+            self.outline.controller.cancel(&mut self.jobs);
             return true;
         }
-        let root = self.project_root.as_deref();
-        let mut changed = controller.validate_context(&self.workbench, root, &mut self.jobs);
+        let mut changed = self.outline.controller.validate_context(
+            &self.workbench,
+            self.project_root.as_deref(),
+            &mut self.jobs,
+        );
         if self.outline.mode == SourceMode::Symbols
-            && controller.needs_outline_refresh(&self.workbench, root)
+            && self
+                .outline
+                .controller
+                .needs_outline_refresh(&self.workbench, self.project_root.as_deref())
         {
             self.outline.hits = None;
             self.outline.first = 0;
-            let _ = controller.request(
-                SourceMode::Symbols,
-                self.source_gui.registry(),
-                &self.workbench,
-                root,
-                &mut self.jobs,
-            );
+            let _ = self.request_outline(SourceMode::Symbols);
             changed = true;
         }
-        controller.tick(&self.workbench, root, &mut self.jobs) | changed
+        self.outline.controller.tick(
+            &self.workbench,
+            self.project_root.as_deref(),
+            &mut self.jobs,
+        ) | changed
     }
 
     pub(super) fn accept_outline(&mut self, completion: &mut CompletedTask) -> bool {
@@ -370,6 +392,11 @@ impl State {
     }
 
     pub(super) fn outline_key(&mut self, code: usize, modifiers: Modifiers) {
+        if code == 0x74 && modifiers == Modifiers::NONE && self.outline.mode == SourceMode::Symbols
+        {
+            self.refresh_outline();
+            return;
+        }
         if (modifiers != Modifiers::NONE && modifiers != Modifiers::CTRL) || !self.outline_ready() {
             return;
         }
@@ -450,13 +477,7 @@ impl State {
                 self.outline.first = 0;
                 self.outline.hits = None;
                 self.outline.candidates = None;
-                if let Err(error) = self.outline.controller.request(
-                    mode,
-                    self.source_gui.registry(),
-                    &self.workbench,
-                    self.project_root.as_deref(),
-                    &mut self.jobs,
-                ) {
+                if let Err(error) = self.request_outline(mode) {
                     self.error(error);
                 }
             }
@@ -667,6 +688,66 @@ mod tests {
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
         }
+    }
+
+    #[test]
+    #[ignore = "requiere el proyecto sintético de OpenEdge con el ejemplo de asistencia"]
+    fn progress_real_outline_gui_lists_program_and_nested_include_and_opens_to_side() {
+        let root = std::path::PathBuf::from(
+            std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap(),
+        );
+        let source = root.join("asistencia.p");
+        let include = root.join("primero/detalle.i");
+        let declarations = std::fs::read_to_string(&include).unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![source.clone()],
+            project_root: Some(root),
+            encoding: Some(TextEncoding::Utf8),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        state.width = 1600;
+        state.height = 900;
+        state.set_outline_visible(true);
+        finish(&mut state);
+        let frame = state.outline_presentation().unwrap();
+        assert!(frame.rows.iter().any(|row| row.label.contains("vPrograma")));
+        assert!(frame
+            .rows
+            .iter()
+            .any(|row| row.label.contains("ttTrabajo.Codigo")));
+        assert!(frame
+            .rows
+            .iter()
+            .any(|row| row.label.contains("ttTrabajo.porCodigo")));
+        assert!(!frame
+            .rows
+            .iter()
+            .any(|row| row.label.contains("vIncorrecto")));
+        let row = frame
+            .rows
+            .iter()
+            .position(|row| row.label.contains("pIncluido"))
+            .unwrap();
+        let x = frame.rect.left + 24;
+        let y = frame.rect.top + state.dpi.pixels(HEAD + row as i32 * ROW) + 2;
+        state.outline.hits = Some(frame.hits());
+        assert!(state.explorer_click(x, y, false));
+        assert!(state.outline_focused());
+        state.outline_key(0x0d, Modifiers::CTRL);
+        assert!(state.workbench.panes().is_split());
+        assert_eq!(
+            state.workbench.active_path().unwrap(),
+            include.canonicalize().unwrap()
+        );
+        assert_eq!(
+            state.workbench.active_editor().unwrap().cursor,
+            declarations.find("pIncluido").unwrap()
+        );
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            declarations.as_bytes()
+        );
     }
 
     #[test]

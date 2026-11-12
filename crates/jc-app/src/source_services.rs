@@ -153,7 +153,8 @@ impl SourceItem {
                 (SourceAction::Caller { path, .. }, SourceMode::Incoming)
                 | (
                     SourceAction::ProjectLocation { path, .. },
-                    SourceMode::Definition
+                    SourceMode::Symbols
+                    | SourceMode::Definition
                     | SourceMode::LspReferences
                     | SourceMode::CatalogDefinition
                     | SourceMode::CatalogReferences,
@@ -176,6 +177,7 @@ pub type RenameProvider =
 
 #[derive(Clone, Copy)]
 pub enum CatalogQuery {
+    Symbols,
     Complete,
     Definition { cursor: usize },
     References { cursor: usize },
@@ -825,7 +827,7 @@ impl SourceController {
         root: Option<&Path>,
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
-        if !mode.is_catalog() {
+        if mode != SourceMode::Symbols && !mode.is_catalog() {
             return Err("Capacidad de catálogo no disponible".into());
         }
         self.request_named(
@@ -887,11 +889,13 @@ impl SourceController {
         if self.outline {
             self.outline_attempt = Some(origin.clone());
         }
-        let provider = if mode.is_catalog() {
-            if !matches!(&input, SourceInput::Catalog(provider) if provider.is_current()) {
-                return Err("Actualiza primero el catálogo del proyecto ABL".into());
+        let provider = if let SourceInput::Catalog(provider) = &input {
+            if !provider.is_current() {
+                return Err("El contexto del catálogo ABL cambió".into());
             }
             None
+        } else if mode.is_catalog() {
+            return Err("Actualiza primero el catálogo del proyecto ABL".into());
         } else if mode.lsp_query().is_some() {
             if !registry.supports_lsp(app, root) {
                 return Err("LSP requiere un archivo guardado de un lenguaje admitido y una carpeta de proyecto".into());
@@ -974,6 +978,7 @@ impl SourceController {
         let work = if let SourceInput::Catalog(provider) = &r.input {
             let cursor = r.origin.cursor;
             let query = match mode {
+                SourceMode::Symbols => CatalogQuery::Symbols,
                 SourceMode::CatalogDefinition => CatalogQuery::Definition { cursor },
                 SourceMode::CatalogReferences => CatalogQuery::References { cursor },
                 _ => CatalogQuery::Complete,
@@ -1117,9 +1122,11 @@ impl SourceController {
             .tab_id;
         let mut items = Vec::new();
         let is_lsp = request.mode.lsp_query().is_some();
+        let catalog_symbols = request.mode == SourceMode::Symbols
+            && matches!(&request.input, SourceInput::Catalog(_));
         let mut notice = None;
         for item in task.output.take_items() {
-            if is_lsp || request.mode == SourceMode::CatalogReferences {
+            if is_lsp || catalog_symbols || request.mode == SourceMode::CatalogReferences {
                 match item {
                     TaskItem::Problem(message) => {
                         self.status(SourceState::Failed, message);
@@ -1178,7 +1185,16 @@ impl SourceController {
             0
         };
         self.items = items;
-        let message = if request.mode == SourceMode::CatalogCompletion {
+        let message = if catalog_symbols {
+            let mut message = format!(
+                "ABL: {} símbolos del archivo y sus inclusiones",
+                self.items.len()
+            );
+            if let Some(notice) = notice {
+                message.push_str(&format!(" · {notice}"));
+            }
+            message
+        } else if request.mode == SourceMode::CatalogCompletion {
             format!("Esquema ABL: {} sugerencias", self.items.len())
         } else if request.mode == SourceMode::CatalogDefinition {
             if self.items.is_empty() {

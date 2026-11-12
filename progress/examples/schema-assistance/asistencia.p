@@ -1,3 +1,4 @@
+DEFINE VARIABLE vPrograma AS INTEGER NO-UNDO.
 {declaraciones.i}
 FOR EACH bCliente NO-LOCK:
     DISPLAY bCliente.name.
@@ -8,5 +9,5 @@ END.
 FOR EACH ttCopia USE-INDEX cust-num:
     DISPLAY ttCopia.name ttCopia.extra.
 END.
-DISPLAY vIncluido fIncluida().
+DISPLAY vPrograma vIncluido fIncluida().
 RUN pIncluido.

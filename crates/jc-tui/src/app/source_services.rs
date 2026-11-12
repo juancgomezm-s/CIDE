@@ -109,7 +109,10 @@ impl TuiApp {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
-        let catalog = if mode.is_catalog() {
+        let catalog = if mode == SourceMode::Symbols {
+            self.progress_schema
+                .outline(&self.workbench, self.project_root.as_deref())
+        } else if mode.is_catalog() {
             let Some(provider) = self.progress_schema.source(
                 &self.workbench,
                 self.project_root.as_deref(),
