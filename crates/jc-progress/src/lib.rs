@@ -23,6 +23,7 @@ pub enum Action {
     Compile,
     Run,
     Schema,
+    Xref,
 }
 
 impl Action {
@@ -32,6 +33,7 @@ impl Action {
             Self::Compile => "compile",
             Self::Run => "run",
             Self::Schema => "schema",
+            Self::Xref => "xref",
         }
     }
 }

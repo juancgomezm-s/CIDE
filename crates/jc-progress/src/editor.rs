@@ -2,6 +2,7 @@
 mod schema;
 #[cfg(test)]
 mod tests;
+mod xref;
 use crate::{
     build_command, parse_response, Action, BridgeRequest, CompletionStatus, ProgressProfile,
     Severity,
@@ -29,6 +30,7 @@ const OUTPUT_LIMIT: u64 = 128 * 1024;
 const HELPER: &[u8] = include_bytes!("../../../progress/abl/jc-bridge.p");
 const SCHEMA_HELPER: &[u8] = include_bytes!("../../../progress/abl/jc-schema.p");
 const SCHEMA_LIMIT: u64 = 1024 * 1024;
+const XREF_LIMIT: u64 = 1024 * 1024;
 
 pub fn action(command: CommandId) -> Option<Action> {
     match command {
@@ -85,7 +87,7 @@ pub fn submit(
         .extension()
         .and_then(|s| s.to_str())
         .unwrap_or_default();
-    if action == Action::Schema
+    if matches!(action, Action::Schema | Action::Xref)
         || !["p", "w", "cls"]
             .iter()
             .any(|ext| extension.eq_ignore_ascii_case(ext))
@@ -105,7 +107,7 @@ pub fn submit(
         Action::Check => "Comprobación ABL",
         Action::Compile => "Compilación ABL",
         Action::Run => "Ejecución ABL",
-        Action::Schema => unreachable!(),
+        Action::Schema | Action::Xref => unreachable!(),
     };
     jobs.submit_document(
         app,
@@ -354,7 +356,7 @@ fn execute(
             Action::Check => "Sintaxis ABL comprobada".into(),
             Action::Compile => format!("Código r generado en {}", job.path.display()),
             Action::Run => "Ejecución ABL finalizada".into(),
-            Action::Schema => unreachable!(),
+            Action::Schema | Action::Xref => unreachable!(),
         };
         output
             .push(TaskItem::Message(message))
@@ -434,11 +436,15 @@ fn invoke(
     } else {
         OUTPUT_LIMIT
     };
-    let status = match wait(
-        &mut child,
-        [(&log, OUTPUT_LIMIT), (&response, response_limit)],
-        cancel,
-    ) {
+    let xref = dir.join("references.xrf");
+    let mut watched = vec![
+        (log.as_path(), OUTPUT_LIMIT),
+        (response.as_path(), response_limit),
+    ];
+    if request.action == Action::Xref {
+        watched.push((&xref, XREF_LIMIT));
+    }
+    let status = match wait(&mut child, &watched, cancel) {
         Ok(status) => status,
         Err(error) => {
             let _ = child.kill();
@@ -472,7 +478,7 @@ fn invoke(
 
 fn wait(
     child: &mut Child,
-    files: [(&Path, u64); 2],
+    files: &[(&Path, u64)],
     cancel: &Cancellation,
 ) -> Result<ExitStatus, String> {
     loop {

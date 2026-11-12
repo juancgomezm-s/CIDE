@@ -260,6 +260,7 @@ impl Workbench {
             | SourceReferences
             | SourceDefinition
             | SourceLspReferences
+            | SourceXref
             | SourceLspComplete
             | SourceSchemaComplete
             | SourceLspDiagnostics

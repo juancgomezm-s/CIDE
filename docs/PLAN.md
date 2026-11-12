@@ -590,6 +590,9 @@ documento y en inclusiones, con apertura normal o lateral en GUI y TUI.
 **Buscar referencias** sigue el ámbito del símbolo y encuentra consumidores
 del mismo proyecto que resuelven la misma declaración incluida por PROPATH.
 **Esquema** lista esas declaraciones en GUI y TUI, con apertura lateral.
+**Buscar referencias con XREF** usa el compilador para añadir referencias a
+tablas, campos e índices de bases conectadas, incluidas ubicaciones en
+inclusiones expandidas por el AVM.
 
 Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, navegación, completado inteligente de tablas/campos/índices y análisis contextual incremental. Añadir Outline/Breadcrumb/Go to Definition/Open to Side mediante `NavigationTarget` universal y proveedores por lenguaje. Buscar/seleccionar/editar sigue siendo responsabilidad genérica de `jc-app` y Search Plus; XREF, imports USING y jerarquía OO son aportaciones del proveedor ABL.
 

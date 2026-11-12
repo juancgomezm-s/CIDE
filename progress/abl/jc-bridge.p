@@ -131,13 +131,16 @@ DO iAlias = 1 TO NUM-ENTRIES(cAliases):
 END.
 
 IF NOT lFailed THEN CASE cAction:
-    WHEN "check" OR WHEN "compile" OR WHEN "run" THEN DO:
+    WHEN "check" OR WHEN "compile" OR WHEN "run" OR WHEN "xref" THEN DO:
         IF cSource = "" THEN DO:
             lFailed = TRUE.
             PUT UNFORMATTED "DIAG|error|-|-|-|" HexText("Source path is required.") SKIP.
         END.
         ELSE DO:
-            COMPILE VALUE(cSource) SAVE INTO VALUE(cOutputDir) NO-ERROR.
+            IF cAction = "xref" THEN
+                COMPILE VALUE(cSource) XREF VALUE(cOutputDir + "/references.xrf") NO-ERROR.
+            ELSE
+                COMPILE VALUE(cSource) SAVE INTO VALUE(cOutputDir) NO-ERROR.
             ASSIGN lFailed    = COMPILER:ERROR
                    iMessages  = ERROR-STATUS:NUM-MESSAGES
                    cErrorFile = COMPILER:FILE-NAME
@@ -210,7 +213,7 @@ IF NOT lFailed THEN CASE cAction:
     OTHERWISE DO:
         lFailed = TRUE.
         PUT UNFORMATTED "DIAG|error|-|-|-|"
-            HexText("Unknown action. Supported: check, compile, run, schema.") SKIP.
+            HexText("Unknown action. Supported: check, compile, run, schema, xref.") SKIP.
     END.
 END CASE.
 

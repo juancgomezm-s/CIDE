@@ -16,6 +16,7 @@ pub(crate) fn is_command(command: CommandId) -> bool {
             | CommandId::SourceReferences
             | CommandId::SourceDefinition
             | CommandId::SourceLspReferences
+            | CommandId::SourceXref
             | CommandId::SourceLspComplete
             | CommandId::SourceSchemaComplete
             | CommandId::SourceLspDiagnostics
@@ -67,6 +68,9 @@ impl TuiApp {
                 .source_registry
                 .resolve(language, SourceMode::Completion)
                 .is_some();
+        context.source_xref_available = self
+            .progress_schema
+            .supports_xref(&self.workbench, self.project_root.as_deref());
         context.source_abl_definition_available = self
             .progress_schema
             .supports_definition(&self.workbench, self.project_root.as_deref());
@@ -109,7 +113,7 @@ impl TuiApp {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
-        let catalog = if mode == SourceMode::Symbols {
+        let catalog = if matches!(mode, SourceMode::Symbols | SourceMode::CatalogXref) {
             self.progress_schema
                 .outline(&self.workbench, self.project_root.as_deref())
         } else if mode.is_catalog() {
@@ -139,6 +143,7 @@ impl TuiApp {
                 | SourceMode::CatalogCompletion
                 | SourceMode::CatalogDefinition
                 | SourceMode::CatalogReferences
+                | SourceMode::CatalogXref
         );
         if mode == SourceMode::LspDiagnostics {
             self.show_bottom(jc_app::BottomPanel::Problems);
@@ -223,6 +228,7 @@ impl TuiApp {
                 };
                 self.request_source(mode);
             }
+            CommandId::SourceXref => self.request_source(SourceMode::CatalogXref),
             CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
             CommandId::SourceSchemaComplete => self.request_source(SourceMode::CatalogCompletion),
             CommandId::SourceLspDiagnostics => self.request_source(SourceMode::LspDiagnostics),
@@ -291,6 +297,8 @@ impl TuiApp {
                             "Definición ABL abierta".into()
                         } else if self.source.mode() == Some(SourceMode::CatalogReferences) {
                             "Referencia ABL abierta".into()
+                        } else if self.source.mode() == Some(SourceMode::CatalogXref) {
+                            "Referencia XREF abierta".into()
                         } else if self.source.mode().is_some_and(SourceMode::is_lsp) {
                             "Ubicación LSP abierta".into()
                         } else {

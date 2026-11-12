@@ -15,6 +15,7 @@ use std::{
 };
 
 mod completion;
+pub(super) use completion::reference_name_at;
 
 const MAX_RECORDS: usize = 8192;
 const PANEL_RECORDS: usize = 256;

@@ -15,6 +15,7 @@ use std::{
 mod declarations;
 mod includes;
 mod references;
+pub(in crate::editor) use references::name_at as reference_name_at;
 
 use declarations::Symbols;
 use includes::IncludeFile;
@@ -57,6 +58,15 @@ impl SchemaController {
             root: root.to_owned(),
             source: project_source(app, root)?.to_owned(),
         }))
+    }
+
+    pub fn supports_xref(&self, app: &Workbench, root: Option<&Path>) -> bool {
+        self.supports_definition(app, root)
+            && app.active_document().is_some_and(|doc| {
+                !doc.session.is_new()
+                    && !doc.session.document().is_modified()
+                    && crate::editor::xref::compilable(doc.session.path())
+            })
     }
 
     pub fn source(
@@ -135,6 +145,21 @@ impl CatalogSource for Provider {
                     cancel,
                 )? {
                     output.push(TaskItem::Source(item))?;
+                }
+            }
+            CatalogQuery::Xref { cursor } => {
+                if let Err(error) = crate::editor::xref::search(
+                    &self.root,
+                    &self.source,
+                    snapshot,
+                    cursor,
+                    cancel,
+                    output,
+                ) {
+                    if cancel.is_cancelled() {
+                        return Err(TaskFailure::Cancelled);
+                    }
+                    output.push(TaskItem::Problem(error))?;
                 }
             }
             CatalogQuery::Symbols => {

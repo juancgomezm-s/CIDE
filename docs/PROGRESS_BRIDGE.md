@@ -196,6 +196,33 @@ el aviso de recorte y la apertura al lado en ambas interfaces. OpenEdge
 la inclusión anidada y de un programa con una declaración homónima
 propia. GUI y TUI abrieron al lado el consumidor y descartaron el homónimo.
 
+### Buscar referencias con XREF
+
+Guarda el programa ABL, coloca el cursor sobre una tabla, campo o índice
+de base de datos y elige **Proyecto → Buscar referencias con XREF** o
+pulsa **Ctrl+Mayús+F12**. El comando usa el perfil Progress, sus aliases y
+PROPATH. **Intro** abre la línea informada por el compilador y
+**Ctrl+Intro** la abre al lado en GUI y TUI.
+
+El AVM ejecuta `COMPILE XREF` en segundo plano. CIDE lee la salida para
+reunir lecturas, escrituras, referencias de tabla y búsquedas por índice,
+incluidas ubicaciones dentro de inclusiones. El AVM escribe XREF en un
+directorio temporal y compila sin la opción `SAVE`. CIDE comprueba la
+versión del archivo antes de abrir el resultado.
+[Referencia COMPILE](https://docs.progress.com/bundle/openedge-abl-reference-128/page/COMPILE-statement.html)
+
+La consulta admite hasta 32 programas, 128 archivos de fuente e
+inclusiones, 16 MiB de fuente y 48 resultados. Indica si algún programa
+quedó fuera por error o cuota. Si la línea contiene varios objetos
+del mismo nombre, usa una línea que permita distinguirlos.
+**Mayús+F12** sigue disponible para símbolos y llamadas ABL.
+
+En OpenEdge 11.7, la GUI abrió al lado un acceso a `customer.Name`
+generado por una macro en una inclusión. La TUI abrió al lado el mismo
+campo en un programa con espacios en el nombre y recuperó referencias de
+`customer` y `cust-num`. La búsqueda conservó los resultados válidos
+cuando otro programa del ejemplo falló al compilar.
+
 ### Esquema del archivo y sus inclusiones
 
 En la GUI, abre **Esquema → Símbolos**. En la TUI, elige **Proyecto →

@@ -69,6 +69,7 @@ pub(super) fn is_command(command: CommandId) -> bool {
             | CommandId::SourceReferences
             | CommandId::SourceDefinition
             | CommandId::SourceLspReferences
+            | CommandId::SourceXref
             | CommandId::SourceLspComplete
             | CommandId::SourceSchemaComplete
             | CommandId::SourceLspDiagnostics
@@ -115,6 +116,9 @@ impl State {
         context.source_completion_available = context.has_document
             && encoded
             && registry.resolve(language, SourceMode::Completion).is_some();
+        context.source_xref_available = self
+            .progress_schema
+            .supports_xref(&self.workbench, self.project_root.as_deref());
         context.source_abl_definition_available = self
             .progress_schema
             .supports_definition(&self.workbench, self.project_root.as_deref());
@@ -154,7 +158,7 @@ impl State {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
-        let catalog = if mode == SourceMode::Symbols {
+        let catalog = if matches!(mode, SourceMode::Symbols | SourceMode::CatalogXref) {
             self.progress_schema
                 .outline(&self.workbench, self.project_root.as_deref())
         } else if mode.is_catalog() {
@@ -225,6 +229,7 @@ impl State {
                 };
                 self.request_source(mode);
             }
+            CommandId::SourceXref => self.request_source(SourceMode::CatalogXref),
             CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
             CommandId::SourceSchemaComplete => self.request_source(SourceMode::CatalogCompletion),
             CommandId::SourceLspDiagnostics => self.request_source(SourceMode::LspDiagnostics),
@@ -307,6 +312,9 @@ impl State {
                             == Some(SourceMode::CatalogReferences)
                         {
                             "Referencia ABL abierta"
+                        } else if self.source_gui.controller.mode() == Some(SourceMode::CatalogXref)
+                        {
+                            "Referencia XREF abierta"
                         } else if self
                             .source_gui
                             .controller
@@ -915,6 +923,59 @@ mod tests {
             declarations.rfind("vIncluido").unwrap()
         );
         assert_eq!(std::fs::read_to_string(consumer).unwrap(), declarations);
+    }
+
+    #[test]
+    #[ignore = "requiere OpenEdge y el proyecto sintético de asistencia"]
+    fn progress_real_xref_gui_opens_macro_access_in_include_to_side() {
+        let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+        let source = root.join("asistencia.p");
+        let target = root.join("primero/xref-campo.i");
+        let text = std::fs::read_to_string(&source).unwrap();
+        let contents = std::fs::read_to_string(&target).unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![source],
+            project_root: Some(root),
+            encoding: Some(TextEncoding::Utf8),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        assert!(state.context().source_xref_available);
+        let tab = state.workbench.tabs().active_id().unwrap();
+        assert!(state.workbench.jump_to_location(
+            tab,
+            text.find("bCliente.name").unwrap() + "bCliente.na".len()
+        ));
+        state.execute_menu(CommandId::SourceXref);
+        finish(&mut state);
+        let controller = &mut state.source_gui.controller;
+        assert!(
+            controller.message().contains("OpenEdge 11.7"),
+            "{}",
+            controller.message()
+        );
+        assert!(
+            controller.message().contains("búsqueda parcial"),
+            "{}",
+            controller.message()
+        );
+        let index = controller
+            .items()
+            .iter()
+            .position(|item| item.label.contains("xref-campo.i"))
+            .unwrap_or_else(|| panic!("{:?}", controller.items()));
+        controller.select_relative(index as isize);
+        state.source_key(0x0d, Modifiers::CTRL);
+        assert!(state.workbench.panes().is_split());
+        assert_eq!(
+            state.workbench.active_path().unwrap(),
+            target.canonicalize().unwrap()
+        );
+        assert_eq!(
+            state.workbench.active_editor().unwrap().cursor,
+            contents.find("DISPLAY").unwrap()
+        );
+        assert_eq!(std::fs::read_to_string(target).unwrap(), contents);
     }
 
     #[test]

@@ -26,6 +26,7 @@ pub enum SourceMode {
     CatalogCompletion,
     CatalogDefinition,
     CatalogReferences,
+    CatalogXref,
     Rename,
     Definition,
     LspReferences,
@@ -44,6 +45,7 @@ impl SourceMode {
             Self::CatalogCompletion => "Completar desde esquema ABL",
             Self::CatalogDefinition => "Ir a definición ABL",
             Self::CatalogReferences => "Buscar referencias ABL",
+            Self::CatalogXref => "Buscar referencias con XREF",
             Self::Rename => "Renombrar símbolo ABL",
             Self::Definition => "Ir a definición (LSP)",
             Self::LspReferences => "Buscar referencias (LSP)",
@@ -55,7 +57,10 @@ impl SourceMode {
     pub fn is_catalog(self) -> bool {
         matches!(
             self,
-            Self::CatalogCompletion | Self::CatalogDefinition | Self::CatalogReferences
+            Self::CatalogCompletion
+                | Self::CatalogDefinition
+                | Self::CatalogReferences
+                | Self::CatalogXref
         )
     }
 
@@ -132,6 +137,7 @@ impl SourceItem {
                     | SourceMode::Definition
                     | SourceMode::CatalogDefinition
                     | SourceMode::CatalogReferences
+                    | SourceMode::CatalogXref
                     | SourceMode::LspReferences,
                 ) => true,
                 (
@@ -157,7 +163,8 @@ impl SourceItem {
                     | SourceMode::Definition
                     | SourceMode::LspReferences
                     | SourceMode::CatalogDefinition
-                    | SourceMode::CatalogReferences,
+                    | SourceMode::CatalogReferences
+                    | SourceMode::CatalogXref,
                 ) => path.is_absolute() && path.as_os_str().len() <= 4096,
                 _ => false,
             }
@@ -181,6 +188,7 @@ pub enum CatalogQuery {
     Complete,
     Definition { cursor: usize },
     References { cursor: usize },
+    Xref { cursor: usize },
 }
 
 /// A project service answers against an immutable snapshot and project context.
@@ -211,6 +219,9 @@ impl SourceJob {
     pub(crate) fn timeout(&self, default: std::time::Duration) -> std::time::Duration {
         match self {
             Self::Lsp(_) => crate::lsp::TIMEOUT,
+            Self::Catalog(_, CatalogQuery::Xref { .. }) => {
+                default.max(std::time::Duration::from_secs(45))
+            }
             Self::Catalog(_, CatalogQuery::References { .. }) => {
                 default.max(std::time::Duration::from_secs(10))
             }
@@ -313,6 +324,7 @@ impl SourceProviderDescriptor {
             | SourceMode::CatalogCompletion
             | SourceMode::CatalogDefinition
             | SourceMode::CatalogReferences
+            | SourceMode::CatalogXref
             | SourceMode::Definition
             | SourceMode::LspReferences
             | SourceMode::LspCompletion
@@ -984,6 +996,7 @@ impl SourceController {
                 SourceMode::Symbols => CatalogQuery::Symbols,
                 SourceMode::CatalogDefinition => CatalogQuery::Definition { cursor },
                 SourceMode::CatalogReferences => CatalogQuery::References { cursor },
+                SourceMode::CatalogXref => CatalogQuery::Xref { cursor },
                 _ => CatalogQuery::Complete,
             };
             SourceJob::Catalog(provider.clone(), query)
@@ -1027,6 +1040,8 @@ impl SourceController {
                     SourceState::Running,
                     if lsp.is_some() {
                         "Consultando servidor LSP"
+                    } else if mode == SourceMode::CatalogXref {
+                        "Compilando referencias XREF del proyecto"
                     } else if mode.is_catalog() {
                         "Analizando el código ABL del proyecto"
                     } else {
@@ -1129,7 +1144,13 @@ impl SourceController {
             && matches!(&request.input, SourceInput::Catalog(_));
         let mut notice = None;
         for item in task.output.take_items() {
-            if is_lsp || catalog_symbols || request.mode == SourceMode::CatalogReferences {
+            if is_lsp
+                || catalog_symbols
+                || matches!(
+                    request.mode,
+                    SourceMode::CatalogReferences | SourceMode::CatalogXref
+                )
+            {
                 match item {
                     TaskItem::Problem(message) => {
                         self.status(SourceState::Failed, message);
@@ -1205,8 +1226,16 @@ impl SourceController {
             } else {
                 "Definición ABL localizada · Intro abre · Ctrl+Intro al lado".into()
             }
-        } else if request.mode == SourceMode::CatalogReferences {
-            let mut message = format!("ABL: {} referencias", self.items.len());
+        } else if matches!(
+            request.mode,
+            SourceMode::CatalogReferences | SourceMode::CatalogXref
+        ) {
+            let provider = if request.mode == SourceMode::CatalogXref {
+                "XREF"
+            } else {
+                "ABL"
+            };
+            let mut message = format!("{provider}: {} referencias", self.items.len());
             if let Some(notice) = notice {
                 message.push_str(&format!(" · {notice}"));
             }

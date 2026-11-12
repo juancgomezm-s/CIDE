@@ -236,6 +236,7 @@ pub fn default_menu_model() -> MenuModel {
                 SEP,
                 command(SourceDefinition),
                 command(SourceLspReferences),
+                command(SourceXref),
             ],
         ),
         menu(

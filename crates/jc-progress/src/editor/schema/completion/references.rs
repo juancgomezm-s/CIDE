@@ -260,7 +260,11 @@ fn identifier_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-') || byte >= 0x80
 }
 
-fn name_at(bytes: &[u8], encoding: TextEncoding, cursor: usize) -> Option<(Range<usize>, String)> {
+pub(in crate::editor) fn name_at(
+    bytes: &[u8],
+    encoding: TextEncoding,
+    cursor: usize,
+) -> Option<(Range<usize>, String)> {
     let tail = bytes.get(cursor..)?;
     let bom = if encoding == TextEncoding::Utf8 && bytes.starts_with(b"\xef\xbb\xbf") {
         3

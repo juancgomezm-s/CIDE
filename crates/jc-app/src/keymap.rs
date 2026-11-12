@@ -273,6 +273,11 @@ pub fn default_keymap() -> KeyMap {
         bind(Editor, KeyStroke::plain(f(8)), SourceReferences),
         bind(Editor, KeyStroke::plain(f(12)), SourceDefinition),
         bind(Editor, KeyStroke::shift(f(12)), SourceLspReferences),
+        bind(
+            Editor,
+            KeyStroke::new(Modifiers::CTRL.union(Modifiers::SHIFT), f(12)),
+            SourceXref,
+        ),
         bind(Editor, KeyStroke::ctrl_shift(c('j')), EditJoinLines),
         bind(Editor, KeyStroke::plain(Enter), EditSplitLine),
         bind(Editor, KeyStroke::alt_shift(Left), EditRectangleLeft),

@@ -279,6 +279,84 @@ fn progress_real_outline_tui_lists_program_and_nested_include_and_opens_to_side(
 }
 
 #[test]
+#[ignore = "requiere OpenEdge y el proyecto sintético de asistencia"]
+fn progress_real_xref_tui_opens_program_with_spaces_to_side() {
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let source = root.join("asistencia.p");
+    let target = root.join("consumidores/xref consumidor.p");
+    let text = std::fs::read_to_string(&source).unwrap();
+    let contents = std::fs::read_to_string(&target).unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![source],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root).unwrap();
+    let tab = app.workbench.tabs().active_id().unwrap();
+    assert!(app.workbench.jump_to_location(
+        tab,
+        text.find("bCliente.name").unwrap() + "bCliente.na".len()
+    ));
+    key(
+        &mut app,
+        KeyCode::F(12),
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    );
+    finish(&mut app);
+    assert!(app.showing_source_popup(), "{}", app.status);
+    assert!(
+        app.source.message().contains("OpenEdge 11.7"),
+        "{}",
+        app.source.message()
+    );
+    let index = app
+        .source
+        .items()
+        .iter()
+        .position(|item| item.label.contains("xref consumidor.p"))
+        .unwrap_or_else(|| panic!("{:?}", app.source.items()));
+    app.source.select_relative(index as isize);
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    assert!(app.workbench.panes().is_split());
+    assert_eq!(
+        app.workbench.active_path().unwrap(),
+        target.canonicalize().unwrap()
+    );
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        contents.find("    DISPLAY").unwrap()
+    );
+    assert_eq!(std::fs::read_to_string(target).unwrap(), contents);
+    let tab = app.workbench.tabs().active_id().unwrap();
+    for token in ["customer", "cust-num"] {
+        assert!(app
+            .workbench
+            .jump_to_location(tab, contents.find(token).unwrap() + 2));
+        key(
+            &mut app,
+            KeyCode::F(12),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        );
+        finish(&mut app);
+        let hits = app.source.items();
+        assert!(
+            hits.iter().any(|item| item.label.contains("asistencia.p")),
+            "{token}: {}",
+            app.source.message()
+        );
+        assert!(
+            hits.iter()
+                .any(|item| item.label.contains("xref consumidor.p")),
+            "{token}: {}",
+            app.source.message()
+        );
+        if token == "cust-num" {
+            assert_eq!(hits.len(), 2, "{hits:?}");
+        }
+        key(&mut app, KeyCode::Esc, KeyModifiers::NONE);
+    }
+}
+
+#[test]
 #[ignore = "requires a configured local LSP server and fixture project"]
 fn source_tui_lsp_language_services() {
     let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());

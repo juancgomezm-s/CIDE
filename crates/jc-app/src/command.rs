@@ -114,6 +114,7 @@ pub enum CommandId {
     SourceReferences,
     SourceDefinition,
     SourceLspReferences,
+    SourceXref,
     SourceLspComplete,
     SourceSchemaComplete,
     SourceLspDiagnostics,
@@ -206,6 +207,7 @@ pub struct CommandContext {
     pub source_references_available: bool,
     pub source_lsp_available: bool,
     pub source_abl_definition_available: bool,
+    pub source_xref_available: bool,
     pub source_calls_available: bool,
     pub source_incoming_available: bool,
     pub source_dependencies_available: bool,
@@ -266,6 +268,7 @@ impl Default for CommandContext {
             source_references_available: false,
             source_lsp_available: false,
             source_abl_definition_available: false,
+            source_xref_available: false,
             source_calls_available: false,
             source_incoming_available: false,
             source_dependencies_available: false,
@@ -499,6 +502,9 @@ fn source_lsp(ctx: &CommandContext) -> bool {
 }
 fn source_definition(ctx: &CommandContext) -> bool {
     source_lsp(ctx) || ctx.source_abl_definition_available && !ctx.rectangular_selection
+}
+fn source_xref(ctx: &CommandContext) -> bool {
+    ctx.source_xref_available && !ctx.rectangular_selection
 }
 fn source_lsp_completion(ctx: &CommandContext) -> bool {
     source_lsp(ctx) && !ctx.has_selection
@@ -916,6 +922,12 @@ pub fn default_registry() -> CommandRegistry {
             Navigation,
             "Buscar referencias",
             source_definition
+        ),
+        spec!(
+            SourceXref,
+            Navigation,
+            "Buscar referencias con XREF",
+            source_xref
         ),
         spec!(SourceIncoming, Navigation, "Llamado por", source_incoming),
         spec!(
