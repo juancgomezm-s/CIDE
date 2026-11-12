@@ -198,9 +198,9 @@ fn progress_real_definition_tui_f12_opens_exact_include_and_local_routine() {
 fn progress_real_references_tui_uses_shift_f12_and_opens_the_selected_result() {
     let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
     let path = root.join("asistencia.p");
-    let include = root.join("primero/detalle.i");
+    let consumer = root.join("consumidores/consumidor.p");
     let text = std::fs::read_to_string(&path).unwrap();
-    let declarations = std::fs::read_to_string(&include).unwrap();
+    let declarations = std::fs::read_to_string(&consumer).unwrap();
     let mut app = TuiApp::new(LaunchOptions {
         files: vec![path],
         encoding: Some(TextEncoding::Utf8),
@@ -213,7 +213,7 @@ fn progress_real_references_tui_uses_shift_f12_and_opens_the_selected_result() {
     key(&mut app, KeyCode::F(12), KeyModifiers::SHIFT);
     finish(&mut app);
     assert!(app.showing_source_popup());
-    assert_eq!(app.source.items().len(), 2, "{}", app.source.message());
+    assert_eq!(app.source.items().len(), 3, "{}", app.source.message());
     key(&mut app, KeyCode::Down, KeyModifiers::NONE);
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(app.workbench.tabs().active_id(), Some(tab));
@@ -223,11 +223,12 @@ fn progress_real_references_tui_uses_shift_f12_and_opens_the_selected_result() {
     );
     key(&mut app, KeyCode::F(12), KeyModifiers::SHIFT);
     finish(&mut app);
+    app.source.select_relative(2);
     key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
     assert!(app.workbench.panes().is_split());
     assert_eq!(
         app.workbench.active_path().unwrap(),
-        include.canonicalize().unwrap()
+        consumer.canonicalize().unwrap()
     );
     assert_eq!(
         app.workbench.active_editor().unwrap().cursor,

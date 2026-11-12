@@ -211,6 +211,9 @@ impl SourceJob {
     pub(crate) fn timeout(&self, default: std::time::Duration) -> std::time::Duration {
         match self {
             Self::Lsp(_) => crate::lsp::TIMEOUT,
+            Self::Catalog(_, CatalogQuery::References { .. }) => {
+                default.max(std::time::Duration::from_secs(10))
+            }
             _ => default,
         }
     }
@@ -1203,7 +1206,7 @@ impl SourceController {
                 "Definición ABL localizada · Intro abre · Ctrl+Intro al lado".into()
             }
         } else if request.mode == SourceMode::CatalogReferences {
-            let mut message = format!("ABL: {} referencias en la unidad fuente", self.items.len());
+            let mut message = format!("ABL: {} referencias", self.items.len());
             if let Some(notice) = notice {
                 message.push_str(&format!(" · {notice}"));
             }

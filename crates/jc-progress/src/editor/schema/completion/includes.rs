@@ -29,6 +29,7 @@ pub(super) struct Includes<'a> {
     stack: Vec<PathBuf>,
     files: usize,
     bytes: usize,
+    byte_limit: usize,
     capture_locations: bool,
 }
 
@@ -41,8 +42,18 @@ impl<'a> Includes<'a> {
             stack: Vec::new(),
             files: 0,
             bytes: 0,
+            byte_limit: MAX_INCLUDE_BYTES,
             capture_locations: false,
         }
+    }
+
+    pub(super) fn with_byte_limit(mut self, limit: usize) -> Self {
+        self.byte_limit = self.byte_limit.min(limit);
+        self
+    }
+
+    pub(super) fn bytes_read(&self) -> usize {
+        self.bytes
     }
 
     pub(super) fn with_locations(mut self) -> Self {
@@ -70,7 +81,7 @@ impl<'a> Includes<'a> {
         }
         let (root, dirs) = self.paths.as_ref().expect("initialized PROPATH");
         for dir in dirs {
-            let limit = MAX_FILE_BYTES.min(MAX_INCLUDE_BYTES - self.bytes);
+            let limit = MAX_FILE_BYTES.min(self.byte_limit - self.bytes);
             match jc_files::read_in_root(root, &dir.join(target), limit) {
                 Ok((path, bytes)) => {
                     self.bytes += bytes.len();

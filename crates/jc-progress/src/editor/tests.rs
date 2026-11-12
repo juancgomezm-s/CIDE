@@ -26,24 +26,31 @@ fn progress_real_schema_completion_compiles_with_propath() {
     let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap())
         .canonicalize()
         .unwrap();
-    let path = root.join("asistencia.p");
-    let before = fs::read(&path).unwrap();
     let mut app = Workbench::default();
-    app.open_file(&path, None).unwrap();
     let mut jobs = JobSystem::new(JobLimits::default(), Wakeup::default()).unwrap();
-    submit(Action::Check, &app, &mut jobs, Some(&root)).unwrap();
-    let task = complete(&mut app, &mut jobs);
-    assert_eq!(task.status, TaskStatus::Completed);
-    assert!(!completion(&task).1, "{:?}", app.problems());
-    assert!(app
-        .output()
-        .iter()
-        .any(|row| row.contains("OpenEdge AVM 11.7")));
-    assert!(app
-        .output()
-        .iter()
-        .any(|row| row.contains("Sintaxis ABL comprobada")));
-    assert_eq!(fs::read(path).unwrap(), before);
+    for filename in [
+        "asistencia.p",
+        "consumidores/consumidor.p",
+        "consumidores/homonimo.p",
+    ] {
+        let path = root.join(filename);
+        let before = fs::read(&path).unwrap();
+        app.open_file(&path, None).unwrap();
+        app.reset_task_panels();
+        submit(Action::Check, &app, &mut jobs, Some(&root)).unwrap();
+        let task = complete(&mut app, &mut jobs);
+        assert_eq!(task.status, TaskStatus::Completed);
+        assert!(!completion(&task).1, "{:?}", app.problems());
+        assert!(app
+            .output()
+            .iter()
+            .any(|row| row.contains("OpenEdge AVM 11.7")));
+        assert!(app
+            .output()
+            .iter()
+            .any(|row| row.contains("Sintaxis ABL comprobada")));
+        assert_eq!(fs::read(path).unwrap(), before);
+    }
 }
 
 #[test]

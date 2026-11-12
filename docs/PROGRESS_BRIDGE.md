@@ -174,20 +174,27 @@ comprobar la sintaxis del ejemplo.
 
 Pulsa **Mayús+F12** o elige **Navegación → Buscar referencias** sobre una
 declaración o un uso. La búsqueda recorre el documento activo y sus
-inclusiones estáticas por PROPATH. Cada resultado muestra la línea. Usa
-**Intro** para abrirlo o **Ctrl+Intro** para abrirlo al lado.
+inclusiones estáticas por PROPATH. Si el símbolo se declara en una inclusión
+a nivel de programa, también busca en otros programas del proyecto que
+resuelvan esa misma declaración. Puedes iniciar la búsqueda desde el
+programa o desde el archivo incluido. Cada resultado muestra la línea.
+Usa **Intro** para abrirlo o **Ctrl+Intro** para abrirlo al lado.
 
 La búsqueda sigue la identidad de la declaración y distingue variables
 homónimas de distintas rutinas, campos homónimos de tablas temporales
 distintas y expansiones independientes de una inclusión. También reconoce
-llamadas directas a rutinas internas. Muestra hasta 48 resultados y avisa
-si recorta la lista. El análisis léxico cubre la unidad fuente activa.
-La búsqueda entre programas independientes queda para un bloque posterior.
+llamadas directas a rutinas internas. Para comparar programas, verifica
+la ruta, el contenido y la posición de la declaración incluida. Examina
+las versiones guardadas de hasta 512 archivos `.p`, `.w` y `.cls`, 128
+directorios y 16 MiB de fuente e inclusiones. Muestra hasta 48 resultados
+y avisa si la búsqueda queda parcial. **Llamado por** busca llamadas
+externas estáticas a un programa.
 
 Las pruebas locales cubrieron ámbitos homónimos, inclusiones repetidas,
 el aviso de recorte y la apertura al lado en ambas interfaces. OpenEdge
-11.7 comprobó la sintaxis del ejemplo con un uso de la misma variable en
-el programa y en una inclusión anidada.
+11.7 comprobó la sintaxis del programa principal, de otro consumidor de
+la inclusión anidada y de un programa con una declaración homónima
+propia. GUI y TUI abrieron al lado el consumidor y descartaron el homónimo.
 
 ### Esquema del archivo y sus inclusiones
 

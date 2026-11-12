@@ -871,12 +871,12 @@ mod tests {
 
     #[test]
     #[ignore = "requiere el proyecto sintético de OpenEdge con el ejemplo de asistencia"]
-    fn progress_real_references_gui_lists_include_and_opens_it_to_side() {
+    fn progress_real_references_gui_opens_project_consumer_to_side() {
         let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
         let path = root.join("asistencia.p");
-        let include = root.join("primero/detalle.i");
+        let consumer = root.join("consumidores/consumidor.p");
         let text = std::fs::read_to_string(&path).unwrap();
-        let declarations = std::fs::read_to_string(&include).unwrap();
+        let declarations = std::fs::read_to_string(&consumer).unwrap();
         let mut state = State::new(&GuiOptions {
             paths: vec![path],
             project_root: Some(root),
@@ -897,22 +897,24 @@ mod tests {
         let panel = state.source_presentation().unwrap().panel.results.unwrap();
         assert_eq!(
             panel.rows.len(),
-            2,
+            3,
             "{}",
             state.source_gui.controller.message()
         );
         assert!(panel.rows[0].label.contains("detalle.i"));
+        assert!(panel.rows[2].label.contains("consumidor.p"));
+        state.source_gui.controller.select_relative(2);
         state.source_key(0x0d, Modifiers::CTRL);
         assert!(state.workbench.panes().is_split());
         assert_eq!(
             state.workbench.active_path().unwrap(),
-            include.canonicalize().unwrap()
+            consumer.canonicalize().unwrap()
         );
         assert_eq!(
             state.workbench.active_editor().unwrap().cursor,
             declarations.rfind("vIncluido").unwrap()
         );
-        assert_eq!(std::fs::read_to_string(include).unwrap(), declarations);
+        assert_eq!(std::fs::read_to_string(consumer).unwrap(), declarations);
     }
 
     #[test]

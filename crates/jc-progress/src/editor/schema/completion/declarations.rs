@@ -220,6 +220,7 @@ impl Symbols {
             .as_ref()
             .filter(|scan| scan.matches(&key))
             .map(|_| binding.site.clone());
+        let global = self.local.is_none();
         let scope = self.scope();
         let target = match binding.kind {
             "Tabla temporal" | "Buffer" | "Tabla de trabajo" => &mut scope.records,
@@ -241,7 +242,7 @@ impl Symbols {
         }
         if let (Some(site), Some(identity), Some(scan)) = (declared, identity, &mut self.references)
         {
-            scan.declare(site, identity)?;
+            scan.declare(site, identity, global)?;
         }
         Ok(())
     }
@@ -617,7 +618,7 @@ impl Symbols {
                         .as_mut()
                         .filter(|scan| scan.matches(&fold(&name)))
                     {
-                        scan.declare(site.clone(), site.clone())?;
+                        scan.declare(site.clone(), site.clone(), self.local.is_none())?;
                     }
                     members.push(Member { name, site });
                 }

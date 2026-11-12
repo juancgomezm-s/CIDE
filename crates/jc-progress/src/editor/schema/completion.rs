@@ -970,6 +970,51 @@ mod tests {
     }
 
     #[test]
+    fn schema_references_find_project_consumers_from_include_without_matching_homonyms() {
+        let fixture = crate::editor::JobDir::create().unwrap();
+        let mut catalog = catalog();
+        catalog.root = fixture.path.clone();
+        std::fs::create_dir(fixture.path.join("otro")).unwrap();
+        let declaration = b"DEFINE VARIABLE compartida AS INTEGER.\n";
+        for path in ["comun.i", "otro/comun.i"] {
+            std::fs::write(fixture.path.join(path), declaration).unwrap();
+        }
+        let consumer = "{comun.i}\nDISPLAY compartida.\n";
+        std::fs::write(fixture.path.join("usa.p"), consumer).unwrap();
+        std::fs::write(
+            fixture.path.join("otro.p"),
+            "{otro/comun.i}\nDISPLAY compartida.\n",
+        )
+        .unwrap();
+        let hits = catalog
+            .references(
+                &fixture.path.join("comun.i"),
+                declaration,
+                TextEncoding::Windows1252,
+                18,
+                &Cancellation::new(Duration::from_secs(3)),
+            )
+            .unwrap();
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert!(matches!(
+            &hits[0],
+            TaskItem::Source(SourceItem { action: SourceAction::ProjectLocation { path, offset, .. }, .. })
+                if path.ends_with("usa.p") && *offset == consumer.find("compartida").unwrap()
+        ));
+        let edited = b"DEFINE VARIABLE compartida AS INTEGER. /* sin guardar */\n";
+        assert!(catalog
+            .references(
+                &fixture.path.join("comun.i"),
+                edited,
+                TextEncoding::Utf8,
+                18,
+                &Cancellation::new(Duration::from_secs(3)),
+            )
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
     fn schema_references_reports_truncated_results() {
         let catalog = catalog();
         let source = format!(
