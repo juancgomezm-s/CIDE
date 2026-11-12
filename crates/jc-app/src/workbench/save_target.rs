@@ -70,6 +70,9 @@ impl Workbench {
                 ));
             }
             document.session.save_as(path)?;
+            if document.session.path() != target.path {
+                self.task_panels.clear_lsp(target.document);
+            }
         } else {
             if target.new_file {
                 return Err(WorkbenchError::Save(

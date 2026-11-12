@@ -27,6 +27,52 @@ fn editor(text: &str, path: &str) -> TuiApp {
 
 #[test]
 #[ignore = "requires a configured local LSP server and fixture project"]
+fn source_tui_lsp_language_services() {
+    let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());
+    let path = root.join(std::env::var_os("CIDE_LSP_TEST_FILE").unwrap());
+    let text = std::fs::read_to_string(&path).unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![path.clone()],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root).unwrap();
+    let tab = app.workbench.tabs().active_id().unwrap();
+    assert!(app
+        .workbench
+        .jump_to_location(tab, text.find(".calcu").unwrap() + 6));
+    app.dispatch(CommandId::SourceLspComplete);
+    finish(&mut app);
+    assert!(app.showing_source_popup());
+    let index = app
+        .source
+        .items()
+        .iter()
+        .position(|item| item.label == "calcular")
+        .unwrap();
+    app.source.select_relative(index as isize);
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert!(String::from_utf8(app.workbench.active_bytes().unwrap())
+        .unwrap()
+        .contains("data.calcular"));
+    app.workbench.undo().unwrap();
+    assert_eq!(app.workbench.active_bytes().unwrap(), text.as_bytes());
+    app.dispatch(CommandId::SourceLspDiagnostics);
+    finish(&mut app);
+    assert_eq!(app.panels.bottom(), jc_app::BottomPanel::Problems);
+    assert!(
+        app.workbench
+            .task_panels()
+            .rows(jc_app::task_panels::PanelKind::Problems)
+            .iter()
+            .any(|row| row.text.contains("missingCideSymbol")),
+        "{}",
+        app.status
+    );
+    assert_eq!(std::fs::read_to_string(path).unwrap(), text);
+}
+
+#[test]
+#[ignore = "requires a configured local LSP server and fixture project"]
 fn source_tui_lsp_navigation() {
     let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());
     let path = root.join(std::env::var_os("CIDE_LSP_TEST_FILE").unwrap());

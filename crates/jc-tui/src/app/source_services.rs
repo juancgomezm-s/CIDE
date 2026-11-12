@@ -16,6 +16,8 @@ pub(crate) fn is_command(command: CommandId) -> bool {
             | CommandId::SourceReferences
             | CommandId::SourceDefinition
             | CommandId::SourceLspReferences
+            | CommandId::SourceLspComplete
+            | CommandId::SourceLspDiagnostics
             | CommandId::SourceCalls
             | CommandId::SourceIncoming
             | CommandId::SourceDependencies
@@ -102,8 +104,10 @@ impl TuiApp {
     fn request_source(&mut self, mode: SourceMode) {
         self.close_overlay();
         self.source_candidates = None;
-        self.source_popup = mode == SourceMode::Completion;
-        if !self.source_popup {
+        self.source_popup = matches!(mode, SourceMode::Completion | SourceMode::LspCompletion);
+        if mode == SourceMode::LspDiagnostics {
+            self.show_bottom(jc_app::BottomPanel::Problems);
+        } else if !self.source_popup {
             self.panels.show_sidebar(SidebarView::Symbols);
             let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
         }
@@ -161,6 +165,8 @@ impl TuiApp {
             CommandId::SourceReferences => self.request_source(SourceMode::References),
             CommandId::SourceDefinition => self.request_source(SourceMode::Definition),
             CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
+            CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
+            CommandId::SourceLspDiagnostics => self.request_source(SourceMode::LspDiagnostics),
             CommandId::SourceCalls => self.request_source(SourceMode::Calls),
             CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
             CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
@@ -218,6 +224,8 @@ impl TuiApp {
                         self.ensure_encoding_choice();
                         self.status = if self.source.mode() == Some(SourceMode::Rename) {
                             "Símbolo renombrado · un paso para deshacer".into()
+                        } else if self.source.mode() == Some(SourceMode::LspCompletion) {
+                            "Sugerencia semántica aplicada · un paso para deshacer".into()
                         } else if self.source.mode().is_some_and(SourceMode::is_lsp) {
                             "Ubicación LSP abierta".into()
                         } else {

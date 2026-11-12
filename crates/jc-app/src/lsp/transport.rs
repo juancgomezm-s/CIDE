@@ -2,8 +2,10 @@ use crate::Cancellation;
 use serde_json::{json, Value};
 use std::{
     io::{self, BufRead, BufReader, Read, Write},
+    path::PathBuf,
     process::{Child, Command, Stdio},
     sync::mpsc::{self, Receiver, SyncSender},
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -18,6 +20,37 @@ pub(super) struct Transport {
     written: Receiver<io::Result<()>>,
     incoming: Receiver<io::Result<Value>>,
     id: u64,
+    diagnostics: Arc<Mutex<DiagnosticsInbox>>,
+}
+
+#[derive(Default)]
+struct DiagnosticsInbox {
+    path: Option<PathBuf>,
+    version: i32,
+    allow_unversioned: bool,
+    report: Option<(Instant, Value)>,
+}
+
+impl DiagnosticsInbox {
+    fn publish(&mut self, params: &mut Value) {
+        let reported = params["uri"].as_str().and_then(super::path_from_uri);
+        let matches =
+            self.path
+                .as_ref()
+                .zip(reported.as_ref())
+                .is_some_and(|(expected, reported)| {
+                    super::inside_local_root(expected, reported)
+                        && super::inside_local_root(reported, expected)
+                });
+        let version = &params["version"];
+        if matches
+            && (version.as_i64() == Some(i64::from(self.version))
+                || version.is_null() && self.allow_unversioned)
+            && params["diagnostics"].is_array()
+        {
+            self.report = Some((Instant::now(), params["diagnostics"].take()));
+        }
+    }
 }
 
 impl Transport {
@@ -38,12 +71,15 @@ impl Transport {
         let (outgoing, write_queue) = mpsc::sync_channel::<Vec<u8>>(1);
         let (write_done, written) = mpsc::sync_channel(1);
         let (read_queue, incoming) = mpsc::sync_channel(2);
+        let diagnostics = Arc::new(Mutex::new(DiagnosticsInbox::default()));
+        let inbox = diagnostics.clone();
         let transport = Self {
             child,
             outgoing,
             written,
             incoming,
             id: 0,
+            diagnostics,
         };
         thread::Builder::new()
             .name("cide-lsp-write".into())
@@ -65,6 +101,16 @@ impl Transport {
                 if result.as_ref().is_ok_and(|message| {
                     message.get("method").is_some() && message.get("id").is_none()
                 }) {
+                    if let Ok(mut message) = result {
+                        if message["jsonrpc"] == "2.0"
+                            && message["method"] == "textDocument/publishDiagnostics"
+                        {
+                            inbox
+                                .lock()
+                                .unwrap_or_else(|error| error.into_inner())
+                                .publish(&mut message["params"]);
+                        }
+                    }
                     continue;
                 }
                 let failed = result.is_err();
@@ -74,6 +120,67 @@ impl Transport {
             })
             .map_err(|_| "No se pudo abrir la salida del servidor LSP")?;
         Ok(transport)
+    }
+
+    pub(super) fn watch_diagnostics(&self, uri: &str, version: i32, allow_unversioned: bool) {
+        *self
+            .diagnostics
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = DiagnosticsInbox {
+            path: super::path_from_uri(uri),
+            version,
+            allow_unversioned,
+            report: None,
+        };
+    }
+
+    pub(super) fn published_diagnostics(
+        &self,
+        cancel: &Cancellation,
+        answer: impl Fn(&str, &Value) -> Option<Value>,
+    ) -> Result<Value, String> {
+        loop {
+            if cancel.is_cancelled() {
+                return Err("Se canceló la consulta LSP".into());
+            }
+            if let Some(report) = self
+                .diagnostics
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .report
+                .as_ref()
+                .filter(|(when, _)| when.elapsed() >= Duration::from_millis(250))
+                .map(|(_, report)| report.clone())
+            {
+                return Ok(report);
+            }
+            match self.incoming.recv_timeout(POLL) {
+                Ok(Ok(message)) => self.respond(&message, cancel, &answer)?,
+                Ok(Err(error)) => return Err(format!("Comunicación LSP: {error}")),
+                Err(mpsc::RecvTimeoutError::Timeout) => (),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err("El servidor LSP se desconectó".into())
+                }
+            }
+        }
+    }
+
+    fn respond(
+        &self,
+        message: &Value,
+        cancel: &Cancellation,
+        answer: &impl Fn(&str, &Value) -> Option<Value>,
+    ) -> Result<(), String> {
+        if let (Some(method), Some(id)) = (message["method"].as_str(), message.get("id")) {
+            let response = match answer(method, &message["params"]) {
+                Some(result) => json!({"jsonrpc":"2.0", "id":id, "result":result}),
+                None => {
+                    json!({"jsonrpc":"2.0", "id":id, "error":{"code":-32601, "message":"Method not supported"}})
+                }
+            };
+            self.send(response, cancel)?;
+        }
+        Ok(())
     }
 
     fn send(&self, value: Value, cancel: &Cancellation) -> Result<(), String> {
@@ -141,16 +248,8 @@ impl Transport {
             if message["jsonrpc"] != "2.0" {
                 return Err("El servidor no respondió con JSON-RPC 2.0".into());
             }
-            if let Some(method) = message["method"].as_str() {
-                if let Some(id) = message.get("id") {
-                    let response = match answer(method, &message["params"]) {
-                        Some(result) => json!({"jsonrpc":"2.0", "id":id, "result":result}),
-                        None => json!({"jsonrpc":"2.0", "id":id, "error":{
-                            "code":-32601, "message":"Method not supported"
-                        }}),
-                    };
-                    self.send(response, cancel)?;
-                }
+            if message["method"].is_string() {
+                self.respond(&message, cancel, &answer)?;
             } else if message["id"].as_u64() == Some(self.id) {
                 if let Some(result) = message.get_mut("result") {
                     return Ok(result.take());
@@ -239,6 +338,25 @@ fn read_frame(reader: &mut impl BufRead) -> io::Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pushed_diagnostics_ignore_other_documents_and_old_versions() {
+        let uri = "file:///C:/project/file.ts";
+        let mut inbox = DiagnosticsInbox {
+            path: super::super::path_from_uri(uri),
+            version: 2,
+            ..Default::default()
+        };
+        inbox.publish(&mut json!({"uri":uri,"version":1,"diagnostics":[1]}));
+        inbox.publish(&mut json!({"uri":uri,"diagnostics":[2]}));
+        inbox.publish(
+            &mut json!({"uri":"file:///C:/project/other.ts","version":2,"diagnostics":[3]}),
+        );
+        assert!(inbox.report.is_none());
+        inbox.publish(&mut json!({"uri":uri,"version":2,"diagnostics":[4]}));
+        assert_eq!(inbox.report.as_ref().unwrap().1, json!([4]));
+        inbox.publish(&mut json!({"uri":uri,"version":2,"diagnostics":[]}));
+        assert_eq!(inbox.report.unwrap().1, json!([]));
+    }
 
     #[test]
     fn frames_are_byte_counted_and_bounded() {

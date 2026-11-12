@@ -181,6 +181,7 @@ pub fn default_menu_model() -> MenuModel {
                 command(EditSelectAll),
                 SEP,
                 command(SourceComplete),
+                command(SourceLspComplete),
                 command(SourceRename),
                 command(EditInsertSnippet),
                 command(EditSurroundWith),
@@ -242,6 +243,7 @@ pub fn default_menu_model() -> MenuModel {
             'h',
             &[
                 command(PaletteOpen),
+                command(SourceLspDiagnostics),
                 SEP,
                 command(ProgressCheck),
                 command(ProgressCompile),

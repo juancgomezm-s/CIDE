@@ -1,4 +1,5 @@
 //! Shared stdio client for explicit, read-only source navigation.
+mod language_items;
 mod transport;
 
 use crate::{
@@ -42,6 +43,8 @@ pub(crate) fn language_id(profile: &str, path: &Path) -> Option<&'static str> {
 pub(crate) enum Query {
     Definition,
     References,
+    Completion,
+    Diagnostics,
 }
 
 #[derive(Default, Clone)]
@@ -155,6 +158,7 @@ struct OpenDocument {
     text: String,
     end: Position,
     version: i32,
+    push_safe: bool,
 }
 
 impl Drop for Server {
@@ -180,7 +184,12 @@ impl Server {
                 "capabilities": {
                     "general":{"positionEncodings":["utf-16"]},
                     "workspace":{"configuration":true,"workspaceFolders":true},
-                    "textDocument":{"definition":{"linkSupport":true}}
+                    "textDocument":{
+                        "definition":{"linkSupport":true},
+                        "completion":{"contextSupport":true,"completionItem":{"snippetSupport":false,"insertReplaceSupport":true}},
+                        "publishDiagnostics":{"versionSupport":true},
+                        "diagnostic":{"relatedDocumentSupport":false}
+                    }
                 },
             }),
             cancel,
@@ -227,15 +236,30 @@ impl Server {
         let (method, capability) = match query {
             Query::Definition => ("textDocument/definition", "definitionProvider"),
             Query::References => ("textDocument/references", "referencesProvider"),
+            Query::Completion => ("textDocument/completion", "completionProvider"),
+            Query::Diagnostics => ("textDocument/diagnostic", "diagnosticProvider"),
         };
         let available = &self.capabilities[capability];
-        if available != true && !available.is_object() {
+        let supported = available == true || available.is_object();
+        if !supported && !matches!(query, Query::Diagnostics) {
             return Err("El servidor LSP no anunció esta capacidad".into());
         }
-        let mut params = json!({"textDocument":{"uri":document.uri},"position":position.wire()});
+        let mut params = json!({"textDocument":{"uri":document.uri}});
+        if !matches!(query, Query::Diagnostics) {
+            params["position"] = position.wire();
+        }
         self.sync_document(document, cancel)?;
-        if matches!(query, Query::References) {
-            params["context"] = json!({"includeDeclaration":true});
+        match query {
+            Query::References => params["context"] = json!({"includeDeclaration":true}),
+            Query::Completion => params["context"] = json!({"triggerKind":1}),
+            Query::Diagnostics if !supported => {
+                return self
+                    .transport
+                    .published_diagnostics(cancel, |method, params| {
+                        answer(method, params, &self.config.settings, &self.folders)
+                    })
+            }
+            _ => (),
         }
         self.transport
             .request(method, params, cancel, |method, params| {
@@ -250,6 +274,7 @@ impl Server {
     ) -> Result<(), String> {
         let sync = &self.capabilities["textDocumentSync"];
         let change = sync.as_u64().or_else(|| sync["change"].as_u64());
+        document.push_safe = self.document.is_none();
         if let Some(previous) = self.document.as_ref().filter(|previous| {
             previous.uri == document.uri && previous.language == document.language
         }) {
@@ -263,6 +288,8 @@ impl Server {
                     change["range"] =
                         json!({"start":Position::default().wire(), "end":previous.end.wire()});
                 }
+                self.transport
+                    .watch_diagnostics(&document.uri, version, false);
                 self.transport.notify("textDocument/didChange", json!({
                     "textDocument":{"uri":document.uri,"version":version}, "contentChanges":[change]
                 }), cancel)?;
@@ -278,11 +305,21 @@ impl Server {
                 cancel,
             )?;
         }
+        self.transport
+            .watch_diagnostics(&document.uri, document.version, document.push_safe);
         self.transport.notify("textDocument/didOpen", json!({"textDocument":{
             "uri":document.uri,"languageId":document.language,"version":document.version,"text":document.text
         }}), cancel)?;
         self.document = Some(document);
         Ok(())
+    }
+
+    fn reusable_diagnostics(&self, document: &OpenDocument) -> bool {
+        self.capabilities["diagnosticProvider"].is_object()
+            || self.capabilities["diagnosticProvider"] == true
+            || self.document.as_ref().is_none_or(|previous| {
+                previous.push_safe && previous.uri == document.uri && previous.text == document.text
+            })
     }
 }
 
@@ -322,14 +359,14 @@ impl Work {
         cancel: &Cancellation,
         output: &mut TaskOutput,
     ) -> Result<(), TaskFailure> {
-        match self.locations(snapshot, cancel) {
+        match self.items(snapshot, cancel) {
             Ok((items, omitted)) => {
                 for item in items {
-                    output.push(TaskItem::Source(item))?;
+                    output.push(item)?;
                 }
                 if omitted != 0 {
                     output.push(TaskItem::Message(format!(
-                        "{omitted} ubicaciones omitidas por alcance, codificación o cuota"
+                        "{omitted} elementos omitidos por alcance, formato o cuota"
                     )))?;
                 }
                 Ok(())
@@ -339,11 +376,11 @@ impl Work {
         }
     }
 
-    fn locations(
+    fn items(
         &self,
         snapshot: &TaskSnapshot,
         cancel: &Cancellation,
-    ) -> Result<(Vec<SourceItem>, usize), String> {
+    ) -> Result<(Vec<TaskItem>, usize), String> {
         let root = self
             .root
             .canonicalize()
@@ -377,6 +414,7 @@ impl Work {
             text,
             end,
             version: 1,
+            push_safe: false,
         };
         let config = Config::load(&self.profile)?;
         let mut session = self
@@ -389,7 +427,11 @@ impl Work {
         }
         let mut existing = session.take();
         let mut server = if existing.as_mut().is_some_and(|server| {
-            server.root == root && server.config == config && server.transport.is_running()
+            server.root == root
+                && server.config == config
+                && server.transport.is_running()
+                && (!matches!(self.query, Query::Diagnostics)
+                    || server.reusable_diagnostics(&document))
         }) {
             existing.expect("matching server")
         } else {
@@ -399,7 +441,16 @@ impl Work {
         let response = server.query(self.query, document, position, cancel)?;
         *session = Some(server);
         drop(session);
-        project_locations(&response, &root, &source, bytes, encoding, cancel)
+        match self.query {
+            Query::Completion => {
+                language_items::completions(&response, bytes, encoding, self.cursor, position)
+            }
+            Query::Diagnostics => language_items::diagnostics(&response, bytes, encoding),
+            Query::Definition | Query::References => project_locations(
+                &response, &root, &source, bytes, encoding, cancel,
+            )
+            .map(|(items, omitted)| (items.into_iter().map(TaskItem::Source).collect(), omitted)),
+        }
     }
 }
 
@@ -663,6 +714,94 @@ fn inside_local_root(path: &Path, root: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires an explicitly configured local stdio server and fixture project"]
+    fn lsp_language_services_roundtrip() {
+        use crate::{
+            source_services::{SourceController, SourceMode, SourceRegistry, SourceState},
+            task_panels::PanelKind,
+            JobSystem, Workbench,
+        };
+        let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());
+        let path = root.join(std::env::var_os("CIDE_LSP_TEST_FILE").unwrap());
+        let source = std::fs::read_to_string(&path).unwrap();
+        let mut app = Workbench::default();
+        let tab = app.open_file(&path, Some(TextEncoding::Utf8)).unwrap();
+        let cursor = [".calcu", "->calcu", " calcu"]
+            .into_iter()
+            .find_map(|prefix| source.find(prefix).map(|offset| offset + prefix.len()))
+            .unwrap();
+        assert!(app.jump_to_location(tab, cursor));
+        let mut jobs = JobSystem::new(Default::default(), Default::default()).unwrap();
+        let mut controller = SourceController::default();
+        let registry = SourceRegistry::default();
+        for mode in [SourceMode::LspCompletion, SourceMode::LspDiagnostics] {
+            let deadline = std::time::Instant::now() + TIMEOUT + Duration::from_secs(5);
+            loop {
+                controller
+                    .request(mode, &registry, &app, Some(&root), &mut jobs)
+                    .unwrap();
+                while matches!(
+                    controller.state(),
+                    SourceState::Queued | SourceState::Running
+                ) {
+                    for mut task in jobs.poll(&app, 8) {
+                        controller.accept_editor(&mut app, Some(&root), &mut task);
+                    }
+                    controller.tick(&app, Some(&root), &mut jobs);
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "{mode:?}: {}",
+                        controller.message()
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                if mode == SourceMode::LspCompletion {
+                    if let Some(index) = controller
+                        .items()
+                        .iter()
+                        .position(|item| item.label.starts_with("calcular"))
+                    {
+                        controller
+                            .activate_at_index(&mut app, Some(&root), index, false)
+                            .unwrap();
+                        assert!(std::str::from_utf8(&app.active_bytes().unwrap())
+                            .unwrap()
+                            .contains("calcular"));
+                        app.undo().unwrap();
+                        assert_eq!(app.active_bytes().unwrap(), source.as_bytes());
+                        break;
+                    }
+                } else if let Some(id) = app
+                    .task_panels()
+                    .rows(PanelKind::Problems)
+                    .iter()
+                    .find(|row| row.text.contains("missingCideSymbol"))
+                    .map(|row| row.id)
+                {
+                    app.activate_problem(id).unwrap();
+                    assert_eq!(
+                        app.active_editor().unwrap().cursor,
+                        source.find("missingCideSymbol").unwrap()
+                    );
+                    app.insert_text("_").unwrap();
+                    assert!(app.task_panels().rows(PanelKind::Problems).is_empty());
+                    app.undo().unwrap();
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "{mode:?}: {} {:?}",
+                    controller.message(),
+                    controller.items()
+                );
+                std::thread::sleep(Duration::from_secs(2));
+            }
+            eprintln!("{mode:?}: {}", controller.message());
+        }
+        assert_eq!(std::fs::read_to_string(path).unwrap(), source);
+    }
 
     #[test]
     fn positions_exclude_bom_crlf_and_surrogate_interiors() {

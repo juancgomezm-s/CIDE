@@ -139,7 +139,7 @@ struct ClosedDocument {
     new_file: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextReplacement {
     pub range: Range<usize>,
     pub text: String,
@@ -819,14 +819,15 @@ impl Workbench {
     }
 
     pub fn set_encoding(&mut self, encoding: TextEncoding) -> Result<(), WorkbenchError> {
-        self.active_document_mut()
-            .ok_or(WorkbenchError::NoDocument)?
-            .session
-            .set_encoding(encoding);
-        let tab = self
-            .active_document()
-            .ok_or(WorkbenchError::NoDocument)?
-            .tab_id;
+        let document = self
+            .active_document_mut()
+            .ok_or(WorkbenchError::NoDocument)?;
+        let (tab, id) = (document.tab_id, document.id);
+        let changed = document.session.encoding() != Some(encoding);
+        document.session.set_encoding(encoding);
+        if changed {
+            self.task_panels.clear_lsp(id);
+        }
         self.panes.clear_rectangles(tab);
         self.normalize_views(tab);
         self.resume_caret_tracking();
@@ -888,6 +889,7 @@ impl Workbench {
             encoding: document.session.encoding(),
             new_file: document.session.is_new(),
         };
+        self.task_panels.clear_lsp(document.id);
         self.documents.retain(|d| d.tab_id != tab);
         self.closed_documents.push(closed);
         if self.closed_documents.len() > 32 {
@@ -1028,6 +1030,7 @@ impl Workbench {
         }
         self.normalize_views(tab);
         self.tabs.set_dirty(tab, dirty);
+        self.task_panels.clear_lsp(id);
         let _ = self.rebuild_search();
         Ok(())
     }

@@ -69,6 +69,8 @@ pub(super) fn is_command(command: CommandId) -> bool {
             | CommandId::SourceReferences
             | CommandId::SourceDefinition
             | CommandId::SourceLspReferences
+            | CommandId::SourceLspComplete
+            | CommandId::SourceLspDiagnostics
             | CommandId::SourceCalls
             | CommandId::SourceIncoming
             | CommandId::SourceDependencies
@@ -150,7 +152,10 @@ impl State {
         self.explorer_focused = false;
         self.source_gui.candidates = None;
         self.source_gui.rename = None;
-        self.source_gui.visible = true;
+        self.source_gui.visible = mode != SourceMode::LspDiagnostics;
+        if mode == SourceMode::LspDiagnostics {
+            self.show_bottom(CommandId::ViewProblems);
+        }
         self.source_gui.epoch = self.source_gui.epoch.saturating_add(1);
         self.status = match self.source_gui.controller.request(
             mode,
@@ -169,6 +174,8 @@ impl State {
             CommandId::SourceReferences => self.request_source(SourceMode::References),
             CommandId::SourceDefinition => self.request_source(SourceMode::Definition),
             CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
+            CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
+            CommandId::SourceLspDiagnostics => self.request_source(SourceMode::LspDiagnostics),
             CommandId::SourceCalls => self.request_source(SourceMode::Calls),
             CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
             CommandId::SourceDependencies => self.request_source(SourceMode::Dependencies),
@@ -232,7 +239,11 @@ impl State {
                         self.bottom.focused = false;
                         self.explorer_focused = false;
                         self.ensure_encoding_selector();
-                        self.status = if self
+                        self.status = if self.source_gui.controller.mode()
+                            == Some(SourceMode::LspCompletion)
+                        {
+                            "Sugerencia semántica aplicada · un paso para deshacer"
+                        } else if self
                             .source_gui
                             .controller
                             .mode()
@@ -434,12 +445,15 @@ impl State {
         changed
     }
     pub(super) fn accept_source(&mut self, completion: &mut CompletedTask) -> bool {
-        let consumed = self.source_gui.controller.accept(
-            &self.workbench,
+        let consumed = self.source_gui.controller.accept_editor(
+            &mut self.workbench,
             self.project_root.as_deref(),
             completion,
         );
-        if consumed && self.source_visible() {
+        if consumed
+            && (self.source_visible()
+                || self.source_gui.controller.mode() == Some(SourceMode::LspDiagnostics))
+        {
             self.status = self.source_gui.controller.message().into();
         }
         consumed
@@ -603,6 +617,67 @@ mod tests {
             std::thread::yield_now();
         }
     }
+    #[test]
+    #[ignore = "requires a configured local LSP server and fixture project"]
+    fn source_gui_lsp_language_services() {
+        let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());
+        let path = root.join(std::env::var_os("CIDE_LSP_TEST_FILE").unwrap());
+        let text = std::fs::read_to_string(&path).unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![path.clone()],
+            project_root: Some(root),
+            encoding: Some(TextEncoding::Utf8),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        let tab = state.workbench.tabs().active_id().unwrap();
+        assert!(state
+            .workbench
+            .jump_to_location(tab, text.find(".calcu").unwrap() + 6));
+        state.execute(CommandId::SourceLspComplete);
+        finish(&mut state);
+        assert!(state.source_visible());
+        assert!(state
+            .source_presentation()
+            .unwrap()
+            .panel
+            .results
+            .unwrap()
+            .rows
+            .iter()
+            .any(|row| row.label.contains("calcular")));
+        let index = state
+            .source_gui
+            .controller
+            .items()
+            .iter()
+            .position(|item| item.label == "calcular")
+            .unwrap();
+        state.source_gui.controller.select_relative(index as isize);
+        state.execute(CommandId::SourceAccept);
+        assert!(String::from_utf8(state.workbench.active_bytes().unwrap())
+            .unwrap()
+            .contains("data.calcular"));
+        state.workbench.undo().unwrap();
+        assert_eq!(state.workbench.active_bytes().unwrap(), text.as_bytes());
+        state.execute(CommandId::SourceLspDiagnostics);
+        finish(&mut state);
+        assert!(
+            state.bottom.visible && state.bottom.kind == jc_app::task_panels::PanelKind::Problems
+        );
+        assert!(
+            state
+                .workbench
+                .task_panels()
+                .rows(state.bottom.kind)
+                .iter()
+                .any(|row| row.text.contains("missingCideSymbol")),
+            "{}",
+            state.status
+        );
+        assert_eq!(std::fs::read_to_string(path).unwrap(), text);
+    }
+
     #[test]
     #[ignore = "requires a configured local LSP server and fixture project"]
     fn source_gui_lsp_navigation() {

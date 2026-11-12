@@ -25,6 +25,8 @@ pub enum SourceMode {
     Rename,
     Definition,
     LspReferences,
+    LspCompletion,
+    LspDiagnostics,
 }
 impl SourceMode {
     pub fn label(self) -> &'static str {
@@ -38,6 +40,8 @@ impl SourceMode {
             Self::Rename => "Renombrar símbolo ABL",
             Self::Definition => "Ir a definición (LSP)",
             Self::LspReferences => "Buscar referencias (LSP)",
+            Self::LspCompletion => "Autocompletado semántico (LSP)",
+            Self::LspDiagnostics => "Comprobar con LSP",
         }
     }
 
@@ -45,6 +49,8 @@ impl SourceMode {
         match self {
             Self::Definition => Some(crate::lsp::Query::Definition),
             Self::LspReferences => Some(crate::lsp::Query::References),
+            Self::LspCompletion => Some(crate::lsp::Query::Completion),
+            Self::LspDiagnostics => Some(crate::lsp::Query::Diagnostics),
             _ => None,
         }
     }
@@ -59,6 +65,7 @@ pub enum SourceAction {
     RelativeFile(String),
     Unresolved(String),
     Replace(String),
+    LspCompletion(Vec<crate::TextReplacement>),
     Caller {
         path: PathBuf,
         offset: usize,
@@ -86,6 +93,10 @@ impl SourceItem {
             + match &self.action {
                 SourceAction::Navigate => 0,
                 SourceAction::LspLocation { path, .. } => path.capacity(),
+                SourceAction::LspCompletion(edits) => {
+                    edits.capacity() * std::mem::size_of::<crate::TextReplacement>()
+                        + edits.iter().map(|edit| edit.text.capacity()).sum::<usize>()
+                }
                 SourceAction::RelativeFile(s)
                 | SourceAction::Unresolved(s)
                 | SourceAction::Replace(s) => s.capacity(),
@@ -116,6 +127,9 @@ impl SourceItem {
                     SourceMode::References | SourceMode::Calls | SourceMode::Dependencies,
                 ) => reason.len() <= 512,
                 (SourceAction::Replace(text), SourceMode::Completion) => text.len() <= 4096,
+                (SourceAction::LspCompletion(edits), SourceMode::LspCompletion) => {
+                    (1..=9).contains(&edits.len())
+                }
                 (SourceAction::Replace(text), SourceMode::Rename) => text.len() <= 64,
                 (SourceAction::Caller { path, .. }, SourceMode::Incoming)
                 | (
@@ -247,7 +261,11 @@ impl SourceProviderDescriptor {
             SourceMode::Incoming => self.dependencies.and(self.references),
             SourceMode::Dependencies => self.dependencies,
             SourceMode::Completion => self.completion,
-            SourceMode::Rename | SourceMode::Definition | SourceMode::LspReferences => None,
+            SourceMode::Rename
+            | SourceMode::Definition
+            | SourceMode::LspReferences
+            | SourceMode::LspCompletion
+            | SourceMode::LspDiagnostics => None,
         }
     }
     fn supports(self, mode: SourceMode) -> bool {
@@ -473,7 +491,7 @@ impl Origin {
                 .is_some_and(|d| d.id == self.stamp.document && d.session.path() == self.path)
             && app.active_editor().is_some_and(|e| {
                 (!matches!(mode, SourceMode::Completion | SourceMode::Rename)
-                    && mode.lsp_query().is_none())
+                    && (!mode.is_lsp() || mode == SourceMode::LspDiagnostics))
                     || e.cursor == self.cursor
                         && e.anchor == self.anchor
                         && app.rectangle_for_pane(self.pane).is_none()
@@ -652,9 +670,7 @@ impl SourceController {
                     Some(SourceMode::Incoming) => "Llamado por (fuentes en disco)",
                     Some(SourceMode::Rename) => "Vista previa del renombrado",
                     Some(SourceMode::Dependencies) => "Dependencias",
-                    Some(mode @ (SourceMode::Definition | SourceMode::LspReferences)) => {
-                        mode.label()
-                    }
+                    Some(mode) if mode.is_lsp() => mode.label(),
                     _ => "Completado (palabras locales)",
                 },
                 columns,
@@ -764,9 +780,11 @@ impl SourceController {
         self.invalidate(jobs);
         self.mode = Some(mode);
         self.status(SourceState::Failed, "Solicitud de código no disponible");
-        if matches!(mode, SourceMode::Completion | SourceMode::Rename)
-            && (app.active_editor().is_some_and(|e| e.selection().is_some())
-                || app.rectangle_for_pane(app.panes().active()).is_some())
+        if matches!(
+            mode,
+            SourceMode::Completion | SourceMode::Rename | SourceMode::LspCompletion
+        ) && (app.active_editor().is_some_and(|e| e.selection().is_some())
+            || app.rectangle_for_pane(app.panes().active()).is_some())
         {
             return Err("Coloca el cursor en el texto, sin selección".into());
         }
@@ -965,6 +983,32 @@ impl SourceController {
             self.status(SourceState::Stale, "La entrega del código no es aplicable");
             return true;
         }
+        if request.mode == SourceMode::LspDiagnostics {
+            let mut count = 0;
+            let mut notice = None;
+            for item in task.output.items() {
+                match item {
+                    TaskItem::Diagnostic { .. } => count += 1,
+                    TaskItem::Message(message) => notice = Some(message),
+                    item => {
+                        let error = if let TaskItem::Problem(error) = item {
+                            error
+                        } else {
+                            "Informe LSP inválido"
+                        };
+                        self.status(SourceState::Failed, error);
+                        return true;
+                    }
+                }
+            }
+            let mut message = format!("LSP: {count} diagnósticos");
+            if let Some(notice) = notice {
+                message.push_str(&format!(" · {notice}"));
+            }
+            self.accepted = Some(request);
+            self.status(SourceState::Ready, message);
+            return true;
+        }
         let tab = app
             .document_by_id(request.origin.stamp.document)
             .unwrap()
@@ -1000,6 +1044,8 @@ impl SourceController {
                 return true;
             };
             if !item.valid_for(request.mode)
+                || request.mode == SourceMode::LspCompletion
+                    && !(item.range.start..=item.range.end).contains(&request.origin.cursor)
                 || request.mode == SourceMode::Completion
                     && (item.range.end != request.origin.cursor || item.range.len() > 512)
                 || !matches!(
@@ -1045,6 +1091,25 @@ impl SourceController {
         self.status(SourceState::Ready, message);
         true
     }
+    pub fn accept_editor(
+        &mut self,
+        app: &mut Workbench,
+        root: Option<&Path>,
+        task: &mut CompletedTask,
+    ) -> bool {
+        let diagnostics = self.flight.as_ref().is_some_and(|flight| {
+            flight.id == task.id
+                && !flight.discard
+                && flight.request.generation == self.generation
+                && flight.request.mode == SourceMode::LspDiagnostics
+        });
+        let consumed = self.accept(app, root, task);
+        if consumed && diagnostics && self.state == SourceState::Ready {
+            app.replace_lsp_diagnostics(task);
+        }
+        consumed
+    }
+
     pub fn activate(
         &mut self,
         app: &mut Workbench,
@@ -1182,6 +1247,18 @@ impl SourceController {
                 if !app.jump_to_pane_location(pane, tab, item.range.start) {
                     return Err("Destino de código inválido".into());
                 }
+                Ok(None)
+            }
+            SourceAction::LspCompletion(edits) => {
+                if to_side {
+                    return Err("El autocompletado se aplica al documento activo".into());
+                }
+                app.apply_text_edits(
+                    request.origin.stamp.document,
+                    request.origin.stamp.revision,
+                    edits.clone(),
+                )
+                .map_err(|error| error.to_string())?;
                 Ok(None)
             }
             SourceAction::Replace(text) => {

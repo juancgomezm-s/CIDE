@@ -265,6 +265,8 @@ pub fn default_keymap() -> KeyMap {
         bind(Editor, KeyStroke::ctrl_shift(Home), EditSelectDocumentStart),
         bind(Editor, KeyStroke::ctrl_shift(End), EditSelectDocumentEnd),
         bind(Editor, KeyStroke::ctrl(c(' ')), SourceComplete),
+        bind(Editor, KeyStroke::ctrl_shift(c(' ')), SourceLspComplete),
+        bind(Editor, KeyStroke::ctrl_shift(c('m')), SourceLspDiagnostics),
         bind(Editor, KeyStroke::plain(f(2)), SourceRename),
         bind(Editor, KeyStroke::plain(f(8)), SourceReferences),
         bind(Editor, KeyStroke::plain(f(12)), SourceDefinition),

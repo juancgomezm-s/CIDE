@@ -569,6 +569,11 @@ catálogo de esquema; una falla conserva la última lectura válida.
 OpenEdge 10.0B y un perfil del ERP siguen pendientes.
 [Configuración y evidencia](PROGRESS_BRIDGE.md)
 
+Por prioridad del usuario, se adelantó la primera integración LSP de GUI y TUI.
+La navegación semántica para C#, JavaScript/TypeScript, PHP y Java quedó en
+`2bfb887`. El incremento de autocompletado y comprobación del archivo activo
+en Problemas pasó validación local con esa misma configuración. [Uso y alcance](M3_LSP_NAVEGACION.md)
+
 Estabilizar el contrato interno de capacidades para vincular proveedores de lenguaje sin introducir una runtime genérica de plugins; comenzar el paquete integrado opcional `progress.abl`, manteniendo el puente existente `jc-progress`. Validar OpenEdge 10.0B y 11.7, includes, PROPATH, aliases, code pages, compilación y ejecución en contexto real. Resolver includes `{...}` y RUN estáticos desde el perfil del proyecto sin ejecutar el programa para navegar; señalar destinos dinámicos como inciertos. La AVM solo se ejecutará a petición del usuario. Conectar Check/Compile/Run/Schema a Problems/Output a través de los jobs de M2-F; comprobar cancelación y que resultados de otra revisión no se apliquen silenciosamente.
 
 ## M4 — Esquema y asistencia ABL

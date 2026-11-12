@@ -47,13 +47,14 @@ TypeScript/TSX, Java y PHP. C#, JavaScript, TypeScript, Java y PHP aportan
 símbolos y dependencias estáticas al panel Esquema. Node.js comparte el
 perfil JavaScript y aporta referencias literales CommonJS. [Configuración y alcance](EXTENSION_ARCHITECTURE.md#resaltado-y-navegación-multilenguaje).
 
-GUI y TUI ofrecen **Ir a definición** y **Buscar referencias** con un servidor
-LSP configurado para C#, JavaScript/TypeScript, PHP o Java.
+GUI y TUI ofrecen navegación, autocompletado semántico y diagnósticos en
+**Problemas** con un servidor LSP configurado para C#, JavaScript/TypeScript,
+PHP o Java.
 [Configuración común y atajos](M3_LSP_NAVEGACION.md).
 
 ABL tiene además comprobación, compilación, ejecución por lotes y consulta
-del catálogo de bases. El completado semántico, los compiladores genéricos y
-la depuración siguen pendientes. [Perfil Progress](PROGRESS_BRIDGE.md).
+del catálogo de bases. Los compiladores genéricos y la depuración siguen
+pendientes. [Perfil Progress](PROGRESS_BRIDGE.md).
 
 ## Contrato de arquitectura
 

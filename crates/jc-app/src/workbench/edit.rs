@@ -188,7 +188,9 @@ impl Workbench {
         // Undo/redo can shorten a range before the caret. Length clamping alone
         // could leave it inside a multibyte scalar (or before the UTF-8 BOM).
         if let Some(document) = self.active_document() {
-            self.normalize_views(document.tab_id);
+            let (tab, id) = (document.tab_id, document.id);
+            self.task_panels.clear_lsp(id);
+            self.normalize_views(tab);
         }
         self.sync_active_tab_dirty();
         let _ = self.rebuild_search();

@@ -319,8 +319,8 @@ impl TuiApp {
             if completion.status == jc_app::TaskStatus::Panicked {
                 update.recover = true;
             }
-            if self.source.accept(
-                &self.workbench,
+            if self.source.accept_editor(
+                &mut self.workbench,
                 self.project_root.as_deref(),
                 &mut completion,
             ) {

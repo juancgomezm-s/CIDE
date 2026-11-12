@@ -40,6 +40,7 @@ pub struct PanelRow {
     /// Source provenance, not permission to navigate. Only a Problems row's
     /// diagnostic range can be activated; Output origins use the empty 0..0.
     pub target: Option<PanelTarget>,
+    lsp: bool,
 }
 impl Deref for PanelRow {
     type Target = String;
@@ -62,6 +63,7 @@ struct Log {
     owned: usize,
     dropped: usize,
     truncated: usize,
+    lsp_rows: usize,
 }
 impl Log {
     fn bytes(&self) -> usize {
@@ -72,6 +74,7 @@ impl Log {
     }
     fn evict(&mut self) {
         let row = self.rows.remove(0);
+        self.lsp_rows -= usize::from(row.lsp);
         self.owned = self.owned.saturating_sub(row.owned_bytes());
         self.dropped = self.dropped.saturating_add(1);
     }
@@ -127,6 +130,7 @@ impl Log {
                 }
             }
             self.owned += owned;
+            self.lsp_rows += usize::from(row.lsp);
             self.rows.push(row);
             self.truncated = self.truncated.saturating_add(usize::from(truncated));
             return true;
@@ -200,6 +204,16 @@ impl TaskPanels {
         self.clear(PanelKind::Output);
     }
     fn push_borrowed(&mut self, kind: PanelKind, text: &str, target: Option<PanelTarget>) -> bool {
+        self.push_row(kind, text, target, false)
+    }
+
+    fn push_row(
+        &mut self,
+        kind: PanelKind,
+        text: &str,
+        target: Option<PanelTarget>,
+        lsp: bool,
+    ) -> bool {
         let Some(id) = self.next_id else {
             let log = self.log_mut(kind);
             log.dropped = log.dropped.saturating_add(1);
@@ -207,8 +221,35 @@ impl TaskPanels {
         };
         self.next_id = id.checked_add(1);
         let (text, truncated) = bounded(text);
-        self.log_mut(kind)
-            .push(kind, PanelRow { id, text, target }, truncated)
+        self.log_mut(kind).push(
+            kind,
+            PanelRow {
+                id,
+                text,
+                target,
+                lsp,
+            },
+            truncated,
+        )
+    }
+
+    pub(crate) fn clear_lsp(&mut self, document: crate::DocumentId) {
+        let log = &mut self.problems;
+        if log.lsp_rows == 0 {
+            return;
+        }
+        log.rows.retain(|row| {
+            let remove = row.lsp
+                && row
+                    .target
+                    .as_ref()
+                    .is_some_and(|target| target.stamp.document == document);
+            if remove {
+                log.owned = log.owned.saturating_sub(row.owned_bytes());
+                log.lsp_rows -= 1;
+            }
+            !remove
+        });
     }
 }
 
@@ -269,6 +310,34 @@ impl PanelSelection {
 }
 
 impl Workbench {
+    pub(crate) fn replace_lsp_diagnostics(&mut self, completion: &CompletedTask) {
+        let stamp = TaskStamp {
+            view: None,
+            ..completion.stamp
+        };
+        let Some(tab) = self.document_by_id(stamp.document).map(|doc| doc.tab_id) else {
+            return;
+        };
+        self.task_panels.clear_lsp(stamp.document);
+        for item in completion.output.items() {
+            let TaskItem::Diagnostic { range, message } = item else {
+                continue;
+            };
+            if self.position_for_tab(tab, range.start).is_none()
+                || self.position_for_tab(tab, range.end).is_none()
+            {
+                continue;
+            }
+            let target = PanelTarget {
+                stamp,
+                path: completion.path.clone(),
+                range: range.clone(),
+            };
+            self.task_panels
+                .push_row(PanelKind::Problems, message, Some(target), true);
+        }
+    }
+
     /// Returns whether the visible logs changed, including explicit discard or
     /// failure status. A true return does not mean provider output was accepted.
     pub fn accept_task_completion(&mut self, completion: &CompletedTask) -> bool {
@@ -439,6 +508,43 @@ mod tests {
     use super::*;
     use crate::PaneId;
     use jc_text::{TextEncoding, TextPosition};
+    #[test]
+    fn refreshing_lsp_problems_preserves_other_documents_and_abl() {
+        let mut panels = TaskPanels::default();
+        let stamp = capture_stamp(&app(), None);
+        let target = PanelTarget {
+            stamp,
+            path: PathBuf::from("test.p"),
+            range: 0..0,
+        };
+        panels.push_borrowed(PanelKind::Problems, "ABL", Some(target.clone()));
+        panels.push_row(
+            PanelKind::Problems,
+            "LSP anterior",
+            Some(target.clone()),
+            true,
+        );
+        let mut other = target.clone();
+        other.stamp.document = crate::DocumentId(stamp.document.0 + 1);
+        panels.push_row(
+            PanelKind::Problems,
+            "LSP de otro documento",
+            Some(other),
+            true,
+        );
+        panels.clear_lsp(stamp.document);
+        panels.push_row(PanelKind::Problems, "LSP actualizado", Some(target), true);
+        let rows = panels.rows(PanelKind::Problems);
+        assert_eq!(
+            rows.iter().map(|row| row.text.as_str()).collect::<Vec<_>>(),
+            ["ABL", "LSP de otro documento", "LSP actualizado"]
+        );
+        assert_eq!(
+            panels.problems.owned,
+            rows.iter().map(PanelRow::owned_bytes).sum::<usize>()
+        );
+        assert_eq!(panels.problems.lsp_rows, 2);
+    }
     fn app() -> Workbench {
         let mut app = Workbench::default();
         app.new_file("task-panel-memory.txt", TextEncoding::Utf8);

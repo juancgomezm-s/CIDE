@@ -346,7 +346,7 @@ impl TuiApp {
         let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
     }
 
-    fn show_bottom(&mut self, panel: BottomPanel) {
+    pub(super) fn show_bottom(&mut self, panel: BottomPanel) {
         self.panels.show_bottom(panel);
         self.bottom_output_anchor = None;
         self.bottom_selected = match panel {

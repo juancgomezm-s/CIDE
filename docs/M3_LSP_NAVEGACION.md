@@ -1,6 +1,8 @@
-# Navegación semántica con LSP
+# Servicios semánticos con LSP
 
 En la GUI y la TUI, abre la carpeta del proyecto y un archivo guardado de C#, JavaScript, TypeScript, PHP o Java. Coloca el cursor sobre un símbolo y usa **Ir a definición (LSP)** (`F12`) o **Buscar referencias (LSP)** (`Mayús+F12`). Los comandos también están en la paleta y en **Navegación** de la GUI o **Proyecto** de la TUI. Selecciona una ubicación y pulsa `Intro` para abrirla o `Ctrl+Intro` para abrirla al lado. La consulta de referencias incluye la declaración cuando el servidor la entrega.
+
+Usa **Editar → Autocompletado semántico (LSP)** (`Ctrl+Mayús+Espacio`) para pedir sugerencias en el cursor. `Intro` aplica la sugerencia y las ediciones adicionales recibidas con ella en un solo paso de deshacer. **Herramientas → Comprobar con LSP** (`Ctrl+Mayús+M`) revisa el documento activo y abre **Problemas**. `Intro` sobre una fila lleva al rango del diagnóstico. Al editar se retiran las filas LSP que describían la revisión anterior. Ejecuta la comprobación otra vez para actualizar el panel. Las filas de compilación ABL tienen su propia procedencia.
 
 ## Configuración compartida
 
@@ -54,11 +56,15 @@ Este bloque presenta hasta 48 ubicaciones locales dentro del proyecto. Los desti
 
 `serde_json` 1.0.145 y su dependencia `ryu` se fijan en `Cargo.lock` para codificar y validar JSON-RPC, con límites de tamaño aplicados antes de analizar las respuestas. Los servidores de lenguaje son programas externos elegidos por el usuario.
 
+El completado admite inserciones de texto y cambios adicionales en el mismo documento. Las plantillas del servidor, los comandos adjuntos y la resolución diferida de sugerencias quedan fuera del bloque. Para diagnósticos se consulta al servidor cuando admite `textDocument/diagnostic` y se recibe su publicación para el archivo activo en los demás casos. Los informes sin versión se admiten en una sesión recién sincronizada para ese documento. Los mensajes de cada diagnóstico conservan el idioma que entrega el servidor.
+
 ## Validación local
 
 Windows x64 y Rust 1.88. Los dos comandos devolvieron ubicaciones de definición y referencias con cinco proyectos de prueba: C# con `csharp-ls` 0.28.0 y una solución `.slnx` de .NET 10, JavaScript `.mjs` y TypeScript con `typescript-language-server` 5.1.3 y TypeScript 5.9.3, PHP con Intelephense 1.15.2 y Java con Eclipse JDT LS 1.52.0 y JDK 21. Las dos interfaces probaron la apertura lateral con TypeScript. La GUI comprobó además la sincronización de una edición Unicode sin guardar y la conservación del archivo en disco.
 
 Pasaron 49 casos dirigidos y los siete recorridos con servidores reales. También pasaron `python -B scripts/check-local.py --steps fmt clippy --jobs 2` y la compilación optimizada del workspace con dependencias bloqueadas y sin red. Los ejecutables están en `target/lsp-navigation-next/release`.
+
+El bloque de autocompletado y diagnósticos pasó siete recorridos adicionales con los mismos servidores. Los cinco proyectos verificaron sugerencia, un solo deshacer, diagnóstico navegable e invalidación al editar. La GUI y la TUI repitieron el flujo con TypeScript y abrieron **Problemas**. Pasaron formato y Clippy del workspace. Se comprobó la convivencia de filas ABL y LSP y el descarte de publicaciones de otra versión o documento.
 
 Las pruebas con servidor externo se ejecutan de forma explícita. Usa `CIDE_LSP_CONFIG` para la configuración local, `CIDE_LSP_TEST_PROJECT` para la carpeta absoluta de prueba y `CIDE_LSP_TEST_FILE` y `CIDE_LSP_TEST_DEST` para las rutas relativas del archivo con la llamada y de la declaración. El símbolo de prueba se llama `calcular`.
 
@@ -67,3 +73,5 @@ cargo test --locked --offline -p jc-app --lib lsp_server_roundtrip -- --ignored 
 cargo test --locked --offline -p jc-gui --lib source_gui_lsp_navigation -- --ignored
 cargo test --locked --offline -p jc-tui --lib source_tui_lsp_navigation -- --ignored
 ```
+
+Para el bloque de completado y diagnósticos, usa los filtros `lsp_language_services_roundtrip`, `source_gui_lsp_language_services` y `source_tui_lsp_language_services`. El archivo de prueba debe tener un prefijo `calcu` que se complete como `calcular` y una referencia sin declarar llamada `missingCideSymbol`.

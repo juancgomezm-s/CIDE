@@ -114,6 +114,8 @@ pub enum CommandId {
     SourceReferences,
     SourceDefinition,
     SourceLspReferences,
+    SourceLspComplete,
+    SourceLspDiagnostics,
     SourceCalls,
     SourceIncoming,
     SourceDependencies,
@@ -489,6 +491,9 @@ fn source_references(ctx: &CommandContext) -> bool {
 }
 fn source_lsp(ctx: &CommandContext) -> bool {
     ctx.source_lsp_available && !ctx.rectangular_selection
+}
+fn source_lsp_completion(ctx: &CommandContext) -> bool {
+    source_lsp(ctx) && !ctx.has_selection
 }
 fn source_calls(ctx: &CommandContext) -> bool {
     ctx.source_calls_available
@@ -910,6 +915,13 @@ pub fn default_registry() -> CommandRegistry {
             "Completar palabra local",
             source_completion
         ),
+        spec!(
+            SourceLspComplete,
+            Edit,
+            "Autocompletado semántico (LSP)",
+            source_lsp_completion
+        ),
+        spec!(SourceLspDiagnostics, Tools, "Comprobar con LSP", source_lsp),
         spec!(SourceRename, Edit, "Renombrar símbolo ABL", source_rename),
         spec!(
             SourceRefresh,
