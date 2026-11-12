@@ -583,6 +583,8 @@ Estabilizar el contrato interno de capacidades para vincular proveedores de leng
 
 El primer bloque comparte en GUI y TUI el autocompletado de tablas, campos e
 índices del catálogo del proyecto. [Uso y alcance](PROGRESS_BRIDGE.md#autocompletado-de-esquema-en-gui-y-tui).
+El segundo amplía las sugerencias a buffers estáticos, tablas temporales y
+declaraciones en inclusiones por PROPATH, con comprobación en OpenEdge 11.7.
 
 Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, navegación, completado inteligente de tablas/campos/índices y análisis contextual incremental. Añadir Outline/Breadcrumb/Go to Definition/Open to Side mediante `NavigationTarget` universal y proveedores por lenguaje. Buscar/seleccionar/editar sigue siendo responsabilidad genérica de `jc-app` y Search Plus; XREF, imports USING y jerarquía OO son aportaciones del proveedor ABL.
 
@@ -1191,4 +1193,5 @@ para ambos proveedores, con apertura lateral y revalidación antes del salto.
 
 Planificado como navegador de registros de solo lectura en una cuadrícula
 nativa de CIDE, con un auxiliar ABL y verificación independiente en OpenEdge
-10.0B y 10.2B. Ver [plan de expansión](EXPANSION_DATADIGGER.md).
+10.0B y 10.2B. Incluye perfiles de conexión y minería de esquema para
+PostgreSQL y MySQL con la misma cuadrícula. [Plan de expansión](EXPANSION_DATADIGGER.md).

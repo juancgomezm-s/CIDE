@@ -242,6 +242,20 @@ fn avm_path(path: &Path) -> PathBuf {
 }
 
 fn project_propath(root: &Path, source: &Path) -> Result<String, String> {
+    project_propath_dirs(root, source)?
+        .into_iter()
+        .map(|resolved| {
+            let path = avm_path(&resolved);
+            match path.to_str() {
+                Some(value) if !value.contains(',') => Ok(value.to_owned()),
+                _ => Err(format!("Ruta incompatible con PROPATH: {}", path.display())),
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(|dirs| dirs.join(","))
+}
+
+fn project_propath_dirs(root: &Path, source: &Path) -> Result<Vec<PathBuf>, String> {
     let parents = jc_app::source_services::load_propath(root)?.unwrap_or_else(|| {
         let parent = source.parent().unwrap_or(root);
         if parent == root {
@@ -265,14 +279,9 @@ fn project_propath(root: &Path, source: &Path) -> Result<String, String> {
                     path.display()
                 ));
             }
-            let path = avm_path(&resolved);
-            match path.to_str() {
-                Some(value) if !value.contains(',') => Ok(value.to_owned()),
-                _ => Err(format!("Ruta incompatible con PROPATH: {}", path.display())),
-            }
+            Ok(resolved)
         })
-        .collect::<Result<Vec<_>, _>>()
-        .map(|dirs| dirs.join(","))
+        .collect()
 }
 
 struct JobDir {

@@ -4,17 +4,23 @@ use jc_app::{
     source_services::{CatalogCompletion, SourceAction, SourceItem},
     Cancellation, TaskFailure, TaskItem, TaskOutput, TaskSnapshot, Workbench,
 };
-use jc_languages::syntax::{scan, LexerState, SyntaxKind, SyntaxProfile};
+use jc_languages::syntax::SyntaxKind;
 use jc_text::{decode_fragment, TextEncoding};
 use std::{
-    collections::BTreeSet,
     ops::Range,
-    path::{Component, Path},
+    path::{Component, Path, PathBuf},
     sync::{atomic::Ordering, Arc, Weak},
 };
 
+mod declarations;
+mod includes;
+
+use declarations::Symbols;
+use includes::Includes;
+
 const MAX_SUGGESTIONS: usize = 32;
 const MAX_STATEMENT_TOKENS: usize = 256;
+const MAX_DEFINITION_TOKENS: usize = 4096;
 const MAX_LOCAL_NAMES: usize = 512;
 
 impl SchemaController {
@@ -42,17 +48,21 @@ impl SchemaController {
         app: &Workbench,
         root: Option<&Path>,
     ) -> Option<Arc<dyn CatalogCompletion>> {
-        Some(Arc::new(Provider(Arc::downgrade(
-            self.catalog_for(app, root)?,
-        ))))
+        Some(Arc::new(Provider {
+            catalog: Arc::downgrade(self.catalog_for(app, root)?),
+            source: app.active_path()?.to_owned(),
+        }))
     }
 }
 
-struct Provider(Weak<Catalog>);
+struct Provider {
+    catalog: Weak<Catalog>,
+    source: PathBuf,
+}
 
 impl Provider {
     fn live_catalog(&self) -> Option<Arc<Catalog>> {
-        self.0
+        self.catalog
             .upgrade()
             .filter(|catalog| catalog.live.load(Ordering::Acquire))
     }
@@ -70,7 +80,12 @@ impl CatalogCompletion for Provider {
         output: &mut TaskOutput,
     ) -> Result<(), TaskFailure> {
         let catalog = self.live_catalog().ok_or(TaskFailure::Cancelled)?;
-        for item in catalog.suggest(snapshot.bytes(), snapshot.stamp.encoding, cancel)? {
+        for item in catalog.suggest(
+            &self.source,
+            snapshot.bytes(),
+            snapshot.stamp.encoding,
+            cancel,
+        )? {
             output.push(TaskItem::Source(item))?;
         }
         Ok(())
@@ -86,15 +101,14 @@ struct Context<'a> {
     bytes: &'a [u8],
     encoding: TextEncoding,
     tokens: Vec<Token>,
-    locals: BTreeSet<String>,
     overflow: bool,
-    local_limit: bool,
 }
 
 enum Target {
     Tables(Option<String>),
     Fields(Vec<String>),
     Indexes(Vec<String>),
+    Symbols { run: bool },
 }
 
 impl<'a> Context<'a> {
@@ -103,9 +117,7 @@ impl<'a> Context<'a> {
             bytes,
             encoding,
             tokens: Vec::new(),
-            locals: BTreeSet::new(),
             overflow: false,
-            local_limit: false,
         }
     }
 
@@ -122,59 +134,63 @@ impl<'a> Context<'a> {
         (decoded.issues.is_empty() && identifier(&decoded.text)).then_some(decoded.text)
     }
 
-    fn push(&mut self, token: Token) {
+    fn starts_definition(&self) -> bool {
+        self.tokens.first().is_some_and(|token| {
+            let word = self.bytes(token);
+            word.eq_ignore_ascii_case(b"DEFINE") || word.eq_ignore_ascii_case(b"DEF")
+        })
+    }
+
+    fn push(
+        &mut self,
+        token: Token,
+        symbols: &mut Symbols,
+        catalog: &Catalog,
+        certain: bool,
+    ) -> Result<(), TaskFailure> {
         let bytes = self.bytes(&token);
+        let after = &self.bytes[token.range.end..];
         if token.kind == SyntaxKind::Operator
             && (matches!(bytes, b":" | b";")
                 || bytes == b"."
-                    && self
-                        .bytes
-                        .get(token.range.end)
-                        .is_some_and(u8::is_ascii_whitespace))
+                    && (after.first().is_some_and(u8::is_ascii_whitespace)
+                        || after.starts_with(b"/*")
+                        || after.is_empty()
+                            && self.tokens.first().is_some_and(|first| {
+                                [b"DEFINE".as_slice(), b"DEF", b"END", b"FUNCTION"]
+                                    .iter()
+                                    .any(|word| self.bytes(first).eq_ignore_ascii_case(word))
+                            })))
         {
+            if certain && !self.overflow {
+                symbols.statement(self, bytes, catalog)?;
+            }
             self.tokens.clear();
             self.overflow = false;
-            return;
-        }
-        if token.kind == SyntaxKind::Preprocessor {
-            // Includes and macros can supply a record name. Resume at the next
-            // explicit context instead of carrying the preceding record across.
-            self.tokens.clear();
-            self.overflow = false;
-            return;
+            return Ok(());
         }
         if token.kind == SyntaxKind::Comment || bytes.iter().all(u8::is_ascii_whitespace) {
-            return;
+            return Ok(());
         }
         if token.kind == SyntaxKind::String {
             if let Some(previous) = self.tokens.last_mut().filter(|previous| {
                 previous.kind == SyntaxKind::String && previous.range.end == token.range.start
             }) {
                 previous.range.end = token.range.end;
-                return;
+                return Ok(());
             }
         }
-        if self.tokens.len() == MAX_STATEMENT_TOKENS {
+        if self.tokens.len() == MAX_STATEMENT_TOKENS && !self.starts_definition() {
             self.overflow = true;
-            return;
         }
-        if self
-            .tokens
-            .first()
-            .is_some_and(|first| self.bytes(first).eq_ignore_ascii_case(b"DEFINE"))
-            && self.tokens.last().is_some_and(|previous| {
-                [b"BUFFER".as_slice(), b"TEMP-TABLE", b"WORK-TABLE"]
-                    .iter()
-                    .any(|name| self.bytes(previous).eq_ignore_ascii_case(name))
-            })
-        {
-            if self.locals.len() == MAX_LOCAL_NAMES {
-                self.local_limit = true;
-            } else if let Some(name) = self.word(&token) {
-                self.locals.insert(fold(&name));
-            }
+        if self.tokens.len() == MAX_DEFINITION_TOKENS {
+            return Err(TaskFailure::LimitExceeded);
+        }
+        if self.overflow {
+            return Ok(());
         }
         self.tokens.push(token);
+        Ok(())
     }
 
     fn record_start(&self) -> Option<usize> {
@@ -298,11 +314,10 @@ impl<'a> Context<'a> {
                 prefix,
             ));
         }
-        None
-    }
-
-    fn is_local(&self, names: &[String]) -> bool {
-        matches!(names, [table] if self.local_limit || self.locals.contains(&fold(table)))
+        let run = previous
+            .last()
+            .is_some_and(|token| self.bytes(token).eq_ignore_ascii_case(b"RUN"));
+        (run || !prefix.is_empty()).then_some((Target::Symbols { run }, range, prefix))
     }
 }
 
@@ -363,59 +378,43 @@ impl Catalog {
 
     fn suggest(
         &self,
+        source: &Path,
         bytes: &[u8],
         encoding: TextEncoding,
         cancel: &Cancellation,
     ) -> Result<Vec<SourceItem>, TaskFailure> {
         let mut context = Context::new(bytes, encoding);
-        let mut lexer = LexerState::default();
-        let mut protected = false;
-        let bom =
-            usize::from(encoding == TextEncoding::Utf8 && bytes.starts_with(b"\xef\xbb\xbf")) * 3;
-        for (chunk, slice) in bytes[bom..].chunks(4096).enumerate() {
-            if cancel.is_cancelled() {
-                return Err(TaskFailure::Cancelled);
-            }
-            let offset = bom + chunk * 4096;
-            scan(
-                SyntaxProfile::Abl,
-                &mut lexer,
-                slice,
-                offset,
-                offset + slice.len() == bytes.len(),
-                |span| {
-                    if span.source.end == bytes.len() {
-                        protected = matches!(
-                            span.kind,
-                            SyntaxKind::Comment | SyntaxKind::String | SyntaxKind::Preprocessor
-                        );
-                    }
-                    context.push(Token {
-                        kind: span.kind,
-                        range: span.source,
-                    });
-                },
-            );
-        }
-        if protected || lexer.limited() || context.overflow {
+        let mut symbols = Symbols::default();
+        let protected =
+            Includes::new(&self.root, source).scan(&mut context, &mut symbols, self, cancel)?;
+        if protected || context.overflow {
             return Ok(Vec::new());
         }
         let Some((target, range, prefix)) = context.target() else {
             return Ok(Vec::new());
         };
         let prefix = fold(&prefix);
-        let suggestions = match target {
+        let mut suggestions = match target {
             Target::Tables(database) => {
+                let mut suggestions = if database.is_none() {
+                    symbols.record_names(&prefix)
+                } else {
+                    Vec::new()
+                };
                 let database = database.map(|name| self.logical_database(&name));
-                self.tables(&context, database.as_deref(), &prefix)
+                suggestions.extend(self.tables(&symbols, database.as_deref(), &prefix));
+                suggestions
             }
             Target::Fields(ref names) | Target::Indexes(ref names) => {
-                if context.is_local(names) {
-                    return Ok(Vec::new());
-                }
-                self.members(names, &prefix, matches!(target, Target::Indexes(_)))
+                let indexes = matches!(target, Target::Indexes(_));
+                symbols
+                    .local_members(self, names, &prefix, indexes)
+                    .unwrap_or_else(|| self.members_where(names, &prefix, indexes, |_| true))
             }
+            Target::Symbols { run } => symbols.value_names(&prefix, run),
         };
+        suggestions.sort_by_cached_key(|(_, name)| fold(name));
+        suggestions.truncate(MAX_SUGGESTIONS);
         if cancel.is_cancelled() {
             return Err(TaskFailure::Cancelled);
         }
@@ -431,7 +430,7 @@ impl Catalog {
 
     fn tables(
         &self,
-        context: &Context<'_>,
+        symbols: &Symbols,
         database: Option<&str>,
         prefix: &str,
     ) -> Vec<(String, String)> {
@@ -448,8 +447,7 @@ impl Catalog {
                 neighbor.is_some_and(|(_, name)| fold(name) == key)
             };
             let qualified = database.is_none()
-                && (context.local_limit
-                    || context.locals.contains(&key)
+                && (symbols.has_record(&key)
                     || adjacent_duplicate(i.checked_sub(1).and_then(|i| candidates.get(i)))
                     || adjacent_duplicate(candidates.get(i + 1)));
             let text = if qualified {
@@ -465,7 +463,13 @@ impl Catalog {
         suggestions
     }
 
-    fn members(&self, names: &[String], prefix: &str, indexes: bool) -> Vec<(String, String)> {
+    fn members_where(
+        &self,
+        names: &[String],
+        prefix: &str,
+        indexes: bool,
+        filter: impl Fn(&str) -> bool,
+    ) -> Vec<(String, String)> {
         let database = (names.len() == 2).then(|| self.logical_database(&names[0]));
         let table_key = fold(names.last().expect("record name"));
         let mut matches = self.table_matches(database.as_deref(), &table_key, true);
@@ -498,8 +502,8 @@ impl Catalog {
                     return None;
                 }
                 let name = self.name(name)?;
-                fold(&name)
-                    .starts_with(prefix)
+                let key = fold(&name);
+                (key.starts_with(prefix) && filter(&key))
                     .then(|| (format!("{label} · {name}"), name))
             })
             .collect::<Vec<_>>();
@@ -551,7 +555,7 @@ mod tests {
             ]);
         }
         Catalog {
-            root: PathBuf::new(),
+            root: std::env::current_dir().unwrap(),
             live: AtomicBool::new(true),
             records,
             codec: "UTF-8".into(),
@@ -566,6 +570,7 @@ mod tests {
     fn replacements(catalog: &Catalog, source: &str) -> Vec<String> {
         catalog
             .suggest(
+                &catalog.root.join("fuente.p"),
                 source.as_bytes(),
                 TextEncoding::Utf8,
                 &Cancellation::new(Duration::from_secs(2)),
@@ -629,7 +634,10 @@ mod tests {
     #[test]
     fn schema_completion_provider_expires_on_catalog_clear() {
         let catalog = Arc::new(catalog());
-        let provider = Provider(Arc::downgrade(&catalog));
+        let provider = Provider {
+            catalog: Arc::downgrade(&catalog),
+            source: PathBuf::new(),
+        };
         let mut controller = SchemaController {
             pending: None,
             catalog: Some(catalog.clone()),
@@ -639,5 +647,76 @@ mod tests {
         // A worker may still hold its snapshot. It must not permit insertion.
         assert!(!provider.is_current());
         assert_eq!(Arc::strong_count(&catalog), 1);
+    }
+
+    #[test]
+    fn schema_completion_resolves_scoped_records_and_ordered_nested_includes() {
+        use crate::editor::JobDir;
+        use std::fs;
+
+        let fixture = JobDir::create().unwrap();
+        let mut catalog = catalog();
+        catalog.root = fixture.path.clone();
+        for dir in [".cide", "primero", "segundo"] {
+            fs::create_dir(fixture.path.join(dir)).unwrap();
+        }
+        fs::write(fixture.path.join(".cide/propath"), "primero\nsegundo\n").unwrap();
+        fs::write(fixture.path.join("primero/externo.i"), "{interno.i}").unwrap();
+        fs::write(
+            fixture.path.join("segundo/externo.i"),
+            "DEFINE VARIABLE incorrecta AS INTEGER.",
+        )
+        .unwrap();
+        fs::write(
+            fixture.path.join("primero/interno.i"),
+            "DEFINE TEMP-TABLE ttCopia LIKE actual.cliente USE-INDEX Numero\n FIELD extra AS INTEGER INDEX porExtra extra.\n\
+             DEFINE BUFFER copia FOR TEMP-TABLE ttCopia.\n DEFINE BUFFER original FOR actual.cliente.\n\
+             DEFINE VARIABLE totalImportado AS INTEGER.\n PROCEDURE importar:\n DEFINE VARIABLE soloLocal AS INTEGER.\n END PROCEDURE.",
+        ).unwrap();
+        for (expression, expected) in [
+            ("FOR EACH ttCo", "FOR EACH ttCopia"),
+            ("DISPLAY copia.ex", "DISPLAY copia.extra"),
+            ("DISPLAY copia.No", "DISPLAY copia.Nombre"),
+            ("DISPLAY original.No", "DISPLAY original.Nombre"),
+            (
+                "FIND FIRST copia USE-INDEX po",
+                "FIND FIRST copia USE-INDEX porExtra",
+            ),
+            (
+                "FIND FIRST copia USE-INDEX Nu",
+                "FIND FIRST copia USE-INDEX Numero",
+            ),
+            ("DISPLAY totalI", "DISPLAY totalImportado"),
+            ("RUN imp", "RUN importar"),
+        ] {
+            assert_eq!(
+                replacements(&catalog, &format!("{{externo.i}}\n{expression}")),
+                [format!("{{externo.i}}\n{expected}")]
+            );
+        }
+        for expression in ["DISPLAY incorrect", "DISPLAY solo", "DISPLAY copia.Anio"] {
+            assert!(replacements(&catalog, &format!("{{externo.i}}\n{expression}")).is_empty());
+        }
+        assert_eq!(
+            replacements(
+                &catalog,
+                "PROCEDURE x:\n DEFINE BUFFER b FOR actual.cliente.\n DISPLAY b.No"
+            ),
+            ["PROCEDURE x:\n DEFINE BUFFER b FOR actual.cliente.\n DISPLAY b.Nombre"]
+        );
+        assert!(replacements(
+            &catalog,
+            "PROCEDURE x:\n DEFINE BUFFER b FOR actual.cliente.\n END PROCEDURE.\n DISPLAY b.No"
+        )
+        .is_empty());
+        let in_routine = "PROCEDURE x:\n DEFINE VARIABLE soloLocal AS INTEGER.\n IF TRUE THEN DO:\n END.\n DISPLAY solo";
+        assert_eq!(
+            replacements(&catalog, in_routine),
+            [format!("{in_routine}Local")]
+        );
+        assert!(replacements(
+            &catalog,
+            "PROCEDURE x:\n DEFINE VARIABLE soloLocal AS INTEGER.\n IF TRUE THEN DO:\n END.\n END.\n DISPLAY solo",
+        ).is_empty());
     }
 }

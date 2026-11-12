@@ -1,0 +1,18 @@
+DEFINE BUFFER bCliente FOR negocio.customer.
+DEFINE TEMP-TABLE ttTrabajo NO-UNDO
+    FIELD Codigo AS INTEGER
+    INDEX porCodigo IS UNIQUE PRIMARY Codigo.
+DEFINE BUFFER bTrabajo FOR TEMP-TABLE ttTrabajo.
+DEFINE TEMP-TABLE ttCopia LIKE negocio.customer
+    USE-INDEX cust-num
+    FIELD extra AS INTEGER.
+DEFINE VARIABLE vIncluido AS INTEGER NO-UNDO.
+
+FUNCTION fIncluida RETURNS INTEGER ():
+    RETURN 1.
+END FUNCTION.
+
+PROCEDURE pIncluido:
+    DEFINE VARIABLE soloLocal AS INTEGER NO-UNDO.
+    soloLocal = 1.
+END PROCEDURE.

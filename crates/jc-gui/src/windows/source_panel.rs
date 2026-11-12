@@ -677,7 +677,7 @@ mod tests {
             "{}",
             state.status
         );
-        for (source, label, suffix) in [
+        for (case, (source, label, suffix)) in [
             (
                 "FOR EACH negocio.cust",
                 "Tabla · devlogica.customer",
@@ -689,11 +689,63 @@ mod tests {
                 "Índice · cust-num",
                 "-num",
             ),
-        ] {
-            state.workbench.new_file(
-                root.join(format!("gui-{}.p", source.len())),
-                TextEncoding::Utf8,
-            );
+            (
+                "{declaraciones.i}\nFOR EACH ttTra",
+                "Tabla temporal · ttTrabajo",
+                "bajo",
+            ),
+            (
+                "{declaraciones.i}\nFOR EACH bTra",
+                "Buffer · bTrabajo",
+                "bajo",
+            ),
+            (
+                "{declaraciones.i}\nDISPLAY bCliente.na",
+                "Campo · name",
+                "me",
+            ),
+            (
+                "{declaraciones.i}\nDISPLAY bTrabajo.Co",
+                "Campo · Codigo",
+                "digo",
+            ),
+            (
+                "{declaraciones.i}\nFIND FIRST bTrabajo USE-INDEX porCo",
+                "Índice · porCodigo",
+                "digo",
+            ),
+            (
+                "{declaraciones.i}\nFIND FIRST ttCopia USE-INDEX cust",
+                "Índice · cust-num",
+                "-num",
+            ),
+            (
+                "{declaraciones.i}\nDISPLAY ttCopia.na",
+                "Campo · name",
+                "me",
+            ),
+            (
+                "{declaraciones.i}\nDISPLAY vIncl",
+                "Variable · vIncluido",
+                "uido",
+            ),
+            (
+                "{declaraciones.i}\nDISPLAY fIncl",
+                "Función · fIncluida",
+                "uida",
+            ),
+            (
+                "{declaraciones.i}\nRUN pIncl",
+                "Procedimiento · pIncluido",
+                "uido",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            state
+                .workbench
+                .new_file(root.join(format!("gui-{case}.p")), TextEncoding::Utf8);
             state.workbench.insert_text(source).unwrap();
             state.execute_menu(CommandId::SourceSchemaComplete);
             finish(&mut state);

@@ -1,7 +1,7 @@
 # Expansión DataDigger en CIDE
 
-**Estado:** plan de expansión. Compatibilidad objetivo con Progress OpenEdge
-**10.0B y 10.2B**, pendiente de validación en ambas versiones.
+**Estado:** plan de expansión. Incluye **Progress OpenEdge 10.0B y 10.2B**,
+**PostgreSQL** y **MySQL**, con validación independiente por motor.
 
 ## Experiencia en la GUI
 
@@ -11,11 +11,59 @@ La primera entrega mostrará páginas de registros, filtros por columna,
 ordenación y un detalle del registro seleccionado. La cuadrícula preparará
 solo las filas visibles y solicitará páginas en segundo plano.
 
-El explorador y el autocompletado seguirán consultando el catálogo local de
-esquema. **Ver registros** usará el perfil OpenEdge del proyecto y abrirá la
-sesión de consulta bajo demanda. La conexión se liberará al cerrar la sesión
-o al cancelar el trabajo que la inició. Las ventanas ABL de DataDigger y
-WebSpeed quedan fuera del alcance de esta integración.
+El explorador usará el catálogo local de cada conexión. **Actualizar
+esquema** minará los metadatos de la conexión elegida y publicará una
+instantánea local. **Ver registros** abrirá una sesión bajo demanda con ese
+mismo perfil. La conexión se liberará al cerrar la sesión o al cancelar el
+trabajo que la inició.
+
+## Configuración de conexiones
+
+**Proyecto → Conexiones de datos** administrará perfiles con nombre, motor
+y catálogo activo. Cada proyecto podrá tener varios perfiles. **Probar
+conexión**, **Actualizar esquema** y **Ver registros** serán acciones
+explícitas. El formulario mostrará los campos del motor seleccionado.
+
+| Motor | Configuración |
+| --- | --- |
+| OpenEdge | Referencia al perfil Progress existente. Reutiliza el AVM, el `.pf`, los aliases y las páginas de códigos. |
+| PostgreSQL | Host, puerto, base, usuario, esquemas incluidos y configuración TLS. |
+| MySQL | Host, puerto, base, usuario y configuración TLS. |
+
+Los perfiles guardarán parámetros de conexión y una referencia a la
+credencial en el almacén seguro del sistema. La contraseña se solicitará
+al probar o abrir la conexión si el almacén aún no la tiene. Las cuentas
+SQL deberán tener permisos de lectura sobre los catálogos y datos
+autorizados. La configuración incluirá tiempos de espera y usará límites
+de página del contrato común.
+
+La configuración local propuesta es `.cide/conexiones.local.toml`. El
+formulario de CIDE escribirá este archivo. Un perfil PostgreSQL tendría
+esta forma. MySQL usa `motor = "mysql"` y selecciona objetos de la base
+indicada.
+
+```toml
+[conexiones.inventario]
+motor = "postgresql"
+host = "db-ejemplo.invalid"
+puerto = 5432
+base = "inventario"
+usuario = "lectura_cide"
+esquemas = ["public"]
+tls = "verificar-servidor"
+credencial = "cide/datadigger/inventario"
+```
+
+## Minería de esquema SQL
+
+Los proveedores SQL consultarán los metadatos visibles para la cuenta
+configurada. El catálogo incluirá esquemas, tablas, vistas, columnas,
+tipos, nulabilidad, claves primarias y foráneas e índices. El proveedor
+conservará los nombres y tipos originales junto al modelo común. La
+instantánea se identificará por perfil y se sustituirá al completar una
+lectura válida. Una actualización fallida conservará el último catálogo
+válido e indicará su antigüedad. La minería de esquema lee metadatos y
+la cuadrícula solicita filas por página al explorar una tabla o vista.
 
 ## Qué aprovechar del DataDigger personalizado
 
@@ -70,6 +118,9 @@ Las operaciones de edición, borrado e importación son una expansión aparte.
    de introducir operadores o campos no admitidos. Validar la liberación
    de consultas, búferes y conexiones al terminar o cancelar.
 
-El mismo contrato de cuadrícula podrá admitir proveedores SQL para
-PostgreSQL y MySQL en bloques posteriores, con consultas parametrizadas
-y sus propias reglas de tipos y paginación.
+4. **Proveedores PostgreSQL y MySQL.** Validar conexión, configuración
+   por motor, permisos, TLS, minería y refresco de metadatos con bases de
+   prueba. Reusar la cuadrícula y probar consultas parametrizadas,
+   distinción de `NULL` y cadena vacía, paginación estable, cancelación y
+   preservación de los datos. Los nombres de objetos se resolverán desde el
+   catálogo y se citarán con las reglas del motor.

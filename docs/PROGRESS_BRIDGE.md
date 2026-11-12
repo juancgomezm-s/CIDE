@@ -114,17 +114,39 @@ Selecciona una sugerencia con las flechas y aplícala con **Intro**.
 - **Índices** después de `USE-INDEX`, usando la tabla de la frase activa.
 
 Se admiten nombres lógicos y aliases del perfil. Se presentan hasta 32
-sugerencias del catálogo en memoria. La consulta corre en segundo plano
+sugerencias. La consulta corre en segundo plano
 y usa hasta 2 MiB de texto anterior al cursor. Cambiar el texto, el cursor,
-la vista, el proyecto o el catálogo invalida las sugerencias. La detección
-de contexto es léxica. La resolución de buffers, tablas temporales e
-identificadores definidos en inclusiones queda para una etapa posterior.
+la vista, el proyecto o el catálogo invalida las sugerencias.
+
+- **Buffers estáticos** de tablas de base de datos y tablas temporales.
+  Por ejemplo, `bCliente.na` usa los campos de la tabla que respalda a
+  `bCliente`.
+- **Tablas temporales** con `FIELD` e `INDEX`, además de campos e índices
+  heredados mediante `LIKE` o `LIKE-SEQUENTIAL`. Tras `USE-INDEX` se
+  ofrecen los índices de la tabla o buffer de la frase activa.
+- **Inclusiones estáticas** anteriores al cursor, con variables,
+  parámetros escalares, funciones y procedimientos internos. Por
+  ejemplo, `RUN pIncl` ofrece `pIncluido`. Los símbolos de una rutina
+  quedan en su ámbito.
+
+El lector toma las inclusiones guardadas en disco. Busca en el orden del
+PROPATH del proyecto y sigue inclusiones anidadas dentro de la carpeta.
+Admite hasta 32 referencias, ocho niveles y 1 MiB acumulado, con 256 KiB
+por archivo. La detección es léxica y admite inclusiones independientes
+sin argumentos. La expansión de macros, las ramas condicionales y los
+buffers dinámicos quedan fuera de este bloque.
 
 Validado en Windows con OpenEdge 11.7 x86 y el perfil de prueba de dos
 bases en solo lectura. GUI y TUI leyeron el catálogo real y completaron
 `negocio.customer`, el campo `name` y el índice `cust-num`. Las tres
 inserciones se revirtieron en un paso en cada interfaz. Las 12 huellas
 SHA-256 de los archivos de base cotejados permanecieron iguales.
+
+El ejemplo `progress/examples/schema-assistance` se copia al proyecto
+sintético de prueba. Su `.cide/propath` contiene `primero` y `segundo` en
+ese orden. Se verificaron 13 inserciones y su deshacer en cada interfaz.
+OpenEdge 11.7 comprobó la sintaxis de `asistencia.p` con ese mismo PROPATH
+y los aliases del perfil de prueba.
 
 ## Validación local — 2026-11-11
 
