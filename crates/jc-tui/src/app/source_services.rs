@@ -17,6 +17,7 @@ pub(crate) fn is_command(command: CommandId) -> bool {
             | CommandId::SourceDefinition
             | CommandId::SourceLspReferences
             | CommandId::SourceLspComplete
+            | CommandId::SourceSchemaComplete
             | CommandId::SourceLspDiagnostics
             | CommandId::SourceCalls
             | CommandId::SourceIncoming
@@ -66,6 +67,9 @@ impl TuiApp {
                 .source_registry
                 .resolve(language, SourceMode::Completion)
                 .is_some();
+        context.source_schema_completion_available = self
+            .progress_schema
+            .supports_completion(&self.workbench, self.project_root.as_deref());
         context.source_rename_available = self.workbench.active_encoding().is_some()
             && self
                 .source_registry
@@ -102,22 +106,50 @@ impl TuiApp {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
+        let catalog = if mode == SourceMode::CatalogCompletion {
+            let Some(provider) = self
+                .progress_schema
+                .completion(&self.workbench, self.project_root.as_deref())
+            else {
+                self.status =
+                    "Actualiza el esquema ABL del proyecto para obtener sugerencias".into();
+                return;
+            };
+            Some(provider)
+        } else {
+            None
+        };
         self.close_overlay();
         self.source_candidates = None;
-        self.source_popup = matches!(mode, SourceMode::Completion | SourceMode::LspCompletion);
+        self.source_popup = matches!(
+            mode,
+            SourceMode::Completion | SourceMode::LspCompletion | SourceMode::CatalogCompletion
+        );
         if mode == SourceMode::LspDiagnostics {
             self.show_bottom(jc_app::BottomPanel::Problems);
         } else if !self.source_popup {
             self.panels.show_sidebar(SidebarView::Symbols);
             let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
         }
-        self.status = match self.source.request(
-            mode,
-            &self.source_registry,
-            &self.workbench,
-            self.project_root.as_deref(),
-            &mut self.tasks,
-        ) {
+        let root = self.project_root.as_deref();
+        let result = if let Some(provider) = catalog {
+            self.source.request_catalog_completion(
+                provider,
+                &self.source_registry,
+                &self.workbench,
+                root,
+                &mut self.tasks,
+            )
+        } else {
+            self.source.request(
+                mode,
+                &self.source_registry,
+                &self.workbench,
+                root,
+                &mut self.tasks,
+            )
+        };
+        self.status = match result {
             Ok(()) => self.source.message().into(),
             Err(e) => e,
         };
@@ -166,6 +198,7 @@ impl TuiApp {
             CommandId::SourceDefinition => self.request_source(SourceMode::Definition),
             CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
             CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
+            CommandId::SourceSchemaComplete => self.request_source(SourceMode::CatalogCompletion),
             CommandId::SourceLspDiagnostics => self.request_source(SourceMode::LspDiagnostics),
             CommandId::SourceCalls => self.request_source(SourceMode::Calls),
             CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
@@ -226,6 +259,8 @@ impl TuiApp {
                             "Símbolo renombrado · un paso para deshacer".into()
                         } else if self.source.mode() == Some(SourceMode::LspCompletion) {
                             "Sugerencia semántica aplicada · un paso para deshacer".into()
+                        } else if self.source.mode() == Some(SourceMode::CatalogCompletion) {
+                            "Sugerencia del esquema aplicada · un paso para deshacer".into()
                         } else if self.source.mode().is_some_and(SourceMode::is_lsp) {
                             "Ubicación LSP abierta".into()
                         } else {

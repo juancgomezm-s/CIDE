@@ -99,6 +99,33 @@ proyecto, admite hasta 1 MiB y 8192 registros, y el panel muestra una vista
 de hasta 256 entradas junto al conteo total. Cambiar de proyecto cancela la
 lectura y libera el catálogo de la carpeta anterior.
 
+### Autocompletado de esquema en GUI y TUI
+
+Actualiza el esquema con **Mayús+F7**. En un archivo ABL de esa carpeta,
+usa **Editar → Completar desde esquema ABL** o **Ctrl+Alt+Espacio**.
+Selecciona una sugerencia con las flechas y aplícala con **Intro**.
+**Ctrl+Z** revierte la inserción en un paso.
+
+- **Tablas** en frases como `FOR EACH negocio.cust`, `FIND FIRST cust` y
+  `CREATE cust`. Si el nombre aparece en varias bases, se muestra e inserta
+  calificado.
+- **Campos** en expresiones como `negocio.customer.na` o justo después de
+  `WHERE` cuando la tabla se puede identificar.
+- **Índices** después de `USE-INDEX`, usando la tabla de la frase activa.
+
+Se admiten nombres lógicos y aliases del perfil. Se presentan hasta 32
+sugerencias del catálogo en memoria. La consulta corre en segundo plano
+y usa hasta 2 MiB de texto anterior al cursor. Cambiar el texto, el cursor,
+la vista, el proyecto o el catálogo invalida las sugerencias. La detección
+de contexto es léxica. La resolución de buffers, tablas temporales e
+identificadores definidos en inclusiones queda para una etapa posterior.
+
+Validado en Windows con OpenEdge 11.7 x86 y el perfil de prueba de dos
+bases en solo lectura. GUI y TUI leyeron el catálogo real y completaron
+`negocio.customer`, el campo `name` y el índice `cust-num`. Las tres
+inserciones se revirtieron en un paso en cada interfaz. Las 12 huellas
+SHA-256 de los archivos de base cotejados permanecieron iguales.
+
 ## Validación local — 2026-11-11
 
 OpenEdge 11.7 x86 en Windows. Se probó el orden de dos directorios con una

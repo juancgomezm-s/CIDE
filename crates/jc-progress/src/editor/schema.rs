@@ -5,10 +5,16 @@ use jc_app::{Cancellation, Wakeup, Workbench};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, TryRecvError},
+        Arc,
+    },
     thread::{self, JoinHandle},
     time::Duration,
 };
+
+mod completion;
 
 const MAX_RECORDS: usize = 8192;
 const PANEL_RECORDS: usize = 256;
@@ -16,7 +22,7 @@ const PANEL_RECORDS: usize = 256;
 #[derive(Default)]
 pub struct SchemaController {
     pending: Option<Pending>,
-    catalog: Option<Catalog>,
+    catalog: Option<Arc<Catalog>>,
 }
 
 struct Pending {
@@ -28,6 +34,8 @@ struct Pending {
 }
 
 struct Catalog {
+    root: PathBuf,
+    live: AtomicBool,
     records: Vec<SchemaRecord>,
     codec: String,
     aliases: Vec<DatabaseAlias>,
@@ -92,7 +100,13 @@ impl SchemaController {
 
     pub fn clear(&mut self) {
         self.cancel();
-        self.catalog = None;
+        self.retire_catalog();
+    }
+
+    fn retire_catalog(&mut self) {
+        if let Some(catalog) = self.catalog.take() {
+            catalog.live.store(false, Ordering::Release);
+        }
     }
 
     pub fn poll(&mut self, root: Option<&Path>, app: &mut Workbench) -> Option<SchemaUpdate> {
@@ -120,7 +134,8 @@ impl SchemaController {
         let update = match result {
             Ok(catalog) => {
                 let first_output_row = catalog.write_output(app);
-                self.catalog = Some(catalog);
+                self.retire_catalog();
+                self.catalog = Some(Arc::new(catalog));
                 SchemaUpdate {
                     message: "Esquema ABL actualizado · consulta Salida",
                     problems: false,
@@ -149,7 +164,7 @@ impl SchemaController {
 
 impl Drop for SchemaController {
     fn drop(&mut self) {
-        self.cancel();
+        self.clear();
         if let Some(pending) = self.pending.take() {
             let _ = pending.worker.join();
         }
@@ -203,6 +218,8 @@ fn load(root: &Path, cancel: &Cancellation) -> Result<Catalog, String> {
     }
     validate(&response.schema)?;
     Ok(Catalog {
+        root: root.to_owned(),
+        live: AtomicBool::new(true),
         records: response.schema,
         codec: response.cpinternal,
         aliases: profile.aliases,

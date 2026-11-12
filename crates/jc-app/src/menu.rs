@@ -182,6 +182,7 @@ pub fn default_menu_model() -> MenuModel {
                 SEP,
                 command(SourceComplete),
                 command(SourceLspComplete),
+                command(SourceSchemaComplete),
                 command(SourceRename),
                 command(EditInsertSnippet),
                 command(EditSurroundWith),

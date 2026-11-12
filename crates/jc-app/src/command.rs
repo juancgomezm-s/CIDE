@@ -115,6 +115,7 @@ pub enum CommandId {
     SourceDefinition,
     SourceLspReferences,
     SourceLspComplete,
+    SourceSchemaComplete,
     SourceLspDiagnostics,
     SourceCalls,
     SourceIncoming,
@@ -208,6 +209,7 @@ pub struct CommandContext {
     pub source_incoming_available: bool,
     pub source_dependencies_available: bool,
     pub source_completion_available: bool,
+    pub source_schema_completion_available: bool,
     pub source_rename_available: bool,
     pub source_active: bool,
     pub source_ready: bool,
@@ -266,6 +268,7 @@ impl Default for CommandContext {
             source_incoming_available: false,
             source_dependencies_available: false,
             source_completion_available: false,
+            source_schema_completion_available: false,
             source_rename_available: false,
             source_active: false,
             source_ready: false,
@@ -494,6 +497,13 @@ fn source_lsp(ctx: &CommandContext) -> bool {
 }
 fn source_lsp_completion(ctx: &CommandContext) -> bool {
     source_lsp(ctx) && !ctx.has_selection
+}
+fn source_schema_completion(ctx: &CommandContext) -> bool {
+    ctx.editor_input
+        && ctx.focus == PrimaryFocus::Editor
+        && !ctx.rectangular_selection
+        && !ctx.has_selection
+        && ctx.source_schema_completion_available
 }
 fn source_calls(ctx: &CommandContext) -> bool {
     ctx.source_calls_available
@@ -922,6 +932,12 @@ pub fn default_registry() -> CommandRegistry {
             source_lsp_completion
         ),
         spec!(SourceLspDiagnostics, Tools, "Comprobar con LSP", source_lsp),
+        spec!(
+            SourceSchemaComplete,
+            Edit,
+            "Completar desde esquema ABL",
+            source_schema_completion
+        ),
         spec!(SourceRename, Edit, "Renombrar símbolo ABL", source_rename),
         spec!(
             SourceRefresh,

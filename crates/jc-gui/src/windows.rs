@@ -205,6 +205,11 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     ),
     (258, CommandId::ViewDatabase, "Ver esquema ABL"),
     (
+        259,
+        CommandId::SourceSchemaComplete,
+        "Completar desde esquema ABL",
+    ),
+    (
         210,
         CommandId::ViewToggleBottomPanel,
         "Mostrar/ocultar panel &inferior",

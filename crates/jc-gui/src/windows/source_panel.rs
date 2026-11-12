@@ -70,6 +70,7 @@ pub(super) fn is_command(command: CommandId) -> bool {
             | CommandId::SourceDefinition
             | CommandId::SourceLspReferences
             | CommandId::SourceLspComplete
+            | CommandId::SourceSchemaComplete
             | CommandId::SourceLspDiagnostics
             | CommandId::SourceCalls
             | CommandId::SourceIncoming
@@ -114,6 +115,9 @@ impl State {
         context.source_completion_available = context.has_document
             && encoded
             && registry.resolve(language, SourceMode::Completion).is_some();
+        context.source_schema_completion_available = self
+            .progress_schema
+            .supports_completion(&self.workbench, self.project_root.as_deref());
         context.source_rename_available = encoded
             && context.editor_input
             && !context.has_selection
@@ -147,6 +151,19 @@ impl State {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
+        let catalog = if mode == SourceMode::CatalogCompletion {
+            let Some(provider) = self
+                .progress_schema
+                .completion(&self.workbench, self.project_root.as_deref())
+            else {
+                self.status =
+                    "Actualiza el esquema ABL del proyecto para obtener sugerencias".into();
+                return;
+            };
+            Some(provider)
+        } else {
+            None
+        };
         self.close_selector();
         self.bottom.focused = false;
         self.explorer_focused = false;
@@ -157,13 +174,25 @@ impl State {
             self.show_bottom(CommandId::ViewProblems);
         }
         self.source_gui.epoch = self.source_gui.epoch.saturating_add(1);
-        self.status = match self.source_gui.controller.request(
-            mode,
-            &self.source_gui.registry,
-            &self.workbench,
-            self.project_root.as_deref(),
-            &mut self.jobs,
-        ) {
+        let root = self.project_root.as_deref();
+        let result = if let Some(provider) = catalog {
+            self.source_gui.controller.request_catalog_completion(
+                provider,
+                &self.source_gui.registry,
+                &self.workbench,
+                root,
+                &mut self.jobs,
+            )
+        } else {
+            self.source_gui.controller.request(
+                mode,
+                &self.source_gui.registry,
+                &self.workbench,
+                root,
+                &mut self.jobs,
+            )
+        };
+        self.status = match result {
             Ok(()) => self.source_gui.controller.message().into(),
             Err(error) => error,
         };
@@ -175,6 +204,7 @@ impl State {
             CommandId::SourceDefinition => self.request_source(SourceMode::Definition),
             CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
             CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
+            CommandId::SourceSchemaComplete => self.request_source(SourceMode::CatalogCompletion),
             CommandId::SourceLspDiagnostics => self.request_source(SourceMode::LspDiagnostics),
             CommandId::SourceCalls => self.request_source(SourceMode::Calls),
             CommandId::SourceIncoming => self.request_source(SourceMode::Incoming),
@@ -243,6 +273,10 @@ impl State {
                             == Some(SourceMode::LspCompletion)
                         {
                             "Sugerencia semántica aplicada · un paso para deshacer"
+                        } else if self.source_gui.controller.mode()
+                            == Some(SourceMode::CatalogCompletion)
+                        {
+                            "Sugerencia del esquema aplicada · un paso para deshacer"
                         } else if self
                             .source_gui
                             .controller
@@ -616,6 +650,85 @@ mod tests {
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
         }
+    }
+    #[test]
+    #[ignore = "requiere el proyecto sintético de esquema de OpenEdge"]
+    fn progress_real_schema_completion_gui() {
+        let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+        let mut state = State::new(&GuiOptions {
+            project_root: Some(root.clone()),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        state
+            .workbench
+            .new_file(root.join("completar-gui.p"), TextEncoding::Utf8);
+        assert!(!state.context().source_schema_completion_available);
+        state.execute_menu(CommandId::ProgressRefreshSchema);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while state.progress_schema.busy() {
+            state.poll_tasks();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        state.bottom.focused = false;
+        assert!(
+            state.context().source_schema_completion_available,
+            "{}",
+            state.status
+        );
+        for (source, label, suffix) in [
+            (
+                "FOR EACH negocio.cust",
+                "Tabla · devlogica.customer",
+                "omer",
+            ),
+            ("DISPLAY negocio.customer.na", "Campo · name", "me"),
+            (
+                "FIND FIRST negocio.customer USE-INDEX cust",
+                "Índice · cust-num",
+                "-num",
+            ),
+        ] {
+            state.workbench.new_file(
+                root.join(format!("gui-{}.p", source.len())),
+                TextEncoding::Utf8,
+            );
+            state.workbench.insert_text(source).unwrap();
+            state.execute_menu(CommandId::SourceSchemaComplete);
+            finish(&mut state);
+            let panel = state.source_presentation().unwrap().panel.results.unwrap();
+            let index = state
+                .source_gui
+                .controller
+                .items()
+                .iter()
+                .position(|item| item.label.to_lowercase() == label.to_lowercase())
+                .unwrap_or_else(|| panic!("{source}: {:?}", state.source_gui.controller.items()));
+            assert!(panel
+                .rows
+                .iter()
+                .any(|row| row.label.to_lowercase().contains(&label.to_lowercase())));
+            state.source_gui.controller.select_relative(index as isize);
+            state.execute_menu(CommandId::SourceAccept);
+            assert!(!state.source_visible());
+            assert_eq!(
+                String::from_utf8(state.workbench.active_bytes().unwrap())
+                    .unwrap()
+                    .to_lowercase(),
+                format!("{source}{suffix}").to_lowercase()
+            );
+            state.workbench.undo().unwrap();
+            assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+        }
+        state.execute_menu(CommandId::SourceSchemaComplete);
+        finish(&mut state);
+        assert!(state.context().source_ready);
+        let before = state.workbench.active_bytes().unwrap();
+        state.progress_schema.clear();
+        assert!(!state.context().source_ready);
+        state.execute_menu(CommandId::SourceAccept);
+        assert_eq!(state.workbench.active_bytes().unwrap(), before);
     }
     #[test]
     #[ignore = "requires a configured local LSP server and fixture project"]

@@ -82,6 +82,7 @@ impl fmt::Display for KeyStroke {
             f.write_str("Mayús+")?;
         }
         match self.key {
+            Key::Char(' ') => f.write_str("Espacio"),
             Key::Char(c) => write!(f, "{}", c.to_ascii_uppercase()),
             Key::Function(n) => write!(f, "F{n}"),
             Key::Tab => f.write_str("Tab"),
@@ -266,6 +267,7 @@ pub fn default_keymap() -> KeyMap {
         bind(Editor, KeyStroke::ctrl_shift(End), EditSelectDocumentEnd),
         bind(Editor, KeyStroke::ctrl(c(' ')), SourceComplete),
         bind(Editor, KeyStroke::ctrl_shift(c(' ')), SourceLspComplete),
+        bind(Editor, KeyStroke::ctrl_alt(c(' ')), SourceSchemaComplete),
         bind(Editor, KeyStroke::ctrl_shift(c('m')), SourceLspDiagnostics),
         bind(Editor, KeyStroke::plain(f(2)), SourceRename),
         bind(Editor, KeyStroke::plain(f(8)), SourceReferences),

@@ -26,6 +26,73 @@ fn editor(text: &str, path: &str) -> TuiApp {
 }
 
 #[test]
+#[ignore = "requiere el proyecto sintético de esquema de OpenEdge"]
+fn progress_real_schema_completion_tui() {
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let mut app = TuiApp::new(LaunchOptions::default());
+    app.set_explorer_root(root.clone()).unwrap();
+    app.workbench
+        .new_file(root.join("completar-tui.p"), TextEncoding::Utf8);
+    assert!(!app.command_context().source_schema_completion_available);
+    app.dispatch(CommandId::ProgressRefreshSchema);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.progress_schema.busy() {
+        app.poll_tasks();
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    app.focus.focus(PrimaryFocus::Editor, &app.panels);
+    assert!(
+        app.command_context().source_schema_completion_available,
+        "{}",
+        app.status
+    );
+    for (source, label, suffix) in [
+        (
+            "FOR EACH negocio.cust",
+            "Tabla · devlogica.customer",
+            "omer",
+        ),
+        ("DISPLAY negocio.customer.na", "Campo · name", "me"),
+        (
+            "FIND FIRST negocio.customer USE-INDEX cust",
+            "Índice · cust-num",
+            "-num",
+        ),
+    ] {
+        app.workbench.new_file(
+            root.join(format!("tui-{}.p", source.len())),
+            TextEncoding::Utf8,
+        );
+        app.workbench.insert_text(source).unwrap();
+        key(
+            &mut app,
+            KeyCode::Char(' '),
+            KeyModifiers::CONTROL | KeyModifiers::ALT,
+        );
+        finish(&mut app);
+        assert!(app.showing_source_popup(), "{}", app.status);
+        let index = app
+            .source
+            .items()
+            .iter()
+            .position(|item| item.label.to_lowercase() == label.to_lowercase())
+            .unwrap_or_else(|| panic!("{source}: {:?}", app.source.items()));
+        app.source.select_relative(index as isize);
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(!app.showing_source_popup());
+        assert_eq!(
+            String::from_utf8(app.workbench.active_bytes().unwrap())
+                .unwrap()
+                .to_lowercase(),
+            format!("{source}{suffix}").to_lowercase()
+        );
+        app.workbench.undo().unwrap();
+        assert_eq!(app.workbench.active_bytes().unwrap(), source.as_bytes());
+    }
+}
+
+#[test]
 #[ignore = "requires a configured local LSP server and fixture project"]
 fn source_tui_lsp_language_services() {
     let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());

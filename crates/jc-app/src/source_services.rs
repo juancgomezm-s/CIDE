@@ -7,6 +7,7 @@ use crate::{
 use std::{
     ops::Range,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 pub const SOURCE_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0001);
@@ -22,6 +23,7 @@ pub enum SourceMode {
     Incoming,
     Dependencies,
     Completion,
+    CatalogCompletion,
     Rename,
     Definition,
     LspReferences,
@@ -37,6 +39,7 @@ impl SourceMode {
             Self::Incoming => "Llamado por",
             Self::Dependencies => "Dependencias",
             Self::Completion => "Completado",
+            Self::CatalogCompletion => "Completar desde esquema ABL",
             Self::Rename => "Renombrar símbolo ABL",
             Self::Definition => "Ir a definición (LSP)",
             Self::LspReferences => "Buscar referencias (LSP)",
@@ -126,7 +129,10 @@ impl SourceItem {
                     SourceAction::Unresolved(reason),
                     SourceMode::References | SourceMode::Calls | SourceMode::Dependencies,
                 ) => reason.len() <= 512,
-                (SourceAction::Replace(text), SourceMode::Completion) => text.len() <= 4096,
+                (
+                    SourceAction::Replace(text),
+                    SourceMode::Completion | SourceMode::CatalogCompletion,
+                ) => text.len() <= 4096,
                 (SourceAction::LspCompletion(edits), SourceMode::LspCompletion) => {
                     (1..=9).contains(&edits.len())
                 }
@@ -152,8 +158,21 @@ pub enum FileResolution {
 pub type RenameProvider =
     fn(&[u8], jc_text::TextEncoding, usize, &str) -> Result<Vec<Range<usize>>, String>;
 
+/// A project service can offer completions against an immutable snapshot.
+/// Publication and insertion require the same provider and editor context.
+pub trait CatalogCompletion: Send + Sync {
+    fn is_current(&self) -> bool;
+    fn complete(
+        &self,
+        snapshot: &TaskSnapshot,
+        cancel: &Cancellation,
+        output: &mut TaskOutput,
+    ) -> Result<(), TaskFailure>;
+}
+
 pub(crate) enum SourceJob {
     Plain(TaskProvider),
+    Catalog(Arc<dyn CatalogCompletion>),
     Lsp(crate::lsp::Work),
     Incoming(IncomingScan),
     Rename {
@@ -179,6 +198,7 @@ impl SourceJob {
     ) -> Result<(), TaskFailure> {
         match self {
             Self::Plain(provider) => provider(snapshot, cancel, output),
+            Self::Catalog(provider) => provider.complete(snapshot, cancel, output),
             Self::Lsp(work) => work.run(snapshot, cancel, output),
             Self::Incoming(scan) => scan.run(snapshot.stamp, cancel, output),
             Self::Rename {
@@ -262,6 +282,7 @@ impl SourceProviderDescriptor {
             SourceMode::Dependencies => self.dependencies,
             SourceMode::Completion => self.completion,
             SourceMode::Rename
+            | SourceMode::CatalogCompletion
             | SourceMode::Definition
             | SourceMode::LspReferences
             | SourceMode::LspCompletion
@@ -490,8 +511,10 @@ impl Origin {
                 .active_document()
                 .is_some_and(|d| d.id == self.stamp.document && d.session.path() == self.path)
             && app.active_editor().is_some_and(|e| {
-                (!matches!(mode, SourceMode::Completion | SourceMode::Rename)
-                    && (!mode.is_lsp() || mode == SourceMode::LspDiagnostics))
+                (!matches!(
+                    mode,
+                    SourceMode::Completion | SourceMode::CatalogCompletion | SourceMode::Rename
+                ) && (!mode.is_lsp() || mode == SourceMode::LspDiagnostics))
                     || e.cursor == self.cursor
                         && e.anchor == self.anchor
                         && app.rectangle_for_pane(self.pane).is_none()
@@ -504,7 +527,23 @@ struct Request {
     origin: Origin,
     mode: SourceMode,
     provider: Option<SourceProviderDescriptor>,
-    rename: Option<String>,
+    input: SourceInput,
+}
+#[derive(Clone)]
+enum SourceInput {
+    None,
+    Rename(String),
+    Catalog(Arc<dyn CatalogCompletion>),
+}
+
+impl Request {
+    fn current(&self, app: &Workbench, root: Option<&Path>) -> bool {
+        self.origin.current(app, root, self.mode)
+            && match &self.input {
+                SourceInput::Catalog(provider) => provider.is_current(),
+                _ => true,
+            }
+    }
 }
 struct Flight {
     id: JobId,
@@ -638,10 +677,7 @@ impl SourceController {
     pub fn ready(&self, app: &Workbench, root: Option<&Path>) -> bool {
         self.state == SourceState::Ready
             && !self.items.is_empty()
-            && self
-                .accepted
-                .as_ref()
-                .is_some_and(|r| r.origin.current(app, root, r.mode))
+            && self.accepted.as_ref().is_some_and(|r| r.current(app, root))
     }
     pub fn side_ready(&self, app: &Workbench, root: Option<&Path>) -> bool {
         self.ready(app, root)
@@ -670,7 +706,9 @@ impl SourceController {
                     Some(SourceMode::Incoming) => "Llamado por (fuentes en disco)",
                     Some(SourceMode::Rename) => "Vista previa del renombrado",
                     Some(SourceMode::Dependencies) => "Dependencias",
-                    Some(mode) if mode.is_lsp() => mode.label(),
+                    Some(mode) if mode.is_lsp() || mode == SourceMode::CatalogCompletion => {
+                        mode.label()
+                    }
                     _ => "Completado (palabras locales)",
                 },
                 columns,
@@ -734,7 +772,7 @@ impl SourceController {
         root: Option<&Path>,
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
-        self.request_named(mode, None, registry, app, root, jobs)
+        self.request_named(mode, SourceInput::None, registry, app, root, jobs)
     }
     pub fn request_rename(
         &mut self,
@@ -749,7 +787,24 @@ impl SourceController {
         }
         self.request_named(
             SourceMode::Rename,
-            Some(name.into()),
+            SourceInput::Rename(name.into()),
+            registry,
+            app,
+            root,
+            jobs,
+        )
+    }
+    pub fn request_catalog_completion(
+        &mut self,
+        provider: Arc<dyn CatalogCompletion>,
+        registry: &SourceRegistry,
+        app: &Workbench,
+        root: Option<&Path>,
+        jobs: &mut JobSystem,
+    ) -> Result<(), String> {
+        self.request_named(
+            SourceMode::CatalogCompletion,
+            SourceInput::Catalog(provider),
             registry,
             app,
             root,
@@ -759,18 +814,20 @@ impl SourceController {
     fn request_named(
         &mut self,
         mode: SourceMode,
-        rename: Option<String>,
+        input: SourceInput,
         registry: &SourceRegistry,
         app: &Workbench,
         root: Option<&Path>,
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
-        if mode == SourceMode::Rename && rename.is_none() {
+        if mode == SourceMode::Rename && !matches!(input, SourceInput::Rename(_)) {
             return Err("Escribe primero el nombre nuevo".into());
         }
         if self.outline
-            && (matches!(mode, SourceMode::Completion | SourceMode::Rename)
-                || mode.lsp_query().is_some())
+            && (matches!(
+                mode,
+                SourceMode::Completion | SourceMode::CatalogCompletion | SourceMode::Rename
+            ) || mode.lsp_query().is_some())
         {
             return Err("Usa el comando de navegación en la vista de código".into());
         }
@@ -782,7 +839,10 @@ impl SourceController {
         self.status(SourceState::Failed, "Solicitud de código no disponible");
         if matches!(
             mode,
-            SourceMode::Completion | SourceMode::Rename | SourceMode::LspCompletion
+            SourceMode::Completion
+                | SourceMode::CatalogCompletion
+                | SourceMode::Rename
+                | SourceMode::LspCompletion
         ) && (app.active_editor().is_some_and(|e| e.selection().is_some())
             || app.rectangle_for_pane(app.panes().active()).is_some())
         {
@@ -802,7 +862,12 @@ impl SourceController {
         if self.outline {
             self.outline_attempt = Some(origin.clone());
         }
-        let provider = if mode.lsp_query().is_some() {
+        let provider = if mode == SourceMode::CatalogCompletion {
+            if !matches!(&input, SourceInput::Catalog(provider) if provider.is_current()) {
+                return Err("Actualiza primero el catálogo del proyecto ABL".into());
+            }
+            None
+        } else if mode.lsp_query().is_some() {
             if !registry.supports_lsp(app, root) {
                 return Err("LSP requiere un archivo guardado de un lenguaje admitido y una carpeta de proyecto".into());
             }
@@ -819,7 +884,7 @@ impl SourceController {
             origin,
             mode,
             provider,
-            rename,
+            input,
         });
         self.status(SourceState::Queued, "Capacidad de código en cola");
         self.tick(app, root, jobs);
@@ -838,14 +903,12 @@ impl SourceController {
         let stale = self
             .accepted
             .as_ref()
-            .is_some_and(|r| !r.origin.current(app, root, r.mode))
+            .is_some_and(|r| !r.current(app, root))
+            || self.pending.as_ref().is_some_and(|r| !r.current(app, root))
             || self
-                .pending
+                .flight
                 .as_ref()
-                .is_some_and(|r| !r.origin.current(app, root, r.mode))
-            || self.flight.as_ref().is_some_and(|f| {
-                !f.discard && !f.request.origin.current(app, root, f.request.mode)
-            });
+                .is_some_and(|f| !f.discard && !f.request.current(app, root));
         if stale {
             self.invalidate(jobs);
             return self.status(
@@ -865,7 +928,10 @@ impl SourceController {
         };
         let len = if r.mode == SourceMode::Incoming {
             0
-        } else if r.mode == SourceMode::Completion {
+        } else if matches!(
+            r.mode,
+            SourceMode::Completion | SourceMode::CatalogCompletion
+        ) {
             r.origin.cursor
         } else {
             app.document_by_id(r.origin.stamp.document)
@@ -878,8 +944,11 @@ impl SourceController {
                 "La captura del servicio de código excede2MiB",
             );
         }
-        let lsp = r.mode.lsp_query();
-        let work = if let Some(query) = lsp {
+        let mode = r.mode;
+        let lsp = mode.lsp_query();
+        let work = if let SourceInput::Catalog(provider) = &r.input {
+            SourceJob::Catalog(provider.clone())
+        } else if let Some(query) = lsp {
             SourceJob::Lsp(crate::lsp::Work {
                 client: self.lsp.clone(),
                 root: r.origin.root.clone().expect("admitted project root"),
@@ -899,7 +968,10 @@ impl SourceController {
                 SourceMode::Rename => SourceJob::Rename {
                     provider: provider.rename.unwrap(),
                     cursor: r.origin.cursor,
-                    name: r.rename.clone().unwrap(),
+                    name: match &r.input {
+                        SourceInput::Rename(name) => name.clone(),
+                        _ => unreachable!("admitted rename input"),
+                    },
                 },
                 mode => SourceJob::Plain(provider.provider(mode).unwrap()),
             }
@@ -916,6 +988,8 @@ impl SourceController {
                     SourceState::Running,
                     if lsp.is_some() {
                         "Consultando servidor LSP"
+                    } else if mode == SourceMode::CatalogCompletion {
+                        "Consultando el catálogo ABL local"
                     } else {
                         "Leyendo captura acotada del fuente; solo evidencia léxica"
                     },
@@ -958,10 +1032,7 @@ impl SourceController {
         if flight.discard || request.generation != self.generation {
             return true;
         }
-        if !request.origin.current(app, root, request.mode)
-            || !task.current
-            || task.path != request.origin.path
-        {
+        if !request.current(app, root) || !task.current || task.path != request.origin.path {
             self.status(
                 SourceState::Stale,
                 "El resultado del código ya no está vigente",
@@ -1046,8 +1117,10 @@ impl SourceController {
             if !item.valid_for(request.mode)
                 || request.mode == SourceMode::LspCompletion
                     && !(item.range.start..=item.range.end).contains(&request.origin.cursor)
-                || request.mode == SourceMode::Completion
-                    && (item.range.end != request.origin.cursor || item.range.len() > 512)
+                || matches!(
+                    request.mode,
+                    SourceMode::Completion | SourceMode::CatalogCompletion
+                ) && (item.range.end != request.origin.cursor || item.range.len() > 512)
                 || !matches!(
                     item.action,
                     SourceAction::Caller { .. } | SourceAction::LspLocation { .. }
@@ -1074,7 +1147,9 @@ impl SourceController {
             0
         };
         self.items = items;
-        let message = if let Some(provider) = request.provider {
+        let message = if request.mode == SourceMode::CatalogCompletion {
+            format!("Esquema ABL: {} sugerencias", self.items.len())
+        } else if let Some(provider) = request.provider {
             format!(
                 "{}: {} resultados léxicos (sin verificación del compilador)",
                 provider.id,
@@ -1129,7 +1204,7 @@ impl SourceController {
             .accepted
             .as_ref()
             .ok_or("No hay resultado de código vigente")?;
-        if !request.origin.current(app, root, request.mode) {
+        if !request.current(app, root) {
             return Err("Cambió el resultado del código; actualiza".into());
         }
         if request.mode == SourceMode::Rename {
@@ -1299,7 +1374,7 @@ impl SourceController {
             .accepted
             .as_ref()
             .ok_or("No hay resultado de código vigente")?;
-        if !request.origin.current(app, root, request.mode) {
+        if !request.current(app, root) {
             return Err("Cambió el resultado del código; actualiza".into());
         }
         let item = self
