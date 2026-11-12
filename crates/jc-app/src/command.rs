@@ -914,8 +914,8 @@ pub fn default_registry() -> CommandRegistry {
         spec!(
             SourceLspReferences,
             Navigation,
-            "Buscar referencias (LSP)",
-            source_lsp
+            "Buscar referencias",
+            source_definition
         ),
         spec!(SourceIncoming, Navigation, "Llamado por", source_incoming),
         spec!(

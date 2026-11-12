@@ -25,6 +25,7 @@ pub enum SourceMode {
     Completion,
     CatalogCompletion,
     CatalogDefinition,
+    CatalogReferences,
     Rename,
     Definition,
     LspReferences,
@@ -42,6 +43,7 @@ impl SourceMode {
             Self::Completion => "Completado",
             Self::CatalogCompletion => "Completar desde esquema ABL",
             Self::CatalogDefinition => "Ir a definición ABL",
+            Self::CatalogReferences => "Buscar referencias ABL",
             Self::Rename => "Renombrar símbolo ABL",
             Self::Definition => "Ir a definición (LSP)",
             Self::LspReferences => "Buscar referencias (LSP)",
@@ -51,7 +53,10 @@ impl SourceMode {
     }
 
     pub fn is_catalog(self) -> bool {
-        matches!(self, Self::CatalogCompletion | Self::CatalogDefinition)
+        matches!(
+            self,
+            Self::CatalogCompletion | Self::CatalogDefinition | Self::CatalogReferences
+        )
     }
 
     fn lsp_query(self) -> Option<crate::lsp::Query> {
@@ -126,6 +131,7 @@ impl SourceItem {
                     | SourceMode::Dependencies
                     | SourceMode::Definition
                     | SourceMode::CatalogDefinition
+                    | SourceMode::CatalogReferences
                     | SourceMode::LspReferences,
                 ) => true,
                 (
@@ -149,7 +155,8 @@ impl SourceItem {
                     SourceAction::ProjectLocation { path, .. },
                     SourceMode::Definition
                     | SourceMode::LspReferences
-                    | SourceMode::CatalogDefinition,
+                    | SourceMode::CatalogDefinition
+                    | SourceMode::CatalogReferences,
                 ) => path.is_absolute() && path.as_os_str().len() <= 4096,
                 _ => false,
             }
@@ -171,6 +178,7 @@ pub type RenameProvider =
 pub enum CatalogQuery {
     Complete,
     Definition { cursor: usize },
+    References { cursor: usize },
 }
 
 /// A project service answers against an immutable snapshot and project context.
@@ -299,6 +307,7 @@ impl SourceProviderDescriptor {
             SourceMode::Rename
             | SourceMode::CatalogCompletion
             | SourceMode::CatalogDefinition
+            | SourceMode::CatalogReferences
             | SourceMode::Definition
             | SourceMode::LspReferences
             | SourceMode::LspCompletion
@@ -963,12 +972,11 @@ impl SourceController {
         let mode = r.mode;
         let lsp = mode.lsp_query();
         let work = if let SourceInput::Catalog(provider) = &r.input {
-            let query = if mode == SourceMode::CatalogDefinition {
-                CatalogQuery::Definition {
-                    cursor: r.origin.cursor,
-                }
-            } else {
-                CatalogQuery::Complete
+            let cursor = r.origin.cursor;
+            let query = match mode {
+                SourceMode::CatalogDefinition => CatalogQuery::Definition { cursor },
+                SourceMode::CatalogReferences => CatalogQuery::References { cursor },
+                _ => CatalogQuery::Complete,
             };
             SourceJob::Catalog(provider.clone(), query)
         } else if let Some(query) = lsp {
@@ -1111,7 +1119,7 @@ impl SourceController {
         let is_lsp = request.mode.lsp_query().is_some();
         let mut notice = None;
         for item in task.output.take_items() {
-            if is_lsp {
+            if is_lsp || request.mode == SourceMode::CatalogReferences {
                 match item {
                     TaskItem::Problem(message) => {
                         self.status(SourceState::Failed, message);
@@ -1178,6 +1186,12 @@ impl SourceController {
             } else {
                 "Definición ABL localizada · Intro abre · Ctrl+Intro al lado".into()
             }
+        } else if request.mode == SourceMode::CatalogReferences {
+            let mut message = format!("ABL: {} referencias en la unidad fuente", self.items.len());
+            if let Some(notice) = notice {
+                message.push_str(&format!(" · {notice}"));
+            }
+            message
         } else if let Some(provider) = request.provider {
             format!(
                 "{}: {} resultados léxicos (sin verificación del compilador)",

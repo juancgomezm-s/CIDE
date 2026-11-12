@@ -15,6 +15,7 @@ const MAX_INCLUDE_BYTES: usize = 1024 * 1024;
 const MAX_INCLUDES: usize = 32;
 const MAX_DEPTH: usize = 8;
 
+#[derive(PartialEq, Eq)]
 pub(super) struct IncludeFile {
     pub path: PathBuf,
     pub encoding: TextEncoding,
@@ -106,6 +107,7 @@ impl<'a> Includes<'a> {
         };
         let mut context = Context::new(&bytes, encoding);
         if self.capture_locations {
+            context.expansion = self.files;
             context.file = Some(Arc::new(IncludeFile {
                 path: path.clone(),
                 encoding,

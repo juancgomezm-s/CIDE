@@ -14,6 +14,7 @@ use std::{
 
 mod declarations;
 mod includes;
+mod references;
 
 use declarations::Symbols;
 use includes::IncludeFile;
@@ -116,7 +117,7 @@ impl CatalogSource for Provider {
                     output.push(TaskItem::Source(item))?;
                 }
             }
-            CatalogQuery::Definition { cursor } => {
+            CatalogQuery::Definition { cursor } | CatalogQuery::References { cursor } => {
                 let empty;
                 let catalog = if let Some(catalog) = catalog.as_deref() {
                     catalog
@@ -131,7 +132,17 @@ impl CatalogSource for Provider {
                     };
                     &empty
                 };
-                if let Some(item) = catalog.definition(
+                if matches!(query, CatalogQuery::References { .. }) {
+                    for item in catalog.references(
+                        &self.source,
+                        snapshot.bytes(),
+                        snapshot.stamp.encoding,
+                        cursor,
+                        cancel,
+                    )? {
+                        output.push(item)?;
+                    }
+                } else if let Some(item) = catalog.definition(
                     &self.source,
                     snapshot.bytes(),
                     snapshot.stamp.encoding,
@@ -155,14 +166,17 @@ struct Context<'a> {
     bytes: &'a [u8],
     encoding: TextEncoding,
     file: Option<Arc<IncludeFile>>,
+    expansion: usize,
+    reference_line: (usize, usize),
     tokens: Vec<Token>,
     overflow: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct Site {
     offset: usize,
     file: Option<Arc<IncludeFile>>,
+    expansion: usize,
 }
 
 impl Site {
@@ -210,6 +224,8 @@ impl<'a> Context<'a> {
             bytes,
             encoding,
             file: None,
+            expansion: 0,
+            reference_line: (0, 1),
             tokens: Vec::new(),
             overflow: false,
         }
@@ -219,6 +235,7 @@ impl<'a> Context<'a> {
         Site {
             offset: token.range.start,
             file: self.file.clone(),
+            expansion: self.expansion,
         }
     }
 
@@ -282,6 +299,9 @@ impl<'a> Context<'a> {
             }
         }
         if self.tokens.len() == MAX_STATEMENT_TOKENS && !self.starts_definition() {
+            if !self.overflow {
+                symbols.note_reference_overflow();
+            }
             self.overflow = true;
         }
         if self.tokens.len() == MAX_DEFINITION_TOKENS {
@@ -291,6 +311,9 @@ impl<'a> Context<'a> {
             return Ok(());
         }
         self.tokens.push(token);
+        if certain {
+            symbols.observe_reference(self)?;
+        }
         Ok(())
     }
 
@@ -351,8 +374,7 @@ impl<'a> Context<'a> {
         self.components(tokens.get(..end)?)
     }
 
-    fn target(&self) -> Option<(Target, Range<usize>, String)> {
-        let cursor = self.bytes.len();
+    fn target(&self, cursor: usize) -> Option<(Target, Range<usize>, String)> {
         let mut before = self.tokens.len();
         let mut range = cursor..cursor;
         let mut prefix = String::new();
@@ -508,7 +530,7 @@ impl Catalog {
         if protected || context.overflow {
             return Ok(None);
         }
-        let Some((target, range, name)) = context.target() else {
+        let Some((target, range, name)) = context.target(end) else {
             return Ok(None);
         };
         if range.is_empty() || !(range.start..=range.end).contains(&cursor) {
@@ -554,7 +576,7 @@ impl Catalog {
         if protected || context.overflow {
             return Ok(Vec::new());
         }
-        let Some((target, range, prefix)) = context.target() else {
+        let Some((target, range, prefix)) = context.target(bytes.len()) else {
             return Ok(Vec::new());
         };
         let prefix = fold(&prefix);
@@ -838,6 +860,137 @@ mod tests {
             );
         }
         assert!(definition(source.find("DISPLAY bDatos").unwrap() + 7).is_none());
+    }
+
+    #[test]
+    fn schema_references_match_scope_fields_and_forward_calls() {
+        let catalog = catalog();
+        let source = "DEFINE VARIABLE cantidad AS INTEGER.\r\n\
+                      DISPLAY cantidad.\r\n\
+                      PROCEDURE uno:\r\n DEFINE VARIABLE cantidad AS INTEGER.\r\n DISPLAY cantidad.\r\n END.\r\n\
+                      DISPLAY cantidad 'cantidad'. /* cantidad */\n DISPLAY objeto:cantidad.\n\
+                      DEFINE TEMP-TABLE ttA FIELD codigo AS INTEGER.\n\
+                      DEFINE TEMP-TABLE ttB FIELD codigo AS INTEGER.\n\
+                      DEFINE BUFFER bA FOR TEMP-TABLE ttA.\n\
+                      DISPLAY bA.codigo ttA.codigo ttB.codigo.\n\
+                      RUN posterior.\n PROCEDURE posterior:\n END PROCEDURE.\n RUN posterior IN externo.";
+        let hits = |cursor| {
+            catalog
+                .references(
+                    &catalog.root.join("fuente.p"),
+                    source.as_bytes(),
+                    TextEncoding::Utf8,
+                    cursor,
+                    &Cancellation::new(Duration::from_secs(2)),
+                )
+                .unwrap()
+                .into_iter()
+                .filter_map(|item| match item {
+                    TaskItem::Source(item) => Some((item.range.start, item.label)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let global = source.find("VARIABLE cantidad").unwrap() + "VARIABLE ".len();
+        let global_uses = [
+            source.find("DISPLAY cantidad").unwrap() + "DISPLAY ".len(),
+            source.find("DISPLAY cantidad '").unwrap() + "DISPLAY ".len(),
+        ];
+        assert_eq!(
+            hits(global)
+                .iter()
+                .map(|(offset, _)| *offset)
+                .collect::<Vec<_>>(),
+            global_uses
+        );
+        assert!(hits(global)[0].1.contains("lín 2"));
+        let local = source.find("DISPLAY cantidad.\r\n END").unwrap() + "DISPLAY ".len();
+        assert_eq!(
+            hits(local)
+                .iter()
+                .map(|(offset, _)| *offset)
+                .collect::<Vec<_>>(),
+            [local]
+        );
+        let first_field = source.find("ttA FIELD codigo").unwrap() + "ttA FIELD ".len();
+        assert_eq!(
+            hits(first_field)
+                .iter()
+                .map(|(offset, _)| *offset)
+                .collect::<Vec<_>>(),
+            [
+                source.find("bA.codigo").unwrap() + 3,
+                source.find("ttA.codigo").unwrap() + 4
+            ]
+        );
+        let first_call = source.find("RUN posterior.").unwrap() + 4;
+        let declaration = source.find("PROCEDURE posterior").unwrap() + 10;
+        assert_eq!(
+            hits(declaration)
+                .iter()
+                .map(|(offset, _)| *offset)
+                .collect::<Vec<_>>(),
+            [first_call]
+        );
+        assert!(hits(source.find("'cantidad'").unwrap() + 2).is_empty());
+    }
+
+    #[test]
+    fn schema_references_reports_truncated_results() {
+        let catalog = catalog();
+        let source = format!(
+            "DEFINE VARIABLE cantidad AS INTEGER.\n{}",
+            "DISPLAY cantidad.\n".repeat(55)
+        );
+        let hits = catalog
+            .references(
+                &catalog.root.join("fuente.p"),
+                source.as_bytes(),
+                TextEncoding::Utf8,
+                source.find("cantidad").unwrap(),
+                &Cancellation::new(Duration::from_secs(2)),
+            )
+            .unwrap();
+        assert_eq!(
+            hits.iter()
+                .filter(|item| matches!(item, TaskItem::Source(_)))
+                .count(),
+            48
+        );
+        assert!(
+            matches!(hits.last(), Some(TaskItem::Message(message)) if message.contains("primeras 48"))
+        );
+    }
+
+    #[test]
+    fn schema_references_distinguish_reused_include_expansions() {
+        let fixture = crate::editor::JobDir::create().unwrap();
+        let mut catalog = catalog();
+        catalog.root = fixture.path.clone();
+        let include = "DEFINE VARIABLE localIncluida AS INTEGER.\nDISPLAY localIncluida.\n";
+        std::fs::write(fixture.path.join("repetida.i"), include).unwrap();
+        let source = "PROCEDURE uno:\n{repetida.i}\nDISPLAY localIncluida.\nEND.\n\
+                      PROCEDURE dos:\n{repetida.i}\nDISPLAY localIncluida.\nEND.";
+        let first_use = source.find("DISPLAY localIncluida").unwrap() + "DISPLAY ".len();
+        let hits = catalog
+            .references(
+                &fixture.path.join("fuente.p"),
+                source.as_bytes(),
+                TextEncoding::Utf8,
+                first_use,
+                &Cancellation::new(Duration::from_secs(2)),
+            )
+            .unwrap();
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert!(matches!(
+            &hits[0],
+            TaskItem::Source(SourceItem { action: SourceAction::ProjectLocation { offset, .. }, .. })
+                if *offset == include.rfind("localIncluida").unwrap()
+        ));
+        assert!(matches!(
+            &hits[1],
+            TaskItem::Source(SourceItem { action: SourceAction::Navigate, range, .. }) if range.start == first_use
+        ));
     }
 
     #[test]

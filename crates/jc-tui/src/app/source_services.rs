@@ -135,6 +135,7 @@ impl TuiApp {
                 | SourceMode::LspCompletion
                 | SourceMode::CatalogCompletion
                 | SourceMode::CatalogDefinition
+                | SourceMode::CatalogReferences
         );
         if mode == SourceMode::LspDiagnostics {
             self.show_bottom(jc_app::BottomPanel::Problems);
@@ -207,18 +208,18 @@ impl TuiApp {
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
-            CommandId::SourceDefinition => {
-                let mode = if self
+            CommandId::SourceDefinition | CommandId::SourceLspReferences => {
+                let abl = self
                     .progress_schema
-                    .supports_definition(&self.workbench, self.project_root.as_deref())
-                {
-                    SourceMode::CatalogDefinition
-                } else {
-                    SourceMode::Definition
+                    .supports_definition(&self.workbench, self.project_root.as_deref());
+                let mode = match (command, abl) {
+                    (CommandId::SourceDefinition, true) => SourceMode::CatalogDefinition,
+                    (CommandId::SourceDefinition, false) => SourceMode::Definition,
+                    (_, true) => SourceMode::CatalogReferences,
+                    (_, false) => SourceMode::LspReferences,
                 };
                 self.request_source(mode);
             }
-            CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
             CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
             CommandId::SourceSchemaComplete => self.request_source(SourceMode::CatalogCompletion),
             CommandId::SourceLspDiagnostics => self.request_source(SourceMode::LspDiagnostics),
@@ -285,6 +286,8 @@ impl TuiApp {
                             "Sugerencia del esquema aplicada · un paso para deshacer".into()
                         } else if self.source.mode() == Some(SourceMode::CatalogDefinition) {
                             "Definición ABL abierta".into()
+                        } else if self.source.mode() == Some(SourceMode::CatalogReferences) {
+                            "Referencia ABL abierta".into()
                         } else if self.source.mode().is_some_and(SourceMode::is_lsp) {
                             "Ubicación LSP abierta".into()
                         } else {

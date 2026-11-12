@@ -194,6 +194,48 @@ fn progress_real_definition_tui_f12_opens_exact_include_and_local_routine() {
 }
 
 #[test]
+#[ignore = "requiere el proyecto sintético de OpenEdge con el ejemplo de asistencia"]
+fn progress_real_references_tui_uses_shift_f12_and_opens_the_selected_result() {
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let path = root.join("asistencia.p");
+    let include = root.join("primero/detalle.i");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let declarations = std::fs::read_to_string(&include).unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![path],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root).unwrap();
+    let tab = app.workbench.tabs().active_id().unwrap();
+    assert!(app
+        .workbench
+        .jump_to_location(tab, text.find("vIncluido").unwrap() + 3));
+    key(&mut app, KeyCode::F(12), KeyModifiers::SHIFT);
+    finish(&mut app);
+    assert!(app.showing_source_popup());
+    assert_eq!(app.source.items().len(), 2, "{}", app.source.message());
+    key(&mut app, KeyCode::Down, KeyModifiers::NONE);
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(app.workbench.tabs().active_id(), Some(tab));
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        text.find("vIncluido").unwrap()
+    );
+    key(&mut app, KeyCode::F(12), KeyModifiers::SHIFT);
+    finish(&mut app);
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    assert!(app.workbench.panes().is_split());
+    assert_eq!(
+        app.workbench.active_path().unwrap(),
+        include.canonicalize().unwrap()
+    );
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        declarations.rfind("vIncluido").unwrap()
+    );
+}
+
+#[test]
 #[ignore = "requires a configured local LSP server and fixture project"]
 fn source_tui_lsp_language_services() {
     let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());

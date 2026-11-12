@@ -15,4 +15,5 @@ END FUNCTION.
 PROCEDURE pIncluido:
     DEFINE VARIABLE soloLocal AS INTEGER NO-UNDO.
     soloLocal = 1.
+    vIncluido = soloLocal.
 END PROCEDURE.

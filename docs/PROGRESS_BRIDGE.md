@@ -170,6 +170,25 @@ rutina declarada después de la llamada y el rechazo del salto a una
 inclusión abierta con cambios sin guardar. OpenEdge 11.7 volvió a
 comprobar la sintaxis del ejemplo.
 
+### Buscar referencias en ABL
+
+Pulsa **Mayús+F12** o elige **Navegación → Buscar referencias** sobre una
+declaración o un uso. La búsqueda recorre el documento activo y sus
+inclusiones estáticas por PROPATH. Cada resultado muestra la línea. Usa
+**Intro** para abrirlo o **Ctrl+Intro** para abrirlo al lado.
+
+La búsqueda sigue la identidad de la declaración y distingue variables
+homónimas de distintas rutinas, campos homónimos de tablas temporales
+distintas y expansiones independientes de una inclusión. También reconoce
+llamadas directas a rutinas internas. Muestra hasta 48 resultados y avisa
+si recorta la lista. El análisis léxico cubre la unidad fuente activa.
+La búsqueda entre programas independientes queda para un bloque posterior.
+
+Las pruebas locales cubrieron ámbitos homónimos, inclusiones repetidas,
+el aviso de recorte y la apertura al lado en ambas interfaces. OpenEdge
+11.7 comprobó la sintaxis del ejemplo con un uso de la misma variable en
+el programa y en una inclusión anidada.
+
 ## Validación local — 2026-11-11
 
 OpenEdge 11.7 x86 en Windows. Se probó el orden de dos directorios con una

@@ -147,11 +147,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     ),
     (250, CommandId::SourceLspDiagnostics, "Comprobar con LSP"),
     (247, CommandId::SourceDefinition, "Ir a definición"),
-    (
-        248,
-        CommandId::SourceLspReferences,
-        "Buscar referencias (LSP)",
-    ),
+    (248, CommandId::SourceLspReferences, "Buscar referencias"),
     (
         238,
         CommandId::SourceDependencies,

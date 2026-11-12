@@ -210,18 +210,18 @@ impl State {
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
-            CommandId::SourceDefinition => {
-                let mode = if self
+            CommandId::SourceDefinition | CommandId::SourceLspReferences => {
+                let abl = self
                     .progress_schema
-                    .supports_definition(&self.workbench, self.project_root.as_deref())
-                {
-                    SourceMode::CatalogDefinition
-                } else {
-                    SourceMode::Definition
+                    .supports_definition(&self.workbench, self.project_root.as_deref());
+                let mode = match (command, abl) {
+                    (CommandId::SourceDefinition, true) => SourceMode::CatalogDefinition,
+                    (CommandId::SourceDefinition, false) => SourceMode::Definition,
+                    (_, true) => SourceMode::CatalogReferences,
+                    (_, false) => SourceMode::LspReferences,
                 };
                 self.request_source(mode);
             }
-            CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
             CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
             CommandId::SourceSchemaComplete => self.request_source(SourceMode::CatalogCompletion),
             CommandId::SourceLspDiagnostics => self.request_source(SourceMode::LspDiagnostics),
@@ -300,6 +300,10 @@ impl State {
                             == Some(SourceMode::CatalogDefinition)
                         {
                             "Definición ABL abierta"
+                        } else if self.source_gui.controller.mode()
+                            == Some(SourceMode::CatalogReferences)
+                        {
+                            "Referencia ABL abierta"
                         } else if self
                             .source_gui
                             .controller
@@ -859,6 +863,52 @@ mod tests {
         assert_eq!(state.source_gui.controller.items().len(), 1);
         state.execute_menu(CommandId::SourceAccept);
         assert_eq!(state.workbench.tabs().active_id(), Some(source_tab));
+        assert_eq!(std::fs::read_to_string(include).unwrap(), declarations);
+    }
+
+    #[test]
+    #[ignore = "requiere el proyecto sintético de OpenEdge con el ejemplo de asistencia"]
+    fn progress_real_references_gui_lists_include_and_opens_it_to_side() {
+        let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+        let path = root.join("asistencia.p");
+        let include = root.join("primero/detalle.i");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let declarations = std::fs::read_to_string(&include).unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![path],
+            project_root: Some(root),
+            encoding: Some(TextEncoding::Utf8),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        let tab = state.workbench.tabs().active_id().unwrap();
+        assert!(state
+            .workbench
+            .jump_to_location(tab, text.find("vIncluido").unwrap() + 3));
+        state.execute_menu(CommandId::SourceLspReferences);
+        finish(&mut state);
+        assert_eq!(
+            state.source_gui.controller.mode(),
+            Some(SourceMode::CatalogReferences)
+        );
+        let panel = state.source_presentation().unwrap().panel.results.unwrap();
+        assert_eq!(
+            panel.rows.len(),
+            2,
+            "{}",
+            state.source_gui.controller.message()
+        );
+        assert!(panel.rows[0].label.contains("detalle.i"));
+        state.source_key(0x0d, Modifiers::CTRL);
+        assert!(state.workbench.panes().is_split());
+        assert_eq!(
+            state.workbench.active_path().unwrap(),
+            include.canonicalize().unwrap()
+        );
+        assert_eq!(
+            state.workbench.active_editor().unwrap().cursor,
+            declarations.rfind("vIncluido").unwrap()
+        );
         assert_eq!(std::fs::read_to_string(include).unwrap(), declarations);
     }
 

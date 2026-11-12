@@ -1,3 +1,4 @@
+use super::references::{binding_context, ReferenceScan};
 use super::{fold, Catalog, Context, Site, SourceItem, Target, Token, MAX_LOCAL_NAMES};
 use jc_app::TaskFailure;
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,6 +29,10 @@ pub(super) struct Definition<'a> {
 }
 
 impl Definition<'_> {
+    pub(super) fn site(&self) -> &Site {
+        self.site
+    }
+
     pub(super) fn item(self, range: std::ops::Range<usize>) -> SourceItem {
         self.site
             .item(format!("{} · {}", self.kind, self.name), range)
@@ -69,6 +74,7 @@ pub(super) struct Symbols {
     local: Option<Routine>,
     tables: Vec<TempTable>,
     declarations: usize,
+    references: Option<ReferenceScan>,
 }
 
 impl Symbols {
@@ -78,25 +84,71 @@ impl Symbols {
             .map_or(&mut self.global, |routine| &mut routine.scope)
     }
 
+    pub(super) fn track_references(&mut self, scan: ReferenceScan) {
+        self.references = Some(scan);
+    }
+
+    pub(super) fn take_references(&mut self) -> Option<ReferenceScan> {
+        self.references.take()
+    }
+
+    pub(super) fn note_reference_overflow(&mut self) {
+        if let Some(scan) = &mut self.references {
+            scan.mark_partial();
+        }
+    }
+
+    pub(super) fn observe_reference(
+        &mut self,
+        context: &mut Context<'_>,
+    ) -> Result<(), TaskFailure> {
+        let Some(scan) = self
+            .references
+            .as_ref()
+            .filter(|scan| scan.matches_token(context))
+        else {
+            return Ok(());
+        };
+        let (binding, forward) = binding_context(context, self, scan.key());
+        self.references
+            .as_mut()
+            .unwrap()
+            .observe(context, binding, forward)
+    }
+
     fn register(&mut self, binding: Binding) -> Result<(), TaskFailure> {
         self.declarations += 1;
         if self.declarations > MAX_LOCAL_NAMES {
             return Err(TaskFailure::LimitExceeded);
         }
+        let key = fold(&binding.name);
+        let declared = self
+            .references
+            .as_ref()
+            .filter(|scan| scan.matches(&key))
+            .map(|_| binding.site.clone());
         let scope = self.scope();
         let target = match binding.kind {
             "Tabla temporal" | "Buffer" | "Tabla de trabajo" => &mut scope.records,
             _ => &mut scope.values,
         };
-        let key = fold(&binding.name);
+        let mut identity = declared.clone();
         if let Some(existing) = target.get_mut(&key) {
-            if existing.kind != binding.kind || !matches!(binding.kind, "Función" | "Procedimiento")
+            if existing.kind == binding.kind && matches!(binding.kind, "Función" | "Procedimiento")
             {
+                if declared.is_some() {
+                    identity = Some(existing.site.clone());
+                }
+            } else {
                 existing.kind = "";
                 existing.record = None;
             }
         } else {
             target.insert(key, binding);
+        }
+        if let (Some(site), Some(identity), Some(scan)) = (declared, identity, &mut self.references)
+        {
+            scan.declare(site, identity)?;
         }
         Ok(())
     }
@@ -430,18 +482,24 @@ impl Symbols {
                 }
             }
             for i in first_member..tokens.len() {
-                if let Some(member) = word(i + 1) {
-                    if is(i, b"FIELD") && (is(i + 2, b"AS") || is(i + 2, b"LIKE")) {
-                        table.fields.push(Member {
-                            name: member,
-                            site: context.site(&tokens[i + 1]),
-                        });
-                    } else if is(i, b"INDEX") {
-                        table.indexes.push(Member {
-                            name: member,
-                            site: context.site(&tokens[i + 1]),
-                        });
+                let is_field = is(i, b"FIELD") && (is(i + 2, b"AS") || is(i + 2, b"LIKE"));
+                let members = if is_field {
+                    &mut table.fields
+                } else if is(i, b"INDEX") {
+                    &mut table.indexes
+                } else {
+                    continue;
+                };
+                if let Some(name) = word(i + 1) {
+                    let site = context.site(&tokens[i + 1]);
+                    if let Some(scan) = self
+                        .references
+                        .as_mut()
+                        .filter(|scan| scan.matches(&fold(&name)))
+                    {
+                        scan.declare(site.clone(), site.clone())?;
                     }
+                    members.push(Member { name, site });
                 }
             }
             let record = Record::Temp(self.tables.len());
