@@ -643,8 +643,9 @@ impl Workbench {
                     }
                     // Disk-origin results describe disk even after a previous
                     // selection opened the document. Check both before focus.
+                    let root = root.canonicalize().map_err(FileError::from)?;
                     let (_, bytes) =
-                        jc_files::read_in_root(root, &path, limit).map_err(FileError::from)?;
+                        jc_files::read_in_root(&root, &path, limit).map_err(FileError::from)?;
                     if jc_files::ContentFingerprint::of(&bytes) != expected {
                         return Err(FileError::Io(std::io::Error::other(
                             "El contenido difiere de la versión esperada; actualiza el resultado",

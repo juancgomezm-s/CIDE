@@ -144,6 +144,56 @@ fn progress_real_schema_completion_tui() {
 }
 
 #[test]
+#[ignore = "requiere el proyecto sintético de OpenEdge con el ejemplo de asistencia"]
+fn progress_real_definition_tui_f12_opens_exact_include_and_local_routine() {
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let path = root.join("asistencia.p");
+    let include = root.join("primero/detalle.i");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let declarations = std::fs::read_to_string(&include).unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![path],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root.clone()).unwrap();
+    let tab = app.workbench.tabs().active_id().unwrap();
+    assert!(app
+        .workbench
+        .jump_to_location(tab, text.find("bCliente.name").unwrap() + 2));
+    key(&mut app, KeyCode::F(12), KeyModifiers::NONE);
+    finish(&mut app);
+    assert!(app.showing_source_popup());
+    assert_eq!(app.source.items().len(), 1, "{}", app.source.message());
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    assert!(app.workbench.panes().is_split());
+    assert_eq!(
+        app.workbench.active_path().unwrap(),
+        include.canonicalize().unwrap()
+    );
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        declarations.find("bCliente").unwrap()
+    );
+
+    let source = "RUN posterior.\nPROCEDURE posterior:\nEND PROCEDURE.";
+    let tab = app
+        .workbench
+        .new_file(root.join("navegacion-tui.p"), TextEncoding::Utf8);
+    app.workbench.insert_text(source).unwrap();
+    assert!(app.workbench.jump_to_location(tab, 6));
+    key(&mut app, KeyCode::F(12), KeyModifiers::NONE);
+    finish(&mut app);
+    assert_eq!(app.source.items().len(), 1, "{}", app.source.message());
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(app.workbench.tabs().active_id(), Some(tab));
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        source.rfind("posterior").unwrap()
+    );
+    assert_eq!(app.workbench.active_bytes().unwrap(), source.as_bytes());
+}
+
+#[test]
 #[ignore = "requires a configured local LSP server and fixture project"]
 fn source_tui_lsp_language_services() {
     let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());

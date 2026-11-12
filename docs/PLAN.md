@@ -585,6 +585,8 @@ El primer bloque comparte en GUI y TUI el autocompletado de tablas, campos e
 índices del catálogo del proyecto. [Uso y alcance](PROGRESS_BRIDGE.md#autocompletado-de-esquema-en-gui-y-tui).
 El segundo amplía las sugerencias a buffers estáticos, tablas temporales y
 declaraciones en inclusiones por PROPATH, con comprobación en OpenEdge 11.7.
+**Ir a definición** usa ese análisis para localizar declaraciones en el
+documento y en inclusiones, con apertura normal o lateral en GUI y TUI.
 
 Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, navegación, completado inteligente de tablas/campos/índices y análisis contextual incremental. Añadir Outline/Breadcrumb/Go to Definition/Open to Side mediante `NavigationTarget` universal y proveedores por lenguaje. Buscar/seleccionar/editar sigue siendo responsabilidad genérica de `jc-app` y Search Plus; XREF, imports USING y jerarquía OO son aportaciones del proveedor ABL.
 

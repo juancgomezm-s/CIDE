@@ -146,7 +146,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "Autocompletado semántico (LSP)",
     ),
     (250, CommandId::SourceLspDiagnostics, "Comprobar con LSP"),
-    (247, CommandId::SourceDefinition, "Ir a definición (LSP)"),
+    (247, CommandId::SourceDefinition, "Ir a definición"),
     (
         248,
         CommandId::SourceLspReferences,

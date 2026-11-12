@@ -7,12 +7,19 @@ use std::{
     io::ErrorKind,
     ops::Range,
     path::{Component, Path, PathBuf},
+    sync::Arc,
 };
 
 const MAX_FILE_BYTES: usize = 256 * 1024;
 const MAX_INCLUDE_BYTES: usize = 1024 * 1024;
 const MAX_INCLUDES: usize = 32;
 const MAX_DEPTH: usize = 8;
+
+pub(super) struct IncludeFile {
+    pub path: PathBuf,
+    pub encoding: TextEncoding,
+    pub version: jc_files::ContentFingerprint,
+}
 
 pub(super) struct Includes<'a> {
     source: &'a Path,
@@ -21,6 +28,7 @@ pub(super) struct Includes<'a> {
     stack: Vec<PathBuf>,
     files: usize,
     bytes: usize,
+    capture_locations: bool,
 }
 
 impl<'a> Includes<'a> {
@@ -32,7 +40,13 @@ impl<'a> Includes<'a> {
             stack: Vec::new(),
             files: 0,
             bytes: 0,
+            capture_locations: false,
         }
+    }
+
+    pub(super) fn with_locations(mut self) -> Self {
+        self.capture_locations = true;
+        self
     }
 
     fn read(&mut self, target: &str) -> Result<Option<(PathBuf, Vec<u8>)>, TaskFailure> {
@@ -90,13 +104,16 @@ impl<'a> Includes<'a> {
         } else {
             encoding
         };
+        let mut context = Context::new(&bytes, encoding);
+        if self.capture_locations {
+            context.file = Some(Arc::new(IncludeFile {
+                path: path.clone(),
+                encoding,
+                version: jc_files::ContentFingerprint::of(&bytes),
+            }));
+        }
         self.stack.push(path);
-        let result = self.scan(
-            &mut Context::new(&bytes, encoding),
-            symbols,
-            catalog,
-            cancel,
-        );
+        let result = self.scan(&mut context, symbols, catalog, cancel);
         self.stack.pop();
         result.map(|_| ())
     }

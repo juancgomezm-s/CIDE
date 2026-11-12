@@ -148,6 +148,28 @@ ese orden. Se verificaron 13 inserciones y su deshacer en cada interfaz.
 OpenEdge 11.7 comprobó la sintaxis de `asistencia.p` con ese mismo PROPATH
 y los aliases del perfil de prueba.
 
+### Ir a definición en ABL
+
+Dentro de un proyecto, coloca el cursor sobre el identificador y pulsa
+**F12** o elige **Navegación → Ir a definición**. **Intro** abre la
+declaración y **Ctrl+Intro** la abre al lado. El comando funciona en
+GUI y TUI y admite declaraciones locales e inclusiones estáticas por
+PROPATH, con la misma resolución que el autocompletado.
+
+Se admiten buffers, tablas temporales, sus campos e índices declarados
+en ABL, variables, parámetros escalares, funciones y procedimientos
+internos. Para una llamada se pueden localizar rutinas internas
+declaradas después del cursor. El análisis es léxico y trabaja con hasta
+2 MiB de fuente. Para una inclusión se verifica la versión de su
+contenido antes de abrirla. Los campos de una base conectada se
+consultan en el catálogo de esquema.
+
+Las pruebas dirigidas de GUI y TUI abrieron `primero/detalle.i` en la
+declaración exacta usando el PROPATH del ejemplo. También cubrieron una
+rutina declarada después de la llamada y el rechazo del salto a una
+inclusión abierta con cambios sin guardar. OpenEdge 11.7 volvió a
+comprobar la sintaxis del ejemplo.
+
 ## Validación local — 2026-11-11
 
 OpenEdge 11.7 x86 en Windows. Se probó el orden de dos directorios con una

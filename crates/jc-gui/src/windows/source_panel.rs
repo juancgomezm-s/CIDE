@@ -115,6 +115,9 @@ impl State {
         context.source_completion_available = context.has_document
             && encoded
             && registry.resolve(language, SourceMode::Completion).is_some();
+        context.source_abl_definition_available = self
+            .progress_schema
+            .supports_definition(&self.workbench, self.project_root.as_deref());
         context.source_schema_completion_available = self
             .progress_schema
             .supports_completion(&self.workbench, self.project_root.as_deref());
@@ -151,13 +154,18 @@ impl State {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
-        let catalog = if mode == SourceMode::CatalogCompletion {
-            let Some(provider) = self
-                .progress_schema
-                .completion(&self.workbench, self.project_root.as_deref())
-            else {
-                self.status =
-                    "Actualiza el esquema ABL del proyecto para obtener sugerencias".into();
+        let catalog = if mode.is_catalog() {
+            let Some(provider) = self.progress_schema.source(
+                &self.workbench,
+                self.project_root.as_deref(),
+                mode == SourceMode::CatalogCompletion,
+            ) else {
+                self.status = if mode == SourceMode::CatalogCompletion {
+                    "Actualiza el esquema ABL del proyecto para obtener sugerencias"
+                } else {
+                    "Abre un archivo ABL del proyecto"
+                }
+                .into();
                 return;
             };
             Some(provider)
@@ -176,7 +184,8 @@ impl State {
         self.source_gui.epoch = self.source_gui.epoch.saturating_add(1);
         let root = self.project_root.as_deref();
         let result = if let Some(provider) = catalog {
-            self.source_gui.controller.request_catalog_completion(
+            self.source_gui.controller.request_catalog(
+                mode,
                 provider,
                 &self.source_gui.registry,
                 &self.workbench,
@@ -201,7 +210,17 @@ impl State {
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
-            CommandId::SourceDefinition => self.request_source(SourceMode::Definition),
+            CommandId::SourceDefinition => {
+                let mode = if self
+                    .progress_schema
+                    .supports_definition(&self.workbench, self.project_root.as_deref())
+                {
+                    SourceMode::CatalogDefinition
+                } else {
+                    SourceMode::Definition
+                };
+                self.request_source(mode);
+            }
             CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
             CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
             CommandId::SourceSchemaComplete => self.request_source(SourceMode::CatalogCompletion),
@@ -277,6 +296,10 @@ impl State {
                             == Some(SourceMode::CatalogCompletion)
                         {
                             "Sugerencia del esquema aplicada · un paso para deshacer"
+                        } else if self.source_gui.controller.mode()
+                            == Some(SourceMode::CatalogDefinition)
+                        {
+                            "Definición ABL abierta"
                         } else if self
                             .source_gui
                             .controller
@@ -782,6 +805,63 @@ mod tests {
         state.execute_menu(CommandId::SourceAccept);
         assert_eq!(state.workbench.active_bytes().unwrap(), before);
     }
+    #[test]
+    #[ignore = "requiere el proyecto sintético de OpenEdge con el ejemplo de asistencia"]
+    fn progress_real_definition_gui_opens_exact_include_and_rejects_dirty_target() {
+        let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+        let path = root.join("asistencia.p");
+        let include = root.join("primero/detalle.i");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let declarations = std::fs::read_to_string(&include).unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![path],
+            project_root: Some(root),
+            encoding: Some(TextEncoding::Utf8),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        assert!(state.context().source_abl_definition_available);
+        let source_tab = state.workbench.tabs().active_id().unwrap();
+        assert!(state.workbench.jump_to_location(
+            source_tab,
+            text.find("bTrabajo.Codigo").unwrap() + "bTrabajo.Co".len()
+        ));
+        state.execute_menu(CommandId::SourceDefinition);
+        finish(&mut state);
+        assert_eq!(
+            state.source_gui.controller.mode(),
+            Some(SourceMode::CatalogDefinition)
+        );
+        assert_eq!(
+            state.source_gui.controller.items().len(),
+            1,
+            "{}",
+            state.source_gui.controller.message()
+        );
+        state.source_key(0x0d, Modifiers::CTRL);
+        assert!(state.workbench.panes().is_split());
+        assert_eq!(
+            state.workbench.active_path().unwrap(),
+            include.canonicalize().unwrap()
+        );
+        assert_eq!(
+            state.workbench.active_editor().unwrap().cursor,
+            declarations.find("FIELD Codigo").unwrap() + "FIELD ".len()
+        );
+
+        state.workbench.insert_text("CambioLocal").unwrap();
+        assert!(state.workbench.select_tab(1));
+        assert!(state
+            .workbench
+            .jump_to_location(source_tab, text.rfind("pIncluido").unwrap() + 3));
+        state.execute_menu(CommandId::SourceDefinition);
+        finish(&mut state);
+        assert_eq!(state.source_gui.controller.items().len(), 1);
+        state.execute_menu(CommandId::SourceAccept);
+        assert_eq!(state.workbench.tabs().active_id(), Some(source_tab));
+        assert_eq!(std::fs::read_to_string(include).unwrap(), declarations);
+    }
+
     #[test]
     #[ignore = "requires a configured local LSP server and fixture project"]
     fn source_gui_lsp_language_services() {

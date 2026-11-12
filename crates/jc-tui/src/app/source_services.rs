@@ -67,6 +67,9 @@ impl TuiApp {
                 .source_registry
                 .resolve(language, SourceMode::Completion)
                 .is_some();
+        context.source_abl_definition_available = self
+            .progress_schema
+            .supports_definition(&self.workbench, self.project_root.as_deref());
         context.source_schema_completion_available = self
             .progress_schema
             .supports_completion(&self.workbench, self.project_root.as_deref());
@@ -106,13 +109,18 @@ impl TuiApp {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
-        let catalog = if mode == SourceMode::CatalogCompletion {
-            let Some(provider) = self
-                .progress_schema
-                .completion(&self.workbench, self.project_root.as_deref())
-            else {
-                self.status =
-                    "Actualiza el esquema ABL del proyecto para obtener sugerencias".into();
+        let catalog = if mode.is_catalog() {
+            let Some(provider) = self.progress_schema.source(
+                &self.workbench,
+                self.project_root.as_deref(),
+                mode == SourceMode::CatalogCompletion,
+            ) else {
+                self.status = if mode == SourceMode::CatalogCompletion {
+                    "Actualiza el esquema ABL del proyecto para obtener sugerencias"
+                } else {
+                    "Abre un archivo ABL del proyecto"
+                }
+                .into();
                 return;
             };
             Some(provider)
@@ -123,7 +131,10 @@ impl TuiApp {
         self.source_candidates = None;
         self.source_popup = matches!(
             mode,
-            SourceMode::Completion | SourceMode::LspCompletion | SourceMode::CatalogCompletion
+            SourceMode::Completion
+                | SourceMode::LspCompletion
+                | SourceMode::CatalogCompletion
+                | SourceMode::CatalogDefinition
         );
         if mode == SourceMode::LspDiagnostics {
             self.show_bottom(jc_app::BottomPanel::Problems);
@@ -133,7 +144,8 @@ impl TuiApp {
         }
         let root = self.project_root.as_deref();
         let result = if let Some(provider) = catalog {
-            self.source.request_catalog_completion(
+            self.source.request_catalog(
+                mode,
                 provider,
                 &self.source_registry,
                 &self.workbench,
@@ -195,7 +207,17 @@ impl TuiApp {
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
-            CommandId::SourceDefinition => self.request_source(SourceMode::Definition),
+            CommandId::SourceDefinition => {
+                let mode = if self
+                    .progress_schema
+                    .supports_definition(&self.workbench, self.project_root.as_deref())
+                {
+                    SourceMode::CatalogDefinition
+                } else {
+                    SourceMode::Definition
+                };
+                self.request_source(mode);
+            }
             CommandId::SourceLspReferences => self.request_source(SourceMode::LspReferences),
             CommandId::SourceLspComplete => self.request_source(SourceMode::LspCompletion),
             CommandId::SourceSchemaComplete => self.request_source(SourceMode::CatalogCompletion),
@@ -261,6 +283,8 @@ impl TuiApp {
                             "Sugerencia semántica aplicada · un paso para deshacer".into()
                         } else if self.source.mode() == Some(SourceMode::CatalogCompletion) {
                             "Sugerencia del esquema aplicada · un paso para deshacer".into()
+                        } else if self.source.mode() == Some(SourceMode::CatalogDefinition) {
+                            "Definición ABL abierta".into()
                         } else if self.source.mode().is_some_and(SourceMode::is_lsp) {
                             "Ubicación LSP abierta".into()
                         } else {

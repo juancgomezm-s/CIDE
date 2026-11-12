@@ -24,6 +24,7 @@ pub enum SourceMode {
     Dependencies,
     Completion,
     CatalogCompletion,
+    CatalogDefinition,
     Rename,
     Definition,
     LspReferences,
@@ -40,12 +41,17 @@ impl SourceMode {
             Self::Dependencies => "Dependencias",
             Self::Completion => "Completado",
             Self::CatalogCompletion => "Completar desde esquema ABL",
+            Self::CatalogDefinition => "Ir a definición ABL",
             Self::Rename => "Renombrar símbolo ABL",
             Self::Definition => "Ir a definición (LSP)",
             Self::LspReferences => "Buscar referencias (LSP)",
             Self::LspCompletion => "Autocompletado semántico (LSP)",
             Self::LspDiagnostics => "Comprobar con LSP",
         }
+    }
+
+    pub fn is_catalog(self) -> bool {
+        matches!(self, Self::CatalogCompletion | Self::CatalogDefinition)
     }
 
     fn lsp_query(self) -> Option<crate::lsp::Query> {
@@ -76,7 +82,7 @@ pub enum SourceAction {
         encoding: jc_text::TextEncoding,
         version: jc_files::ContentFingerprint,
     },
-    LspLocation {
+    ProjectLocation {
         path: PathBuf,
         offset: usize,
         encoding: jc_text::TextEncoding,
@@ -95,7 +101,7 @@ impl SourceItem {
             + self.label.capacity()
             + match &self.action {
                 SourceAction::Navigate => 0,
-                SourceAction::LspLocation { path, .. } => path.capacity(),
+                SourceAction::ProjectLocation { path, .. } => path.capacity(),
                 SourceAction::LspCompletion(edits) => {
                     edits.capacity() * std::mem::size_of::<crate::TextReplacement>()
                         + edits.iter().map(|edit| edit.text.capacity()).sum::<usize>()
@@ -119,6 +125,7 @@ impl SourceItem {
                     | SourceMode::Calls
                     | SourceMode::Dependencies
                     | SourceMode::Definition
+                    | SourceMode::CatalogDefinition
                     | SourceMode::LspReferences,
                 ) => true,
                 (
@@ -139,8 +146,10 @@ impl SourceItem {
                 (SourceAction::Replace(text), SourceMode::Rename) => text.len() <= 64,
                 (SourceAction::Caller { path, .. }, SourceMode::Incoming)
                 | (
-                    SourceAction::LspLocation { path, .. },
-                    SourceMode::Definition | SourceMode::LspReferences,
+                    SourceAction::ProjectLocation { path, .. },
+                    SourceMode::Definition
+                    | SourceMode::LspReferences
+                    | SourceMode::CatalogDefinition,
                 ) => path.is_absolute() && path.as_os_str().len() <= 4096,
                 _ => false,
             }
@@ -158,12 +167,18 @@ pub enum FileResolution {
 pub type RenameProvider =
     fn(&[u8], jc_text::TextEncoding, usize, &str) -> Result<Vec<Range<usize>>, String>;
 
-/// A project service can offer completions against an immutable snapshot.
-/// Publication and insertion require the same provider and editor context.
-pub trait CatalogCompletion: Send + Sync {
+#[derive(Clone, Copy)]
+pub enum CatalogQuery {
+    Complete,
+    Definition { cursor: usize },
+}
+
+/// A project service answers against an immutable snapshot and project context.
+pub trait CatalogSource: Send + Sync {
     fn is_current(&self) -> bool;
-    fn complete(
+    fn query(
         &self,
+        query: CatalogQuery,
         snapshot: &TaskSnapshot,
         cancel: &Cancellation,
         output: &mut TaskOutput,
@@ -172,7 +187,7 @@ pub trait CatalogCompletion: Send + Sync {
 
 pub(crate) enum SourceJob {
     Plain(TaskProvider),
-    Catalog(Arc<dyn CatalogCompletion>),
+    Catalog(Arc<dyn CatalogSource>, CatalogQuery),
     Lsp(crate::lsp::Work),
     Incoming(IncomingScan),
     Rename {
@@ -198,7 +213,7 @@ impl SourceJob {
     ) -> Result<(), TaskFailure> {
         match self {
             Self::Plain(provider) => provider(snapshot, cancel, output),
-            Self::Catalog(provider) => provider.complete(snapshot, cancel, output),
+            Self::Catalog(provider, query) => provider.query(*query, snapshot, cancel, output),
             Self::Lsp(work) => work.run(snapshot, cancel, output),
             Self::Incoming(scan) => scan.run(snapshot.stamp, cancel, output),
             Self::Rename {
@@ -283,6 +298,7 @@ impl SourceProviderDescriptor {
             SourceMode::Completion => self.completion,
             SourceMode::Rename
             | SourceMode::CatalogCompletion
+            | SourceMode::CatalogDefinition
             | SourceMode::Definition
             | SourceMode::LspReferences
             | SourceMode::LspCompletion
@@ -511,10 +527,9 @@ impl Origin {
                 .active_document()
                 .is_some_and(|d| d.id == self.stamp.document && d.session.path() == self.path)
             && app.active_editor().is_some_and(|e| {
-                (!matches!(
-                    mode,
-                    SourceMode::Completion | SourceMode::CatalogCompletion | SourceMode::Rename
-                ) && (!mode.is_lsp() || mode == SourceMode::LspDiagnostics))
+                (!matches!(mode, SourceMode::Completion | SourceMode::Rename)
+                    && !mode.is_catalog()
+                    && (!mode.is_lsp() || mode == SourceMode::LspDiagnostics))
                     || e.cursor == self.cursor
                         && e.anchor == self.anchor
                         && app.rectangle_for_pane(self.pane).is_none()
@@ -533,7 +548,7 @@ struct Request {
 enum SourceInput {
     None,
     Rename(String),
-    Catalog(Arc<dyn CatalogCompletion>),
+    Catalog(Arc<dyn CatalogSource>),
 }
 
 impl Request {
@@ -686,7 +701,7 @@ impl SourceController {
                 .get(self.selected)
                 .is_some_and(|item| match item.action {
                     SourceAction::Navigate => true,
-                    SourceAction::LspLocation { .. } => root.is_some(),
+                    SourceAction::ProjectLocation { .. } => root.is_some(),
                     SourceAction::RelativeFile(_) | SourceAction::Caller { .. } => self
                         .accepted
                         .as_ref()
@@ -706,9 +721,7 @@ impl SourceController {
                     Some(SourceMode::Incoming) => "Llamado por (fuentes en disco)",
                     Some(SourceMode::Rename) => "Vista previa del renombrado",
                     Some(SourceMode::Dependencies) => "Dependencias",
-                    Some(mode) if mode.is_lsp() || mode == SourceMode::CatalogCompletion => {
-                        mode.label()
-                    }
+                    Some(mode) if mode.is_lsp() || mode.is_catalog() => mode.label(),
                     _ => "Completado (palabras locales)",
                 },
                 columns,
@@ -794,16 +807,20 @@ impl SourceController {
             jobs,
         )
     }
-    pub fn request_catalog_completion(
+    pub fn request_catalog(
         &mut self,
-        provider: Arc<dyn CatalogCompletion>,
+        mode: SourceMode,
+        provider: Arc<dyn CatalogSource>,
         registry: &SourceRegistry,
         app: &Workbench,
         root: Option<&Path>,
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
+        if !mode.is_catalog() {
+            return Err("Capacidad de catálogo no disponible".into());
+        }
         self.request_named(
-            SourceMode::CatalogCompletion,
+            mode,
             SourceInput::Catalog(provider),
             registry,
             app,
@@ -824,10 +841,9 @@ impl SourceController {
             return Err("Escribe primero el nombre nuevo".into());
         }
         if self.outline
-            && (matches!(
-                mode,
-                SourceMode::Completion | SourceMode::CatalogCompletion | SourceMode::Rename
-            ) || mode.lsp_query().is_some())
+            && (matches!(mode, SourceMode::Completion | SourceMode::Rename)
+                || mode.is_catalog()
+                || mode.is_lsp())
         {
             return Err("Usa el comando de navegación en la vista de código".into());
         }
@@ -862,7 +878,7 @@ impl SourceController {
         if self.outline {
             self.outline_attempt = Some(origin.clone());
         }
-        let provider = if mode == SourceMode::CatalogCompletion {
+        let provider = if mode.is_catalog() {
             if !matches!(&input, SourceInput::Catalog(provider) if provider.is_current()) {
                 return Err("Actualiza primero el catálogo del proyecto ABL".into());
             }
@@ -947,7 +963,14 @@ impl SourceController {
         let mode = r.mode;
         let lsp = mode.lsp_query();
         let work = if let SourceInput::Catalog(provider) = &r.input {
-            SourceJob::Catalog(provider.clone())
+            let query = if mode == SourceMode::CatalogDefinition {
+                CatalogQuery::Definition {
+                    cursor: r.origin.cursor,
+                }
+            } else {
+                CatalogQuery::Complete
+            };
+            SourceJob::Catalog(provider.clone(), query)
         } else if let Some(query) = lsp {
             SourceJob::Lsp(crate::lsp::Work {
                 client: self.lsp.clone(),
@@ -988,8 +1011,8 @@ impl SourceController {
                     SourceState::Running,
                     if lsp.is_some() {
                         "Consultando servidor LSP"
-                    } else if mode == SourceMode::CatalogCompletion {
-                        "Consultando el catálogo ABL local"
+                    } else if mode.is_catalog() {
+                        "Analizando el código ABL del proyecto"
                     } else {
                         "Leyendo captura acotada del fuente; solo evidencia léxica"
                     },
@@ -1123,7 +1146,7 @@ impl SourceController {
                 ) && (item.range.end != request.origin.cursor || item.range.len() > 512)
                 || !matches!(
                     item.action,
-                    SourceAction::Caller { .. } | SourceAction::LspLocation { .. }
+                    SourceAction::Caller { .. } | SourceAction::ProjectLocation { .. }
                 ) && (app.position_for_tab(tab, item.range.start).is_none()
                     || app.position_for_tab(tab, item.range.end).is_none())
             {
@@ -1149,6 +1172,12 @@ impl SourceController {
         self.items = items;
         let message = if request.mode == SourceMode::CatalogCompletion {
             format!("Esquema ABL: {} sugerencias", self.items.len())
+        } else if request.mode == SourceMode::CatalogDefinition {
+            if self.items.is_empty() {
+                "Definición ABL sin resolver".into()
+            } else {
+                "Definición ABL localizada · Intro abre · Ctrl+Intro al lado".into()
+            }
         } else if let Some(provider) = request.provider {
             format!(
                 "{}: {} resultados léxicos (sin verificación del compilador)",
@@ -1281,7 +1310,7 @@ impl SourceController {
                 }
                 Ok(None)
             }
-            SourceAction::LspLocation {
+            SourceAction::ProjectLocation {
                 path,
                 offset,
                 encoding,
@@ -1299,7 +1328,7 @@ impl SourceController {
                     )
                     .map_err(|error| error.to_string())?;
                 if !app.jump_to_pane_location(app.panes().active(), tab, *offset) {
-                    return Err("El destino LSP no es una posición válida".into());
+                    return Err("El destino de código no es una posición válida".into());
                 }
                 Ok(None)
             }

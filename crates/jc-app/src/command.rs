@@ -205,6 +205,7 @@ pub struct CommandContext {
     pub source_symbols_available: bool,
     pub source_references_available: bool,
     pub source_lsp_available: bool,
+    pub source_abl_definition_available: bool,
     pub source_calls_available: bool,
     pub source_incoming_available: bool,
     pub source_dependencies_available: bool,
@@ -264,6 +265,7 @@ impl Default for CommandContext {
             source_symbols_available: false,
             source_references_available: false,
             source_lsp_available: false,
+            source_abl_definition_available: false,
             source_calls_available: false,
             source_incoming_available: false,
             source_dependencies_available: false,
@@ -494,6 +496,9 @@ fn source_references(ctx: &CommandContext) -> bool {
 }
 fn source_lsp(ctx: &CommandContext) -> bool {
     ctx.source_lsp_available && !ctx.rectangular_selection
+}
+fn source_definition(ctx: &CommandContext) -> bool {
+    source_lsp(ctx) || ctx.source_abl_definition_available && !ctx.rectangular_selection
 }
 fn source_lsp_completion(ctx: &CommandContext) -> bool {
     source_lsp(ctx) && !ctx.has_selection
@@ -903,8 +908,8 @@ pub fn default_registry() -> CommandRegistry {
         spec!(
             SourceDefinition,
             Navigation,
-            "Ir a definición (LSP)",
-            source_lsp
+            "Ir a definición",
+            source_definition
         ),
         spec!(
             SourceLspReferences,

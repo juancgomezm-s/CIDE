@@ -676,7 +676,7 @@ fn project_locations(
             let label = format!("{}:{}  {name}", position.line + 1, position.column + 1);
             let (action, offset) = match fingerprint {
                 Some(version) => (
-                    SourceAction::LspLocation {
+                    SourceAction::ProjectLocation {
                         path: path.clone(),
                         offset,
                         encoding,
@@ -895,7 +895,7 @@ mod tests {
                     "{mode:?}: {}",
                     controller.message()
                 );
-                let found = controller.items().iter().position(|item| matches!(&item.action, SourceAction::LspLocation { path, .. } if *path == dest));
+                let found = controller.items().iter().position(|item| matches!(&item.action, SourceAction::ProjectLocation { path, .. } if *path == dest));
                 if mode == SourceMode::Definition && found.is_some()
                     || mode == SourceMode::LspReferences
                         && controller

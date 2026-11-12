@@ -1,7 +1,7 @@
 use super::{avm_path, decode, Catalog, SchemaController};
 use crate::{EncodedText, SchemaRecord};
 use jc_app::{
-    source_services::{CatalogCompletion, SourceAction, SourceItem},
+    source_services::{CatalogQuery, CatalogSource, SourceAction, SourceItem},
     Cancellation, TaskFailure, TaskItem, TaskOutput, TaskSnapshot, Workbench,
 };
 use jc_languages::syntax::SyntaxKind;
@@ -16,6 +16,7 @@ mod declarations;
 mod includes;
 
 use declarations::Symbols;
+use includes::IncludeFile;
 use includes::Includes;
 
 const MAX_SUGGESTIONS: usize = 32;
@@ -23,70 +24,123 @@ const MAX_STATEMENT_TOKENS: usize = 256;
 const MAX_DEFINITION_TOKENS: usize = 4096;
 const MAX_LOCAL_NAMES: usize = 512;
 
+fn project_source<'a>(app: &'a Workbench, root: &Path) -> Option<&'a Path> {
+    let path = app.active_path()?;
+    if !(path.starts_with(root) || avm_path(path).starts_with(avm_path(root)))
+        || path.components().any(|part| part == Component::ParentDir)
+        || jc_languages::detect(&path.to_string_lossy()).id != "abl"
+    {
+        return None;
+    }
+    app.active_encoding()?;
+    Some(path)
+}
+
 impl SchemaController {
-    fn catalog_for(&self, app: &Workbench, root: Option<&Path>) -> Option<&Arc<Catalog>> {
-        let catalog = self.catalog.as_ref()?;
-        let path = app.active_path()?;
-        let root = root?;
-        if root != catalog.root
-            || !(path.starts_with(root) || avm_path(path).starts_with(avm_path(root)))
-            || path.components().any(|part| part == Component::ParentDir)
-            || jc_languages::detect(&path.to_string_lossy()).id != "abl"
-        {
-            return None;
-        }
-        app.active_encoding()?;
-        Some(catalog)
-    }
-
     pub fn supports_completion(&self, app: &Workbench, root: Option<&Path>) -> bool {
-        self.catalog_for(app, root).is_some()
+        self.supports_definition(app, root)
+            && self
+                .catalog
+                .as_ref()
+                .is_some_and(|catalog| root == Some(catalog.root.as_path()))
     }
 
-    pub fn completion(
+    pub fn supports_definition(&self, app: &Workbench, root: Option<&Path>) -> bool {
+        root.and_then(|root| project_source(app, root)).is_some()
+    }
+
+    pub fn source(
         &self,
         app: &Workbench,
         root: Option<&Path>,
-    ) -> Option<Arc<dyn CatalogCompletion>> {
+        require_schema: bool,
+    ) -> Option<Arc<dyn CatalogSource>> {
+        let root = root?;
+        let source = project_source(app, root)?.to_owned();
+        let catalog = self
+            .catalog
+            .as_ref()
+            .filter(|catalog| catalog.root == root)
+            .map(Arc::downgrade);
+        if require_schema && catalog.is_none() {
+            return None;
+        }
         Some(Arc::new(Provider {
-            catalog: Arc::downgrade(self.catalog_for(app, root)?),
-            source: app.active_path()?.to_owned(),
+            catalog,
+            root: root.to_owned(),
+            source,
         }))
     }
 }
 
 struct Provider {
-    catalog: Weak<Catalog>,
+    catalog: Option<Weak<Catalog>>,
+    root: PathBuf,
     source: PathBuf,
 }
 
 impl Provider {
     fn live_catalog(&self) -> Option<Arc<Catalog>> {
         self.catalog
+            .as_ref()?
             .upgrade()
             .filter(|catalog| catalog.live.load(Ordering::Acquire))
     }
 }
 
-impl CatalogCompletion for Provider {
+impl CatalogSource for Provider {
     fn is_current(&self) -> bool {
-        self.live_catalog().is_some()
+        self.catalog.is_none() || self.live_catalog().is_some()
     }
 
-    fn complete(
+    fn query(
         &self,
+        query: CatalogQuery,
         snapshot: &TaskSnapshot,
         cancel: &Cancellation,
         output: &mut TaskOutput,
     ) -> Result<(), TaskFailure> {
-        let catalog = self.live_catalog().ok_or(TaskFailure::Cancelled)?;
-        for item in catalog.suggest(
-            &self.source,
-            snapshot.bytes(),
-            snapshot.stamp.encoding,
-            cancel,
-        )? {
-            output.push(TaskItem::Source(item))?;
+        let catalog = self.live_catalog();
+        if self.catalog.is_some() && catalog.is_none() {
+            return Err(TaskFailure::Cancelled);
+        }
+        match query {
+            CatalogQuery::Complete => {
+                let catalog = catalog.ok_or(TaskFailure::Failed)?;
+                for item in catalog.suggest(
+                    &self.source,
+                    snapshot.bytes(),
+                    snapshot.stamp.encoding,
+                    cancel,
+                )? {
+                    output.push(TaskItem::Source(item))?;
+                }
+            }
+            CatalogQuery::Definition { cursor } => {
+                let empty;
+                let catalog = if let Some(catalog) = catalog.as_deref() {
+                    catalog
+                } else {
+                    empty = Catalog {
+                        root: self.root.clone(),
+                        live: true.into(),
+                        records: Vec::new(),
+                        codec: String::new(),
+                        aliases: Vec::new(),
+                        version: String::new(),
+                    };
+                    &empty
+                };
+                if let Some(item) = catalog.definition(
+                    &self.source,
+                    snapshot.bytes(),
+                    snapshot.stamp.encoding,
+                    cursor,
+                    cancel,
+                )? {
+                    output.push(TaskItem::Source(item))?;
+                }
+            }
         }
         Ok(())
     }
@@ -100,8 +154,47 @@ struct Token {
 struct Context<'a> {
     bytes: &'a [u8],
     encoding: TextEncoding,
+    file: Option<Arc<IncludeFile>>,
     tokens: Vec<Token>,
     overflow: bool,
+}
+
+#[derive(Clone)]
+struct Site {
+    offset: usize,
+    file: Option<Arc<IncludeFile>>,
+}
+
+impl Site {
+    fn item(&self, label: String, reference: Range<usize>) -> SourceItem {
+        if let Some(file) = &self.file {
+            let name: String = file
+                .path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .take(48)
+                .collect();
+            SourceItem {
+                range: reference,
+                label: format!("{label} · {name}"),
+                action: SourceAction::ProjectLocation {
+                    path: file.path.clone(),
+                    offset: self.offset,
+                    encoding: file.encoding,
+                    version: file.version,
+                },
+            }
+        } else {
+            SourceItem {
+                range: self.offset..self.offset,
+                label,
+                action: SourceAction::Navigate,
+            }
+        }
+    }
 }
 
 enum Target {
@@ -116,8 +209,16 @@ impl<'a> Context<'a> {
         Self {
             bytes,
             encoding,
+            file: None,
             tokens: Vec::new(),
             overflow: false,
+        }
+    }
+
+    fn site(&self, token: &Token) -> Site {
+        Site {
+            offset: token.range.start,
+            file: self.file.clone(),
         }
     }
 
@@ -376,6 +477,69 @@ impl Catalog {
         })
     }
 
+    fn definition(
+        &self,
+        source: &Path,
+        bytes: &[u8],
+        encoding: TextEncoding,
+        cursor: usize,
+        cancel: &Cancellation,
+    ) -> Result<Option<SourceItem>, TaskFailure> {
+        let tail = bytes.get(cursor..).ok_or(TaskFailure::InvalidRange)?;
+        let end = cursor
+            + tail
+                .iter()
+                .take(129)
+                .take_while(|&&byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-') || byte >= 0x80
+                })
+                .count();
+        if end - cursor > 128 {
+            return Ok(None);
+        }
+        let mut context = Context::new(&bytes[..end], encoding);
+        let mut symbols = Symbols::default();
+        let protected = Includes::new(&self.root, source).with_locations().scan(
+            &mut context,
+            &mut symbols,
+            self,
+            cancel,
+        )?;
+        if protected || context.overflow {
+            return Ok(None);
+        }
+        let Some((target, range, name)) = context.target() else {
+            return Ok(None);
+        };
+        if range.is_empty() || !(range.start..=range.end).contains(&cursor) {
+            return Ok(None);
+        }
+        let qualified = bytes
+            .get(end..end + 2)
+            .is_some_and(|next| next[0] == b'.' && !next[1].is_ascii_whitespace());
+        let key = fold(&name);
+        if let Some(found) = symbols.definition(&target, &key, qualified) {
+            return Ok(Some(found.item(range)));
+        }
+
+        // Internal routines can be declared below their use. The second scan
+        // only considers top-level routine declarations, never a later local.
+        if matches!(target, Target::Symbols { .. }) && !qualified && end < bytes.len() {
+            let mut all = Symbols::default();
+            Includes::new(&self.root, source).with_locations().scan(
+                &mut Context::new(bytes, encoding),
+                &mut all,
+                self,
+                cancel,
+            )?;
+            let run = matches!(target, Target::Symbols { run: true });
+            return Ok(all
+                .routine_definition(&key, run)
+                .map(|found| found.item(range)));
+        }
+        Ok(None)
+    }
+
     fn suggest(
         &self,
         source: &Path,
@@ -632,10 +796,56 @@ mod tests {
     }
 
     #[test]
+    fn schema_definition_uses_exact_name_scope_and_member_origin() {
+        let catalog = catalog();
+        let source = "DEFINE TEMP-TABLE ttDatos FIELD Codigo AS INTEGER INDEX idxCodigo Codigo.\n\
+                      DEFINE BUFFER bDatos FOR TEMP-TABLE ttDatos.\n\
+                      DEFINE VARIABLE cantidad AS INTEGER.\n\
+                      PROCEDURE uno:\n DEFINE VARIABLE cantidad AS INTEGER.\n DISPLAY cantidad.\n END.\n\
+                      DISPLAY bDatos.Codigo cantidad.\n FIND FIRST bDatos USE-INDEX idxCodigo.\n\
+                      RUN despues.\n PROCEDURE despues:\n END PROCEDURE.";
+        let definition = |cursor| {
+            catalog
+                .definition(
+                    &catalog.root.join("fuente.p"),
+                    source.as_bytes(),
+                    TextEncoding::Utf8,
+                    cursor,
+                    &Cancellation::new(Duration::from_secs(2)),
+                )
+                .unwrap()
+        };
+        for (reference, position, declaration, declaration_name) in [
+            ("DISPLAY bDatos", 10, "BUFFER bDatos", 7),
+            ("bDatos.Codigo", 9, "FIELD Codigo", 6),
+            ("USE-INDEX idxCodigo", 13, "INDEX idxCodigo", 6),
+            (
+                "DISPLAY cantidad",
+                10,
+                "VARIABLE cantidad AS INTEGER.\n DISPLAY",
+                9,
+            ),
+            ("Codigo cantidad", 10, "VARIABLE cantidad", 9),
+            ("RUN despues", 7, "PROCEDURE despues", 10),
+        ] {
+            let cursor = source.find(reference).unwrap() + position;
+            let item = definition(cursor).unwrap_or_else(|| panic!("{reference}"));
+            assert_eq!(item.action, SourceAction::Navigate);
+            assert_eq!(
+                item.range.start,
+                source.find(declaration).unwrap() + declaration_name,
+                "{reference}"
+            );
+        }
+        assert!(definition(source.find("DISPLAY bDatos").unwrap() + 7).is_none());
+    }
+
+    #[test]
     fn schema_completion_provider_expires_on_catalog_clear() {
         let catalog = Arc::new(catalog());
         let provider = Provider {
-            catalog: Arc::downgrade(&catalog),
+            catalog: Some(Arc::downgrade(&catalog)),
+            root: catalog.root.clone(),
             source: PathBuf::new(),
         };
         let mut controller = SchemaController {

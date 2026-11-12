@@ -1,4 +1,4 @@
-use super::{fold, Catalog, Context, Token, MAX_LOCAL_NAMES};
+use super::{fold, Catalog, Context, Site, SourceItem, Target, Token, MAX_LOCAL_NAMES};
 use jc_app::TaskFailure;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -11,15 +11,44 @@ enum Record {
 #[derive(Default)]
 struct TempTable {
     base: Option<Record>,
-    fields: Vec<String>,
-    indexes: Vec<String>,
+    fields: Vec<Member>,
+    indexes: Vec<Member>,
     inherited_indexes: BTreeSet<String>,
+}
+
+struct Member {
+    name: String,
+    site: Site,
+}
+
+pub(super) struct Definition<'a> {
+    kind: &'static str,
+    name: &'a str,
+    site: &'a Site,
+}
+
+impl Definition<'_> {
+    pub(super) fn item(self, range: std::ops::Range<usize>) -> SourceItem {
+        self.site
+            .item(format!("{} · {}", self.kind, self.name), range)
+    }
 }
 
 struct Binding {
     name: String,
     kind: &'static str,
     record: Option<Record>,
+    site: Site,
+}
+
+impl Binding {
+    fn definition(&self) -> Option<Definition<'_>> {
+        (!self.kind.is_empty()).then_some(Definition {
+            kind: self.kind,
+            name: &self.name,
+            site: &self.site,
+        })
+    }
 }
 
 #[derive(Default)]
@@ -115,6 +144,70 @@ impl Symbols {
             .collect()
     }
 
+    pub(super) fn definition(
+        &self,
+        target: &Target,
+        key: &str,
+        qualified: bool,
+    ) -> Option<Definition<'_>> {
+        match target {
+            Target::Tables(None) => self.record(key)?.definition(),
+            Target::Tables(Some(_)) => None,
+            Target::Symbols { run: true } => self.routine_definition(key, true),
+            Target::Symbols { run: false } => {
+                let value = self
+                    .local
+                    .as_ref()
+                    .and_then(|routine| routine.scope.values.get(key))
+                    .or_else(|| self.global.values.get(key))
+                    .filter(|binding| binding.kind != "Procedimiento");
+                if qualified {
+                    self.record(key).or(value)?.definition()
+                } else {
+                    value.or_else(|| self.record(key))?.definition()
+                }
+            }
+            Target::Fields(names) | Target::Indexes(names) => {
+                let [name] = names.as_slice() else {
+                    return None;
+                };
+                let indexes = matches!(target, Target::Indexes(_));
+                let mut record = self.record(&fold(name))?.record.as_ref();
+                while let Some(Record::Temp(index)) = record {
+                    let table = &self.tables[*index];
+                    let (members, kind) = if indexes {
+                        (&table.indexes, "Índice")
+                    } else {
+                        (&table.fields, "Campo")
+                    };
+                    if let Some(member) = members.iter().find(|member| fold(&member.name) == key) {
+                        return Some(Definition {
+                            kind,
+                            name: &member.name,
+                            site: &member.site,
+                        });
+                    }
+                    if indexes
+                        && !table.inherited_indexes.is_empty()
+                        && !table.inherited_indexes.contains(key)
+                    {
+                        return None;
+                    }
+                    record = table.base.as_ref();
+                }
+                None
+            }
+        }
+    }
+
+    pub(super) fn routine_definition(&self, key: &str, run: bool) -> Option<Definition<'_>> {
+        let binding = self.global.values.get(key)?;
+        let kind = if run { "Procedimiento" } else { "Función" };
+        (binding.kind == kind)
+            .then(|| binding.definition())
+            .flatten()
+    }
+
     pub(super) fn has_record(&self, key: &str) -> bool {
         self.record(key).is_some()
     }
@@ -164,7 +257,8 @@ impl Symbols {
                     } else {
                         (&table.fields, "Campo")
                     };
-                    suggestions.extend(names.iter().filter_map(|name| {
+                    suggestions.extend(names.iter().filter_map(|member| {
+                        let name = &member.name;
                         let key = fold(name);
                         (key.starts_with(prefix)
                             && filters.iter().all(|filter| filter.contains(&key)))
@@ -191,6 +285,9 @@ impl Symbols {
     ) -> Option<Record> {
         if let [name] = names.as_slice() {
             let key = fold(name);
+            if buffer && !temp_only && catalog.records.is_empty() {
+                return None;
+            }
             if temp_only || !buffer || catalog.table_matches(None, &key, true).next().is_none() {
                 if let Some(local) = self.record(&key) {
                     return match &local.record {
@@ -243,6 +340,7 @@ impl Symbols {
                         name,
                         kind,
                         record: None,
+                        site: context.site(&tokens[1]),
                     })?;
                 }
             }
@@ -334,9 +432,15 @@ impl Symbols {
             for i in first_member..tokens.len() {
                 if let Some(member) = word(i + 1) {
                     if is(i, b"FIELD") && (is(i + 2, b"AS") || is(i + 2, b"LIKE")) {
-                        table.fields.push(member);
+                        table.fields.push(Member {
+                            name: member,
+                            site: context.site(&tokens[i + 1]),
+                        });
                     } else if is(i, b"INDEX") {
-                        table.indexes.push(member);
+                        table.indexes.push(Member {
+                            name: member,
+                            site: context.site(&tokens[i + 1]),
+                        });
                     }
                 }
             }
@@ -352,7 +456,12 @@ impl Symbols {
         } else {
             return Ok(());
         };
-        self.register(Binding { name, kind, record })
+        self.register(Binding {
+            name,
+            kind,
+            record,
+            site: context.site(&tokens[index + 1]),
+        })
     }
 }
 
