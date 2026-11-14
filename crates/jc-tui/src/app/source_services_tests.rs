@@ -357,6 +357,39 @@ fn progress_real_xref_tui_opens_program_with_spaces_to_side() {
 }
 
 #[test]
+#[ignore = "requiere el proyecto sintético de OpenEdge con los ejemplos USING"]
+fn progress_real_using_tui_resolves_wildcard_from_include_and_opens_to_side() {
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let path = root.join("consumidores/using-comodin.p");
+    let target = root.join("primero/paquete/Elemento.cls");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let class = std::fs::read_to_string(&target).unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![path],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root).unwrap();
+    let tab = app.workbench.tabs().active_id().unwrap();
+    assert!(app
+        .workbench
+        .jump_to_location(tab, text.find("AS Elemento").unwrap() + 5));
+    key(&mut app, KeyCode::F(12), KeyModifiers::NONE);
+    finish(&mut app);
+    assert_eq!(app.source.items().len(), 1, "{}", app.source.message());
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    assert!(app.workbench.panes().is_split());
+    assert_eq!(
+        app.workbench.active_path().unwrap(),
+        target.canonicalize().unwrap()
+    );
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        class.find("Elemento").unwrap()
+    );
+    assert_eq!(app.workbench.active_bytes().unwrap(), class.as_bytes());
+}
+
+#[test]
 #[ignore = "requires a configured local LSP server and fixture project"]
 fn source_tui_lsp_language_services() {
     let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());

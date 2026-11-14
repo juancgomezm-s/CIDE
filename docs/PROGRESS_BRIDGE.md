@@ -170,6 +170,25 @@ rutina declarada después de la llamada y el rechazo del salto a una
 inclusión abierta con cambios sin guardar. OpenEdge 11.7 volvió a
 comprobar la sintaxis del ejemplo.
 
+### Clases importadas mediante USING
+
+Pulsa **F12** sobre el nombre en `USING` o sobre el tipo usado en código
+ABL. **Intro** abre la declaración y **Ctrl+Intro** la abre al lado.
+GUI y TUI admiten importaciones explícitas y por comodín, incluidas las
+declaradas en inclusiones estáticas. También se admiten tipos calificados
+y usos en `AS`, `NEW`, `CAST`, `TYPE-OF`, `INHERITS` e `IMPLEMENTS`.
+
+CIDE resuelve primero la importación explícita. Para comodines, sigue el
+orden de las sentencias `USING`. Para cada tipo, consulta los directorios
+en orden de PROPATH y verifica el nombre declarado en el `.cls`. Las
+importaciones `FROM ASSEMBLY` quedan fuera de la navegación a fuentes
+ABL. [Referencia USING](https://docs.progress.com/bundle/openedge-abl-reference-128/page/USING-statement.html)
+
+OpenEdge 11.7 comprobó la sintaxis de los ejemplos con dos copias de
+`paquete.Elemento` en PROPATH. GUI y TUI abrieron al lado la declaración
+exacta de la primera copia. Los ejemplos también cubren la prioridad de
+una importación explícita sobre un comodín y el comodín en una inclusión.
+
 ### Buscar referencias en ABL
 
 Pulsa **Mayús+F12** o elige **Navegación → Buscar referencias** sobre una

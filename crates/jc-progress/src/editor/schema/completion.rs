@@ -12,6 +12,7 @@ use std::{
     sync::{atomic::Ordering, Arc, Weak},
 };
 
+mod classes;
 mod declarations;
 mod includes;
 mod references;
@@ -333,6 +334,7 @@ impl<'a> Context<'a> {
                                     b"END",
                                     b"FUNCTION",
                                     b"PROCEDURE",
+                                    b"USING",
                                     b"METHOD",
                                 ]
                                 .iter()
@@ -580,6 +582,7 @@ impl Catalog {
         }
         let mut context = Context::new(&bytes[..end], encoding);
         let mut symbols = Symbols::default();
+        symbols.track_imports();
         let protected = Includes::new(&self.root, source).with_locations().scan(
             &mut context,
             &mut symbols,
@@ -595,12 +598,27 @@ impl Catalog {
         if range.is_empty() || !(range.start..=range.end).contains(&cursor) {
             return Ok(None);
         }
+        let mut type_use = classes::type_use(&context, bytes, &range);
+        if type_use.as_ref().is_some_and(|use_| !use_.static_access) {
+            return symbols.imports().resolve(
+                &self.root,
+                source,
+                type_use.take().unwrap(),
+                encoding,
+                cancel,
+            );
+        }
         let qualified = bytes
             .get(end..end + 2)
             .is_some_and(|next| next[0] == b'.' && !next[1].is_ascii_whitespace());
         let key = fold(&name);
         if let Some(found) = symbols.definition(&target, &key, qualified) {
             return Ok(Some(found.item(range)));
+        }
+        if let Some(use_) = type_use {
+            return symbols
+                .imports()
+                .resolve(&self.root, source, use_, encoding, cancel);
         }
 
         // Internal routines can be declared below their use. The second scan
@@ -919,6 +937,37 @@ mod tests {
             );
         }
         assert!(definition(source.find("DISPLAY bDatos").unwrap() + 7).is_none());
+    }
+
+    #[test]
+    fn schema_definition_uses_imports_only_for_types_and_respects_from_assembly() {
+        let fixture = crate::editor::JobDir::create().unwrap();
+        let mut catalog = catalog();
+        catalog.root = fixture.path.clone();
+        std::fs::create_dir(fixture.path.join("paquete")).unwrap();
+        std::fs::write(
+            fixture.path.join("paquete/Elemento.cls"),
+            b"/* CLASS falso. */\nCLASS paquete.Elemento:\nEND CLASS.\n",
+        )
+        .unwrap();
+        let definition = |source: &str| {
+            catalog
+                .definition(
+                    &fixture.path.join("fuente.p"),
+                    source.as_bytes(),
+                    TextEncoding::Utf8,
+                    source.rfind("Elemento").unwrap() + 2,
+                    &Cancellation::new(Duration::from_secs(2)),
+                )
+                .unwrap()
+        };
+        assert!(matches!(
+            definition("USING paquete.Elemento.\nDEFINE VARIABLE objeto AS CLASS Elemento.").unwrap().action,
+            SourceAction::ProjectLocation { path, .. } if path.ends_with("paquete/Elemento.cls")
+        ));
+        assert!(definition("USING paquete.*.\nDISPLAY Elemento.").is_none());
+        assert!(definition("USING paquete.Elemento FROM ASSEMBLY.\nUSING paquete.* FROM PROPATH.\nobjeto = NEW Elemento().").is_none());
+        assert!(definition("USING paquete.Elemento FROM ASSEMBLY.").is_none());
     }
 
     #[test]

@@ -21,6 +21,37 @@ fn open(app: &mut Workbench, root: &Path, name: &str, content: &str) {
 }
 
 #[test]
+#[ignore = "requiere el proyecto sintético de OpenEdge con los ejemplos USING"]
+fn progress_real_using_compiles_with_ordered_propath() {
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap())
+        .canonicalize()
+        .unwrap();
+    let mut app = Workbench::default();
+    let mut jobs = JobSystem::new(JobLimits::default(), Wakeup::default()).unwrap();
+    for filename in [
+        "consumidores/using-explicito.p",
+        "consumidores/using-comodin.p",
+    ] {
+        let path = root.join(filename);
+        let before = fs::read(&path).unwrap();
+        app.open_file(&path, None).unwrap();
+        app.reset_task_panels();
+        submit(Action::Check, &app, &mut jobs, Some(&root)).unwrap();
+        let result = complete(&mut app, &mut jobs);
+        assert!(!completion(&result).1, "{filename}: {:?}", app.problems());
+        assert!(app
+            .output()
+            .iter()
+            .any(|row| row.contains("OpenEdge AVM 11.7")));
+        assert!(app
+            .output()
+            .iter()
+            .any(|row| row.contains("Sintaxis ABL comprobada")));
+        assert_eq!(fs::read(path).unwrap(), before);
+    }
+}
+
+#[test]
 #[ignore = "requiere el proyecto sintético de esquema de OpenEdge con el ejemplo de asistencia"]
 fn progress_real_schema_completion_compiles_with_propath() {
     let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap())

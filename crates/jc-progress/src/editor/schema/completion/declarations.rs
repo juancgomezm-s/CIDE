@@ -1,3 +1,4 @@
+use super::classes::Imports;
 use super::references::{binding_context, ReferenceScan};
 use super::{fold, Catalog, Context, Site, SourceItem, Target, Token, MAX_LOCAL_NAMES};
 use jc_app::{TaskFailure, TaskItem, TaskOutput};
@@ -110,9 +111,17 @@ pub(super) struct Symbols {
     declarations: usize,
     references: Option<ReferenceScan>,
     outline: Option<Outline>,
+    imports: Option<Imports>,
 }
 
 impl Symbols {
+    pub(super) fn track_imports(&mut self) {
+        self.imports = Some(Imports::default());
+    }
+
+    pub(super) fn imports(&self) -> &Imports {
+        self.imports.as_ref().expect("active type analysis")
+    }
     pub(super) fn track_outline(&mut self) {
         self.outline = Some(Outline::default());
     }
@@ -462,6 +471,11 @@ impl Symbols {
         let tokens = &context.tokens;
         let word = |index| tokens.get(index).and_then(|token| context.word(token));
         let is = |index, keyword| at(context, tokens, index, keyword);
+        if end == b"." && is(0, b"USING") {
+            if let Some(imports) = &mut self.imports {
+                imports.add(context)?;
+            }
+        }
         if let Some(outline) = &mut self.outline {
             let header = [
                 (b"CLASS".as_slice(), "Clase"),

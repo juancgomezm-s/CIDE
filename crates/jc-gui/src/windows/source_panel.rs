@@ -979,6 +979,58 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requiere el proyecto sintético de OpenEdge con los ejemplos USING"]
+    fn progress_real_using_gui_prefers_explicit_import_and_opens_to_side() {
+        let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+        let path = root.join("consumidores/using-explicito.p");
+        let target = root.join("primero/paquete/Elemento.cls");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let class = std::fs::read_to_string(&target).unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![path],
+            project_root: Some(root),
+            encoding: Some(TextEncoding::Utf8),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        let tab = state.workbench.tabs().active_id().unwrap();
+        for (text_marker, advance) in [
+            ("paquete.Elemento", 3),
+            (", Elemento", 4),
+            ("NEW Elemento", 6),
+        ] {
+            assert!(state
+                .workbench
+                .jump_to_location(tab, text.find(text_marker).unwrap() + advance));
+            state.execute_menu(CommandId::SourceDefinition);
+            finish(&mut state);
+            assert!(
+                matches!(
+                    state.source_gui.controller.items(),
+                    [jc_app::source_services::SourceItem { action: jc_app::source_services::SourceAction::ProjectLocation { path, .. }, .. }]
+                        if *path == target.canonicalize().unwrap()
+                ),
+                "{}",
+                state.source_gui.controller.message()
+            );
+            if text_marker != "NEW Elemento" {
+                state.source_key(0x1b, Modifiers::NONE);
+            }
+        }
+        state.source_key(0x0d, Modifiers::CTRL);
+        assert!(state.workbench.panes().is_split());
+        assert_eq!(
+            state.workbench.active_path().unwrap(),
+            target.canonicalize().unwrap()
+        );
+        assert_eq!(
+            state.workbench.active_editor().unwrap().cursor,
+            class.find("Elemento").unwrap()
+        );
+        assert_eq!(state.workbench.active_bytes().unwrap(), class.as_bytes());
+    }
+
+    #[test]
     #[ignore = "requires a configured local LSP server and fixture project"]
     fn source_gui_lsp_language_services() {
         let root = PathBuf::from(std::env::var_os("CIDE_LSP_TEST_PROJECT").unwrap());
