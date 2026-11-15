@@ -2040,8 +2040,10 @@ name = "jc-cli"
 version = "0.1.0"
 dependencies = [
  "jc-core",
+ "jc-git",
  "jc-languages",
  "jc-progress",
+ "serde_json",
 ]
 
 [[package]]

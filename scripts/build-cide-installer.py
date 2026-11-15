@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
+import re
 import subprocess
 from tempfile import TemporaryDirectory
 import zipfile
@@ -19,6 +20,13 @@ RUNTIME_FILES = {
         'cide', 'cide-gui', 'cide-tui', 'jc-ide', 'jc-ide-gui', 'jc-ide-tui',
     )),
 }
+
+def msi_version(value):
+    if re.fullmatch(r"(?:0|[1-9][0-9]{0,4})(?:\.(?:0|[1-9][0-9]{0,4})){2}", value):
+        major, minor, build = map(int, value.split('.'))
+        if major <= 255 and minor <= 255 and build <= 65535:
+            return value
+    raise argparse.ArgumentTypeError('Usa una versión MSI de tres campos con límites 255.255.65535.')
 
 
 def prepare_payload(package, payload):
@@ -58,6 +66,7 @@ def main():
     parser.add_argument('--wix', required=True, type=Path)
     parser.add_argument('--ui-extension', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--msi-version', default='0.1.0', type=msi_version)
     args = parser.parse_args()
     output = args.output.absolute()
     if os.name != 'nt' or output.suffix.lower() != '.msi' or os.path.lexists(output):
@@ -78,6 +87,7 @@ def main():
         subprocess.run([
             str(args.wix.resolve(strict=True)), 'build', '-arch', 'x64', '-culture', 'es-ES',
             '-ext', str(args.ui_extension.resolve(strict=True)), '-d', f'Payload={payload}',
+            '-d', f'MsiVersion={args.msi_version}',
             '-d', f'LicenseRtf={license_rtf}', '-out', str(candidate), '-pdbtype', 'none',
             str(ROOT / 'installer/CIDE.wxs'),
         ], cwd=work, check=True)

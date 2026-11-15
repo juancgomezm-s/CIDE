@@ -625,7 +625,18 @@ La generación de una interfaz de servicio depende de un contrato real de
 integración. El renombrado entre archivos requiere un bloque posterior con
 validación y recuperación de la transacción de proyecto.
 
-## M5 — Servicios opcionales, hardening y CI
+## M5 — Integración y validación local
+
+**Avance en Windows.** En una corrida transversal pasaron 975 pruebas
+con tres fallos. Las tres regresiones pasaron al repetir sus casos
+dirigidos, junto con la nueva prueba del comando Git con `PATH` vacío.
+También pasaron formato, Clippy, las pruebas TypeScript con servidor
+real y la recuperación en los ejecutables extraídos del MSI. El
+identificador de menú de LSP ahora es independiente del de Markdown.
+La compilación de desarrollo pasó las 152 comprobaciones nativas
+en una ventana oculta después de fijar la geometría de los fixtures.
+El MSI optimizado 0.1.1 pasó ICE y la verificación de 666 archivos
+extraídos. [Evidencia del instalador](../installer/README.md#validación-local-de-011).
 
 Git completo (stage/unstage por hunk, commit, fetch, pull, push, ramas, merge y resolución BASE/OURS/THEIRS/RESULT), proveedores semánticos/LSP, tareas e integración con OmniCore, todos bajo demanda. Construir los flujos de Git con confirmaciones y protección de archivos modificados; el visor read-only se adelanta a M2A. Hardening del contrato de proveedores internos de lenguaje y sus contribuciones al registro central; búsqueda de proyecto permanece priorizada en M2A.
 
@@ -636,16 +647,18 @@ Las colisiones entre archivo y carpeta se resuelven eligiendo la estructura
 completa de una versión.
 Los renombres exactos en competencia se resuelven eligiendo la ruta de una versión.
 
-**CI pertenece a M5.** Hasta iniciar M5 no se ejecutará GitHub Actions automáticamente en `push` ni `pull_request`, ni se usará CI remoto para perseguir fallos intermedios de M2–M4. El workflow queda conservado únicamente como `workflow_dispatch` manual y no debe invocarse antes de M5 salvo autorización explícita del propietario.
+La validación sigue siendo **local** en M5 mediante
+[`scripts/check-local.py`](LOCAL_VALIDATION.md). GitHub Actions requiere
+una autorización expresa para la ejecución concreta.
 
-Durante M2–M4 la validación es local y dirigida: ejecutar solo las pruebas/builds necesarias cuando exista toolchain disponible. Si el entorno de desarrollo no permite validarlas, se registra la limitación y se continúa; no se consume CI para compensarla.
-
-**Criterios de aceptación de CI en M5:**
-- estabilizar primero la arquitectura y los flujos funcionales de M2–M4;
-- reactivar entonces CI automático para `push`/`pull_request`;
-- matriz Windows/Linux para formato, tests, Clippy y release build;
-- smoke tests representativos de TUI, archivos y adaptadores que ya estén funcionalmente terminados;
-- completar en esa fase la matriz transversal de compatibilidad; los defectos conocidos de integridad y respuesta se corrigen en el incremento que los introduce o descubre.
+1. Ejecutar la suite del editor en Windows y la matriz de formato, pruebas,
+   Clippy y compilación para los componentes admitidos en Linux.
+2. Actualizar el MSI y verificar sus archivos, la actualización desde el
+   paquete anterior y la recuperación de sesiones en GUI y TUI.
+3. Reutilizar el motor Git en OmniCore y OmniCoder, con contratos públicos
+   de lectura y pruebas en cada host. CIDE ya tiene operaciones locales y
+   transporte embebido. Los dos hosts ya tienen una integración opcional
+   probada para leer `HEAD`. [Contrato y recorridos](GIT_SHARED_CORE.md#consulta-de-head-para-otros-hosts).
 
 ## Anexo post-M5 — Compatibilidad con Sublime Text
 
@@ -662,7 +675,7 @@ Especificación: [POST_M5_SUBLIME_COMPAT.md](POST_M5_SUBLIME_COMPAT.md).
 - Progress y otros procesos: medir por separado y como total;
 - archivos grandes: medir latencia, piezas, historial y caches antes de optimizar.
 
-Son objetivos exploratorios, no resultados alcanzados. La medición **local empieza en M2-F**; CI remoto continúa en M5. El perfil actual `opt-level="s"` prioriza tamaño: compararlo con 2/3 usando las mismas cargas antes de fijar la política de release. No cambiarlo por intuición.
+Son objetivos exploratorios. La medición local empieza en M2-F y continúa en M5. El perfil actual `opt-level="s"` prioriza tamaño. La política de release se fija comparándolo con 2/3 bajo las mismas cargas.
 
 Metas iniciales para un equipo de referencia identificado en cada corrida: p95 de movimiento/consulta textual <2 ms con índices calientes en archivos de hasta 4 MiB; p95 tecla-a-pantalla <16 ms con viewport fijo, una/dos vistas y servicios inactivos; cancelación de búsqueda perceptible <100 ms en la carga local. Son presupuestos para orientar F2/F3, no garantías universales. Ajustarlos solo con evidencia registrada; informar degradación en archivos/líneas extremas.
 

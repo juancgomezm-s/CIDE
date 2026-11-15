@@ -86,6 +86,22 @@ fn run(args: Vec<OsString>) -> Result<(), Box<dyn Error>> {
             println!("This is a headless core demonstration, not a graphical editor.");
         }
         "progress-plan" => progress_plan(&args[1..])?,
+        "git-head" if args.len() == 2 => {
+            let result = jc_git::revision::read_head_commit(
+                Path::new(&args[1]),
+                jc_git::Limits {
+                    max_blob: 0,
+                    max_entries: 4096,
+                    max_path: 4096,
+                    max_bytes: 4 * 1024 * 1024,
+                    timeout: std::time::Duration::from_secs(2),
+                },
+                || false,
+            );
+            let mut stdout = io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &git_head_response(result))?;
+            writeln!(stdout)?;
+        }
         "progress-result" if args.len() == 2 => {
             let mut bytes = Vec::new();
             fs::File::open(&args[1])?
@@ -110,6 +126,37 @@ fn run(args: Vec<OsString>) -> Result<(), Box<dyn Error>> {
         _ => return Err(invalid("unknown command or wrong argument count; use --help").into()),
     }
     Ok(())
+}
+
+fn git_head_response(
+    result: Result<Option<jc_git::revision::HeadCommit>, jc_git::Error>,
+) -> serde_json::Value {
+    use jc_git::Error;
+    const PROTOCOL: &str = "cide.git.head.v1";
+    match result {
+        Ok(Some(head)) => serde_json::json!({
+            "protocol": PROTOCOL,
+            "state": "ready",
+            "commit": head.commit,
+            "tree": head.tree,
+            "parents": head.parents,
+        }),
+        Ok(None) => serde_json::json!({ "protocol": PROTOCOL, "state": "unborn" }),
+        Err(error) => {
+            let code = match error {
+                Error::InvalidRoot => "invalid_root",
+                Error::NotRepository => "not_repository",
+                Error::Missing => "missing",
+                Error::Limited => "limited",
+                Error::Cancelled => "cancelled",
+                Error::TimedOut => "timeout",
+                Error::Stale => "stale",
+                Error::Unsupported | Error::Filter | Error::Unmerged => "unsupported",
+                Error::Io(_) | Error::Engine(_) => "read_failed",
+            };
+            serde_json::json!({ "protocol": PROTOCOL, "state": "error", "code": code })
+        }
+    }
 }
 
 fn save_new(doc: &Document, path: &Path) -> io::Result<()> {
@@ -232,6 +279,7 @@ Commands:\n\
   cide roundtrip INPUT NEW_OUTPUT\n\
   cide edit INPUT START_BYTE END_BYTE HEX_OR_DASH NEW_OUTPUT\n\
   cide demo\n\
+  cide git-head ABSOLUTE_REPOSITORY_ROOT\n\
   cide progress-result RESPONSE_FILE\n\
   cide progress-plan --action check|compile|run|schema --exe PATH --helper PATH\n\
       --output-dir NEW_DIR --cpstream PAGE --cpinternal PAGE\n\

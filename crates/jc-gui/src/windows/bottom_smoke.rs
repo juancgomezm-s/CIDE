@@ -19,18 +19,6 @@ use std::{
 };
 static RELEASE: AtomicBool = AtomicBool::new(true);
 const SOURCE: &[u8] = b"alpha\r\nbeta\r\n";
-#[link(name = "user32")]
-extern "system" {
-    fn SetWindowPos(
-        hwnd: Hwnd,
-        after: Hwnd,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
-        flags: u32,
-    ) -> i32;
-}
 fn fixture(s: &TaskSnapshot, c: &Cancellation, out: &mut TaskOutput) -> Result<(), TaskFailure> {
     while !RELEASE.load(Ordering::Acquire) {
         if c.is_cancelled() {
@@ -438,10 +426,9 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
             s.jobs.artifact_bytes(),
         )
     };
+    let size = super::explorer_smoke::OwnSize::new(hwnd)?;
     for (width, height) in [(360, 170), (360, 320), (1400, 800)] {
-        if SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, width, height, 0x16) == 0 {
-            return Err("Bottom owned resize failed".into());
-        }
+        size.resize(width, height)?;
         let mut s = owner(hwnd).unwrap().state.borrow_mut();
         let _frame = paint::prepare(&mut s);
     }
@@ -516,9 +503,7 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         .workbench
         .close_active(true)
         .map_err(|e| e.to_string())?;
-    if SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 1000, 700, 0x16) == 0 {
-        return Err("Bottom owned size restore failed".into());
-    }
+    drop(size);
     expected(hwnd, SOURCE)?;
     let after = snapshot(hwnd)?;
     if after.0 != baseline.0

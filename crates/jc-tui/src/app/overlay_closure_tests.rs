@@ -177,7 +177,8 @@ fn overlay_closure_palette_page_clamps_and_disabled_command_remains_inert() {
     key(&mut a, KeyCode::PageDown);
     assert!(matches!(a.overlay,UiOverlay::Palette {selected,..} if selected == last));
     key(&mut a, KeyCode::Home);
-    paste(&mut a, "Base de datos/esquema");
+    let schema_label = a.registry.get(CommandId::ViewDatabase).unwrap().label;
+    paste(&mut a, schema_label);
     key(&mut a, KeyCode::Enter);
     assert!(matches!(a.overlay, UiOverlay::Palette { .. }));
     assert!(a.status.contains("deshabilitado"));

@@ -205,6 +205,39 @@ impl Drop for Fixture {
             .to_str()
             .unwrap()
             .starts_with("jc git diff "));
+        // Git for Windows marks newly written loose objects read-only.
+        // Only clear that bit within this fixture's ordinary object directories.
+        use std::os::windows::fs::MetadataExt;
+        const REPARSE_POINT: u32 = 0x400;
+        let objects = self.root.join(".git/objects");
+        if let Ok(fanout) = fs::read_dir(objects) {
+            for dir in fanout {
+                let dir = dir.unwrap();
+                let name = dir.file_name();
+                let metadata = fs::symlink_metadata(dir.path()).unwrap();
+                if !metadata.is_dir()
+                    || metadata.file_attributes() & REPARSE_POINT != 0
+                    || !name.to_str().is_some_and(|name| {
+                        name.len() == 2 && name.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    })
+                {
+                    continue;
+                }
+                for object in fs::read_dir(dir.path()).unwrap() {
+                    let object = object.unwrap();
+                    let metadata = fs::symlink_metadata(object.path()).unwrap();
+                    let mut permissions = metadata.permissions();
+                    if metadata.is_file()
+                        && metadata.file_attributes() & REPARSE_POINT == 0
+                        && permissions.readonly()
+                    {
+                        #[allow(clippy::permissions_set_readonly_false)]
+                        permissions.set_readonly(false);
+                        fs::set_permissions(object.path(), permissions).unwrap();
+                    }
+                }
+            }
+        }
         fs::remove_dir_all(target).unwrap();
     }
 }

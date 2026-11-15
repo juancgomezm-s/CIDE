@@ -2,9 +2,9 @@
 //! gix directly; queries and comparison require neither an editor nor Git CLI.
 use gix::bstr::ByteSlice;
 use jc_git::{
-    Change, Limits,
+    Change, Error, Limits,
     diff_model::{DiffLimits, DiffLine, DiffSide, DiffStatus, OwnedDiffModel},
-    revision::{read_file_pair, read_revision},
+    revision::{HeadCommit, read_file_pair, read_head_commit, read_revision},
 };
 use std::{
     collections::BTreeMap,
@@ -107,6 +107,103 @@ fn image(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut files = BTreeMap::new();
     visit(root, root, &mut files);
     files
+}
+
+#[test]
+fn public_head_commit_distinguishes_unborn_and_preserves_exact_parent_order() {
+    let fixture = Fixture::new();
+    let limits = Limits {
+        max_blob: 0,
+        max_entries: 32,
+        max_path: 4096,
+        max_bytes: 128 * 1024,
+        timeout: Duration::from_secs(3),
+    };
+    assert!(matches!(
+        read_head_commit(&fixture.root, limits, || false),
+        Err(Error::NotRepository)
+    ));
+    let repo = gix::init(&fixture.root).unwrap();
+    assert_eq!(
+        read_head_commit(&fixture.root, limits, || false).unwrap(),
+        None
+    );
+    let first = commit(&repo, b"first", None);
+    let second = commit(&repo, b"second", Some(first));
+    let tree = repo
+        .find_commit(second)
+        .unwrap()
+        .tree_id()
+        .unwrap()
+        .detach();
+    let author = gix::actor::SignatureRef {
+        name: b"independent Rust consumer".as_bstr(),
+        email: b"fixture@example.invalid".as_bstr(),
+        time: "1 +0000",
+    };
+    let merge = repo
+        .commit_as(
+            author,
+            author,
+            "HEAD",
+            "merge fixture",
+            tree,
+            [second, first],
+        )
+        .unwrap()
+        .detach();
+    let expected = HeadCommit {
+        commit: merge.to_string(),
+        tree: tree.to_string(),
+        parents: vec![second.to_string(), first.to_string()],
+    };
+    let before = image(&fixture.root);
+    assert_eq!(
+        read_head_commit(&fixture.root, limits, || false).unwrap(),
+        Some(expected)
+    );
+    assert_eq!(image(&fixture.root), before);
+    assert!(matches!(
+        read_head_commit(&fixture.root, limits, || true),
+        Err(Error::Cancelled)
+    ));
+    assert!(matches!(
+        read_head_commit(
+            &fixture.root,
+            Limits {
+                max_bytes: 1,
+                ..limits
+            },
+            || false
+        ),
+        Err(Error::Limited)
+    ));
+
+    let mut parents = Vec::from([merge]);
+    for byte in 0..8 {
+        parents.push(commit(&repo, &[byte], parents.last().copied()));
+    }
+    repo.commit_as(
+        author,
+        author,
+        "HEAD",
+        "too many parents",
+        tree,
+        parents.into_iter().rev(),
+    )
+    .unwrap();
+    assert!(matches!(
+        read_head_commit(&fixture.root, limits, || false),
+        Err(Error::Limited)
+    ));
+
+    drop(repo);
+    fs::write(fixture.root.join(".git/HEAD"), format!("{first}\n")).unwrap();
+    let detached = read_head_commit(&fixture.root, limits, || false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(detached.commit, first.to_string());
+    assert!(detached.parents.is_empty());
 }
 
 #[test]

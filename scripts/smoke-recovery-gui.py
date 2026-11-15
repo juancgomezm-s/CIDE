@@ -20,12 +20,14 @@ def read_head(path):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--exe',type=Path,required=True)
+    parser.add_argument('--inspector',type=Path)
     parser.add_argument('--periodic',action='store_true',help='Espera checkpoint periódico y termina el proceso sin cierre normal')
     args=parser.parse_args()
     workspace=Path(__file__).resolve().parents[1]
     exe=(workspace/args.exe).resolve(strict=True)
     assert exe.is_relative_to(workspace) and exe.name=='cide-gui.exe'
-    inspector=(exe.parent/'examples/recovery_inspect.exe').resolve(strict=True)
+    inspector=(workspace/args.inspector if args.inspector else exe.parent/'examples/recovery_inspect.exe').resolve(strict=True)
+    assert inspector.is_relative_to(workspace) and inspector.name=='recovery_inspect.exe'
     output=workspace/'work/recovery-gui'/(dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ-')+uuid.uuid4().hex[:8])
     output.mkdir(parents=True)
     source=output/'documento.rs'

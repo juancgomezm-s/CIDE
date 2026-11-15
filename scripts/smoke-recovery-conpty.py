@@ -26,12 +26,14 @@ def read_head(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--exe', type=Path, required=True)
+    parser.add_argument('--host',type=Path)
     parser.add_argument('--periodic',action='store_true')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     exe = (root / args.exe).resolve(strict=True)
     assert exe.is_relative_to(root) and exe.name == 'cide-tui.exe'
-    host = (exe.parent / 'examples/f3_console_host.exe').resolve(strict=True)
+    host = (root/args.host if args.host else exe.parent/'examples/f3_console_host.exe').resolve(strict=True)
+    assert host.is_relative_to(root) and host.name == 'f3_console_host.exe'
     output = root / 'work/recovery-conpty' / (dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ-') + uuid.uuid4().hex[:8])
     output.mkdir(parents=True)
     source = output / 'documento.md'

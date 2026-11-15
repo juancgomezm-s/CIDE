@@ -1,6 +1,6 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
-  <Package Name="CIDE" Manufacturer="Juan Carlos Gómez Montiel" Version="0.1.0"
+  <Package Name="CIDE" Manufacturer="Juan Carlos Gómez Montiel" Version="$(var.MsiVersion)"
            Language="3082" Scope="perMachine" UpgradeCode="54C0AB97-10FC-42CD-AC23-872E554A7F21"
            Codepage="1252">
     <MajorUpgrade DowngradeErrorMessage="Ya hay una versión más reciente de CIDE instalada." />

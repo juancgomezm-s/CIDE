@@ -264,19 +264,19 @@ unsafe fn scroll_messages(hwnd: Hwnd, parent: &Path) -> Result<Vec<&'static str>
     ready(hwnd, root)?;
     result
 }
-struct OwnSize {
+pub(super) struct OwnSize {
     hwnd: Hwnd,
     rect: Rect,
 }
 impl OwnSize {
-    unsafe fn new(hwnd: Hwnd) -> Result<Self, String> {
+    pub(super) unsafe fn new(hwnd: Hwnd) -> Result<Self, String> {
         let mut rect = Rect::default();
         if GetWindowRect(hwnd, &mut rect) == 0 {
             return Err("Cannot inspect owned smoke window size".into());
         }
         Ok(Self { hwnd, rect })
     }
-    unsafe fn resize(&self, width: i32, height: i32) -> Result<(), String> {
+    pub(super) unsafe fn resize(&self, width: i32, height: i32) -> Result<(), String> {
         if SetWindowPos(self.hwnd, null_mut(), 0, 0, width, height, 0x16) == 0 {
             return Err("Cannot resize owned smoke window".into());
         }

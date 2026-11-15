@@ -218,8 +218,7 @@ unsafe fn dpi_transition(hwnd: Hwnd) -> Result<(), String> {
     if GetWindowRect(hwnd, &mut rect) == 0 {
         return Err("No se pudo leer el marco de prueba de DPI".into());
     }
-    let original_dpi = owner.state.borrow().dpi.pixels(96) as usize;
-    let set_dpi = |dpi| {
+    let set_dpi = |dpi: usize| {
         SendMessageW(
             hwnd,
             super::dpi::CHANGED,
@@ -232,8 +231,9 @@ unsafe fn dpi_transition(hwnd: Hwnd) -> Result<(), String> {
     let baseline = set_dpi(96);
     let medium = set_dpi(144);
     let large = set_dpi(192);
-    set_dpi(original_dpi);
-    if [baseline.0, medium.0, large.0] != [96, 144, 192]
+    let restored = set_dpi(96);
+    if restored != baseline
+        || [baseline.0, medium.0, large.0] != [96, 144, 192]
         || !(baseline.1 < medium.1 && medium.1 < large.1)
         || !(baseline.2 < medium.2 && medium.2 < large.2)
     {
@@ -276,6 +276,10 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), Strin
         checks.push("no_child_edit_control");
         dpi_transition(hwnd)?;
         checks.push("native_dpi_changes_96_144_192_preserve_document");
+        // Use a common window size after the separate DPI transition probe.
+        // Individual probes can resize the owned HWND and restore this baseline.
+        let size = super::explorer_smoke::OwnSize::new(hwnd)?;
+        size.resize(1000, 650)?;
         if options.navigation_only
             || options.line_edit_only
             || options.selection_reopen_only

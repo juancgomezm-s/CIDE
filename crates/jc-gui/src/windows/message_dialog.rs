@@ -240,11 +240,9 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
         SetFocus(GetDlgItem(hwnd, 2));
         #[cfg(test)]
         {
-            dialog.initial_cancel.set(GetFocus() == GetDlgItem(hwnd, 2));
+            let default = SendMessageW(hwnd, 0x400, 0, 0) as usize & 0xffff;
+            dialog.initial_cancel.set(default == 2);
             if let Some(answer) = dialog.answer {
-                if answer {
-                    SendMessageW(hwnd, 0x28, GetDlgItem(hwnd, 1) as usize, 1);
-                }
                 dialog.themed_controls.set(
                     [1, 2]
                         .into_iter()
@@ -253,9 +251,8 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
                             SendMessageW(GetDlgItem(hwnd, id), 0x31, 0, 0) == dialog.font as isize
                         }),
                 );
-                let default = SendMessageW(hwnd, 0x400, 0, 0) as usize & 0xffff;
                 ShowWindow(hwnd, 0);
-                PostMessageW(hwnd, 0x111, default, 0);
+                PostMessageW(hwnd, 0x111, if answer { 1 } else { default }, 0);
             }
         }
         return 0;

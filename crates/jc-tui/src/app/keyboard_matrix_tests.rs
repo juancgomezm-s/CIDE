@@ -114,7 +114,12 @@ fn disabled_database_command_has_no_effect_from_shortcut_palette_or_menu() {
         KeyCode::Char('p'),
         KeyModifiers::CONTROL | KeyModifiers::SHIFT,
     );
-    app.handle_event(Event::Paste("Base de datos/esquema".into()));
+    let schema_label = app
+        .registry
+        .get(jc_app::CommandId::ViewDatabase)
+        .unwrap()
+        .label;
+    app.handle_event(Event::Paste(schema_label.into()));
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     assert!(matches!(app.overlay, UiOverlay::Palette { .. }));
     assert_eq!(app.panels.sidebar(), SidebarView::Explorer);

@@ -55,6 +55,48 @@ siendo responsabilidad del adaptador; no hay un Document dentro del motor.
 
 ## Contrato del núcleo
 
+### Consulta de HEAD para otros hosts
+
+`jc_git::revision::read_head_commit` recibe la raíz absoluta del worktree,
+cuotas y una comprobación de cancelación. Devuelve el commit, su árbol y
+los OID de sus padres en orden. Una rama aún sin commits devuelve un
+resultado vacío. Una lectura que rebasa las cuotas devuelve error.
+
+Los hosts pueden ejecutar el binario de CIDE con argumentos separados y
+con una llamada directa al proceso.
+
+```text
+cide git-head RAIZ_ABSOLUTA_DEL_WORKTREE
+```
+
+Una invocación válida entrega una línea JSON con
+`"protocol":"cide.git.head.v1"`. Con `"state":"ready"` incluye `commit`,
+`tree` y `parents`. `"state":"unborn"` indica una rama sin commits.
+`"state":"error"` incluye un `code` estable para que el host decida cómo
+presentarlo. El código de salida cero indica que se entregó la respuesta
+del protocolo. Argumentos incorrectos y fallos de escritura de la
+respuesta salen con código distinto de cero.
+
+El comando observa HEAD sin leer archivos del worktree, iniciar programas
+Git, escribir en el repositorio ni usar la red. La consulta admite hasta
+ocho padres y usa las cuotas de lectura del grafo. El host puede establecer
+su propio límite de tiempo y de salida para el proceso.
+
+OmniCore usa este contrato en `omni worktree inspect` si
+`OMNICORE_CIDE_EXECUTABLE` apunta al binario. OmniCoder lo usa para
+resolver `HEAD` en el comparador si se define
+`OMNICODER_CIDE_EXECUTABLE`. Ambas variables reciben una ruta absoluta.
+El estado completo, otras referencias y las escrituras siguen a cargo
+de las operaciones existentes de cada host.
+
+La prueba de OmniCore en .NET 10 comparó la salida del camino habitual
+con la del adaptador y comprobó el error con un ejecutable inexistente.
+En OmniCoder pasaron cuatro pruebas dirigidas de Vitest, con el
+ejecutable real de CIDE, y la comprobación TypeScript del paquete de
+presentación.
+
+### Reglas compartidas
+
 - API con solicitudes y resultados tipados, versiones/capacidades explícitas y
   errores estructurados. Las apps convierten esos errores a mensajes para sus UI.
 - Fuentes Git y fuentes suministradas por el host se distinguen explícitamente.

@@ -8,6 +8,42 @@ pub(super) const MAX_PARENTS: usize = 8;
 const MAX_DEPTH: usize = 128;
 const MAX_SOURCE_BYTES: usize = 4 * 1024 * 1024;
 
+/// Identity of one observed HEAD, with its complete parent list in commit order.
+#[derive(Debug, PartialEq, Eq)]
+pub struct HeadCommit {
+    pub commit: String,
+    pub tree: String,
+    pub parents: Vec<String>,
+}
+
+/// Observe HEAD at an absolute worktree root without reading the tree or files.
+/// An unborn branch returns `Ok(None)`; a missing commit object is an error.
+/// A parent list beyond the supported budget is rejected in full.
+pub fn read_head_commit(
+    root: &Path,
+    limits: Limits,
+    cancelled: impl FnMut() -> bool + Send,
+) -> Result<Option<HeadCommit>, Error> {
+    limits.admit()?;
+    controlled(limits.timeout, cancelled, |ctx| {
+        let (repo, _) = open(root, ctx)?;
+        let mut budget = Budget::new(limits);
+        let (head, _) = super::graph::references(&repo, limits, &mut budget, ctx)?;
+        let Some(target) = head.target() else {
+            return Ok(None);
+        };
+        let head = commit(&repo, commit_id(target)?, limits, &mut budget, ctx)?;
+        if head.limited {
+            return Err(Error::Limited);
+        }
+        Ok(Some(HeadCommit {
+            commit: head.id.to_string(),
+            tree: head.tree.to_string(),
+            parents: head.parents.into_iter().map(|id| id.to_string()).collect(),
+        }))
+    })
+}
+
 pub struct Revision {
     pub repository: Identity,
     pub commit: String,

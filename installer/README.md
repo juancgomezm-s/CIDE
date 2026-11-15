@@ -13,6 +13,11 @@ python -B scripts/build-cide-installer.py --package work/packages/CIDE-input.zip
 & $wixExe msi validate work/packages/CIDE-0.1.0-windows-x64.msi
 ```
 
+Para preparar una actualización, usa `--msi-version 0.1.1` y un nombre
+de salida que coincida con esa versión. Windows Installer compara los
+tres campos numéricos del MSI mediante el mismo código de actualización.
+La versión de transporte declarada por el ZIP se valida por separado.
+
 Para comprobar el contenido, usar `msiexec /a` con `TARGETDIR` apuntando a una carpeta de pruebas. Comparar la extracción con el manifiesto del ZIP, aplicando la selección de archivos de `build-cide-installer.py`. El MSI actual se construye sin firma digital.
 
 ## Validación de v0.1.0-preview.1
@@ -20,3 +25,17 @@ Para comprobar el contenido, usar `msiexec /a` con `TARGETDIR` apuntando a una c
 El 11 de noviembre de 2026, Windows Installer devolvió `0` en los cuatro pasos con permisos de administrador: instalación, desinstalación, reinstalación y desinstalación final. Se verificaron el registro del producto, los archivos instalados y los destinos de ambos accesos del menú Inicio. La prueba abrió la GUI en una ventana oculta y la TUI en una pseudoconsola privada desde `Archivos de programa`.
 
 Ambas interfaces cerraron normalmente con cambios sin guardar. El depósito de recuperación, situado en un `LOCALAPPDATA` de prueba, conservó sus archivos byte por byte después de desinstalar y reinstalar. Ambas interfaces restauraron los cambios y el historial de edición. Los documentos originales conservaron sus bytes. La última desinstalación retiró el registro, los accesos y la carpeta de instalación. Los registros locales quedaron en `work/packages/cide-msi-lifecycle-19c54cc7`.
+
+## Validación local de 0.1.1
+
+WiX validó las tablas ICE del MSI de M5 en Windows. La extracción
+administrativa mediante `msiexec /a` verificó los 666 archivos contra
+el manifiesto del ZIP. Los ejecutables de esa extracción restauraron
+cambios sin guardar en tres procesos GUI ocultos y tres procesos TUI en
+una terminal privada. Los originales de las pruebas conservaron sus
+bytes. La comparación Git en Código pasó desde la TUI extraída.
+El paquete local es `work/packages/CIDE-0.1.1-m5-windows-x64.msi`.
+
+El ciclo de instalación por máquina de 0.1.1, actualización desde 0.1.0
+y desinstalación requiere una sesión elevada de Windows. La extracción
+administrativa y las pruebas de recuperación usaron carpetas de prueba.

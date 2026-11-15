@@ -19,5 +19,7 @@ bench = false
 
 [dependencies]
 jc-core = { path = "../jc-core" }
+jc-git = { path = "../jc-git" }
 jc-languages = { path = "../jc-languages" }
 jc-progress = { path = "../jc-progress" }
+serde_json = "=1.0.145"
