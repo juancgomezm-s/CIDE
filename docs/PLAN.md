@@ -638,6 +638,16 @@ en una ventana oculta después de fijar la geometría de los fixtures.
 El MSI optimizado 0.1.1 pasó ICE y la verificación de 666 archivos
 extraídos. [Evidencia del instalador](../installer/README.md#validación-local-de-011).
 
+**Avance en Linux.** En Debian 13 x86_64 (WSL) con Rust 1.88.0 pasaron
+689 pruebas del workspace, con 22 ignoradas, el formato, Clippy con avisos
+tratados como errores, la compilación optimizada y la demo de CLI. La TUI optimizada abrió
+un archivo sintético en una terminal privada, salió mediante Archivo › Salir
+y preservó el archivo byte por byte. Los casos de publicación del índice y
+del clon local que dependen de primitivas Win32 conservan su cobertura en
+Windows. En Linux se comprueba que preparar un archivo para el índice devuelva un error de
+plataforma sin modificar el índice ni el contenido. La GUI nativa, WinHTTP
+y la fuente paginada de archivos grandes siguen siendo de Windows.
+
 Git completo (stage/unstage por hunk, commit, fetch, pull, push, ramas, merge y resolución BASE/OURS/THEIRS/RESULT), proveedores semánticos/LSP, tareas e integración con OmniCore, todos bajo demanda. Construir los flujos de Git con confirmaciones y protección de archivos modificados; el visor read-only se adelanta a M2A. Hardening del contrato de proveedores internos de lenguaje y sus contribuciones al registro central; búsqueda de proyecto permanece priorizada en M2A.
 
 [Fusión local de ramas](GIT_LOCAL_MERGE.md): GUI y TUI revisan y confirman el

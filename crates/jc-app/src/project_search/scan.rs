@@ -46,7 +46,7 @@ pub(super) fn path_included(options: &ProjectSearchOptions, root: &Path, path: &
 pub(super) fn read_file(root: &Path, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
     jc_files::read_in_root(root, path, limit).map(|(_, bytes)| bytes)
 }
-#[cfg(test)]
+#[cfg(all(test, windows))]
 fn verify_handle(root: &Path, _: &Path, file: &std::fs::File) -> io::Result<()> {
     jc_files::verify_file_in_root(root, file)
 }

@@ -776,6 +776,7 @@ mod repository_context_tests {
         );
     }
     #[test]
+    #[cfg(windows)]
     fn reviewed_commit_pins_staged_bytes_and_rejects_changed_index_and_head() {
         use super::{
             commit_write::{AmendTarget, apply_commit, prepare_amend, prepare_commit},
@@ -904,6 +905,7 @@ mod repository_context_tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn index_write_add_then_unstage_preserves_raw_disk_and_unborn_head() {
         use super::index_write::{IndexAction, apply_index_change, prepare_index_change};
         let fixture = Fixture::new();
@@ -935,6 +937,7 @@ mod repository_context_tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn index_write_rejects_stale_bytes_conflicting_lock_and_late_cancellation() {
         use super::index_write::{IndexAction, apply_index_change, prepare_index_change};
         let fixture = Fixture::new();
@@ -976,6 +979,7 @@ mod repository_context_tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn index_write_never_replaces_a_newer_index_and_unstages_a_tracked_deletion() {
         use super::{
             diff_model::{DiffLimits, OwnedDiffModel},

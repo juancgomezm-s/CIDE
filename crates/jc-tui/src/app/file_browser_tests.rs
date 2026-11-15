@@ -162,6 +162,10 @@ fn browser_folder_frame_navigates_selects_current_folder_and_cancel_restores_foc
                 .unwrap(),
         );
     }
+    #[cfg(not(windows))]
+    {
+        app.git_cwd = fixture.root.clone();
+    }
     let _ = app.focus.focus(PrimaryFocus::Sidebar, &app.panels);
     app.open_prompt(PromptKind::OpenFolder);
     assert!(app.file_browser.active());

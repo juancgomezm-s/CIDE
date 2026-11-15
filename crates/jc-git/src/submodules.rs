@@ -2119,9 +2119,13 @@ pub fn list(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::Duration;
+    #[cfg(windows)]
+    use std::time::{SystemTime, UNIX_EPOCH};
 
+    #[cfg(windows)]
     struct Fixture(PathBuf);
+    #[cfg(windows)]
     impl Fixture {
         fn new() -> Self {
             let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2149,6 +2153,7 @@ mod tests {
             self.0.join(name)
         }
     }
+    #[cfg(windows)]
     impl Drop for Fixture {
         fn drop(&mut self) {
             let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2181,6 +2186,7 @@ mod tests {
             timeout: Duration::from_secs(10),
         }
     }
+    #[cfg(windows)]
     fn tree(repo: &gix::Repository, entries: &[(&[u8], u32, gix::ObjectId)]) -> gix::ObjectId {
         let mut entries = entries
             .iter()
@@ -2195,6 +2201,7 @@ mod tests {
             .unwrap()
             .detach()
     }
+    #[cfg(windows)]
     fn commit(repo: &gix::Repository, tree: gix::ObjectId) -> gix::ObjectId {
         let signature = gix::actor::SignatureRef {
             name: b"CIDE test".as_bstr(),
@@ -2213,6 +2220,7 @@ mod tests {
         .unwrap()
         .detach()
     }
+    #[cfg(windows)]
     fn head(repo: &mut gix::Repository, oid: gix::ObjectId) {
         repo.refs.write_reflog = gix::refs::store::WriteReflog::Disable;
         let old = repo.find_reference("HEAD").unwrap().target().into_owned();

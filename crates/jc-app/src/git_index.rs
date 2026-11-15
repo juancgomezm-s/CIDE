@@ -705,6 +705,22 @@ mod tests {
         assert_eq!(controller.state(), IndexState::Preparing);
         assert!(controller.review().is_none());
         wait_delivery(&mut controller, &wake);
+        if !cfg!(windows) {
+            assert_eq!(controller.state(), IndexState::Failed);
+            let failure = controller.preparation_failure().unwrap();
+            assert_eq!(failure.ticket, ticket);
+            assert!(matches!(
+                &failure.error,
+                IndexFailure::Git(jc_git::Error::Io(error))
+                    if error.kind() == std::io::ErrorKind::Unsupported
+            ));
+            assert!(!fixture.root.join(".git/index").exists());
+            assert_eq!(
+                fs::read(fixture.root.join("fuente.txt")).unwrap(),
+                b"fixture CIDE\r\n"
+            );
+            return;
+        }
         assert_eq!(
             controller.state(),
             IndexState::Reviewing,

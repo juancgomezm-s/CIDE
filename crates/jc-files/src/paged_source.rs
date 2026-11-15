@@ -2,8 +2,9 @@
 //! connected to Document/FileSession/editor opening yet. Reads block and belong
 //! in explicit worker jobs, never rendering or frontend input preparation.
 use jc_core::source::{ImmutableByteSource, ReadChunk, SourceReadError, MAX_READ_CHUNK_BYTES};
+#[cfg(all(windows, target_pointer_width = "64"))]
+use std::fs::File;
 use std::{
-    fs::File,
     io,
     path::Path,
     sync::{Arc, Mutex, MutexGuard},
@@ -42,18 +43,23 @@ pub struct PageCacheStatistics {
     pub budget_bytes: usize,
 }
 struct Page {
+    #[cfg(all(windows, target_pointer_width = "64"))]
     offset: u64,
     bytes: Arc<[u8]>,
+    #[cfg(all(windows, target_pointer_width = "64"))]
     used: u64,
 }
 struct Cache {
     pages: Vec<Page>,
+    #[cfg(all(windows, target_pointer_width = "64"))]
     tick: u64,
     statistics: PageCacheStatistics,
 }
 pub struct PagedFileSource {
+    #[cfg(all(windows, target_pointer_width = "64"))]
     file: File,
     len: u64,
+    #[cfg(all(windows, target_pointer_width = "64"))]
     limits: PageCacheLimits,
     cache: Mutex<Cache>,
 }

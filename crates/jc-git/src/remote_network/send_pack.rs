@@ -286,6 +286,7 @@ pub(super) fn push_pack(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
     use std::{
         sync::atomic::{AtomicBool, AtomicU8},
         time::{Duration, Instant},

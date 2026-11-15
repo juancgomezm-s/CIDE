@@ -2104,6 +2104,7 @@ pub fn apply_local_push(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -2412,6 +2413,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn bare_clone_is_create_only_and_pins_heads_and_tags() {
         let fixture = Fixture::new();
         let source_path = fixture.p("source.git");

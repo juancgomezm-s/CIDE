@@ -1,6 +1,8 @@
 //! Bounded transports and protocol adapters for embedded Git.
 use super::{Context, Error, Limits, OperationCredential};
+#[cfg(windows)]
 use gix::remote::Direction;
+#[cfg(windows)]
 use gix_transport::client::TransportWithoutIO;
 use std::path::Path;
 
