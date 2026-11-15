@@ -598,6 +598,16 @@ impl Catalog {
         if range.is_empty() || !(range.start..=range.end).contains(&cursor) {
             return Ok(None);
         }
+        if let Some(super_) = classes::receiver(bytes, &range) {
+            return self.inherited_method(
+                source,
+                &Context::new(bytes, encoding),
+                range,
+                &name,
+                super_,
+                cancel,
+            );
+        }
         let mut type_use = classes::type_use(&context, bytes, &range);
         if type_use.as_ref().is_some_and(|use_| !use_.static_access) {
             return symbols.imports().resolve(

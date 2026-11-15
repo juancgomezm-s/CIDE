@@ -979,6 +979,45 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requiere el proyecto sintético de OpenEdge con las clases de herencia"]
+    fn progress_real_inheritance_gui_opens_grandparent_method_to_side() {
+        let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+        let path = root.join("primero/paquete/Derivada.cls");
+        let target = root
+            .join("primero/paquete/Raiz.cls")
+            .canonicalize()
+            .unwrap();
+        let source = std::fs::read_to_string(&path).unwrap();
+        let method = std::fs::read_to_string(&target)
+            .unwrap()
+            .find("Saludo")
+            .unwrap();
+        let mut state = State::new(&GuiOptions {
+            paths: vec![path],
+            project_root: Some(root),
+            encoding: Some(TextEncoding::Utf8),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        let tab = state.workbench.tabs().active_id().unwrap();
+        assert!(state
+            .workbench
+            .jump_to_location(tab, source.find("SUPER:Saludo").unwrap() + 8));
+        state.execute_menu(CommandId::SourceDefinition);
+        finish(&mut state);
+        assert_eq!(
+            state.source_gui.controller.items().len(),
+            1,
+            "{}",
+            state.source_gui.controller.message()
+        );
+        state.source_key(0x0d, Modifiers::CTRL);
+        assert!(state.workbench.panes().is_split());
+        assert_eq!(state.workbench.active_path(), Some(target.as_path()));
+        assert_eq!(state.workbench.active_editor().unwrap().cursor, method);
+    }
+
+    #[test]
     #[ignore = "requiere el proyecto sintético de OpenEdge con los ejemplos USING"]
     fn progress_real_using_gui_prefers_explicit_import_and_opens_to_side() {
         let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());

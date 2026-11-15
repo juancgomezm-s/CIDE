@@ -1,4 +1,4 @@
-use super::classes::Imports;
+use super::classes::{Hierarchy, Imports};
 use super::references::{binding_context, ReferenceScan};
 use super::{fold, Catalog, Context, Site, SourceItem, Target, Token, MAX_LOCAL_NAMES};
 use jc_app::{TaskFailure, TaskItem, TaskOutput};
@@ -112,9 +112,21 @@ pub(super) struct Symbols {
     references: Option<ReferenceScan>,
     outline: Option<Outline>,
     imports: Option<Imports>,
+    hierarchy: Option<Hierarchy>,
 }
 
 impl Symbols {
+    pub(super) fn track_hierarchy(&mut self, method: &str) {
+        self.hierarchy = Some(Hierarchy::new(method));
+    }
+
+    pub(super) fn into_hierarchy(self) -> (Hierarchy, Imports) {
+        (
+            self.hierarchy.expect("active class analysis"),
+            self.imports.unwrap_or_default(),
+        )
+    }
+
     pub(super) fn track_imports(&mut self) {
         self.imports = Some(Imports::default());
     }
@@ -471,6 +483,9 @@ impl Symbols {
         let tokens = &context.tokens;
         let word = |index| tokens.get(index).and_then(|token| context.word(token));
         let is = |index, keyword| at(context, tokens, index, keyword);
+        if let Some(hierarchy) = &mut self.hierarchy {
+            hierarchy.statement(context, end);
+        }
         if end == b"." && is(0, b"USING") {
             if let Some(imports) = &mut self.imports {
                 imports.add(context)?;

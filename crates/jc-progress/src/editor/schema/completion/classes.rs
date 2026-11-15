@@ -1,9 +1,10 @@
-use super::{identifier, Context, SourceItem};
+use super::{identifier, Catalog, Context, Includes, Site, SourceItem, Symbols};
 use crate::editor::project_propath_dirs;
 use jc_app::{source_services::SourceAction, Cancellation, TaskFailure};
 use jc_languages::syntax::{scan, LexerState, SyntaxKind, SyntaxProfile};
 use jc_text::{decode_fragment, TextEncoding};
 use std::{
+    collections::BTreeSet,
     io::ErrorKind,
     ops::Range,
     path::{Path, PathBuf},
@@ -12,6 +13,185 @@ use std::{
 const MAX_IMPORTS: usize = 128;
 const MAX_CLASS_BYTES: usize = 512 * 1024;
 const MAX_NAME: usize = 512;
+const MAX_BASE_CLASSES: usize = 16;
+
+pub(super) struct Hierarchy {
+    method: String,
+    class: Option<String>,
+    parent: Option<String>,
+    methods: Vec<Method>,
+}
+
+struct Method {
+    site: Site,
+    private: bool,
+    package: bool,
+    abstract_: bool,
+}
+
+impl Hierarchy {
+    pub(super) fn new(method: &str) -> Self {
+        Self {
+            method: method.into(),
+            class: None,
+            parent: None,
+            methods: Vec::new(),
+        }
+    }
+
+    pub(super) fn statement(&mut self, context: &Context<'_>, end: &[u8]) {
+        let tokens = &context.tokens;
+        let is = |i: usize, word: &[u8]| {
+            tokens
+                .get(i)
+                .is_some_and(|token| context.bytes(token).eq_ignore_ascii_case(word))
+        };
+        if end == b":" && is(0, b"CLASS") && self.class.is_none() && context.file.is_none() {
+            let read = |i: usize| {
+                let name = name_at(context.bytes, context.encoding, tokens.get(i)?.range.start)?;
+                (!name.wildcard).then_some(name.text)
+            };
+            self.class = read(1);
+            self.parent = (2..tokens.len())
+                .find(|&i| is(i, b"INHERITS"))
+                .and_then(|i| read(i + 1));
+        }
+        if !is(0, b"METHOD") || self.class.is_none() {
+            return;
+        }
+        let Some(open) = (2..tokens.len()).find(|&i| is(i, b"(")) else {
+            return;
+        };
+        if !is(open - 1, self.method.as_bytes())
+            || !is(open + 1, b")")
+            || (1..open - 1).any(|i| is(i, b"STATIC"))
+            || self.methods.len() >= 2
+        {
+            return;
+        }
+        let flags = |word| (1..open - 1).any(|i| is(i, word));
+        self.methods.push(Method {
+            site: context.site(&tokens[open - 1]),
+            private: flags(b"PRIVATE"),
+            package: flags(b"PACKAGE-PRIVATE") || flags(b"PACKAGE-PROTECTED"),
+            abstract_: flags(b"ABSTRACT"),
+        });
+    }
+}
+
+/// Return only an explicit, zero-argument instance call.
+pub(super) fn receiver(bytes: &[u8], range: &Range<usize>) -> Option<bool> {
+    let prefix = bytes.get(..range.start)?.strip_suffix(b":")?;
+    let starts = |word: &[u8]| {
+        let Some(start) = prefix.len().checked_sub(word.len()) else {
+            return false;
+        };
+        prefix[start..].eq_ignore_ascii_case(word)
+            && (start == 0 || !component_byte(prefix[start - 1]))
+            && !matches!(prefix.get(start.wrapping_sub(1)), Some(b':' | b'.'))
+    };
+    let super_ = starts(b"SUPER");
+    if !super_ && !starts(b"THIS-OBJECT") {
+        return None;
+    }
+    let mut suffix = bytes
+        .get(range.end..)?
+        .iter()
+        .take(128)
+        .filter(|b| !b.is_ascii_whitespace());
+    (suffix.next() == Some(&b'(') && suffix.next() == Some(&b')')).then_some(super_)
+}
+
+impl Catalog {
+    pub(super) fn inherited_method(
+        &self,
+        source: &Path,
+        context: &Context<'_>,
+        range: Range<usize>,
+        name: &str,
+        super_: bool,
+        cancel: &Cancellation,
+    ) -> Result<Option<SourceItem>, TaskFailure> {
+        if !source
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("cls"))
+        {
+            return Ok(None);
+        }
+        let inspect = |path: &Path, bytes: &[u8], encoding| {
+            let mut symbols = Symbols::default();
+            symbols.track_imports();
+            symbols.track_hierarchy(name);
+            Includes::new(&self.root, path).with_locations().scan(
+                &mut Context::new(bytes, encoding),
+                &mut symbols,
+                self,
+                cancel,
+            )?;
+            Ok::<_, TaskFailure>(symbols.into_hierarchy())
+        };
+        let (mut hierarchy, mut imports) = inspect(source, context.bytes, context.encoding)?;
+        let Some(owner) = hierarchy.class.clone() else {
+            return Ok(None);
+        };
+        let package = |class: &str| {
+            class
+                .rsplit_once('.')
+                .map_or("", |(package, _)| package)
+                .to_owned()
+        };
+        let source_package = package(&owner);
+        let mut seen = BTreeSet::from([owner.to_lowercase()]);
+        let mut loaded: Option<ClassSource> = None;
+        for depth in 0..=MAX_BASE_CLASSES {
+            let class = hierarchy.class.as_deref().unwrap_or_default();
+            let local = loaded.is_none();
+            if !local || !super_ {
+                let mut eligible = hierarchy.methods.iter().filter(|method| {
+                    local
+                        || !method.private
+                            && (!method.package
+                                || package(class).eq_ignore_ascii_case(&source_package))
+                });
+                if let Some(method) = eligible.next() {
+                    if eligible.next().is_some() || super_ && method.abstract_ {
+                        return Ok(None);
+                    }
+                    let class_label: String = class.chars().take(64).collect();
+                    let label = format!("Método · {name} · {class_label}");
+                    return Ok(Some(if method.site.file.is_some() || local {
+                        method.site.item(label, range)
+                    } else {
+                        loaded
+                            .as_ref()
+                            .unwrap()
+                            .item(range, label, method.site.offset)
+                    }));
+                }
+            }
+            let Some(parent) = hierarchy.parent else {
+                return Ok(None);
+            };
+            if depth == MAX_BASE_CLASSES {
+                return Err(TaskFailure::LimitExceeded);
+            }
+            let (path, encoding) = loaded.as_ref().map_or((source, context.encoding), |class| {
+                (class.path.as_path(), class.encoding)
+            });
+            let Some(base) = imports.load(&self.root, path, &parent, false, encoding, cancel)?
+            else {
+                return Ok(None);
+            };
+            if !seen.insert(base.name.to_lowercase()) {
+                return Ok(None);
+            }
+            (hierarchy, imports) = inspect(&base.path, &base.bytes, base.encoding)?;
+            loaded = Some(base);
+        }
+        Err(TaskFailure::LimitExceeded)
+    }
+}
 
 struct Name {
     text: String,
@@ -81,8 +261,35 @@ impl Imports {
         if use_.assembly || use_.name.wildcard || use_.in_using && !use_.name.text.contains('.') {
             return Ok(None);
         }
-        let text = &use_.name.text;
-        let direct = use_.in_using || text.contains('.');
+        let Some(class) = self.load(
+            root,
+            source,
+            &use_.name.text,
+            use_.in_using,
+            encoding,
+            cancel,
+        )?
+        else {
+            return Ok(None);
+        };
+        let label: String = class.name.chars().take(88).collect();
+        Ok(Some(class.item(
+            use_.name.range,
+            format!("{} · {label}", class.kind),
+            class.offset,
+        )))
+    }
+
+    fn load(
+        &self,
+        root: &Path,
+        source: &Path,
+        text: &str,
+        in_using: bool,
+        encoding: TextEncoding,
+        cancel: &Cancellation,
+    ) -> Result<Option<ClassSource>, TaskFailure> {
+        let direct = in_using || text.contains('.');
         let explicit = (!direct)
             .then(|| {
                 self.0.iter().find(|import| {
@@ -104,17 +311,15 @@ impl Imports {
             .iter()
             .filter(|import| import.name.wildcard && !import.assembly);
         let names = if direct {
-            vec![text.clone()]
+            vec![text.to_owned()]
         } else if let Some(import) = explicit {
             vec![import.name.text.clone()]
         } else {
             wildcards
                 .map(|import| format!("{}.{text}", import.name.text))
+                .chain(std::iter::once(text.to_owned()))
                 .collect()
         };
-        if names.is_empty() {
-            return Ok(None);
-        }
         let root = root.canonicalize().map_err(|_| TaskFailure::Failed)?;
         let parent = source
             .parent()
@@ -147,20 +352,41 @@ impl Imports {
                 let Some((kind, offset)) = declaration(&bytes, encoding, &name, cancel)? else {
                     return Ok(None);
                 };
-                let label: String = name.chars().take(88).collect();
-                return Ok(Some(SourceItem {
-                    range: use_.name.range,
-                    label: format!("{kind} · {label}"),
-                    action: SourceAction::ProjectLocation {
-                        path,
-                        offset,
-                        encoding,
-                        version: jc_files::ContentFingerprint::of(&bytes),
-                    },
+                return Ok(Some(ClassSource {
+                    name,
+                    kind,
+                    offset,
+                    path,
+                    bytes,
+                    encoding,
                 }));
             }
         }
         Ok(None)
+    }
+}
+
+struct ClassSource {
+    name: String,
+    kind: &'static str,
+    offset: usize,
+    path: PathBuf,
+    bytes: Vec<u8>,
+    encoding: TextEncoding,
+}
+
+impl ClassSource {
+    fn item(&self, range: Range<usize>, label: String, offset: usize) -> SourceItem {
+        SourceItem {
+            range,
+            label,
+            action: SourceAction::ProjectLocation {
+                path: self.path.clone(),
+                offset,
+                encoding: self.encoding,
+                version: jc_files::ContentFingerprint::of(&self.bytes),
+            },
+        }
     }
 }
 

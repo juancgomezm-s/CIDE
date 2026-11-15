@@ -357,6 +357,48 @@ fn progress_real_xref_tui_opens_program_with_spaces_to_side() {
 }
 
 #[test]
+#[ignore = "requiere el proyecto sintético de OpenEdge con las clases de herencia"]
+fn progress_real_inheritance_tui_selects_override_and_opens_grandparent() {
+    let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
+    let path = root.join("primero/paquete/Derivada.cls");
+    let target = root
+        .join("primero/paquete/Raiz.cls")
+        .canonicalize()
+        .unwrap();
+    let source = std::fs::read_to_string(&path).unwrap();
+    let method = std::fs::read_to_string(&target)
+        .unwrap()
+        .find("Saludo")
+        .unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![path],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root).unwrap();
+    let tab = app.workbench.tabs().active_id().unwrap();
+    assert!(app
+        .workbench
+        .jump_to_location(tab, source.find("THIS-OBJECT:Saludo").unwrap() + 14));
+    key(&mut app, KeyCode::F(12), KeyModifiers::NONE);
+    finish(&mut app);
+    assert_eq!(app.source.items().len(), 1, "{}", app.source.message());
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        source.find("Saludo").unwrap()
+    );
+    assert!(app
+        .workbench
+        .jump_to_location(tab, source.find("SUPER:Saludo").unwrap() + 8));
+    key(&mut app, KeyCode::F(12), KeyModifiers::NONE);
+    finish(&mut app);
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    assert!(app.workbench.panes().is_split());
+    assert_eq!(app.workbench.active_path(), Some(target.as_path()));
+    assert_eq!(app.workbench.active_editor().unwrap().cursor, method);
+}
+
+#[test]
 #[ignore = "requiere el proyecto sintético de OpenEdge con los ejemplos USING"]
 fn progress_real_using_tui_resolves_wildcard_from_include_and_opens_to_side() {
     let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());

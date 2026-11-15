@@ -189,6 +189,21 @@ OpenEdge 11.7 comprobó la sintaxis de los ejemplos con dos copias de
 exacta de la primera copia. Los ejemplos también cubren la prioridad de
 una importación explícita sobre un comodín y el comodín en una inclusión.
 
+### Métodos heredados en ABL
+
+En una clase, pulsa **F12** sobre el método en llamadas sin argumentos
+como `SUPER:Saludo()` y `THIS-OBJECT:Saludo()`. **Intro** abre la
+declaración y **Ctrl+Intro** la abre al lado en GUI y TUI.
+`SUPER` empieza en la clase base y `THIS-OBJECT` en la clase actual.
+El recorrido sigue `INHERITS`, `USING` y PROPATH hasta 16 clases base.
+[Referencia SUPER](https://docs.progress.com/bundle/openedge-abl-reference-128/page/SUPER-system-reference.html)
+
+OpenEdge 11.7 compiló el ejemplo de tres clases. Las dos interfaces
+abrieron el método protegido de la clase raíz desde `SUPER`. La TUI
+comprobó además que `THIS-OBJECT` abre la redefinición de la clase actual.
+La resolución de llamadas con argumentos, propiedades y receptores
+como variables de objeto queda para otro bloque.
+
 ### Buscar referencias en ABL
 
 Pulsa **Mayús+F12** o elige **Navegación → Buscar referencias** sobre una

@@ -1,0 +1,10 @@
+USING paquete.Intermedia FROM PROPATH.
+CLASS paquete.Derivada INHERITS Intermedia:
+    METHOD PROTECTED OVERRIDE CHARACTER Saludo():
+        RETURN SUPER:Saludo().
+    END METHOD.
+
+    METHOD PUBLIC CHARACTER Probar():
+        RETURN THIS-OBJECT:Saludo().
+    END METHOD.
+END CLASS.

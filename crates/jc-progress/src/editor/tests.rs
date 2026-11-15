@@ -31,6 +31,7 @@ fn progress_real_using_compiles_with_ordered_propath() {
     for filename in [
         "consumidores/using-explicito.p",
         "consumidores/using-comodin.p",
+        "primero/paquete/Derivada.cls",
     ] {
         let path = root.join(filename);
         let before = fs::read(&path).unwrap();
