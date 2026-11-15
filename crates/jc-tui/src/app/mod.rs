@@ -2,6 +2,7 @@ mod clipboard;
 #[cfg(test)]
 mod clipboard_tests;
 mod commands;
+pub(crate) mod data_connections;
 mod events;
 mod explorer;
 #[cfg(test)]
@@ -107,6 +108,7 @@ pub struct TuiApp {
     pub(crate) focus: FocusManager,
     pub(crate) panels: PanelManager,
     pub(crate) overlay: UiOverlay,
+    pub(crate) data_connections: Option<data_connections::ConnectionsDialog>,
     pub(crate) last_frame_height: u16,
     clipboard_transport: Option<Box<dyn clipboard::ClipboardTransport>>,
     pub(crate) status: String,
@@ -195,6 +197,7 @@ impl TuiApp {
             focus: FocusManager::default(),
             panels: PanelManager::default(),
             overlay: UiOverlay::None,
+            data_connections: None,
             last_frame_height: 24,
             clipboard_transport: None,
             find_cursor: usize::MAX,

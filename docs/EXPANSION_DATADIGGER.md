@@ -1,7 +1,9 @@
 # Expansión DataDigger en CIDE
 
-**Estado:** plan de expansión. Incluye **Progress OpenEdge 10.0B y 10.2B**,
-**PostgreSQL** y **MySQL**, con validación independiente por motor.
+**Estado:** configuración de perfiles por proyecto en GUI y TUI. La expansión
+incluye **Progress OpenEdge 10.0B y 10.2B**, **PostgreSQL** y **MySQL**, con
+validación independiente por motor. El navegador de registros y los proveedores
+SQL siguen pendientes.
 
 ## Experiencia en la GUI
 
@@ -19,10 +21,17 @@ trabajo que la inició.
 
 ## Configuración de conexiones
 
-**Proyecto → Conexiones de datos** administrará perfiles con nombre, motor
-y catálogo activo. Cada proyecto podrá tener varios perfiles. **Probar
-conexión**, **Actualizar esquema** y **Ver registros** serán acciones
-explícitas. El formulario mostrará los campos del motor seleccionado.
+**Proyecto → Conexiones de datos** permite crear y editar perfiles en español.
+El formulario muestra los campos del motor seleccionado. OpenEdge usa el perfil
+Progress existente en `.cide/progress.local.ini`. Para SQL se guardan los datos
+del perfil. **Probar conexión** y **Ver registros** forman parte de los siguientes
+bloques de integración.
+
+Si el proyecto tiene `.cide/progress.local.ini` y ya se guardó un perfil
+OpenEdge, el selector ofrece **Actualizar esquema ABL**. En la TUI se
+ejecuta con F5 sobre ese perfil. La operación reutiliza el trabajo ABL del
+editor y publica el resultado en **Salida** o **Problemas**. En la TUI,
+F9 guarda el formulario y Esc vuelve a la lista sin guardar el borrador.
 
 | Motor | Configuración |
 | --- | --- |
@@ -30,29 +39,44 @@ explícitas. El formulario mostrará los campos del motor seleccionado.
 | PostgreSQL | Host, puerto, base, usuario, esquemas incluidos y configuración TLS. |
 | MySQL | Host, puerto, base, usuario y configuración TLS. |
 
-Los perfiles guardarán parámetros de conexión y una referencia a la
-credencial en el almacén seguro del sistema. La contraseña se solicitará
-al probar o abrir la conexión si el almacén aún no la tiene. Las cuentas
-SQL deberán tener permisos de lectura sobre los catálogos y datos
-autorizados. La configuración incluirá tiempos de espera y usará límites
-de página del contrato común.
+Los perfiles se guardan en `.cide/conexiones.local.json`. El archivo usa el
+escritor atómico del editor y conserva el contenido si cambia en disco mientras
+el formulario está abierto. El campo de credencial admite una referencia
+opcional del tipo `cide/datadigger/inventario`. La consulta del almacén seguro
+y el ingreso de contraseñas quedan para el bloque de conectividad. Las cuentas
+SQL deberán tener permisos de lectura sobre los catálogos y datos autorizados.
 
-La configuración local propuesta es `.cide/conexiones.local.toml`. El
-formulario de CIDE escribirá este archivo. Un perfil PostgreSQL tendría
-esta forma. MySQL usa `motor = "mysql"` y selecciona objetos de la base
-indicada.
-
-```toml
-[conexiones.inventario]
-motor = "postgresql"
-host = "db-ejemplo.invalid"
-puerto = 5432
-base = "inventario"
-usuario = "lectura_cide"
-esquemas = ["public"]
-tls = "verificar-servidor"
-credencial = "cide/datadigger/inventario"
+```json
+{
+  "version": 1,
+  "conexiones": [
+    {
+      "motor": "postgresql",
+      "campos": {
+        "nombre": "Inventario",
+        "servidor": "db-ejemplo.invalid",
+        "puerto": "5432",
+        "base": "inventario",
+        "usuario": "lectura_cide",
+        "esquemas": "public",
+        "tls": "verificar-servidor",
+        "credencial": "cide/datadigger/inventario"
+      }
+    }
+  ]
+}
 ```
+
+### Validación local de la configuración
+
+En Windows con Rust 1.88 pasaron las pruebas dirigidas del almacenamiento, el
+formulario nativo con ventana de prueba y el recorrido de teclado en la TUI.
+Cubren alta, edición, reapertura, cancelación, validación de puertos y rechazo
+de guardados sobre cambios externos. También se verificó la lectura del esquema
+de una copia de Sports2000 con OpenEdge 11.7 y `-RO` desde ambas interfaces. El
+catálogo conserva el índice interno `default` de `InventoryTrans` sin presentar
+su componente anónimo como una columna de usuario. Los archivos de la base
+conservaron sus huellas SHA-256.
 
 ## Minería de esquema SQL
 
@@ -64,6 +88,9 @@ instantánea se identificará por perfil y se sustituirá al completar una
 lectura válida. Una actualización fallida conservará el último catálogo
 válido e indicará su antigüedad. La minería de esquema lee metadatos y
 la cuadrícula solicita filas por página al explorar una tabla o vista.
+En la prueba PostgreSQL 17.11, `information_schema.table_constraints`
+omitió claves con un rol de solo lectura. La consulta a `pg_catalog`
+recuperó la clave primaria y la foránea con esa misma cuenta.
 
 ## Qué aprovechar del DataDigger personalizado
 

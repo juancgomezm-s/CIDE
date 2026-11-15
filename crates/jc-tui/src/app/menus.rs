@@ -64,6 +64,7 @@ impl TuiApp {
     }
 
     pub(crate) fn open_focus_overlay(&mut self, overlay: Overlay) {
+        self.data_connections = None;
         self.rename_target = None;
         self.git_patch.clear_draft();
         self.invalidate_mouse();
@@ -77,6 +78,7 @@ impl TuiApp {
     }
 
     pub(crate) fn close_overlay(&mut self) {
+        self.data_connections = None;
         self.rename_target = None;
         self.git_patch.clear_draft();
         self.invalidate_mouse();

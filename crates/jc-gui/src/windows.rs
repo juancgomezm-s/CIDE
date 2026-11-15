@@ -7,6 +7,7 @@ mod chrome;
 mod clipboard;
 mod clipboard_flow;
 mod close_flow;
+mod data_connections;
 mod dpi;
 mod editor_scroll;
 mod explorer_paint;
@@ -221,6 +222,11 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "Actualizar esquema de base de datos",
     ),
     (258, CommandId::ViewDatabase, "Ver esquema ABL"),
+    (
+        268,
+        CommandId::ProjectDataConnections,
+        "&Conexiones de datos…",
+    ),
     (
         259,
         CommandId::SourceSchemaComplete,
@@ -452,6 +458,7 @@ enum Action {
     OpenWeb(String),
     ExportGitPatch(Arc<jc_app::git_revision::RevisionComparison>),
     ChooseFolder,
+    DataConnections,
     Open(bool),
     SaveAs,
     SaveAll,
@@ -865,6 +872,10 @@ impl State {
     }
     fn execute(&mut self, command: CommandId) -> Action {
         self.cancel_pointer();
+        if command == CommandId::ProjectDataConnections && self.project_root.is_none() {
+            self.status = "Abre una carpeta de proyecto para configurar conexiones de datos".into();
+            return Action::None;
+        }
         if !self
             .registry
             .is_enabled(command, &self.entry_context(command))
@@ -1110,6 +1121,10 @@ impl State {
             CommandId::FileOpenFolder => {
                 self.close_selector();
                 return Action::ChooseFolder;
+            }
+            CommandId::ProjectDataConnections => {
+                self.close_selector();
+                return Action::DataConnections;
             }
             CommandId::PaletteOpen => {
                 self.open_selector(SelectorKind::Palette);
@@ -2306,7 +2321,11 @@ unsafe fn release_idle_capture(hwnd: Hwnd) {
 unsafe fn perform(hwnd: Hwnd, action: Action) {
     if matches!(
         action,
-        Action::Open(_) | Action::SaveAs | Action::ChooseFolder | Action::ExportGitPatch(_)
+        Action::Open(_)
+            | Action::SaveAs
+            | Action::ChooseFolder
+            | Action::DataConnections
+            | Action::ExportGitPatch(_)
     ) && owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke)
     {
         if let Some(owner) = owner(hwnd) {
@@ -2358,6 +2377,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::PasteProject(generation) => clipboard_flow::paste_project(hwnd, generation),
         Action::PasteReplacement(generation) => clipboard_flow::paste_replacement(hwnd, generation),
         Action::SaveAll => save_flow::perform(hwnd),
+        Action::DataConnections => data_connections::open(hwnd),
         Action::ChooseFolder => {
             let initial = owner(hwnd).and_then(|o| o.state.borrow().project_root.clone());
             let selected = folder::choose_folder(hwnd, initial.as_deref());

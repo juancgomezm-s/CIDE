@@ -5,6 +5,7 @@ target/
 *.log
 *.tmp
 *.local.toml
+/.cide/conexiones.local.json
 *.local.pf
 *.local.ini
 .env

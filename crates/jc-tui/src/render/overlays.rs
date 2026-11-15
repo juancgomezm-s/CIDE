@@ -6,6 +6,7 @@ use jc_app::MenuId;
 
 pub fn draw(app: &TuiApp, screen: &mut Screen) {
     match &app.overlay {
+        UiOverlay::DataConnections => super::data_connections::draw(app, screen),
         UiOverlay::QuickOpen { input, selected } => draw_quick_open(app, screen, input, *selected),
         UiOverlay::ProjectReplacePreview { selected } => {
             draw_project_preview(app, screen, *selected)

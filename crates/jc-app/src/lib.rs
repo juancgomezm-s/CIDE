@@ -83,6 +83,7 @@ pub use workbench::{
     SearchHistoryEntry, SearchState, SyntaxRows, SyntaxStats, TextReplacement, Workbench,
     WorkbenchError,
 };
+pub mod data_connections;
 mod project_search;
 pub use project_search::{
     ProjectReplacePreview, ProjectSearch, ProjectSearchMatch, ProjectSearchOptions,

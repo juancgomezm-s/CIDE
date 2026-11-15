@@ -60,6 +60,12 @@ FOR EACH DICTDB._File NO-LOCK
         FOR EACH DICTDB._Index-Field OF DICTDB._Index NO-LOCK
             BY DICTDB._Index-Field._Index-Seq:
             FIND DICTDB._Field OF DICTDB._Index-Field NO-LOCK.
+            /* The fallback primary index may reference an unnamed internal
+               field. Keep the index metadata without a user column. */
+            IF DICTDB._Field._Field-Name = ""
+               AND DICTDB._Index._Index-Name = "default"
+               AND RECID(DICTDB._Index) = DICTDB._File._Prime-Index
+               AND NOT DICTDB._Index._Unique THEN NEXT.
             PUT UNFORMATTED "INDEX_FIELD|" HexText(pcDatabase) "|"
                 HexText(DICTDB._File._File-Name) "|"
                 HexText(DICTDB._Index._Index-Name) "|"

@@ -1,3 +1,4 @@
+mod data_connections;
 mod file_browser;
 mod git_code;
 mod git_diff;

@@ -160,6 +160,7 @@ pub enum CommandId {
     ProgressRun,
     ProgressCancel,
     ProgressRefreshSchema,
+    ProjectDataConnections,
 
     MenuFile,
     MenuEdit,
@@ -1060,6 +1061,12 @@ pub fn default_registry() -> CommandRegistry {
             abl_project
         ),
         spec!(MenuFile, Menu, "Menú Archivo", always),
+        spec!(
+            ProjectDataConnections,
+            Build,
+            "Conexiones de datos…",
+            project
+        ),
         spec!(MenuEdit, Menu, "Menú Editar", always),
         spec!(MenuSearch, Menu, "Menú Buscar", always),
         spec!(MenuProject, Menu, "Menú Proyecto", always),

@@ -38,6 +38,7 @@ pub enum UiOverlay {
     ProjectReplacePreview {
         selected: usize,
     },
+    DataConnections,
     None,
     Prompt {
         kind: PromptKind,

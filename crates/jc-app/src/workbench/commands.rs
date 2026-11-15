@@ -297,10 +297,15 @@ impl Workbench {
             | ProgressRun
             | ProgressCancel
             | ProgressRefreshSchema => Ok(CommandOutcome::Progress(command)),
-            FileChooseEncoding | FileQuickOpen | FileOpenFolder | SearchProject
-            | SearchCancelProject | SearchReplaceProject | ExplorerRefresh | ExplorerCancel => {
-                Ok(CommandOutcome::View(command))
-            }
+            FileChooseEncoding
+            | FileQuickOpen
+            | FileOpenFolder
+            | SearchProject
+            | SearchCancelProject
+            | SearchReplaceProject
+            | ExplorerRefresh
+            | ExplorerCancel
+            | ProjectDataConnections => Ok(CommandOutcome::View(command)),
         }
     }
 }

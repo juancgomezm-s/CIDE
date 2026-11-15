@@ -23,6 +23,7 @@ impl TuiApp {
         }
         let page_rows = self.overlay_page_rows();
         match self.overlay.clone() {
+            UiOverlay::DataConnections => self.handle_data_connections_key(key),
             UiOverlay::QuickOpen { input, selected } => {
                 self.handle_quick_open_key(key, input, selected)
             }
@@ -263,6 +264,9 @@ impl TuiApp {
             }
         }
         match self.overlay.clone() {
+            UiOverlay::DataConnections => {
+                self.edit_data_connection(jc_app::FieldEdit::Insert(text))
+            }
             UiOverlay::QuickOpen { input, .. } => self.append_quick_open_text(input, text),
             UiOverlay::Prompt { kind, mut input } => {
                 input.push_str(text);

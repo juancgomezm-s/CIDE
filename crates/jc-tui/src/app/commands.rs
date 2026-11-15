@@ -7,6 +7,10 @@ impl TuiApp {
         // Every TUI entry point, including menu Enter, shares this gate.
         // Check before changing search/focus state or invoking any handler.
         if !self.registry.is_enabled(command, &self.command_context()) {
+            if command == CommandId::ProjectDataConnections && self.project_root.is_none() {
+                self.status = super::data_connections::PROJECT_REQUIRED.into();
+                return;
+            }
             self.status = self
                 .registry
                 .get(command)
@@ -108,6 +112,10 @@ impl TuiApp {
             CommandId::SearchGoToPosition | CommandId::NavigateBack | CommandId::NavigateForward
         ) {
             self.workbench.cancel_search_navigation();
+        }
+        if command == CommandId::ProjectDataConnections {
+            self.open_data_connections();
+            return;
         }
         match self.workbench.execute(command) {
             Ok(outcome) => {

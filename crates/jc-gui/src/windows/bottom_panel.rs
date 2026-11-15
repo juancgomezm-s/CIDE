@@ -494,7 +494,12 @@ fn exercise_progress_schema_gui(root: std::path::PathBuf, synthetic: bool) {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(15));
     }
-    assert!(state.context().has_database_schema, "{}", state.status);
+    assert!(
+        state.context().has_database_schema,
+        "{}: {:?}",
+        state.status,
+        state.workbench.problems()
+    );
     assert_eq!(state.bottom.kind, PanelKind::Output);
     let output = state.workbench.output();
     assert!(output

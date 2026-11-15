@@ -3,6 +3,8 @@
 use super::{dpi, ffi::*, paint, shell, wide};
 use std::cell::Cell;
 
+pub(super) mod form;
+
 #[repr(C)]
 struct DrawItem {
     control_type: u32,
@@ -71,9 +73,9 @@ struct Dialog<'a> {
     themed_controls: Cell<bool>,
 }
 
-fn centered(parent: Rect, work: Rect, dpi: dpi::Dpi) -> Rect {
-    let width = dpi.pixels(420).min((work.right - work.left).max(1));
-    let height = dpi.pixels(176).min((work.bottom - work.top).max(1));
+fn centered(parent: Rect, work: Rect, dpi: dpi::Dpi, size: [i32; 2]) -> Rect {
+    let width = dpi.pixels(size[0]).min((work.right - work.left).max(1));
+    let height = dpi.pixels(size[1]).min((work.bottom - work.top).max(1));
     let left = (parent.left + (parent.right - parent.left - width) / 2)
         .clamp(work.left, work.right - width);
     let top = (parent.top + (parent.bottom - parent.top - height) / 2)
@@ -86,13 +88,9 @@ fn centered(parent: Rect, work: Rect, dpi: dpi::Dpi) -> Rect {
     }
 }
 
-unsafe fn arrange(hwnd: Hwnd, dialog: &Dialog<'_>) -> bool {
+unsafe fn position(hwnd: Hwnd, owner: Hwnd, size: [i32; 2]) -> Option<(dpi::Dpi, i32, i32)> {
     let mut parent = Rect::default();
-    let reference = if dialog.parent.is_null() {
-        hwnd
-    } else {
-        dialog.parent
-    };
+    let reference = if owner.is_null() { hwnd } else { owner };
     let mut info = MonitorInfo {
         size: std::mem::size_of::<MonitorInfo>() as u32,
         monitor: Rect::default(),
@@ -102,10 +100,10 @@ unsafe fn arrange(hwnd: Hwnd, dialog: &Dialog<'_>) -> bool {
     if GetWindowRect(reference, &mut parent) == 0
         || GetMonitorInfoW(MonitorFromWindow(reference, 2), &mut info) == 0
     {
-        return false;
+        return None;
     }
     let scale = dpi::for_window(reference);
-    let bounds = centered(parent, info.work, scale);
+    let bounds = centered(parent, info.work, scale, size);
     let width = bounds.right - bounds.left;
     let height = bounds.bottom - bounds.top;
     if SetWindowPos(
@@ -118,8 +116,15 @@ unsafe fn arrange(hwnd: Hwnd, dialog: &Dialog<'_>) -> bool {
         0x14,
     ) == 0
     {
-        return false;
+        return None;
     }
+    Some((scale, width, height))
+}
+
+unsafe fn arrange(hwnd: Hwnd, dialog: &Dialog<'_>) -> bool {
+    let Some((scale, width, height)) = position(hwnd, dialog.parent, [420, 176]) else {
+        return false;
+    };
     let margin = scale.pixels(16);
     let gap = scale.pixels(12);
     let button = scale.pixels(104);
@@ -158,10 +163,22 @@ impl Drop for Dialog<'_> {
 }
 
 fn control(words: &mut Vec<u16>, id: u16, bounds: [u16; 4], class: u16, text: &str) {
+    let style = if class == 0x80 { 0x1000b } else { 0 };
+    styled_control(words, id, bounds, class, text, style);
+}
+
+fn styled_control(
+    words: &mut Vec<u16>,
+    id: u16,
+    bounds: [u16; 4],
+    class: u16,
+    text: &str,
+    style: u32,
+) {
     if words.len() % 2 != 0 {
         words.push(0);
     }
-    let style = 0x5000_0000u32 | if class == 0x80 { 0x1000b } else { 0 };
+    let style = 0x5000_0000 | style;
     words.extend([style as u16, (style >> 16) as u16, 0, 0]);
     words.extend(bounds);
     words.extend([id, 0xffff, class]);
@@ -170,6 +187,14 @@ fn control(words: &mut Vec<u16>, id: u16, bounds: [u16; 4], class: u16, text: &s
 }
 
 fn template(dialog: &Dialog<'_>) -> Vec<u32> {
+    let mut words = template_header(dialog.title, 3);
+    control(&mut words, 100, [12, 32, 296, 60], 0x82, dialog.message);
+    control(&mut words, 1, [132, 106, 80, 22], 0x80, dialog.accept);
+    control(&mut words, 2, [220, 106, 80, 22], 0x80, "Cancelar");
+    pack_template(words)
+}
+
+fn template_header(title: &str, controls: u16) -> Vec<u16> {
     // Standard DLGTEMPLATE followed by DWORD-aligned DLGITEMTEMPLATE records.
     // A Vec<u32> guarantees the alignment required by the dialog manager.
     let style = 0x8008_0800u32; // POPUP | SYSMENU | CENTER; all chrome uses CIDE paint.
@@ -178,7 +203,7 @@ fn template(dialog: &Dialog<'_>) -> Vec<u32> {
         (style >> 16) as u16,
         0,
         0,
-        3,
+        controls,
         0,
         0,
         320,
@@ -186,10 +211,11 @@ fn template(dialog: &Dialog<'_>) -> Vec<u32> {
         0,
         0,
     ];
-    words.extend(wide(dialog.title));
-    control(&mut words, 100, [12, 32, 296, 60], 0x82, dialog.message);
-    control(&mut words, 1, [132, 106, 80, 22], 0x80, dialog.accept);
-    control(&mut words, 2, [220, 106, 80, 22], 0x80, "Cancelar");
+    words.extend(wide(title));
+    words
+}
+
+fn pack_template(mut words: Vec<u16>) -> Vec<u32> {
     if words.len() % 2 != 0 {
         words.push(0);
     }
@@ -222,6 +248,64 @@ unsafe fn paint_button(item: &DrawItem, dialog: &Dialog<'_>) -> Result<(), Strin
         Err("No se pudo dibujar el botón del mensaje".into())
     } else {
         Ok(())
+    }
+}
+
+unsafe fn paint_frame(hwnd: Hwnd, dialog: &Dialog<'_>) {
+    let mut ps: PaintStruct = std::mem::zeroed();
+    let dc = BeginPaint(hwnd, &mut ps);
+    if !dc.is_null() {
+        let mut client = Rect::default();
+        GetClientRect(hwnd, &mut client);
+        let height = dpi::for_window(hwnd).pixels(32).min(client.bottom);
+        let previous = SelectObject(dc, dialog.font);
+        let result = paint::fill(dc, client, shell::RAISED).and_then(|_| {
+            paint::fill(
+                dc,
+                Rect {
+                    bottom: height,
+                    ..client
+                },
+                shell::SELECTED,
+            )?;
+            // A light outline separates the raised modal from the editor.
+            for edge in [
+                Rect {
+                    bottom: 1,
+                    ..client
+                },
+                Rect {
+                    top: client.bottom - 1,
+                    ..client
+                },
+                Rect { right: 1, ..client },
+                Rect {
+                    left: client.right - 1,
+                    ..client
+                },
+            ] {
+                paint::fill(dc, edge, shell::MUTED)?;
+            }
+            paint::text(
+                dc,
+                Rect {
+                    left: 12,
+                    right: client.right - 12,
+                    top: 8,
+                    bottom: height,
+                },
+                &wide(dialog.title),
+                shell::TEXT,
+                shell::SELECTED,
+            )
+        });
+        if result.is_err() {
+            dialog.failed.set(true);
+        }
+        SelectObject(dc, previous);
+        EndPaint(hwnd, &ps);
+    } else {
+        dialog.failed.set(true);
     }
 }
 
@@ -299,61 +383,7 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
             1
         }
         0xf => {
-            let mut ps: PaintStruct = std::mem::zeroed();
-            let dc = BeginPaint(hwnd, &mut ps);
-            if !dc.is_null() {
-                let mut client = Rect::default();
-                GetClientRect(hwnd, &mut client);
-                let height = dpi::for_window(hwnd).pixels(32).min(client.bottom);
-                let previous = SelectObject(dc, dialog.font);
-                let result = paint::fill(dc, client, shell::RAISED).and_then(|_| {
-                    paint::fill(
-                        dc,
-                        Rect {
-                            bottom: height,
-                            ..client
-                        },
-                        shell::SELECTED,
-                    )?;
-                    // A light outline separates the raised modal from the editor.
-                    for edge in [
-                        Rect {
-                            bottom: 1,
-                            ..client
-                        },
-                        Rect {
-                            top: client.bottom - 1,
-                            ..client
-                        },
-                        Rect { right: 1, ..client },
-                        Rect {
-                            left: client.right - 1,
-                            ..client
-                        },
-                    ] {
-                        paint::fill(dc, edge, shell::MUTED)?;
-                    }
-                    paint::text(
-                        dc,
-                        Rect {
-                            left: 12,
-                            right: client.right - 12,
-                            top: 8,
-                            bottom: height,
-                        },
-                        &wide(dialog.title),
-                        shell::TEXT,
-                        shell::SELECTED,
-                    )
-                });
-                if result.is_err() {
-                    dialog.failed.set(true);
-                }
-                SelectObject(dc, previous);
-                EndPaint(hwnd, &ps);
-            } else {
-                dialog.failed.set(true);
-            }
+            paint_frame(hwnd, dialog);
             1
         }
         0x84 => {
@@ -455,7 +485,7 @@ mod tests {
                 right: -200,
                 bottom: 1000,
             };
-            let r = centered(parent, work, dpi);
+            let r = centered(parent, work, dpi, [420, 176]);
             assert_eq!(r.left + r.right, parent.left + parent.right);
             assert_eq!(r.top + r.bottom, parent.top + parent.bottom);
             let edge = centered(
@@ -467,6 +497,7 @@ mod tests {
                 },
                 work,
                 dpi,
+                [420, 176],
             );
             assert!(edge.left >= work.left && edge.right <= work.right);
             assert!(edge.top >= work.top && edge.bottom <= work.bottom);

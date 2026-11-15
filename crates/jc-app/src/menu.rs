@@ -227,6 +227,7 @@ pub fn default_menu_model() -> MenuModel {
             'p',
             &[
                 command(ExplorerRefresh),
+                command(ProjectDataConnections),
                 SEP,
                 command(ViewSymbols),
                 command(SourceReferences),
