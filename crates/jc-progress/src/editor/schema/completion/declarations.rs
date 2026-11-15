@@ -1,8 +1,11 @@
 use super::classes::{Hierarchy, Imports};
 use super::references::{binding_context, ReferenceScan};
-use super::{fold, Catalog, Context, Site, SourceItem, Target, Token, MAX_LOCAL_NAMES};
+use super::{
+    fold, Catalog, Context, Site, SourceAction, SourceItem, Target, Token, MAX_LOCAL_NAMES,
+};
 use jc_app::{TaskFailure, TaskItem, TaskOutput};
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Range;
 
 #[derive(Clone)]
 enum Record {
@@ -68,39 +71,69 @@ struct Routine {
     kind: &'static str,
     blocks: usize,
     scope: Scope,
+    outline_scope: Option<usize>,
 }
 
 const MAX_OUTLINE_ROWS: usize = 63;
 
 #[derive(Default)]
 struct Outline {
-    rows: Vec<(Site, String)>,
+    rows: Vec<OutlineRow>,
+    container: Option<usize>,
     truncated: bool,
     skipped_include: bool,
 }
 
+struct OutlineRow {
+    site: Site,
+    label: String,
+    extent: Option<Range<usize>>,
+}
+
 impl Outline {
-    fn add(&mut self, kind: &str, name: &str, site: Site) {
+    fn add(&mut self, kind: &str, name: &str, site: Site) -> Option<usize> {
         if self.truncated {
-            return;
+            return None;
         }
-        if self
+        if let Some(existing) = self
             .rows
             .iter()
-            .any(|(existing, _)| existing.offset == site.offset && existing.file == site.file)
+            .position(|row| row.site.offset == site.offset && row.site.file == site.file)
         {
-            return;
+            return Some(existing);
         }
         if self.rows.len() == MAX_OUTLINE_ROWS {
             self.truncated = true;
-            return;
+            return None;
         }
         let name: String = name
             .chars()
             .filter(|ch| !ch.is_control())
             .take(64)
             .collect();
-        self.rows.push((site, format!("{name} · {kind}")));
+        let index = self.rows.len();
+        self.rows.push(OutlineRow {
+            site,
+            label: format!("{name} · {kind}"),
+            extent: None,
+        });
+        Some(index)
+    }
+
+    fn begin(&mut self, row: Option<usize>, context: &Context<'_>) -> Option<usize> {
+        let index = row.filter(|_| context.file.is_none())?;
+        let start = context.tokens.first()?.range.start;
+        self.rows[index].extent = Some(start..start);
+        Some(index)
+    }
+
+    fn end(&mut self, index: Option<usize>, context: &Context<'_>, end: usize) {
+        if let Some(extent) = index
+            .filter(|_| context.file.is_none())
+            .and_then(|index| self.rows[index].extent.as_mut())
+        {
+            extent.end = end;
+        }
     }
 }
 
@@ -141,8 +174,12 @@ impl Symbols {
 
     pub(super) fn publish_outline(self, output: &mut TaskOutput) -> Result<(), TaskFailure> {
         let outline = self.outline.expect("active outline");
-        for (site, label) in outline.rows {
-            output.push(TaskItem::Source(site.item(label, 0..0)))?;
+        for row in outline.rows {
+            let mut item = row.site.item(row.label, 0..0);
+            if let Some(extent) = row.extent.filter(|extent| !extent.is_empty()) {
+                item.action = SourceAction::ScopedSymbol { extent };
+            }
+            output.push(TaskItem::Source(item))?;
         }
         let notice = match (outline.truncated, outline.skipped_include) {
             (true, true) => Some(format!(
@@ -490,6 +527,7 @@ impl Symbols {
         &mut self,
         context: &Context<'_>,
         end: &[u8],
+        boundary: usize,
         catalog: &Catalog,
     ) -> Result<(), TaskFailure> {
         let tokens = &context.tokens;
@@ -503,6 +541,7 @@ impl Symbols {
                 imports.add(context)?;
             }
         }
+        let mut routine_outline = None;
         if let Some(outline) = &mut self.outline {
             let header = [
                 (b"CLASS".as_slice(), "Clase"),
@@ -522,17 +561,43 @@ impl Symbols {
                 } else {
                     1
                 };
-                if let Some(name) = word(name_at) {
-                    outline.add(kind, &name, context.site(&tokens[name_at]));
+                let container = matches!(keyword, b"CLASS" | b"INTERFACE" | b"ENUM");
+                let name = if container {
+                    tokens
+                        .get(name_at)
+                        .and_then(|token| super::classes::declared_type(context, token.range.start))
+                } else {
+                    word(name_at)
+                };
+                if let Some(name) = name {
+                    let row = outline.add(kind, &name, context.site(&tokens[name_at]));
+                    if end == b":" && self.local.is_none() {
+                        let row = outline.begin(row, context);
+                        if container && context.file.is_none() {
+                            outline.container = row;
+                        } else {
+                            routine_outline = row;
+                        }
+                    }
                 }
             }
         }
         if is(0, b"END") {
             if let Some(routine) = &mut self.local {
                 if is(1, routine.kind.as_bytes()) || tokens.len() == 1 && routine.blocks == 0 {
+                    if let Some(outline) = &mut self.outline {
+                        outline.end(routine.outline_scope, context, boundary);
+                    }
                     self.local = None;
                 } else {
                     routine.blocks = routine.blocks.saturating_sub(1);
+                }
+            } else if let Some(outline) = &mut self.outline {
+                if context.file.is_none()
+                    && (is(1, b"CLASS") || is(1, b"INTERFACE") || is(1, b"ENUM"))
+                {
+                    let row = outline.container.take();
+                    outline.end(row, context, boundary);
                 }
             }
         } else if let Some((keyword, kind)) = [
@@ -557,10 +622,17 @@ impl Symbols {
                 }
             }
             if end == b":" && self.local.is_none() {
+                if !kind.is_empty() {
+                    if let (Some(outline), Some(name)) = (&mut self.outline, word(1)) {
+                        let row = outline.add(kind, &name, context.site(&tokens[1]));
+                        routine_outline = outline.begin(row, context);
+                    }
+                }
                 self.local = Some(Routine {
                     kind: keyword,
                     blocks: 0,
                     scope: Scope::default(),
+                    outline_scope: routine_outline,
                 });
             }
         } else if end == b"." && (is(0, b"DEFINE") || is(0, b"DEF")) {

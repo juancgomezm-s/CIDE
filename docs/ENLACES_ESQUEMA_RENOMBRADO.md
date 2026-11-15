@@ -25,9 +25,10 @@ El primer subconjunto admite declaraciones escalares, asignaciones simples
 y ciertos bloques y expresiones. Rechaza documentos con construcciones cuya
 resolución no puede verificar, como includes, macros, acceso a tablas o campos,
 clases y métodos. Rechaza colisiones y nombres que no cumplan el subconjunto de
-identificadores admitido. Admite hasta 256 KiB de fuente y 64 cambios por
-vista previa. La validación es local en Rust y queda pendiente la validación
-con un compilador OpenEdge.
+identificadores admitido. Admite hasta 256 KiB de fuente y 64 filas por
+vista previa. OpenEdge 11.7 compiló propuestas para una variable global,
+una local, un procedimiento y una función con prototipo `FORWARD`.
+En cada caso, una operación de deshacer restauró el contenido anterior.
 
 ## Procedimientos y funciones del mismo archivo
 

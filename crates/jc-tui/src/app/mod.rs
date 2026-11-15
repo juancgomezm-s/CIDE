@@ -131,6 +131,7 @@ pub struct TuiApp {
     pub(crate) open_diff_visible: bool,
     pub(crate) source_registry: jc_app::source_services::SourceRegistry,
     pub(crate) source: jc_app::source_services::SourceController,
+    pub(crate) symbol_path: jc_app::source_services::SourceController,
     pub(crate) source_popup: bool,
     pub(crate) rename_target: Option<jc_app::snippets::SnippetTarget>,
     pub(crate) snippet_ui: Option<snippets::SnippetUi>,
@@ -220,6 +221,7 @@ impl TuiApp {
             open_diff_visible: false,
             source_registry,
             source: Default::default(),
+            symbol_path: jc_app::source_services::SourceController::outline(),
             source_popup: false,
             rename_target: None,
             snippet_ui: None,
@@ -319,6 +321,14 @@ impl TuiApp {
             if completion.status == jc_app::TaskStatus::Panicked {
                 update.recover = true;
             }
+            if self.symbol_path.accept(
+                &self.workbench,
+                self.project_root.as_deref(),
+                &mut completion,
+            ) {
+                update.changed = true;
+                continue;
+            }
             if self.source.accept_editor(
                 &mut self.workbench,
                 self.project_root.as_deref(),
@@ -354,6 +364,7 @@ impl TuiApp {
             self.project_root.as_deref(),
             &mut self.tasks,
         );
+        update.changed |= self.poll_symbol_path();
         update.changed |= self.poll_progress_schema();
         update.changed |= self.open_diff.tick(&self.workbench, &mut self.tasks);
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);

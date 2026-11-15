@@ -1,7 +1,9 @@
 use super::{avm_path, decode, Catalog, SchemaController};
 use crate::{EncodedText, SchemaRecord};
 use jc_app::{
-    source_services::{CatalogQuery, CatalogSource, SourceAction, SourceItem},
+    source_services::{
+        publish_review, CatalogQuery, CatalogSource, ReviewedEdit, SourceAction, SourceItem,
+    },
     Cancellation, TaskFailure, TaskItem, TaskOutput, TaskSnapshot, Workbench,
 };
 use jc_languages::syntax::SyntaxKind;
@@ -14,6 +16,7 @@ use std::{
 
 mod classes;
 mod declarations;
+mod generate;
 mod includes;
 mod references;
 pub(in crate::editor) use references::name_at as reference_name_at;
@@ -40,6 +43,16 @@ fn project_source<'a>(app: &'a Workbench, root: &Path) -> Option<&'a Path> {
 }
 
 impl SchemaController {
+    pub fn supports_review(&self, app: &Workbench, root: Option<&Path>) -> bool {
+        root.or_else(|| app.active_path()?.parent())
+            .and_then(|root| project_source(app, root))
+            .is_some()
+    }
+
+    pub fn review(&self, app: &Workbench, root: Option<&Path>) -> Option<Arc<dyn CatalogSource>> {
+        self.outline(app, root.or_else(|| app.active_path()?.parent()))
+    }
+
     pub fn supports_completion(&self, app: &Workbench, root: Option<&Path>) -> bool {
         self.supports_definition(app, root)
             && self
@@ -137,6 +150,36 @@ impl CatalogSource for Provider {
             return Err(TaskFailure::Cancelled);
         }
         match query {
+            CatalogQuery::ReviewEdit { action, cursor } => {
+                let bytes = snapshot.bytes();
+                let encoding = snapshot.stamp.encoding;
+                let proposal = match action {
+                    ReviewedEdit::OrganizeImports => {
+                        classes::organize_imports(&self.root, &self.source, bytes, encoding, cancel)
+                    }
+                    ReviewedEdit::UpdatePrototype => {
+                        crate::rename::synchronize_prototype(bytes, encoding, cursor)
+                    }
+                    ReviewedEdit::GenerateConstructors | ReviewedEdit::GenerateOverrides => {
+                        generate::propose(
+                            &self.root,
+                            &self.source,
+                            bytes,
+                            encoding,
+                            cursor,
+                            action,
+                            cancel,
+                        )
+                    }
+                };
+                if cancel.is_cancelled() {
+                    return Err(TaskFailure::Cancelled);
+                }
+                match proposal {
+                    Ok(edits) => publish_review(snapshot, edits, output)?,
+                    Err(message) => output.push(TaskItem::Message(message))?,
+                }
+            }
             CatalogQuery::Complete => {
                 let catalog = catalog.ok_or(TaskFailure::Failed)?;
                 for item in catalog.suggest(
@@ -361,7 +404,7 @@ impl<'a> Context<'a> {
                             })))
         {
             if certain && !self.overflow {
-                symbols.statement(self, bytes, catalog)?;
+                symbols.statement(self, bytes, token.range.end, catalog)?;
             }
             self.tokens.clear();
             self.overflow = false;

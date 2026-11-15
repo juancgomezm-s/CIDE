@@ -21,6 +21,172 @@ fn open(app: &mut Workbench, root: &Path, name: &str, content: &str) {
 }
 
 #[test]
+#[ignore = "requiere CIDE_TEST_PROGRESS_EXE apuntando a un AVM local por lotes"]
+fn progress_real_rename_local_reviews_compile_and_undo() {
+    let executable = std::env::var("CIDE_TEST_PROGRESS_EXE").unwrap();
+    let fixture = JobDir::create().unwrap();
+    let root = &fixture.path;
+    fs::create_dir(root.join(".cide")).unwrap();
+    fs::write(
+        root.join(PROFILE),
+        format!("executable={executable}\ncpinternal=iso8859-1\ncpstream=ibm850\n"),
+    )
+    .unwrap();
+    let source = concat!(
+        "DEFINE VARIABLE total AS INTEGER NO-UNDO.\r\n",
+        "FUNCTION importe RETURNS INTEGER (INPUT numero AS INTEGER) FORWARD.\r\n",
+        "total = importe(7).\r\n",
+        "RUN calcular.\r\n",
+        "PROCEDURE calcular:\r\n",
+        "  DEFINE VARIABLE total AS INTEGER NO-UNDO.\r\n",
+        "  total = importe(3).\r\n",
+        "END PROCEDURE.\r\n",
+        "FUNCTION importe RETURNS INTEGER (INPUT numero AS INTEGER):\r\n",
+        "  RETURN numero.\r\n",
+        "END FUNCTION."
+    );
+    let mut app = Workbench::default();
+    let mut jobs = JobSystem::new(JobLimits::default(), Wakeup::default()).unwrap();
+    open(&mut app, root, "renombrar.p", source);
+    for (selected, replacement, expected) in [
+        ("total = importe(7)", "total-global", 2),
+        ("total = importe(3)", "total-local", 2),
+        ("calcular.", "procesar", 2),
+        ("importe RETURNS", "obtenerImporte", 4),
+    ] {
+        let cursor = source.find(selected).unwrap();
+        let edits = crate::rename::propose(
+            source.as_bytes(),
+            jc_text::TextEncoding::Utf8,
+            cursor,
+            replacement,
+        )
+        .unwrap();
+        assert_eq!(edits.len(), expected);
+        let document = app.active_document().unwrap();
+        app.apply_text_edits(
+            document.id,
+            document.session.document().revision(),
+            edits
+                .into_iter()
+                .map(|range| jc_app::TextReplacement {
+                    range,
+                    text: replacement.into(),
+                })
+                .collect(),
+        )
+        .unwrap();
+        app.save_active().unwrap();
+        assert_ne!(
+            fs::read(root.join("renombrar.p")).unwrap(),
+            source.as_bytes()
+        );
+        app.reset_task_panels();
+        submit(Action::Check, &app, &mut jobs, Some(root)).unwrap();
+        assert!(
+            !completion(&complete(&mut app, &mut jobs)).1,
+            "{:?}",
+            app.problems()
+        );
+        assert!(app
+            .output()
+            .iter()
+            .any(|row| row.contains("Sintaxis ABL comprobada")));
+        app.undo().unwrap();
+        assert_eq!(app.active_bytes().unwrap(), source.as_bytes());
+        app.save_active().unwrap();
+    }
+}
+
+#[test]
+#[ignore = "requiere CIDE_TEST_PROGRESS_EXE apuntando a un AVM local por lotes"]
+fn progress_real_review_imports_and_prototype_compile_and_undo() {
+    use jc_app::source_services::{ReviewedEdit, SourceController, SourceMode, SourceRegistry};
+
+    let executable = std::env::var("CIDE_TEST_PROGRESS_EXE").unwrap();
+    let fixture = JobDir::create().unwrap();
+    let root = &fixture.path;
+    fs::create_dir(root.join(".cide")).unwrap();
+    fs::create_dir_all(root.join("fuentes/paquete")).unwrap();
+    fs::write(
+        root.join(PROFILE),
+        format!("executable={executable}\ncpinternal=iso8859-1\ncpstream=ibm850\n"),
+    )
+    .unwrap();
+    fs::write(root.join(".cide/propath"), "fuentes\n").unwrap();
+    for name in ["Alfa", "Zeta"] {
+        fs::write(
+            root.join(format!("fuentes/paquete/{name}.cls")),
+            format!("CLASS paquete.{name}:\nEND CLASS.\n"),
+        )
+        .unwrap();
+    }
+
+    let mut app = Workbench::default();
+    let schema = SchemaController::default();
+    let mut controller = SourceController::default();
+    let mut jobs = JobSystem::new(JobLimits::default(), Wakeup::default()).unwrap();
+    for (file, action, source, selected) in [
+        (
+            "imports.p",
+            ReviewedEdit::OrganizeImports,
+            concat!(
+                "USING paquete.Zeta FROM PROPATH.\r\n",
+                "USING paquete.Alfa FROM PROPATH.\r\n",
+                "DEFINE VARIABLE objetoZeta AS CLASS Zeta NO-UNDO.\r\n",
+                "DEFINE VARIABLE objetoAlfa AS CLASS Alfa NO-UNDO.\r\n"
+            ),
+            "USING",
+        ),
+        (
+            "funcion.p",
+            ReviewedEdit::UpdatePrototype,
+            concat!(
+                "FUNCTION calcula RETURNS INTEGER (INPUT valor AS INTEGER) FORWARD.\r\n",
+                "FUNCTION calcula RETURNS INT64 (INPUT valor AS INT64):\r\n",
+                "  RETURN valor.\r\nEND FUNCTION."
+            ),
+            "calcula",
+        ),
+    ] {
+        open(&mut app, root, file, source);
+        let tab = app.tabs().active_id().unwrap();
+        assert!(app.jump_to_location(tab, source.find(selected).unwrap()));
+        controller
+            .request_catalog(
+                SourceMode::ReviewEdit(action),
+                schema.review(&app, Some(root)).unwrap(),
+                &SourceRegistry::default(),
+                &app,
+                Some(root),
+                &mut jobs,
+            )
+            .unwrap();
+        let mut task = complete(&mut app, &mut jobs);
+        assert!(controller.accept(&app, Some(root), &mut task));
+        assert!(
+            controller.ready(&app, Some(root)),
+            "{}",
+            controller.message()
+        );
+        assert_eq!(app.active_bytes().unwrap(), source.as_bytes());
+        controller.confirm_review(&mut app, Some(root)).unwrap();
+        app.save_active().unwrap();
+        let modified = fs::read(root.join(file)).unwrap();
+        assert_ne!(modified, source.as_bytes());
+        app.reset_task_panels();
+        submit(Action::Check, &app, &mut jobs, Some(root)).unwrap();
+        assert!(
+            !completion(&complete(&mut app, &mut jobs)).1,
+            "{:?}",
+            app.problems()
+        );
+        app.undo().unwrap();
+        assert_eq!(app.active_bytes().unwrap(), source.as_bytes());
+    }
+}
+
+#[test]
 #[ignore = "requiere el proyecto sintético de OpenEdge con los ejemplos USING"]
 fn progress_real_using_compiles_with_ordered_propath() {
     let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap())

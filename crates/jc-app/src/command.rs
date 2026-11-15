@@ -123,6 +123,10 @@ pub enum CommandId {
     SourceDependencies,
     SourceComplete,
     SourceRename,
+    SourceOrganizeImports,
+    SourceUpdatePrototype,
+    SourceGenerateConstructors,
+    SourceGenerateOverrides,
     SourceRefresh,
     SourceCancel,
     SourceAccept,
@@ -214,6 +218,8 @@ pub struct CommandContext {
     pub source_completion_available: bool,
     pub source_schema_completion_available: bool,
     pub source_rename_available: bool,
+    pub source_review_available: bool,
+    pub source_oo_available: bool,
     pub source_active: bool,
     pub source_ready: bool,
     pub source_side_ready: bool,
@@ -275,6 +281,8 @@ impl Default for CommandContext {
             source_completion_available: false,
             source_schema_completion_available: false,
             source_rename_available: false,
+            source_review_available: false,
+            source_oo_available: false,
             source_active: false,
             source_ready: false,
             source_side_ready: false,
@@ -535,6 +543,12 @@ fn source_completion(ctx: &CommandContext) -> bool {
 fn source_rename(ctx: &CommandContext) -> bool {
     ctx.source_rename_available && !ctx.rectangular_selection && !ctx.has_selection
 }
+fn source_review(ctx: &CommandContext) -> bool {
+    ctx.source_review_available && !ctx.rectangular_selection && !ctx.has_selection
+}
+fn source_oo(ctx: &CommandContext) -> bool {
+    ctx.source_oo_available && source_review(ctx)
+}
 fn source_active(ctx: &CommandContext) -> bool {
     ctx.source_active
 }
@@ -577,7 +591,7 @@ fn database_schema(ctx: &CommandContext) -> bool {
 }
 
 macro_rules! spec {
-    ($id:ident, $cat:ident, $label:literal, $enabled:ident) => {
+    ($id:ident, $cat:ident, $label:expr, $enabled:ident) => {
         CommandSpec {
             id: CommandId::$id,
             category: CommandCategory::$cat,
@@ -956,6 +970,30 @@ pub fn default_registry() -> CommandRegistry {
             source_schema_completion
         ),
         spec!(SourceRename, Edit, "Renombrar símbolo ABL", source_rename),
+        spec!(
+            SourceOrganizeImports,
+            Edit,
+            crate::source_services::ReviewedEdit::OrganizeImports.label(),
+            source_review
+        ),
+        spec!(
+            SourceUpdatePrototype,
+            Edit,
+            crate::source_services::ReviewedEdit::UpdatePrototype.label(),
+            source_review
+        ),
+        spec!(
+            SourceGenerateConstructors,
+            Edit,
+            crate::source_services::ReviewedEdit::GenerateConstructors.label(),
+            source_oo
+        ),
+        spec!(
+            SourceGenerateOverrides,
+            Edit,
+            crate::source_services::ReviewedEdit::GenerateOverrides.label(),
+            source_oo
+        ),
         spec!(
             SourceRefresh,
             Navigation,

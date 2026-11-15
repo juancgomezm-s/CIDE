@@ -52,13 +52,41 @@ Ctrl+Shift+F pertenece a Buscar en proyecto, no a Correct Case; Ctrl+Shift+O abr
 
 | Comando PDSOE | Dependencia |
 |---|---|
-| Organize USING Statements | Resolver tipos y referencias antes de eliminar, ordenar o expandir imports |
-| Update Function Prototypes | Analizar firmas reales y declaraciones |
-| Constructors from Super Class | Jerarquía de clases y constructores disponibles |
-| Override/Implement Members | Resolución de herencia/interfaces |
-| Define Service Interface | Solo si hay contrato real del proyecto |
+| Organize USING Statements | Ordena imports completos y únicos `FROM PROPATH` al inicio del archivo después de resolver sus clases. Conserva todos los imports. |
+| Update Function Prototypes | Sincroniza un prototipo `FORWARD` escalar con la firma explícita de su implementación en el mismo archivo. |
+| Constructors from Super Class | Prepara constructores públicos o protegidos del padre inmediato y delega en `SUPER`. |
+| Override/Implement Members | Prepara métodos heredados o de interfaz, propiedades automáticas y eventos de firma admitida. |
+| Define Service Interface | Requiere un contrato real del proyecto. Queda pendiente de ese insumo. |
 
 El compilador de ABL puede producir XREF / XREF-XML para referencias de RUN, includes, tablas, campos e índices. CIDE aprovechará dichos artefactos bajo demanda; las referencias dinámicas que el compilador no determina deben etiquetarse como inciertas.
+
+En GUI y TUI, **Herramientas → Organizar USING de ABL** abre una vista previa
+de las declaraciones que cambiarían de posición. Se mantienen la sangría y los
+saltos de línea de cada posición del archivo. El comando requiere un grupo
+inicial sin comentarios intercalados, comodines, nombres cortos repetidos ni
+preprocesador. Cada clase debe poder resolverse mediante PROPATH.
+
+Para **Actualizar prototipo FORWARD**, pon el cursor sobre el nombre de la
+función en el prototipo o en la implementación. La implementación debe declarar
+su lista de parámetros y ambas firmas deben estar en una sola línea. La propuesta
+cambia la firma del prototipo y conserva el cuerpo, las llamadas y los espacios
+que rodean la firma. El analizador verifica el resultado dentro del subconjunto
+escalar admitido.
+
+La generación usa clases e interfaces resolubles por PROPATH y preserva
+los finales de línea. Admite firmas escalares sencillas con modos explícitos
+o deducibles, propiedades automáticas `GET`/`SET` y eventos `VOID`.
+Las propuestas omiten miembros ya declarados y se detienen ante contratos
+incompatibles. Los métodos concretos delegan en `SUPER`. Los métodos que
+requieren lógica de aplicación dejan un cuerpo que informa que la
+implementación está pendiente. Las fuentes con preprocesador, imports por
+comodín, firmas de objetos o arreglos y tipos de ensamblados quedan fuera
+del generador de este bloque.
+
+La vista previa muestra las líneas anteriores con `-` y las propuestas con
+`+`. **F9** o **Ctrl+Intro** aplica la edición completa en un solo paso de
+deshacer. **Esc** cancela. La confirmación requiere la misma revisión, vista,
+codificación y posición del cursor que se usaron para preparar la propuesta.
 
 ## D — Opcionales o excluidos
 

@@ -27,6 +27,7 @@ pub enum SourceMode {
     CatalogDefinition,
     CatalogReferences,
     CatalogXref,
+    ReviewEdit(ReviewedEdit),
     Rename,
     Definition,
     LspReferences,
@@ -46,6 +47,7 @@ impl SourceMode {
             Self::CatalogDefinition => "Ir a definición ABL",
             Self::CatalogReferences => "Buscar referencias ABL",
             Self::CatalogXref => "Buscar referencias con XREF",
+            Self::ReviewEdit(action) => action.label(),
             Self::Rename => "Renombrar símbolo ABL",
             Self::Definition => "Ir a definición (LSP)",
             Self::LspReferences => "Buscar referencias (LSP)",
@@ -61,6 +63,7 @@ impl SourceMode {
                 | Self::CatalogDefinition
                 | Self::CatalogReferences
                 | Self::CatalogXref
+                | Self::ReviewEdit(_)
         )
     }
 
@@ -78,12 +81,46 @@ impl SourceMode {
         self.lsp_query().is_some()
     }
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewedEdit {
+    OrganizeImports,
+    UpdatePrototype,
+    GenerateConstructors,
+    GenerateOverrides,
+}
+
+impl ReviewedEdit {
+    pub fn from_command(command: crate::CommandId) -> Option<Self> {
+        use crate::CommandId;
+        Some(match command {
+            CommandId::SourceOrganizeImports => Self::OrganizeImports,
+            CommandId::SourceUpdatePrototype => Self::UpdatePrototype,
+            CommandId::SourceGenerateConstructors => Self::GenerateConstructors,
+            CommandId::SourceGenerateOverrides => Self::GenerateOverrides,
+            _ => return None,
+        })
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::OrganizeImports => "Organizar USING de ABL",
+            Self::UpdatePrototype => "Actualizar prototipo FORWARD",
+            Self::GenerateConstructors => "Generar constructores de la clase base",
+            Self::GenerateOverrides => "Generar implementaciones y sobrescrituras",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceAction {
     Navigate,
+    ScopedSymbol {
+        extent: Range<usize>,
+    },
     RelativeFile(String),
     Unresolved(String),
     Replace(String),
+    ReviewLine,
     LspCompletion(Vec<crate::TextReplacement>),
     Caller {
         path: PathBuf,
@@ -110,7 +147,9 @@ impl SourceItem {
         std::mem::size_of::<Self>()
             + self.label.capacity()
             + match &self.action {
-                SourceAction::Navigate => 0,
+                SourceAction::Navigate
+                | SourceAction::ScopedSymbol { .. }
+                | SourceAction::ReviewLine => 0,
                 SourceAction::ProjectLocation { path, .. } => path.capacity(),
                 SourceAction::LspCompletion(edits) => {
                     edits.capacity() * std::mem::size_of::<crate::TextReplacement>()
@@ -128,6 +167,9 @@ impl SourceItem {
         self.label.len() <= 512
             && !self.label.chars().any(char::is_control)
             && match (&self.action, mode) {
+                (SourceAction::ScopedSymbol { extent }, SourceMode::Symbols) => {
+                    !extent.is_empty() && extent.contains(&self.range.start)
+                }
                 (
                     SourceAction::Navigate,
                     SourceMode::Symbols
@@ -156,6 +198,8 @@ impl SourceItem {
                     (1..=9).contains(&edits.len())
                 }
                 (SourceAction::Replace(text), SourceMode::Rename) => text.len() <= 64,
+                (SourceAction::Replace(text), SourceMode::ReviewEdit(_)) => text.len() <= 4096,
+                (SourceAction::ReviewLine, SourceMode::ReviewEdit(_)) => true,
                 (SourceAction::Caller { path, .. }, SourceMode::Incoming)
                 | (
                     SourceAction::ProjectLocation { path, .. },
@@ -189,6 +233,7 @@ pub enum CatalogQuery {
     Definition { cursor: usize },
     References { cursor: usize },
     Xref { cursor: usize },
+    ReviewEdit { action: ReviewedEdit, cursor: usize },
 }
 
 /// A project service answers against an immutable snapshot and project context.
@@ -201,6 +246,82 @@ pub trait CatalogSource: Send + Sync {
         cancel: &Cancellation,
         output: &mut TaskOutput,
     ) -> Result<(), TaskFailure>;
+}
+
+pub fn publish_review(
+    snapshot: &TaskSnapshot,
+    mut edits: Vec<crate::TextReplacement>,
+    output: &mut TaskOutput,
+) -> Result<(), TaskFailure> {
+    edits.sort_unstable_by_key(|edit| edit.range.start);
+    for pair in edits.windows(2) {
+        if pair[0].range.end > pair[1].range.start || pair[0].range.start == pair[1].range.start {
+            return Err(TaskFailure::InvalidRange);
+        }
+    }
+    if edits
+        .iter()
+        .any(|edit| edit.range.len() > 4096 || edit.text.len() > 4096)
+    {
+        return Err(TaskFailure::LimitExceeded);
+    }
+    if edits
+        .iter()
+        .any(|edit| jc_text::encode(&edit.text, snapshot.stamp.encoding).is_err())
+    {
+        return output.push(TaskItem::Message(
+            "La propuesta contiene caracteres que no admite la codificación del documento".into(),
+        ));
+    }
+    let mut previous = 0;
+    let mut line = 1;
+    for edit in edits {
+        let before = snapshot
+            .bytes()
+            .get(edit.range.clone())
+            .ok_or(TaskFailure::InvalidRange)?;
+        let decoded = jc_text::decode_fragment(before, snapshot.stamp.encoding, edit.range.start);
+        if !decoded.issues.is_empty() {
+            return Err(TaskFailure::InvalidRange);
+        }
+        line += snapshot.bytes()[previous..edit.range.start]
+            .iter()
+            .filter(|&&byte| byte == b'\n')
+            .count();
+        previous = edit.range.start;
+        for (sign, text) in [('-', decoded.text.as_str()), ('+', edit.text.as_str())] {
+            let mut push_line = |chunk: &str| {
+                output.push(TaskItem::Source(SourceItem {
+                    range: edit.range.start..edit.range.start,
+                    label: format!("{sign} {chunk}"),
+                    action: SourceAction::ReviewLine,
+                }))
+            };
+            for text_line in text.lines() {
+                let mut chunk = String::new();
+                for ch in text_line.chars() {
+                    match ch {
+                        '\t' => chunk.push_str("⇥ "),
+                        ch if ch.is_control() => chunk.extend(ch.escape_default()),
+                        ch => chunk.push(ch),
+                    }
+                    if chunk.len() >= 52 {
+                        push_line(&chunk)?;
+                        chunk.clear();
+                    }
+                }
+                if !chunk.is_empty() || text_line.is_empty() {
+                    push_line(&chunk)?;
+                }
+            }
+        }
+        output.push(TaskItem::Source(SourceItem {
+            range: edit.range,
+            label: format!("Línea {line} · cambio completo arriba"),
+            action: SourceAction::Replace(edit.text),
+        }))?;
+    }
+    Ok(())
 }
 
 pub(crate) enum SourceJob {
@@ -321,6 +442,7 @@ impl SourceProviderDescriptor {
             SourceMode::Dependencies => self.dependencies,
             SourceMode::Completion => self.completion,
             SourceMode::Rename
+            | SourceMode::ReviewEdit(_)
             | SourceMode::CatalogCompletion
             | SourceMode::CatalogDefinition
             | SourceMode::CatalogReferences
@@ -715,6 +837,36 @@ impl SourceController {
     pub fn selected(&self) -> usize {
         self.selected
     }
+    /// Outline results are revision-pinned; cursor movement only selects
+    /// from the admitted extents and never restarts the provider.
+    pub fn symbol_path(
+        &self,
+        app: &Workbench,
+        root: Option<&Path>,
+    ) -> impl DoubleEndedIterator<Item = (usize, &str)> + '_ {
+        let cursor = (self.mode == Some(SourceMode::Symbols) && self.ready(app, root))
+            .then(|| app.active_editor().map(|editor| editor.cursor))
+            .flatten();
+        self.items
+            .iter()
+            .enumerate()
+            .filter_map(move |(index, item)| {
+                let SourceAction::ScopedSymbol { extent } = &item.action else {
+                    return None;
+                };
+                cursor.filter(|cursor| extent.contains(cursor)).map(|_| {
+                    let name = item
+                        .label
+                        .rsplit_once(" · ")
+                        .map_or(item.label.as_str(), |(name, _)| name);
+                    (index, name)
+                })
+            })
+    }
+
+    pub fn active_symbol(&self, app: &Workbench, root: Option<&Path>) -> Option<(usize, &str)> {
+        self.symbol_path(app, root).next_back()
+    }
     pub fn ready(&self, app: &Workbench, root: Option<&Path>) -> bool {
         self.state == SourceState::Ready
             && !self.items.is_empty()
@@ -726,7 +878,7 @@ impl SourceController {
                 .items
                 .get(self.selected)
                 .is_some_and(|item| match item.action {
-                    SourceAction::Navigate => true,
+                    SourceAction::Navigate | SourceAction::ScopedSymbol { .. } => true,
                     SourceAction::ProjectLocation { .. } => root.is_some(),
                     SourceAction::RelativeFile(_) | SourceAction::Caller { .. } => self
                         .accepted
@@ -885,6 +1037,7 @@ impl SourceController {
                 | SourceMode::CatalogCompletion
                 | SourceMode::Rename
                 | SourceMode::LspCompletion
+                | SourceMode::ReviewEdit(_)
         ) && (app.active_editor().is_some_and(|e| e.selection().is_some())
             || app.rectangle_for_pane(app.panes().active()).is_some())
         {
@@ -997,6 +1150,7 @@ impl SourceController {
                 SourceMode::CatalogDefinition => CatalogQuery::Definition { cursor },
                 SourceMode::CatalogReferences => CatalogQuery::References { cursor },
                 SourceMode::CatalogXref => CatalogQuery::Xref { cursor },
+                SourceMode::ReviewEdit(action) => CatalogQuery::ReviewEdit { action, cursor },
                 _ => CatalogQuery::Complete,
             };
             SourceJob::Catalog(provider.clone(), query)
@@ -1134,10 +1288,9 @@ impl SourceController {
             self.status(SourceState::Ready, message);
             return true;
         }
-        let tab = app
-            .document_by_id(request.origin.stamp.document)
-            .unwrap()
-            .tab_id;
+        let document = app.document_by_id(request.origin.stamp.document).unwrap();
+        let tab = document.tab_id;
+        let source_len = document.session.document().len();
         let mut items = Vec::new();
         let is_lsp = request.mode.lsp_query().is_some();
         let catalog_symbols = request.mode == SourceMode::Symbols
@@ -1166,7 +1319,7 @@ impl SourceController {
                 }
             }
             if let TaskItem::Message(message) = &item {
-                if request.mode == SourceMode::Rename {
+                if matches!(request.mode, SourceMode::Rename | SourceMode::ReviewEdit(_)) {
                     self.status(SourceState::Failed, message.clone());
                     return true;
                 }
@@ -1179,6 +1332,8 @@ impl SourceController {
                 return true;
             };
             if !item.valid_for(request.mode)
+                || matches!(&item.action, SourceAction::ScopedSymbol { extent }
+                    if extent.end > source_len)
                 || request.mode == SourceMode::LspCompletion
                     && !(item.range.start..=item.range.end).contains(&request.origin.cursor)
                 || matches!(
@@ -1222,6 +1377,12 @@ impl SourceController {
             message
         } else if request.mode == SourceMode::CatalogCompletion {
             format!("Esquema ABL: {} sugerencias", self.items.len())
+        } else if matches!(request.mode, SourceMode::ReviewEdit(_)) {
+            if self.items.is_empty() {
+                "No hay cambios para aplicar".into()
+            } else {
+                "Revisa los cambios antes de confirmar".into()
+            }
         } else if request.mode == SourceMode::CatalogDefinition {
             if self.items.is_empty() {
                 notice.unwrap_or_else(|| "Definición ABL sin resolver".into())
@@ -1286,6 +1447,39 @@ impl SourceController {
     ) -> Result<Option<Vec<PathBuf>>, String> {
         self.activate_at_index(app, root, self.selected, to_side)
     }
+    pub fn confirm_review(&self, app: &mut Workbench, root: Option<&Path>) -> Result<(), String> {
+        let request = self
+            .accepted
+            .as_ref()
+            .filter(|request| matches!(request.mode, SourceMode::ReviewEdit(_)))
+            .filter(|request| request.current(app, root))
+            .ok_or("La vista previa aún no está lista o cambió el documento")?;
+        self.apply_replacements(app, request)
+    }
+
+    fn apply_replacements(&self, app: &mut Workbench, request: &Request) -> Result<(), String> {
+        let edits = self
+            .items
+            .iter()
+            .filter_map(|item| match &item.action {
+                SourceAction::ReviewLine => None,
+                SourceAction::Replace(text) => Some(Ok(crate::TextReplacement {
+                    range: item.range.clone(),
+                    text: text.clone(),
+                })),
+                _ => Some(Err("La propuesta de edición no es válida".to_owned())),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if edits.is_empty() {
+            return Err("No hay una propuesta de edición para aplicar".into());
+        }
+        app.apply_text_edits(
+            request.origin.stamp.document,
+            request.origin.stamp.revision,
+            edits,
+        )
+        .map_err(|error| error.to_string())
+    }
     pub fn activate_at_index(
         &self,
         app: &mut Workbench,
@@ -1300,29 +1494,14 @@ impl SourceController {
         if !request.current(app, root) {
             return Err("Cambió el resultado del código; actualiza".into());
         }
+        if matches!(request.mode, SourceMode::ReviewEdit(_)) {
+            return Err("Confirma los cambios con F9 o Ctrl+Intro".into());
+        }
         if request.mode == SourceMode::Rename {
             if to_side || self.items.is_empty() {
                 return Err("No hay una propuesta de renombrado para aplicar".into());
             }
-            let edits = self
-                .items
-                .iter()
-                .map(|item| {
-                    let SourceAction::Replace(text) = &item.action else {
-                        return Err("La propuesta de renombrado no es válida".to_owned());
-                    };
-                    Ok(crate::TextReplacement {
-                        range: item.range.clone(),
-                        text: text.clone(),
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            app.apply_text_edits(
-                request.origin.stamp.document,
-                request.origin.stamp.revision,
-                edits,
-            )
-            .map_err(|error| error.to_string())?;
+            self.apply_replacements(app, request)?;
             return Ok(None);
         }
         let item = self
@@ -1330,6 +1509,7 @@ impl SourceController {
             .get(index)
             .ok_or("No hay elemento de código seleccionado")?;
         match &item.action {
+            SourceAction::ReviewLine => Err("Esta fila solo muestra la vista previa".into()),
             SourceAction::Caller {
                 path,
                 offset,
@@ -1399,7 +1579,7 @@ impl SourceController {
             SourceAction::Unresolved(reason) => {
                 Err(format!("Referencia léxica sin resolver: {reason}"))
             }
-            SourceAction::Navigate => {
+            SourceAction::Navigate | SourceAction::ScopedSymbol { .. } => {
                 let tab = app
                     .document_by_id(request.origin.stamp.document)
                     .unwrap()

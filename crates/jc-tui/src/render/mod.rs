@@ -339,21 +339,7 @@ fn draw_editor(
     let document = view
         .location()
         .and_then(|location| app.workbench.document_by_tab(location.tab));
-    let title = document
-        .and_then(|doc| doc.session.path().file_name())
-        .map_or("Vacío", |name| name.to_str().unwrap_or("<archivo>"));
-    let header = format!(
-        "{} Grupo {}: {}{}{}",
-        if active { ">" } else { " " },
-        if pane == PaneId::Primary { 1 } else { 2 },
-        title,
-        if view.is_pinned() { " [FIJO]" } else { "" },
-        if app.workbench.panes().scroll_linked() {
-            " [ENLACE]"
-        } else {
-            ""
-        }
-    );
+    let header = app.editor_heading(pane).unwrap_or_default();
     screen.text_styled(
         x,
         y,
@@ -364,6 +350,9 @@ fn draw_editor(
             CellStyle::Menu
         },
     );
+    for crumb in &frame.editor(pane).symbol_path {
+        screen.text_styled(crumb.x, y, &crumb.label, CellStyle::Accent);
+    }
     let y = y + 1;
     let Some(_document) = document else {
         screen.text(x + 2, y + 2, "CIDE");

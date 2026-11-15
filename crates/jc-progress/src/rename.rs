@@ -11,14 +11,14 @@ const UNSUPPORTED: &str = "El documento usa sintaxis ABL fuera del subconjunto d
 const AMBIGUOUS: &str = "Hay una declaración duplicada o una referencia ambigua";
 
 #[derive(Clone)]
-struct Token<'a> {
-    text: &'a [u8],
+pub(crate) struct Token<'a> {
+    pub(crate) text: &'a [u8],
     kind: SyntaxKind,
-    range: Range<usize>,
+    pub(crate) range: Range<usize>,
 }
 
 impl Token<'_> {
-    fn is(&self, word: &[u8]) -> bool {
+    pub(crate) fn is(&self, word: &[u8]) -> bool {
         self.text.eq_ignore_ascii_case(word)
     }
     fn name(&self) -> bool {
@@ -62,7 +62,7 @@ fn identifier(bytes: &[u8]) -> bool {
         && !bytes.ends_with(b"-")
 }
 
-fn tokenize(bytes: &[u8]) -> Result<Vec<Token<'_>>, String> {
+pub(crate) fn tokenize(bytes: &[u8]) -> Result<Vec<Token<'_>>, String> {
     let mut lexer = LexerState::default();
     let mut tokens: Vec<Token<'_>> = Vec::new();
     let mut covered = 0;
@@ -475,6 +475,102 @@ fn classify(tokens: &[Token<'_>]) -> Result<Vec<Occurrence>, String> {
     Ok(occurrences)
 }
 
+/// Copies a complete scalar signature into an existing FORWARD declaration.
+pub(crate) fn synchronize_prototype(
+    bytes: &[u8],
+    encoding: TextEncoding,
+    cursor: usize,
+) -> Result<Vec<jc_app::TextReplacement>, String> {
+    if bytes.len() > SOURCE_LIMIT {
+        return Err("Actualizar prototipos admite documentos de hasta 256 KiB".into());
+    }
+    let prefix = bom_prefix(bytes, encoding);
+    let body = &bytes[prefix..];
+    let cursor = cursor
+        .checked_sub(prefix)
+        .ok_or("Selecciona el nombre de una función")?;
+    let tokens = tokenize(body)?;
+    let mut headers = Vec::new();
+    let mut start = 0;
+    for (end, delimiter) in tokens
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.is(b".") || t.is(b":"))
+    {
+        let words = &tokens[start..end];
+        if let [keyword, name, ..] = words {
+            if keyword.is(b"FUNCTION") && name.name() {
+                let forward =
+                    delimiter.is(b".") && words.last().is_some_and(|token| token.is(b"FORWARD"));
+                if forward || delimiter.is(b":") {
+                    headers.push((start, end - usize::from(forward), forward));
+                }
+            }
+        }
+        start = end + 1;
+    }
+    let selected = headers
+        .iter()
+        .map(|(start, _, _)| &tokens[*start + 1])
+        .find(|token| (token.range.start..=token.range.end).contains(&cursor))
+        .ok_or("Coloca el cursor en el nombre de la función o su prototipo FORWARD")?;
+    let mut prototype = None;
+    let mut implementation = None;
+    for (start, end, forward) in headers {
+        if !tokens[start + 1].is(selected.text) {
+            continue;
+        }
+        let header = FunctionHeader::parse(&tokens, start, end)?;
+        let range = start + 2..end;
+        let slot = if forward {
+            &mut prototype
+        } else {
+            &mut implementation
+        };
+        if slot.replace((range, header)).is_some() {
+            return Err("La función tiene prototipos o implementaciones duplicados".into());
+        }
+    }
+    let (previous, _) = prototype.ok_or("La función no tiene prototipo FORWARD")?;
+    let (actual, signature) = implementation.ok_or("La función FORWARD no tiene implementación")?;
+    if signature.parameters.is_none() {
+        return Err(
+            "La implementación debe declarar la lista de parámetros, incluso si es vacía".into(),
+        );
+    }
+    let signature_bytes = |indices: Range<usize>| {
+        let tokens = &tokens[indices];
+        let range = tokens.first().unwrap().range.start..tokens.last().unwrap().range.end;
+        let trivia_is_horizontal = tokens.windows(2).all(|pair| {
+            body[pair[0].range.end..pair[1].range.start]
+                .iter()
+                .all(|byte| matches!(byte, b' ' | b'\t'))
+        });
+        trivia_is_horizontal
+            .then_some(range)
+            .ok_or("La firma debe estar en una línea y sin comentarios intercalados")
+    };
+    let range = signature_bytes(previous)?;
+    let replacement = &body[signature_bytes(actual)?];
+    if &body[range.clone()] == replacement {
+        return Ok(Vec::new());
+    }
+    let mut candidate = body.to_vec();
+    candidate.splice(range.clone(), replacement.iter().copied());
+    let candidate_tokens = tokenize(&candidate)?;
+    classify(&candidate_tokens)?;
+    let text = std::str::from_utf8(replacement)
+        .map_err(|_| "La firma ABL contiene bytes fuera del subconjunto admitido")?;
+    Ok(vec![jc_app::TextReplacement {
+        range: range.start + prefix..range.end + prefix,
+        text: text.into(),
+    }])
+}
+
+pub(crate) fn bom_prefix(bytes: &[u8], encoding: TextEncoding) -> usize {
+    usize::from(encoding == TextEncoding::Utf8 && bytes.starts_with(b"\xef\xbb\xbf")) * 3
+}
+
 /// Returns the declaration and uses in the closed lexical subset, in source order.
 /// All supported editor encodings preserve ASCII identifier bytes unchanged.
 pub fn propose(
@@ -493,8 +589,7 @@ pub fn propose(
         );
     }
     // Keep the BOM outside the token stream and restore original byte coordinates.
-    let prefix =
-        usize::from(encoding == TextEncoding::Utf8 && bytes.starts_with(&[0xef, 0xbb, 0xbf])) * 3;
+    let prefix = bom_prefix(bytes, encoding);
     let tokens = tokenize(&bytes[prefix..])?;
     let occurrences = classify(&tokens)?;
     let mut bindings = HashMap::new();

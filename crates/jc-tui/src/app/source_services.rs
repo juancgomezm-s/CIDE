@@ -10,28 +10,83 @@ use jc_app::{
     CommandId, PrimaryFocus, SidebarView,
 };
 pub(crate) fn is_command(command: CommandId) -> bool {
-    matches!(
-        command,
-        CommandId::ViewSymbols
-            | CommandId::SourceReferences
-            | CommandId::SourceDefinition
-            | CommandId::SourceLspReferences
-            | CommandId::SourceXref
-            | CommandId::SourceLspComplete
-            | CommandId::SourceSchemaComplete
-            | CommandId::SourceLspDiagnostics
-            | CommandId::SourceCalls
-            | CommandId::SourceIncoming
-            | CommandId::SourceDependencies
-            | CommandId::SourceComplete
-            | CommandId::SourceRename
-            | CommandId::SourceRefresh
-            | CommandId::SourceCancel
-            | CommandId::SourceAccept
-            | CommandId::SourceOpenToSide
-    )
+    jc_app::source_services::ReviewedEdit::from_command(command).is_some()
+        || matches!(
+            command,
+            CommandId::ViewSymbols
+                | CommandId::SourceReferences
+                | CommandId::SourceDefinition
+                | CommandId::SourceLspReferences
+                | CommandId::SourceXref
+                | CommandId::SourceLspComplete
+                | CommandId::SourceSchemaComplete
+                | CommandId::SourceLspDiagnostics
+                | CommandId::SourceCalls
+                | CommandId::SourceIncoming
+                | CommandId::SourceDependencies
+                | CommandId::SourceComplete
+                | CommandId::SourceRename
+                | CommandId::SourceRefresh
+                | CommandId::SourceCancel
+                | CommandId::SourceAccept
+                | CommandId::SourceOpenToSide
+        )
 }
 impl TuiApp {
+    pub(super) fn poll_symbol_path(&mut self) -> bool {
+        let root = self.project_root.as_deref();
+        let mut changed = self
+            .symbol_path
+            .validate_context(&self.workbench, root, &mut self.tasks);
+        if !self.git_code.active
+            && !self.open_diff_visible
+            && self.markdown_ui.is_none()
+            && !matches!(
+                self.source.state(),
+                SourceState::Queued | SourceState::Running
+            )
+            && self
+                .symbol_path
+                .needs_outline_refresh(&self.workbench, root)
+        {
+            if let Some(provider) = self.progress_schema.outline(&self.workbench, root) {
+                let _ = self.symbol_path.request_catalog(
+                    SourceMode::Symbols,
+                    provider,
+                    &self.source_registry,
+                    &self.workbench,
+                    root,
+                    &mut self.tasks,
+                );
+                changed = true;
+            }
+        }
+        self.symbol_path
+            .tick(&self.workbench, root, &mut self.tasks)
+            | changed
+    }
+
+    pub(super) fn open_symbol_path(&mut self, index: usize, to_side: bool) -> bool {
+        let root = self.project_root.as_deref();
+        if !self
+            .symbol_path
+            .symbol_path(&self.workbench, root)
+            .any(|(current, _)| current == index)
+        {
+            return false;
+        }
+        match self
+            .symbol_path
+            .activate_at_index(&mut self.workbench, root, index, to_side)
+        {
+            Ok(_) => {
+                let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+            }
+            Err(error) => self.status = error,
+        }
+        true
+    }
+
     pub(crate) fn keep_source_for(command: CommandId) -> bool {
         is_command(command)
             || matches!(
@@ -81,6 +136,14 @@ impl TuiApp {
             && self
                 .source_registry
                 .supports_document(&self.workbench, SourceMode::Rename);
+        context.source_review_available = self
+            .progress_schema
+            .supports_review(&self.workbench, self.project_root.as_deref());
+        context.source_oo_available = self
+            .workbench
+            .active_path()
+            .and_then(|path| path.extension())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("cls"));
         context.source_active = self.source.mode().is_some()
             && !matches!(
                 self.source.state(),
@@ -96,9 +159,10 @@ impl TuiApp {
                 .source_registry
                 .resolve(language, SourceMode::Dependencies)
                 .is_some();
-        context.source_ready = self
-            .source
-            .ready(&self.workbench, self.project_root.as_deref());
+        context.source_ready = !matches!(self.source.mode(), Some(SourceMode::ReviewEdit(_)))
+            && self
+                .source
+                .ready(&self.workbench, self.project_root.as_deref());
         context.source_incoming_available = self
             .source_registry
             .supports_incoming(&self.workbench, self.project_root.as_deref());
@@ -113,7 +177,16 @@ impl TuiApp {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
-        let catalog = if matches!(mode, SourceMode::Symbols | SourceMode::CatalogXref) {
+        let catalog = if matches!(mode, SourceMode::ReviewEdit(_)) {
+            let Some(provider) = self
+                .progress_schema
+                .review(&self.workbench, self.project_root.as_deref())
+            else {
+                self.status = "Abre un archivo ABL con codificación elegida".into();
+                return;
+            };
+            Some(provider)
+        } else if matches!(mode, SourceMode::Symbols | SourceMode::CatalogXref) {
             self.progress_schema
                 .outline(&self.workbench, self.project_root.as_deref())
         } else if mode.is_catalog() {
@@ -144,6 +217,7 @@ impl TuiApp {
                 | SourceMode::CatalogDefinition
                 | SourceMode::CatalogReferences
                 | SourceMode::CatalogXref
+                | SourceMode::ReviewEdit(_)
         );
         if mode == SourceMode::LspDiagnostics {
             self.show_bottom(jc_app::BottomPanel::Problems);
@@ -213,6 +287,10 @@ impl TuiApp {
         }
     }
     pub(crate) fn source_command(&mut self, command: CommandId) {
+        if let Some(action) = jc_app::source_services::ReviewedEdit::from_command(command) {
+            self.request_source(SourceMode::ReviewEdit(action));
+            return;
+        }
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
@@ -312,6 +390,29 @@ impl TuiApp {
         }
     }
     pub(crate) fn source_key(&mut self, key: KeyEvent) {
+        if matches!(self.source.mode(), Some(SourceMode::ReviewEdit(_))) {
+            if key.code == KeyCode::F(9) && key.modifiers.is_empty()
+                || key.code == KeyCode::Enter && key.modifiers == KeyModifiers::CONTROL
+            {
+                match self
+                    .source
+                    .confirm_review(&mut self.workbench, self.project_root.as_deref())
+                {
+                    Ok(()) => {
+                        self.source_popup = false;
+                        self.source_candidates = None;
+                        self.close_overlay();
+                        let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
+                        self.status = "Cambios aplicados · un paso para deshacer".into();
+                    }
+                    Err(e) => self.status = e,
+                }
+                return;
+            }
+            if key.code == KeyCode::Enter {
+                return;
+            }
+        }
         if self.source.mode() == Some(SourceMode::Rename) {
             if key.code == KeyCode::F(9)
                 || key.code == KeyCode::Enter && key.modifiers.contains(KeyModifiers::CONTROL)

@@ -185,6 +185,14 @@ pub(crate) struct EditorText {
     pub rows: Vec<Vec<jc_app::VisualAtom>>,
     pub display_rows: Option<Vec<Vec<jc_app::DisplayCell>>>,
     pub cursor_column: Option<usize>,
+    pub symbol_path: Vec<SymbolCrumb>,
+}
+#[derive(Debug)]
+pub(crate) struct SymbolCrumb {
+    pub index: usize,
+    pub x: u16,
+    pub width: u16,
+    pub label: String,
 }
 pub(crate) struct Presentation<'a> {
     pub code_diff: Option<super::git_code::CodeDiffPresentation>,
@@ -220,6 +228,77 @@ impl Presentation<'_> {
 }
 
 impl TuiApp {
+    pub(crate) fn editor_heading(&self, pane: PaneId) -> Option<String> {
+        let view = self.workbench.panes().view(pane)?;
+        let name = view
+            .location()
+            .and_then(|location| self.workbench.document_by_tab(location.tab))
+            .and_then(|doc| doc.session.path().file_name())
+            .map_or("Vacío", |name| name.to_str().unwrap_or("<archivo>"));
+        Some(format!(
+            "{} Grupo {}: {}{}{}",
+            if pane == self.workbench.panes().active() {
+                ">"
+            } else {
+                " "
+            },
+            if pane == PaneId::Primary { 1 } else { 2 },
+            name,
+            if view.is_pinned() { " [FIJO]" } else { "" },
+            if self.workbench.panes().scroll_linked() {
+                " [ENLACE]"
+            } else {
+                ""
+            }
+        ))
+    }
+
+    fn prepare_symbol_path(&self, pane: PaneId, x: u16, width: u16) -> Vec<SymbolCrumb> {
+        const SEPARATOR: &str = " › ";
+        if pane != self.workbench.panes().active() {
+            return Vec::new();
+        }
+        let column = self
+            .editor_heading(pane)
+            .map_or(0, |heading| jc_text::grapheme::width(&heading));
+        let mut remaining = usize::from(width).saturating_sub(column);
+        let separator_width = jc_text::grapheme::width(SEPARATOR);
+        if remaining <= separator_width {
+            return Vec::new();
+        }
+        let scopes = self
+            .symbol_path
+            .symbol_path(&self.workbench, self.project_root.as_deref())
+            .rev();
+        let mut crumbs = Vec::new();
+        for (index, name) in scopes {
+            let available = remaining.saturating_sub(separator_width);
+            if available == 0 {
+                break;
+            }
+            let text = jc_app::source_services::display_ui_label(name, available);
+            if text.is_empty() || (!crumbs.is_empty() && text != name) {
+                break;
+            }
+            let label = format!("{SEPARATOR}{text}");
+            let width = jc_text::grapheme::width(&label) as u16;
+            remaining -= usize::from(width);
+            crumbs.push(SymbolCrumb {
+                index,
+                x: 0,
+                width,
+                label,
+            });
+        }
+        crumbs.reverse();
+        let mut placement = x + column as u16;
+        for crumb in &mut crumbs {
+            crumb.x = placement;
+            placement += crumb.width;
+        }
+        crumbs
+    }
+
     pub(crate) fn prepare_frame(&mut self, width: u16, height: u16) -> Presentation<'_> {
         self.validate_source();
         if self.explorer.root() != self.project_root.as_deref() {
@@ -401,6 +480,7 @@ impl TuiApp {
                     rows,
                     display_rows,
                     cursor_column,
+                    symbol_path: self.prepare_symbol_path(pane, x, width),
                 };
                 match pane {
                     PaneId::Primary => primary = text,

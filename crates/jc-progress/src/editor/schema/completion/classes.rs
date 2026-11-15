@@ -11,6 +11,9 @@ use std::{
     rc::Rc,
 };
 
+mod organize;
+pub(super) use organize::organize_imports;
+
 const MAX_IMPORTS: usize = 128;
 const MAX_CLASS_BYTES: usize = 512 * 1024;
 const MAX_NAME: usize = 512;
@@ -838,7 +841,7 @@ impl Imports {
         )))
     }
 
-    fn load(
+    pub(super) fn load(
         &self,
         root: &Path,
         source: &Path,
@@ -924,13 +927,13 @@ impl Imports {
     }
 }
 
-struct ClassSource {
-    name: String,
+pub(super) struct ClassSource {
+    pub(super) name: String,
     kind: &'static str,
     offset: usize,
-    path: PathBuf,
-    bytes: Vec<u8>,
-    encoding: TextEncoding,
+    pub(super) path: PathBuf,
+    pub(super) bytes: Vec<u8>,
+    pub(super) encoding: TextEncoding,
 }
 
 impl ClassSource {

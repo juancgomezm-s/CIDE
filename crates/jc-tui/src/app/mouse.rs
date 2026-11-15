@@ -208,6 +208,7 @@ enum Action {
     ExplorerScroll(ScrollBar),
     Bottom(usize),
     Symbol(usize),
+    SymbolCrumb(usize),
     GitStatus(usize),
     GitHunk(usize),
     Focus(PrimaryFocus),
@@ -723,6 +724,19 @@ impl TuiApp {
             let Some(context) = SourceContext::capture(self, pane) else {
                 continue;
             };
+            if self.mouse_source_available() {
+                for crumb in &text.symbol_path {
+                    frame.hits.push(Hit {
+                        area: Rect {
+                            x: crumb.x,
+                            y: 2,
+                            width: crumb.width,
+                            height: 1,
+                        },
+                        action: Action::SymbolCrumb(crumb.index),
+                    });
+                }
+            }
             if let Some(bars) = text.bars {
                 for bar in bars {
                     frame.hits.push(Hit {
@@ -1004,6 +1018,16 @@ impl TuiApp {
                 let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
                 self.dispatch(CommandId::SourceAccept);
                 true
+            }
+            Some(Action::SymbolCrumb(index)) => {
+                if !self.mouse_source_available() {
+                    return false;
+                }
+                match event.modifiers {
+                    KeyModifiers::NONE => self.open_symbol_path(index, false),
+                    KeyModifiers::CONTROL => self.open_symbol_path(index, true),
+                    _ => false,
+                }
             }
             Some(Action::GitStatus(index)) => {
                 if self.git_history.active {

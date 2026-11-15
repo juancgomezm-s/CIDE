@@ -584,6 +584,10 @@ Estabilizar el contrato interno de capacidades para vincular proveedores de leng
 
 ## M4 — Esquema y asistencia ABL
 
+**Cerrado localmente en Windows con OpenEdge 11.7** para los flujos
+admitidos. La evidencia y los límites se detallan en el
+[puente Progress](PROGRESS_BRIDGE.md#validación-local-de-m4).
+
 El primer bloque comparte en GUI y TUI el autocompletado de tablas, campos e
 índices del catálogo del proyecto. [Uso y alcance](PROGRESS_BRIDGE.md#autocompletado-de-esquema-en-gui-y-tui).
 El segundo amplía las sugerencias a buffers estáticos, tablas temporales y
@@ -604,12 +608,22 @@ cuando hay una firma inequívoca, incluidos los modos `INPUT`, `OUTPUT`
 e `INPUT-OUTPUT` con tipos primitivos conocidos. También sigue cadenas
 de propiedades y retornos declarados mediante PROPATH.
 
-El siguiente bloque es la ruta de navegación del símbolo activo
-(breadcrumbs) en GUI y TUI, usando el esquema y la navegación compartidos.
-Después siguen las acciones de edición ABL con vista previa y una sola
-operación de deshacer.
+La ruta del símbolo activo usa el Esquema versionado del documento. En GUI
+se muestra dentro de Esquema. En TUI se integra al encabezado del grupo
+activo. Ambas interfaces abren la declaración en el grupo actual o al lado.
+Mover el cursor reutiliza los ámbitos calculados para esa revisión.
 
-Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, navegación, completado inteligente de tablas/campos/índices y análisis contextual incremental. Añadir Outline/Breadcrumb/Go to Definition/Open to Side mediante `NavigationTarget` universal y proveedores por lenguaje. Buscar/seleccionar/editar sigue siendo responsabilidad genérica de `jc-app` y Search Plus; XREF, imports USING y jerarquía OO son aportaciones del proveedor ABL.
+Las acciones de edición permiten ordenar `USING` explícitos, sincronizar
+prototipos `FORWARD`, generar constructores del padre directo y preparar
+sobrescrituras e implementaciones de clases e interfaces. Comparten vista
+previa, confirmación y un solo paso de deshacer. El catálogo, XREF, imports y
+jerarquía son aportaciones ABL. La navegación y la transacción de edición
+permanecen en el editor compartido.
+[Uso](PROGRESS_BRIDGE.md#acciones-de-edición-abl) · [Alcance](ABL_EDITOR_COMMAND_SCOPE.md#c--m4-funciones-que-requieren-semántica).
+
+La generación de una interfaz de servicio depende de un contrato real de
+integración. El renombrado entre archivos requiere un bloque posterior con
+validación y recuperación de la transacción de proyecto.
 
 ## M5 — Servicios opcionales, hardening y CI
 

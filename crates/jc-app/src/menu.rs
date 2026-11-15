@@ -252,6 +252,11 @@ pub fn default_menu_model() -> MenuModel {
                 command(ProgressRun),
                 command(ProgressRefreshSchema),
                 command(ProgressCancel),
+                SEP,
+                command(SourceOrganizeImports),
+                command(SourceUpdatePrototype),
+                command(SourceGenerateConstructors),
+                command(SourceGenerateOverrides),
             ],
         ),
         menu(

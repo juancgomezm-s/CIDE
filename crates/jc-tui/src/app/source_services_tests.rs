@@ -279,6 +279,89 @@ fn progress_real_outline_tui_lists_program_and_nested_include_and_opens_to_side(
 }
 
 #[test]
+fn source_tui_abl_breadcrumbs_follow_the_cursor_and_open_the_scope() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../progress/examples/schema-assistance")
+        .canonicalize()
+        .unwrap();
+    let path = root.join("primero/paquete/Derivada.cls");
+    let code = std::fs::read_to_string(&path).unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![path],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.set_explorer_root(root).unwrap();
+    let tab = app.workbench.tabs().active_id().unwrap();
+    let first = code.find("RETURN SUPER").unwrap();
+    let second = code.find("THIS-OBJECT:Titulo").unwrap();
+    assert!(app.workbench.jump_to_location(tab, first));
+    app.poll_tasks();
+    finish(&mut app);
+    assert_eq!(app.focus.primary(), PrimaryFocus::Editor);
+    assert_eq!(app.panels.sidebar(), SidebarView::Explorer);
+    let old_click = {
+        let frame = app.prepare_frame(120, 24);
+        let row = render::render(&frame).row_text(2);
+        assert!(
+            row.contains("Derivada.cls › paquete.Derivada › Saludo"),
+            "{row}"
+        );
+        let symbol = frame
+            .editor(jc_app::PaneId::Primary)
+            .symbol_path
+            .last()
+            .unwrap();
+        MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: symbol.x + symbol.width - 1,
+            row: 2,
+            modifiers: KeyModifiers::CONTROL,
+        }
+    };
+    assert!(app.workbench.jump_to_location(tab, second));
+    assert!(!app.handle_mouse(old_click));
+    assert!(app.workbench.jump_to_location(tab, 0));
+    assert!(!app.frame(120, 24).row_text(2).contains('›'));
+    assert!(app.workbench.jump_to_location(tab, second));
+    let click = {
+        let frame = app.prepare_frame(120, 24);
+        let row = render::render(&frame).row_text(2);
+        assert!(
+            row.contains(" › Probar") && !row.contains(" › Saludo"),
+            "{row}"
+        );
+        let symbol = frame
+            .editor(jc_app::PaneId::Primary)
+            .symbol_path
+            .last()
+            .unwrap();
+        MouseEvent {
+            column: symbol.x + symbol.width - 1,
+            ..old_click
+        }
+    };
+    assert_eq!(app.tasks.outstanding(), 0);
+    assert!(app.handle_mouse(click));
+    assert!(app.workbench.panes().is_split());
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        code.find("Probar").unwrap()
+    );
+    assert_eq!(app.workbench.active_bytes().unwrap(), code.as_bytes());
+
+    app.poll_tasks();
+    finish(&mut app);
+    assert!(app.workbench.jump_to_location(tab, second));
+    app.workbench.insert_text("/* edición */ ").unwrap();
+    assert!(!app.frame(160, 24).row_text(2).contains(" › Probar"));
+    app.poll_tasks();
+    finish(&mut app);
+    assert!(app.frame(160, 24).row_text(2).contains(" › Probar"));
+}
+
+#[test]
 #[ignore = "requiere OpenEdge y el proyecto sintético de asistencia"]
 fn progress_real_xref_tui_opens_program_with_spaces_to_side() {
     let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
@@ -746,6 +829,58 @@ fn source_tui_rename_previews_scoped_ranges_and_applies_one_undo() {
     );
     a.workbench.undo().unwrap();
     assert_eq!(a.workbench.active_bytes().unwrap(), text.as_bytes());
+}
+#[test]
+fn source_tui_reviewed_imports_previews_and_applies_in_one_undo() {
+    let root = std::env::temp_dir().join(format!(
+        "cide-reviewed-imports-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let package = root.join("pack");
+    std::fs::create_dir_all(&package).unwrap();
+    for name in ["Alfa", "Beta"] {
+        std::fs::write(
+            package.join(format!("{name}.cls")),
+            format!("CLASS pack.{name}:\nEND CLASS.\n"),
+        )
+        .unwrap();
+    }
+    let text = "/* Ítems. */\r\n  USING pack.Beta FROM PROPATH.\n\tUSING pack.Alfa FROM PROPATH.\r\nDEFINE VARIABLE dato AS CLASS Alfa NO-UNDO.";
+    let expected = "/* Ítems. */\r\n  USING pack.Alfa FROM PROPATH.\n\tUSING pack.Beta FROM PROPATH.\r\nDEFINE VARIABLE dato AS CLASS Alfa NO-UNDO.";
+    let mut app = TuiApp::new(LaunchOptions::default());
+    app.workbench
+        .new_file(root.join("imports.p"), TextEncoding::Utf8);
+    app.workbench.insert_text(text).unwrap();
+    app.dispatch(CommandId::SourceOrganizeImports);
+    finish(&mut app);
+    assert!(
+        app.source
+            .items()
+            .iter()
+            .any(|item| item.label == "- USING pack.Beta FROM PROPATH."),
+        "{}",
+        app.source.message()
+    );
+    assert!(app
+        .source
+        .items()
+        .iter()
+        .any(|item| item.label == "+ USING pack.Alfa FROM PROPATH."));
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(app.workbench.active_bytes().unwrap(), text.as_bytes());
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    assert_eq!(app.workbench.active_bytes().unwrap(), expected.as_bytes());
+    app.workbench.undo().unwrap();
+    assert_eq!(app.workbench.active_bytes().unwrap(), text.as_bytes());
+    for name in ["Alfa", "Beta"] {
+        std::fs::remove_file(package.join(format!("{name}.cls"))).unwrap();
+    }
+    std::fs::remove_dir(package).unwrap();
+    std::fs::remove_dir(root).unwrap();
 }
 #[test]
 fn source_tui_symbols_keyboard_navigation_readonly_render_and_explicit_refresh() {

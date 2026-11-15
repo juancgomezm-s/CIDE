@@ -72,7 +72,14 @@ pub(super) fn popup(frame: &Presentation<'_>, screen: &mut Screen) {
             x + 2,
             y + height - 2,
             &super::clip(
-                if frame.app.source.mode() == Some(jc_app::source_services::SourceMode::Rename) {
+                if matches!(
+                    frame.app.source.mode(),
+                    Some(jc_app::source_services::SourceMode::ReviewEdit(_))
+                ) {
+                    "F9/Ctrl+Intro aplicar | Flechas revisar | Esc"
+                } else if frame.app.source.mode()
+                    == Some(jc_app::source_services::SourceMode::Rename)
+                {
                     "F9/Ctrl+Intro aplicar | Flechas revisar | F5 editar | Esc"
                 } else {
                     "Intro abrir | Ctrl+Intro al lado | Flechas elegir | Esc"

@@ -220,6 +220,60 @@ de propiedades y retornos y las sobrecargas por modo de `Ajustar`.
 La GUI mostró el aviso de ambigüedad para `Saludar(?)` y para una llamada
 a `Ajustar` sin modo explícito.
 
+### Ruta del símbolo activo
+
+Abre un archivo ABL desde la carpeta del proyecto. En la GUI, **Esquema**
+muestra la ruta sobre la lista de símbolos. Un clic abre la declaración
+del ámbito activo y **Ctrl+clic** la abre al lado. En la TUI, la ruta
+aparece en el encabezado del grupo activo. Cada tramo admite clic y
+**Ctrl+clic**. Puedes navegar con el teclado desde **Ver → Esquema**.
+
+La ruta usa los ámbitos delimitados por el proveedor de Esquema en la
+revisión actual. Mover el cursor reutiliza el resultado. Al editar, la
+ruta anterior caduca mientras se actualiza el esquema en segundo plano.
+Las inclusiones siguen accesibles desde Esquema. El ámbito resaltado
+corresponde a declaraciones del archivo activo con un cierre reconocido.
+
+### Acciones de edición ABL
+
+En **Herramientas** o en la paleta, la GUI y la TUI ofrecen estas acciones
+sobre el documento activo.
+
+- **Organizar USING de ABL** ordena alfabéticamente el grupo inicial de
+  imports explícitos de PROPATH. Conserva la posición de los comentarios
+  externos al grupo y los finales de línea. Una colisión de nombres
+  cortos, un comodín o un import sin resolver detiene la propuesta.
+- **Actualizar prototipo FORWARD** copia la firma de la implementación
+  explícita al prototipo de la misma función. Coloca el cursor en el
+  nombre en cualquiera de las dos declaraciones.
+- **Generar constructores de la clase base** crea constructores compatibles
+  del padre inmediato y delega en `SUPER`. **Generar implementaciones y
+  sobrescrituras** usa los contratos resolubles por PROPATH. Las
+  implementaciones de métodos pendientes generan un cuerpo que informa
+  que queda por escribir la lógica.
+
+Revisa las líneas que se agregan y se quitan. **F9** o **Ctrl+Intro**
+aplica la propuesta completa en el documento y **Esc** cancela. El editor
+exige la misma revisión y vista antes de aplicar. Una sola operación de
+deshacer revierte el cambio.
+
+### Validación local de M4
+
+En Windows pasaron 46 pruebas dirigidas distintas en varias corridas.
+Incluyen 25 recorridos que usan la instalación de OpenEdge 11.7, con
+compilación del código generado y de propuestas de organización de imports,
+sincronización de prototipos y renombrado local. Las pruebas de GUI y TUI
+verifican el salto desde la ruta activa, el rechazo de resultados obsoletos,
+la revisión previa y el deshacer. El fixture inicial de imports usaba
+`dos` como identificador. OpenEdge lo reservaba y la prueba pasó al
+usar un identificador válido.
+
+El formato y Clippy del workspace aprobaron mediante
+`python -B scripts/check-local.py --steps fmt clippy --jobs 2`.
+Las pruebas locales se ejecutaron sin usar el escritorio. La aceptación
+en OpenEdge 10.0B y con el perfil del ERP de desarrollo sigue registrada
+en M3.
+
 ### Buscar referencias en ABL
 
 Pulsa **Mayús+F12** o elige **Navegación → Buscar referencias** sobre una

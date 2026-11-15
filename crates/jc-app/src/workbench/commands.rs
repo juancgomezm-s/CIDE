@@ -269,6 +269,10 @@ impl Workbench {
             | SourceDependencies
             | SourceComplete
             | SourceRename
+            | SourceOrganizeImports
+            | SourceUpdatePrototype
+            | SourceGenerateConstructors
+            | SourceGenerateOverrides
             | SourceRefresh
             | SourceCancel
             | SourceAccept

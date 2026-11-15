@@ -150,6 +150,26 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (248, CommandId::SourceLspReferences, "Buscar referencias"),
     (260, CommandId::SourceXref, "Buscar referencias con XREF"),
     (
+        261,
+        CommandId::SourceOrganizeImports,
+        jc_app::source_services::ReviewedEdit::OrganizeImports.label(),
+    ),
+    (
+        262,
+        CommandId::SourceUpdatePrototype,
+        jc_app::source_services::ReviewedEdit::UpdatePrototype.label(),
+    ),
+    (
+        263,
+        CommandId::SourceGenerateConstructors,
+        jc_app::source_services::ReviewedEdit::GenerateConstructors.label(),
+    ),
+    (
+        264,
+        CommandId::SourceGenerateOverrides,
+        jc_app::source_services::ReviewedEdit::GenerateOverrides.label(),
+    ),
+    (
         238,
         CommandId::SourceDependencies,
         "Dependencias e inclusiones",

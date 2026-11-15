@@ -43,12 +43,15 @@ pub(super) struct OutlineFrame {
     mode: SourceMode,
     tools: Vec<(Rect, SourceMode, bool)>,
     close: Rect,
+    breadcrumb: Option<String>,
+    active_symbol: Option<usize>,
 }
 
 pub(super) struct OutlineHits {
     rect: Rect,
     rows: Vec<usize>,
     close: Rect,
+    active_symbol: Option<usize>,
 }
 
 impl OutlineFrame {
@@ -57,6 +60,7 @@ impl OutlineFrame {
             rect: self.rect,
             rows: self.rows.iter().map(|row| row.index).collect(),
             close: self.close,
+            active_symbol: self.active_symbol,
         }
     }
 }
@@ -298,6 +302,24 @@ impl State {
         } else {
             controller.message()
         };
+        let root = self.project_root.as_deref();
+        let mut path = controller.symbol_path(&self.workbench, root);
+        let active = path.next_back();
+        let breadcrumb = active.map(|(_, leaf)| {
+            let mut text = String::new();
+            for (_, ancestor) in path {
+                text.push_str(ancestor);
+                text.push_str(" › ");
+            }
+            text.push_str(leaf);
+            let fitted = display_ui_label(&text, columns);
+            if fitted == text {
+                fitted
+            } else {
+                display_ui_label(leaf, columns)
+            }
+        });
+        let active_symbol = active.map(|(index, _)| index);
         Some(OutlineFrame {
             rect,
             dpi: self.dpi,
@@ -321,6 +343,8 @@ impl State {
                 })
                 .collect(),
             close: close_rect(rect, self.dpi),
+            breadcrumb,
+            active_symbol,
         })
     }
 
@@ -455,6 +479,22 @@ impl State {
         }) {
             self.set_outline_visible(false);
             return true;
+        }
+        if (rect.top + self.dpi.pixels(90)..rect.top + self.dpi.pixels(HEAD)).contains(&y) {
+            let active = self
+                .outline
+                .controller
+                .active_symbol(&self.workbench, self.project_root.as_deref());
+            if let Some((index, _)) = active.filter(|(index, _)| {
+                self.outline.hits.as_ref().is_some_and(|hits| {
+                    same_rect(hits.rect, rect) && hits.active_symbol == Some(*index)
+                })
+            }) {
+                self.outline.controller.first();
+                self.outline.controller.select_relative(index as isize);
+                self.activate_outline(self.modifiers().contains(Modifiers::CTRL));
+                return true;
+            }
         }
         if let Some((_, mode)) = tools(rect, self.dpi)
             .into_iter()
@@ -595,11 +635,16 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
         shell::MUTED,
         shell::SIDEBAR,
     )?;
+    let breadcrumb = frame.breadcrumb.as_deref();
     paint::text(
         dc,
         label(rect.top + px(90), rect.top + px(HEAD)),
-        &wide("Doble clic / Intro · Ctrl: al lado"),
-        shell::MUTED,
+        &wide(breadcrumb.unwrap_or("Doble clic / Intro · Ctrl: al lado")),
+        if breadcrumb.is_some() {
+            shell::ACCENT
+        } else {
+            shell::MUTED
+        },
         shell::SIDEBAR,
     )?;
     for (r, mode, enabled) in &frame.tools {
@@ -663,7 +708,11 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
             dc,
             label(top + px(2), top + px(ROW)),
             &wide(&row.label),
-            shell::TEXT,
+            if frame.active_symbol == Some(row.index) {
+                shell::ACCENT
+            } else {
+                shell::TEXT
+            },
             background,
         )?;
     }
@@ -811,6 +860,55 @@ mod tests {
         );
         state.workbench.undo().unwrap();
         assert!(state.workbench.active_bytes().unwrap().is_empty());
+    }
+
+    #[test]
+    fn abl_breadcrumb_tracks_cursor_and_requires_current_revision_to_jump() {
+        let root = std::env::current_dir().unwrap();
+        let mut state = State::new(&GuiOptions {
+            project_root: Some(root.clone()),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        state.width = 1600;
+        state.height = 900;
+        let tab = state
+            .workbench
+            .new_file(root.join("Ruta.cls"), TextEncoding::Utf8);
+        let source = "CLASS demo.Ruta:\nMETHOD PUBLIC VOID Trabajo():\n  DO:\n    MESSAGE 1.\n  END.\nEND METHOD.\n\nEND CLASS.\n";
+        state.workbench.insert_text(source).unwrap();
+        let body = source.find("MESSAGE").unwrap();
+        assert!(state.workbench.jump_to_location(tab, body));
+        finish(&mut state);
+        let frame = state.outline_presentation().unwrap();
+        assert_eq!(frame.breadcrumb.as_deref(), Some("demo.Ruta › Trabajo"));
+        let x = frame.rect.left + 24;
+        let y = frame.rect.top + state.dpi.pixels(92);
+        state.outline.hits = Some(frame.hits());
+        assert!(state.outline_click(x, y, false));
+        assert_eq!(
+            state.workbench.active_editor().unwrap().cursor,
+            source.find("Trabajo").unwrap()
+        );
+
+        assert!(state
+            .workbench
+            .jump_to_location(tab, source.find("END CLASS").unwrap()));
+        assert_eq!(
+            state.outline_presentation().unwrap().breadcrumb.as_deref(),
+            Some("demo.Ruta")
+        );
+        assert_eq!(
+            state.jobs.outstanding(),
+            0,
+            "changing cursor does not restart the outline"
+        );
+
+        assert!(state.workbench.jump_to_location(tab, body));
+        state.workbench.insert_text(" ").unwrap();
+        assert!(state.outline_presentation().unwrap().breadcrumb.is_none());
+        assert!(state.outline_click(x, y, false));
+        assert_eq!(state.workbench.active_editor().unwrap().cursor, body + 1);
     }
 
     #[test]

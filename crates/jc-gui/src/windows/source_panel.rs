@@ -63,26 +63,27 @@ impl SourceGui {
     }
 }
 pub(super) fn is_command(command: CommandId) -> bool {
-    matches!(
-        command,
-        CommandId::ViewSymbols
-            | CommandId::SourceReferences
-            | CommandId::SourceDefinition
-            | CommandId::SourceLspReferences
-            | CommandId::SourceXref
-            | CommandId::SourceLspComplete
-            | CommandId::SourceSchemaComplete
-            | CommandId::SourceLspDiagnostics
-            | CommandId::SourceCalls
-            | CommandId::SourceIncoming
-            | CommandId::SourceDependencies
-            | CommandId::SourceComplete
-            | CommandId::SourceRename
-            | CommandId::SourceRefresh
-            | CommandId::SourceCancel
-            | CommandId::SourceAccept
-            | CommandId::SourceOpenToSide
-    )
+    jc_app::source_services::ReviewedEdit::from_command(command).is_some()
+        || matches!(
+            command,
+            CommandId::ViewSymbols
+                | CommandId::SourceReferences
+                | CommandId::SourceDefinition
+                | CommandId::SourceLspReferences
+                | CommandId::SourceXref
+                | CommandId::SourceLspComplete
+                | CommandId::SourceSchemaComplete
+                | CommandId::SourceLspDiagnostics
+                | CommandId::SourceCalls
+                | CommandId::SourceIncoming
+                | CommandId::SourceDependencies
+                | CommandId::SourceComplete
+                | CommandId::SourceRename
+                | CommandId::SourceRefresh
+                | CommandId::SourceCancel
+                | CommandId::SourceAccept
+                | CommandId::SourceOpenToSide
+        )
 }
 impl State {
     pub(super) fn source_visible(&self) -> bool {
@@ -130,6 +131,14 @@ impl State {
             && !context.has_selection
             && !context.rectangular_selection
             && registry.supports_document(&self.workbench, SourceMode::Rename);
+        context.source_review_available = self
+            .progress_schema
+            .supports_review(&self.workbench, self.project_root.as_deref());
+        context.source_oo_available = self
+            .workbench
+            .active_path()
+            .and_then(|path| path.extension())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("cls"));
         context.source_calls_available =
             encoded && registry.resolve(language, SourceMode::Calls).is_some();
         context.source_dependencies_available = encoded
@@ -142,7 +151,11 @@ impl State {
         context.source_lsp_available =
             registry.supports_lsp(&self.workbench, self.project_root.as_deref());
         let rename = self.source_gui.rename.is_some();
-        let can_accept = !rename && controller.mode() != Some(SourceMode::Rename);
+        let can_accept = !rename
+            && !matches!(
+                controller.mode(),
+                Some(SourceMode::Rename | SourceMode::ReviewEdit(_))
+            );
         context.source_active = rename
             || controller.mode().is_some()
                 && !matches!(
@@ -158,7 +171,16 @@ impl State {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
-        let catalog = if matches!(mode, SourceMode::Symbols | SourceMode::CatalogXref) {
+        let catalog = if matches!(mode, SourceMode::ReviewEdit(_)) {
+            let Some(provider) = self
+                .progress_schema
+                .review(&self.workbench, self.project_root.as_deref())
+            else {
+                self.status = "Abre un archivo ABL con codificación elegida".into();
+                return;
+            };
+            Some(provider)
+        } else if matches!(mode, SourceMode::Symbols | SourceMode::CatalogXref) {
             self.progress_schema
                 .outline(&self.workbench, self.project_root.as_deref())
         } else if mode.is_catalog() {
@@ -214,6 +236,10 @@ impl State {
         };
     }
     pub(super) fn source_command(&mut self, command: CommandId) -> Action {
+        if let Some(action) = jc_app::source_services::ReviewedEdit::from_command(command) {
+            self.request_source(SourceMode::ReviewEdit(action));
+            return Action::None;
+        }
         match command {
             CommandId::ViewSymbols => self.request_source(SourceMode::Symbols),
             CommandId::SourceReferences => self.request_source(SourceMode::References),
@@ -453,6 +479,30 @@ impl State {
         if self.rename_key(code, modifiers) {
             return Action::None;
         }
+        if matches!(
+            self.source_gui.controller.mode(),
+            Some(SourceMode::ReviewEdit(_))
+        ) {
+            if code == 0x78 && modifiers == Modifiers::NONE
+                || code == 0x0d && modifiers == Modifiers::CTRL
+            {
+                match self
+                    .source_gui
+                    .controller
+                    .confirm_review(&mut self.workbench, self.project_root.as_deref())
+                {
+                    Ok(()) => {
+                        self.close_source_ui();
+                        self.status = "Cambios aplicados · un paso para deshacer".into();
+                    }
+                    Err(error) => self.status = error,
+                }
+                return Action::None;
+            }
+            if code == 0x0d {
+                return Action::None;
+            }
+        }
         match code {
             0x74 if modifiers == Modifiers::NONE => {
                 return self.source_command(CommandId::SourceRefresh)
@@ -654,7 +704,12 @@ impl State {
                 draft: "Servicios locales de código",
                 policy:
                     "Evidencia léxica | captura acotada | aceptación explícita | sin AVM/indexador",
-                footer: if reviewing {
+                footer: if matches!(
+                    self.source_gui.controller.mode(),
+                    Some(SourceMode::ReviewEdit(_))
+                ) {
+                    "F9/Ctrl+Intro aplica todo | Flechas revisan | Esc cancela"
+                } else if reviewing {
                     "F9/Ctrl+Intro aplica todo | F2 edita | Flechas recorren | Esc cancela"
                 } else {
                     "Flechas/Inicio/Fin eligen | Intro acepta | Ctrl+Intro al lado | F5 actualiza | Esc"
@@ -1350,6 +1405,51 @@ mod tests {
             source.replace("contador", "acumulado").as_bytes()
         );
         assert!(!state.source_visible());
+        state.workbench.undo().unwrap();
+        assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+    }
+    #[test]
+    fn source_gui_reviewed_prototype_rejects_stale_preview_and_undoes_once() {
+        let source = "FUNCTION calcular RETURNS INTEGER (INPUT valor AS INTEGER) FORWARD.\r\nFUNCTION calcular RETURNS INT64 (INPUT valor AS INT64):\r\nRETURN valor.\r\nEND FUNCTION.";
+        let expected = source.replacen(
+            "INTEGER (INPUT valor AS INTEGER)",
+            "INT64 (INPUT valor AS INT64)",
+            1,
+        );
+        let mut state = editor("gui-prototype.p", source, TextEncoding::Windows1252);
+        let position = jc_text::TextPosition {
+            line: 0,
+            column: 11,
+        };
+        state.workbench.go_to_position(position).unwrap();
+        state.execute_menu(CommandId::SourceUpdatePrototype);
+        finish(&mut state);
+        let items = state.source_gui.controller.items();
+        assert!(
+            items
+                .iter()
+                .any(|item| item.label.starts_with("- RETURNS INTEGER")),
+            "{}",
+            state.status
+        );
+        assert!(items
+            .iter()
+            .any(|item| item.label.starts_with("+ RETURNS INT64")));
+        state.source_key(0x0d, Modifiers::NONE);
+        state.source_command(CommandId::SourceAccept);
+        assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+
+        state.workbench.move_left(false).unwrap();
+        state.source_key(0x0d, Modifiers::CTRL);
+        assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+        assert_eq!(state.source_gui.controller.state(), SourceState::Stale);
+
+        state.workbench.go_to_position(position).unwrap();
+        state.source_command(CommandId::SourceUpdatePrototype);
+        finish(&mut state);
+        state.source_key(0x78, Modifiers::NONE);
+        assert!(!state.source_visible());
+        assert_eq!(state.workbench.active_bytes().unwrap(), expected.as_bytes());
         state.workbench.undo().unwrap();
         assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
     }
