@@ -24,6 +24,7 @@ impl TuiApp {
     pub(super) fn clipboard_field_budget(&self) -> Option<usize> {
         match &self.overlay {
             UiOverlay::DataConnections => self.data_connection_paste_budget(),
+            UiOverlay::BrowseRecords => self.browse_filter_paste_budget(),
             UiOverlay::Find { input } => Some(4096usize.saturating_sub(input.len()).max(1)),
             UiOverlay::Replace {
                 find,

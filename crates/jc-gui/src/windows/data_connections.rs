@@ -17,15 +17,17 @@ enum Choice {
     Edit(usize, Engine),
     New(Engine),
     RefreshSchema,
+    BrowseRecords,
 }
 
 enum Outcome {
     Saved,
     Cancelled,
     RefreshSchema,
+    BrowseRecords,
 }
 
-fn choices(profiles: &[Draft], has_abl_profile: bool) -> Vec<(Choice, String)> {
+fn choices(profiles: &[Draft], has_abl_profile: bool, has_catalog: bool) -> Vec<(Choice, String)> {
     let refresh_available = has_abl_profile
         && profiles
             .iter()
@@ -46,6 +48,10 @@ fn choices(profiles: &[Draft], has_abl_profile: bool) -> Vec<(Choice, String)> {
                 "OpenEdge · Actualizar esquema ABL".into(),
             )
         }))
+        .chain(
+            (refresh_available && has_catalog)
+                .then(|| (Choice::BrowseRecords, "OpenEdge · Ver registros".into())),
+        )
         .chain(Engine::ALL.into_iter().map(|engine| {
             (
                 Choice::New(engine),
@@ -69,12 +75,13 @@ fn engine_details(engine: Engine, has_abl_profile: bool) -> &'static str {
     }
 }
 
-unsafe fn manage(hwnd: Hwnd, root: &Path) -> Result<Outcome, String> {
+unsafe fn manage(hwnd: Hwnd, root: &Path, has_catalog: bool) -> Result<Outcome, String> {
     let mut store = ProfileStore::open(root)?;
     let has_abl_profile = root.join(".cide/progress.local.ini").is_file();
-    let (actions, labels): (Vec<_>, Vec<_>) = choices(store.profiles(), has_abl_profile)
-        .into_iter()
-        .unzip();
+    let (actions, labels): (Vec<_>, Vec<_>) =
+        choices(store.profiles(), has_abl_profile, has_catalog)
+            .into_iter()
+            .unzip();
     loop {
         let Some(selection) = form::choose(
             hwnd,
@@ -89,6 +96,7 @@ unsafe fn manage(hwnd: Hwnd, root: &Path) -> Result<Outcome, String> {
             Choice::Edit(index, engine) => (Some(index), engine),
             Choice::New(engine) => (None, engine),
             Choice::RefreshSchema => return Ok(Outcome::RefreshSchema),
+            Choice::BrowseRecords => return Ok(Outcome::BrowseRecords),
         };
         let defaults = Draft::new(engine);
         let initial = editing.map_or(&defaults, |index| &store.profiles()[index]);
@@ -129,21 +137,29 @@ unsafe fn manage(hwnd: Hwnd, root: &Path) -> Result<Outcome, String> {
 }
 
 pub(super) unsafe fn open(hwnd: Hwnd) {
-    let root = owner(hwnd).and_then(|owner| owner.state.borrow().project_root.clone());
+    let Some(window) = owner(hwnd) else {
+        return;
+    };
+    let (root, has_catalog) = {
+        let state = window.state.borrow();
+        (
+            state.project_root.clone(),
+            state.progress_schema.has_catalog(),
+        )
+    };
     let result = match root.as_deref() {
-        Some(root) => manage(hwnd, root),
+        Some(root) => manage(hwnd, root, has_catalog),
         None => Err("Abre una carpeta de proyecto para configurar conexiones de datos".into()),
     };
-    if matches!(result, Ok(Outcome::RefreshSchema)) {
+    let command = match result {
+        Ok(Outcome::RefreshSchema) => Some(CommandId::ProgressRefreshSchema),
+        Ok(Outcome::BrowseRecords) => Some(CommandId::ProgressBrowseRecords),
+        _ => None,
+    };
+    if let Some(command) = command {
         if owner(hwnd).is_some_and(|owner| owner.state.borrow().project_root == root) {
-            // The modal has closed. Use the same worker and command path as
-            // Herramientas → Actualizar esquema de base de datos.
-            SendMessageW(
-                hwnd,
-                WM_COMMAND,
-                command_id(CommandId::ProgressRefreshSchema),
-                0,
-            );
+            // The modal has closed. Revalidate through the ordinary menu route.
+            SendMessageW(hwnd, WM_COMMAND, command_id(command), 0);
         }
         return;
     }
@@ -151,7 +167,7 @@ pub(super) unsafe fn open(hwnd: Hwnd) {
         let mut state = owner.state.borrow_mut();
         match result {
             Ok(Outcome::Saved) => state.status = "Perfil de conexión guardado".into(),
-            Ok(Outcome::Cancelled | Outcome::RefreshSchema) => {}
+            Ok(Outcome::Cancelled | Outcome::RefreshSchema | Outcome::BrowseRecords) => {}
             Err(error) => state.error(error),
         }
     }
@@ -165,12 +181,13 @@ mod tests {
     fn project_connections_lists_saved_profiles_before_new_engines() {
         let mut profile = Draft::new(Engine::OpenEdge);
         profile.set_value(0, "Inventario").unwrap();
-        let items = choices(&[profile], true);
-        assert_eq!(items.len(), 2 + Engine::ALL.len());
+        let items = choices(&[profile], true, true);
+        assert_eq!(items.len(), 3 + Engine::ALL.len());
         assert!(items[0].1.starts_with("Inventario · "));
         assert_eq!(items[0].0, Choice::Edit(0, Engine::OpenEdge));
         assert_eq!(items[1].0, Choice::RefreshSchema);
-        for ((action, item), engine) in items[2..].iter().zip(Engine::ALL) {
+        assert_eq!(items[2].0, Choice::BrowseRecords);
+        for ((action, item), engine) in items[3..].iter().zip(Engine::ALL) {
             assert_eq!(*action, Choice::New(engine));
             assert_eq!(*item, format!("Nueva conexión · {}", engine.label()));
         }
@@ -183,9 +200,16 @@ mod tests {
             (vec![Draft::new(Engine::OpenEdge)], false),
             (Vec::new(), true),
         ] {
-            assert!(choices(&profiles, has_abl_profile)
+            assert!(choices(&profiles, has_abl_profile, true)
                 .iter()
-                .all(|(action, _)| *action != Choice::RefreshSchema));
+                .all(|(action, _)| !matches!(
+                    action,
+                    Choice::RefreshSchema | Choice::BrowseRecords
+                )));
         }
+        let profile = Draft::new(Engine::OpenEdge);
+        assert!(choices(&[profile], true, false)
+            .iter()
+            .all(|(action, _)| *action != Choice::BrowseRecords));
     }
 }

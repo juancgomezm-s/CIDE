@@ -39,6 +39,7 @@ pub enum UiOverlay {
         selected: usize,
     },
     DataConnections,
+    BrowseRecords,
     None,
     Prompt {
         kind: PromptKind,

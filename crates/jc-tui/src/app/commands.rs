@@ -258,11 +258,12 @@ impl TuiApp {
                 self.cancel_explorer();
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
             }
+            ProgressBrowseRecords => self.open_record_browser(),
             ViewDatabase => {
                 if let Some(first) = self.progress_schema.show(&mut self.workbench) {
                     self.show_bottom(BottomPanel::Output);
                     self.select_schema_output(first);
-                    self.status = "Esquema ABL · consulta Salida".into();
+                    self.status = "Esquema ABL · consulta Salida · Ver → Ver registros ABL".into();
                 }
             }
             ViewGit => {

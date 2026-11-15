@@ -241,6 +241,7 @@ impl Workbench {
             | MenuHelp => Ok(CommandOutcome::OpenMenu(command)),
             ViewExplorer
             | ViewDatabase
+            | ProgressBrowseRecords
             | ViewGit
             | GitDiffHead
             | GitDiffIndex

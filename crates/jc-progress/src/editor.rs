@@ -13,6 +13,10 @@ use jc_app::{
 };
 use jc_files::read_in_root;
 use jc_text::{DecodedScalars, TextEncoding};
+pub use schema::browse::{
+    BrowseController, BrowseFilter, BrowsePage, BrowseRequest, BrowseTable,
+    BROWSE_MAX_FILTER_BYTES, BROWSE_PAGE_SIZE,
+};
 pub use schema::{SchemaController, SchemaUpdate};
 use std::{
     fs::{self, File},

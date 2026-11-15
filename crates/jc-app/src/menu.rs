@@ -273,6 +273,7 @@ pub fn default_menu_model() -> MenuModel {
                 command(ViewProblems),
                 command(ViewOutput),
                 command(ViewDatabase),
+                command(ProgressBrowseRecords),
                 command(ViewSearchResults),
                 command(ViewToggleBottomPanel),
                 SEP,

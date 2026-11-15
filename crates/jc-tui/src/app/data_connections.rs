@@ -82,6 +82,11 @@ impl TuiApp {
             self.dispatch(CommandId::ProgressRefreshSchema);
             return;
         }
+        if key.code == KeyCode::F(6) && self.can_browse_connection_records() {
+            self.close_overlay();
+            self.dispatch(CommandId::ProgressBrowseRecords);
+            return;
+        }
         let Some(dialog) = self.data_connections.as_mut() else {
             return;
         };
@@ -173,6 +178,20 @@ impl TuiApp {
     }
 
     pub(crate) fn can_refresh_connection_schema(&self) -> bool {
+        self.openedge_profile_selected()
+            && self
+                .registry
+                .is_enabled(CommandId::ProgressRefreshSchema, &self.command_context())
+    }
+
+    pub(crate) fn can_browse_connection_records(&self) -> bool {
+        self.openedge_profile_selected()
+            && self
+                .registry
+                .is_enabled(CommandId::ProgressBrowseRecords, &self.command_context())
+    }
+
+    fn openedge_profile_selected(&self) -> bool {
         let Some(dialog) = &self.data_connections else {
             return false;
         };
@@ -183,9 +202,6 @@ impl TuiApp {
                 .profile_row
                 .checked_sub(1)
                 .is_some_and(|index| dialog.store.profiles()[index].engine() == Engine::OpenEdge)
-            && self
-                .registry
-                .is_enabled(CommandId::ProgressRefreshSchema, &self.command_context())
     }
 
     pub(super) fn data_connection_paste_budget(&self) -> Option<usize> {

@@ -14,6 +14,7 @@ use std::{
     time::Duration,
 };
 
+pub(super) mod browse;
 mod completion;
 pub(super) use completion::reference_name_at;
 

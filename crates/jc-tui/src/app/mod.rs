@@ -1,3 +1,4 @@
+pub(crate) mod browse_records;
 mod clipboard;
 #[cfg(test)]
 mod clipboard_tests;
@@ -109,6 +110,8 @@ pub struct TuiApp {
     pub(crate) panels: PanelManager,
     pub(crate) overlay: UiOverlay,
     pub(crate) data_connections: Option<data_connections::ConnectionsDialog>,
+    pub(crate) record_browser: Option<browse_records::RecordBrowser>,
+    progress_browse: jc_progress::editor::BrowseController,
     pub(crate) last_frame_height: u16,
     clipboard_transport: Option<Box<dyn clipboard::ClipboardTransport>>,
     pub(crate) status: String,
@@ -198,6 +201,8 @@ impl TuiApp {
             panels: PanelManager::default(),
             overlay: UiOverlay::None,
             data_connections: None,
+            record_browser: None,
+            progress_browse: Default::default(),
             last_frame_height: 24,
             clipboard_transport: None,
             find_cursor: usize::MAX,
@@ -369,6 +374,7 @@ impl TuiApp {
         );
         update.changed |= self.poll_symbol_path();
         update.changed |= self.poll_progress_schema();
+        update.changed |= self.poll_progress_browse();
         update.changed |= self.open_diff.tick(&self.workbench, &mut self.tasks);
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
         let revision_changed = self.git_revision.poll(self.project_root.as_deref());

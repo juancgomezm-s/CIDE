@@ -1,17 +1,17 @@
 # Expansión DataDigger en CIDE
 
-**Estado:** configuración de perfiles por proyecto en GUI y TUI. La expansión
-incluye **Progress OpenEdge 10.0B y 10.2B**, **PostgreSQL** y **MySQL**, con
-validación independiente por motor. El navegador de registros y los proveedores
-SQL siguen pendientes.
+**Estado:** configuración de perfiles por proyecto y primera cuadrícula de
+lectura OpenEdge en GUI y TUI. La expansión incluye edición con respaldo y
+restauración, compatibilidad con **OpenEdge 10.0B y 10.2B**, y proveedores
+**PostgreSQL** y **MySQL**, con validación independiente por motor.
 
 ## Experiencia en la GUI
 
-Desde el Explorador de esquemas, la acción **Ver registros** abrirá una
-pestaña de CIDE con una cuadrícula nativa, en español y con el tema activo.
-La primera entrega mostrará páginas de registros, filtros por columna,
-ordenación y un detalle del registro seleccionado. La cuadrícula preparará
-solo las filas visibles y solicitará páginas en segundo plano.
+Después de **Actualizar esquema ABL**, la acción **Ver → Ver registros ABL**
+abre un selector de tabla. También se puede abrir desde **Conexiones de datos**
+con el perfil OpenEdge. La GUI usa un diálogo con una cuadrícula nativa. La
+TUI muestra la cuadrícula y el detalle de celda con el teclado. Ambas consultan
+páginas en segundo plano y permiten filtrar y recorrer el índice en ambos sentidos.
 
 El explorador usará el catálogo local de cada conexión. **Actualizar
 esquema** minará los metadatos de la conexión elegida y publicará una
@@ -32,6 +32,32 @@ OpenEdge, el selector ofrece **Actualizar esquema ABL**. En la TUI se
 ejecuta con F5 sobre ese perfil. La operación reutiliza el trabajo ABL del
 editor y publica el resultado en **Salida** o **Problemas**. En la TUI,
 F9 guarda el formulario y Esc vuelve a la lista sin guardar el borrador.
+
+### Lectura de registros OpenEdge
+
+Para esta primera cuadrícula, usa una copia cerrada de la base y un `.pf`
+dentro del proyecto, con una conexión local por línea. Por ejemplo:
+
+```text
+-db "C:/bases/demo/sports2000" -ld sports2000 -1 -RO
+```
+
+El lector inicia una sesión independiente para la base seleccionada. La AVM
+confirma que la conexión es de solo lectura y el auxiliar desactiva los
+disparadores FIND antes de abrir una consulta `NO-LOCK`. El orden usa el
+índice primario único observado y revalidado en la base. Cada página admite
+20 filas y hasta 12 columnas escalares. La primera versión admite un filtro
+exacto de texto o entero y distingue `?` de una cadena vacía. Los filtros de
+texto siguen las reglas de comparación de la AVM.
+
+La prueba del lector con Sports2000 en OpenEdge 11.7 verificó dos páginas
+de `Customer`, orden inverso, filtros de texto y entero y los bytes de la
+base después de consultar. Las pruebas de GUI con ventana oculta y las de
+la TUI verificaron la presentación de páginas y su interacción por separado.
+
+Con un esquema cargado, en la TUI se puede usar F6 sobre el perfil OpenEdge.
+Dentro de la cuadrícula, **RePág** y **AvPág** cambian de página, **F** aplica
+un filtro, **X** lo quita, **O** invierte el orden e **Intro** abre el detalle.
 
 | Motor | Configuración |
 | --- | --- |
@@ -126,7 +152,20 @@ un identificador que permita descartar resultados de filtros anteriores.
 La primera página se entregará sin esperar el conteo total. La paginación
 usará orden estable cuando haya un índice único compatible. Si falta un
 orden adecuado, se limitará la navegación a un cursor secuencial acotado.
-Las operaciones de edición, borrado e importación son una expansión aparte.
+## Edición con respaldo y restauración
+
+Antes de modificar o borrar un registro, CIDE deberá localizarlo por su clave
+y capturar sus valores tipados actuales bajo control de concurrencia. El
+respaldo se escribirá y verificará antes de aplicar el cambio. Si el respaldo
+falla, la operación en la base se cancela. El historial de respaldos mostrará
+la base, tabla, clave, fecha y estado de cada operación.
+
+Restaurar tendrá vista previa y una transacción propia. Si el registro cambió
+desde la operación respaldada, CIDE mostrará el conflicto antes de aplicar
+otra escritura. Para las altas se registrará la ausencia anterior y la clave
+de la fila creada, para que una reversión pueda identificarla y detectar
+modificaciones posteriores. La recuperación distinguirá una operación
+confirmada de una interrumpida entre el respaldo y la escritura.
 
 ## Bloques y criterios de aceptación
 

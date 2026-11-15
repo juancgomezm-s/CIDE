@@ -95,6 +95,7 @@ pub enum CommandId {
     ViewAppearance,
     ViewEditorZoom,
     ViewDatabase,
+    ProgressBrowseRecords,
     ViewGit,
     GitDiffHead,
     GitDiffIndex,
@@ -804,6 +805,12 @@ pub fn default_registry() -> CommandRegistry {
             always
         ),
         spec!(ViewDatabase, View, "Ver esquema ABL", database_schema),
+        spec!(
+            ProgressBrowseRecords,
+            View,
+            "Ver registros ABL…",
+            database_schema
+        ),
         spec!(
             ViewAppearance,
             View,

@@ -54,6 +54,16 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
     let top = y + 2;
     match &dialog.stage {
         Stage::Profiles => {
+            let mut rows = rows;
+            if app.can_browse_connection_records() {
+                screen.text_styled(
+                    left,
+                    y + height - 3,
+                    &clip("F6 ver registros ABL", columns),
+                    CellStyle::Dim,
+                );
+                rows = rows.saturating_sub(1);
+            }
             let selected = dialog.profile_row();
             let start = first_row(selected, rows, dialog.store.profiles().len() + 1);
             let labels = std::iter::once("Nueva conexión…".to_owned()).chain(
@@ -130,7 +140,7 @@ fn label_width(columns: u16) -> u16 {
     (columns * 2 / 3).min(31)
 }
 
-fn value_offset(value: &str, cursor: usize, columns: usize) -> usize {
+pub(super) fn value_offset(value: &str, cursor: usize, columns: usize) -> usize {
     let prefix = &value[..cursor];
     let mut hidden = jc_text::grapheme::width(prefix).saturating_sub(columns);
     let mut offset = 0;

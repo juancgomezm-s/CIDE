@@ -15,6 +15,9 @@ impl TuiApp {
         self.explorer.set_root(root.clone())?;
         self.tasks.cancel_all();
         self.progress_schema.clear();
+        if self.record_browser.is_some() {
+            self.close_overlay();
+        }
         self.workbench.reset_task_panels();
         self.bottom_output_anchor = None;
         self.explorer_view = Default::default();

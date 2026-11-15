@@ -1,3 +1,4 @@
+mod browse_records;
 mod data_connections;
 mod file_browser;
 mod git_code;

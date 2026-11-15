@@ -49,6 +49,7 @@ mod project_paint;
 mod project_panel;
 mod project_results;
 mod project_smoke;
+mod records;
 mod recovery;
 mod rectangle_input;
 mod rectangle_smoke;
@@ -222,6 +223,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "Actualizar esquema de base de datos",
     ),
     (258, CommandId::ViewDatabase, "Ver esquema ABL"),
+    (269, CommandId::ProgressBrowseRecords, "Ver registros…"),
     (
         268,
         CommandId::ProjectDataConnections,
@@ -459,6 +461,7 @@ enum Action {
     ExportGitPatch(Arc<jc_app::git_revision::RevisionComparison>),
     ChooseFolder,
     DataConnections,
+    BrowseRecords,
     Open(bool),
     SaveAs,
     SaveAll,
@@ -946,6 +949,14 @@ impl State {
             CommandId::ViewDatabase => {
                 self.show_progress_schema();
                 return Action::None;
+            }
+            CommandId::ProgressBrowseRecords => {
+                if self.progress_schema.busy() || self.jobs.has_job(jc_progress::editor::JOB_KEY) {
+                    self.error("Espera a que termine la tarea ABL antes de consultar registros");
+                    return Action::None;
+                }
+                self.close_selector();
+                return Action::BrowseRecords;
             }
             command if jc_progress::editor::action(command).is_some() => {
                 if self.progress_schema.busy() {
@@ -2378,6 +2389,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::PasteReplacement(generation) => clipboard_flow::paste_replacement(hwnd, generation),
         Action::SaveAll => save_flow::perform(hwnd),
         Action::DataConnections => data_connections::open(hwnd),
+        Action::BrowseRecords => records::open(hwnd),
         Action::ChooseFolder => {
             let initial = owner(hwnd).and_then(|o| o.state.borrow().project_root.clone());
             let selected = folder::choose_folder(hwnd, initial.as_deref());

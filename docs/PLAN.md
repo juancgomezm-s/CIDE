@@ -1251,7 +1251,8 @@ para ambos proveedores, con apertura lateral y revalidación antes del salto.
 
 ## Expansión DataDigger
 
-Planificado como navegador de registros de solo lectura en una cuadrícula
-nativa de CIDE, con un auxiliar ABL y verificación independiente en OpenEdge
-10.0B y 10.2B. Incluye perfiles de conexión y minería de esquema para
-PostgreSQL y MySQL con la misma cuadrícula. [Plan de expansión](EXPANSION_DATADIGGER.md).
+La primera cuadrícula permite consultar registros ABL y fue validada con
+Sports2000 en OpenEdge 11.7. La expansión incluye edición con respaldo
+verificado antes de cada modificación y restauración transaccional. Quedan
+la validación en OpenEdge 10.0B y 10.2B y los proveedores PostgreSQL y MySQL
+para la misma cuadrícula. [Plan de expansión](EXPANSION_DATADIGGER.md).

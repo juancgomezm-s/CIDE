@@ -4,6 +4,7 @@ use super::{dpi, ffi::*, paint, shell, wide};
 use std::cell::Cell;
 
 pub(super) mod form;
+pub(super) mod records;
 
 #[repr(C)]
 struct DrawItem {
@@ -226,6 +227,22 @@ fn pack_template(mut words: Vec<u16>) -> Vec<u32> {
 }
 
 unsafe fn paint_button(item: &DrawItem, dialog: &Dialog<'_>) -> Result<(), String> {
+    paint_button_label(
+        item,
+        dialog,
+        if item.control_id == 1 {
+            dialog.accept
+        } else {
+            "Cancelar"
+        },
+    )
+}
+
+unsafe fn paint_button_label(
+    item: &DrawItem,
+    dialog: &Dialog<'_>,
+    label: &str,
+) -> Result<(), String> {
     let background = if item.state & (1 | 16) != 0 {
         shell::SELECTED
     } else {
@@ -234,12 +251,15 @@ unsafe fn paint_button(item: &DrawItem, dialog: &Dialog<'_>) -> Result<(), Strin
     paint::fill(item.dc, item.rect, background)?;
     let previous = SelectObject(item.dc, dialog.font);
     let mode = SetBkMode(item.dc, 1);
-    SetTextColor(item.dc, shell::TEXT);
-    let label = wide(if item.control_id == 1 {
-        dialog.accept
-    } else {
-        "Cancelar"
-    });
+    SetTextColor(
+        item.dc,
+        if item.state & 4 != 0 {
+            shell::MUTED
+        } else {
+            shell::TEXT
+        },
+    );
+    let label = wide(label);
     let mut rect = item.rect;
     let drawn = DrawTextW(item.dc, label.as_ptr(), -1, &mut rect, 1 | 4 | 0x20 | 0x800);
     SetBkMode(item.dc, mode);

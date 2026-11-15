@@ -1,4 +1,4 @@
-//! Themed native controls for project configuration. The dialog owns its
+//! Themed native controls for selection and project configuration. The dialog owns its
 //! temporary values and invokes the caller only for an explicit acceptance.
 use super::*;
 use std::cell::RefCell;
@@ -318,7 +318,7 @@ unsafe fn show(form: &Form<'_>) -> Result<bool, String> {
         (form as *const Form<'_>) as isize,
     );
     if result == -1 || (result == 0 && form.dialog.failed.get()) {
-        return Err("No se pudo mostrar el formulario de conexiones".into());
+        return Err("No se pudo mostrar el formulario de CIDE".into());
     }
     Ok(result == 1)
 }
