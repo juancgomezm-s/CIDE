@@ -320,6 +320,14 @@ impl TuiApp {
         self.syntax_targets = [None, None];
         let layout = FrameLayout::new(self, width, height);
         self.last_frame_height = layout.height;
+        if let Some(review) = self
+            .record_browser
+            .as_mut()
+            .and_then(|browser| browser.review.as_mut())
+        {
+            review.presented = layout.width >= super::browse_records::REVIEW_MIN_WIDTH
+                && layout.height >= super::browse_records::REVIEW_MIN_HEIGHT;
+        }
         self.file_browser.prepare(layout.height, layout.width);
         let mut glyph_budget = jc_app::MAX_PRESENTATION_TEXT_BYTES;
         let mut primary = EditorText::default();

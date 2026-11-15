@@ -251,6 +251,8 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
         if let Some(probe) = form.probe {
             probe.run(hwnd, form);
         }
+        #[cfg(test)]
+        drive_scripted_form(hwnd, form);
         return 0;
     }
     let data = GetWindowLongPtrW(hwnd, -21);
@@ -329,8 +331,15 @@ pub(in crate::windows) unsafe fn choose(
     message: &str,
     items: &[String],
 ) -> Result<Option<usize>, String> {
+    choose_dialog(create(parent, title, message, "Continuar")?, items)
+}
+
+pub(super) unsafe fn choose_dialog(
+    dialog: Dialog<'_>,
+    items: &[String],
+) -> Result<Option<usize>, String> {
     let form = Form {
-        dialog: create(parent, title, message, "Continuar")?,
+        dialog,
         mode: Mode::Choose(items),
         selection: Cell::new(None),
         #[cfg(test)]
@@ -347,13 +356,64 @@ pub(in crate::windows) unsafe fn edit<'a>(
     fields: &'a [Field<'a>],
     submit: &'a mut Submit<'a>,
 ) -> Result<bool, String> {
+    edit_dialog(create(parent, title, message, "Guardar")?, fields, submit)
+}
+
+pub(super) unsafe fn edit_dialog<'a>(
+    dialog: Dialog<'a>,
+    fields: &'a [Field<'a>],
+    submit: &'a mut Submit<'a>,
+) -> Result<bool, String> {
     show(&Form {
-        dialog: create(parent, title, message, "Guardar")?,
+        dialog,
         mode: Mode::Edit(fields, RefCell::new(submit)),
         selection: Cell::new(None),
         #[cfg(test)]
         probe: None,
     })
+}
+
+#[cfg(test)]
+thread_local! {
+    static SCRIPTED_VALUE: RefCell<Option<(String, String)>> = const { RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(super) fn script_record_edit(column: &str, value: &str) {
+    SCRIPTED_VALUE.set(Some((column.into(), value.into())));
+}
+
+#[cfg(test)]
+unsafe fn drive_scripted_form(hwnd: Hwnd, form: &Form<'_>) {
+    let instructed = SCRIPTED_VALUE.with(|script| {
+        let mut script = script.borrow_mut();
+        match (&form.mode, form.dialog.title, script.as_ref()) {
+            (Mode::Choose(items), "Editar columna", Some((column, _))) => {
+                let index = items
+                    .iter()
+                    .position(|item| item == column)
+                    .unwrap_or(usize::MAX);
+                let list = GetDlgItem(hwnd, i32::from(LIST));
+                SendMessageW(list, LB_SETCURSEL, index, 0);
+                Some(())
+            }
+            (Mode::Edit(_, _), "Editar registro", Some(_)) => {
+                let (_, value) = script.take()?;
+                SetWindowTextW(
+                    GetDlgItem(hwnd, i32::from(EDIT_START)),
+                    wide(&value).as_ptr(),
+                );
+                Some(())
+            }
+            _ => None,
+        }
+    });
+    if instructed.is_some() {
+        ShowWindow(hwnd, 0);
+        // If admission failed, leave the test with its assertion rather than an open modal.
+        PostMessageW(hwnd, WM_COMMAND, usize::from(CANCEL), 0);
+        SendMessageW(hwnd, WM_COMMAND, usize::from(ACCEPT), 0);
+    }
 }
 
 #[cfg(test)]

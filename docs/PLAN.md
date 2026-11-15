@@ -1251,8 +1251,10 @@ para ambos proveedores, con apertura lateral y revalidación antes del salto.
 
 ## Expansión DataDigger
 
-La primera cuadrícula permite consultar registros ABL y fue validada con
-Sports2000 en OpenEdge 11.7. La expansión incluye edición con respaldo
-verificado antes de cada modificación y restauración transaccional. Quedan
-la validación en OpenEdge 10.0B y 10.2B y los proveedores PostgreSQL y MySQL
-para la misma cuadrícula. [Plan de expansión](EXPANSION_DATADIGGER.md).
+La cuadrícula consulta registros ABL, permite editar celdas de texto y entero
+en copias locales autorizadas y restaura el último cambio confirmado. La
+edición y restauración requieren vista previa y respaldo verificado antes de
+escribir. El recorrido GUI/TUI y los conflictos se validaron con Sports2000
+en OpenEdge 11.7. Quedan las altas y borrados, la validación en OpenEdge
+10.0B y 10.2B y los proveedores PostgreSQL y MySQL para la misma cuadrícula.
+[Plan de expansión](EXPANSION_DATADIGGER.md).

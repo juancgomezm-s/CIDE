@@ -112,6 +112,7 @@ pub struct TuiApp {
     pub(crate) data_connections: Option<data_connections::ConnectionsDialog>,
     pub(crate) record_browser: Option<browse_records::RecordBrowser>,
     progress_browse: jc_progress::editor::BrowseController,
+    progress_records: jc_progress::editor::RecordController,
     pub(crate) last_frame_height: u16,
     clipboard_transport: Option<Box<dyn clipboard::ClipboardTransport>>,
     pub(crate) status: String,
@@ -203,6 +204,7 @@ impl TuiApp {
             data_connections: None,
             record_browser: None,
             progress_browse: Default::default(),
+            progress_records: Default::default(),
             last_frame_height: 24,
             clipboard_transport: None,
             find_cursor: usize::MAX,
@@ -486,6 +488,10 @@ impl TuiApp {
     }
 
     pub(crate) fn request_exit(&mut self) {
+        if self.progress_records_busy() {
+            self.status = "Espera a que termine la operación de registros ABL".into();
+            return;
+        }
         match self.checkpoint_session() {
             Ok(()) => self.should_exit = true,
             Err(error) => self.status = format!("No se cerró el editor: {error}"),

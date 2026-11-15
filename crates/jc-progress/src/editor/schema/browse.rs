@@ -17,6 +17,7 @@ use std::{
 };
 
 pub const BROWSE_PAGE_SIZE: usize = 20;
+pub(in crate::editor) mod edit;
 pub const BROWSE_MAX_FILTER_BYTES: usize = 256;
 const MAX_COLUMNS: usize = 12;
 const MAX_OFFSET: usize = 2_000;

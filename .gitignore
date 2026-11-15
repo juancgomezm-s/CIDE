@@ -6,6 +6,7 @@ target/
 *.tmp
 *.local.toml
 /.cide/conexiones.local.json
+**/.cide/respaldos-registros/
 *.local.pf
 *.local.ini
 .env

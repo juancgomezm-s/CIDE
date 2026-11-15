@@ -4,7 +4,10 @@ use super::{
     overlays::{centered, panel},
 };
 use crate::{
-    app::{browse_records::RecordBrowser, TuiApp},
+    app::{
+        browse_records::{RecordBrowser, ValueField},
+        TuiApp,
+    },
     screen::{CellStyle, Screen},
 };
 use jc_progress::editor::BROWSE_PAGE_SIZE;
@@ -50,26 +53,88 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
         } else {
             "ascendente"
         };
-        let heading = format!(
-            "Página {} · Índice {order} · Solo lectura · {title}",
-            page.offset / BROWSE_PAGE_SIZE + 1
-        );
+        let page_number = page.offset / BROWSE_PAGE_SIZE + 1;
+        let heading = if browser.stale() {
+            format!("Página {page_number} sin actualizar · {title}")
+        } else {
+            format!("Página {page_number} · Índice {order} · {title}")
+        };
         draw_line(screen, left, y + 1, columns, &heading, CellStyle::Dim);
 
-        if let Some(field) = &browser.filter {
-            let label = format!("Filtro exacto · {}", page.columns[browser.column]);
+        if let Some(review) = &browser.review {
+            if !review.presented {
+                draw_line(
+                    screen,
+                    left,
+                    y + 2,
+                    columns,
+                    "Amplía la terminal",
+                    CellStyle::Accent,
+                );
+                draw_line(screen, left, y + 3, columns, "Esc cancelar", CellStyle::Dim);
+                return;
+            }
+            let action = if review.preview.restoring {
+                "Restaurar"
+            } else {
+                "Editar"
+            };
+            let label = format!(
+                "{action} · {} · Fila {}",
+                review.preview.column,
+                page.offset + browser.row + 1
+            );
             draw_line(screen, left, y + 2, columns, &label, CellStyle::Accent);
-            let offset = value_offset(&field.value, field.cursor, usize::from(columns - 1));
-            let cursor = grapheme::width(&field.value[offset..field.cursor]) as u16;
-            draw_line(
+            for (after, label, value) in [
+                (false, "Actual", review.preview.before.as_deref()),
+                (true, "Propuesto", review.preview.after.as_deref()),
+            ] {
+                let active = after == review.after_selected;
+                let offset = if active { review.offset } else { 0 };
+                let value = match value {
+                    Some("") => Cow::Borrowed("⟨texto vacío⟩"),
+                    Some(value) => {
+                        let byte = grapheme::graphemes(value)
+                            .take(offset)
+                            .map(str::len)
+                            .sum::<usize>();
+                        Cow::Owned(format!("«{}»", printable(&value[byte..])))
+                    }
+                    None => Cow::Borrowed("⟨desconocido⟩"),
+                };
+                draw_line(
+                    screen,
+                    left,
+                    y + 3 + u16::from(after),
+                    columns,
+                    &format!("{label} · {value}"),
+                    if active {
+                        CellStyle::Reverse
+                    } else {
+                        CellStyle::Normal
+                    },
+                );
+            }
+            (
+                "F9 confirmar · Esc cancelar",
+                "↑↓ elegir valor · ←→ desplazar",
+            )
+        } else if let Some(field) = &browser.edit {
+            let label = format!("Nuevo valor · {}", page.columns[browser.column]);
+            draw_line(screen, left, y + 2, columns, &label, CellStyle::Accent);
+            draw_input(
                 screen,
+                field,
                 left,
                 y + 3,
                 columns,
-                &field.value[offset..],
-                CellStyle::Reverse,
+                !app.progress_records_busy(),
             );
-            screen.set_cursor(left + cursor, y + 3);
+            ("Intro revisar · Esc cancelar", "Ctrl+U borrar valor")
+        } else if let Some(field) = &browser.filter {
+            let label = format!("Filtro exacto · {}", page.columns[browser.column]);
+            draw_line(screen, left, y + 2, columns, &label, CellStyle::Accent);
+            draw_input(screen, field, left, y + 3, columns, true);
             (
                 "Intro aplicar · Esc cancelar",
                 "Coincidencia exacta en texto o enteros",
@@ -92,8 +157,14 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
         } else {
             draw_grid(screen, browser, left, y + 2, columns, rows);
             (
-                "↑↓ filas · ←→ columnas · Intro valor · Esc tablas",
-                "RePág/AvPág página · F filtrar · X quitar · O orden",
+                "↑↓ filas · ←→ columnas · Intro valor · F5 actualizar · Esc tablas",
+                if browser.can_edit() {
+                    "E editar · R restaurar · RePág/AvPág · F filtrar · X quitar · O orden"
+                } else if browser.can_restore() {
+                    "R restaurar · RePág/AvPág · F filtrar · X quitar · O orden"
+                } else {
+                    "RePág/AvPág página · F filtrar · X quitar · O orden"
+                },
             )
         }
     } else {
@@ -124,7 +195,17 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
         ("↑↓ elegir · Intro abrir · Esc cerrar", "")
     };
 
-    if browser.loading() {
+    if app.progress_records_busy() {
+        draw_line(
+            screen,
+            left,
+            status,
+            columns,
+            "Operación de registros ABL en curso…",
+            CellStyle::Accent,
+        );
+        return;
+    } else if browser.loading() {
         draw_line(
             screen,
             left,
@@ -143,7 +224,11 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
             &printable(message),
             CellStyle::Accent,
         );
-    } else if browser.detail.is_none() && browser.filter.is_none() {
+    } else if browser.detail.is_none()
+        && browser.filter.is_none()
+        && browser.edit.is_none()
+        && browser.review.is_none()
+    {
         if let Some((page, filter)) = browser
             .accepted
             .as_ref()
@@ -173,6 +258,29 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
         actions,
         CellStyle::Dim,
     );
+}
+
+fn draw_input(
+    screen: &mut Screen,
+    field: &ValueField,
+    left: u16,
+    y: u16,
+    columns: u16,
+    focused: bool,
+) {
+    let offset = value_offset(&field.value, field.cursor, usize::from(columns - 1));
+    draw_line(
+        screen,
+        left,
+        y,
+        columns,
+        &field.value[offset..],
+        CellStyle::Reverse,
+    );
+    if focused {
+        let cursor = grapheme::width(&field.value[offset..field.cursor]) as u16;
+        screen.set_cursor(left + cursor, y);
+    }
 }
 
 fn draw_grid(

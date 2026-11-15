@@ -1,10 +1,11 @@
-//! Native report control over accepted pages from the read-only ABL worker.
+//! Native record pages and explicitly reviewed ABL updates.
 use super::*;
 use crate::windows::notify::Bridge;
 use jc_app::Wakeup;
 use jc_progress::editor::{
-    BrowseController, BrowseFilter, BrowsePage, BrowseRequest, BrowseTable,
-    BROWSE_MAX_FILTER_BYTES, BROWSE_PAGE_SIZE,
+    BrowseController, BrowseFilter, BrowsePage, BrowseRequest, BrowseTable, RecordController,
+    RecordEvent, RecordPreview, BROWSE_MAX_FILTER_BYTES, BROWSE_PAGE_SIZE,
+    RECORD_EDIT_MAX_VALUE_BYTES,
 };
 use std::{cell::RefCell, path::Path, ptr::null_mut, sync::Arc};
 
@@ -18,16 +19,21 @@ const GRID: u16 = 105;
 const STATUS: u16 = 106;
 const PREVIOUS: u16 = 107;
 const NEXT: u16 = 108;
-const BUTTONS: [(u16, &str); 5] = [
+const EDIT: u16 = 109;
+const RESTORE: u16 = 110;
+const BUTTONS: [(u16, &str); 7] = [
     (APPLY, "Aplicar filtro"),
     (SORT, "Invertir orden"),
     (PREVIOUS, "Anterior"),
     (NEXT, "Siguiente"),
+    (EDIT, "Editar…"),
+    (RESTORE, "Restaurar respaldo…"),
     (CLOSE, "Cerrar"),
 ];
 
 const WM_INITDIALOG: u32 = 0x110;
 const WM_DRAWITEM: u32 = 0x2b;
+const WM_NOTIFY: u32 = 0x4e;
 const WM_SETFONT: u32 = 0x30;
 const WM_CTLCOLORLISTBOX: u32 = 0x134;
 const WM_CTLCOLOREDIT: u32 = 0x133;
@@ -42,15 +48,26 @@ const EM_SETLIMITTEXT: u32 = 0xc5;
 
 const LVM_SETBKCOLOR: u32 = 0x1001;
 const LVM_DELETEALLITEMS: u32 = 0x1009;
+const LVM_GETNEXTITEM: u32 = 0x100c;
 const LVM_GETHEADER: u32 = 0x101f;
+const LVM_ENSUREVISIBLE: u32 = 0x1013;
 const LVM_SETTEXTCOLOR: u32 = 0x1024;
 const LVM_SETTEXTBKCOLOR: u32 = 0x1026;
 const LVM_SETEXTENDEDLISTVIEWSTYLE: u32 = 0x1036;
 const LVM_INSERTITEMW: u32 = 0x104d;
+const LVM_SETITEMSTATE: u32 = 0x102b;
 const LVM_INSERTCOLUMNW: u32 = 0x1061;
 const LVM_SETITEMTEXTW: u32 = 0x1074;
 const HDM_GETITEMW: u32 = 0x120b;
 const HDM_SETITEMW: u32 = 0x120c;
+const LVN_ITEMCHANGED: i32 = -101;
+
+#[repr(C)]
+struct NotifyHeader {
+    window: Hwnd,
+    id: usize,
+    code: i32,
+}
 
 #[link(name = "user32")]
 extern "system" {
@@ -134,10 +151,16 @@ struct Query {
 #[derive(Default)]
 struct PageState {
     worker: BrowseController,
+    records: RecordController,
     accepted: Query,
+    result: Option<BrowsePage>,
     offset: usize,
     has_next: bool,
     pending: Option<Query>,
+    reviewing: bool,
+    applying: bool,
+    record_key: Option<String>,
+    needs_refresh: Option<&'static str>,
 }
 
 struct Browser<'a> {
@@ -147,11 +170,20 @@ struct Browser<'a> {
     page: RefCell<PageState>,
     bridge: Arc<Bridge>,
     wakeup: Wakeup,
+    #[cfg(test)]
+    review_answer: Cell<Option<bool>>,
 }
 
 impl Browser<'_> {
+    fn buttons(&self) -> impl Iterator<Item = (u16, &'static str)> {
+        let editable = self.editable();
+        BUTTONS
+            .into_iter()
+            .filter(move |(id, _)| editable || !matches!(*id, EDIT | RESTORE))
+    }
+
     fn template(&self) -> Vec<u32> {
-        let mut words = template_header(self.dialog.title, 9);
+        let mut words = template_header(self.dialog.title, (4 + self.buttons().count()) as u16);
         let bounds = [0, 0, 1, 1];
         styled_control(
             &mut words,
@@ -165,7 +197,7 @@ impl Browser<'_> {
         styled_control(&mut words, FIELD, bounds, 0x85, "", 0x21_0203);
         styled_control(&mut words, VALUE, bounds, 0x81, "", 0x81_0080);
         styled_control(&mut words, STATUS, bounds, 0x82, "", 0x80);
-        for (id, label) in BUTTONS {
+        for (id, label) in self.buttons() {
             control(&mut words, id, bounds, 0x80, label);
         }
         pack_template(words)
@@ -206,6 +238,12 @@ impl Browser<'_> {
                 return false;
             }
         }
+        if self.editable()
+            && (!place(EDIT, p(220), height - p(46), p(92), p(30))
+                || !place(RESTORE, p(320), height - p(46), p(168), p(30)))
+        {
+            return false;
+        }
         let combo = child(hwnd, FIELD);
         for label in
             std::iter::once("Sin filtro").chain(self.table.columns.iter().map(String::as_str))
@@ -241,15 +279,14 @@ impl Browser<'_> {
         if SetWindowPos(grid, child(hwnd, SORT), 0, 0, 0, 0, 0x13) == 0 {
             return false;
         }
-        EnableWindow(child(hwnd, PREVIOUS), 0);
-        EnableWindow(child(hwnd, NEXT), 0);
+        self.sync_controls(hwnd);
         SetFocus(grid);
         true
     }
 
     unsafe fn submit(&self, hwnd: Hwnd, query: Query, offset: usize) {
         let mut page = self.page.borrow_mut();
-        if page.worker.busy() {
+        if page.busy() {
             return;
         }
         let request = BrowseRequest {
@@ -261,49 +298,73 @@ impl Browser<'_> {
         match page.worker.request(self.root, request, self.wakeup.clone()) {
             Ok(()) => {
                 page.pending = Some(query);
-                set_status(hwnd, "Solo lectura · Consultando registros…");
-                for id in [PREVIOUS, NEXT, SORT, APPLY] {
-                    EnableWindow(child(hwnd, id), 0);
-                }
+                page.status(hwnd, "Consultando registros…");
             }
-            Err(error) => set_status(hwnd, &error),
+            Err(error) => page.status(hwnd, &error),
         }
+        drop(page);
+        self.sync_controls(hwnd);
     }
 
     unsafe fn poll(&self, hwnd: Hwnd) {
         self.bridge.acknowledge();
         let mut page = self.page.borrow_mut();
-        let Some(result) = page.worker.poll(self.root) else {
+        // A nested edit form may pump a wakeup before its accepted row has
+        // been recorded. The caller polls again after leaving that form.
+        if page.reviewing {
             return;
-        };
-        let Some(query) = page.pending.take() else {
-            return;
-        };
-        match result {
-            Ok(result) => {
-                if result.columns != self.table.columns || !install_page(child(hwnd, GRID), &result)
-                {
-                    self.dialog.failed.set(true);
-                    drop(page);
-                    EndDialog(hwnd, 0);
-                    return;
-                }
-                set_status(hwnd, &page_label(&result, query.descending));
-                page.accepted = query;
-                page.offset = result.offset;
-                page.has_next = result.has_next;
-            }
-            Err(error) => set_status(hwnd, &error),
         }
-        EnableWindow(child(hwnd, PREVIOUS), i32::from(page.offset > 0));
-        EnableWindow(child(hwnd, NEXT), i32::from(page.has_next));
-        EnableWindow(child(hwnd, SORT), 1);
-        EnableWindow(child(hwnd, APPLY), 1);
+        if let Some(result) = page.worker.poll(self.root) {
+            if let Some(query) = page.pending.take() {
+                match result {
+                    Ok(result) => {
+                        if result.columns != self.table.columns
+                            || !install_page(child(hwnd, GRID), &result)
+                        {
+                            self.dialog.failed.set(true);
+                            drop(page);
+                            EndDialog(hwnd, 0);
+                            return;
+                        }
+                        if let (Some(key_column), Some(key)) =
+                            (self.table.edit_key_column(), page.record_key.take())
+                        {
+                            if let Some(index) = result
+                                .rows
+                                .iter()
+                                .position(|row| row[key_column].as_deref() == Some(&key))
+                            {
+                                select_index(child(hwnd, GRID), index);
+                            }
+                        }
+                        page.status(
+                            hwnd,
+                            &page_label(&result, query.descending, self.editable()),
+                        );
+                        page.needs_refresh = None;
+                        page.accepted = query;
+                        page.offset = result.offset;
+                        page.has_next = result.has_next;
+                        page.result = Some(result);
+                    }
+                    Err(error) => page.status(hwnd, &error),
+                }
+            }
+        }
+        let event = page.records.poll(self.root);
+        drop(page);
+        if let Some(event) = event {
+            self.record_event(hwnd, event);
+        }
+        self.sync_controls(hwnd);
     }
 
     unsafe fn command(&self, hwnd: Hwnd, id: u16) {
         let (mut query, offset, has_next) = {
             let page = self.page.borrow();
+            if page.busy() {
+                return;
+            }
             (page.accepted.clone(), page.offset, page.has_next)
         };
         let offset = match id {
@@ -326,6 +387,241 @@ impl Browser<'_> {
             _ => return,
         };
         self.submit(hwnd, query, offset);
+    }
+
+    fn editable(&self) -> bool {
+        self.table.edit_key_column().is_some()
+    }
+
+    unsafe fn sync_controls(&self, hwnd: Hwnd) {
+        // Installing a page can synchronously send selection notifications.
+        let Ok(page) = self.page.try_borrow() else {
+            return;
+        };
+        let ready = !page.busy();
+        for (id, enabled) in [
+            (PREVIOUS, ready && page.offset > 0),
+            (NEXT, ready && page.has_next),
+            (SORT, ready),
+            (APPLY, ready),
+            (CLOSE, !page.applying),
+        ] {
+            EnableWindow(child(hwnd, id), i32::from(enabled));
+        }
+        if let Some(key) = self.table.edit_key_column() {
+            let enabled = ready && page.selected_record(hwnd, key).is_some();
+            EnableWindow(child(hwnd, EDIT), i32::from(enabled));
+            EnableWindow(child(hwnd, RESTORE), i32::from(enabled));
+        }
+    }
+
+    unsafe fn record_command(&self, hwnd: Hwnd, id: u16) {
+        let Some(key) = self.table.edit_key_column() else {
+            return;
+        };
+        let row = {
+            let page = self.page.borrow();
+            if page.busy() {
+                return;
+            }
+            let Some(row) = page.selected_record(hwnd, key) else {
+                return;
+            };
+            row.to_vec()
+        };
+        self.page.borrow_mut().reviewing = true;
+        let result = if id == EDIT {
+            self.edit(hwnd, &row, key)
+        } else {
+            self.page
+                .borrow_mut()
+                .records
+                .request_restore(self.root, self.table, &row, self.wakeup.clone())
+                .map(|()| true)
+        };
+        self.page.borrow_mut().reviewing = false;
+        match result {
+            Ok(true) => {
+                self.page.borrow_mut().record_key = row[key].clone();
+                set_status(hwnd, "Preparando la vista previa…");
+                self.poll(hwnd);
+            }
+            Ok(false) => {}
+            Err(error) => set_status(hwnd, &error),
+        }
+        self.sync_controls(hwnd);
+    }
+
+    unsafe fn edit(&self, hwnd: Hwnd, row: &[Option<String>], key: usize) -> Result<bool, String> {
+        let target = self.record_label(key, row[key].as_deref());
+        let columns: Vec<_> = (0..self.table.columns.len())
+            .filter(|&index| self.table.can_edit_column(index))
+            .collect();
+        let names: Vec<_> = columns
+            .iter()
+            .map(|&index| self.table.columns[index].clone())
+            .collect();
+        let chooser = self
+            .dialog
+            .child(hwnd, "Editar columna", &target, "Continuar")?;
+        let Some(selected) = form::choose_dialog(chooser, &names)? else {
+            return Ok(false);
+        };
+        let column = columns[selected];
+        let current = row[column]
+            .as_deref()
+            .filter(|value| {
+                value.len() <= RECORD_EDIT_MAX_VALUE_BYTES && !value.chars().any(char::is_control)
+            })
+            .unwrap_or("");
+        let fields = [form::Field {
+            label: &self.table.columns[column],
+            value: current,
+            limit: RECORD_EDIT_MAX_VALUE_BYTES,
+        }];
+        let dialog = self
+            .dialog
+            .child(hwnd, "Editar registro", &target, "Vista previa")?;
+        form::edit_dialog(dialog, &fields, &mut |values| {
+            self.page.borrow_mut().records.request_edit(
+                self.root,
+                self.table,
+                row,
+                column,
+                values[0].clone(),
+                self.wakeup.clone(),
+            )
+        })
+    }
+
+    unsafe fn record_event(&self, hwnd: Hwnd, event: Result<RecordEvent, String>) {
+        match event {
+            Ok(RecordEvent::Preview(preview)) => self.review(hwnd, preview),
+            Ok(RecordEvent::Applied) => {
+                let (query, offset) = {
+                    let mut page = self.page.borrow_mut();
+                    page.applying = false;
+                    (page.accepted.clone(), page.offset)
+                };
+                self.submit(hwnd, query, offset);
+            }
+            Err(error) => {
+                let mut page = self.page.borrow_mut();
+                // A failed request may have reached the database. Require a fresh
+                // page before offering another edit to the same displayed row.
+                if page.applying {
+                    page.applying = false;
+                    page.needs_refresh = Some("Vuelve a consultar antes de editar");
+                } else {
+                    page.record_key = None;
+                }
+                set_status(hwnd, &error);
+            }
+        }
+    }
+
+    unsafe fn review(&self, hwnd: Hwnd, preview: RecordPreview) {
+        let target = {
+            let page = self.page.borrow();
+            self.table
+                .edit_key_column()
+                .zip(page.record_key.as_deref())
+                .map(|(key, value)| self.record_label(key, Some(value)))
+        };
+        let Some(target) = target else {
+            set_status(
+                hwnd,
+                "No se pudo identificar el registro de la vista previa",
+            );
+            return;
+        };
+        let (title, action, completed) = if preview.restoring {
+            (
+                "Vista previa de restauración",
+                "Restaurar",
+                "Respaldo restaurado",
+            )
+        } else {
+            (
+                "Vista previa de edición",
+                "Confirmar edición",
+                "Edición respaldada y guardada",
+            )
+        };
+        let message = preview_message(
+            &target,
+            &preview.column,
+            preview.before.as_deref(),
+            preview.after.as_deref(),
+        );
+        self.page.borrow_mut().reviewing = true;
+        let answer = self
+            .dialog
+            .child(hwnd, title, &message, action)
+            .and_then(|mut dialog| {
+                dialog.scrollable = true;
+                #[cfg(test)]
+                {
+                    dialog.answer = self.review_answer.take();
+                }
+                super::show(hwnd, &mut dialog)
+            });
+        let mut page = self.page.borrow_mut();
+        page.reviewing = false;
+        match answer {
+            Ok(true) => match page.records.apply(self.root, preview, self.wakeup.clone()) {
+                Ok(()) => {
+                    page.applying = true;
+                    page.needs_refresh = Some(completed);
+                    set_status(hwnd, "Aplicando el cambio confirmado…");
+                }
+                Err(error) => {
+                    page.record_key = None;
+                    set_status(hwnd, &error);
+                }
+            },
+            Ok(false) => {
+                page.record_key = None;
+                set_status(hwnd, "Cambio cancelado");
+            }
+            Err(error) => {
+                page.record_key = None;
+                set_status(hwnd, &error);
+            }
+        }
+    }
+
+    fn record_label(&self, key: usize, value: Option<&str>) -> String {
+        format!(
+            "{}.{} · {} = {}",
+            self.table.database,
+            self.table.name,
+            self.table.columns[key],
+            display_value(value)
+        )
+    }
+}
+
+impl PageState {
+    fn busy(&self) -> bool {
+        self.worker.busy() || self.records.busy() || self.reviewing || self.applying
+    }
+
+    unsafe fn selected_record(&self, hwnd: Hwnd, key: usize) -> Option<&[Option<String>]> {
+        if self.needs_refresh.is_some() {
+            return None;
+        }
+        let index = selected_index(child(hwnd, GRID))?;
+        let row = self.result.as_ref()?.rows.get(index)?;
+        row.get(key)?.as_deref()?;
+        Some(row)
+    }
+
+    unsafe fn status(&self, hwnd: Hwnd, message: &str) {
+        match self.needs_refresh {
+            Some(prefix) => set_status(hwnd, &format!("{prefix} · {message}")),
+            None => set_status(hwnd, message),
+        }
     }
 }
 
@@ -355,7 +651,7 @@ unsafe fn read_filter(hwnd: Hwnd, columns: usize) -> Result<Option<BrowseFilter>
     }))
 }
 
-fn page_label(page: &BrowsePage, descending: bool) -> String {
+fn page_label(page: &BrowsePage, descending: bool, editable: bool) -> String {
     let records = if page.rows.is_empty() {
         "Sin registros para esta consulta".into()
     } else {
@@ -371,7 +667,48 @@ fn page_label(page: &BrowsePage, descending: bool) -> String {
     } else {
         "ascendente"
     };
-    format!("Solo lectura · {records} · Clave primaria en orden {order}")
+    let mode = if editable { "" } else { "Solo lectura · " };
+    format!("{mode}{records} · Clave primaria en orden {order}")
+}
+
+fn preview_message(
+    target: &str,
+    column: &str,
+    before: Option<&str>,
+    after: Option<&str>,
+) -> String {
+    format!(
+        "{target}\r\nColumna: {column}\r\n\r\nValor actual\r\n{}\r\n\r\nValor propuesto\r\n{}",
+        display_value(before),
+        display_value(after)
+    )
+}
+
+fn display_value(value: Option<&str>) -> String {
+    // Quotes distinguish empty text and literal "(desconocido)" from ABL ?.
+    value.map_or_else(|| "(desconocido)".into(), |value| format!("{value:?}"))
+}
+
+unsafe fn selected_index(grid: Hwnd) -> Option<usize> {
+    // Start before the first row and return the selected row (LVNI_SELECTED).
+    SendMessageW(grid, LVM_GETNEXTITEM, usize::MAX, 2)
+        .try_into()
+        .ok()
+}
+
+unsafe fn select_index(grid: Hwnd, index: usize) {
+    let item = Item {
+        state: 3, // LVIS_SELECTED | LVIS_FOCUSED
+        state_mask: 3,
+        ..std::mem::zeroed()
+    };
+    SendMessageW(
+        grid,
+        LVM_SETITEMSTATE,
+        index,
+        (&item as *const Item) as isize,
+    );
+    SendMessageW(grid, LVM_ENSUREVISIBLE, index, 0);
 }
 
 fn wide_cell(value: Option<&str>) -> Vec<u16> {
@@ -558,7 +895,11 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
     match message {
         WM_COMMAND => match (wp as u16, (wp >> 16) as u16) {
             (CLOSE, 0) => {
-                EndDialog(hwnd, 0);
+                let page = browser.page.borrow();
+                if !page.applying && !page.reviewing {
+                    drop(page);
+                    EndDialog(hwnd, 0);
+                }
                 1
             }
             (FIELD, 1) => {
@@ -570,15 +911,32 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
                 browser.command(hwnd, id);
                 1
             }
+            (id @ (EDIT | RESTORE), 0) => {
+                browser.record_command(hwnd, id);
+                1
+            }
             _ => 0,
         },
+        WM_NOTIFY if wp == usize::from(GRID) && lp != 0 => {
+            let header = &*(lp as *const NotifyHeader);
+            if header.code == LVN_ITEMCHANGED {
+                browser.sync_controls(hwnd);
+            }
+            0
+        }
         WM_CLOSE => {
-            EndDialog(hwnd, 0);
+            let page = browser.page.borrow();
+            if !page.applying && !page.reviewing {
+                drop(page);
+                EndDialog(hwnd, 0);
+            }
             1
         }
         WM_DESTROY => {
             browser.bridge.detach();
-            browser.page.borrow_mut().worker.cancel();
+            let mut page = browser.page.borrow_mut();
+            page.worker.cancel();
+            page.records.cancel_preview();
             0
         }
         TASKS_MESSAGE => {
@@ -587,10 +945,10 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
         }
         DM_GETDEFID => {
             let focus = GetFocus();
-            let id = BUTTONS
-                .iter()
+            let id = browser
+                .buttons()
                 .find(|(id, _)| child(hwnd, *id) == focus)
-                .map_or(APPLY, |(id, _)| *id);
+                .map_or(APPLY, |(id, _)| id);
             let result = if IsWindowEnabled(child(hwnd, id)) == 0 {
                 0
             } else {
@@ -610,8 +968,8 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
             if item.control_type != 4 {
                 return 0;
             }
-            let Some((_, label)) = BUTTONS
-                .iter()
+            let Some((_, label)) = browser
+                .buttons()
                 .find(|(id, _)| u32::from(*id) == item.control_id)
             else {
                 return 0;
@@ -672,6 +1030,8 @@ pub(in crate::windows) unsafe fn show(
         page: RefCell::default(),
         bridge,
         wakeup: Wakeup::with_notifier(move || notify.signal()),
+        #[cfg(test)]
+        review_answer: Cell::new(None),
     };
     show_browser(&browser)
 }
@@ -679,6 +1039,166 @@ pub(in crate::windows) unsafe fn show(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jc_progress::editor::SchemaController;
+    use std::{
+        path::PathBuf,
+        time::{Duration, Instant},
+    };
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn CreateDialogIndirectParamW(
+            instance: Handle,
+            template: *const u32,
+            parent: Hwnd,
+            procedure: Option<unsafe extern "system" fn(Hwnd, u32, usize, isize) -> isize>,
+            parameter: isize,
+        ) -> Hwnd;
+    }
+
+    struct TestWindow(Hwnd);
+
+    impl Drop for TestWindow {
+        fn drop(&mut self) {
+            unsafe { DestroyWindow(self.0) };
+        }
+    }
+
+    unsafe fn native_text(hwnd: Hwnd) -> String {
+        let mut units = [0u16; 1024];
+        let len = GetWindowTextW(hwnd, units.as_mut_ptr(), units.len() as i32);
+        String::from_utf16_lossy(&units[..len as usize])
+    }
+
+    unsafe fn wait_for_window(browser: &Browser<'_>, hwnd: Hwnd) -> String {
+        let deadline = Instant::now() + Duration::from_secs(65);
+        while browser.page.borrow().busy() {
+            let mut message = std::mem::zeroed();
+            if PeekMessageW(&mut message, hwnd, TASKS_MESSAGE, TASKS_MESSAGE, 1) != 0 {
+                DispatchMessageW(&message);
+            } else {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{}",
+                native_text(child(hwnd, STATUS))
+            );
+        }
+        native_text(child(hwnd, STATUS))
+    }
+
+    #[test]
+    #[ignore = "requiere CIDE_TEST_PROGRESS_RECORD_EDIT_PROJECT con una copia descartable de Sports2000"]
+    fn records_real_sports2000_native_edit_and_restore() {
+        let root =
+            PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_RECORD_EDIT_PROJECT").unwrap())
+                .canonicalize()
+                .unwrap();
+        let mut schema = SchemaController::default();
+        let mut workbench = jc_app::Workbench::default();
+        schema.request(Some(&root), Wakeup::default()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(35);
+        let update = loop {
+            if let Some(update) = schema.poll(Some(&root), &mut workbench) {
+                break update;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(
+            !update.problems,
+            "{}: {:?}",
+            update.message,
+            workbench.problems()
+        );
+        let table = schema
+            .browse_tables()
+            .into_iter()
+            .find(|table| table.name.eq_ignore_ascii_case("Customer"))
+            .unwrap();
+        let column = table
+            .columns
+            .iter()
+            .position(|name| name.eq_ignore_ascii_case("Name"))
+            .unwrap();
+        assert!(table.can_edit_column(column));
+        unsafe {
+            assert!(initialize_list_class());
+            let instance = GetModuleHandleW(std::ptr::null());
+            let owner = TestWindow(CreateWindowExW(
+                0,
+                wide("STATIC").as_ptr(),
+                wide("CIDE").as_ptr(),
+                0x8000_0000,
+                0,
+                0,
+                1040,
+                630,
+                null_mut(),
+                null_mut(),
+                instance,
+                null_mut(),
+            ));
+            assert!(!owner.0.is_null());
+            let bridge = Arc::new(Bridge::default());
+            let notify = bridge.clone();
+            let browser = Browser {
+                dialog: create(owner.0, "Ver registros", "", "").unwrap(),
+                root: &root,
+                table: &table,
+                page: RefCell::default(),
+                bridge,
+                wakeup: Wakeup::with_notifier(move || notify.signal()),
+                review_answer: Cell::new(None),
+            };
+            let template = browser.template();
+            let window = TestWindow(CreateDialogIndirectParamW(
+                instance,
+                template.as_ptr(),
+                owner.0,
+                Some(procedure),
+                (&browser as *const Browser<'_>) as isize,
+            ));
+            let hwnd = window.0;
+            assert!(!hwnd.is_null());
+            let status = wait_for_window(&browser, hwnd);
+            assert!(status.starts_with("Página 1"), "{status}");
+            let grid = child(hwnd, GRID);
+            let name = || {
+                let mut text = [0u16; 1024];
+                let mut item: Item = std::mem::zeroed();
+                item.subitem = column as i32;
+                item.text = text.as_mut_ptr();
+                item.text_max = text.len() as i32;
+                let len = SendMessageW(grid, 0x1073, 0, (&mut item as *mut Item) as isize);
+                String::from_utf16_lossy(&text[..len as usize])
+            };
+            let original = name();
+            let proposed = "CIDE GUI Sports2000";
+            assert!(!original.is_empty() && original != proposed);
+            assert_eq!(IsWindowEnabled(child(hwnd, EDIT)), 0);
+            select_index(grid, 0);
+            assert_ne!(IsWindowEnabled(child(hwnd, EDIT)), 0);
+            for (answer, expected_status, expected_value) in [
+                (false, "Cambio cancelado", original.as_str()),
+                (true, "Edición respaldada y guardada", proposed),
+            ] {
+                browser.review_answer.set(Some(answer));
+                form::script_record_edit(&table.columns[column], proposed);
+                SendMessageW(hwnd, WM_COMMAND, usize::from(EDIT), 0);
+                let status = wait_for_window(&browser, hwnd);
+                assert!(status.starts_with(expected_status), "{status}");
+                assert_eq!(name(), expected_value);
+                assert_eq!(selected_index(grid), Some(0));
+            }
+            browser.review_answer.set(Some(true));
+            SendMessageW(hwnd, WM_COMMAND, usize::from(RESTORE), 0);
+            let status = wait_for_window(&browser, hwnd);
+            assert!(status.starts_with("Respaldo restaurado"), "{status}");
+            assert_eq!(name(), original);
+        }
+    }
 
     #[test]
     fn records_grid_replaces_pages_in_native_cells() {
@@ -733,15 +1253,32 @@ mod tests {
             assert!(install_page(grid, &page));
             assert_eq!(read_cell(0), "21");
             assert_eq!(read_cell(1), r"Café\tSan José");
+            assert_eq!(selected_index(grid), None);
+            select_index(grid, 0);
+            assert_eq!(selected_index(grid), Some(0));
             assert_eq!(
-                page_label(&page, true),
+                page_label(&page, true, false),
                 "Solo lectura · Página 2 · Registros 21–21 · Clave primaria en orden descendente"
             );
             page.rows = vec![vec![Some("22".into()), None]];
             assert!(install_page(grid, &page));
+            assert_eq!(selected_index(grid), None);
             assert_eq!(read_cell(0), "22");
             assert_eq!(read_cell(1), "(desconocido)");
             assert_ne!(DestroyWindow(owner), 0);
         }
+    }
+
+    #[test]
+    fn records_preview_distinguishes_unknown_empty_and_literal_text() {
+        assert_eq!(
+            preview_message("sports.Customer · CustNum = \"21\"", "Name", None, Some("")),
+            concat!(
+                "sports.Customer · CustNum = \"21\"\r\nColumna: Name\r\n\r\n",
+                "Valor actual\r\n(desconocido)\r\n\r\nValor propuesto\r\n\"\""
+            )
+        );
+        assert_eq!(display_value(Some("(desconocido)")), "\"(desconocido)\"");
+        assert_eq!(display_value(Some("Café\tSan José")), r#""Café\tSan José""#);
     }
 }

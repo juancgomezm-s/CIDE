@@ -63,6 +63,8 @@ struct Dialog<'a> {
     title: &'a str,
     message: &'a str,
     accept: &'a str,
+    scrollable: bool,
+    ui_size: u8,
     font: Handle,
     brush: Handle,
     failed: Cell<bool>,
@@ -123,12 +125,20 @@ unsafe fn position(hwnd: Hwnd, owner: Hwnd, size: [i32; 2]) -> Option<(dpi::Dpi,
 }
 
 unsafe fn arrange(hwnd: Hwnd, dialog: &Dialog<'_>) -> bool {
-    let Some((scale, width, height)) = position(hwnd, dialog.parent, [420, 176]) else {
+    let size = if dialog.scrollable {
+        [620, 350]
+    } else {
+        [420, 176]
+    };
+    let Some((scale, width, height)) = position(hwnd, dialog.parent, size) else {
         return false;
     };
+    if dialog.scrollable && (width < scale.pixels(300) || height < scale.pixels(216)) {
+        return false;
+    }
     let margin = scale.pixels(16);
     let gap = scale.pixels(12);
-    let button = scale.pixels(104);
+    let button = scale.pixels(if dialog.scrollable { 154 } else { 104 });
     let button_height = scale.pixels(32);
     let bottom = height - margin - button_height;
     for (id, x, y, w, h) in [
@@ -189,7 +199,19 @@ fn styled_control(
 
 fn template(dialog: &Dialog<'_>) -> Vec<u32> {
     let mut words = template_header(dialog.title, 3);
-    control(&mut words, 100, [12, 32, 296, 60], 0x82, dialog.message);
+    if dialog.scrollable {
+        // Read-only multiline edit with native text selection and vertical scrolling.
+        styled_control(
+            &mut words,
+            100,
+            [12, 32, 296, 60],
+            0x81,
+            dialog.message,
+            0xa1_2804,
+        );
+    } else {
+        control(&mut words, 100, [12, 32, 296, 60], 0x82, dialog.message);
+    }
     control(&mut words, 1, [132, 106, 80, 22], 0x80, dialog.accept);
     control(&mut words, 2, [220, 106, 80, 22], 0x80, "Cancelar");
     pack_template(words)
@@ -347,10 +369,19 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
             let default = SendMessageW(hwnd, 0x400, 0, 0) as usize & 0xffff;
             dialog.initial_cancel.set(default == 2);
             if let Some(answer) = dialog.answer {
+                let details = GetDlgItem(hwnd, 100);
+                let controls_match = !dialog.scrollable || {
+                    let style = GetWindowLongPtrW(details, -16);
+                    let mut text = vec![0; dialog.message.encode_utf16().count() + 1];
+                    let len = GetWindowTextW(details, text.as_mut_ptr(), text.len() as i32);
+                    style & 0x20_0804 == 0x20_0804
+                        && String::from_utf16_lossy(&text[..len as usize]) == dialog.message
+                };
                 dialog.themed_controls.set(
-                    [1, 2]
-                        .into_iter()
-                        .all(|id| GetWindowLongPtrW(GetDlgItem(hwnd, id), -16) & 0xf == 0xb)
+                    controls_match
+                        && [1, 2]
+                            .into_iter()
+                            .all(|id| GetWindowLongPtrW(GetDlgItem(hwnd, id), -16) & 0xf == 0xb)
                         && [100, 1, 2].into_iter().all(|id| {
                             SendMessageW(GetDlgItem(hwnd, id), 0x31, 0, 0) == dialog.font as isize
                         }),
@@ -435,13 +466,36 @@ pub(super) unsafe fn confirm(
     show(parent, &mut dialog)
 }
 
+impl Dialog<'_> {
+    unsafe fn child<'a>(
+        &self,
+        parent: Hwnd,
+        title: &'a str,
+        message: &'a str,
+        accept: &'a str,
+    ) -> Result<Dialog<'a>, String> {
+        // Modal HWND user data belongs to that dialog, not the editor window.
+        create_at_size(parent, title, message, accept, self.ui_size)
+    }
+}
+
 unsafe fn create<'a>(
     parent: Hwnd,
     title: &'a str,
     message: &'a str,
     accept: &'a str,
 ) -> Result<Dialog<'a>, String> {
-    let font = dpi::ui_font_size(dpi::for_window(parent), dpi::window_ui_size(parent));
+    create_at_size(parent, title, message, accept, dpi::window_ui_size(parent))
+}
+
+unsafe fn create_at_size<'a>(
+    parent: Hwnd,
+    title: &'a str,
+    message: &'a str,
+    accept: &'a str,
+    ui_size: u8,
+) -> Result<Dialog<'a>, String> {
+    let font = dpi::ui_font_size(dpi::for_window(parent), ui_size);
     let brush = CreateSolidBrush(shell::RAISED);
     if font.is_null() || brush.is_null() {
         if !font.is_null() {
@@ -457,6 +511,8 @@ unsafe fn create<'a>(
         title,
         message,
         accept,
+        scrollable: false,
+        ui_size,
         font,
         brush,
         failed: Cell::new(false),
@@ -530,6 +586,26 @@ mod tests {
             for answer in [false, true] {
                 let mut dialog =
                     create(null_mut(), "CIDE", "Mensaje sintético", "Descartar").unwrap();
+                dialog.answer = Some(answer);
+                assert_eq!(show(null_mut(), &mut dialog).unwrap(), answer);
+                assert!(dialog.initial_cancel.get());
+                assert!(dialog.themed_controls.get());
+            }
+        }
+    }
+
+    #[test]
+    fn scrollable_record_confirmation_keeps_both_values_and_defaults_to_cancel() {
+        unsafe {
+            let message = format!(
+                "sports.Customer · CustNum = 1\r\nValor actual\r\n{}\r\nValor propuesto\r\n{}",
+                "Café ".repeat(200),
+                "México ".repeat(200)
+            );
+            for answer in [false, true] {
+                let mut dialog =
+                    create(null_mut(), "Vista previa", &message, "Confirmar edición").unwrap();
+                dialog.scrollable = true;
                 dialog.answer = Some(answer);
                 assert_eq!(show(null_mut(), &mut dialog).unwrap(), answer);
                 assert!(dialog.initial_cancel.get());

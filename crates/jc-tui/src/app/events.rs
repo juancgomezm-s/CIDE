@@ -48,7 +48,16 @@ impl TuiApp {
                     self.handle_mouse(event);
                 }
             }
-            Event::Resize(_, _) | Event::FocusGained | Event::FocusLost => {}
+            Event::Resize(_, _) => {
+                if let Some(review) = self
+                    .record_browser
+                    .as_mut()
+                    .and_then(|browser| browser.review.as_mut())
+                {
+                    review.presented = false;
+                }
+            }
+            Event::FocusGained | Event::FocusLost => {}
             _ => {}
         }
     }

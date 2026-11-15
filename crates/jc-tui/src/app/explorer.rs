@@ -8,6 +8,9 @@ use std::path::PathBuf;
 
 impl TuiApp {
     pub(crate) fn set_explorer_root(&mut self, path: PathBuf) -> Result<(), String> {
+        if self.progress_records_busy() {
+            return Err("Espera a que termine la operación de registros ABL".into());
+        }
         let root = path.canonicalize().map_err(|e| e.to_string())?;
         if !root.is_dir() {
             return Err("La raíz del proyecto debe ser un directorio".into());

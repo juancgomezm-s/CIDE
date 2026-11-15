@@ -1,8 +1,8 @@
 # Expansión DataDigger en CIDE
 
-**Estado:** configuración de perfiles por proyecto y primera cuadrícula de
-lectura OpenEdge en GUI y TUI. La expansión incluye edición con respaldo y
-restauración, compatibilidad con **OpenEdge 10.0B y 10.2B**, y proveedores
+**Estado:** configuración de perfiles, cuadrícula OpenEdge, edición con
+respaldo y restauración en GUI y TUI. La expansión incluye validación de
+compatibilidad con **OpenEdge 10.0B y 10.2B**, y proveedores
 **PostgreSQL** y **MySQL**, con validación independiente por motor.
 
 ## Experiencia en la GUI
@@ -154,18 +154,42 @@ usará orden estable cuando haya un índice único compatible. Si falta un
 orden adecuado, se limitará la navegación a un cursor secuencial acotado.
 ## Edición con respaldo y restauración
 
-Antes de modificar o borrar un registro, CIDE deberá localizarlo por su clave
-y capturar sus valores tipados actuales bajo control de concurrencia. El
-respaldo se escribirá y verificará antes de aplicar el cambio. Si el respaldo
-falla, la operación en la base se cancela. El historial de respaldos mostrará
-la base, tabla, clave, fecha y estado de cada operación.
+Habilita una copia cerrada de la base dentro del proyecto con
+`.cide/edicion-registros.local.ini`. La base lógica y el archivo deben
+coincidir con la conexión del `.pf` local mostrado arriba.
 
-Restaurar tendrá vista previa y una transacción propia. Si el registro cambió
-desde la operación respaldada, CIDE mostrará el conflicto antes de aplicar
-otra escritura. Para las altas se registrará la ausencia anterior y la clave
-de la fila creada, para que una reversión pueda identificarla y detectar
-modificaciones posteriores. La recuperación distinguirá una operación
-confirmada de una interrumpida entre el respaldo y la escritura.
+```ini
+base=sports2000
+archivo=sports2000.db
+```
+
+En **Ver registros ABL**, selecciona un registro. La GUI ofrece **Editar**
+y **Restaurar respaldo**. En la TUI, **E** edita la celda seleccionada y
+**R** revisa el último respaldo. La vista previa muestra el valor actual y
+el propuesto. Confirma en el diálogo o con **F9** en la TUI. La cuadrícula
+vuelve a consultar la página tras el cambio confirmado.
+
+Rust guarda y relee el respaldo antes de iniciar la AVM de escritura.
+OpenEdge localiza la fila con bloqueo exclusivo, compara la identidad y
+la imagen binaria completa y aplica el cambio en una transacción. Una
+restauración verifica también el recibo del último cambio confirmado y
+crea su propio respaldo. El almacén está en `.cide/respaldos-registros/`.
+Una copia con respaldo publicado y resultado incierto queda registrada sin
+recibo. Solo una operación con recibo puede iniciar una restauración desde
+la cuadrícula. [Método ABL para capturar la imagen del registro](https://docs.progress.com/bundle/openedge-abl-reference-128/page/RAW-TRANSFER-method.html).
+
+Este bloque admite cambios de texto y entero en filas existentes con una
+clave primaria entera de una columna y con imagen binaria completa. La
+escritura se ejecuta sobre copias locales autorizadas y desactiva los
+disparadores de búsqueda y carga. Las altas, borrados y selección de un
+respaldo histórico específico quedan para el siguiente alcance.
+
+Validado localmente con copias separadas de Sports2000 en OpenEdge 11.7. La
+GUI con ventanas propias ocultas y la TUI comprobaron la cancelación, la
+edición confirmada y la restauración tras volver a consultar. El núcleo
+comprobó que un fallo de respaldo bloquea la escritura, que un cambio externo
+en otra columna invalida la vista previa de edición o restauración y que
+un respaldo alterado se rechaza al compararlo con su recibo.
 
 ## Bloques y criterios de aceptación
 
