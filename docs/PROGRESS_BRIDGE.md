@@ -189,20 +189,28 @@ OpenEdge 11.7 comprobó la sintaxis de los ejemplos con dos copias de
 exacta de la primera copia. Los ejemplos también cubren la prioridad de
 una importación explícita sobre un comodín y el comodín en una inclusión.
 
-### Métodos heredados en ABL
+### Métodos y propiedades heredados en ABL
 
-En una clase, pulsa **F12** sobre el método en llamadas sin argumentos
-como `SUPER:Saludo()` y `THIS-OBJECT:Saludo()`. **Intro** abre la
-declaración y **Ctrl+Intro** la abre al lado en GUI y TUI.
-`SUPER` empieza en la clase base y `THIS-OBJECT` en la clase actual.
-El recorrido sigue `INHERITS`, `USING` y PROPATH hasta 16 clases base.
+Pulsa **F12** sobre el miembro en `SUPER:Saludar("Ana")`,
+`THIS-OBJECT:Titulo`, `objeto:Saludar(numero)` u `objeto:Titulo`.
+**Intro** abre la declaración y **Ctrl+Intro** la abre al lado en GUI y
+TUI. `SUPER` empieza en la clase base, `THIS-OBJECT` en la clase actual y
+un receptor declarado empieza en su tipo estático. El recorrido sigue
+`INHERITS`, `USING` y PROPATH hasta 16 clases base.
 [Referencia SUPER](https://docs.progress.com/bundle/openedge-abl-reference-128/page/SUPER-system-reference.html)
 
-OpenEdge 11.7 compiló el ejemplo de tres clases. Las dos interfaces
-abrieron el método protegido de la clase raíz desde `SUPER`. La TUI
-comprobó además que `THIS-OBJECT` abre la redefinición de la clase actual.
-La resolución de llamadas con argumentos, propiedades y receptores
-como variables de objeto queda para otro bloque.
+La resolución de sobrecargas usa la aridad y los tipos que puede
+identificar por literales o declaraciones simples. Prefiere una firma
+exacta y admite ensanchamientos numéricos inequívocos. Si hay varias
+firmas posibles, muestra un aviso de ambigüedad. Los receptores
+encadenados, la inferencia de expresiones complejas y la resolución
+completa de modos `OUTPUT` e `INPUT-OUTPUT` quedan fuera de este análisis.
+
+OpenEdge 11.7 compiló la jerarquía de tres clases y el programa
+`consumidores/herencia.p`. GUI y TUI abrieron al lado las sobrecargas de
+`Saludar` para texto y entero, incluida la llamada con una variable de
+tipo `INTEGER`, y la declaración de `Titulo` en la clase raíz. La GUI
+mostró el aviso de ambigüedad para `Saludar(?)`.
 
 ### Buscar referencias en ABL
 

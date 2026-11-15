@@ -994,7 +994,7 @@ mod tests {
             .unwrap();
         let mut state = State::new(&GuiOptions {
             paths: vec![path],
-            project_root: Some(root),
+            project_root: Some(root.clone()),
             encoding: Some(TextEncoding::Utf8),
             ..GuiOptions::default()
         })
@@ -1015,6 +1015,61 @@ mod tests {
         assert!(state.workbench.panes().is_split());
         assert_eq!(state.workbench.active_path(), Some(target.as_path()));
         assert_eq!(state.workbench.active_editor().unwrap().cursor, method);
+        let caller = root.join("consumidores/herencia.p");
+        let code = std::fs::read_to_string(&caller).unwrap();
+        let class = std::fs::read_to_string(&target).unwrap();
+        for (reference, name, declaration) in [
+            ("objeto:Saludar(\"Ana\")", "Saludar", "Saludar(INPUT nombre"),
+            ("objeto:Saludar(12)", "Saludar", "Saludar(INPUT cantidad"),
+            (
+                "objeto:Saludar(numero)",
+                "Saludar",
+                "Saludar(INPUT cantidad",
+            ),
+            ("objeto:Titulo", "Titulo", "Titulo AS"),
+        ] {
+            let tab = state
+                .workbench
+                .open_file(&caller, Some(TextEncoding::Utf8))
+                .unwrap();
+            let offset = code.find(reference).unwrap() + reference.find(name).unwrap();
+            assert!(state.workbench.jump_to_location(tab, offset + 1));
+            state.execute_menu(CommandId::SourceDefinition);
+            finish(&mut state);
+            assert_eq!(
+                state.source_gui.controller.items().len(),
+                1,
+                "{}",
+                state.source_gui.controller.message()
+            );
+            state.source_key(0x0d, Modifiers::CTRL);
+            assert_eq!(state.workbench.active_path(), Some(target.as_path()));
+            assert_eq!(
+                state.workbench.active_editor().unwrap().cursor,
+                class.find(declaration).unwrap()
+            );
+        }
+
+        let tab = state
+            .workbench
+            .new_file(root.join("ambiguo.p"), TextEncoding::Utf8);
+        let code = "USING paquete.Derivada FROM PROPATH.\nDEFINE VARIABLE objeto AS CLASS Derivada.\nDISPLAY objeto:Saludar(?).";
+        state.workbench.insert_text(code).unwrap();
+        assert!(state
+            .workbench
+            .jump_to_location(tab, code.find("Saludar").unwrap() + 2));
+        state.execute_menu(CommandId::SourceDefinition);
+        finish(&mut state);
+        assert!(state.source_gui.controller.items().is_empty());
+        assert!(
+            state
+                .source_gui
+                .controller
+                .message()
+                .contains("Sobrecarga ABL ambigua"),
+            "{}",
+            state.source_gui.controller.message()
+        );
     }
 
     #[test]

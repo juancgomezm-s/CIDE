@@ -374,7 +374,7 @@ fn progress_real_inheritance_tui_selects_override_and_opens_grandparent() {
         files: vec![path],
         encoding: Some(TextEncoding::Utf8),
     });
-    app.set_explorer_root(root).unwrap();
+    app.set_explorer_root(root.clone()).unwrap();
     let tab = app.workbench.tabs().active_id().unwrap();
     assert!(app
         .workbench
@@ -396,6 +396,35 @@ fn progress_real_inheritance_tui_selects_override_and_opens_grandparent() {
     assert!(app.workbench.panes().is_split());
     assert_eq!(app.workbench.active_path(), Some(target.as_path()));
     assert_eq!(app.workbench.active_editor().unwrap().cursor, method);
+    let caller = root.join("consumidores/herencia.p");
+    let code = std::fs::read_to_string(&caller).unwrap();
+    let class = std::fs::read_to_string(&target).unwrap();
+    for (reference, name, declaration) in [
+        ("objeto:Saludar(\"Ana\")", "Saludar", "Saludar(INPUT nombre"),
+        ("objeto:Saludar(12)", "Saludar", "Saludar(INPUT cantidad"),
+        (
+            "objeto:Saludar(numero)",
+            "Saludar",
+            "Saludar(INPUT cantidad",
+        ),
+        ("objeto:Titulo", "Titulo", "Titulo AS"),
+    ] {
+        let tab = app
+            .workbench
+            .open_file(&caller, Some(TextEncoding::Utf8))
+            .unwrap();
+        let offset = code.find(reference).unwrap() + reference.find(name).unwrap();
+        assert!(app.workbench.jump_to_location(tab, offset + 1));
+        key(&mut app, KeyCode::F(12), KeyModifiers::NONE);
+        finish(&mut app);
+        assert_eq!(app.source.items().len(), 1, "{}", app.source.message());
+        key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+        assert_eq!(app.workbench.active_path(), Some(target.as_path()));
+        assert_eq!(
+            app.workbench.active_editor().unwrap().cursor,
+            class.find(declaration).unwrap()
+        );
+    }
 }
 
 #[test]

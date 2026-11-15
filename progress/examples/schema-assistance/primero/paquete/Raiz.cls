@@ -1,4 +1,14 @@
 CLASS paquete.Raiz:
+    DEFINE PUBLIC PROPERTY Titulo AS CHARACTER NO-UNDO GET. SET.
+
+    METHOD PUBLIC CHARACTER Saludar(INPUT nombre AS CHARACTER):
+        RETURN nombre.
+    END METHOD.
+
+    METHOD PUBLIC CHARACTER Saludar(INPUT cantidad AS INTEGER):
+        RETURN STRING(cantidad).
+    END METHOD.
+
     METHOD PROTECTED CHARACTER Saludo():
         RETURN "raiz".
     END METHOD.

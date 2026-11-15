@@ -32,6 +32,7 @@ fn progress_real_using_compiles_with_ordered_propath() {
         "consumidores/using-explicito.p",
         "consumidores/using-comodin.p",
         "primero/paquete/Derivada.cls",
+        "consumidores/herencia.p",
     ] {
         let path = root.join(filename);
         let before = fs::read(&path).unwrap();

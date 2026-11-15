@@ -595,8 +595,9 @@ tablas, campos e índices de bases conectadas, incluidas ubicaciones en
 inclusiones expandidas por el AVM.
 **Ir a definición** resuelve tipos ABL importados con `USING` y abre la
 declaración del `.cls` correspondiente por PROPATH en GUI y TUI.
-La navegación de métodos sin argumentos sigue `INHERITS` para las
-llamadas explícitas `SUPER` y `THIS-OBJECT`.
+La navegación de métodos y propiedades sigue `INHERITS` con `SUPER`,
+`THIS-OBJECT` y receptores de tipo declarado. Selecciona sobrecargas
+cuando hay una firma inequívoca.
 
 Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, navegación, completado inteligente de tablas/campos/índices y análisis contextual incremental. Añadir Outline/Breadcrumb/Go to Definition/Open to Side mediante `NavigationTarget` universal y proveedores por lenguaje. Buscar/seleccionar/editar sigue siendo responsabilidad genérica de `jc-app` y Search Plus; XREF, imports USING y jerarquía OO son aportaciones del proveedor ABL.
 

@@ -195,18 +195,37 @@ impl CatalogSource for Provider {
                     )? {
                         output.push(item)?;
                     }
-                } else if let Some(item) = catalog.definition(
-                    &self.source,
-                    snapshot.bytes(),
-                    snapshot.stamp.encoding,
-                    cursor,
-                    cancel,
-                )? {
-                    output.push(TaskItem::Source(item))?;
+                } else {
+                    match catalog.definition(
+                        &self.source,
+                        snapshot.bytes(),
+                        snapshot.stamp.encoding,
+                        cursor,
+                        cancel,
+                    ) {
+                        Ok(Some(item)) => output.push(TaskItem::Source(item))?,
+                        Ok(None) => {}
+                        Err(DefinitionFailure::Ambiguous) => output.push(TaskItem::Message(
+                            "Sobrecarga ABL ambigua · no se pudo determinar una firma única".into(),
+                        ))?,
+                        Err(DefinitionFailure::Task(error)) => return Err(error),
+                    }
                 }
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+enum DefinitionFailure {
+    Task(TaskFailure),
+    Ambiguous,
+}
+
+impl From<TaskFailure> for DefinitionFailure {
+    fn from(error: TaskFailure) -> Self {
+        Self::Task(error)
     }
 }
 
@@ -567,7 +586,7 @@ impl Catalog {
         encoding: TextEncoding,
         cursor: usize,
         cancel: &Cancellation,
-    ) -> Result<Option<SourceItem>, TaskFailure> {
+    ) -> Result<Option<SourceItem>, DefinitionFailure> {
         let tail = bytes.get(cursor..).ok_or(TaskFailure::InvalidRange)?;
         let end = cursor
             + tail
@@ -598,25 +617,24 @@ impl Catalog {
         if range.is_empty() || !(range.start..=range.end).contains(&cursor) {
             return Ok(None);
         }
-        if let Some(super_) = classes::receiver(bytes, &range) {
-            return self.inherited_method(
-                source,
-                &Context::new(bytes, encoding),
-                range,
-                &name,
-                super_,
-                cancel,
-            );
+        if let Some(receiver) = classes::receiver(bytes, &range, encoding) {
+            let context = Context::new(bytes, encoding);
+            let Some(call) =
+                classes::member_use(&context, range, name, receiver, &symbols, cancel)?
+            else {
+                return Ok(None);
+            };
+            return self.inherited_member(source, &context, &symbols, call, cancel);
         }
         let mut type_use = classes::type_use(&context, bytes, &range);
         if type_use.as_ref().is_some_and(|use_| !use_.static_access) {
-            return symbols.imports().resolve(
+            return Ok(symbols.imports().resolve(
                 &self.root,
                 source,
                 type_use.take().unwrap(),
                 encoding,
                 cancel,
-            );
+            )?);
         }
         let qualified = bytes
             .get(end..end + 2)
@@ -626,9 +644,9 @@ impl Catalog {
             return Ok(Some(found.item(range)));
         }
         if let Some(use_) = type_use {
-            return symbols
+            return Ok(symbols
                 .imports()
-                .resolve(&self.root, source, use_, encoding, cancel);
+                .resolve(&self.root, source, use_, encoding, cancel)?);
         }
 
         // Internal routines can be declared below their use. The second scan

@@ -44,6 +44,7 @@ struct Binding {
     name: String,
     kind: &'static str,
     record: Option<Record>,
+    object_type: Option<String>,
     site: Site,
 }
 
@@ -257,6 +258,7 @@ impl Symbols {
             } else {
                 existing.kind = "";
                 existing.record = None;
+                existing.object_type = None;
             }
         } else {
             target.insert(key, binding);
@@ -365,6 +367,16 @@ impl Symbols {
                 None
             }
         }
+    }
+
+    pub(super) fn object_type(&self, name: &str) -> Option<&str> {
+        let key = fold(name);
+        self.local
+            .as_ref()
+            .and_then(|routine| routine.scope.values.get(&key))
+            .or_else(|| self.global.values.get(&key))?
+            .object_type
+            .as_deref()
     }
 
     pub(super) fn routine_definition(&self, key: &str, run: bool) -> Option<Definition<'_>> {
@@ -484,7 +496,7 @@ impl Symbols {
         let word = |index| tokens.get(index).and_then(|token| context.word(token));
         let is = |index, keyword| at(context, tokens, index, keyword);
         if let Some(hierarchy) = &mut self.hierarchy {
-            hierarchy.statement(context, end);
+            hierarchy.statement(context, end)?;
         }
         if end == b"." && is(0, b"USING") {
             if let Some(imports) = &mut self.imports {
@@ -539,6 +551,7 @@ impl Symbols {
                         name,
                         kind,
                         record: None,
+                        object_type: None,
                         site: context.site(&tokens[1]),
                     })?;
                 }
@@ -670,10 +683,22 @@ impl Symbols {
             }
             return Ok(());
         };
+        let object_type = if self.imports.is_some()
+            && matches!(kind, "Variable" | "Parámetro")
+            && is(start, b"AS")
+        {
+            let index = start + 1 + usize::from(is(start + 1, b"CLASS"));
+            tokens
+                .get(index)
+                .and_then(|token| super::classes::declared_type(context, token.range.start))
+        } else {
+            None
+        };
         self.register(Binding {
             name,
             kind,
             record,
+            object_type,
             site: context.site(&tokens[index + 1]),
         })
     }

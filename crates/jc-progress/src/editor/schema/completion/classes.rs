@@ -14,32 +14,69 @@ const MAX_IMPORTS: usize = 128;
 const MAX_CLASS_BYTES: usize = 512 * 1024;
 const MAX_NAME: usize = 512;
 const MAX_BASE_CLASSES: usize = 16;
+const MAX_SIGNATURES: usize = 32;
+const MAX_ARGUMENT_BYTES: usize = 4096;
 
-pub(super) struct Hierarchy {
-    method: String,
-    class: Option<String>,
-    parent: Option<String>,
-    methods: Vec<Method>,
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Primitive {
+    Character,
+    Integer,
+    Int64,
+    Decimal,
+    Logical,
+    Unknown,
 }
 
-struct Method {
+fn primitive(word: &[u8]) -> Primitive {
+    [
+        (b"CHARACTER".as_slice(), Primitive::Character),
+        (b"INTEGER", Primitive::Integer),
+        (b"INT64", Primitive::Int64),
+        (b"DECIMAL", Primitive::Decimal),
+        (b"LOGICAL", Primitive::Logical),
+    ]
+    .into_iter()
+    .find_map(|(name, kind)| word.eq_ignore_ascii_case(name).then_some(kind))
+    .unwrap_or(Primitive::Unknown)
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum Signature {
+    Property,
+    Method(Vec<Primitive>),
+}
+
+pub(super) struct Hierarchy {
+    name: String,
+    class: Option<String>,
+    parent: Option<String>,
+    members: Vec<Member>,
+}
+
+struct Member {
     site: Site,
+    signature: Signature,
+    public: bool,
     private: bool,
-    package: bool,
+    package_private: bool,
     abstract_: bool,
 }
 
 impl Hierarchy {
-    pub(super) fn new(method: &str) -> Self {
+    pub(super) fn new(name: &str) -> Self {
         Self {
-            method: method.into(),
+            name: name.into(),
             class: None,
             parent: None,
-            methods: Vec::new(),
+            members: Vec::new(),
         }
     }
 
-    pub(super) fn statement(&mut self, context: &Context<'_>, end: &[u8]) {
+    pub(super) fn statement(
+        &mut self,
+        context: &Context<'_>,
+        end: &[u8],
+    ) -> Result<(), TaskFailure> {
         let tokens = &context.tokens;
         let is = |i: usize, word: &[u8]| {
             tokens
@@ -47,82 +84,286 @@ impl Hierarchy {
                 .is_some_and(|token| context.bytes(token).eq_ignore_ascii_case(word))
         };
         if end == b":" && is(0, b"CLASS") && self.class.is_none() && context.file.is_none() {
-            let read = |i: usize| {
-                let name = name_at(context.bytes, context.encoding, tokens.get(i)?.range.start)?;
-                (!name.wildcard).then_some(name.text)
-            };
+            let read = |i: usize| declared_type(context, tokens.get(i)?.range.start);
             self.class = read(1);
             self.parent = (2..tokens.len())
                 .find(|&i| is(i, b"INHERITS"))
                 .and_then(|i| read(i + 1));
         }
-        if !is(0, b"METHOD") || self.class.is_none() {
-            return;
+        if self.class.is_none() {
+            return Ok(());
         }
-        let Some(open) = (2..tokens.len()).find(|&i| is(i, b"(")) else {
-            return;
+        let (name, signature) = if is(0, b"METHOD") {
+            let Some(open) = (2..tokens.len()).find(|&i| is(i, b"(")) else {
+                return Ok(());
+            };
+            if !is(open - 1, self.name.as_bytes()) {
+                return Ok(());
+            }
+            let Some(close) = (open + 1..tokens.len()).find(|&i| is(i, b")")) else {
+                return Ok(());
+            };
+            let parameters = &tokens[open + 1..close];
+            let types = if parameters.is_empty() {
+                Vec::new()
+            } else {
+                parameters
+                    .split(|token| context.bytes(token) == b",")
+                    .map(|parameter| {
+                        let mut words = parameter.iter().map(|token| context.bytes(token));
+                        let Some(first) = words.next() else {
+                            return Primitive::Unknown;
+                        };
+                        if first.eq_ignore_ascii_case(b"OUTPUT")
+                            || first.eq_ignore_ascii_case(b"INPUT-OUTPUT")
+                        {
+                            return Primitive::Unknown;
+                        }
+                        let kind = words
+                            .by_ref()
+                            .skip_while(|word| !word.eq_ignore_ascii_case(b"AS"))
+                            .nth(1)
+                            .map_or(Primitive::Unknown, primitive);
+                        if words.next().is_none() {
+                            kind
+                        } else {
+                            Primitive::Unknown
+                        }
+                    })
+                    .collect()
+            };
+            (open - 1, Signature::Method(types))
+        } else if is(0, b"DEFINE") || is(0, b"DEF") {
+            let Some(property) = (1..tokens.len()).find(|&i| is(i, b"PROPERTY")) else {
+                return Ok(());
+            };
+            if !is(property + 1, self.name.as_bytes()) || !is(property + 2, b"AS") {
+                return Ok(());
+            }
+            (property + 1, Signature::Property)
+        } else {
+            return Ok(());
         };
-        if !is(open - 1, self.method.as_bytes())
-            || !is(open + 1, b")")
-            || (1..open - 1).any(|i| is(i, b"STATIC"))
-            || self.methods.len() >= 2
-        {
-            return;
+        let flags_end = if signature == Signature::Property {
+            name - 1
+        } else {
+            name
+        };
+        let flags = |word| (1..flags_end).any(|i| is(i, word));
+        if flags(b"STATIC") {
+            return Ok(());
         }
-        let flags = |word| (1..open - 1).any(|i| is(i, word));
-        self.methods.push(Method {
-            site: context.site(&tokens[open - 1]),
+        if self.members.len() == MAX_SIGNATURES {
+            return Err(TaskFailure::LimitExceeded);
+        }
+        self.members.push(Member {
+            site: context.site(&tokens[name]),
+            signature,
+            public: flags(b"PUBLIC"),
             private: flags(b"PRIVATE"),
-            package: flags(b"PACKAGE-PRIVATE") || flags(b"PACKAGE-PROTECTED"),
+            package_private: flags(b"PACKAGE-PRIVATE"),
             abstract_: flags(b"ABSTRACT"),
         });
+        Ok(())
     }
 }
 
-/// Return only an explicit, zero-argument instance call.
-pub(super) fn receiver(bytes: &[u8], range: &Range<usize>) -> Option<bool> {
+pub(super) enum Receiver {
+    Super,
+    This,
+    Variable(String),
+}
+
+pub(super) fn receiver(
+    bytes: &[u8],
+    range: &Range<usize>,
+    encoding: TextEncoding,
+) -> Option<Receiver> {
     let prefix = bytes.get(..range.start)?.strip_suffix(b":")?;
-    let starts = |word: &[u8]| {
-        let Some(start) = prefix.len().checked_sub(word.len()) else {
-            return false;
-        };
-        prefix[start..].eq_ignore_ascii_case(word)
-            && (start == 0 || !component_byte(prefix[start - 1]))
-            && !matches!(prefix.get(start.wrapping_sub(1)), Some(b':' | b'.'))
-    };
-    let super_ = starts(b"SUPER");
-    if !super_ && !starts(b"THIS-OBJECT") {
+    let len = prefix
+        .iter()
+        .rev()
+        .take(129)
+        .take_while(|&&byte| component_byte(byte))
+        .count();
+    let start = prefix.len() - len;
+    if !(1..=128).contains(&len) || matches!(prefix.get(start.wrapping_sub(1)), Some(b':' | b'.')) {
         return None;
     }
-    let mut suffix = bytes
-        .get(range.end..)?
+    let decoded = decode_fragment(&prefix[start..], encoding, start);
+    let word = decoded.text;
+    if !decoded.issues.is_empty() || !identifier(&word) {
+        return None;
+    }
+    Some(if word.eq_ignore_ascii_case("SUPER") {
+        Receiver::Super
+    } else if word.eq_ignore_ascii_case("THIS-OBJECT") {
+        Receiver::This
+    } else {
+        Receiver::Variable(word)
+    })
+}
+
+pub(super) struct MemberUse {
+    range: Range<usize>,
+    name: String,
+    receiver: Receiver,
+    signature: Signature,
+}
+
+pub(super) fn member_use(
+    context: &Context<'_>,
+    range: Range<usize>,
+    name: String,
+    receiver: Receiver,
+    symbols: &Symbols,
+    cancel: &Cancellation,
+) -> Result<Option<MemberUse>, TaskFailure> {
+    if cancel.is_cancelled() {
+        return Err(TaskFailure::Cancelled);
+    }
+    let suffix = &context.bytes[range.end..];
+    let start = suffix
         .iter()
-        .take(128)
-        .filter(|b| !b.is_ascii_whitespace());
-    (suffix.next() == Some(&b'(') && suffix.next() == Some(&b')')).then_some(super_)
+        .take(MAX_ARGUMENT_BYTES)
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(suffix.len());
+    let signature = if suffix.get(start) == Some(&b'(') {
+        let Some(arguments) = arguments(&suffix[start..], |argument| {
+            literal(argument, symbols, context.encoding)
+        }) else {
+            return Ok(None);
+        };
+        Signature::Method(arguments)
+    } else {
+        if matches!(receiver, Receiver::Super) {
+            return Ok(None);
+        }
+        Signature::Property
+    };
+    Ok(Some(MemberUse {
+        range,
+        name,
+        receiver,
+        signature,
+    }))
+}
+
+fn arguments(source: &[u8], classify: impl Fn(&[u8]) -> Primitive) -> Option<Vec<Primitive>> {
+    let slice = &source[..source.len().min(MAX_ARGUMENT_BYTES)];
+    let mut lexer = LexerState::default();
+    let mut args = Vec::new();
+    let mut delimiters = Vec::new();
+    let mut start = 1;
+    let mut closed = false;
+    let mut invalid = false;
+    scan(SyntaxProfile::Abl, &mut lexer, slice, 0, true, |span| {
+        if closed || invalid || span.kind != SyntaxKind::Operator {
+            return;
+        }
+        let token = &slice[span.source.clone()];
+        match token {
+            b"(" | b"[" => delimiters.push(token[0]),
+            b")" | b"]" => {
+                let opener = if token == b")" { b'(' } else { b'[' };
+                if delimiters.pop() != Some(opener) {
+                    invalid = true;
+                } else if delimiters.is_empty() {
+                    closed = true;
+                    let argument = slice[start..span.source.start].trim_ascii();
+                    if !argument.is_empty() || !args.is_empty() {
+                        args.push(classify(argument));
+                    }
+                }
+            }
+            b"," if delimiters.len() == 1 => {
+                args.push(classify(slice[start..span.source.start].trim_ascii()));
+                start = span.source.end;
+            }
+            _ => {}
+        }
+    });
+    (closed && !invalid && args.len() <= 32).then_some(args)
+}
+
+fn literal(bytes: &[u8], symbols: &Symbols, encoding: TextEncoding) -> Primitive {
+    let first = bytes
+        .split(|byte| byte.is_ascii_whitespace())
+        .next()
+        .unwrap_or_default();
+    let bytes = if first.eq_ignore_ascii_case(b"INPUT") {
+        bytes[first.len()..].trim_ascii_start()
+    } else {
+        bytes
+    };
+    if bytes.eq_ignore_ascii_case(b"TRUE") || bytes.eq_ignore_ascii_case(b"FALSE") {
+        return Primitive::Logical;
+    }
+    if bytes
+        .first()
+        .is_some_and(|byte| matches!(byte, b'"' | b'\''))
+        && bytes.len() >= 2
+    {
+        let quote = bytes[0];
+        let mut i = 1;
+        while i < bytes.len() {
+            if bytes[i] == b'~' || bytes[i] == quote && bytes.get(i + 1) == Some(&quote) {
+                i += 2;
+                continue;
+            }
+            if bytes[i] == quote {
+                return if i + 1 == bytes.len() {
+                    Primitive::Character
+                } else {
+                    Primitive::Unknown
+                };
+            }
+            i += 1;
+        }
+        return Primitive::Unknown;
+    }
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        if text.parse::<i32>().is_ok() {
+            return Primitive::Integer;
+        }
+        if text.parse::<i64>().is_ok() {
+            return Primitive::Int64;
+        }
+        if text.contains('.')
+            && text
+                .bytes()
+                .all(|b| b.is_ascii_digit() || matches!(b, b'+' | b'-' | b'.'))
+            && text.parse::<f64>().is_ok()
+        {
+            return Primitive::Decimal;
+        }
+    }
+    let decoded = decode_fragment(bytes, encoding, 0);
+    if decoded.issues.is_empty() && identifier(&decoded.text) {
+        if let Some(ty) = symbols.object_type(&decoded.text) {
+            return primitive(ty.as_bytes());
+        }
+    }
+    Primitive::Unknown
+}
+
+fn package(class: &str) -> &str {
+    class.rsplit_once('.').map_or("", |(package, _)| package)
 }
 
 impl Catalog {
-    pub(super) fn inherited_method(
+    pub(super) fn inherited_member(
         &self,
         source: &Path,
         context: &Context<'_>,
-        range: Range<usize>,
-        name: &str,
-        super_: bool,
+        symbols: &Symbols,
+        call: MemberUse,
         cancel: &Cancellation,
-    ) -> Result<Option<SourceItem>, TaskFailure> {
-        if !source
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("cls"))
-        {
-            return Ok(None);
-        }
+    ) -> Result<Option<SourceItem>, super::DefinitionFailure> {
         let inspect = |path: &Path, bytes: &[u8], encoding| {
             let mut symbols = Symbols::default();
             symbols.track_imports();
-            symbols.track_hierarchy(name);
+            symbols.track_hierarchy(&call.name);
             Includes::new(&self.root, path).with_locations().scan(
                 &mut Context::new(bytes, encoding),
                 &mut symbols,
@@ -131,57 +372,126 @@ impl Catalog {
             )?;
             Ok::<_, TaskFailure>(symbols.into_hierarchy())
         };
-        let (mut hierarchy, mut imports) = inspect(source, context.bytes, context.encoding)?;
+        let external = matches!(call.receiver, Receiver::Variable(_));
+        let super_ = matches!(call.receiver, Receiver::Super);
+        let mut loaded = if let Receiver::Variable(name) = &call.receiver {
+            let Some(ty) = symbols.object_type(name) else {
+                return Ok(None);
+            };
+            let Some(class) =
+                symbols
+                    .imports()
+                    .load(&self.root, source, ty, false, context.encoding, cancel)?
+            else {
+                return Ok(None);
+            };
+            Some(class)
+        } else {
+            if !source
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("cls"))
+            {
+                return Ok(None);
+            }
+            None
+        };
+        let (mut hierarchy, mut imports) = if let Some(class) = &loaded {
+            inspect(&class.path, &class.bytes, class.encoding)?
+        } else {
+            inspect(source, context.bytes, context.encoding)?
+        };
         let Some(owner) = hierarchy.class.clone() else {
             return Ok(None);
         };
-        let package = |class: &str| {
-            class
-                .rsplit_once('.')
-                .map_or("", |(package, _)| package)
-                .to_owned()
-        };
-        let source_package = package(&owner);
         let mut seen = BTreeSet::from([owner.to_lowercase()]);
-        let mut loaded: Option<ClassSource> = None;
+        let mut signatures = BTreeSet::new();
+        let mut exact = Vec::new();
+        let mut uncertain = Vec::new();
         for depth in 0..=MAX_BASE_CLASSES {
             let class = hierarchy.class.as_deref().unwrap_or_default();
-            let local = loaded.is_none();
-            if !local || !super_ {
-                let mut eligible = hierarchy.methods.iter().filter(|method| {
-                    local
-                        || !method.private
-                            && (!method.package
-                                || package(class).eq_ignore_ascii_case(&source_package))
-                });
-                if let Some(method) = eligible.next() {
-                    if eligible.next().is_some() || super_ && method.abstract_ {
-                        return Ok(None);
-                    }
-                    let class_label: String = class.chars().take(64).collect();
-                    let label = format!("Método · {name} · {class_label}");
-                    return Ok(Some(if method.site.file.is_some() || local {
-                        method.site.item(label, range)
+            if !super_ || depth != 0 {
+                let mut declared_here = BTreeSet::new();
+                for member in &hierarchy.members {
+                    let same_package = package(class).eq_ignore_ascii_case(package(&owner));
+                    let accessible = if external {
+                        member.public
                     } else {
-                        loaded
-                            .as_ref()
-                            .unwrap()
-                            .item(range, label, method.site.offset)
-                    }));
+                        depth == 0 || !member.private && (!member.package_private || same_package)
+                    };
+                    if !accessible || signatures.contains(&member.signature) {
+                        continue;
+                    }
+                    let rank = match (&call.signature, &member.signature) {
+                        (Signature::Property, Signature::Property) => true,
+                        (Signature::Method(args), Signature::Method(params))
+                            if args.len() == params.len() =>
+                        {
+                            if !args.iter().zip(params).all(|(&arg, &param)| {
+                                arg == param
+                                    || matches!(arg, Primitive::Unknown)
+                                    || matches!(param, Primitive::Unknown)
+                                    || matches!(
+                                        (arg, param),
+                                        (Primitive::Integer, Primitive::Int64 | Primitive::Decimal)
+                                            | (Primitive::Int64, Primitive::Decimal)
+                                    )
+                            }) {
+                                continue;
+                            }
+                            args.iter()
+                                .zip(params)
+                                .all(|(arg, param)| arg == param && *arg != Primitive::Unknown)
+                        }
+                        _ => continue,
+                    };
+                    if !member.signature.unknown() {
+                        declared_here.insert(member.signature.clone());
+                    }
+                    let candidate = if super_ && member.abstract_ {
+                        None
+                    } else {
+                        let kind = if call.signature == Signature::Property {
+                            "Propiedad"
+                        } else {
+                            "Método"
+                        };
+                        let class_label: String = class.chars().take(64).collect();
+                        let label = format!("{kind} · {} · {class_label}", call.name);
+                        Some(
+                            if let Some(class) =
+                                loaded.as_ref().filter(|_| member.site.file.is_none())
+                            {
+                                class.item(call.range.clone(), label, member.site.offset)
+                            } else {
+                                member.site.item(label, call.range.clone())
+                            },
+                        )
+                    };
+                    if rank {
+                        exact.push(candidate);
+                    } else {
+                        uncertain.push((candidate, member.signature.unknown()));
+                    }
+                }
+                signatures.extend(declared_here);
+                if !exact.is_empty() && !call.signature.unknown() {
+                    // A farther declaration with the same exact signature is overridden.
+                    break;
                 }
             }
             let Some(parent) = hierarchy.parent else {
-                return Ok(None);
+                break;
             };
             if depth == MAX_BASE_CLASSES {
-                return Err(TaskFailure::LimitExceeded);
+                return Err(TaskFailure::LimitExceeded.into());
             }
             let (path, encoding) = loaded.as_ref().map_or((source, context.encoding), |class| {
                 (class.path.as_path(), class.encoding)
             });
             let Some(base) = imports.load(&self.root, path, &parent, false, encoding, cancel)?
             else {
-                return Ok(None);
+                break;
             };
             if !seen.insert(base.name.to_lowercase()) {
                 return Ok(None);
@@ -189,8 +499,35 @@ impl Catalog {
             (hierarchy, imports) = inspect(&base.path, &base.bytes, base.encoding)?;
             loaded = Some(base);
         }
-        Err(TaskFailure::LimitExceeded)
+        if exact.is_empty() {
+            unique(uncertain.into_iter().map(|(item, _)| item).collect())
+        } else if uncertain.iter().all(|(_, unknown)| !unknown) {
+            unique(exact)
+        } else {
+            // Incomplete signature information may hide a better overload.
+            Err(super::DefinitionFailure::Ambiguous)
+        }
     }
+}
+
+impl Signature {
+    fn unknown(&self) -> bool {
+        matches!(self, Self::Method(types) if types.contains(&Primitive::Unknown))
+    }
+}
+
+fn unique(
+    mut candidates: Vec<Option<SourceItem>>,
+) -> Result<Option<SourceItem>, super::DefinitionFailure> {
+    if candidates.len() > 1 {
+        return Err(super::DefinitionFailure::Ambiguous);
+    }
+    Ok(candidates.pop().flatten())
+}
+
+pub(super) fn declared_type(context: &Context<'_>, start: usize) -> Option<String> {
+    let name = name_at(context.bytes, context.encoding, start)?;
+    (!name.wildcard).then_some(name.text)
 }
 
 struct Name {

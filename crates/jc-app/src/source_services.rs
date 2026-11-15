@@ -1148,7 +1148,9 @@ impl SourceController {
                 || catalog_symbols
                 || matches!(
                     request.mode,
-                    SourceMode::CatalogReferences | SourceMode::CatalogXref
+                    SourceMode::CatalogDefinition
+                        | SourceMode::CatalogReferences
+                        | SourceMode::CatalogXref
                 )
             {
                 match item {
@@ -1222,7 +1224,7 @@ impl SourceController {
             format!("Esquema ABL: {} sugerencias", self.items.len())
         } else if request.mode == SourceMode::CatalogDefinition {
             if self.items.is_empty() {
-                "Definición ABL sin resolver".into()
+                notice.unwrap_or_else(|| "Definición ABL sin resolver".into())
             } else {
                 "Definición ABL localizada · Intro abre · Ctrl+Intro al lado".into()
             }
