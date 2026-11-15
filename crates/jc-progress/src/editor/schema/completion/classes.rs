@@ -8,6 +8,7 @@ use std::{
     io::ErrorKind,
     ops::Range,
     path::{Path, PathBuf},
+    rc::Rc,
 };
 
 const MAX_IMPORTS: usize = 128;
@@ -16,6 +17,7 @@ const MAX_NAME: usize = 512;
 const MAX_BASE_CLASSES: usize = 16;
 const MAX_SIGNATURES: usize = 32;
 const MAX_ARGUMENT_BYTES: usize = 4096;
+const MAX_RECEIVER_STEPS: usize = 4;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Primitive {
@@ -43,7 +45,49 @@ fn primitive(word: &[u8]) -> Primitive {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Signature {
     Property,
-    Method(Vec<Primitive>),
+    Method(Vec<Parameter>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Mode {
+    Input,
+    Output,
+    InputOutput,
+}
+
+fn mode(word: &[u8]) -> Option<Mode> {
+    [
+        ("INPUT", Mode::Input),
+        ("OUTPUT", Mode::Output),
+        ("INPUT-OUTPUT", Mode::InputOutput),
+    ]
+    .into_iter()
+    .find_map(|(name, mode)| word.eq_ignore_ascii_case(name.as_bytes()).then_some(mode))
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Parameter {
+    mode: Option<Mode>,
+    kind: Primitive,
+}
+
+impl Parameter {
+    fn accepts(self, argument: Self) -> bool {
+        if argument.mode.is_some() && self.mode != argument.mode {
+            return false;
+        }
+        use Primitive::{Decimal, Int64, Integer, Unknown};
+        self.kind == argument.kind
+            || self.kind == Unknown
+            || argument.kind == Unknown
+            || match self.mode {
+                Some(Mode::Input) => matches!(
+                    (argument.kind, self.kind),
+                    (Integer, Int64 | Decimal) | (Int64, Decimal)
+                ),
+                _ => false,
+            }
+    }
 }
 
 pub(super) struct Hierarchy {
@@ -56,6 +100,7 @@ pub(super) struct Hierarchy {
 struct Member {
     site: Site,
     signature: Signature,
+    object_type: Option<String>,
     public: bool,
     private: bool,
     package_private: bool,
@@ -93,7 +138,7 @@ impl Hierarchy {
         if self.class.is_none() {
             return Ok(());
         }
-        let (name, signature) = if is(0, b"METHOD") {
+        let (name, signature, object_type) = if is(0, b"METHOD") {
             let Some(open) = (2..tokens.len()).find(|&i| is(i, b"(")) else {
                 return Ok(());
             };
@@ -111,28 +156,40 @@ impl Hierarchy {
                     .split(|token| context.bytes(token) == b",")
                     .map(|parameter| {
                         let mut words = parameter.iter().map(|token| context.bytes(token));
-                        let Some(first) = words.next() else {
-                            return Primitive::Unknown;
-                        };
-                        if first.eq_ignore_ascii_case(b"OUTPUT")
-                            || first.eq_ignore_ascii_case(b"INPUT-OUTPUT")
-                        {
-                            return Primitive::Unknown;
-                        }
+                        let direction = words.next().and_then(mode).unwrap_or(Mode::Input);
                         let kind = words
                             .by_ref()
                             .skip_while(|word| !word.eq_ignore_ascii_case(b"AS"))
                             .nth(1)
                             .map_or(Primitive::Unknown, primitive);
-                        if words.next().is_none() {
-                            kind
-                        } else {
-                            Primitive::Unknown
+                        Parameter {
+                            mode: Some(direction),
+                            kind: if words.next().is_none() {
+                                kind
+                            } else {
+                                Primitive::Unknown
+                            },
                         }
                     })
                     .collect()
             };
-            (open - 1, Signature::Method(types))
+            let name = open - 1;
+            let mut type_index = name - 1;
+            while type_index >= 3 && is(type_index - 1, b".") {
+                type_index -= 2;
+            }
+            let object_type = name_at(
+                context.bytes,
+                context.encoding,
+                tokens[type_index].range.start,
+            )
+            .filter(|ty| {
+                type_index > 0
+                    && ty.range.end == tokens[name - 1].range.end
+                    && class_type(&tokens[type_index], ty)
+            })
+            .map(|ty| ty.text);
+            (name, Signature::Method(types), object_type)
         } else if is(0, b"DEFINE") || is(0, b"DEF") {
             let Some(property) = (1..tokens.len()).find(|&i| is(i, b"PROPERTY")) else {
                 return Ok(());
@@ -140,7 +197,21 @@ impl Hierarchy {
             if !is(property + 1, self.name.as_bytes()) || !is(property + 2, b"AS") {
                 return Ok(());
             }
-            (property + 1, Signature::Property)
+            let type_index = property + if is(property + 3, b"CLASS") { 4 } else { 3 };
+            let object_type = tokens
+                .get(type_index)
+                .and_then(|token| {
+                    name_at(context.bytes, context.encoding, token.range.start)
+                        .filter(|ty| class_type(token, ty))
+                })
+                .filter(|ty| {
+                    !tokens.iter().any(|token| {
+                        token.range.start >= ty.range.end
+                            && context.bytes(token).eq_ignore_ascii_case(b"EXTENT")
+                    })
+                })
+                .map(|ty| ty.text);
+            (property + 1, Signature::Property, object_type)
         } else {
             return Ok(());
         };
@@ -159,6 +230,7 @@ impl Hierarchy {
         self.members.push(Member {
             site: context.site(&tokens[name]),
             signature,
+            object_type,
             public: flags(b"PUBLIC"),
             private: flags(b"PRIVATE"),
             package_private: flags(b"PACKAGE-PRIVATE"),
@@ -168,54 +240,116 @@ impl Hierarchy {
     }
 }
 
-pub(super) enum Receiver {
+enum ReceiverRoot {
     Super,
     This,
     Variable(String),
 }
 
+pub(super) struct Receiver {
+    root: ReceiverRoot,
+    chain: Vec<MemberUse>,
+}
+
 pub(super) fn receiver(
-    bytes: &[u8],
+    context: &Context<'_>,
     range: &Range<usize>,
-    encoding: TextEncoding,
+    symbols: &Symbols,
 ) -> Option<Receiver> {
-    let prefix = bytes.get(..range.start)?.strip_suffix(b":")?;
-    let len = prefix
+    context.bytes.get(..range.start)?.strip_suffix(b":")?;
+    let start = range.start.saturating_sub(MAX_ARGUMENT_BYTES);
+    let line_break = context.bytes[start..range.start]
         .iter()
-        .rev()
-        .take(129)
-        .take_while(|&&byte| component_byte(byte))
-        .count();
-    let start = prefix.len() - len;
-    if !(1..=128).contains(&len) || matches!(prefix.get(start.wrapping_sub(1)), Some(b':' | b'.')) {
+        .rposition(|byte| matches!(byte, b'\n' | b'\r'));
+    let start = match line_break {
+        Some(offset) => start + offset + 1,
+        None if start == 0 => 0,
+        None => return None,
+    };
+    let mut tokens = Vec::new();
+    let mut lexer = LexerState::default();
+    scan(
+        SyntaxProfile::Abl,
+        &mut lexer,
+        &context.bytes[start..range.end],
+        start,
+        true,
+        |span| {
+            let bytes = &context.bytes[span.source.clone()];
+            if span.kind != SyntaxKind::Comment && !bytes.iter().all(u8::is_ascii_whitespace) {
+                tokens.push(super::Token {
+                    kind: span.kind,
+                    range: span.source,
+                });
+            }
+        },
+    );
+    let mut index = tokens.len().checked_sub(2)?;
+    if context.bytes(&tokens[index]) != b":" || tokens[index].range.end != range.start {
         return None;
     }
-    let decoded = decode_fragment(&prefix[start..], encoding, start);
-    let word = decoded.text;
-    if !decoded.issues.is_empty() || !identifier(&word) {
-        return None;
-    }
-    Some(if word.eq_ignore_ascii_case("SUPER") {
-        Receiver::Super
+    let mut chain = Vec::new();
+    let word = loop {
+        index = index.checked_sub(1)?;
+        let mut signature = Signature::Property;
+        if context.bytes(&tokens[index]) == b")" {
+            let mut level = 1;
+            let end = tokens[index].range.end;
+            while level != 0 {
+                index = index.checked_sub(1)?;
+                match context.bytes(&tokens[index]) {
+                    b")" => level += 1,
+                    b"(" => level -= 1,
+                    _ => {}
+                }
+            }
+            let args = arguments(&context.bytes[tokens[index].range.start..end], |arg| {
+                call_parameter(arg, symbols, context.encoding)
+            })?;
+            signature = Signature::Method(args);
+            index = index.checked_sub(1)?;
+        }
+        let token = &tokens[index];
+        let word = context.word(token).filter(|word| identifier(word))?;
+        let previous = index.checked_sub(1).and_then(|i| tokens.get(i));
+        match previous.map(|token| context.bytes(token)) {
+            Some(b":") if chain.len() < MAX_RECEIVER_STEPS => {
+                chain.push(MemberUse {
+                    range: token.range.clone(),
+                    name: word,
+                    signature,
+                    through: true,
+                });
+                index -= 1;
+            }
+            Some(b".") if previous?.range.end == token.range.start => return None,
+            Some(b":") => return None,
+            _ if signature == Signature::Property => break word,
+            _ => return None,
+        }
+    };
+    chain.reverse();
+    let root = if word.eq_ignore_ascii_case("SUPER") {
+        ReceiverRoot::Super
     } else if word.eq_ignore_ascii_case("THIS-OBJECT") {
-        Receiver::This
+        ReceiverRoot::This
     } else {
-        Receiver::Variable(word)
-    })
+        ReceiverRoot::Variable(word)
+    };
+    Some(Receiver { root, chain })
 }
 
 pub(super) struct MemberUse {
     range: Range<usize>,
     name: String,
-    receiver: Receiver,
     signature: Signature,
+    through: bool,
 }
 
 pub(super) fn member_use(
     context: &Context<'_>,
     range: Range<usize>,
     name: String,
-    receiver: Receiver,
     symbols: &Symbols,
     cancel: &Cancellation,
 ) -> Result<Option<MemberUse>, TaskFailure> {
@@ -230,26 +364,23 @@ pub(super) fn member_use(
         .unwrap_or(suffix.len());
     let signature = if suffix.get(start) == Some(&b'(') {
         let Some(arguments) = arguments(&suffix[start..], |argument| {
-            literal(argument, symbols, context.encoding)
+            call_parameter(argument, symbols, context.encoding)
         }) else {
             return Ok(None);
         };
         Signature::Method(arguments)
     } else {
-        if matches!(receiver, Receiver::Super) {
-            return Ok(None);
-        }
         Signature::Property
     };
     Ok(Some(MemberUse {
         range,
         name,
-        receiver,
         signature,
+        through: false,
     }))
 }
 
-fn arguments(source: &[u8], classify: impl Fn(&[u8]) -> Primitive) -> Option<Vec<Primitive>> {
+fn arguments(source: &[u8], classify: impl Fn(&[u8]) -> Parameter) -> Option<Vec<Parameter>> {
     let slice = &source[..source.len().min(MAX_ARGUMENT_BYTES)];
     let mut lexer = LexerState::default();
     let mut args = Vec::new();
@@ -286,16 +417,24 @@ fn arguments(source: &[u8], classify: impl Fn(&[u8]) -> Primitive) -> Option<Vec
     (closed && !invalid && args.len() <= 32).then_some(args)
 }
 
-fn literal(bytes: &[u8], symbols: &Symbols, encoding: TextEncoding) -> Primitive {
+fn call_parameter(bytes: &[u8], symbols: &Symbols, encoding: TextEncoding) -> Parameter {
     let first = bytes
         .split(|byte| byte.is_ascii_whitespace())
         .next()
         .unwrap_or_default();
-    let bytes = if first.eq_ignore_ascii_case(b"INPUT") {
+    let direction = mode(first);
+    let value = if direction.is_some() {
         bytes[first.len()..].trim_ascii_start()
     } else {
         bytes
     };
+    Parameter {
+        mode: direction,
+        kind: literal(value, symbols, encoding),
+    }
+}
+
+fn literal(bytes: &[u8], symbols: &Symbols, encoding: TextEncoding) -> Primitive {
     if bytes.eq_ignore_ascii_case(b"TRUE") || bytes.eq_ignore_ascii_case(b"FALSE") {
         return Primitive::Logical;
     }
@@ -357,9 +496,39 @@ impl Catalog {
         source: &Path,
         context: &Context<'_>,
         symbols: &Symbols,
+        receiver: Receiver,
         call: MemberUse,
         cancel: &Cancellation,
     ) -> Result<Option<SourceItem>, super::DefinitionFailure> {
+        let mut origin = Origin::Initial(&receiver.root, symbols);
+        for step in receiver.chain {
+            let Some(found) = self.resolve_member(source, context, origin, step, cancel)? else {
+                return Ok(None);
+            };
+            let Some(ty) = found.object_type else {
+                return Ok(None);
+            };
+            let Some(class) =
+                ty.imports
+                    .load(&self.root, &ty.path, &ty.name, false, ty.encoding, cancel)?
+            else {
+                return Ok(None);
+            };
+            origin = Origin::Chained(class);
+        }
+        Ok(self
+            .resolve_member(source, context, origin, call, cancel)?
+            .map(|found| found.item))
+    }
+
+    fn resolve_member(
+        &self,
+        source: &Path,
+        context: &Context<'_>,
+        origin: Origin<'_>,
+        call: MemberUse,
+        cancel: &Cancellation,
+    ) -> Result<Option<MemberMatch>, super::DefinitionFailure> {
         let inspect = |path: &Path, bytes: &[u8], encoding| {
             let mut symbols = Symbols::default();
             symbols.track_imports();
@@ -370,31 +539,43 @@ impl Catalog {
                 self,
                 cancel,
             )?;
-            Ok::<_, TaskFailure>(symbols.into_hierarchy())
+            let (hierarchy, imports) = symbols.into_hierarchy();
+            Ok::<_, TaskFailure>((hierarchy, Rc::new(imports)))
         };
-        let external = matches!(call.receiver, Receiver::Variable(_));
-        let super_ = matches!(call.receiver, Receiver::Super);
-        let mut loaded = if let Receiver::Variable(name) = &call.receiver {
-            let Some(ty) = symbols.object_type(name) else {
-                return Ok(None);
-            };
-            let Some(class) =
-                symbols
-                    .imports()
-                    .load(&self.root, source, ty, false, context.encoding, cancel)?
-            else {
-                return Ok(None);
-            };
-            Some(class)
-        } else {
-            if !source
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("cls"))
-            {
-                return Ok(None);
+        let external = matches!(
+            origin,
+            Origin::Initial(ReceiverRoot::Variable(_), _) | Origin::Chained(_)
+        );
+        let super_ = matches!(origin, Origin::Initial(ReceiverRoot::Super, _));
+        let mut loaded = match origin {
+            Origin::Chained(class) => Some(class),
+            Origin::Initial(ReceiverRoot::Variable(name), symbols) => {
+                let Some(ty) = symbols.object_type(name) else {
+                    return Ok(None);
+                };
+                let Some(class) = symbols.imports().load(
+                    &self.root,
+                    source,
+                    ty,
+                    false,
+                    context.encoding,
+                    cancel,
+                )?
+                else {
+                    return Ok(None);
+                };
+                Some(class)
             }
-            None
+            Origin::Initial(_, _) => {
+                if !source
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("cls"))
+                {
+                    return Ok(None);
+                }
+                None
+            }
         };
         let (mut hierarchy, mut imports) = if let Some(class) = &loaded {
             inspect(&class.path, &class.bytes, class.encoding)?
@@ -427,47 +608,59 @@ impl Catalog {
                         (Signature::Method(args), Signature::Method(params))
                             if args.len() == params.len() =>
                         {
-                            if !args.iter().zip(params).all(|(&arg, &param)| {
-                                arg == param
-                                    || matches!(arg, Primitive::Unknown)
-                                    || matches!(param, Primitive::Unknown)
-                                    || matches!(
-                                        (arg, param),
-                                        (Primitive::Integer, Primitive::Int64 | Primitive::Decimal)
-                                            | (Primitive::Int64, Primitive::Decimal)
-                                    )
-                            }) {
+                            if !args
+                                .iter()
+                                .zip(params)
+                                .all(|(&arg, &param)| param.accepts(arg))
+                            {
                                 continue;
                             }
-                            args.iter()
-                                .zip(params)
-                                .all(|(arg, param)| arg == param && *arg != Primitive::Unknown)
+                            args.iter().zip(params).all(|(arg, param)| {
+                                arg.kind == param.kind && arg.kind != Primitive::Unknown
+                            })
                         }
                         _ => continue,
                     };
                     if !member.signature.unknown() {
                         declared_here.insert(member.signature.clone());
                     }
-                    let candidate = if super_ && member.abstract_ {
-                        None
-                    } else {
-                        let kind = if call.signature == Signature::Property {
-                            "Propiedad"
+                    let candidate =
+                        if super_ && (member.abstract_ || call.signature == Signature::Property) {
+                            None
                         } else {
-                            "Método"
-                        };
-                        let class_label: String = class.chars().take(64).collect();
-                        let label = format!("{kind} · {} · {class_label}", call.name);
-                        Some(
-                            if let Some(class) =
+                            let kind = if call.signature == Signature::Property {
+                                "Propiedad"
+                            } else {
+                                "Método"
+                            };
+                            let class_label: String = class.chars().take(64).collect();
+                            let label = format!("{kind} · {} · {class_label}", call.name);
+                            let item = if let Some(class) =
                                 loaded.as_ref().filter(|_| member.site.file.is_none())
                             {
                                 class.item(call.range.clone(), label, member.site.offset)
                             } else {
                                 member.site.item(label, call.range.clone())
-                            },
-                        )
-                    };
+                            };
+                            let object_type = member
+                                .object_type
+                                .as_ref()
+                                .filter(|_| call.through)
+                                .map(|name| {
+                                    let (path, encoding) = loaded
+                                        .as_ref()
+                                        .map_or((source, context.encoding), |class| {
+                                            (class.path.as_path(), class.encoding)
+                                        });
+                                    DeclaredClass {
+                                        name: name.clone(),
+                                        imports: Rc::clone(&imports),
+                                        path: path.to_owned(),
+                                        encoding,
+                                    }
+                                });
+                            Some(MemberMatch { item, object_type })
+                        };
                     if rank {
                         exact.push(candidate);
                     } else {
@@ -475,7 +668,7 @@ impl Catalog {
                     }
                 }
                 signatures.extend(declared_here);
-                if !exact.is_empty() && !call.signature.unknown() {
+                if !exact.is_empty() && call.signature.explicit() && !call.signature.unknown() {
                     // A farther declaration with the same exact signature is overridden.
                     break;
                 }
@@ -510,15 +703,39 @@ impl Catalog {
     }
 }
 
+enum Origin<'a> {
+    Initial(&'a ReceiverRoot, &'a Symbols),
+    Chained(ClassSource),
+}
+
+struct MemberMatch {
+    item: SourceItem,
+    object_type: Option<DeclaredClass>,
+}
+
+struct DeclaredClass {
+    name: String,
+    imports: Rc<Imports>,
+    path: PathBuf,
+    encoding: TextEncoding,
+}
+
 impl Signature {
     fn unknown(&self) -> bool {
-        matches!(self, Self::Method(types) if types.contains(&Primitive::Unknown))
+        matches!(self, Self::Method(types) if types.iter().any(|param| param.kind == Primitive::Unknown))
+    }
+
+    fn explicit(&self) -> bool {
+        match self {
+            Self::Property => true,
+            Self::Method(params) => params.iter().all(|param| param.mode.is_some()),
+        }
     }
 }
 
 fn unique(
-    mut candidates: Vec<Option<SourceItem>>,
-) -> Result<Option<SourceItem>, super::DefinitionFailure> {
+    mut candidates: Vec<Option<MemberMatch>>,
+) -> Result<Option<MemberMatch>, super::DefinitionFailure> {
     if candidates.len() > 1 {
         return Err(super::DefinitionFailure::Ambiguous);
     }
@@ -535,6 +752,10 @@ struct Name {
     range: Range<usize>,
     last: usize,
     wildcard: bool,
+}
+
+fn class_type(token: &super::Token, name: &Name) -> bool {
+    !name.wildcard && (name.text.contains('.') || token.kind == SyntaxKind::Plain)
 }
 
 #[derive(Default)]

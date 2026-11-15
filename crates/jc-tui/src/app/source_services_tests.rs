@@ -408,6 +408,27 @@ fn progress_real_inheritance_tui_selects_override_and_opens_grandparent() {
             "Saludar(INPUT cantidad",
         ),
         ("objeto:Titulo", "Titulo", "Titulo AS"),
+        ("objeto:Hijo:Titulo", "Titulo", "Titulo AS"),
+        (
+            "objeto:Obtener():Hijo:Saludar(numero)",
+            "Saludar",
+            "Saludar(INPUT cantidad",
+        ),
+        (
+            "objeto:Ajustar(INPUT numero)",
+            "Ajustar",
+            "Ajustar(INPUT cantidad",
+        ),
+        (
+            "objeto:Ajustar(OUTPUT numero)",
+            "Ajustar",
+            "Ajustar(OUTPUT cantidad",
+        ),
+        (
+            "objeto:Ajustar(INPUT-OUTPUT numero)",
+            "Ajustar",
+            "Ajustar(INPUT-OUTPUT cantidad",
+        ),
     ] {
         let tab = app
             .workbench

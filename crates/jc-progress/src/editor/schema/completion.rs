@@ -617,14 +617,20 @@ impl Catalog {
         if range.is_empty() || !(range.start..=range.end).contains(&cursor) {
             return Ok(None);
         }
-        if let Some(receiver) = classes::receiver(bytes, &range, encoding) {
-            let context = Context::new(bytes, encoding);
-            let Some(call) =
-                classes::member_use(&context, range, name, receiver, &symbols, cancel)?
-            else {
+        if range
+            .start
+            .checked_sub(1)
+            .and_then(|offset| bytes.get(offset))
+            == Some(&b':')
+        {
+            let Some(receiver) = classes::receiver(&context, &range, &symbols) else {
                 return Ok(None);
             };
-            return self.inherited_member(source, &context, &symbols, call, cancel);
+            let context = Context::new(bytes, encoding);
+            let Some(call) = classes::member_use(&context, range, name, &symbols, cancel)? else {
+                return Ok(None);
+            };
+            return self.inherited_member(source, &context, &symbols, receiver, call, cancel);
         }
         let mut type_use = classes::type_use(&context, bytes, &range);
         if type_use.as_ref().is_some_and(|use_| !use_.static_access) {

@@ -1027,6 +1027,27 @@ mod tests {
                 "Saludar(INPUT cantidad",
             ),
             ("objeto:Titulo", "Titulo", "Titulo AS"),
+            ("objeto:Hijo:Titulo", "Titulo", "Titulo AS"),
+            (
+                "objeto:Obtener():Hijo:Saludar(numero)",
+                "Saludar",
+                "Saludar(INPUT cantidad",
+            ),
+            (
+                "objeto:Ajustar(INPUT numero)",
+                "Ajustar",
+                "Ajustar(INPUT cantidad",
+            ),
+            (
+                "objeto:Ajustar(OUTPUT numero)",
+                "Ajustar",
+                "Ajustar(OUTPUT cantidad",
+            ),
+            (
+                "objeto:Ajustar(INPUT-OUTPUT numero)",
+                "Ajustar",
+                "Ajustar(INPUT-OUTPUT cantidad",
+            ),
         ] {
             let tab = state
                 .workbench
@@ -1050,26 +1071,32 @@ mod tests {
             );
         }
 
-        let tab = state
-            .workbench
-            .new_file(root.join("ambiguo.p"), TextEncoding::Utf8);
-        let code = "USING paquete.Derivada FROM PROPATH.\nDEFINE VARIABLE objeto AS CLASS Derivada.\nDISPLAY objeto:Saludar(?).";
-        state.workbench.insert_text(code).unwrap();
-        assert!(state
-            .workbench
-            .jump_to_location(tab, code.find("Saludar").unwrap() + 2));
-        state.execute_menu(CommandId::SourceDefinition);
-        finish(&mut state);
-        assert!(state.source_gui.controller.items().is_empty());
-        assert!(
-            state
-                .source_gui
-                .controller
-                .message()
-                .contains("Sobrecarga ABL ambigua"),
-            "{}",
-            state.source_gui.controller.message()
-        );
+        for (file, method, args) in [
+            ("ambiguo.p", "Saludar", "?"),
+            ("modo-ambiguo.p", "Ajustar", "numero"),
+        ] {
+            let tab = state
+                .workbench
+                .new_file(root.join(file), TextEncoding::Utf8);
+            let header = "USING paquete.Derivada FROM PROPATH.\nDEFINE VARIABLE objeto AS CLASS Derivada.\nDEFINE VARIABLE numero AS INTEGER.\n";
+            let code = format!("{header}objeto:{method}({args}).");
+            state.workbench.insert_text(&code).unwrap();
+            assert!(state
+                .workbench
+                .jump_to_location(tab, code.find(method).unwrap() + 2));
+            state.execute_menu(CommandId::SourceDefinition);
+            finish(&mut state);
+            assert!(state.source_gui.controller.items().is_empty());
+            assert!(
+                state
+                    .source_gui
+                    .controller
+                    .message()
+                    .contains("Sobrecarga ABL ambigua"),
+                "{}",
+                state.source_gui.controller.message()
+            );
+        }
     }
 
     #[test]

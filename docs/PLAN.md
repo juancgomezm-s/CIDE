@@ -570,6 +570,9 @@ El perfil puede fijar la versión del AVM y **Salida** registra la versión
 efectiva. Los recorridos de validación del perfil ERP están preparados para
 ambas interfaces. Queda ejecutar las pruebas con OpenEdge 10.0B y con un
 perfil autorizado del ERP de desarrollo.
+La revalidación de Windows con OpenEdge 11.7 pasó 22 pruebas dirigidas
+en el puente, la GUI y la TUI. Los 12 archivos de las bases de prueba
+conservaron su SHA-256.
 [Configuración y evidencia](PROGRESS_BRIDGE.md)
 
 Por prioridad del usuario, se adelantó la primera integración LSP de GUI y TUI.
@@ -597,7 +600,14 @@ inclusiones expandidas por el AVM.
 declaración del `.cls` correspondiente por PROPATH en GUI y TUI.
 La navegación de métodos y propiedades sigue `INHERITS` con `SUPER`,
 `THIS-OBJECT` y receptores de tipo declarado. Selecciona sobrecargas
-cuando hay una firma inequívoca.
+cuando hay una firma inequívoca, incluidos los modos `INPUT`, `OUTPUT`
+e `INPUT-OUTPUT` con tipos primitivos conocidos. También sigue cadenas
+de propiedades y retornos declarados mediante PROPATH.
+
+El siguiente bloque es la ruta de navegación del símbolo activo
+(breadcrumbs) en GUI y TUI, usando el esquema y la navegación compartidos.
+Después siguen las acciones de edición ABL con vista previa y una sola
+operación de deshacer.
 
 Como capacidades de la extensión `progress.abl`, desarrollar catálogo local, navegación, completado inteligente de tablas/campos/índices y análisis contextual incremental. Añadir Outline/Breadcrumb/Go to Definition/Open to Side mediante `NavigationTarget` universal y proveedores por lenguaje. Buscar/seleccionar/editar sigue siendo responsabilidad genérica de `jc-app` y Search Plus; XREF, imports USING y jerarquía OO son aportaciones del proveedor ABL.
 

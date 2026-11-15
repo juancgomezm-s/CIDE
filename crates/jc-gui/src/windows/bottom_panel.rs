@@ -437,7 +437,12 @@ fn progress_real_gui_command_routes_to_output_and_problems() {
     state.execute_menu(CommandId::ProgressRun);
     poll(&mut state);
     assert!(state.bottom.visible);
-    assert_eq!(state.bottom.kind, PanelKind::Output);
+    assert_eq!(
+        state.bottom.kind,
+        PanelKind::Output,
+        "{:?}",
+        state.workbench.problems()
+    );
     assert!(state.workbench.output().iter().any(|r| r.text == "CIDE-M3"));
     state
         .workbench

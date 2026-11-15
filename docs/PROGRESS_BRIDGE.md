@@ -199,18 +199,26 @@ un receptor declarado empieza en su tipo estático. El recorrido sigue
 `INHERITS`, `USING` y PROPATH hasta 16 clases base.
 [Referencia SUPER](https://docs.progress.com/bundle/openedge-abl-reference-128/page/SUPER-system-reference.html)
 
-La resolución de sobrecargas usa la aridad y los tipos que puede
-identificar por literales o declaraciones simples. Prefiere una firma
-exacta y admite ensanchamientos numéricos inequívocos. Si hay varias
-firmas posibles, muestra un aviso de ambigüedad. Los receptores
-encadenados, la inferencia de expresiones complejas y la resolución
-completa de modos `OUTPUT` e `INPUT-OUTPUT` quedan fuera de este análisis.
+La resolución de sobrecargas usa la aridad, el modo del argumento y los
+tipos que puede identificar por literales o declaraciones simples. Prefiere
+una firma exacta y admite ensanchamientos numéricos inequívocos de entrada.
+Para `OUTPUT` e `INPUT-OUTPUT` reconoce tipos primitivos por coincidencia
+exacta. Si se omite el modo y hay varias firmas posibles, muestra un aviso
+de ambigüedad. [Modos y sobrecargas en ABL](https://docs.progress.com/bundle/abl-reference/page/Parameter-passing-syntax.html)
+
+En `objeto:Obtener():Hijo:Titulo` se puede ir a la definición de `Titulo`
+a través del tipo declarado que devuelve cada miembro. Cada tipo se resuelve
+con los imports de la clase que declara el miembro. El análisis admite
+hasta cuatro pasos intermedios dentro de una línea de código. Las llamadas
+dinámicas y la inferencia de expresiones complejas siguen pendientes.
 
 OpenEdge 11.7 compiló la jerarquía de tres clases y el programa
 `consumidores/herencia.p`. GUI y TUI abrieron al lado las sobrecargas de
 `Saludar` para texto y entero, incluida la llamada con una variable de
-tipo `INTEGER`, y la declaración de `Titulo` en la clase raíz. La GUI
-mostró el aviso de ambigüedad para `Saludar(?)`.
+tipo `INTEGER`, la declaración de `Titulo` en la clase raíz, las cadenas
+de propiedades y retornos y las sobrecargas por modo de `Ajustar`.
+La GUI mostró el aviso de ambigüedad para `Saludar(?)` y para una llamada
+a `Ajustar` sin modo explícito.
 
 ### Buscar referencias en ABL
 
@@ -303,7 +311,7 @@ La prueba real compartida genera su propio proyecto de prueba. Define
 con la versión que quieres confirmar. Ejecuta:
 
 ```console
-cargo test -p jc-progress --features source-services --lib progress_real_ --locked --offline -- --ignored
+cargo test -p jc-progress --features source-services --lib progress_real_propath --locked --offline -- --ignored
 ```
 
 Para los recorridos de interfaz, define `CIDE_TEST_PROGRESS_PROJECT` con la
@@ -311,7 +319,7 @@ raíz de un proyecto sintético con el perfil anterior, `valido.p` que imprime
 `CIDE-M3` y `invalido.p` que incluye `{ausente.i}`:
 
 ```console
-cargo test -p jc-gui -p jc-tui --lib progress_real_ --locked --offline -- --ignored
+cargo test -p jc-gui -p jc-tui --lib command_routes_to_output_and_problems --locked --offline -- --ignored
 ```
 
 En el segundo bloque se usó `prodb` para crear dos bases aisladas a partir
