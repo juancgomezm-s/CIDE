@@ -36,6 +36,7 @@ DEFINE VARIABLE lOk AS LOGICAL NO-UNDO.
 DEFINE VARIABLE lRead AS LOGICAL NO-UNDO.
 DEFINE VARIABLE lCommitted AS LOGICAL INITIAL FALSE.
 DEFINE VARIABLE lReadOnly AS LOGICAL NO-UNDO.
+DEFINE VARIABLE lTriggers AS LOGICAL NO-UNDO.
 
 FUNCTION SafeName RETURNS LOGICAL (INPUT pcName AS CHARACTER):
     DEFINE VARIABLE idx AS INTEGER NO-UNDO.
@@ -143,6 +144,13 @@ END.
 IF NOT lRead OR cHeader <> "JCIDE-RECORD/1" THEN QUIT.
 OUTPUT STREAM outputFile TO VALUE(SUBSTRING(SESSION:PARAMETER, 1, R-INDEX(SESSION:PARAMETER, ".")) + "out") NO-CONVERT.
 PUT STREAM outputFile UNFORMATTED cHeader SKIP "AVM|" PROVERSION SKIP.
+IF cMode BEGINS "trigger-" THEN DO:
+    cMode = SUBSTRING(cMode, 9).
+    IF LOOKUP(cMode, "apply,insert,delete") = 0 THEN RUN Fail("shape").
+    IF OS-GETENV("CIDE_RECORD_PROPATH") = ? OR OS-GETENV("CIDE_RECORD_PROPATH") = "" THEN RUN Fail("triggers").
+    PROPATH = OS-GETENV("CIDE_RECORD_PROPATH") + "," + PROPATH.
+    lTriggers = TRUE.
+END.
 IF LOOKUP(cMode, "preview,apply,inspect,insert,delete,recreate") = 0 THEN RUN Fail("shape").
 lReadOnly = LOOKUP(cMode, "preview,inspect") > 0.
 IF cVersion <> PROVERSION THEN RUN Fail("version").
@@ -157,7 +165,7 @@ CREATE BUFFER hBuffer FOR TABLE (cDb + "." + cTable) BUFFER-NAME "cide_edit" NO-
 IF NOT VALID-HANDLE(hBuffer) THEN RUN Fail("shape").
 lOk = hBuffer:DISABLE-DUMP-TRIGGERS() NO-ERROR.
 IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN RUN Fail("triggers").
-IF NOT lReadOnly THEN DO:
+IF NOT lReadOnly AND NOT lTriggers THEN DO:
     lOk = hBuffer:DISABLE-LOAD-TRIGGERS(FALSE) NO-ERROR.
     IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN RUN Fail("triggers").
 END.

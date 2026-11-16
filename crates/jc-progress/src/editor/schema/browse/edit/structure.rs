@@ -1,9 +1,9 @@
 //! Reviewed creation, deletion and reversal of row presence.
 use super::{
     decode_cell, hex, io_error, journal_directory, new_backup_id, parse_snapshot, publish_verified,
-    read_in_root, run_mode, snapshot_wire, value_wire, write_database, AvmMode, BrowseTable,
-    ColumnKind, RecordAction, RecordController, RecordEvent, RecordPreview, Selection, Snapshot,
-    MAX_PROTOCOL,
+    read_in_root, replica, run_mode, snapshot_wire, value_wire, write_database, AvmMode,
+    BrowseTable, ColumnKind, RecordAction, RecordController, RecordEvent, RecordPreview, Selection,
+    Snapshot, MAX_PROTOCOL,
 };
 use jc_app::{Cancellation, Wakeup};
 use jc_files::ContentFingerprint;
@@ -22,6 +22,7 @@ pub(super) struct Operation {
     before: Option<Snapshot>,
     action: Change,
     source: Option<Source>,
+    triggers: Option<PathBuf>,
 }
 
 enum Change {
@@ -61,7 +62,8 @@ impl RecordController {
             summary.push(format!("{field} = «{value}»"));
         }
         self.start(root, wakeup, false, move |root, cancel| {
-            let database = write_database(root, &selection)?;
+            let triggers = replica::propath(root)?;
+            let database = write_database(root, &selection, triggers.is_some())?;
             if run_mode(root, &selection, &database, AvmMode::Inspect, cancel)?.is_some() {
                 return Err(format!(
                     "Conflicto: ya existe un registro con la clave {key}"
@@ -73,6 +75,7 @@ impl RecordController {
                 before: None,
                 action: Change::Insert(assignments.join(",")),
                 source: None,
+                triggers,
             };
             Ok(preview(
                 operation,
@@ -98,7 +101,8 @@ impl RecordController {
             .cloned()
             .ok_or("Selecciona un registro")?;
         self.start(root, wakeup, false, move |root, cancel| {
-            let database = write_database(root, &selection)?;
+            let triggers = replica::propath(root)?;
+            let database = write_database(root, &selection, triggers.is_some())?;
             let before = run_mode(root, &selection, &database, AvmMode::Inspect, cancel)?
                 .ok_or("Conflicto: el registro ya no existe")?;
             if decode_cell(&before.value, &selection.table.catalog.codec)? != visible {
@@ -111,6 +115,7 @@ impl RecordController {
                 before: Some(before),
                 action: Change::Delete,
                 source: None,
+                triggers,
             };
             Ok(preview(operation, "Borrado de registro", summary, None))
         })
@@ -126,7 +131,8 @@ impl RecordController {
         let selection = choose(table, key)?;
         selection.check_catalog(root)?;
         self.start(root, wakeup, false, move |root, cancel| {
-            let database = write_database(root, &selection)?;
+            replica::require_row_restore(root)?;
+            let database = write_database(root, &selection, false)?;
             let directory = journal_directory(root, &selection, false)?;
             let source =
                 latest_id(&directory)?.ok_or("La clave no tiene un alta o borrado confirmado")?;
@@ -148,6 +154,7 @@ impl RecordController {
                 before: live,
                 action,
                 source: Some(Source { id: source, sealed }),
+                triggers: None,
             };
             Ok(preview(
                 operation,
@@ -209,6 +216,7 @@ fn preview(
         after,
         restoring: operation.source.is_some(),
         structural_title: Some(title),
+        with_triggers: operation.triggers.is_some(),
         operation: RecordAction::Structure(Box::new(operation)),
     })
 }
@@ -219,9 +227,23 @@ pub(super) fn apply(
     cancel: &Cancellation,
 ) -> Result<RecordEvent, String> {
     let selection = &operation.selection;
-    let database = write_database(root, selection)?;
+    replica::check_propath(root, operation.triggers.as_deref())?;
+    let database = write_database(root, selection, operation.triggers.is_some())?;
     if database != operation.database {
         return Err("Cambió la base desde la vista previa".into());
+    }
+    let mode = match &operation.action {
+        Change::Insert(values) => AvmMode::Insert(values),
+        Change::Delete => AvmMode::Delete(
+            operation
+                .before
+                .as_ref()
+                .ok_or("Falta la imagen del registro")?,
+        ),
+        Change::Recreate(image) => AvmMode::Recreate(image),
+    };
+    if let Some(propath) = &operation.triggers {
+        return replica::apply(root, selection, &database, propath, mode, cancel);
     }
     let directory = journal_directory(root, selection, true)?;
     if let Some(source) = &operation.source {
@@ -242,16 +264,6 @@ pub(super) fn apply(
         &directory.join(format!("{id}.fila")),
         backup.as_bytes(),
     )?;
-    let mode = match &operation.action {
-        Change::Insert(values) => AvmMode::Insert(values),
-        Change::Delete => AvmMode::Delete(
-            operation
-                .before
-                .as_ref()
-                .ok_or("Falta la imagen del registro")?,
-        ),
-        Change::Recreate(image) => AvmMode::Recreate(image),
-    };
     let after = run_mode(root, selection, &database, mode, cancel)
         .map_err(|error| format!("{error}. Respaldo verificado {id}"))?;
     let receipt = format!("{backup}{}", image_wire(after.as_ref()));
@@ -377,7 +389,7 @@ mod tests {
             .unwrap();
         let key = 19999;
         let selection = choose(&table, key).unwrap();
-        let db = write_database(&root, &selection).unwrap();
+        let db = write_database(&root, &selection, false).unwrap();
         let cancel = Cancellation::new(Duration::from_secs(75));
         let inspect = || run_mode(&root, &selection, &db, AvmMode::Inspect, &cancel).unwrap();
         assert!(inspect().is_none());

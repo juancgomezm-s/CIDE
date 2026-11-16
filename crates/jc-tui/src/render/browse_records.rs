@@ -104,7 +104,11 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
             );
             (
                 "F9 confirmar · Esc cancelar",
-                "↑↓ elegir valor · ←→ desplazar",
+                if review.preview.with_triggers {
+                    "Disparadores en una base nueva · respaldo completo"
+                } else {
+                    "↑↓ elegir valor · ←→ desplazar"
+                },
             )
         } else if let Some(conflict) = &browser.conflict {
             let label = format!("Conflicto de restauración · {}", conflict.conflict.column);

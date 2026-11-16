@@ -119,15 +119,18 @@ muestran por separado.
 
 Windows necesita un controlador Unicode de **psqlODBC** para PostgreSQL o
 **MySQL Connector/ODBC** 8 o posterior para MySQL. La aplicación detecta los
-controladores registrados. En este equipo se verificó el diagnóstico de
-controlador ausente y el visor por separado de la conexión real.
+controladores registrados. Las pruebas de GUI y TUI verifican sus visores y
+el diagnóstico de controlador ausente.
 
 PostgreSQL 17.11 pasó 18 comprobaciones con psqlODBC Unicode en Debian bajo
 WSL. Incluyeron TLS con verificación de identidad, consultas del proveedor,
 claves, filtros parametrizados, paginación, solo lectura y datos intactos.
 MySQL 8.0.45 pasó 15 comprobaciones del motor en una instancia aislada
-en Windows. La conexión completa desde CIDE con ambos controladores ODBC
-registrados en Windows queda pendiente.
+en Windows. También pasó la conexión real cifrada desde el trabajador Rust
+de CIDE en Windows x64 con psqlODBC Unicode 17.00.0004 y Connector/ODBC
+9.6.0, usando un registro privado del proceso de prueba. Ambas sesiones
+consultaron catálogo y columnas, filtraron un valor con acentos y
+distinguieron `NULL` de una cadena vacía en dos páginas de registros.
 
 ## Qué aprovechar del DataDigger personalizado
 
@@ -195,9 +198,8 @@ esperado, y conserva el registro. [Método ABL para capturar la imagen del regis
 
 Este bloque admite cambios de texto y entero en filas existentes con una
 clave primaria entera de una columna y con imagen binaria completa. La
-escritura se ejecuta sobre copias locales autorizadas y desactiva los
-disparadores de búsqueda y carga. La edición con efectos de disparadores
-sigue fuera del alcance verificado.
+edición directa se ejecuta sobre copias locales autorizadas y desactiva los
+disparadores de búsqueda y carga.
 
 **Fila…** ofrece alta, borrado y restauración de alta o borrado por clave.
 En la TUI se usan **N**, **D** y **U**, respectivamente. El alta permite
@@ -208,6 +210,36 @@ revertir un alta, CIDE exige que la fila coincida con la creada. Al recuperar
 un borrado, rechaza la operación si la clave volvió a ocuparse y verifica
 que la imagen binaria recuperada sea igual al respaldo. La restauración
 estructural usa la última operación de fila confirmada para la clave.
+
+### Edición con disparadores y respaldo completo
+
+Para un proyecto de confianza, crea `.cide/disparadores-registros.local.ini`
+con un directorio de código ABL dentro del proyecto:
+
+```ini
+propath=disparadores
+```
+
+El `.pf` de lectura y el perfil de edición deben identificar la misma base
+local cerrada. En este modo se admite que el origen esté fuera del proyecto.
+La vista previa de edición, alta o borrado indica que la operación se
+ejecutará en una base nueva. CIDE usa `PROBKUP`, sincroniza el archivo y
+verifica los bloques con `PROREST -vp` antes de restaurar dos bases nuevas
+y abrir una de ellas para escribir. [Verificación nativa del respaldo](https://docs.progress.com/bundle/openedge-database-management/page/Verify-a-backup.html).
+
+La carpeta del resultado está en `.cide/respaldos-registros/bases/`. Contiene
+`resultado.db` con el cambio, `anterior.db` con el estado completo previo y
+`anterior.pbk` como respaldo independiente. Para volver al estado anterior,
+apunta el perfil de lectura a `anterior.db`, conservando sus extensiones en
+la misma carpeta. Usa `completado.txt` para identificar los resultados que
+terminaron. Si el disparador falla, la transacción en la base nueva se
+revierte y CIDE conserva el respaldo sin publicar ese marcador.
+
+Este modo protege los cambios en la única base abierta por CIDE. Actívalo
+con disparadores propios que operen dentro de esa transacción. La reversión
+de efectos en servicios, archivos u otras bases requiere mecanismos de
+recuperación propios de esos destinos. La escritura directa en bases
+activas sigue pendiente.
 
 Validado localmente con copias separadas de Sports2000 en OpenEdge 11.7. La
 GUI con ventanas propias ocultas y la TUI comprobaron la cancelación, la

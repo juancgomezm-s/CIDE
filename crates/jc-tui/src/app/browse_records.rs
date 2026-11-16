@@ -241,6 +241,10 @@ impl TuiApp {
                             .as_ref()
                             .map(|accepted| (accepted.page.offset, accepted.query.clone()));
                     }
+                    Ok(RecordEvent::Replica(directory)) => {
+                        let relative = directory.strip_prefix(root).unwrap_or(&directory);
+                        browser.message = Some(format!("Base nueva en {}", relative.display()));
+                    }
                     Err(error) => browser.message = Some(error),
                 }
             } else if let Err(error) = result {

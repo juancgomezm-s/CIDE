@@ -641,6 +641,28 @@ impl Browser<'_> {
                 };
                 self.submit(hwnd, query, offset);
             }
+            Ok(RecordEvent::Replica(directory)) => {
+                let mut page = self.page.borrow_mut();
+                page.applying = false;
+                page.needs_refresh = None;
+                page.record_key = None;
+                drop(page);
+                set_status(
+                    hwnd,
+                    "Operación con disparadores completada en una base nueva",
+                );
+                let message = format!(
+                    "{}\r\n\r\nresultado.db contiene el cambio y los efectos de los disparadores.\r\nanterior.db conserva el estado completo previo.\r\nanterior.pbk es el respaldo verificado.",
+                    directory.display()
+                );
+                let dialog =
+                    self.dialog
+                        .child(hwnd, "Resultado de la operación", &message, "Aceptar");
+                if let Ok(mut dialog) = dialog {
+                    dialog.scrollable = true;
+                    let _ = super::show(hwnd, &mut dialog);
+                }
+            }
             Err(error) => {
                 let mut page = self.page.borrow_mut();
                 // A failed request may have reached the database. Require a fresh
@@ -761,7 +783,7 @@ impl Browser<'_> {
                 "Edición respaldada y guardada",
             )
         };
-        let message = if preview.structural_title.is_some() {
+        let mut message = if preview.structural_title.is_some() {
             structural_preview_message(&target, preview.before.as_deref(), preview.after.as_deref())
         } else {
             preview_message(
@@ -771,6 +793,9 @@ impl Browser<'_> {
                 preview.after.as_deref(),
             )
         };
+        if preview.with_triggers {
+            message.push_str("\r\n\r\nCIDE ejecutará los disparadores del proyecto en una base nueva. Se conservarán la base de origen y un respaldo completo anterior al cambio.");
+        }
         self.page.borrow_mut().reviewing = true;
         let answer = self
             .dialog

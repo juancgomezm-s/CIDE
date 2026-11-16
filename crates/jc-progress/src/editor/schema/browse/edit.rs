@@ -23,6 +23,7 @@ const EDIT_PROFILE: &str = ".cide/edicion-registros.local.ini";
 const PROTOCOL: &str = "JCIDE-RECORD/1";
 const MAX_PROTOCOL: usize = 64 * 1024;
 const HELPER: &[u8] = include_bytes!("../../../../../../progress/abl/jc-record-edit.p");
+mod replica;
 mod structure;
 
 #[derive(Default)]
@@ -42,6 +43,7 @@ pub enum RecordEvent {
     History(RecordHistory),
     Conflict(RecordConflict),
     Applied,
+    Replica(PathBuf),
 }
 
 pub struct RecordHistory {
@@ -84,6 +86,7 @@ pub struct RecordPreview {
     pub after: Option<String>,
     pub restoring: bool,
     pub structural_title: Option<&'static str>,
+    pub with_triggers: bool,
     operation: RecordAction,
 }
 
@@ -98,6 +101,7 @@ struct RecordOperation {
     next: String,
     database_path: PathBuf,
     restore: Option<RestoreSource>,
+    triggers: Option<PathBuf>,
 }
 
 struct RestoreSource {
@@ -202,12 +206,13 @@ impl RecordController {
         let next = value_wire(&selection, &value)?;
         let visible = row.get(column).cloned().ok_or("Fila de edición ausente")?;
         self.start(root, wakeup, false, move |root, cancel| {
-            let db = write_database(root, &selection)?;
+            let triggers = replica::propath(root)?;
+            let db = write_database(root, &selection, triggers.is_some())?;
             let snapshot = run_avm(root, &selection, &db, None, cancel)?;
             if visible != decode_cell(&snapshot.value, &selection.table.catalog.codec)? {
                 return Err("Conflicto: cambió el valor seleccionado. Recarga la página".into());
             }
-            prepare(selection, db, snapshot, next, None)
+            prepare(selection, db, snapshot, next, None, triggers)
         })
     }
 
@@ -221,7 +226,8 @@ impl RecordController {
         let mut selection = Selection::new(table, row, 0)?;
         selection.check_catalog(root)?;
         self.start(root, wakeup, false, move |root, cancel| {
-            let db = write_database(root, &selection)?;
+            replica::require_row_restore(root)?;
+            let db = write_database(root, &selection, false)?;
             let directory = journal_directory(root, &selection, false)?;
             let (source, backup, recorded_after) = latest_backup(root, &directory, &db)?;
             if backup.restoring {
@@ -233,7 +239,7 @@ impl RecordController {
             if snapshot != recorded_after || snapshot.value != backup.next {
                 return Err("Conflicto: el registro cambió después del respaldo. La restauración se canceló".into());
             }
-            prepare(selection, db, snapshot, backup.before.value, Some(source))
+            prepare(selection, db, snapshot, backup.before.value, Some(source), None)
         })
     }
 
@@ -247,7 +253,7 @@ impl RecordController {
         let selection = Selection::new(table, row, 0)?;
         selection.check_catalog(root)?;
         self.start(root, wakeup, false, move |root, cancel| {
-            let db = write_database(root, &selection)?;
+            let db = write_database(root, &selection, replica::propath(root)?.is_some())?;
             let directory = journal_directory(root, &selection, false)?;
             let entries = read_history(
                 root,
@@ -290,7 +296,8 @@ impl RecordController {
         let database_path = history.database_path.clone();
         let id = entry.id.clone();
         self.start(root, wakeup, false, move |root, cancel| {
-            let db = write_database(root, &selection)?;
+            replica::require_row_restore(root)?;
+            let db = write_database(root, &selection, false)?;
             if db != database_path {
                 return Err("Cambió la base desde la consulta del historial".into());
             }
@@ -354,7 +361,7 @@ impl RecordController {
         }
         let root = root.to_owned();
         let worker_root = root.clone();
-        let cancel = Cancellation::new(Duration::from_secs(20));
+        let cancel = Cancellation::new(Duration::from_secs(if writable { 300 } else { 20 }));
         let worker_cancel = cancel.clone();
         let (send, result) = mpsc::sync_channel(1);
         thread::Builder::new()
@@ -435,6 +442,7 @@ fn prepare(
     snapshot: Snapshot,
     next: String,
     restore: Option<RestoreSource>,
+    triggers: Option<PathBuf>,
 ) -> Result<RecordEvent, String> {
     if snapshot.value == next {
         return Err("El valor propuesto coincide con el actual".into());
@@ -452,12 +460,14 @@ fn prepare(
         after: decode_cell(&next, codec)?,
         restoring: restore.is_some(),
         structural_title: None,
+        with_triggers: triggers.is_some(),
         operation: RecordAction::Edit(Box::new(RecordOperation {
             selection,
             snapshot,
             next,
             database_path: db,
             restore,
+            triggers,
         })),
     }))
 }
@@ -478,10 +488,21 @@ fn prepare_history_restore(
             actual: decode_cell(&snapshot.value, codec)?,
         }));
     }
-    prepare(selection, db, snapshot, backup.before.value, Some(source))
+    prepare(
+        selection,
+        db,
+        snapshot,
+        backup.before.value,
+        Some(source),
+        None,
+    )
 }
 
-fn write_database(root: &Path, selection: &Selection) -> Result<PathBuf, String> {
+fn write_database(
+    root: &Path,
+    selection: &Selection,
+    create_replica: bool,
+) -> Result<PathBuf, String> {
     selection.check_catalog(root)?;
     let config = load_profile(root)?;
     let (_, bytes) = read_in_root(root, &root.join(EDIT_PROFILE), 4096).map_err(|err| {
@@ -501,15 +522,14 @@ fn write_database(root: &Path, selection: &Selection) -> Result<PathBuf, String>
         .next()
         .and_then(|line| line.strip_prefix("archivo="))
         .ok_or("Falta archivo en el perfil de edición")?;
-    if lines.next().is_some()
-        || base != selection.table.target.database
-        || Path::new(path).is_absolute()
-    {
+    if lines.next().is_some() || base != selection.table.target.database {
         return Err("El perfil de edición no autoriza esta base local".into());
     }
     let db = root.join(path).canonicalize().map_err(io_error)?;
-    if !db.starts_with(root) {
-        return Err("La copia editable de la base debe estar dentro del proyecto".into());
+    if (Path::new(path).is_absolute() || !db.starts_with(root)) && !create_replica {
+        return Err(
+            "La edición en el archivo original requiere una copia dentro del proyecto".into(),
+        );
     }
     let pf = config
         .avm
@@ -528,9 +548,20 @@ fn apply(
     cancel: &Cancellation,
 ) -> Result<RecordEvent, String> {
     let selection = &operation.selection;
-    let db = write_database(root, selection)?;
+    replica::check_propath(root, operation.triggers.as_deref())?;
+    let db = write_database(root, selection, operation.triggers.is_some())?;
     if db != operation.database_path {
         return Err("Cambió la base desde la vista previa".into());
+    }
+    if let Some(propath) = &operation.triggers {
+        return replica::apply(
+            root,
+            selection,
+            &db,
+            propath,
+            AvmMode::Apply(&operation.snapshot, &operation.next),
+            cancel,
+        );
     }
     let directory = journal_directory(root, selection, true)?;
     if let Some(source) = &operation.restore {
@@ -940,6 +971,17 @@ fn run_mode(
     mode: AvmMode<'_>,
     cancel: &Cancellation,
 ) -> Result<Option<Snapshot>, String> {
+    run_mode_with_triggers(root, selection, db, mode, None, cancel)
+}
+
+fn run_mode_with_triggers(
+    root: &Path,
+    selection: &Selection,
+    db: &Path,
+    mode: AvmMode<'_>,
+    propath: Option<&Path>,
+    cancel: &Cancellation,
+) -> Result<Option<Snapshot>, String> {
     let config = load_profile(root)?;
     crate::code_page(&config.avm.cpstream, "cpstream")
         .map_err(|_| "Página de códigos ABL inválida")?;
@@ -965,8 +1007,13 @@ fn run_mode(
         AvmMode::Recreate(before) => ("recreate", "", before.image.as_str(), ""),
     };
     let version = &selection.table.catalog.version;
+    let wire_mode = if propath.is_some() {
+        format!("trigger-{mode}")
+    } else {
+        mode.to_owned()
+    };
     let input = format!(
-        "{PROTOCOL}\n{mode}\n{version}\n{}\n{}\n{}\n{}\n{}\n{}\n{row}\n{image}\n{value}\n",
+        "{PROTOCOL}\n{wire_mode}\n{version}\n{}\n{}\n{}\n{}\n{}\n{}\n{row}\n{image}\n{value}\n",
         target.database,
         target.name,
         key.index,
@@ -1011,6 +1058,9 @@ fn run_mode(
     .stderr(log);
     if let Some(dlc) = config.avm.executable.parent().and_then(Path::parent) {
         cmd.env("DLC", dlc);
+    }
+    if let Some(propath) = propath {
+        cmd.env("CIDE_RECORD_PROPATH", avm_path(propath));
     }
     #[cfg(windows)]
     {
@@ -1078,6 +1128,116 @@ fn run_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requiere una copia de Sports2000 con un disparador sintético"]
+    fn progress_real_record_trigger_writes_other_table_and_preserves_full_checkpoint() {
+        let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_TRIGGER_PROJECT").unwrap())
+            .canonicalize()
+            .unwrap();
+        let wake = Wakeup::default();
+        let mut schema = SchemaController::default();
+        let mut workbench = jc_app::Workbench::default();
+        schema.request(Some(&root), wake.clone()).unwrap();
+        assert!(
+            !wait_for(&wake, || schema.poll(Some(&root), &mut workbench)).problems,
+            "{:?}",
+            workbench.problems()
+        );
+        let tables = schema.browse_tables();
+        let customer = tables
+            .iter()
+            .find(|table| table.name == "Customer")
+            .unwrap();
+        let sales = tables.iter().find(|table| table.name == "Item").unwrap();
+        let page = |table: &BrowseTable| {
+            let mut chooser = BrowseController::default();
+            chooser
+                .request(
+                    &root,
+                    BrowseRequest {
+                        table: table.clone(),
+                        offset: 0,
+                        filter: None,
+                        descending: false,
+                    },
+                    wake.clone(),
+                )
+                .unwrap();
+            wait_for(&wake, || chooser.poll(&root)).unwrap()
+        };
+        let original_sales = page(sales).rows;
+        let row = page(customer).rows.remove(0);
+        let column = customer
+            .columns
+            .iter()
+            .position(|name| name == "Name")
+            .unwrap();
+        let mut controller = RecordController::default();
+        let review_edit = |controller: &mut RecordController, value: &str| {
+            controller
+                .request_edit(&root, customer, &row, column, value.into(), wake.clone())
+                .unwrap();
+            let preview = review(&root, controller, &wake);
+            assert!(preview.with_triggers);
+            controller.apply(&root, preview, wake.clone()).unwrap();
+            finish(&root, controller, &wake)
+        };
+        let prior_marker = "CIDE trigger verified";
+        assert!(!original_sales
+            .iter()
+            .flatten()
+            .any(|value| value.as_deref() == Some(prior_marker)));
+        let completed = |parent: &Path| {
+            fs::read_dir(parent)
+                .ok()
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|item| item.path().join("completado.txt").is_file())
+                .count()
+        };
+        let before = completed(&root.join(".cide/respaldos-registros/bases"));
+        let result = review_edit(&mut controller, "CIDE edit with trigger").unwrap();
+        let RecordEvent::Replica(directory) = result else {
+            panic!("No se publicó la base nueva")
+        };
+        assert!(directory.join("completado.txt").is_file());
+        assert!(directory.join("anterior.pbk").is_file());
+        assert_eq!(page(sales).rows, original_sales);
+        assert_eq!(page(customer).rows[0], row);
+
+        let selection = Selection::new(customer, &row, column).unwrap();
+        let cancel = Cancellation::new(Duration::from_secs(30));
+        let read = |file| run_avm(&root, &selection, &directory.join(file), None, &cancel).unwrap();
+        assert_eq!(
+            read("anterior.db").value,
+            value_wire(&selection, row[column].as_deref().unwrap()).unwrap()
+        );
+        assert_eq!(
+            read("resultado.db").value,
+            value_wire(&selection, "CIDE edit with trigger").unwrap()
+        );
+        let config = load_profile(&root).unwrap();
+        let mut check = Command::new(&config.avm.executable);
+        check
+            .current_dir(avm_path(&directory))
+            .args(["-db", "resultado.db", "-1", "-RO", "-b", "-p"])
+            .arg(avm_path(&root.join("verify-trigger.p")));
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            check.creation_flags(0x0800_0000);
+        }
+        assert!(check.output().unwrap().status.success());
+        assert_eq!(fs::read(directory.join("verified.txt")).unwrap(), b"OK");
+        assert!(review_edit(&mut controller, "CIDE trigger rejected")
+            .err()
+            .unwrap()
+            .contains("revirtió"));
+        assert_eq!(page(sales).rows, original_sales);
+        assert_eq!(completed(directory.parent().unwrap()), before + 1);
+    }
     use crate::editor::{BrowseController, BrowseRequest, SchemaController};
     use std::time::Instant;
 
@@ -1220,7 +1380,7 @@ mod tests {
         let mut row = page.rows[0].clone();
         let selection = Selection::new(&table, &row, column).unwrap();
         let external = Selection::new(&table, &row, other).unwrap();
-        let db = write_database(&root, &selection).unwrap();
+        let db = write_database(&root, &selection, false).unwrap();
         let cancel = Cancellation::new(Duration::from_secs(75));
         let initial = run_avm(&root, &selection, &db, None, &cancel).unwrap();
         let external_before = run_avm(&root, &external, &db, None, &cancel).unwrap();
