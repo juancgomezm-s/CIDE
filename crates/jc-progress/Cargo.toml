@@ -11,6 +11,7 @@ jc-app = { path = "../jc-app", optional = true }
 jc-files = { path = "../jc-files", optional = true }
 jc-languages = { path = "../jc-languages", optional = true }
 jc-text = { path = "../jc-text", optional = true }
+serde_json = { version = "=1.0.145", optional = true }
 
 [features]
-source-services = ["dep:jc-app", "dep:jc-files", "dep:jc-languages", "dep:jc-text"]
+source-services = ["dep:jc-app", "dep:jc-files", "dep:jc-languages", "dep:jc-text", "dep:serde_json"]

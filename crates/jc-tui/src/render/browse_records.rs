@@ -105,7 +105,7 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
             (
                 "F9 confirmar · Esc cancelar",
                 if review.preview.with_triggers {
-                    "Disparadores en una base nueva · respaldo completo"
+                    "Base activa · disparadores · respaldo de la fila"
                 } else if review.preview.active_database {
                     "Base activa · respaldo y bloqueo exclusivo"
                 } else {

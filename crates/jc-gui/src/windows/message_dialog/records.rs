@@ -641,28 +641,6 @@ impl Browser<'_> {
                 };
                 self.submit(hwnd, query, offset);
             }
-            Ok(RecordEvent::Replica(directory)) => {
-                let mut page = self.page.borrow_mut();
-                page.applying = false;
-                page.needs_refresh = None;
-                page.record_key = None;
-                drop(page);
-                set_status(
-                    hwnd,
-                    "Operación con disparadores completada en una base nueva",
-                );
-                let message = format!(
-                    "{}\r\n\r\nresultado.db contiene el cambio y los efectos de los disparadores.\r\nanterior.db conserva el estado completo previo.\r\nanterior.pbk es el respaldo verificado.",
-                    directory.display()
-                );
-                let dialog =
-                    self.dialog
-                        .child(hwnd, "Resultado de la operación", &message, "Aceptar");
-                if let Ok(mut dialog) = dialog {
-                    dialog.scrollable = true;
-                    let _ = super::show(hwnd, &mut dialog);
-                }
-            }
             Err(error) => {
                 let mut page = self.page.borrow_mut();
                 // A failed request may have reached the database. Require a fresh
@@ -794,7 +772,7 @@ impl Browser<'_> {
             )
         };
         if preview.with_triggers {
-            message.push_str("\r\n\r\nCIDE ejecutará los disparadores del proyecto en una base nueva. Se conservarán la base de origen y un respaldo completo anterior al cambio.");
+            message.push_str("\r\n\r\nEl cambio se aplicará en la base activa con los disparadores del proyecto. El JSON respalda esta fila.");
         } else if preview.active_database {
             message.push_str("\r\n\r\nEl cambio se aplicará en la base activa. CIDE verifica el respaldo y comprueba el registro con bloqueo exclusivo antes de escribir.");
         }

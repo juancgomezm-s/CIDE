@@ -233,10 +233,9 @@ fila. Para un alta verifica la ausencia de la clave y deja que OpenEdge
 impida duplicados. Un bloqueo o una imagen distinta cancela la operación.
 Para restaurar, se aplica la misma comprobación con el recibo seleccionado.
 
-El auxiliar lee los disparadores del esquema antes de escribir dentro de
-la transacción. Solo admite operaciones cuyos cambios quedan cubiertos por
-el respaldo de una fila. Si hay un disparador aplicable, usa el modo
-de respaldo completo descrito abajo. [Modos de conexión ABL](https://docs.progress.com/bundle/openedge-abl-manage-applications/page/Connection-modes.html).
+Con el perfil básico, el auxiliar comprueba los disparadores del esquema
+antes de escribir dentro de la transacción. Para ejecutar los disparadores
+del proyecto en la base activa, configura el PROPATH descrito abajo. [Modos de conexión ABL](https://docs.progress.com/bundle/openedge-abl-manage-applications/page/Connection-modes.html).
 
 La prueba con Sports2000 11.7 mantuvo un bloqueo desde una segunda sesión
 durante la confirmación. CIDE rechazó el cambio mientras la otra sesión
@@ -248,47 +247,44 @@ edición, altas, borrados y restauración en la GUI con ventanas ocultas y
 en la TUI. La prueba de lectura de la copia cerrada con `-1 -RO` también
 pasó y comparó los archivos de la base byte por byte.
 
-### Edición con disparadores y respaldo completo
+### Disparadores y registro JSON por fila
 
-Para un proyecto de confianza, crea `.cide/disparadores-registros.local.ini`
-con un directorio de código ABL dentro del proyecto:
+Para editar en línea con los disparadores del proyecto, conserva
+`modo=activa` en el perfil de edición y crea
+`.cide/disparadores-registros.local.ini` con el directorio de código ABL
+del proyecto:
 
 ```ini
 propath=disparadores
 ```
 
-El `.pf` de lectura y el perfil de edición deben identificar la misma base
-local cerrada. En este modo se admite que el origen esté fuera del proyecto.
-La vista previa de edición, alta o borrado indica que la operación se
-ejecutará en una base nueva. CIDE usa `PROBKUP`, sincroniza el archivo y
-verifica los bloques con `PROREST -vp` antes de restaurar dos bases nuevas
-y abrir una de ellas para escribir. [Verificación nativa del respaldo](https://docs.progress.com/bundle/openedge-database-management/page/Verify-a-backup.html).
+Cada operación confirmada en DataDigger guarda un JSON en
+`.cide/respaldos-registros/<base>/<tabla>/<clave>/`. Contiene la base, tabla,
+clave, columna, operación, codificación y estado anterior de esa fila.
+El estado anterior incluye la imagen completa en hexadecimal y el valor
+visible de la columna. Para un alta, el estado anterior es `null`.
+CIDE vuelve a leer el JSON antes de iniciar la escritura y genera un
+recibo separado cuando OpenEdge confirma la transacción. Si falta el
+recibo, la edición figura como pendiente y no se restaura automáticamente.
 
-La carpeta del resultado está en `.cide/respaldos-registros/bases/`. Contiene
-`resultado.db` con el cambio, `anterior.db` con el estado completo previo y
-`anterior.pbk` como respaldo independiente. Para volver al estado anterior,
-apunta el perfil de lectura a `anterior.db`, conservando sus extensiones en
-la misma carpeta. Usa `completado.txt` para identificar los resultados que
-terminaron. Si el disparador falla, la transacción en la base nueva se
-revierte y CIDE conserva el respaldo sin publicar ese marcador.
+Abre **Historial** en la GUI o pulsa **R** en la TUI cuando necesites revisar
+una edición de CIDE. Las altas y borrados se restauran por clave desde
+**Fila…** o **U**. La restauración comprueba el recibo y la imagen actual
+y devuelve únicamente la fila respaldada a su estado anterior. Si cambió
+desde el recibo, CIDE señala el conflicto. El historial registra las
+operaciones que se solicitan en CIDE. Las escrituras de otras sesiones
+quedan fuera del historial, al igual que los efectos en otras filas
+provocados por los disparadores. En el modo configurado, las
+restauraciones respetan los disparadores de OpenEdge y exigen que la
+imagen final de la fila sea igual a la respaldada. Se conservan los
+lectores de respaldos de fila del formato anterior.
 
-Este modo protege los cambios en la única base abierta por CIDE. Actívalo
-con disparadores propios que operen dentro de esa transacción. La reversión
-de efectos en servicios, archivos u otras bases requiere mecanismos de
-recuperación propios de esos destinos.
+La prueba con Sports2000 11.7 modificó Customer en una base activa. Su
+disparador actualizó otro campo de Customer y también Item. Restaurar el
+respaldo JSON recuperó la fila completa de Customer y conservó el cambio
+de Item. La prueba verificó que no se generara una copia de la base.
 
-Validado localmente con copias separadas de Sports2000 en OpenEdge 11.7. La
-GUI con ventanas propias ocultas y la TUI comprobaron la cancelación, la
-edición confirmada y la restauración tras volver a consultar. El núcleo
-comprobó que un fallo de respaldo bloquea la escritura, que un cambio externo
-en otra columna invalida la vista previa de edición o restauración y que
-un respaldo alterado se rechaza al compararlo con su recibo.
-Las pruebas de fila también comprobaron el alta de una clave nueva, la
-reversión del alta, el borrado y la recuperación exacta. Una clave ocupada
-entre la revisión y la confirmación mantuvo el registro que ya existía.
-Al final del bloque se comprobó la disponibilidad de las AVM antiguas. Los
-ejecutables de OpenEdge encontrados en este equipo corresponden a 11.7.
-Las pruebas de ejecución con 10.0B y 10.2B quedan pendientes.
+Las pruebas de ejecución con OpenEdge 10.2B y 10.0B quedan pendientes.
 
 ## Bloques y criterios de aceptación
 

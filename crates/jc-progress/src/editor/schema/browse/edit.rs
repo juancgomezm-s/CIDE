@@ -25,8 +25,9 @@ const EDIT_PROFILE: &str = ".cide/edicion-registros.local.ini";
 const PROTOCOL: &str = "JCIDE-RECORD/1";
 const MAX_PROTOCOL: usize = 64 * 1024;
 const HELPER: &[u8] = include_bytes!("../../../../../../progress/abl/jc-record-edit.p");
-mod replica;
+mod journal;
 mod structure;
+mod trigger_profile;
 
 #[derive(Default)]
 pub struct RecordController {
@@ -45,7 +46,6 @@ pub enum RecordEvent {
     History(RecordHistory),
     Conflict(RecordConflict),
     Applied,
-    Replica(PathBuf),
 }
 
 pub struct RecordHistory {
@@ -209,9 +209,9 @@ impl RecordController {
         let next = value_wire(&selection, &value)?;
         let visible = row.get(column).cloned().ok_or("Fila de edición ausente")?;
         self.start(root, wakeup, false, move |root, cancel| {
-            let triggers = replica::propath(root)?;
+            let triggers = trigger_profile::propath(root)?;
             let db = write_database(root, &selection, triggers.is_some())?;
-            let snapshot = run_avm(root, &selection, &db, None, cancel)?;
+            let snapshot = read_for_edit(root, &selection, &db, triggers.as_deref(), cancel)?;
             if visible != decode_cell(&snapshot.value, &selection.table.catalog.codec)? {
                 return Err("Conflicto: cambió el valor seleccionado. Recarga la página".into());
             }
@@ -229,8 +229,8 @@ impl RecordController {
         let mut selection = Selection::new(table, row, 0)?;
         selection.check_catalog(root)?;
         self.start(root, wakeup, false, move |root, cancel| {
-            replica::require_row_restore(root)?;
-            let db = write_database(root, &selection, false)?;
+            let triggers = trigger_profile::propath(root)?;
+            let db = write_database(root, &selection, triggers.is_some())?;
             let directory = journal_directory(root, &selection, false)?;
             let (source, backup, recorded_after) = latest_backup(root, &directory, &db.path)?;
             if backup.restoring {
@@ -238,11 +238,11 @@ impl RecordController {
             }
             selection.column = selection.table.target.columns.iter().position(|(column, _)| column == &backup.column)
                 .filter(|index| selection.table.can_edit_column(*index)).ok_or("El campo del respaldo ya no es editable")?;
-            let snapshot = run_avm(root, &selection, &db, None, cancel)?;
+            let snapshot = read_for_edit(root, &selection, &db, triggers.as_deref(), cancel)?;
             if snapshot != recorded_after || snapshot.value != backup.next {
                 return Err("Conflicto: el registro cambió después del respaldo. La restauración se canceló".into());
             }
-            prepare(selection, db, snapshot, backup.before.value, Some(source), None)
+            prepare(selection, db, snapshot, backup.before.value, Some(source), triggers)
         })
     }
 
@@ -256,7 +256,7 @@ impl RecordController {
         let selection = Selection::new(table, row, 0)?;
         selection.check_catalog(root)?;
         self.start(root, wakeup, false, move |root, cancel| {
-            let db = write_database(root, &selection, replica::propath(root)?.is_some())?;
+            let db = write_database(root, &selection, trigger_profile::propath(root)?.is_some())?;
             let directory = journal_directory(root, &selection, false)?;
             let entries = read_history(
                 root,
@@ -299,8 +299,8 @@ impl RecordController {
         let database = history.database.clone();
         let id = entry.id.clone();
         self.start(root, wakeup, false, move |root, cancel| {
-            replica::require_row_restore(root)?;
-            let db = write_database(root, &selection, false)?;
+            let triggers = trigger_profile::propath(root)?;
+            let db = write_database(root, &selection, triggers.is_some())?;
             if db != database {
                 return Err("Cambió la base desde la consulta del historial".into());
             }
@@ -318,7 +318,7 @@ impl RecordController {
                 .position(|(column, _)| column == &backup.column)
                 .filter(|index| selection.table.can_edit_column(*index))
                 .ok_or("El campo del respaldo ya no es editable")?;
-            let snapshot = run_avm(root, &selection, &db, None, cancel)?;
+            let snapshot = read_for_edit(root, &selection, &db, triggers.as_deref(), cancel)?;
             prepare_history_restore(
                 selection,
                 db,
@@ -326,6 +326,7 @@ impl RecordController {
                 RestoreSource { id, receipt },
                 backup,
                 recorded_after,
+                triggers,
             )
         })
     }
@@ -483,6 +484,7 @@ fn prepare_history_restore(
     source: RestoreSource,
     backup: Backup,
     recorded_after: Snapshot,
+    triggers: Option<PathBuf>,
 ) -> Result<RecordEvent, String> {
     if snapshot != recorded_after {
         let codec = &selection.table.catalog.codec;
@@ -498,14 +500,14 @@ fn prepare_history_restore(
         snapshot,
         backup.before.value,
         Some(source),
-        None,
+        triggers,
     )
 }
 
 fn write_database(
     root: &Path,
     selection: &Selection,
-    create_replica: bool,
+    with_triggers: bool,
 ) -> Result<LocalDatabase, String> {
     selection.check_catalog(root)?;
     let config = load_profile(root)?;
@@ -535,7 +537,7 @@ fn write_database(
         return Err("El perfil de edición no autoriza esta base local".into());
     }
     let db = root.join(path).canonicalize().map_err(io_error)?;
-    if (Path::new(path).is_absolute() || !db.starts_with(root)) && !create_replica && !active {
+    if (Path::new(path).is_absolute() || !db.starts_with(root)) && !active {
         return Err(
             "La edición en el archivo original requiere una copia dentro del proyecto".into(),
         );
@@ -549,8 +551,8 @@ fn write_database(
     if configured.path != db || configured.active != active {
         return Err("La ruta o el modo de edición no coincide con el .pf del esquema".into());
     }
-    if active && create_replica {
-        return Err("El respaldo con disparadores requiere una base cerrada".into());
+    if with_triggers && !active {
+        return Err("Configura modo=activa para ejecutar los disparadores en línea".into());
     }
     Ok(configured)
 }
@@ -561,23 +563,13 @@ fn apply(
     cancel: &Cancellation,
 ) -> Result<RecordEvent, String> {
     let selection = &operation.selection;
-    replica::check_propath(root, operation.triggers.as_deref())?;
+    trigger_profile::check_propath(root, operation.triggers.as_deref())?;
     let db = write_database(root, selection, operation.triggers.is_some())?;
     if db != operation.database {
         return Err("Cambió la base desde la vista previa".into());
     }
-    if let Some(propath) = &operation.triggers {
-        return replica::apply(
-            root,
-            selection,
-            &db.path,
-            propath,
-            AvmMode::Apply(&operation.snapshot, &operation.next),
-            cancel,
-        );
-    }
     let directory = journal_directory(root, selection, true)?;
-    if let Some(source) = &operation.restore {
+    let previous = if let Some(source) = &operation.restore {
         let (backup, recorded_after, receipt) =
             confirmed_backup(root, &directory, &db.path, &source.id)?;
         if receipt != source.receipt
@@ -587,44 +579,54 @@ fn apply(
         {
             return Err("Conflicto: el respaldo cambió desde la vista previa".into());
         }
-    }
-    let path_key = hex(db
-        .path
-        .to_str()
-        .ok_or("La ruta de la copia ABL no es válida")?
-        .as_bytes());
-    let backup = format!(
-        "{PROTOCOL}\n{path_key}\n{}\n{}\n{}\n{}",
-        selection.column_name(),
-        u8::from(operation.restore.is_some()),
-        operation.next,
-        snapshot_wire(&operation.snapshot)
-    );
+        Some(backup.before)
+    } else {
+        None
+    };
+    let mut document = journal::document(
+        selection,
+        &db.path,
+        if operation.restore.is_some() {
+            "restaurar_edicion"
+        } else {
+            "edicion"
+        },
+        Some(&operation.snapshot),
+    )?;
+    document["propuesto_hex"] = serde_json::json!(operation.next);
+    document["propuesto"] = serde_json::json!(decode_cell(
+        &operation.next,
+        &selection.table.catalog.codec,
+    )?);
+    let backup = journal::encode(&document)?;
     let id = new_backup_id()?;
     publish_verified(
         root,
-        &directory.join(format!("{id}.respaldo")),
-        backup.as_bytes(),
+        &directory.join(format!("{id}.respaldo.json")),
+        &backup,
     )?;
-    let snapshot = run_avm(
+    let mut receipt = backup;
+    let snapshot = run_mode_with_triggers(
         root,
         selection,
         &db,
-        Some((&operation.snapshot, &operation.next)),
+        previous.as_ref().map_or(
+            AvmMode::Apply(&operation.snapshot, &operation.next),
+            |before| AvmMode::Restore(&operation.snapshot, before),
+        ),
+        operation.triggers.as_deref(),
         cancel,
     )
-    .map_err(|error| format!("{error}. Respaldo verificado {id}"))?;
-    let receipt = format!("{backup}{}", snapshot_wire(&snapshot));
-    publish_verified(
-        root,
-        &directory.join(format!("{id}.confirmado")),
-        receipt.as_bytes(),
-    )
-    .map_err(|error| {
-        format!(
+    .map_err(|error| format!("{error}. Respaldo verificado {id}"))?
+    .ok_or("OpenEdge no devolvió el registro actualizado")?;
+    receipt.extend(snapshot_wire(&snapshot).as_bytes());
+    publish_verified(root, &directory.join(format!("{id}.confirmado")), &receipt).map_err(
+        |error| {
+            format!(
             "El AVM confirmó el cambio y se conserva el respaldo {id}. El recibo falló: {error}"
         )
-    })?;
+        },
+    )?;
     Ok(RecordEvent::Applied)
 }
 
@@ -699,7 +701,7 @@ fn journal_entries(directory: &Path) -> Result<BTreeMap<String, JournalFiles>, S
             return Err("El historial del registro excede el límite de revisión".into());
         }
         let name = entry.map_err(io_error)?.file_name();
-        let Some((id, extension)) = name.to_str().and_then(|name| name.rsplit_once('.')) else {
+        let Some((id, extension)) = name.to_str().and_then(|name| name.split_once('.')) else {
             continue;
         };
         if id.len() != 71
@@ -710,7 +712,7 @@ fn journal_entries(directory: &Path) -> Result<BTreeMap<String, JournalFiles>, S
                     byte.is_ascii_digit()
                 }
             })
-            || !matches!(extension, "respaldo" | "confirmado")
+            || !matches!(extension, "respaldo" | "respaldo.json" | "confirmado")
         {
             continue;
         }
@@ -844,12 +846,33 @@ fn read_backup(
     id: &str,
 ) -> Result<(Backup, Vec<u8>), String> {
     let invalid = "El respaldo o su recibo están incompletos";
-    let (_, bytes) = read_in_root(
-        root,
-        &directory.join(format!("{id}.respaldo")),
-        MAX_PROTOCOL,
-    )
-    .map_err(io_error)?;
+    let (bytes, document) = journal::read(root, directory, db, id, "respaldo")?;
+    if let Some(document) = document {
+        let column = document["columna"]
+            .as_str()
+            .and_then(|column| super::name(column.as_bytes()))
+            .ok_or(invalid)?;
+        let restoring = match document["operacion"].as_str() {
+            Some("edicion") => false,
+            Some("restaurar_edicion") => true,
+            _ => return Err(invalid.into()),
+        };
+        let next = document["propuesto_hex"]
+            .as_str()
+            .filter(|wire| valid_value(wire))
+            .ok_or(invalid)?
+            .to_owned();
+        let before = journal::image(&document["anterior"])?.ok_or(invalid)?;
+        return Ok((
+            Backup {
+                column,
+                restoring,
+                next,
+                before,
+            },
+            bytes,
+        ));
+    }
     let mut lines = std::str::from_utf8(&bytes).map_err(|_| invalid)?.lines();
     let path = hex(db.to_str().ok_or(invalid)?.as_bytes());
     if lines.next() != Some(PROTOCOL) || lines.next() != Some(&path) {
@@ -956,6 +979,7 @@ fn parse_snapshot(mut lines: std::str::Lines<'_>) -> Result<Snapshot, String> {
     })
 }
 
+#[cfg(test)]
 fn run_avm(
     root: &Path,
     selection: &Selection,
@@ -969,9 +993,21 @@ fn run_avm(
     run_mode(root, selection, db, mode, cancel)?.ok_or_else(|| "La fila ya no existe".into())
 }
 
+fn read_for_edit(
+    root: &Path,
+    selection: &Selection,
+    db: &LocalDatabase,
+    triggers: Option<&Path>,
+    cancel: &Cancellation,
+) -> Result<Snapshot, String> {
+    run_mode_with_triggers(root, selection, db, AvmMode::Preview, triggers, cancel)?
+        .ok_or_else(|| "La fila ya no existe".into())
+}
+
 enum AvmMode<'a> {
     Preview,
     Apply(&'a Snapshot, &'a str),
+    Restore(&'a Snapshot, &'a Snapshot),
     Inspect,
     Insert(&'a str),
     Delete(&'a Snapshot),
@@ -1011,6 +1047,12 @@ fn run_mode_with_triggers(
             before.row_id.as_str(),
             before.image.as_str(),
             value,
+        ),
+        AvmMode::Restore(live, before) => (
+            "restore",
+            live.row_id.as_str(),
+            live.image.as_str(),
+            before.image.as_str(),
         ),
         AvmMode::Inspect => ("inspect", "", "", ""),
         AvmMode::Insert(value) => ("insert", "", "", value),
@@ -1142,7 +1184,7 @@ mod tests {
 
     #[test]
     #[ignore = "requiere una copia de Sports2000 con un disparador sintético"]
-    fn progress_real_record_trigger_writes_other_table_and_preserves_full_checkpoint() {
+    fn progress_real_active_trigger_restores_only_the_journaled_row() {
         let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_TRIGGER_PROJECT").unwrap())
             .canonicalize()
             .unwrap();
@@ -1194,66 +1236,62 @@ mod tests {
             controller.apply(&root, preview, wake.clone()).unwrap();
             finish(&root, controller, &wake)
         };
-        let prior_marker = "CIDE trigger verified";
+        let marker = "CIDE trigger verified";
         assert!(!original_sales
             .iter()
             .flatten()
-            .any(|value| value.as_deref() == Some(prior_marker)));
-        let completed = |parent: &Path| {
-            fs::read_dir(parent)
-                .ok()
-                .into_iter()
-                .flatten()
-                .flatten()
-                .filter(|item| item.path().join("completado.txt").is_file())
-                .count()
-        };
-        let before = completed(&root.join(".cide/respaldos-registros/bases"));
-        let result = review_edit(&mut controller, "CIDE edit with trigger").unwrap();
-        let RecordEvent::Replica(directory) = result else {
-            panic!("No se publicó la base nueva")
-        };
-        assert!(directory.join("completado.txt").is_file());
-        assert!(directory.join("anterior.pbk").is_file());
-        assert_eq!(page(sales).rows, original_sales);
-        assert_eq!(page(customer).rows[0], row);
-
+            .any(|cell| cell.as_deref() == Some(marker)));
+        assert!(matches!(
+            review_edit(&mut controller, "CIDE edit with trigger"),
+            Ok(RecordEvent::Applied)
+        ));
+        let changed = page(customer).rows.remove(0);
+        assert_eq!(changed[column].as_deref(), Some("CIDE edit with trigger"));
+        assert!(page(sales)
+            .rows
+            .iter()
+            .flatten()
+            .any(|cell| cell.as_deref() == Some(marker)));
         let selection = Selection::new(customer, &row, column).unwrap();
-        let cancel = Cancellation::new(Duration::from_secs(30));
-        let read = |file| {
-            let db = LocalDatabase {
-                path: directory.join(file),
-                active: false,
-            };
-            run_avm(&root, &selection, &db, None, &cancel).unwrap()
-        };
+        let directory = journal_directory(&root, &selection, false).unwrap();
+        let backup = fs::read_dir(&directory)
+            .unwrap()
+            .flatten()
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .ends_with(".respaldo.json")
+            })
+            .unwrap();
+        let document: serde_json::Value =
+            serde_json::from_slice(&fs::read(backup.path()).unwrap()).unwrap();
+        assert_eq!(document["tabla"], "Customer");
         assert_eq!(
-            read("anterior.db").value,
-            value_wire(&selection, row[column].as_deref().unwrap()).unwrap()
+            document["anterior"]["valor"].as_str(),
+            row[column].as_deref()
         );
-        assert_eq!(
-            read("resultado.db").value,
-            value_wire(&selection, "CIDE edit with trigger").unwrap()
-        );
-        let config = load_profile(&root).unwrap();
-        let mut check = Command::new(&config.avm.executable);
-        check
-            .current_dir(avm_path(&directory))
-            .args(["-db", "resultado.db", "-1", "-RO", "-b", "-p"])
-            .arg(avm_path(&root.join("verify-trigger.p")));
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            check.creation_flags(0x0800_0000);
-        }
-        assert!(check.output().unwrap().status.success());
-        assert_eq!(fs::read(directory.join("verified.txt")).unwrap(), b"OK");
+        assert!(!root.join(".cide/respaldos-registros/bases").exists());
+        controller
+            .request_restore(&root, customer, &changed, wake.clone())
+            .unwrap();
+        let preview = review(&root, &mut controller, &wake);
+        controller.apply(&root, preview, wake.clone()).unwrap();
+        assert!(matches!(
+            finish(&root, &mut controller, &wake),
+            Ok(RecordEvent::Applied)
+        ));
+        assert_eq!(page(customer).rows[0], row);
+        assert!(page(sales)
+            .rows
+            .iter()
+            .flatten()
+            .any(|cell| cell.as_deref() == Some(marker)));
         assert!(review_edit(&mut controller, "CIDE trigger rejected")
             .err()
             .unwrap()
             .contains("revirtió"));
-        assert_eq!(page(sales).rows, original_sales);
-        assert_eq!(completed(directory.parent().unwrap()), before + 1);
+        assert_eq!(page(customer).rows[0], row);
     }
     use crate::editor::{BrowseController, BrowseRequest, SchemaController};
     use std::time::Instant;
@@ -1539,14 +1577,14 @@ mod tests {
         assert!(run_avm(&root, &selection, &db, None, &cancel).unwrap() == receipt);
         row[column] = Some(next.into());
 
-        let backup_path = directory.join(format!("{}.respaldo", source.id));
+        let backup_path = directory.join(format!("{}.respaldo.json", source.id));
         let original_backup = fs::read(&backup_path).unwrap();
         let mut altered = original_backup.clone();
         let position = altered
-            .windows(6)
-            .position(|value| value == b"IMAGE|")
+            .windows(b"\"imagen_hex\": \"".len())
+            .position(|value| value == b"\"imagen_hex\": \"")
             .unwrap()
-            + 6;
+            + b"\"imagen_hex\": \"".len();
         altered[position] = if altered[position] == b'1' {
             b'2'
         } else {

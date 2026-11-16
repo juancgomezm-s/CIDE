@@ -1256,13 +1256,11 @@ en copias locales autorizadas y restaura el último cambio confirmado. La
 edición y restauración requieren vista previa y respaldo verificado antes de
 escribir. El recorrido GUI/TUI y los conflictos se validaron con Sports2000
 en OpenEdge 11.7. Altas y borrados tienen vista previa y reversión por clave.
-El modo con disparadores trabaja en una base nueva y conserva una
-restauración completa anterior, incluidas las tablas afectadas por los
-disparadores. La escritura directa en bases activas locales está disponible
-en OpenEdge 11.7 para operaciones sin disparadores aplicables, con bloqueo y
-revisión de la imagen completa.
-El proveedor compartido de PostgreSQL y MySQL consultó catálogo y registros
-sobre conexiones TLS reales con ambos controladores ODBC Windows. Quedan
-la compatibilidad con OpenEdge 10.0B y 10.2B, las escrituras con disparadores
-en bases activas y la recuperación de efectos externos a la transacción.
+La escritura directa en bases activas locales de OpenEdge 11.7 admite los
+disparadores configurados del proyecto. El respaldo JSON registra únicamente
+la fila seleccionada para cada operación solicitada en DataDigger, y el
+historial se consulta a petición. La restauración revalida la imagen de la
+fila antes de escribir. El proveedor compartido de PostgreSQL y MySQL
+consultó catálogo y registros mediante TLS con ambos controladores ODBC
+Windows. Queda verificar OpenEdge 10.2B y, al final, 10.0B.
 [Plan de expansión](EXPANSION_DATADIGGER.md).

@@ -1,9 +1,9 @@
 //! Reviewed creation, deletion and reversal of row presence.
 use super::{
-    decode_cell, hex, io_error, journal_directory, new_backup_id, parse_snapshot, publish_verified,
-    read_in_root, replica, run_mode, snapshot_wire, value_wire, write_database, AvmMode,
-    BrowseTable, ColumnKind, LocalDatabase, RecordAction, RecordController, RecordEvent,
-    RecordPreview, Selection, Snapshot, MAX_PROTOCOL,
+    decode_cell, hex, io_error, journal, journal_directory, new_backup_id, parse_snapshot,
+    publish_verified, read_in_root, run_mode, run_mode_with_triggers, snapshot_wire,
+    trigger_profile, value_wire, write_database, AvmMode, BrowseTable, ColumnKind, LocalDatabase,
+    RecordAction, RecordController, RecordEvent, RecordPreview, Selection, Snapshot, MAX_PROTOCOL,
 };
 use jc_app::{Cancellation, Wakeup};
 use jc_files::ContentFingerprint;
@@ -62,7 +62,7 @@ impl RecordController {
             summary.push(format!("{field} = «{value}»"));
         }
         self.start(root, wakeup, false, move |root, cancel| {
-            let triggers = replica::propath(root)?;
+            let triggers = trigger_profile::propath(root)?;
             let database = write_database(root, &selection, triggers.is_some())?;
             if run_mode(root, &selection, &database, AvmMode::Inspect, cancel)?.is_some() {
                 return Err(format!(
@@ -101,7 +101,7 @@ impl RecordController {
             .cloned()
             .ok_or("Selecciona un registro")?;
         self.start(root, wakeup, false, move |root, cancel| {
-            let triggers = replica::propath(root)?;
+            let triggers = trigger_profile::propath(root)?;
             let database = write_database(root, &selection, triggers.is_some())?;
             let before = run_mode(root, &selection, &database, AvmMode::Inspect, cancel)?
                 .ok_or("Conflicto: el registro ya no existe")?;
@@ -131,8 +131,8 @@ impl RecordController {
         let selection = choose(table, key)?;
         selection.check_catalog(root)?;
         self.start(root, wakeup, false, move |root, cancel| {
-            replica::require_row_restore(root)?;
-            let database = write_database(root, &selection, false)?;
+            let triggers = trigger_profile::propath(root)?;
+            let database = write_database(root, &selection, triggers.is_some())?;
             let directory = journal_directory(root, &selection, false)?;
             let source =
                 latest_id(&directory)?.ok_or("La clave no tiene un alta o borrado confirmado")?;
@@ -154,7 +154,7 @@ impl RecordController {
                 before: live,
                 action,
                 source: Some(Source { id: source, sealed }),
-                triggers: None,
+                triggers,
             };
             Ok(preview(
                 operation,
@@ -228,7 +228,7 @@ pub(super) fn apply(
     cancel: &Cancellation,
 ) -> Result<RecordEvent, String> {
     let selection = &operation.selection;
-    replica::check_propath(root, operation.triggers.as_deref())?;
+    trigger_profile::check_propath(root, operation.triggers.as_deref())?;
     let database = write_database(root, selection, operation.triggers.is_some())?;
     if database != operation.database {
         return Err("Cambió la base desde la vista previa".into());
@@ -243,9 +243,6 @@ pub(super) fn apply(
         ),
         Change::Recreate(image) => AvmMode::Recreate(image),
     };
-    if let Some(propath) = &operation.triggers {
-        return replica::apply(root, selection, &database.path, propath, mode, cancel);
-    }
     let directory = journal_directory(root, selection, true)?;
     if let Some(source) = &operation.source {
         let (_, after, sealed) = read_verified(root, &directory, &database.path, &source.id)?;
@@ -254,21 +251,31 @@ pub(super) fn apply(
         }
     }
     let id = new_backup_id()?;
-    let path = database.path.to_str().ok_or("Ruta de base inválida")?;
-    let backup = format!(
-        "{HEADER}\n{}\n{}",
-        hex(path.as_bytes()),
-        image_wire(operation.before.as_ref())
-    );
-    publish_verified(
+    let action = match (&operation.action, &operation.source) {
+        (_, Some(_)) => "restaurar_fila",
+        (Change::Insert(_), None) => "alta",
+        (Change::Delete, None) => "borrado",
+        (Change::Recreate(_), None) => return Err("Falta el respaldo original de la fila".into()),
+    };
+    let backup = journal::encode(&journal::document(
+        selection,
+        &database.path,
+        action,
+        operation.before.as_ref(),
+    )?)?;
+    publish_verified(root, &directory.join(format!("{id}.fila.json")), &backup)?;
+    let after = run_mode_with_triggers(
         root,
-        &directory.join(format!("{id}.fila")),
-        backup.as_bytes(),
-    )?;
-    let after = run_mode(root, selection, &database, mode, cancel)
-        .map_err(|error| format!("{error}. Respaldo verificado {id}"))?;
-    let receipt = format!("{backup}{}", image_wire(after.as_ref()));
-    publish_verified(root, &directory.join(format!("{id}.fila-confirmada")), receipt.as_bytes())
+        selection,
+        &database,
+        mode,
+        operation.triggers.as_deref(),
+        cancel,
+    )
+    .map_err(|error| format!("{error}. Respaldo verificado {id}"))?;
+    let mut receipt = backup;
+    receipt.extend(image_wire(after.as_ref()).as_bytes());
+    publish_verified(root, &directory.join(format!("{id}.fila-confirmada")), &receipt)
         .map_err(|error| format!("OpenEdge confirmó la operación de fila. Se conserva el respaldo {id}, pero falló el recibo: {error}"))?;
     Ok(RecordEvent::Applied)
 }
@@ -314,8 +321,7 @@ fn read_verified(
     if !valid_id(id) {
         return Err(invalid.into());
     }
-    let (_, bytes) = read_in_root(root, &directory.join(format!("{id}.fila")), MAX_PROTOCOL)
-        .map_err(io_error)?;
+    let (bytes, document) = journal::read(root, directory, database, id, "fila")?;
     let (_, receipt) = read_in_root(
         root,
         &directory.join(format!("{id}.fila-confirmada")),
@@ -326,12 +332,23 @@ fn read_verified(
         "{HEADER}\n{}\n",
         hex(database.to_str().ok_or(invalid)?.as_bytes())
     );
-    let before = bytes
-        .strip_prefix(header.as_bytes())
-        .ok_or("El respaldo pertenece a otra base")?;
+    let before = if let Some(document) = document {
+        if !matches!(
+            document["operacion"].as_str(),
+            Some("alta" | "borrado" | "restaurar_fila")
+        ) {
+            return Err(invalid.into());
+        }
+        journal::image(&document["anterior"])?
+    } else {
+        let wire = bytes
+            .strip_prefix(header.as_bytes())
+            .ok_or("El respaldo pertenece a otra base")?;
+        read_image(wire)?
+    };
     let after = receipt.strip_prefix(bytes.as_slice()).ok_or(invalid)?;
     let sealed = ContentFingerprint::of_chunks([receipt.as_slice()]);
-    Ok((read_image(before)?, read_image(after)?, sealed))
+    Ok((before, read_image(after)?, sealed))
 }
 
 fn read_image(bytes: &[u8]) -> Result<Option<Snapshot>, String> {

@@ -148,18 +148,18 @@ OUTPUT STREAM outputFile TO VALUE(SUBSTRING(SESSION:PARAMETER, 1, R-INDEX(SESSIO
 PUT STREAM outputFile UNFORMATTED cHeader SKIP "AVM|" PROVERSION SKIP.
 IF cMode BEGINS "trigger-" THEN DO:
     cMode = SUBSTRING(cMode, 9).
-    IF LOOKUP(cMode, "apply,insert,delete") = 0 THEN RUN Fail("shape").
+    IF LOOKUP(cMode, "preview,apply,restore,insert,delete,recreate") = 0 THEN RUN Fail("shape").
     IF OS-GETENV("CIDE_RECORD_PROPATH") = ? OR OS-GETENV("CIDE_RECORD_PROPATH") = "" THEN RUN Fail("triggers").
     PROPATH = OS-GETENV("CIDE_RECORD_PROPATH") + "," + PROPATH.
     lTriggers = TRUE.
 END.
-IF LOOKUP(cMode, "preview,apply,inspect,insert,delete,recreate") = 0 THEN RUN Fail("shape").
+IF LOOKUP(cMode, "preview,apply,restore,inspect,insert,delete,recreate") = 0 THEN RUN Fail("shape").
 lReadOnly = LOOKUP(cMode, "preview,inspect") > 0.
 IF OS-GETENV("CIDE_RECORD_ACTIVE") = "1" THEN lActive = TRUE.
-IF cVersion <> PROVERSION THEN RUN Fail("version").
+IF cVersion <> PROVERSION OR (lActive AND PROVERSION <> "11.7") THEN RUN Fail("version").
 IF NUM-DBS <> 1 OR LDBNAME(1) <> cDb THEN RUN Fail("connection").
 IF (INDEX(DBRESTRICTIONS(1), "READ-ONLY") > 0) <> (lReadOnly AND NOT lActive)
-   OR (lActive AND lTriggers) THEN RUN Fail("connection").
+   OR (lTriggers AND NOT lActive) THEN RUN Fail("connection").
 IF NOT SafeName(cDb) OR NOT SafeName(cTable) OR NOT SafeName(cIndex) OR NOT SafeName(cKeyField)
    OR NOT SafeName(cColumn) OR cColumn = cKeyField THEN RUN Fail("shape").
 iKey = INTEGER(cKey) NO-ERROR.
@@ -196,7 +196,7 @@ hRaw = BUFFER ttImage:BUFFER-FIELD("payload").
 
 IF lReadOnly THEN DO:
     IF lActive THEN DO:
-        IF cMode = "preview" THEN DO:
+        IF cMode = "preview" AND NOT lTriggers THEN DO:
             RUN CheckLiveWrite(OUTPUT lSafe).
             IF lSafe <> TRUE THEN RUN Fail("active-triggers").
         END.
@@ -214,15 +214,17 @@ IF lReadOnly THEN DO:
            cValue = FieldValue(hEdit)
            cRow = STRING(hBuffer:ROWID).
 END.
-ELSE IF cMode = "apply" THEN DO:
-    cValue = TextFromHex(cNext).
-    IF cNext <> "-" AND (cValue = ? OR TextHex(cValue) <> cNext) THEN RUN Fail("shape").
-    IF hEdit:DATA-TYPE = "INTEGER" AND cValue <> ? THEN DO:
-        iNext = INTEGER(cValue) NO-ERROR.
-        IF ERROR-STATUS:ERROR OR iNext = ? OR TRIM(STRING(iNext)) <> cValue THEN RUN Fail("shape").
+ELSE IF LOOKUP(cMode, "apply,restore") > 0 THEN DO:
+    IF cMode = "apply" THEN DO:
+        cValue = TextFromHex(cNext).
+        IF cNext <> "-" AND (cValue = ? OR TextHex(cValue) <> cNext) THEN RUN Fail("shape").
+        IF hEdit:DATA-TYPE = "INTEGER" AND cValue <> ? THEN DO:
+            iNext = INTEGER(cValue) NO-ERROR.
+            IF ERROR-STATUS:ERROR OR iNext = ? OR TRIM(STRING(iNext)) <> cValue THEN RUN Fail("shape").
+        END.
     END.
     DO TRANSACTION ON ERROR UNDO, LEAVE ON STOP UNDO, LEAVE:
-        IF lActive THEN DO:
+        IF lActive AND NOT lTriggers THEN DO:
             cStatus = "active-triggers".
             RUN CheckLiveWrite(OUTPUT lSafe).
             IF lSafe <> TRUE THEN UNDO, LEAVE.
@@ -236,7 +238,13 @@ ELSE IF cMode = "apply" THEN DO:
                cRow = STRING(hBuffer:ROWID).
         IF cRow <> cOldRow OR cImage = ? OR cImage <> cOldImage THEN UNDO, LEAVE.
         cStatus = "write".
-        IF cValue = ? THEN hEdit:BUFFER-VALUE = ? NO-ERROR.
+        IF cMode = "restore" THEN DO:
+            ttImage.payload = ImageFromHex(cNext).
+            IF ttImage.payload = ? THEN UNDO, LEAVE.
+            lOk = hBuffer:RAW-TRANSFER(FALSE, hRaw) NO-ERROR.
+            IF lOk <> TRUE OR ERROR-STATUS:NUM-MESSAGES > 0 THEN UNDO, LEAVE.
+        END.
+        ELSE IF cValue = ? THEN hEdit:BUFFER-VALUE = ? NO-ERROR.
         ELSE IF hEdit:DATA-TYPE = "INTEGER" THEN hEdit:BUFFER-VALUE = iNext NO-ERROR.
         ELSE hEdit:BUFFER-VALUE = cValue NO-ERROR.
         IF ERROR-STATUS:ERROR THEN UNDO, LEAVE.
@@ -246,7 +254,9 @@ ELSE IF cMode = "apply" THEN DO:
         IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
         ASSIGN cAfter = FieldValue(hEdit)
                cImage = RawHex(ttImage.payload).
-        IF cAfter = ? OR cAfter <> cNext OR cImage = ? THEN UNDO, LEAVE.
+        IF cAfter = ? OR cImage = ? THEN UNDO, LEAVE.
+        IF cMode = "restore" AND cImage <> cNext THEN UNDO, LEAVE.
+        IF cMode = "apply" AND cAfter <> cNext THEN UNDO, LEAVE.
         lCommitted = TRUE.
     END.
     IF NOT lCommitted THEN RUN Fail(cStatus).
@@ -254,7 +264,7 @@ ELSE IF cMode = "apply" THEN DO:
 END.
 ELSE DO:
     DO TRANSACTION ON ERROR UNDO, LEAVE ON STOP UNDO, LEAVE:
-        IF lActive THEN DO:
+        IF lActive AND NOT lTriggers THEN DO:
             cStatus = "active-triggers".
             RUN CheckLiveWrite(OUTPUT lSafe).
             IF lSafe <> TRUE THEN UNDO, LEAVE.
@@ -340,7 +350,7 @@ PROCEDURE CheckLiveWrite:
     plSafe = FALSE.
     /* 11.7 requires an exclusive schema lock to install/change triggers. */
     IF PROVERSION <> "11.7" THEN RETURN.
-    IF LOOKUP(cMode, "apply,preview") > 0 THEN
+    IF LOOKUP(cMode, "apply,restore,preview") > 0 THEN
         cOtherEvents = "FIND,CREATE,DELETE,REPLICATION-CREATE,REPLICATION-DELETE".
     ELSE IF cMode = "delete" THEN cOtherEvents = "FIND,CREATE,REPLICATION-CREATE".
     ELSE cOtherEvents = "FIND,DELETE,REPLICATION-DELETE".
