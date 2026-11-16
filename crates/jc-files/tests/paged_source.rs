@@ -111,11 +111,20 @@ mod windows {
             if let Ok(entries) = fs::read_dir(&self.root) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.parent() == Some(self.root.as_path())
-                        && fs::symlink_metadata(&path)
-                            .is_ok_and(|m| m.is_file() && m.file_attributes() & 0x400 == 0)
+                    let Ok(metadata) = fs::symlink_metadata(&path) else {
+                        continue;
+                    };
+                    if path.parent() != Some(self.root.as_path())
+                        || metadata.file_attributes() & 0x400 != 0
                     {
+                        continue;
+                    }
+                    if metadata.is_file() {
                         let _ = fs::remove_file(path);
+                    } else if path == self.path("recuperacion")
+                        && path.canonicalize().is_ok_and(|resolved| resolved == path)
+                    {
+                        let _ = fs::remove_dir_all(path);
                     }
                 }
             }
@@ -135,7 +144,10 @@ mod windows {
     #[ignore = "usa hasta 16 GiB de disco temporal; ejecutar explícitamente en Windows x64"]
     fn private_snapshot_edits_saves_and_recovers_a_file_above_four_gib() {
         use jc_core::RecoveryLimits;
-        use jc_files::{read_recovery_document_in, FileSession};
+        use jc_files::{
+            read_recovery_document_in, recovery::RecoveryStore, FileSession, SessionRecoveryInfo,
+        };
+        use std::io::Read;
         const OFFSET: u64 = (1 << 32) + 5;
         const LEN: u64 = OFFSET + 65_536;
         let workspace = Workspace::new();
@@ -188,19 +200,27 @@ mod windows {
             assert_eq!(&bytes, b"CIDE original\n");
         }
         session.insert_text(at, "sin guardar ").unwrap();
-        let recovery_path = workspace.path("recuperacion.bin");
-        {
-            let mut recovery = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&recovery_path)
-                .unwrap();
-            session.document().write_recovery(&mut recovery).unwrap();
-            recovery.sync_all().unwrap();
-        }
+        let depot = workspace.path("recuperacion");
+        let mut info = Vec::new();
+        session.recovery_info().write_to(&mut info).unwrap();
+        let generation = RecoveryStore::open(&depot, Default::default())
+            .unwrap()
+            .checkpoint(&info, 1, |_, writer| {
+                session.document().write_recovery(writer)
+            })
+            .unwrap();
         drop(session);
-        let mut recovery = File::open(&recovery_path).unwrap();
-        let mut document = read_recovery_document_in(
+        let mut store = RecoveryStore::open(&depot, Default::default()).unwrap();
+        let mut loaded = store.load_latest().unwrap().unwrap();
+        assert_eq!(loaded.generation, generation);
+        assert!(!loaded.used_backup);
+        assert_eq!(loaded.metadata, info);
+        assert_eq!(loaded.documents.len(), 1);
+        let metadata =
+            SessionRecoveryInfo::read_from(&mut loaded.metadata.as_slice(), Default::default())
+                .unwrap();
+        let mut recovery = loaded.documents.pop().unwrap();
+        let document = read_recovery_document_in(
             &mut recovery,
             RecoveryLimits {
                 max_source_bytes: LEN as usize + 1024,
@@ -211,13 +231,20 @@ mod windows {
             &workspace.root,
         )
         .unwrap();
+        assert_eq!(recovery.read(&mut [0]).unwrap(), 0);
+        drop(recovery);
+        drop(store);
+        let mut restored = FileSession::from_recovery(metadata, document).unwrap();
+        assert_eq!(restored.path(), path);
+        let document = restored.document();
         assert!(document.is_paged());
         assert!(document.is_modified());
         assert_eq!(
             document.read_range(at..at + 26).unwrap(),
             b"sin guardar CIDE original\n"
         );
-        assert!(document.undo());
+        assert!(restored.document_mut().undo());
+        let document = restored.document();
         assert!(!document.is_modified());
         assert_eq!(
             document.read_range(at..at + 14).unwrap(),

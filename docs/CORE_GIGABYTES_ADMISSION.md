@@ -12,8 +12,11 @@ de cambios externos de la sesión.
 La prueba optimizada de sesión abrió 4.295.032.837 bytes desde un archivo
 disperso, editó en el offset 4.294.967.301, guardó al mismo nombre y recuperó
 una edición posterior sin guardar. Comprobó también deshacer al estado
-guardado. La prueba ejercitó una copia privada real con lectura y escritura
-por tramos. La asignación dispersa del original no sirve para inferir
+guardado. La prueba publicó una generación en `RecoveryStore`, cerró el
+almacén y volvió a abrirlo. Revalidó la generación y reconstruyó la sesión,
+incluidos la ruta y el historial de cambios. Tardó 84,36 s en Windows x64 y
+eliminó todos sus archivos de prueba al terminar. La prueba ejercitó una copia
+privada real con lectura y escritura por tramos. La asignación dispersa del original no sirve para inferir
 rendimiento de lectura fría, latencia visible ni memoria del proceso completo.
 
 La preparación compartida de la primera vista ya puede entregar hasta 256
