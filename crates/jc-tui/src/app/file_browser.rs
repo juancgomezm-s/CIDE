@@ -449,17 +449,15 @@ impl TuiApp {
                 self.browser_navigate_prompt(kind, path);
             }
         } else if kind == PromptKind::Open {
-            match self.file_browser.catalog.open_file(
+            match self.file_browser.catalog.request_file_open(
                 id,
                 &mut self.workbench,
                 self.default_encoding,
                 side,
                 16 * 1024 * 1024,
             ) {
-                Ok(_) => {
-                    self.close_overlay();
-                    self.ensure_encoding_choice();
-                    self.status = "Archivo abierto desde el selector".into();
+                Ok(opened) => {
+                    self.finish_file_open(opened.is_some(), "Archivo abierto desde el selector")
                 }
                 Err(error) => self.status = error,
             }
@@ -482,14 +480,16 @@ impl TuiApp {
             ordinary_directory(&parent)?;
             let path = parent.join(path.file_name().ok_or("La ruta no identifica un archivo")?);
             self.workbench
-                .open_project_file(&parent, path, self.default_encoding, side, 16 * 1024 * 1024)
+                .request_file_open_in_root(
+                    &parent,
+                    path,
+                    self.default_encoding,
+                    side,
+                    16 * 1024 * 1024,
+                )
                 .map_err(|e| e.to_string())
         }) {
-            Ok(_) => {
-                self.close_overlay();
-                self.ensure_encoding_choice();
-                self.status = "Archivo abierto".into();
-            }
+            Ok(opened) => self.finish_file_open(opened.is_some(), "Archivo abierto"),
             Err(error) => self.status = error,
         }
     }

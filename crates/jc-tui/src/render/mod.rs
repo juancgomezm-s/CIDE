@@ -358,7 +358,7 @@ fn draw_editor(
         screen.text_styled(crumb.x, y, &crumb.label, CellStyle::Accent);
     }
     let y = y + 1;
-    let Some(_document) = document else {
+    let Some(document) = document else {
         screen.text(x + 2, y + 2, "CIDE");
         screen.text_styled(
             x + 2,
@@ -410,7 +410,7 @@ fn draw_editor(
             .or(prepared.cursor_column)
     };
     let selection = app.workbench.selection_for_pane(pane);
-    let highlights = app.workbench.search_matches_for_tab(_document.tab_id);
+    let highlights = app.workbench.search_matches_for_tab(document.tab_id);
 
     for row in 0..visible_height {
         let line_index = first_line + row;
@@ -418,7 +418,14 @@ fn draw_editor(
             break;
         }
         let row_y = y + row as u16;
-        let number = format!("{:>width$} ", line_index + 1, width = number_width as usize);
+        let width = number_width as usize;
+        let number = app
+            .workbench
+            .line_display_number(document.tab_id, line_index)
+            .map_or_else(
+                || format!("{:>width$} ", "·"),
+                |number| format!("{number:>width$} "),
+            );
         screen.text_styled(x, row_y, &number, CellStyle::Dim);
         if let Some(display) = &prepared.display_rows {
             for (target, cell) in display
@@ -682,14 +689,21 @@ fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
         let position = frame
             .status_position
             .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
-        format!(
-            " {} | {} | {} | Lín {} Col {} ",
-            path.display(),
-            language,
-            encoding,
-            position.line + 1,
-            position.column + 1
-        )
+        if let Some(offset) = app.workbench.active_paged_byte() {
+            format!(
+                " Byte {offset} | Ir a posición con @byte | {encoding} | {} ",
+                path.display()
+            )
+        } else {
+            format!(
+                " {} | {} | {} | Lín {} Col {} ",
+                path.display(),
+                language,
+                encoding,
+                position.line + 1,
+                position.column + 1
+            )
+        }
     } else {
         " CIDE ".to_owned()
     };

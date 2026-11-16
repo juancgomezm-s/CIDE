@@ -89,7 +89,7 @@ pub(crate) struct UnicodeLayout {
     lines: VecDeque<Line>,
     pub scanned_bytes: u64,
 }
-fn glyph(bytes: &[u8], encoding: TextEncoding, start: usize) -> (Glyph, usize, bool) {
+pub(crate) fn glyph(bytes: &[u8], encoding: TextEncoding, start: usize) -> (Glyph, usize, bool) {
     fn from_text(text: &str) -> (Glyph, usize, bool) {
         let width = grapheme::width(text);
         if width > 0 && !text.chars().any(char::is_control) {
@@ -119,7 +119,7 @@ fn glyph(bytes: &[u8], encoding: TextEncoding, start: usize) -> (Glyph, usize, b
     let width = escaped.len();
     (Glyph::Cluster(Arc::from(escaped)), width, true)
 }
-fn ascii_glyph(bytes: &[u8]) -> Option<(Glyph, usize, bool)> {
+pub(crate) fn ascii_glyph(bytes: &[u8]) -> Option<(Glyph, usize, bool)> {
     match bytes {
         [b' '..=b'~'] => Some((Glyph::Scalar(bytes[0] as char), 1, false)),
         [b'\t'] => Some((Glyph::Scalar('\t'), 0, false)),

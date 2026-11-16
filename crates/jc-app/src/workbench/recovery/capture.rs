@@ -1,6 +1,6 @@
 //! Cooperative codec capture. The worker receives chunks, never live documents.
 use super::*;
-use jc_core::RecoveryCursor;
+use jc_core::{source::ImmutableByteSource, RecoveryCursor, RecoveryPart};
 use jc_files::{ContentFingerprint, SessionRecoveryInfo};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -9,8 +9,17 @@ pub struct RecoveryKey {
     documents: Vec<(DocumentId, u64, u64)>,
 }
 pub enum CaptureChunk {
-    Data { document: usize, bytes: Vec<u8> },
-    End { document: usize },
+    Data {
+        document: usize,
+        bytes: Vec<u8>,
+    },
+    Source {
+        document: usize,
+        source: std::sync::Arc<dyn ImmutableByteSource>,
+    },
+    End {
+        document: usize,
+    },
 }
 #[derive(Debug)]
 pub enum CaptureError {
@@ -79,7 +88,8 @@ impl RecoveryCapture {
     pub fn document_count(&self) -> usize {
         self.documents.len()
     }
-    /// At most64KiB is copied in a step, including metadata. A changed/closed
+    /// At most 64 KiB is copied in a step. The writer reads paged sources.
+    /// A changed/closed
     /// source aborts the whole unpublished generation instead of mixing versions.
     pub fn next_chunk(&mut self, bench: &Workbench) -> Result<Option<CaptureChunk>, CaptureError> {
         let Some(target) = self.documents.get_mut(self.next) else {
@@ -95,14 +105,18 @@ impl RecoveryCapture {
         match doc
             .session
             .document()
-            .recovery_chunk(&mut target.cursor, 64 * 1024)
+            .recovery_part(&mut target.cursor, 64 * 1024)
             .map_err(|e| match e {
                 jc_core::RecoveryError::StaleCapture => CaptureError::Stale,
                 error => CaptureError::Failed(error.to_string()),
             })? {
-            Some(bytes) => Ok(Some(CaptureChunk::Data {
+            Some(RecoveryPart::Bytes(bytes)) => Ok(Some(CaptureChunk::Data {
                 document: self.next,
                 bytes,
+            })),
+            Some(RecoveryPart::Source(source)) => Ok(Some(CaptureChunk::Source {
+                document: self.next,
+                source,
             })),
             None => {
                 let document = self.next;

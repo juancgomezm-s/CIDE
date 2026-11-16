@@ -5,6 +5,9 @@ use std::path::PathBuf;
 mod periodic;
 pub use periodic::{PeriodicRecovery, PeriodicStats, RecoveryPolicy};
 
+pub(crate) const MAX_PAGED_RECOVERY_DOCUMENT: u64 = 8 * 1024 * 1024 * 1024;
+pub(crate) const MAX_RECOVERY_PAYLOAD: u64 = 16 * 1024 * 1024 * 1024;
+
 pub struct EditorRecovery {
     pub store: RecoveryStore,
     pub base: PathBuf,
@@ -13,8 +16,8 @@ impl EditorRecovery {
     pub fn open_in(root: &std::path::Path) -> Result<Self, String> {
         let base = std::env::current_dir().map_err(|e| e.to_string())?;
         let limits = RecoveryLimits {
-            max_total_bytes: 8 * 1024 * 1024 * 1024,
-            max_document_bytes: 512 * 1024 * 1024,
+            max_total_bytes: MAX_RECOVERY_PAYLOAD,
+            max_document_bytes: MAX_PAGED_RECOVERY_DOCUMENT,
             ..RecoveryLimits::default()
         };
         let store = RecoveryStore::open(root, limits).map_err(|e| e.to_string())?;

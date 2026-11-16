@@ -50,7 +50,12 @@ impl State {
             pane,
             generation,
         });
-        self.status = "Usa línea[:columna], coordenadas escalares del fuente desde1".into();
+        self.status = if self.workbench.active_paged_byte().is_some() {
+            "Usa @byte, desde cero, para ir a cualquier tramo del archivo"
+        } else {
+            "Usa línea[:columna], coordenadas escalares del fuente desde1"
+        }
+        .into();
     }
     pub(super) fn navigation_target_current(&self) -> bool {
         self.navigation_panel.as_ref().is_some_and(|panel| {
@@ -90,6 +95,18 @@ impl State {
         if !self.navigation_target_current() {
             self.navigation_panel = None;
             self.error("Cambió el destino; vuelve a abrir Ir a posición");
+            return;
+        }
+        if self.workbench.active_paged_byte().is_some() {
+            let panel = self.navigation_panel.as_ref().unwrap();
+            match self.workbench.go_to_paged_input(&panel.input) {
+                Ok(()) => {
+                    self.close_selector();
+                    self.bottom.focused = false;
+                    self.status = "Destino solicitado".into();
+                }
+                Err(error) => self.error(error),
+            }
             return;
         }
         let Some(position) = self

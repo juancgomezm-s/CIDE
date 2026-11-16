@@ -1,7 +1,10 @@
 //! A recovery generation owns documents once; views refer to their tab identity.
 use super::selection_history::{SelectionHistory, SelectionRecord, SelectionState};
 use super::*;
+use crate::session::{MAX_PAGED_RECOVERY_DOCUMENT, MAX_RECOVERY_PAYLOAD};
+use jc_core::PAGED_ADDED_LIMIT;
 use jc_files::{
+    read_recovery_document_in,
     recovery::{LoadedRecovery, RecoveryStore},
     SessionRecoveryInfo, SessionRecoveryLimits,
 };
@@ -11,13 +14,50 @@ mod capture;
 pub use capture::{CaptureChunk, CaptureError, RecoveryCapture, RecoveryKey};
 
 const MAGIC: &[u8; 8] = b"CIDEAPP2";
+const PAGED_MAGIC: &[u8; 8] = b"CIDEAPP3";
 const LEGACY_MAGIC: &[u8; 8] = b"CIDEAPP1";
 const MAX_SELECTION_RECORDS: usize = 1024;
 const MAX_SELECTION_BYTES: usize = 256 * 1024;
 const SELECTION_RECORD_BYTES: usize = 144;
 const MAX_DOCUMENTS: usize = 4096;
 const MAX_METADATA: usize = 16 * 1024 * 1024;
-const MAX_ENCODED_DOCUMENTS: u64 = 512 * 1024 * 1024;
+const MAX_RESIDENT_PAYLOAD: u64 = 512 * 1024 * 1024;
+
+fn recovery_limits(paged: bool) -> jc_core::RecoveryLimits {
+    let limits = jc_core::RecoveryLimits::default();
+    if paged {
+        jc_core::RecoveryLimits {
+            max_source_bytes: usize::try_from(7 * 1024u64.pow(3) + PAGED_ADDED_LIMIT as u64)
+                .unwrap_or(usize::MAX),
+            max_encoded_bytes: MAX_PAGED_RECOVERY_DOCUMENT,
+            ..limits
+        }
+    } else {
+        limits
+    }
+}
+
+#[derive(Default)]
+struct RecoveryPayload {
+    total: u64,
+    resident: u64,
+}
+
+impl RecoveryPayload {
+    fn add(&mut self, bytes: u64, paged: bool) -> io::Result<()> {
+        self.total = self.total.checked_add(bytes).ok_or_else(invalid)?;
+        if !paged {
+            self.resident = self.resident.checked_add(bytes).ok_or_else(invalid)?;
+        }
+        if bytes > recovery_limits(paged).max_encoded_bytes
+            || self.total > MAX_RECOVERY_PAYLOAD
+            || self.resident > MAX_RESIDENT_PAYLOAD
+        {
+            return Err(invalid());
+        }
+        Ok(())
+    }
+}
 
 fn invalid() -> io::Error {
     io::Error::new(
@@ -233,27 +273,36 @@ impl Workbench {
         if documents.len() != self.documents.len() {
             return Err(invalid().to_string());
         }
-        let mut total = 0u64;
+        let mut payload = RecoveryPayload::default();
+        let mut has_paged = false;
         for document in &self.documents {
             let source = document.session.document();
-            source
-                .validate_recovery_limits(jc_core::RecoveryLimits::default())
-                .map_err(|e| e.to_string())?;
-            total = total
-                .checked_add(source.recovery_encoded_len().map_err(|e| e.to_string())?)
-                .ok_or_else(|| invalid().to_string())?;
-            if total > MAX_ENCODED_DOCUMENTS {
-                return Err(invalid().to_string());
+            let paged = source.is_paged();
+            has_paged |= paged;
+            if paged && source.retained_added_bytes() > PAGED_ADDED_LIMIT {
+                return Err("Los cambios de la instantánea superan 64 MiB de recuperación".into());
             }
+            source
+                .validate_recovery_limits(recovery_limits(paged))
+                .map_err(|e| e.to_string())?;
+            payload
+                .add(
+                    source.recovery_encoded_len().map_err(|e| e.to_string())?,
+                    paged,
+                )
+                .map_err(|e| e.to_string())?;
         }
         let mut metadata = Metadata(Vec::new());
         let mut build = || -> io::Result<()> {
-            metadata.write_all(MAGIC)?;
+            metadata.write_all(if has_paged { PAGED_MAGIC } else { MAGIC })?;
             number(&mut metadata, tabs.len() as u64)?;
             for tab in tabs {
                 let document = documents.get(&tab.id).copied().ok_or_else(invalid)?;
                 number(&mut metadata, tab.id.0)?;
                 write_string(&mut metadata, &tab.title)?;
+                if has_paged {
+                    metadata.write_all(&[u8::from(document.session.document().is_paged())])?;
+                }
                 let mut info = document.session.recovery_info();
                 if info.path.is_relative() {
                     info.path = base.join(info.path);
@@ -327,36 +376,28 @@ impl Workbench {
             return Ok(None);
         };
         let was_backup = loaded.used_backup;
-        match Self::decode_recovery(loaded) {
+        let depot = store.slot_path().to_owned();
+        match Self::decode_recovery(loaded, &depot) {
             Ok(value) => Ok(Some(value)),
             Err(error) if !was_backup => {
                 let Some(backup) = store.load_backup().map_err(|e| e.to_string())? else {
                     return Err(error.to_string());
                 };
-                Self::decode_recovery(backup)
+                Self::decode_recovery(backup, &depot)
                     .map(Some)
                     .map_err(|e| e.to_string())
             }
             Err(error) => Err(error.to_string()),
         }
     }
-    fn decode_recovery(loaded: LoadedRecovery) -> io::Result<(Self, Vec<u8>, bool)> {
+    fn decode_recovery(loaded: LoadedRecovery, depot: &Path) -> io::Result<(Self, Vec<u8>, bool)> {
         if loaded.metadata.len() > MAX_METADATA || loaded.documents.len() > MAX_DOCUMENTS {
             return Err(invalid());
-        }
-        let mut total = 0u64;
-        for file in &loaded.documents {
-            total = total
-                .checked_add(file.metadata()?.len())
-                .ok_or_else(invalid)?;
-            if total > MAX_ENCODED_DOCUMENTS {
-                return Err(invalid());
-            }
         }
         let mut reader = Cursor::new(loaded.metadata.as_slice());
         let mut magic = [0; 8];
         reader.read_exact(&mut magic)?;
-        if &magic != MAGIC && &magic != LEGACY_MAGIC {
+        if &magic != PAGED_MAGIC && &magic != MAGIC && &magic != LEGACY_MAGIC {
             return Err(invalid());
         }
         let n = count(&mut reader, MAX_DOCUMENTS)?;
@@ -365,21 +406,38 @@ impl Workbench {
         }
         let mut result = Self::default();
         let mut mapping = Vec::with_capacity(n);
+        let mut payload = RecoveryPayload::default();
         for mut file in loaded.documents {
             let old = TabId(read_number(&mut reader)?);
             if mapping.iter().any(|(id, _, _, _)| *id == old) {
                 return Err(invalid());
             }
             let title = read_string(&mut reader)?;
+            let paged = if &magic == PAGED_MAGIC {
+                let mut flag = [0];
+                reader.read_exact(&mut flag)?;
+                match flag[0] {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(invalid()),
+                }
+            } else {
+                false
+            };
+            payload.add(file.metadata()?.len(), paged)?;
             let info =
                 SessionRecoveryInfo::read_from(&mut reader, SessionRecoveryLimits::default())
                     .map_err(io::Error::other)?;
             if !info.path.is_absolute() {
                 return Err(invalid());
             }
-            let source =
-                jc_core::Document::read_recovery(&mut file, jc_core::RecoveryLimits::default())
-                    .map_err(io::Error::other)?;
+            let limits = recovery_limits(paged);
+            let source = if paged {
+                read_recovery_document_in(&mut file, limits, PAGED_ADDED_LIMIT, depot)
+            } else {
+                jc_core::Document::read_recovery(&mut file, limits)
+            }
+            .map_err(io::Error::other)?;
             if file.read(&mut [0])? != 0 {
                 return Err(invalid());
             }
@@ -387,6 +445,14 @@ impl Workbench {
             let revision = source.revision();
             let dirty = source.is_modified();
             let session = FileSession::from_recovery(info, source).map_err(io::Error::other)?;
+            let (session, large_viewport) = if paged {
+                let (session, viewport) = PreparedLargeDocument::prepare(session)
+                    .map_err(io::Error::other)?
+                    .into_parts();
+                (session, Some(viewport))
+            } else {
+                (session, None)
+            };
             let tab_id = result.tabs.open(title);
             result.tabs.set_dirty(tab_id, dirty);
             result.next_document += 1;
@@ -400,6 +466,7 @@ impl Workbench {
                 unicode: RefCell::default(),
                 syntax: RefCell::default(),
                 selection_history: SelectionHistory::default(),
+                large_viewport,
             });
             mapping.push((old, tab_id, len, revision));
         }
@@ -419,7 +486,36 @@ impl Workbench {
             PaneManager::read_recovery_with_views(&mut reader, &mapping)?
         };
         result.panes = panes;
-        if &magic == MAGIC {
+        for document in &mut result.documents {
+            let Some(viewport) = &document.large_viewport else {
+                continue;
+            };
+            let active = result.panes.active();
+            let other = if active == PaneId::Primary {
+                PaneId::Secondary
+            } else {
+                PaneId::Primary
+            };
+            let location = [active, other].into_iter().find_map(|pane| {
+                let location = result.panes.view(pane)?.location()?;
+                (location.tab == document.tab_id).then_some((pane, location.byte_offset))
+            });
+            if let Some((pane, cursor)) = location {
+                let encoding = document.session.encoding();
+                if encoding.is_some() && viewport.position(cursor).is_none() {
+                    let rebuilt = large_document::LargeViewportRequest::new(
+                        document.session.document(),
+                        encoding,
+                        cursor.saturating_sub(96),
+                    )
+                    .map_err(io::Error::other)?
+                    .prepare()?;
+                    document.large_viewport = Some(rebuilt);
+                    result.panes.set_scroll(pane, 0, 0);
+                }
+            }
+        }
+        if &magic != LEGACY_MAGIC {
             let views: HashMap<_, _> = result.panes.recovery_view_tabs().collect();
             let remap: HashMap<_, _> = view_mapping.into_iter().collect();
             let mut selection_bytes = 0usize;
@@ -603,7 +699,7 @@ mod selection_recovery_tests {
         let metadata = bench.recovery_metadata(&fixture.root, b"UI!").unwrap();
         assert_eq!(&metadata[..8], MAGIC);
         let (restored, frontend, _) =
-            Workbench::decode_recovery(fixture.load(&bench, metadata)).unwrap();
+            Workbench::decode_recovery(fixture.load(&bench, metadata), &fixture.root).unwrap();
         assert_eq!(frontend, b"UI!");
         let actual = restored.documents[0].selection_history.records()[0];
         assert_ne!(record.view, actual.view);
@@ -628,7 +724,7 @@ mod selection_recovery_tests {
         metadata.drain(start..metadata.len() - 11);
         metadata[..8].copy_from_slice(LEGACY_MAGIC);
         let (restored, frontend, _) =
-            Workbench::decode_recovery(fixture.load(&bench, metadata)).unwrap();
+            Workbench::decode_recovery(fixture.load(&bench, metadata), &fixture.root).unwrap();
         assert_eq!(frontend, b"UI!");
         assert!(restored.documents[0].selection_history.records().is_empty());
         assert_eq!(restored.active_bytes().unwrap(), b"x");
@@ -684,13 +780,15 @@ mod selection_recovery_tests {
             let mut metadata = original.clone();
             metadata[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
             assert!(
-                Workbench::decode_recovery(fixture.load(&bench, metadata)).is_err(),
+                Workbench::decode_recovery(fixture.load(&bench, metadata), &fixture.root).is_err(),
                 "offset {offset}"
             );
         }
         let mut truncated = original;
         truncated.truncate(start + 16 + SELECTION_RECORD_BYTES - 1);
-        assert!(Workbench::decode_recovery(fixture.load(&bench, truncated)).is_err());
+        assert!(
+            Workbench::decode_recovery(fixture.load(&bench, truncated), &fixture.root).is_err()
+        );
     }
     #[test]
     fn selection_recovery_omits_closed_origins_and_rejects_a_view_owned_by_another_document() {
@@ -725,6 +823,6 @@ mod selection_recovery_tests {
         let mut metadata = bench.recovery_metadata(&fixture.root, b"UI!").unwrap();
         let tables = metadata.len() - 11 - 2 * 16 - SELECTION_RECORD_BYTES;
         metadata[tables + 32..tables + 40].copy_from_slice(&foreign.0.to_le_bytes());
-        assert!(Workbench::decode_recovery(fixture.load(&bench, metadata)).is_err());
+        assert!(Workbench::decode_recovery(fixture.load(&bench, metadata), &fixture.root).is_err());
     }
 }

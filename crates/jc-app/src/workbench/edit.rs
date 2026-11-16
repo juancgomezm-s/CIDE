@@ -40,6 +40,15 @@ impl Workbench {
         })
     }
     pub(crate) fn preferred_ending(&self) -> Result<&'static [u8], WorkbenchError> {
+        if let Some(document) = self
+            .active_document()
+            .filter(|document| document.session.document().is_paged())
+        {
+            return Ok(document
+                .large_viewport
+                .as_ref()
+                .map_or(b"\r\n", |viewport| viewport.preferred_ending()));
+        }
         self.with_active_text(|text, _| text.preferred_ending())
     }
 
@@ -223,6 +232,44 @@ impl Workbench {
             .session
             .encoding()
             .ok_or(jc_files::FileError::EncodingRequired)?;
+        if editor.session.document().is_paged() {
+            let viewport = self.paged_viewport_for_tab(editor.tab_id).ok_or_else(|| {
+                WorkbenchError::UnicodeLayout(
+                    "La vista del archivo todavía se está preparando".into(),
+                )
+            })?;
+            let position = viewport.position(cursor).ok_or_else(|| {
+                WorkbenchError::UnicodeLayout("El cursor está fuera del tramo preparado".into())
+            })?;
+            let row = &viewport.rows()[position.line];
+            if (forward && cursor < row.content.end) || (!forward && cursor > row.content.start) {
+                let document = self
+                    .document_by_tab(editor.tab_id)
+                    .ok_or(WorkbenchError::NoDocument)?;
+                return document
+                    .unicode
+                    .borrow_mut()
+                    .adjacent(
+                        editor.session.document(),
+                        encoding,
+                        row.content.clone(),
+                        cursor,
+                        forward,
+                    )
+                    .map_err(WorkbenchError::UnicodeLayout);
+            }
+            return Ok(if forward {
+                row.ending
+                    .as_ref()
+                    .filter(|ending| !ending.is_empty())
+                    .map(|ending| ending.end)
+            } else {
+                position
+                    .line
+                    .checked_sub(1)
+                    .map(|line| viewport.rows()[line].content.end)
+            });
+        }
         let content = self.with_active_text(|text, source| {
             let position = text.position(source, cursor)?;
             Ok::<_, jc_text::PositionError>(text.line_range(source, position.line).unwrap().0)
@@ -262,6 +309,8 @@ impl Workbench {
         self.resume_caret_tracking();
         if let Some(offset) = self.previous_boundary()? {
             self.move_cursor_to(offset, select)?;
+        } else if self.step_paged_view(false, select)? {
+            return Ok(());
         } else {
             self.cancel_rectangle();
         }
@@ -272,6 +321,8 @@ impl Workbench {
         self.resume_caret_tracking();
         if let Some(offset) = self.next_boundary()? {
             self.move_cursor_to(offset, select)?;
+        } else if self.step_paged_view(true, select)? {
+            return Ok(());
         } else {
             self.cancel_rectangle();
         }
@@ -295,6 +346,12 @@ impl Workbench {
             super::session_content_start(&document.session)
         };
         self.resume_caret_tracking();
+        if self
+            .active_document()
+            .is_some_and(|document| document.session.document().is_paged())
+        {
+            return self.go_to_paged_byte(offset, select);
+        }
         self.move_cursor_to(offset, select)
     }
 
@@ -311,6 +368,16 @@ impl Workbench {
 
     pub fn move_end(&mut self, select: bool) -> Result<(), WorkbenchError> {
         let pos = self.active_position().ok_or(WorkbenchError::NoDocument)?;
+        if let Some(document) = self
+            .active_document()
+            .filter(|document| document.session.document().is_paged())
+        {
+            let row = self
+                .paged_viewport_for_tab(document.tab_id)
+                .and_then(|viewport| viewport.rows().get(pos.line))
+                .ok_or(WorkbenchError::NoDocument)?;
+            return self.move_cursor_to(row.content.end, select);
+        }
         let column = self
             .with_active_text(|text, source| text.line_len(source, pos.line))?
             .ok_or(PositionError::LineOutOfRange(pos.line))?;
@@ -326,6 +393,17 @@ impl Workbench {
         let editor = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
         let tab = editor.tab_id;
         let current = self.active_position().ok_or(WorkbenchError::NoDocument)?;
+        if self.is_paged_tab(tab) {
+            let requested = current.line.saturating_add_signed(delta);
+            let crosses_window = if delta < 0 {
+                current.line < delta.unsigned_abs()
+            } else {
+                requested >= self.line_count_for_tab(tab).unwrap_or(0)
+            };
+            if crosses_window && self.step_paged_view(delta > 0, select)? {
+                return Ok(());
+            }
+        }
         let column = self
             .visual_column_for_pane(self.panes.active())
             .ok_or_else(|| {
@@ -349,6 +427,15 @@ impl Workbench {
         position: TextPosition,
         select: bool,
     ) -> Result<(), WorkbenchError> {
+        if let Some(document) = self
+            .active_document()
+            .filter(|document| document.session.document().is_paged())
+        {
+            let offset = self
+                .byte_offset_for_tab(document.tab_id, position)
+                .ok_or(PositionError::LineOutOfRange(position.line))?;
+            return self.move_cursor_to(offset, select);
+        }
         let offset = self.with_active_text(|text, source| text.offset(source, position))??;
         self.move_cursor_to(offset, select)
     }
@@ -363,7 +450,11 @@ impl Workbench {
         self.move_to_position(position, select)
     }
 
-    fn move_cursor_to(&mut self, offset: usize, select: bool) -> Result<(), WorkbenchError> {
+    pub(super) fn move_cursor_to(
+        &mut self,
+        offset: usize,
+        select: bool,
+    ) -> Result<(), WorkbenchError> {
         let mut document = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         if document.rectangle.take().is_some() {
             document.anchor = None;
@@ -890,6 +981,21 @@ impl Workbench {
             .active_document()
             .ok_or(WorkbenchError::NoDocument)?
             .tab_id;
+        if self.is_paged_tab(tab) {
+            let viewport = self
+                .paged_viewport_for_tab(tab)
+                .ok_or(WorkbenchError::NoDocument)?;
+            if (line == 0 && viewport.first_row_is_fragment())
+                || viewport
+                    .rows()
+                    .get(line)
+                    .is_none_or(|row| row.ending.is_none())
+            {
+                return Err(WorkbenchError::LineCommand(
+                    "La operación requiere una línea completa en la vista paginada".into(),
+                ));
+            }
+        }
         let (content, separator) = self
             .line_range_for_tab(tab, line)
             .ok_or(PositionError::LineOutOfRange(line))?;

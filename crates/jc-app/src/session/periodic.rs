@@ -1,6 +1,7 @@
 //! One cooperative capture and one disk writer, with a one-chunk bounded queue.
 use super::EditorRecovery;
 use crate::{CaptureChunk, CaptureError, RecoveryCapture, RecoveryKey, Wakeup, Workbench};
+use jc_core::source::{ImmutableByteSource, MAX_READ_CHUNK_BYTES};
 use std::{
     io,
     sync::{
@@ -11,6 +12,41 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+
+fn check_cancel(cancel: &AtomicBool) -> io::Result<()> {
+    if cancel.load(Ordering::Acquire) {
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "Captura de recuperación cancelada",
+        ));
+    }
+    Ok(())
+}
+
+fn write_source(
+    source: &dyn ImmutableByteSource,
+    writer: &mut dyn io::Write,
+    cancel: &AtomicBool,
+) -> io::Result<()> {
+    let mut offset = 0;
+    let len = source.len();
+    while offset < len {
+        check_cancel(cancel)?;
+        let requested = (len - offset).min(MAX_READ_CHUNK_BYTES as u64) as usize;
+        let chunk = source
+            .read_chunk(offset, requested)
+            .map_err(io::Error::other)?;
+        if chunk.source_offset() != offset || chunk.is_empty() || chunk.len() > requested {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Fragmento de instantánea inválido en la recuperación",
+            ));
+        }
+        writer.write_all(chunk.as_slice())?;
+        offset += chunk.len() as u64;
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy)]
 pub struct RecoveryPolicy {
@@ -316,12 +352,7 @@ impl PeriodicRecovery {
                     let checkpoint = recovery
                         .store
                         .checkpoint(&metadata, documents, |document, writer| loop {
-                            if worker_cancel.load(Ordering::Acquire) {
-                                return Err(io::Error::new(
-                                    io::ErrorKind::Interrupted,
-                                    "Captura de recuperación cancelada",
-                                ));
-                            }
+                            check_cancel(&worker_cancel)?;
                             let chunk = receiver.recv().map_err(|_| {
                                 io::Error::new(
                                     io::ErrorKind::UnexpectedEof,
@@ -334,6 +365,12 @@ impl PeriodicRecovery {
                                     document: index,
                                     bytes,
                                 } if index == document => writer.write_all(&bytes)?,
+                                CaptureChunk::Source {
+                                    document: index,
+                                    source,
+                                } if index == document => {
+                                    write_source(source.as_ref(), writer, &worker_cancel)?;
+                                }
                                 CaptureChunk::End { document: index } if index == document => {
                                     return Ok(())
                                 }

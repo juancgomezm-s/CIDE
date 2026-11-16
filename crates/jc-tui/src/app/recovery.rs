@@ -223,6 +223,89 @@ mod tests {
         }
     }
     #[test]
+    fn paged_tui_opens_draws_saves_and_recovers_an_unsaved_edit() {
+        let fixture = Fixture::new();
+        let path = fixture.root.join("paginas.txt");
+        let mut bytes = vec![b'x'; 140_000];
+        bytes.extend_from_slice(b"\r\nfinal\r\n");
+        fs::write(&path, &bytes).unwrap();
+        let cursor = bytes.len() - 7;
+        let mut app = TuiApp::new(LaunchOptions::default());
+        app.restore_from(fixture.recovery()).unwrap();
+        assert_eq!(
+            app.workbench
+                .request_file_open_in_root(
+                    &fixture.root,
+                    &path,
+                    Some(TextEncoding::Utf8),
+                    false,
+                    16
+                )
+                .unwrap(),
+            None
+        );
+        let wait = |app: &mut TuiApp, cursor: usize| {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while app.workbench.active_paged_byte() != Some(cursor) {
+                assert!(
+                    std::time::Instant::now() < until,
+                    "Entrega de archivo paginado incompleta"
+                );
+                app.poll_tasks();
+                std::thread::yield_now();
+            }
+        };
+        wait(&mut app, 0);
+        app.dispatch(CommandId::SearchGoToPosition);
+        app.submit_prompt(crate::state::PromptKind::GoToPosition, format!("@{cursor}"));
+        wait(&mut app, cursor);
+        let screen = app.frame(96, 25);
+        assert!((0..25).any(|row| screen.row_text(row).contains("final")));
+        app.workbench.insert_text("guardado ").unwrap();
+        app.dispatch(CommandId::FileSave);
+        bytes.splice(cursor..cursor, b"guardado ".iter().copied());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        app.workbench.insert_text("pendiente ").unwrap();
+        let now = std::time::Instant::now();
+        let short = std::time::Duration::from_millis(1);
+        app.periodic_recovery = jc_app::session::PeriodicRecovery::new(
+            jc_app::session::RecoveryPolicy {
+                idle: short,
+                maximum_delay: short,
+                retry: short,
+            },
+            now,
+        )
+        .unwrap();
+        let until = now + std::time::Duration::from_secs(5);
+        while app.periodic_recovery.statistics().confirmed == 0 {
+            assert!(
+                std::time::Instant::now() < until,
+                "No se confirmó la captura periódica paginada: {}",
+                app.status
+            );
+            app.poll_periodic_recovery();
+            std::thread::sleep(short);
+        }
+        drop(app);
+        let mut restored = TuiApp::new(LaunchOptions::default());
+        restored.restore_from(fixture.recovery()).unwrap();
+        assert_eq!(restored.workbench.active_paged_byte(), Some(cursor + 19));
+        assert!(restored.workbench.active_position().is_some());
+        let source = restored
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document();
+        assert!(source.is_modified());
+        assert_eq!(
+            source.read_range(cursor..cursor + 19).unwrap(),
+            b"guardado pendiente "
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+    #[test]
     fn tui_recovery_restores_frontend_panels_focus_project_and_dirty_editor_without_environment() {
         let fixture = Fixture::new();
         let original = fixture.root.join("original.p");

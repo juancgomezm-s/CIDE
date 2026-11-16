@@ -374,7 +374,8 @@ impl TuiApp {
                 let first = view.scroll_line().min(count.unwrap_or(0).saturating_sub(1));
                 let page = usize::from(layout.editor_rows());
                 let visible = first..count.unwrap_or(0).min(first + page);
-                let all = self.workbench.invisibles_visible() && rectangle.is_none();
+                let all =
+                    self.workbench.invisibles_visible_for_tab(location.tab) && rectangle.is_none();
                 let bars = count.filter(|_| page > 0 && text_width > 0).map(|count| {
                     let offset = self.workbench.horizontal_scroll_for_pane(pane).unwrap_or(0);
                     let columns = if all {

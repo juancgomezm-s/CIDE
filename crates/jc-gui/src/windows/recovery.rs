@@ -309,6 +309,78 @@ mod tests {
         }
     }
     #[test]
+    fn paged_gui_opens_draws_saves_and_recovers_an_unsaved_edit() {
+        let fixture = Fixture::new();
+        let path = fixture.root.join("paginas.txt");
+        let mut bytes = vec![b'x'; 140_000];
+        bytes.extend_from_slice(b"\r\nfinal\r\n");
+        fs::write(&path, &bytes).unwrap();
+        let cursor = bytes.len() - 7;
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.restore_from(fixture.recovery()).unwrap();
+        assert_eq!(
+            state
+                .workbench
+                .request_file_open_in_root(
+                    &fixture.root,
+                    &path,
+                    Some(TextEncoding::Utf8),
+                    false,
+                    16
+                )
+                .unwrap(),
+            None
+        );
+        let poll_until = |state: &mut State, done: fn(&State) -> bool| {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !done(state) {
+                assert!(
+                    std::time::Instant::now() < until,
+                    "Entrega de archivo paginado incompleta"
+                );
+                state.poll_tasks();
+                std::thread::yield_now();
+            }
+        };
+        poll_until(&mut state, |state| {
+            state.workbench.active_paged_byte().is_some()
+        });
+        state.open_navigation_panel();
+        let input = format!("@{cursor}");
+        state.edit_navigation_input(jc_app::FieldEdit::Insert(&input));
+        state.navigation_key(0x0d, jc_app::Modifiers::NONE);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while state.workbench.active_paged_byte() != Some(cursor) {
+            assert!(std::time::Instant::now() < until, "El salto no llegó");
+            state.poll_tasks();
+            std::thread::yield_now();
+        }
+        super::super::paint::prepare(&mut state);
+        state.workbench.insert_text("guardado ").unwrap();
+        state.execute_menu(CommandId::FileSave);
+        bytes.splice(cursor..cursor, b"guardado ".iter().copied());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        state.workbench.insert_text("pendiente ").unwrap();
+        assert!(state.checkpoint_session().unwrap());
+        drop(state);
+        let mut restored = State::new(&GuiOptions::default()).unwrap();
+        restored.restore_from(fixture.recovery()).unwrap();
+        assert_eq!(restored.workbench.active_paged_byte(), Some(cursor + 19));
+        assert!(restored.workbench.active_position().is_some());
+        let source = restored
+            .workbench
+            .active_document()
+            .unwrap()
+            .session
+            .document();
+        assert!(source.is_modified());
+        assert_eq!(
+            source.read_range(cursor..cursor + 19).unwrap(),
+            b"guardado pendiente "
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+    }
+    #[test]
     fn gui_exit_without_recovery_keeps_dirty_document_and_history() {
         let mut state = State::new(&GuiOptions::default()).unwrap();
         state.workbench = Workbench::default();

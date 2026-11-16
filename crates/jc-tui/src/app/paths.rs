@@ -9,6 +9,9 @@ impl TuiApp {
         self.open_focus_overlay(Overlay::Dialog);
         let input = self.start_file_browser(kind).unwrap_or_default();
         self.overlay = UiOverlay::Prompt { kind, input };
+        if kind == PromptKind::GoToPosition && self.workbench.active_paged_byte().is_some() {
+            self.status = "Usa @byte, desde cero".into();
+        }
     }
 
     pub(crate) fn submit_prompt(&mut self, kind: PromptKind, input: String) {
@@ -22,6 +25,17 @@ impl TuiApp {
             return;
         }
         if kind == PromptKind::GoToPosition {
+            if self.workbench.active_paged_byte().is_some() {
+                match self.workbench.go_to_paged_input(&input) {
+                    Ok(()) => {
+                        self.close_overlay();
+                        let _ = self.focus.focus(jc_app::PrimaryFocus::Editor, &self.panels);
+                        self.status = "Destino solicitado".into();
+                    }
+                    Err(error) => self.status = error.to_string(),
+                }
+                return;
+            }
             if let Some(position) = jc_app::parse_text_position(&input) {
                 match self.workbench.go_to_position(position) {
                     Ok(()) => {
@@ -57,21 +71,22 @@ impl TuiApp {
             return;
         }
         if matches!(kind, PromptKind::Open) {
-            match self.workbench.open_file(path, self.default_encoding) {
-                Ok(_) => {
-                    self.close_overlay();
-                    self.status = "Listo".to_owned();
-                    self.ensure_encoding_choice();
-                }
+            match self
+                .workbench
+                .request_file_open(path, self.default_encoding, false)
+            {
+                Ok(opened) => self.finish_file_open(opened.is_some(), "Listo"),
                 Err(error) => self.status = error.to_string(),
             }
             return;
         }
         let result: Result<(), String> = match kind {
-            PromptKind::GoToPosition | PromptKind::RenameSymbol | PromptKind::GitExportPatch => {
+            PromptKind::GoToPosition
+            | PromptKind::RenameSymbol
+            | PromptKind::GitExportPatch
+            | PromptKind::Open => {
                 unreachable!()
             }
-            PromptKind::Open => self.open_path(path),
             PromptKind::New => {
                 let encoding = self.default_encoding.unwrap_or(TextEncoding::Utf8);
                 self.workbench.new_file(path, encoding);
@@ -98,12 +113,73 @@ impl TuiApp {
         }
     }
 
-    pub(crate) fn open_path(&mut self, path: PathBuf) -> Result<(), String> {
+    pub(crate) fn open_startup_files(&mut self, files: Vec<PathBuf>) {
         self.workbench
-            .open_file(path, self.default_encoding)
+            .set_large_open_wakeup(self.syntax_wakeup.clone());
+        self.startup_files.extend(files);
+        self.advance_startup_files();
+    }
+
+    fn advance_startup_files(&mut self) {
+        while !self.workbench.large_open_pending() {
+            let Some(path) = self.startup_files.pop_front() else {
+                return;
+            };
+            if let Err(error) = self.open_path(path) {
+                self.status = error;
+            }
+        }
+    }
+
+    pub(crate) fn open_path(&mut self, path: PathBuf) -> Result<(), String> {
+        let opened = self
+            .workbench
+            .request_file_open(path, self.default_encoding, false)
             .map_err(|error| error.to_string())?;
-        self.ensure_encoding_choice();
+        if opened.is_some() {
+            self.ensure_encoding_choice();
+        } else {
+            self.status = "Copiando archivo grande en segundo plano…".into();
+        }
         Ok(())
+    }
+
+    pub(super) fn finish_file_open(&mut self, opened: bool, message: &str) {
+        self.close_overlay();
+        if opened {
+            self.status = message.to_owned();
+            self.ensure_encoding_choice();
+            if matches!(self.overlay, UiOverlay::None) {
+                let _ = self.focus.focus(jc_app::PrimaryFocus::Editor, &self.panels);
+            }
+        } else {
+            self.status = "Copiando archivo grande en segundo plano…".into();
+        }
+    }
+
+    pub(super) fn poll_large_file(&mut self) -> bool {
+        if !matches!(self.overlay, UiOverlay::None) {
+            return false;
+        }
+        let Some(result) = self.workbench.poll_large_open() else {
+            return false;
+        };
+        match result {
+            Ok(tab)
+                if self
+                    .workbench
+                    .active_document()
+                    .is_some_and(|doc| doc.tab_id == tab) =>
+            {
+                self.finish_file_open(true, "Archivo abierto");
+            }
+            Ok(_) => self.status = "Archivo grande abierto en una pestaña".into(),
+            Err(error) => self.status = error.to_string(),
+        }
+        self.advance_startup_files();
+        self.periodic_recovery
+            .note_activity(std::time::Instant::now());
+        true
     }
 
     pub(crate) fn ensure_encoding_choice(&mut self) {

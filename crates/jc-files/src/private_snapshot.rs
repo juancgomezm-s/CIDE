@@ -28,6 +28,16 @@ impl PrivateSnapshot {
         max_bytes: u64,
         progress: impl FnMut(u64, u64) -> io::Result<()>,
     ) -> Result<Self, FileError> {
+        Self::capture_scoped(path, None, depot, max_bytes, progress)
+    }
+
+    pub(crate) fn capture_scoped(
+        path: &Path,
+        root: Option<&Path>,
+        depot: &Path,
+        max_bytes: u64,
+        progress: impl FnMut(u64, u64) -> io::Result<()>,
+    ) -> Result<Self, FileError> {
         #[cfg(all(windows, target_pointer_width = "64"))]
         {
             use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
@@ -36,6 +46,9 @@ impl PrivateSnapshot {
                 .share_mode(FILE_SHARE_READ)
                 .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_SEQUENTIAL_SCAN)
                 .open(path)?;
+            if let Some(root) = root {
+                crate::verify_file_in_root(root, &input)?;
+            }
             let metadata = input.metadata()?;
             if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
             {
@@ -59,7 +72,7 @@ impl PrivateSnapshot {
         }
         #[cfg(not(all(windows, target_pointer_width = "64")))]
         {
-            let _ = (path, depot, max_bytes, progress);
+            let _ = (path, root, depot, max_bytes, progress);
             Err(unsupported())
         }
     }

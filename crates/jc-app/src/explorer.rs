@@ -737,6 +737,25 @@ impl ProjectExplorer {
         to_side: bool,
         max_bytes: usize,
     ) -> Result<TabId, String> {
+        let (root, path, _verified) = self.resolved_file_open(id)?;
+        app.open_project_file(root, path, encoding, to_side, max_bytes)
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn request_file_open(
+        &self,
+        id: NodeId,
+        app: &mut Workbench,
+        encoding: Option<TextEncoding>,
+        to_side: bool,
+        resident_limit: usize,
+    ) -> Result<Option<TabId>, String> {
+        let (root, path, _verified) = self.resolved_file_open(id)?;
+        app.request_file_open_in_root(root, path, encoding, to_side, resident_limit)
+            .map_err(|e| e.to_string())
+    }
+
+    fn resolved_file_open(&self, id: NodeId) -> Result<(&Path, PathBuf, std::fs::File), String> {
         let node = self
             .node(id)
             .ok_or("El nodo del explorador está obsoleto")?;
@@ -748,9 +767,8 @@ impl ProjectExplorer {
         // An already-open target takes Workbench's deduplication route. Check
         // the current native leaf/chain first so a replacement link cannot
         // redirect that route to some other dirty document inside the root.
-        let _verified = verified_open_target(root, &path)?;
-        app.open_project_file(root, path, encoding, to_side, max_bytes)
-            .map_err(|e| e.to_string())
+        let verified = verified_open_target(root, &path)?;
+        Ok((root, path, verified))
     }
 }
 

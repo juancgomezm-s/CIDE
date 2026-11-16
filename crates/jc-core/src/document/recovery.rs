@@ -199,11 +199,6 @@ pub struct RecoveryCursor {
 impl RecoveryCursor {
     /// Constant work; callers may perform separate admission before capture.
     pub fn new(document: &Document) -> Result<Self, RecoveryError> {
-        if document.is_paged() {
-            return Err(RecoveryError::LimitExceeded(
-                "la instantánea paginada requiere recuperación por streaming",
-            ));
-        }
         if document.recovery_identity == 0 || document.recovery_epoch == u64::MAX {
             return Err(RecoveryError::StaleCapture);
         }
@@ -363,6 +358,13 @@ impl RecoveryCursor {
     }
 }
 
+/// One ordered part of the canonical recovery stream. Original paged bytes
+/// are read by the recovery writer through their immutable source handle.
+pub enum RecoveryPart {
+    Bytes(Vec<u8>),
+    Source(Arc<dyn ImmutableByteSource>),
+}
+
 impl Document {
     /// Produce at most 64KiB with bounded allocation and metadata work. A stale
     /// cursor never emits further bytes, even after undo returns to a revision.
@@ -371,6 +373,25 @@ impl Document {
         cursor: &mut RecoveryCursor,
         max_bytes: usize,
     ) -> Result<Option<Vec<u8>>, RecoveryError> {
+        if self.is_paged() {
+            return Err(RecoveryError::LimitExceeded(
+                "la instantánea paginada requiere recuperación por streaming",
+            ));
+        }
+        match self.recovery_part(cursor, max_bytes)? {
+            Some(RecoveryPart::Bytes(bytes)) => Ok(Some(bytes)),
+            None => Ok(None),
+            Some(RecoveryPart::Source(_)) => unreachable!("documento residente"),
+        }
+    }
+
+    /// Capture bounded resident data or hand an immutable original to the writer.
+    /// No source reads occur here.
+    pub fn recovery_part(
+        &self,
+        cursor: &mut RecoveryCursor,
+        max_bytes: usize,
+    ) -> Result<Option<RecoveryPart>, RecoveryError> {
         if max_bytes == 0 || max_bytes > CHUNK {
             return Err(RecoveryError::LimitExceeded(
                 "fragmento fuera de 1..=65536 bytes",
@@ -400,9 +421,16 @@ impl Document {
             }
             if matches!(cursor.phase, CapturePhase::Original | CapturePhase::Added) {
                 let arena = if cursor.phase == CapturePhase::Original {
-                    self.original
-                        .resident()
-                        .ok_or(RecoveryError::StaleCapture)?
+                    match &self.original {
+                        Original::Resident(bytes) => bytes.as_slice(),
+                        Original::Paged { source, .. } => {
+                            if !output.is_empty() {
+                                break;
+                            }
+                            cursor.phase = CapturePhase::Added;
+                            return Ok(Some(RecoveryPart::Source(source.clone())));
+                        }
+                    }
                 } else {
                     self.added.as_slice()
                 };
@@ -429,7 +457,7 @@ impl Document {
                 cursor.words += 1;
             }
         }
-        Ok(Some(output))
+        Ok(Some(RecoveryPart::Bytes(output)))
     }
 }
 

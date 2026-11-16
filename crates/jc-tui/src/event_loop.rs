@@ -144,11 +144,7 @@ pub(crate) fn run(mut options: LaunchOptions, search_workers: usize) -> io::Resu
     let files = std::mem::take(&mut options.files);
     let mut app = TuiApp::with_wakeup_and_search_workers(options, wakeup.clone(), search_workers)?;
     app.enable_recovery().map_err(io::Error::other)?;
-    for path in files {
-        if let Err(error) = app.open_path(path) {
-            app.status = error;
-        }
-    }
+    app.open_startup_files(files);
     #[cfg(windows)]
     app.connect_windows_clipboard();
     let input = InputPump::start(wakeup.clone())?;

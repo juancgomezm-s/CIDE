@@ -121,6 +121,13 @@ impl Workbench {
         if self.search.query.is_empty() || self.active_document().is_none() {
             return Ok(());
         }
+        if self
+            .active_document()
+            .is_some_and(|document| document.session.document().is_paged())
+        {
+            self.search.status = SearchStatus::Unavailable;
+            return Ok(());
+        }
         if cancelled {
             self.search.status = SearchStatus::Cancelled;
             return Ok(());

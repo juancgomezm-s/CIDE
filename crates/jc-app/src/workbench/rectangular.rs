@@ -231,6 +231,11 @@ impl Workbench {
         known_anchor: Option<usize>,
     ) -> Result<(), WorkbenchError> {
         let editor = self.active_editor().ok_or(WorkbenchError::NoDocument)?;
+        if editor.session.document().is_paged() {
+            return Err(WorkbenchError::Rectangle(
+                "La selección rectangular aún no está disponible en archivos paginados".into(),
+            ));
+        }
         let tab = editor.tab_id;
         let revision = editor.session.document().revision();
         let scroll = editor

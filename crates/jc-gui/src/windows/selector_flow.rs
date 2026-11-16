@@ -125,7 +125,13 @@ impl State {
     }
     pub(super) fn poll_tasks(&mut self) -> bool {
         let failed = self.bridge.acknowledge() | self.wakeup.take_notifier_failure();
-        let mut changed = failed | self.syntax_pending;
+        let mut changed = failed | self.syntax_pending | self.poll_large_file();
+        if let Some(result) = self.workbench.poll_large_view() {
+            changed = true;
+            if let Err(error) = result {
+                self.error(error);
+            }
+        }
         if self.syntax_pending {
             self.syntax_pending = false;
             let mut previous = None;
@@ -389,20 +395,24 @@ impl State {
                     self.quick_open
                         .selected_target(root, selector.input(), selector.selected());
                 match target {
-                    Ok(path) => match self.workbench.open_project_file(
+                    Ok(path) => match self.workbench.request_file_open_in_root(
                         root,
                         path,
                         self.encoding,
                         side,
                         16 * 1024 * 1024,
                     ) {
-                        Ok(_) => {
+                        Ok(Some(_)) => {
                             self.close_selector();
                             self.bottom.focused = false;
                             self.status =
                                 "Archivo de proyecto abierto · documento/deshacer compartidos"
                                     .into();
                             self.ensure_encoding_selector();
+                        }
+                        Ok(None) => {
+                            self.close_selector();
+                            self.status = "Copiando archivo grande en segundo plano…".into();
                         }
                         Err(error) => self.error(error),
                     },

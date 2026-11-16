@@ -293,7 +293,7 @@ pub(super) fn text_areas(state: &State) -> Vec<TextArea> {
             let geometry = editor_scroll::Geometry::with_minimap(
                 rect,
                 state.dpi,
-                state.minimap_visible,
+                state.minimap_visible && !state.workbench.is_paged_tab(tab),
                 state.minimap_width,
             );
             let rect = geometry.text;
@@ -328,7 +328,13 @@ pub(super) fn source_pane_at(state: &State, x: i32, y: i32) -> Option<(PaneId, u
         let text = editor_scroll::Geometry::with_minimap(
             rect,
             state.dpi,
-            state.minimap_visible,
+            state.minimap_visible
+                && state
+                    .workbench
+                    .panes()
+                    .view(pane)
+                    .and_then(|view| view.location())
+                    .is_none_or(|location| !state.workbench.is_paged_tab(location.tab)),
             state.minimap_width,
         )
         .text;
@@ -395,7 +401,7 @@ pub(super) fn linear_hit(
                     },
                 )
                 .map_err(|e| e.to_string())?
-        } else if state.workbench.invisibles_visible() {
+        } else if state.workbench.invisibles_visible_for_tab(area.tab) {
             state
                 .workbench
                 .display_byte_at(area.tab, line, column)
@@ -443,7 +449,7 @@ pub(super) fn rectangle_hit(
                 line,
                 column: VisualColumn(column),
             }
-        } else if state.workbench.invisibles_visible() {
+        } else if state.workbench.invisibles_visible_for_tab(area.tab) {
             let (content, eol) = state
                 .workbench
                 .line_range_for_tab(area.tab, line)
@@ -540,7 +546,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         let tab = area.tab;
         let rectangle = state.workbench.rectangle_for_pane(id);
         let first = area.first;
-        let invisible = state.workbench.invisibles_visible();
+        let invisible = state.workbench.invisibles_visible_for_tab(tab);
         let scroll = area.scroll;
         let position = state.workbench.position_for_pane(id);
         let count = area.count;
@@ -651,7 +657,10 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                 })
                 .collect();
             prepared.push(Row {
-                number: wide(&format!("{:>digits$}", line + 1)),
+                number: wide(&state.workbench.line_display_number(tab, line).map_or_else(
+                    || format!("{:>digits$}", "·"),
+                    |number| format!("{number:>digits$}"),
+                )),
                 cells,
             });
         }
@@ -706,10 +715,18 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         .workbench
         .active_encoding()
         .map_or("elige codificación", |encoding| encoding.name());
+    let location = state.workbench.active_paged_byte().map_or_else(
+        || {
+            format!(
+                "Lín {} Col {} (escalar)",
+                position.line + 1,
+                position.column + 1
+            )
+        },
+        |offset| format!("Byte {offset} · Ir a posición con @byte"),
+    );
     let status = wide(&format!(
-        "Lín {} Col {} (escalar) · {encoding}{}{}{} · {}",
-        position.line + 1,
-        position.column + 1,
+        "{location} · {encoding}{}{}{} · {}",
         if state.workbench.panes().scroll_linked() {
             " · Desplazamiento vinculado"
         } else {

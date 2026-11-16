@@ -1,8 +1,10 @@
 //! Preparation of a bounded initial viewport on a worker with an owned session.
 pub use super::progressive_lines::LineLookup as LargeViewportLookup;
 use super::progressive_lines::ProgressiveLines;
+use crate::unicode_layout::{ascii_glyph, glyph, Glyph, VisualAtom, MAX_VISUAL_ROW_TEXT_BYTES};
+use jc_core::{Document, PagedReadPlan};
 use jc_files::{FileError, FileSession};
-use jc_text::{DecodedScalars, TextEncoding};
+use jc_text::{grapheme, DecodedScalars, TextEncoding, TextPosition};
 use std::{
     io,
     ops::Range,
@@ -12,6 +14,8 @@ use std::{
 const VIEWPORT_BYTES: usize = 64 * 1024;
 const VIEWPORT_ROWS: usize = 256;
 const UTF8_LOOKAHEAD: usize = 3;
+const LOOKBEHIND: usize = 4;
+const MAX_VISUAL_WIDTH: usize = 4096;
 type ByteVisitor<'a> = &'a mut dyn FnMut(&[u8]) -> io::Result<()>;
 
 /// A private snapshot and the first prepared view of that document. Dropping a
@@ -39,32 +43,70 @@ impl PreparedLargeDocument {
 
     /// Blocking, also suitable for an already recovered paged session.
     pub fn prepare(session: FileSession) -> Result<Self, FileError> {
-        let source = session.document();
-        if !source.is_paged() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "La preparación del archivo grande requiere una fuente paginada",
-            )
-            .into());
-        }
-        let viewport = LargeViewport::prepare_prefix(
-            source.recovery_identity(),
-            source.revision(),
-            source.len(),
-            session.encoding(),
-            |range, sink| {
-                source
-                    .prepare_paged_read(range, VIEWPORT_BYTES + UTF8_LOOKAHEAD)
-                    .map_err(io::Error::other)?
-                    .visit(sink)
-            },
-        )?;
+        let viewport =
+            LargeViewportRequest::new(session.document(), session.encoding(), 0)?.prepare()?;
         Ok(Self { session, viewport })
     }
 
     pub fn into_parts(self) -> (FileSession, LargeViewport) {
         (self.session, self.viewport)
     }
+}
+
+/// A bounded source read captured for one document revision.
+pub struct LargeViewportRequest {
+    plan: PagedReadPlan,
+    encoding: Option<TextEncoding>,
+    len: usize,
+    start: usize,
+}
+
+impl LargeViewportRequest {
+    pub fn new(
+        document: &Document,
+        encoding: Option<TextEncoding>,
+        start: usize,
+    ) -> Result<Self, FileError> {
+        if !document.is_paged() || start > document.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "El tramo de vista requiere una posición válida en un archivo paginado",
+            )
+            .into());
+        }
+        let range = viewport_read_range(document.len(), encoding, start);
+        let budget = range.len();
+        let plan = document
+            .prepare_paged_read(range, budget)
+            .map_err(io::Error::other)?;
+        Ok(Self {
+            plan,
+            encoding,
+            len: document.len(),
+            start,
+        })
+    }
+
+    /// Run on a worker. The result carries its source identity and revision.
+    pub fn prepare(self) -> io::Result<LargeViewport> {
+        LargeViewport::prepare_window(
+            self.plan.document_identity(),
+            self.plan.revision(),
+            self.len,
+            self.encoding,
+            self.start,
+            |_, sink| self.plan.visit(sink),
+        )
+    }
+}
+
+fn viewport_read_range(len: usize, encoding: Option<TextEncoding>, start: usize) -> Range<usize> {
+    let lookahead = if encoding == Some(TextEncoding::Utf8) {
+        UTF8_LOOKAHEAD
+    } else {
+        0
+    };
+    start.saturating_sub(LOOKBEHIND)..len.min(start.saturating_add(VIEWPORT_BYTES + lookahead))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,12 +124,196 @@ pub struct LargeViewportRow {
 pub struct LargeViewport {
     document_identity: u64,
     revision: u64,
+    origin: usize,
+    encoding: Option<TextEncoding>,
+    left_fragment: bool,
+    preferred_ending: &'static [u8],
     bytes: Vec<u8>,
     rows: Vec<LargeViewportRow>,
     index: ProgressiveLines,
 }
 
 impl LargeViewport {
+    pub fn origin(&self) -> usize {
+        self.origin
+    }
+
+    pub fn matches(&self, document: &Document, encoding: Option<TextEncoding>) -> bool {
+        self.document_identity == document.recovery_identity()
+            && self.revision == document.revision()
+            && self.encoding == encoding
+    }
+
+    pub fn line_number(&self, row: usize) -> Option<usize> {
+        (self.origin == 0 && row < self.rows.len()).then_some(row + 1)
+    }
+
+    pub(super) fn first_row_is_fragment(&self) -> bool {
+        self.left_fragment
+    }
+
+    pub(super) fn preferred_ending(&self) -> &'static [u8] {
+        self.preferred_ending
+    }
+
+    pub fn position(&self, byte: usize) -> Option<TextPosition> {
+        let upper = self.rows.partition_point(|row| row.content.start <= byte);
+        let line = upper.checked_sub(1)?;
+        let row = self.rows.get(line)?;
+        if byte > row.content.end {
+            return None;
+        }
+        let encoding = self.encoding?;
+        let mut column = 0;
+        for scalar in DecodedScalars::new(
+            self.bytes(row.content.clone())?,
+            encoding,
+            row.content.start,
+        ) {
+            if scalar.source_range.start == byte {
+                return Some(TextPosition { line, column });
+            }
+            if scalar.source_range.end > byte {
+                return None;
+            }
+            column += 1;
+        }
+        Some(TextPosition { line, column })
+    }
+
+    pub fn offset(&self, position: TextPosition) -> Option<usize> {
+        let row = self.rows.get(position.line)?;
+        if position.column == 0 {
+            return Some(row.content.start);
+        }
+        DecodedScalars::new(
+            self.bytes(row.content.clone())?,
+            self.encoding?,
+            row.content.start,
+        )
+        .nth(position.column - 1)
+        .map(|scalar| scalar.source_range.end)
+    }
+
+    fn walk_visual(&self, line: usize, mut visit: impl FnMut(VisualAtom) -> bool) -> Option<usize> {
+        let row = self.rows.get(line)?;
+        let bytes = self.bytes(row.content.clone())?;
+        let encoding = self.encoding?;
+        let mut column = 0;
+        let mut cluster = |start: usize, body: &[u8]| {
+            let source = row.content.start + start;
+            let (glyph, mut width, marker) =
+                ascii_glyph(body).unwrap_or_else(|| glyph(body, encoding, source));
+            if body == b"\t" {
+                width = 4 - column % 4;
+            }
+            let atom = VisualAtom {
+                source: source..source + body.len(),
+                column,
+                width,
+                glyph,
+                marker,
+            };
+            column += width;
+            visit(atom)
+        };
+        if encoding != TextEncoding::Utf8 || bytes.is_ascii() {
+            for (start, byte) in bytes.iter().enumerate() {
+                if !cluster(start, std::slice::from_ref(byte)) {
+                    break;
+                }
+            }
+        } else {
+            let mut start = 0;
+            while start < bytes.len() {
+                let (valid, invalid) = match std::str::from_utf8(&bytes[start..]) {
+                    Ok(text) => (text.len(), 0),
+                    Err(error) => (
+                        error.valid_up_to(),
+                        error
+                            .error_len()
+                            .unwrap_or(bytes.len() - start - error.valid_up_to()),
+                    ),
+                };
+                let text = std::str::from_utf8(&bytes[start..start + valid]).ok()?;
+                for segment in grapheme::graphemes(text) {
+                    if !cluster(start, segment.as_bytes()) {
+                        return Some(column);
+                    }
+                    start += segment.len();
+                }
+                if invalid > 0 {
+                    if !cluster(start, &bytes[start..start + invalid]) {
+                        break;
+                    }
+                    start += invalid;
+                }
+            }
+        }
+        Some(column)
+    }
+
+    pub fn visual_row(&self, line: usize, scroll: usize, width: usize) -> Option<Vec<VisualAtom>> {
+        let right = scroll.saturating_add(width.min(MAX_VISUAL_WIDTH));
+        let mut result = Vec::new();
+        let mut text_bytes = 0;
+        self.walk_visual(line, |mut atom| {
+            if atom.column >= right {
+                return false;
+            }
+            if atom.glyph == Glyph::Scalar('\t') {
+                let start = atom.column.max(scroll);
+                let end = (atom.column + atom.width).min(right);
+                for column in start..end {
+                    result.push(VisualAtom {
+                        source: atom.source.clone(),
+                        column: column - scroll,
+                        width: 1,
+                        glyph: Glyph::Scalar(' '),
+                        marker: false,
+                    });
+                }
+            } else if atom.column >= scroll && atom.column + atom.width <= right {
+                text_bytes += atom.glyph.byte_len();
+                if text_bytes > MAX_VISUAL_ROW_TEXT_BYTES {
+                    return false;
+                }
+                atom.column -= scroll;
+                result.push(atom);
+            }
+            true
+        })?;
+        Some(result)
+    }
+
+    pub fn visual_byte_at(&self, line: usize, column: usize) -> Option<usize> {
+        let mut offset = self.rows.get(line)?.content.end;
+        self.walk_visual(line, |atom| {
+            if column < atom.column + atom.width {
+                offset = atom.source.start;
+                return false;
+            }
+            true
+        })?;
+        Some(offset)
+    }
+
+    pub fn visual_column_at(&self, line: usize, byte: usize) -> Option<usize> {
+        let row = self.rows.get(line)?;
+        if byte < row.content.start || byte > row.content.end {
+            return None;
+        }
+        let mut column = None;
+        let end = self.walk_visual(line, |atom| {
+            if byte < atom.source.end {
+                column = Some(atom.column);
+                return false;
+            }
+            true
+        })?;
+        Some(column.unwrap_or(end))
+    }
+
     pub fn document_identity(&self) -> u64 {
         self.document_identity
     }
@@ -101,7 +327,8 @@ impl LargeViewport {
     }
 
     pub fn bytes(&self, range: Range<usize>) -> Option<&[u8]> {
-        self.bytes.get(range)
+        self.bytes
+            .get(range.start.checked_sub(self.origin)?..range.end.checked_sub(self.origin)?)
     }
 
     pub fn indexed_through(&self) -> usize {
@@ -113,7 +340,9 @@ impl LargeViewport {
     }
 
     pub fn total_lines(&self) -> Option<usize> {
-        self.index.line_count()
+        (self.origin == 0)
+            .then(|| self.index.line_count())
+            .flatten()
     }
 
     /// Query an indexed line in the retained bytes. An unfinished row is still
@@ -142,6 +371,9 @@ impl LargeViewport {
     /// The raw line ordinal for an indexed byte. No scalar or editing
     /// boundary validation is implied by this lookup.
     pub fn line_at_offset(&self, offset: usize) -> io::Result<LargeViewportLookup<usize>> {
+        if offset < self.origin {
+            return Ok(LargeViewportLookup::Pending);
+        }
         self.index
             .line_at_offset(offset, |range, sink| self.visit_bytes(range, sink))
     }
@@ -156,26 +388,32 @@ impl LargeViewport {
         sink(bytes)
     }
 
-    pub(crate) fn prepare_prefix(
+    #[cfg(test)]
+    fn prepare_prefix(
         document_identity: u64,
         revision: u64,
         len: usize,
         encoding: Option<TextEncoding>,
         read: impl FnOnce(Range<usize>, ByteVisitor<'_>) -> io::Result<()>,
     ) -> io::Result<Self> {
-        let limit = len.min(VIEWPORT_BYTES);
-        let utf8 = encoding == Some(TextEncoding::Utf8);
-        let read_end = if utf8 {
-            len.min(limit + UTF8_LOOKAHEAD)
-        } else {
-            limit
-        };
+        Self::prepare_window(document_identity, revision, len, encoding, 0, read)
+    }
+
+    fn prepare_window(
+        document_identity: u64,
+        revision: u64,
+        len: usize,
+        encoding: Option<TextEncoding>,
+        start: usize,
+        read: impl FnOnce(Range<usize>, ByteVisitor<'_>) -> io::Result<()>,
+    ) -> io::Result<Self> {
+        let range = viewport_read_range(len, encoding, start);
         let mut bytes = Vec::new();
-        bytes
-            .try_reserve_exact(read_end)
-            .map_err(|_| io::Error::new(io::ErrorKind::OutOfMemory, "Vista inicial sin memoria"))?;
-        read(0..read_end, &mut |chunk| {
-            if chunk.len() > read_end - bytes.len() {
+        bytes.try_reserve_exact(range.len()).map_err(|_| {
+            io::Error::new(io::ErrorKind::OutOfMemory, "Vista paginada sin memoria")
+        })?;
+        read(range.clone(), &mut |chunk| {
+            if chunk.len() > range.len() - bytes.len() {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "La lectura de la vista excedió el tramo solicitado",
@@ -184,34 +422,61 @@ impl LargeViewport {
             bytes.extend_from_slice(chunk);
             Ok(())
         })?;
-        if bytes.len() != read_end {
+        if bytes.len() != range.len() {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "La lectura de la vista inicial quedó incompleta",
+                "La lectura de la vista paginada quedó incompleta",
             ));
         }
 
-        // Inspect up to three following bytes to distinguish a clipped UTF-8
-        // sequence from an invalid source sequence. Neither is rewritten.
-        let mut end = limit;
-        let mut content_start = 0;
-        if utf8 {
-            let scalars = DecodedScalars::new(&bytes, TextEncoding::Utf8, 0);
-            content_start = scalars.content_start();
-            if read_end > limit {
-                end = scalars
-                    .take_while(|scalar| scalar.source_range.end <= limit)
-                    .last()
-                    .map_or(content_start, |scalar| scalar.source_range.end);
+        let mut origin = start;
+        let mut end = len.min(start.saturating_add(VIEWPORT_BYTES));
+        let mut content_start = start;
+        if encoding == Some(TextEncoding::Utf8) {
+            let scalars = DecodedScalars::new(&bytes, TextEncoding::Utf8, range.start);
+            let bom_end = scalars.content_start();
+            if range.start == 0 && start < bom_end {
+                origin = 0;
+                content_start = bom_end;
             }
+            let mut aligned_end = bom_end;
+            for scalar in scalars.take_while(|scalar| scalar.source_range.start < end) {
+                let source = scalar.source_range;
+                if source.start < origin && origin < source.end {
+                    origin = source.start;
+                    content_start = origin;
+                }
+                if source.end > end {
+                    break;
+                }
+                aligned_end = source.end;
+            }
+            end = aligned_end.max(content_start);
         }
-        bytes.truncate(end);
+        let left = origin - range.start;
+        if left > 0 && bytes[left - 1] == b'\r' && bytes.get(left) == Some(&b'\n') {
+            origin -= 1;
+            content_start = origin;
+        }
+        let left_fragment = origin > 0
+            && bytes
+                .get((origin - range.start).wrapping_sub(1))
+                .is_none_or(|byte| !matches!(byte, b'\r' | b'\n'));
+        bytes.truncate(end - range.start);
+        bytes.drain(..origin - range.start);
 
         let mut rows = Vec::new();
         rows.try_reserve_exact(VIEWPORT_ROWS)
             .map_err(|_| io::Error::new(io::ErrorKind::OutOfMemory, "Vista inicial sin memoria"))?;
         let mut index = ProgressiveLines::new(len, content_start)?;
-        index.append_with_lines(&bytes[content_start..], |_, line| {
+        let mut endings = [0usize; 3];
+        index.append_with_lines(&bytes[content_start - origin..], |_, line| {
+            let kind = match &bytes[line.ending.start - origin..line.ending.end - origin] {
+                b"\r\n" => 0,
+                b"\n" => 1,
+                _ => 2,
+            };
+            endings[kind] += 1;
             if rows.len() < VIEWPORT_ROWS {
                 rows.push(LargeViewportRow {
                     content: line.content,
@@ -240,9 +505,21 @@ impl LargeViewport {
                 }
             }
         }
+        let preferred_ending: &'static [u8] = if endings[1] > endings[0] && endings[1] >= endings[2]
+        {
+            b"\n"
+        } else if endings[2] > endings[0] && endings[2] > endings[1] {
+            b"\r"
+        } else {
+            b"\r\n"
+        };
         Ok(Self {
             document_identity,
             revision,
+            origin,
+            encoding,
+            left_fragment,
+            preferred_ending,
             bytes,
             rows,
             index,

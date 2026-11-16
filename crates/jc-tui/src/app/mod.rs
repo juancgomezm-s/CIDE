@@ -165,6 +165,7 @@ pub struct TuiApp {
     recovery: Option<jc_app::session::EditorRecovery>,
     pub(crate) periodic_recovery: jc_app::session::PeriodicRecovery,
     default_encoding: Option<TextEncoding>,
+    startup_files: std::collections::VecDeque<std::path::PathBuf>,
 }
 
 impl TuiApp {
@@ -263,12 +264,9 @@ impl TuiApp {
             recovery: None,
             periodic_recovery: Default::default(),
             default_encoding: options.encoding,
+            startup_files: Default::default(),
         };
-        for path in options.files {
-            if let Err(error) = app.open_path(path) {
-                app.status = error;
-            }
-        }
+        app.open_startup_files(options.files);
         Ok(app)
     }
 
@@ -279,9 +277,15 @@ impl TuiApp {
 
     pub(crate) fn poll_tasks(&mut self) -> TaskUpdate {
         let mut update = TaskUpdate {
-            changed: self.syntax_pending,
+            changed: self.syntax_pending | self.poll_large_file(),
             ..TaskUpdate::default()
         };
+        if let Some(result) = self.workbench.poll_large_view() {
+            update.changed = true;
+            if let Err(error) = result {
+                self.status = error.to_string();
+            }
+        }
         if self.syntax_pending {
             self.syntax_pending = false;
             let mut previous = None;

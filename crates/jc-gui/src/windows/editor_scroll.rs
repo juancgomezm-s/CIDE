@@ -347,7 +347,7 @@ impl Frame {
                     area.first,
                     area.rows,
                     area.columns,
-                    app.invisibles_visible(),
+                    app.invisibles_visible_for_tab(area.tab),
                 )
                 .max(area.scroll),
             page: area.columns.max(1),

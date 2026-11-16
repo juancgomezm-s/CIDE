@@ -2,7 +2,7 @@
 use super::TuiApp;
 use crate::{input::is_plain_text, state::UiOverlay};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use jc_app::{Overlay, PrimaryFocus};
+use jc_app::Overlay;
 
 const QUERY_BYTES: usize = 256;
 const OPEN_BYTES: usize = 16 * 1024 * 1024;
@@ -152,18 +152,15 @@ impl TuiApp {
                 return;
             }
         };
-        match self.workbench.open_project_file(
+        match self.workbench.request_file_open_in_root(
             &root,
             target,
             self.default_encoding,
             to_side,
             OPEN_BYTES,
         ) {
-            Ok(_) => {
-                self.close_overlay();
-                let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
-                self.ensure_encoding_choice();
-                self.status = "Apertura rápida: archivo abierto (límite de admisión 16 MiB)".into();
+            Ok(opened) => {
+                self.finish_file_open(opened.is_some(), "Apertura rápida · archivo abierto")
             }
             Err(error) => self.status = error.to_string(),
         }

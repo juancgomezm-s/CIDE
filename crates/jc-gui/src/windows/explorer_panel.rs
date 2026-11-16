@@ -208,19 +208,20 @@ impl State {
         if expand_only {
             return;
         }
-        match self.explorer.open_file(
+        match self.explorer.request_file_open(
             id,
             &mut self.workbench,
             self.encoding,
             side,
             16 * 1024 * 1024,
         ) {
-            Ok(_) => {
+            Ok(Some(_)) => {
                 self.explorer_focused = false;
                 self.status =
                     "Archivo abierto desde el explorador; documento compartido conservado".into();
                 self.ensure_encoding_selector();
             }
+            Ok(None) => self.status = "Copiando archivo grande en segundo plano…".into(),
             Err(error) => self.error(error),
         }
     }

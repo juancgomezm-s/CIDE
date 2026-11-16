@@ -7,6 +7,18 @@ use crate::{
 use std::ops::Range;
 
 impl Workbench {
+    pub fn paged_viewport_for_tab(&self, tab: TabId) -> Option<&super::LargeViewport> {
+        let document = self.document_by_tab(tab)?;
+        let viewport = document.large_viewport.as_ref()?;
+        viewport
+            .matches(document.session.document(), document.session.encoding())
+            .then_some(viewport)
+    }
+
+    pub fn invisibles_visible_for_tab(&self, tab: TabId) -> bool {
+        self.show_invisibles && !self.is_paged_tab(tab)
+    }
+
     pub fn unicode_statistics(&self, tab: TabId) -> Option<(u64, usize)> {
         let doc = self.document_by_tab(tab)?;
         let layout = doc.unicode.borrow();
@@ -19,6 +31,11 @@ impl Workbench {
         scroll: usize,
         width: usize,
     ) -> Option<Vec<crate::VisualAtom>> {
+        if self.is_paged_tab(tab) {
+            return self
+                .paged_viewport_for_tab(tab)?
+                .visual_row(line, scroll, width);
+        }
         let doc = self.document_by_tab(tab)?;
         let (content, _) = self.line_range_for_tab(tab, line)?;
         doc.unicode
@@ -34,6 +51,11 @@ impl Workbench {
             .ok()
     }
     pub fn visual_byte_at(&self, tab: TabId, line: usize, column: usize) -> Option<usize> {
+        if self.is_paged_tab(tab) {
+            return self
+                .paged_viewport_for_tab(tab)?
+                .visual_byte_at(line, column);
+        }
         let doc = self.document_by_tab(tab)?;
         let (content, _) = self.line_range_for_tab(tab, line)?;
         doc.unicode
@@ -53,6 +75,11 @@ impl Workbench {
         self.visual_column_at_byte(loc.tab, position.line, loc.byte_offset)
     }
     pub fn visual_column_at_byte(&self, tab: TabId, line: usize, byte: usize) -> Option<usize> {
+        if self.is_paged_tab(tab) {
+            return self
+                .paged_viewport_for_tab(tab)?
+                .visual_column_at(line, byte);
+        }
         if self.position_for_tab(tab, byte)?.line != line {
             return None;
         }

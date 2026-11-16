@@ -1,6 +1,6 @@
 # Archivos de gigabytes — auditoría y admisión propuesta
 
-## Estado de la integración — 2026-11-16
+## Integración en GUI y TUI — 2026-11-16
 
 El núcleo ya admite una fuente privada en disco en el mismo documento que usa
 las piezas y el historial. En Windows x64, `FileSession::open_private_snapshot`
@@ -19,13 +19,42 @@ eliminó todos sus archivos de prueba al terminar. La prueba ejercitó una copia
 privada real con lectura y escritura por tramos. La asignación dispersa del original no sirve para inferir
 rendimiento de lectura fría, latencia visible ni memoria del proceso completo.
 
-La preparación compartida de la primera vista ya puede entregar hasta 256
-filas de 64 KiB iniciales, con un índice progresivo por intervalos. Sigue
-pendiente publicar y renovar esas vistas desde las aperturas normales de GUI y
-TUI. El guardado de `FileSession` y el códec de recuperación se comprobaron
-en una sesión aislada. El editor todavía necesita sus trabajos versionados de
-guardado, captura periódica, cierre y reapertura, con cuotas para archivos de
-este tamaño.
+La GUI y la TUI usan esta fuente desde los selectores, el explorador, la
+apertura rápida y los argumentos de inicio. La apertura directa prepara una
+instantánea en segundo plano al superar 64 MiB y admite originales de hasta
+7 GiB en Windows x64. Las aperturas confinadas conservan la comprobación del
+handle y su umbral residente puede ser menor. El trabajo pendiente conserva
+la pestaña en uso si el usuario cambia de vista antes de que termine la copia.
+
+El editor conserva una ventana de hasta 256 filas y 64 KiB de texto fuente,
+con unos bytes de contexto para UTF-8 y CRLF. `Ir a posición` acepta `@byte`
+desde cero, y Ctrl+Inicio/Ctrl+Fin saltan a los extremos. Las flechas y las
+teclas de página pueden pasar de un tramo al siguiente. Fuera del tramo
+inicial se muestra el byte de la selección en la barra inferior. La vista
+solo acepta resultados de la revisión y la codificación vigentes.
+
+El guardado conserva el reemplazo atómico condicionado a la huella en disco.
+La recuperación periódica entrega la fuente original al trabajador, que la
+escribe por tramos junto con las ediciones y el historial. El formato de
+sesión distingue fuentes residentes y paginadas y sigue leyendo las versiones
+anteriores. Al recuperar una sesión, se reconstruye la vista alrededor del
+cursor que se guardó. Las inserciones retenidas tienen un límite de 64 MiB
+por documento paginado y el almacén admite hasta 16 GiB por generación.
+
+Las pruebas dirigidas recorrieron la GUI y la TUI desde el modelo y la
+presentación de cada interfaz, con apertura paginada, salto, edición, guardado
+y recuperación posterior. La GUI validó la captura al cerrar. La TUI validó
+la captura periódica. Una ejecución optimizada del editor compartido abrió
+4.294.967.314 bytes, saltó al byte 4.294.967.307, editó y guardó. Después de
+retirar el original de prueba, restauró una edición pendiente y deshizo al
+estado guardado. Tardó 92,15 segundos en Windows x64 y limpió su directorio.
+Pasaron el formato, Clippy dirigido y la compilación optimizada local del
+workspace. Los ejecutables y sus huellas están en
+`target/gb-editor-next/release`, con la caché reutilizada de `target/build-cache`.
+Quedan pendientes la medición interactiva con varios GB,
+el guardado no bloqueante, el minimapa global y la búsqueda completa sobre la
+fuente paginada. El historial de pestañas cerradas conserva solo metadatos;
+para abrir de nuevo un archivo grande descartado se usa `Abrir archivo`.
 
 ## Admisión inicial — 2026-11-03
 

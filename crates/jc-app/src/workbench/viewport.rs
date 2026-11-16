@@ -40,6 +40,9 @@ impl Workbench {
         self.activate_location_document(crate::NavLocation::new(tab, offset))
     }
     pub fn byte_offset_for_tab(&self, tab: TabId, position: TextPosition) -> Option<usize> {
+        if self.is_paged_tab(tab) {
+            return self.paged_viewport_for_tab(tab)?.offset(position);
+        }
         self.with_text(tab, |text, source| text.offset(source, position))?
             .ok()
     }
@@ -50,15 +53,29 @@ impl Workbench {
         anchor: usize,
         head: usize,
     ) -> Result<(), WorkbenchError> {
-        self.with_active_text(|text, source| {
-            // Existing whole-file selection uses anchor0, including an initial
-            // BOM. The caret/head still requires a legal textual boundary.
-            if anchor != 0 {
-                text.position(source, anchor)?;
+        if let Some(tab) = self
+            .active_document()
+            .map(|document| document.tab_id)
+            .filter(|tab| self.is_paged_tab(*tab))
+        {
+            if (anchor != 0 && self.position_for_tab(tab, anchor).is_none())
+                || self.position_for_tab(tab, head).is_none()
+            {
+                return Err(WorkbenchError::LineCommand(
+                    "La selección sale del tramo de texto disponible".into(),
+                ));
             }
-            text.position(source, head)?;
-            Ok::<(), PositionError>(())
-        })??;
+        } else {
+            self.with_active_text(|text, source| {
+                // Existing whole-file selection uses anchor0, including an initial
+                // BOM. The caret/head still requires a legal textual boundary.
+                if anchor != 0 {
+                    text.position(source, anchor)?;
+                }
+                text.position(source, head)?;
+                Ok::<(), PositionError>(())
+            })??;
+        }
         let state = self
             .panes
             .active_state_mut()

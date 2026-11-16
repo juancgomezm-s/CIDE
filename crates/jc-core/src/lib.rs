@@ -18,6 +18,7 @@ pub mod source;
 
 pub use document::{
     ByteEdit, ChangeSet, Document, DocumentRead, EditBatch, EditError, HistoryTransition,
-    PagedReadPlan, RangeChunks, RecoveryCursor, RecoveryError, RecoveryLimits, Replacement,
+    PagedReadPlan, RangeChunks, RecoveryCursor, RecoveryError, RecoveryLimits, RecoveryPart,
+    Replacement, PAGED_ADDED_LIMIT,
 };
 pub use region::Region;

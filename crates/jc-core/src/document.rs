@@ -4,7 +4,9 @@ use std::io::{self, Write};
 use std::ops::Range;
 use std::sync::Arc;
 mod recovery;
-pub use recovery::{RecoveryCursor, RecoveryError, RecoveryLimits};
+pub use recovery::{RecoveryCursor, RecoveryError, RecoveryLimits, RecoveryPart};
+
+pub const PAGED_ADDED_LIMIT: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditError {
@@ -14,6 +16,7 @@ pub enum EditError {
         len: usize,
     },
     CapacityOverflow,
+    PagedAddedLimit,
     SourceRead(String),
     StaleRevision {
         expected: u64,
@@ -39,6 +42,9 @@ impl fmt::Display for EditError {
                 write!(f, "desbordamiento de capacidad o revisión del documento")
             }
             Self::SourceRead(error) => f.write_str(error),
+            Self::PagedAddedLimit => {
+                f.write_str("Las ediciones acumuladas del archivo paginado superan 64 MiB")
+            }
         }
     }
 }
@@ -870,9 +876,24 @@ impl Document {
         edits
             .try_reserve(batch.edits.len())
             .map_err(|_| EditError::CapacityOverflow)?;
-        self.added
-            .try_reserve(added_len)
-            .map_err(|_| EditError::CapacityOverflow)?;
+        if self.is_paged() {
+            let needed = self
+                .added
+                .len()
+                .checked_add(added_len)
+                .filter(|length| *length <= PAGED_ADDED_LIMIT)
+                .ok_or(EditError::PagedAddedLimit)?;
+            if needed > self.added.capacity() {
+                let reserve = needed.next_power_of_two() - self.added.len();
+                self.added
+                    .try_reserve_exact(reserve)
+                    .map_err(|_| EditError::CapacityOverflow)?;
+            }
+        } else {
+            self.added
+                .try_reserve(added_len)
+                .map_err(|_| EditError::CapacityOverflow)?;
+        }
         if self.history_limit > 0 {
             self.undo
                 .try_reserve(1)

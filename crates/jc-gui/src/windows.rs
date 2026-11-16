@@ -482,6 +482,7 @@ struct State {
     markdown_gui: Option<markdown_panel::MarkdownGui>,
     markdown_images: markdown_images::ImageController,
     pub workbench: Workbench,
+    startup_files: std::collections::VecDeque<PathBuf>,
     registry: CommandRegistry,
     keymap: KeyMap,
     encoding: Option<TextEncoding>,
@@ -628,6 +629,7 @@ impl State {
             markdown_gui: None,
             markdown_images: markdown_images::ImageController::new(wakeup.clone()),
             workbench: Workbench::default(),
+            startup_files: Default::default(),
             recovery: None,
             periodic_recovery: Default::default(),
             restore_window: None,
@@ -760,21 +762,74 @@ impl State {
             if !cfg!(test) {
                 state.enable_recovery()?;
             }
-            for path in &options.paths {
-                state
-                    .workbench
-                    .open_file(path, options.encoding)
-                    .map_err(|e| e.to_string())?;
-            }
-            if state.workbench.tabs().tabs().is_empty() {
-                state.new_document();
-            }
+            state.workbench.set_large_open_wakeup(state.wakeup.clone());
+            state.startup_files.extend(options.paths.iter().cloned());
+            state.advance_startup_files();
         }
         state.ensure_encoding_selector();
         if options.project_root.is_some() {
             state.explorer_visible = true;
         }
         Ok(state)
+    }
+    fn advance_startup_files(&mut self) {
+        while !self.workbench.large_open_pending() {
+            let Some(path) = self.startup_files.pop_front() else {
+                if self.workbench.tabs().tabs().is_empty() {
+                    self.new_document();
+                }
+                return;
+            };
+            match self.workbench.request_file_open(path, self.encoding, false) {
+                Ok(Some(_)) => {}
+                Ok(None) => self.status = "Copiando archivo grande en segundo plano…".into(),
+                Err(error) => self.error(error),
+            }
+        }
+    }
+    fn file_opened(&mut self) {
+        self.status = "Abierto".into();
+        self.explorer_focused = false;
+        self.bottom.focused = false;
+        self.ensure_encoding_selector();
+    }
+    fn poll_large_file(&mut self) -> bool {
+        if self.selector.is_some()
+            || self.search_panel.is_some()
+            || self.navigation_panel.is_some()
+            || self.project_visible()
+            || self.replace_panel.is_some()
+            || self.source_visible()
+            || self.snippet_gui.is_some()
+            || self.open_diff_visible
+            || self.markdown_gui.is_some()
+            || self.git_panel.is_some()
+            || self.git_code.active
+        {
+            return false;
+        }
+        let Some(result) = self.workbench.poll_large_open() else {
+            return false;
+        };
+        match result {
+            Ok(tab)
+                if self
+                    .workbench
+                    .active_document()
+                    .is_some_and(|doc| doc.tab_id == tab) =>
+            {
+                self.file_opened();
+            }
+            Ok(_) => self.status = "Archivo grande abierto en una pestaña".into(),
+            Err(error) => self.error(error),
+        }
+        if !self.startup_files.is_empty() || self.workbench.tabs().tabs().is_empty() {
+            self.advance_startup_files();
+            self.ensure_encoding_selector();
+        }
+        self.periodic_recovery
+            .note_activity(std::time::Instant::now());
+        true
     }
     fn new_document(&mut self) {
         self.bottom.focused = false;
@@ -1919,6 +1974,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         };
         match message {
             WM_CREATE => {
+                if state.workbench.large_open_pending() {
+                    state.wakeup.signal();
+                }
                 shell::dark_caption(hwnd);
                 state.icon = GetClassLongPtrW(hwnd, -14) as Handle;
                 if let Some(theme) = owner.menu_theme.borrow().clone() {
@@ -2205,7 +2263,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     recovery::arm(hwnd);
     perform(hwnd, action);
     if let Some(current) = self::owner(hwnd) {
-        let state = current.state.borrow();
+        let mut state = current.state.borrow_mut();
+        if message != TASKS_MESSAGE && state.workbench.large_open_pending() {
+            redraw |= state.poll_large_file();
+        }
         state.schedule_search();
         state.schedule_outline();
     }
@@ -2425,18 +2486,12 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
                 match selected {
                     Ok(Some(path)) => {
                         let encoding = state.encoding;
-                        let result = if side {
-                            state.workbench.open_file_to_side(path, encoding)
-                        } else {
-                            state.workbench.open_file(path, encoding)
-                        };
-                        if let Err(error) = result {
-                            state.error(error);
-                        } else {
-                            state.status = "Abierto".into();
-                            state.explorer_focused = false;
-                            state.bottom.focused = false;
-                            state.ensure_encoding_selector();
+                        match state.workbench.request_file_open(path, encoding, side) {
+                            Ok(Some(_)) => state.file_opened(),
+                            Ok(None) => {
+                                state.status = "Copiando archivo grande en segundo plano…".into();
+                            }
+                            Err(error) => state.error(error),
                         }
                     }
                     Ok(None) => {}

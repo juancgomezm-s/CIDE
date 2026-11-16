@@ -11,7 +11,7 @@ use jc_text::{
 };
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 mod scoped_read;
@@ -160,9 +160,21 @@ impl FileSession {
         max_bytes: u64,
         progress: impl FnMut(u64, u64) -> io::Result<()>,
     ) -> Result<Self, FileError> {
+        Self::open_private_snapshot_scoped(path, explicit, None, depot, max_bytes, progress)
+    }
+
+    pub fn open_private_snapshot_scoped(
+        path: impl Into<PathBuf>,
+        explicit: Option<TextEncoding>,
+        root: Option<&Path>,
+        depot: &Path,
+        max_bytes: u64,
+        progress: impl FnMut(u64, u64) -> io::Result<()>,
+    ) -> Result<Self, FileError> {
         let path = path.into();
-        let snapshot =
-            private_snapshot::PrivateSnapshot::capture(&path, depot, max_bytes, progress)?;
+        let snapshot = private_snapshot::PrivateSnapshot::capture_scoped(
+            &path, root, depot, max_bytes, progress,
+        )?;
         let (encoding, encoding_source) = explicit.map_or(
             (snapshot.encoding.encoding, snapshot.encoding.source),
             |encoding| (Some(encoding), EncodingSource::Explicit),
@@ -174,6 +186,32 @@ impl FileSession {
             encoding_source,
             disk_fingerprint: Some(snapshot.fingerprint),
         })
+    }
+
+    /// Bound the resident read even if the file grew after admission.
+    pub fn open_bounded(
+        path: impl Into<PathBuf>,
+        explicit: Option<TextEncoding>,
+        max_bytes: usize,
+    ) -> Result<Self, FileError> {
+        let path = path.into();
+        let file = File::open(&path)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.len() > max_bytes as u64 {
+            return Err(
+                io::Error::other("El archivo requiere apertura con instantánea privada").into(),
+            );
+        }
+        let mut bytes = Vec::new();
+        file.take((max_bytes as u64).saturating_add(1))
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > max_bytes {
+            return Err(io::Error::other(
+                "El archivo creció durante la apertura; vuelve a abrirlo",
+            )
+            .into());
+        }
+        Ok(Self::from_open_bytes(path, bytes, explicit))
     }
 
     /// Explicit project opening validates the actual handle before reading bytes.

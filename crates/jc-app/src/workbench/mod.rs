@@ -8,6 +8,7 @@ mod clipboard_transfer;
 pub use clipboard_transfer::{ClipboardExport, ClipboardTarget};
 mod edit;
 mod large_document;
+mod large_open;
 pub use large_document::{
     LargeViewport, LargeViewportLookup, LargeViewportRow, PreparedLargeDocument,
 };
@@ -122,6 +123,7 @@ pub struct EditorDocument {
     pub tab_id: TabId,
     pub session: FileSession,
     notified_revision: u64,
+    large_viewport: Option<LargeViewport>,
     text: RefCell<TextProjection>,
     invisible: RefCell<invisible_layout::InvisibleLayout>,
     unicode: RefCell<crate::unicode_layout::UnicodeLayout>,
@@ -198,6 +200,7 @@ pub enum CommandOutcome {
 
 #[derive(Debug, Default)]
 pub struct Workbench {
+    large_open: large_open::LargeOpen,
     selection_transaction: Option<DocumentId>,
     show_invisibles: bool,
     pub(crate) tabs: TabManager,
@@ -257,6 +260,28 @@ impl Workbench {
         self.documents.iter().find(|document| document.tab_id == id)
     }
 
+    pub fn is_paged_tab(&self, tab: TabId) -> bool {
+        self.document_by_tab(tab)
+            .is_some_and(|document| document.session.document().is_paged())
+    }
+
+    pub fn line_display_number(&self, tab: TabId, line: usize) -> Option<usize> {
+        if self.is_paged_tab(tab) {
+            self.paged_viewport_for_tab(tab)?.line_number(line)
+        } else {
+            line.checked_add(1)
+        }
+    }
+
+    pub fn active_paged_byte(&self) -> Option<usize> {
+        let editor = self.active_editor()?;
+        editor
+            .session
+            .document()
+            .is_paged()
+            .then_some(editor.cursor)
+    }
+
     fn cursor_for_tab(&self, tab: TabId) -> usize {
         self.panes.remembered_cursor(tab).unwrap_or_else(|| {
             self.document_by_tab(tab)
@@ -272,6 +297,9 @@ impl Workbench {
         let document = self.document_by_tab(tab)?;
         let encoding = document.session.encoding()?;
         let source = document.session.document();
+        if source.is_paged() {
+            return None;
+        }
         let mut text = document.text.borrow_mut();
         text.ensure(source, encoding);
         Some(f(&mut text, source))
@@ -284,10 +312,18 @@ impl Workbench {
         if document.session.encoding().is_none() {
             return Err(FileError::EncodingRequired.into());
         }
+        if document.session.document().is_paged() {
+            return Err(WorkbenchError::LineCommand(
+                "La operación requiere la vista de un documento residente".into(),
+            ));
+        }
         self.with_text(document.tab_id, f)
             .ok_or(WorkbenchError::NoDocument)
     }
     pub fn position_for_tab(&self, tab: TabId, offset: usize) -> Option<TextPosition> {
+        if self.is_paged_tab(tab) {
+            return self.paged_viewport_for_tab(tab)?.position(offset);
+        }
         self.with_text(tab, |text, source| text.position(source, offset))?
             .ok()
     }
@@ -296,11 +332,19 @@ impl Workbench {
         self.position_for_tab(location.tab, location.byte_offset)
     }
     pub fn line_count_for_tab(&self, tab: TabId) -> Option<usize> {
+        if self.is_paged_tab(tab) {
+            return Some(self.paged_viewport_for_tab(tab)?.rows().len());
+        }
         self.with_text(tab, |text, _| text.line_count())
     }
     /// Classify a raw byte offset using line metadata, without scalar layout.
     /// This is not a conversion to a valid caret or a visual/scalar column.
     pub fn line_ordinal_for_byte(&self, tab: TabId, offset: usize) -> Option<usize> {
+        if self.is_paged_tab(tab) {
+            return self
+                .position_for_tab(tab, offset)
+                .map(|position| position.line);
+        }
         self.with_text(tab, |text, _| text.line_ordinal_for_byte(offset))?
     }
     pub fn line_range_for_tab(
@@ -308,6 +352,15 @@ impl Workbench {
         tab: TabId,
         line: usize,
     ) -> Option<(Range<usize>, Range<usize>)> {
+        if self.is_paged_tab(tab) {
+            let row = self.paged_viewport_for_tab(tab)?.rows().get(line)?;
+            return Some((
+                row.content.clone(),
+                row.ending
+                    .clone()
+                    .unwrap_or(row.content.end..row.content.end),
+            ));
+        }
         self.with_text(tab, |text, source| text.line_range(source, line))?
     }
     pub fn visible_line(
@@ -341,6 +394,9 @@ impl Workbench {
     fn activate_location_document(&mut self, location: NavLocation) -> bool {
         if !self.tabs.select(location.tab) {
             return false;
+        }
+        if self.is_paged_tab(location.tab) {
+            self.refresh_paged_view(location.tab);
         }
         let _ = self.rebuild_search();
         true
@@ -466,13 +522,16 @@ impl Workbench {
         };
         let active = self.panes.active();
         let rectangle = self.rectangle_for_pane(active);
-        let caret_column = if self.show_invisibles && rectangle.is_none() {
+        let view = self.panes.view(active).expect("active view");
+        let invisible = view
+            .location()
+            .is_some_and(|loc| self.invisibles_visible_for_tab(loc.tab));
+        let caret_column = if invisible && rectangle.is_none() {
             self.display_column_for_pane(active).unwrap_or(0)
         } else {
             self.visual_column_for_pane(active)
                 .unwrap_or(position.column)
         };
-        let view = self.panes.view(active).expect("active view");
         let old_line = view.scroll_line();
         let mut line = old_line;
         let mut column = view.scroll_column();
@@ -524,6 +583,10 @@ impl Workbench {
 
     fn normalize_views(&mut self, tab: TabId) {
         if let Some(document) = self.documents.iter().find(|d| d.tab_id == tab) {
+            if document.session.document().is_paged() {
+                self.refresh_paged_view(tab);
+                return;
+            }
             if let Some(encoding) = document.session.encoding() {
                 let source = document.session.document();
                 let mut text = document.text.borrow_mut();
@@ -675,13 +738,28 @@ impl Workbench {
             }
             None => FileSession::open(&path, encoding)?,
         };
-        // Read failures leave the current group, selection and history intact.
-        let first_side_open = to_side && self.active_document().is_none();
-        if to_side && !first_side_open {
+        Ok(self.admit_open_session(session, None, to_side, true))
+    }
+
+    fn admit_open_session(
+        &mut self,
+        session: FileSession,
+        large_viewport: Option<LargeViewport>,
+        to_side: bool,
+        activate: bool,
+    ) -> TabId {
+        // A completed capture opened from an older pane must not change a later selection.
+        let previous_tab = self.tabs.active_id();
+        let activate = activate || previous_tab.is_none();
+        let first_side_open = activate && to_side && self.active_document().is_none();
+        if activate && to_side && !first_side_open {
             self.prepare_side_target();
         }
-        let cursor = session_content_start(&session);
-        let title = title_for_path(&path, "<archivo>");
+        let cursor = large_viewport
+            .as_ref()
+            .and_then(|viewport| viewport.rows().first())
+            .map_or_else(|| session_content_start(&session), |row| row.content.start);
+        let title = title_for_path(session.path(), "<archivo>");
         let tab_id = self.tabs.open(title);
         self.next_document += 1;
         self.documents.push(EditorDocument {
@@ -689,19 +767,24 @@ impl Workbench {
             session,
             id: DocumentId(self.next_document),
             notified_revision: 0,
+            large_viewport,
             text: RefCell::default(),
             invisible: RefCell::default(),
             unicode: RefCell::default(),
             syntax: RefCell::default(),
             selection_history: Default::default(),
         });
-        self.panes.navigate(NavLocation::new(tab_id, cursor), true);
-        let _ = self.rebuild_search();
+        if activate {
+            self.panes.navigate(NavLocation::new(tab_id, cursor), true);
+            let _ = self.rebuild_search();
+        } else if let Some(tab) = previous_tab {
+            self.tabs.select(tab);
+        }
         if first_side_open {
             self.split_editor_right();
             self.focus_editor_pane(PaneId::Secondary);
         }
-        Ok(tab_id)
+        tab_id
     }
 
     pub fn new_file(&mut self, path: impl Into<PathBuf>, encoding: TextEncoding) -> TabId {
@@ -715,6 +798,7 @@ impl Workbench {
             session,
             id: DocumentId(self.next_document),
             notified_revision: 0,
+            large_viewport: None,
             text: RefCell::default(),
             invisible: RefCell::default(),
             unicode: RefCell::default(),
@@ -770,6 +854,7 @@ impl Workbench {
 
     pub fn active_bytes(&self) -> Option<Vec<u8>> {
         self.active_document()
+            .filter(|document| !document.session.document().is_paged())
             .map(|document| document.session.document().to_bytes())
     }
 
@@ -945,7 +1030,7 @@ impl Workbench {
         let session = if closed.new_file {
             FileSession::new(&closed.path, closed.encoding.unwrap_or(TextEncoding::Utf8))
         } else {
-            FileSession::open(&closed.path, closed.encoding)?
+            FileSession::open_bounded(&closed.path, closed.encoding, large_open::RESIDENT_LIMIT)?
         };
         let expected = closed.tab;
         if self.tabs.reopen_last() != Some(expected) {
@@ -959,6 +1044,7 @@ impl Workbench {
             tab_id: expected,
             session,
             notified_revision: 0,
+            large_viewport: None,
             text: RefCell::default(),
             invisible: RefCell::default(),
             unicode: RefCell::default(),
@@ -1000,7 +1086,13 @@ impl Workbench {
             .encoding()
             .ok_or(FileError::EncodingRequired)?;
         let projection = document.text.get_mut();
-        projection.ensure(document.session.document(), encoding);
+        let source = document.session.document();
+        if source.is_paged() {
+            return Err(WorkbenchError::LineCommand(
+                "La edición por lotes todavía requiere un documento residente".into(),
+            ));
+        }
+        projection.ensure(source, encoding);
         let mut replacements = Vec::with_capacity(edits.len());
         for edit in edits {
             for offset in [edit.range.start, edit.range.end] {

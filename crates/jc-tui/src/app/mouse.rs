@@ -69,7 +69,7 @@ impl SourceContext {
             active: app.workbench.panes().active(),
             cursor: state.cursor,
             anchor: state.anchor,
-            invisibles: app.workbench.invisibles_visible(),
+            invisibles: app.workbench.invisibles_visible_for_tab(doc.tab_id),
             rectangle: state.rectangle.is_some(),
         })
     }

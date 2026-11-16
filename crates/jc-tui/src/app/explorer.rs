@@ -75,14 +75,14 @@ impl TuiApp {
         if expand_only {
             return;
         }
-        match self.explorer.open_file(
+        match self.explorer.request_file_open(
             id,
             &mut self.workbench,
             self.default_encoding,
             side,
             16 * 1024 * 1024,
         ) {
-            Ok(_) => {
+            Ok(Some(_)) => {
                 self.ensure_encoding_choice();
                 if matches!(self.overlay, crate::state::UiOverlay::None) {
                     let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
@@ -90,6 +90,7 @@ impl TuiApp {
                 self.status =
                     "Archivo abierto desde el explorador; documento compartido conservado".into();
             }
+            Ok(None) => self.status = "Copiando archivo grande en segundo plano…".into(),
             Err(error) => self.status = error,
         }
     }
