@@ -40,6 +40,8 @@ pub enum UiOverlay {
     },
     DataConnections,
     BrowseRecords,
+    #[cfg(windows)]
+    SqlRecords,
     None,
     Prompt {
         kind: PromptKind,

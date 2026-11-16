@@ -255,6 +255,16 @@ impl RecordController {
                 &db,
                 &selection.table.catalog.codec,
                 cancel,
+                || {
+                    let Ok(selection) = structure::choose(&selection.table, selection.key) else {
+                        return Observation::Unavailable;
+                    };
+                    match run_mode(root, &selection, &db, AvmMode::Inspect, cancel) {
+                        Ok(Some(row)) => Observation::Row(row),
+                        Ok(None) => Observation::Missing,
+                        Err(_) => Observation::Unavailable,
+                    }
+                },
             )?;
             Ok(RecordEvent::History(RecordHistory {
                 selection,
@@ -672,15 +682,37 @@ struct JournalFiles {
     receipt: bool,
 }
 
+enum Observation {
+    Unavailable,
+    Missing,
+    Row(Snapshot),
+}
+
+impl Observation {
+    fn describe(&self, before: &Snapshot) -> &'static str {
+        match self {
+            Self::Row(row) if row.row_id == before.row_id && row.image == before.image => {
+                "Pendiente · coincide con el respaldo"
+            }
+            Self::Row(_) => "Pendiente · el registro difiere del respaldo",
+            Self::Missing => "Pendiente · el registro está ausente",
+            Self::Unavailable => "Pendiente · estado actual sin verificar",
+        }
+    }
+}
+
 fn read_history(
     root: &Path,
     directory: &Path,
     db: &Path,
     codec: &str,
     cancel: &Cancellation,
+    observe: impl FnOnce() -> Observation,
 ) -> Result<Vec<RecordHistoryEntry>, String> {
     let files = journal_entries(directory)?;
     let mut entries = Vec::with_capacity(files.len());
+    let mut observe = Some(observe);
+    let mut observation = Observation::Unavailable;
     for (index, (id, files)) in files.into_iter().rev().enumerate() {
         if cancel.is_cancelled() {
             return Err("Se canceló la consulta del historial de respaldos".into());
@@ -689,7 +721,12 @@ fn read_history(
             confirmed_backup(root, directory, db, &id)
                 .map(|(backup, _, receipt)| ("Confirmado", backup, Some(receipt)))
         } else {
-            read_backup(root, directory, db, &id).map(|(backup, _)| ("Pendiente", backup, None))
+            read_backup(root, directory, db, &id).map(|(backup, _)| {
+                if let Some(observe) = observe.take() {
+                    observation = observe();
+                }
+                (observation.describe(&backup.before), backup, None)
+            })
         };
         let (label, receipt) = match parsed {
             Ok((status, backup, receipt)) => {
@@ -1114,11 +1151,16 @@ mod tests {
         }
         fs::write(root.join("malformed.confirmado"), b"foreign").unwrap();
         let cancel = Cancellation::new(Duration::from_secs(10));
-        let history = read_history(root, root, &db, "iso8859-1", &cancel).unwrap();
+        let history = read_history(root, root, &db, "iso8859-1", &cancel, || {
+            Observation::Row(before)
+        })
+        .unwrap();
         assert_eq!(history.len(), 3);
         assert!(history[0].label().contains("no verificable"));
         assert!(!history[0].confirmed());
-        assert!(history[1].label().contains("Pendiente"));
+        assert!(history[1]
+            .label()
+            .contains("Pendiente · coincide con el respaldo"));
         assert!(!history[1].confirmed());
         assert!(history[2]
             .label()

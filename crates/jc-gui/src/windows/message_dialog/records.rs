@@ -936,8 +936,8 @@ unsafe fn select_index(grid: Hwnd, index: usize) {
     SendMessageW(grid, LVM_ENSUREVISIBLE, index, 0);
 }
 
-fn wide_cell(value: Option<&str>) -> Vec<u16> {
-    let value = value.unwrap_or("(desconocido)");
+fn wide_cell(value: Option<&str>, null_value: &str) -> Vec<u16> {
+    let value = value.unwrap_or(null_value);
     let mut text = String::with_capacity(value.len());
     for ch in value.chars() {
         if ch.is_control() {
@@ -1000,7 +1000,7 @@ unsafe extern "system" fn grid_procedure(
     DefSubclassProc(hwnd, message, wp, lp)
 }
 
-unsafe fn create_grid(
+pub(super) unsafe fn create_grid(
     parent: Hwnd,
     bounds: Rect,
     font: Handle,
@@ -1073,16 +1073,25 @@ unsafe fn create_grid(
 }
 
 unsafe fn install_page(grid: Hwnd, page: &BrowsePage) -> bool {
-    if page.rows.iter().any(|row| row.len() != page.columns.len()) {
+    install_rows(grid, &page.columns, &page.rows, "(desconocido)")
+}
+
+pub(super) unsafe fn install_rows(
+    grid: Hwnd,
+    columns: &[String],
+    rows: &[Vec<Option<String>>],
+    null_value: &str,
+) -> bool {
+    if rows.iter().any(|row| row.len() != columns.len()) {
         return false;
     }
     SendMessageW(grid, LVM_DELETEALLITEMS, 0, 0);
-    for (index, row) in page.rows.iter().enumerate() {
+    for (index, row) in rows.iter().enumerate() {
         let mut item: Item = std::mem::zeroed();
         item.mask = 1; // LVIF_TEXT
         item.index = index as i32;
         for (column, value) in row.iter().enumerate() {
-            let mut text = wide_cell(value.as_deref());
+            let mut text = wide_cell(value.as_deref(), null_value);
             item.subitem = column as i32;
             item.text = text.as_mut_ptr();
             let parameter = (&mut item as *mut Item) as isize;
@@ -1097,6 +1106,23 @@ unsafe fn install_page(grid: Hwnd, page: &BrowsePage) -> bool {
         }
     }
     true
+}
+
+#[cfg(test)]
+pub(super) unsafe fn cell_text(grid: Hwnd, row: usize, column: i32) -> String {
+    const LVM_GETITEMTEXTW: u32 = 0x1073;
+    let mut units = [0u16; 1024];
+    let mut item: Item = std::mem::zeroed();
+    item.subitem = column;
+    item.text = units.as_mut_ptr();
+    item.text_max = units.len() as i32;
+    let len = SendMessageW(
+        grid,
+        LVM_GETITEMTEXTW,
+        row,
+        (&mut item as *mut Item) as isize,
+    );
+    String::from_utf16_lossy(&units[..len as usize])
 }
 
 unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isize) -> isize {
@@ -1216,7 +1242,7 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
     }
 }
 
-unsafe fn initialize_list_class() -> bool {
+pub(super) unsafe fn initialize_list_class() -> bool {
     let controls = CommonControls {
         size: std::mem::size_of::<CommonControls>() as u32,
         classes: 1, // ICC_LISTVIEW_CLASSES

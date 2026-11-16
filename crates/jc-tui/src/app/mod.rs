@@ -45,6 +45,8 @@ mod snippets_tests;
 mod source_services;
 #[cfg(test)]
 mod source_services_tests;
+#[cfg(windows)]
+pub(crate) mod sql_browser;
 #[cfg(test)]
 mod syntax_integration_tests;
 #[cfg(test)]
@@ -111,6 +113,8 @@ pub struct TuiApp {
     pub(crate) overlay: UiOverlay,
     pub(crate) data_connections: Option<data_connections::ConnectionsDialog>,
     pub(crate) record_browser: Option<browse_records::RecordBrowser>,
+    #[cfg(windows)]
+    pub(crate) sql_browser: Option<sql_browser::SqlBrowser>,
     progress_browse: jc_progress::editor::BrowseController,
     progress_records: jc_progress::editor::RecordController,
     pub(crate) last_frame_height: u16,
@@ -204,6 +208,8 @@ impl TuiApp {
             data_connections: None,
             record_browser: None,
             progress_browse: Default::default(),
+            #[cfg(windows)]
+            sql_browser: None,
             progress_records: Default::default(),
             last_frame_height: 24,
             clipboard_transport: None,
@@ -377,6 +383,10 @@ impl TuiApp {
         update.changed |= self.poll_symbol_path();
         update.changed |= self.poll_progress_schema();
         update.changed |= self.poll_progress_browse();
+        #[cfg(windows)]
+        {
+            update.changed |= self.poll_sql_browser();
+        }
         update.changed |= self.open_diff.tick(&self.workbench, &mut self.tasks);
         update.changed |= self.git_diff.tick(&self.workbench, &mut self.tasks);
         let revision_changed = self.git_revision.poll(self.project_root.as_deref());

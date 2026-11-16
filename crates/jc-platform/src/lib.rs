@@ -8,3 +8,8 @@ mod clipboard_owner;
 pub use clipboard_owner::WindowsClipboard;
 
 pub mod web_link;
+
+#[cfg(windows)]
+pub mod sql;
+#[cfg(windows)]
+pub mod sql_worker;

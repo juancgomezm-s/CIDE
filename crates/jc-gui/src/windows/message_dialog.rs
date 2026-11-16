@@ -5,6 +5,7 @@ use std::cell::Cell;
 
 pub(super) mod form;
 pub(super) mod records;
+pub(super) mod sql_records;
 
 #[repr(C)]
 struct DrawItem {

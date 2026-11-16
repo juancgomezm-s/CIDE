@@ -1255,6 +1255,9 @@ La cuadrícula consulta registros ABL, permite editar celdas de texto y entero
 en copias locales autorizadas y restaura el último cambio confirmado. La
 edición y restauración requieren vista previa y respaldo verificado antes de
 escribir. El recorrido GUI/TUI y los conflictos se validaron con Sports2000
-en OpenEdge 11.7. Quedan las altas y borrados, la validación en OpenEdge
-10.0B y 10.2B y los proveedores PostgreSQL y MySQL para la misma cuadrícula.
+en OpenEdge 11.7. Altas y borrados tienen vista previa y reversión por clave.
+PostgreSQL y MySQL tienen consulta de catálogo y registros en Windows por
+ODBC. Quedan la validación con los controladores de ambos motores, la
+compatibilidad con OpenEdge 10.0B y 10.2B y las escrituras que puedan afectar
+a varios registros mediante disparadores.
 [Plan de expansión](EXPANSION_DATADIGGER.md).

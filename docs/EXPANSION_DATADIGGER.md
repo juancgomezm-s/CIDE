@@ -1,9 +1,8 @@
 # Expansión DataDigger en CIDE
 
-**Estado:** configuración de perfiles, cuadrícula OpenEdge, edición con
-respaldo y restauración en GUI y TUI. La expansión incluye validación de
-compatibilidad con **OpenEdge 10.0B y 10.2B**, y proveedores
-**PostgreSQL** y **MySQL**, con validación independiente por motor.
+**Estado:** perfiles, cuadrícula OpenEdge con edición y respaldos, y consulta
+de PostgreSQL y MySQL por ODBC en GUI y TUI de Windows. La validación en
+**OpenEdge 10.0B y 10.2B** se ejecuta por separado de las pruebas de 11.7.
 
 ## Experiencia en la GUI
 
@@ -13,19 +12,20 @@ con el perfil OpenEdge. La GUI usa un diálogo con una cuadrícula nativa. La
 TUI muestra la cuadrícula y el detalle de celda con el teclado. Ambas consultan
 páginas en segundo plano y permiten filtrar y recorrer el índice en ambos sentidos.
 
-El explorador usará el catálogo local de cada conexión. **Actualizar
-esquema** minará los metadatos de la conexión elegida y publicará una
-instantánea local. **Ver registros** abrirá una sesión bajo demanda con ese
-mismo perfil. La conexión se liberará al cerrar la sesión o al cancelar el
-trabajo que la inició.
+La consulta SQL abre una sesión bajo demanda y carga el catálogo de tablas
+y vistas. Los metadatos de cada objeto se consultan al abrir **Esquema**.
+**Actualizar catálogo** vuelve a leer las relaciones de la sesión. Si falla,
+el visor conserva los resultados aceptados. Al cerrar el visor, el trabajador
+libera la conexión cuando termina la llamada que esté en curso.
 
 ## Configuración de conexiones
 
 **Proyecto → Conexiones de datos** permite crear y editar perfiles en español.
 El formulario muestra los campos del motor seleccionado. OpenEdge usa el perfil
-Progress existente en `.cide/progress.local.ini`. Para SQL se guardan los datos
-del perfil. **Probar conexión** y **Ver registros** forman parte de los siguientes
-bloques de integración.
+Progress existente en `.cide/progress.local.ini`. Para abrir una conexión SQL
+guardada, elige **Consultar** en la GUI o pulsa F6 sobre el perfil en la TUI.
+El visor muestra el catálogo cuando la conexión responde y el diagnóstico si
+falla.
 
 Si el proyecto tiene `.cide/progress.local.ini` y ya se guardó un perfil
 OpenEdge, el selector ofrece **Actualizar esquema ABL**. En la TUI se
@@ -68,9 +68,12 @@ un filtro, **X** lo quita, **O** invierte el orden e **Intro** abre el detalle.
 Los perfiles se guardan en `.cide/conexiones.local.json`. El archivo usa el
 escritor atómico del editor y conserva el contenido si cambia en disco mientras
 el formulario está abierto. El campo de credencial admite una referencia
-opcional del tipo `cide/datadigger/inventario`. La consulta del almacén seguro
-y el ingreso de contraseñas quedan para el bloque de conectividad. Las cuentas
-SQL deberán tener permisos de lectura sobre los catálogos y datos autorizados.
+opcional del tipo `cide/datadigger/inventario`. CIDE lee la contraseña de una
+credencial genérica con ese nombre en el **Administrador de credenciales de
+Windows**. El usuario de conexión se toma del perfil de CIDE. Configura una
+cuenta con permiso de lectura sobre los catálogos y datos autorizados. CIDE
+usa como opción inicial `verificar-servidor` y la confianza configurada para
+el controlador.
 
 ```json
 {
@@ -106,17 +109,25 @@ conservaron sus huellas SHA-256.
 
 ## Minería de esquema SQL
 
-Los proveedores SQL consultarán los metadatos visibles para la cuenta
-configurada. El catálogo incluirá esquemas, tablas, vistas, columnas,
-tipos, nulabilidad, claves primarias y foráneas e índices. El proveedor
-conservará los nombres y tipos originales junto al modelo común. La
-instantánea se identificará por perfil y se sustituirá al completar una
-lectura válida. Una actualización fallida conservará el último catálogo
-válido e indicará su antigüedad. La minería de esquema lee metadatos y
-la cuadrícula solicita filas por página al explorar una tabla o vista.
-En la prueba PostgreSQL 17.11, `information_schema.table_constraints`
-omitió claves con un rol de solo lectura. La consulta a `pg_catalog`
-recuperó la clave primaria y la foránea con esa misma cuenta.
+Los proveedores SQL consultan los metadatos visibles para la cuenta
+configurada, incluidas columnas, tipos, nulabilidad, claves primarias y
+foráneas e índices. La cuadrícula admite páginas de hasta 20 filas y filtros
+exactos parametrizados de texto y entero. Para avanzar páginas o invertir el
+orden se requiere una clave primaria que garantice un orden estable. Las
+vistas y tablas sin clave admiten una primera página. `NULL` y texto vacío se
+muestran por separado.
+
+Windows necesita un controlador Unicode de **psqlODBC** para PostgreSQL o
+**MySQL Connector/ODBC** 8 o posterior para MySQL. La aplicación detecta los
+controladores registrados. En este equipo se verificó el diagnóstico de
+controlador ausente y el visor por separado de la conexión real.
+
+PostgreSQL 17.11 pasó 18 comprobaciones con psqlODBC Unicode en Debian bajo
+WSL. Incluyeron TLS con verificación de identidad, consultas del proveedor,
+claves, filtros parametrizados, paginación, solo lectura y datos intactos.
+MySQL 8.0.45 pasó 15 comprobaciones del motor en una instancia aislada
+en Windows. La conexión completa desde CIDE con ambos controladores ODBC
+registrados en Windows queda pendiente.
 
 ## Qué aprovechar del DataDigger personalizado
 
@@ -175,9 +186,11 @@ la imagen binaria completa y aplica el cambio en una transacción. Una
 restauración verifica también el recibo del último cambio confirmado y
 crea su propio respaldo. El almacén está en `.cide/respaldos-registros/`.
 Una operación de edición con respaldo publicado y resultado incierto aparece
-como pendiente. Para restaurar una edición histórica se requiere el recibo
-seleccionado. CIDE lo revalida al confirmar y compara el registro completo con
-la imagen posterior a esa edición. Si difieren, muestra el valor actual y el
+como pendiente. El historial compara la fila actual con la imagen del respaldo
+cuando puede leerla y muestra si coincide, difiere o está ausente. La
+comparación conserva el estado pendiente. La restauración de una edición
+histórica requiere seleccionar su recibo. CIDE lo revalida al confirmar y
+compara el registro completo con la imagen posterior a esa edición. Si difieren, muestra el valor actual y el
 esperado, y conserva el registro. [Método ABL para capturar la imagen del registro](https://docs.progress.com/bundle/openedge-abl-reference-128/page/RAW-TRANSFER-method.html).
 
 Este bloque admite cambios de texto y entero en filas existentes con una
@@ -205,6 +218,9 @@ un respaldo alterado se rechaza al compararlo con su recibo.
 Las pruebas de fila también comprobaron el alta de una clave nueva, la
 reversión del alta, el borrado y la recuperación exacta. Una clave ocupada
 entre la revisión y la confirmación mantuvo el registro que ya existía.
+Al final del bloque se comprobó la disponibilidad de las AVM antiguas. Los
+ejecutables de OpenEdge encontrados en este equipo corresponden a 11.7.
+Las pruebas de ejecución con 10.0B y 10.2B quedan pendientes.
 
 ## Bloques y criterios de aceptación
 

@@ -159,7 +159,7 @@ impl RecordController {
     }
 }
 
-fn choose(table: &BrowseTable, key: i32) -> Result<Selection, String> {
+pub(super) fn choose(table: &BrowseTable, key: i32) -> Result<Selection, String> {
     let column = table
         .target
         .columns

@@ -55,13 +55,16 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
     match &dialog.stage {
         Stage::Profiles => {
             let mut rows = rows;
-            if app.can_browse_connection_records() {
-                screen.text_styled(
-                    left,
-                    y + height - 3,
-                    &clip("F6 ver registros ABL", columns),
-                    CellStyle::Dim,
-                );
+            let action = app
+                .can_browse_connection_records()
+                .then_some("F6 ver registros ABL");
+            #[cfg(windows)]
+            let action = action.or_else(|| {
+                app.selected_sql_connection()
+                    .map(|_| "F6 conectar y explorar SQL")
+            });
+            if let Some(action) = action {
+                screen.text_styled(left, y + height - 3, &clip(action, columns), CellStyle::Dim);
                 rows = rows.saturating_sub(1);
             }
             let selected = dialog.profile_row();
@@ -169,6 +172,7 @@ fn first_row(selected: usize, rows: usize, total: usize) -> usize {
 fn availability(engine: Engine) -> &'static str {
     match engine {
         Engine::OpenEdge => "Esquema ABL con .cide/progress.local.ini",
-        Engine::PostgreSql | Engine::MySql => "Solo perfil local · proveedor pendiente",
+        Engine::PostgreSql | Engine::MySql if cfg!(windows) => "SQL de solo lectura mediante ODBC",
+        Engine::PostgreSql | Engine::MySql => "Perfiles SQL · conexión disponible en Windows",
     }
 }

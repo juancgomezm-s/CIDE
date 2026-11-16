@@ -9,6 +9,8 @@ mod open_diff;
 mod overlays;
 mod snippets;
 mod source_services;
+#[cfg(windows)]
+mod sql_browser;
 pub(crate) use git_diff::git_sidebar_targets;
 pub(crate) use overlays::menu_bounds;
 

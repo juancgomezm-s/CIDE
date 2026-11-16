@@ -25,6 +25,8 @@ impl TuiApp {
         match self.overlay.clone() {
             UiOverlay::DataConnections => self.handle_data_connections_key(key),
             UiOverlay::BrowseRecords => self.handle_browse_records_key(key),
+            #[cfg(windows)]
+            UiOverlay::SqlRecords => self.handle_sql_browser_key(key),
             UiOverlay::QuickOpen { input, selected } => {
                 self.handle_quick_open_key(key, input, selected)
             }
@@ -269,6 +271,8 @@ impl TuiApp {
                 self.edit_data_connection(jc_app::FieldEdit::Insert(text))
             }
             UiOverlay::BrowseRecords => self.edit_browse_field(jc_app::FieldEdit::Insert(text)),
+            #[cfg(windows)]
+            UiOverlay::SqlRecords => self.paste_sql_filter(text),
             UiOverlay::QuickOpen { input, .. } => self.append_quick_open_text(input, text),
             UiOverlay::Prompt { kind, mut input } => {
                 input.push_str(text);

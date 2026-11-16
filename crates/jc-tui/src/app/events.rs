@@ -13,6 +13,8 @@ impl TuiApp {
             Event::Key(key) if is_action_event(key) => self.handle_key(key),
             Event::Paste(text) => self.handle_paste(&text),
             Event::Mouse(_) if self.overlay == UiOverlay::BrowseRecords => {}
+            #[cfg(windows)]
+            Event::Mouse(_) if self.overlay == UiOverlay::SqlRecords => {}
             Event::Mouse(event) => {
                 if self.git_commit.view().is_some() {
                     use crossterm::event::MouseEventKind;

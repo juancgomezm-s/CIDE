@@ -1,13 +1,13 @@
-//! Per-project connection profiles. Opening or saving a profile never opens a
-//! database session. OpenEdge schema refresh stays on its existing ABL route.
+//! Per-project connection profiles and explicit record browsing.
 use super::{
     command_id,
     ffi::{Hwnd, SendMessageW, WM_COMMAND},
-    message_dialog::form,
+    message_dialog::{form, sql_records},
     owner,
 };
 use jc_app::data_connections::{Draft, Engine, ProfileStore, MAX_VALUE_BYTES};
 use jc_app::CommandId;
+use jc_platform::{sql, sql_worker};
 use std::path::Path;
 
 const TITLE: &str = "Conexiones de datos";
@@ -18,6 +18,7 @@ enum Choice {
     New(Engine),
     RefreshSchema,
     BrowseRecords,
+    BrowseSql(usize, sql::Engine),
 }
 
 enum Outcome {
@@ -52,6 +53,21 @@ fn choices(profiles: &[Draft], has_abl_profile: bool, has_catalog: bool) -> Vec<
             (refresh_available && has_catalog)
                 .then(|| (Choice::BrowseRecords, "OpenEdge · Ver registros".into())),
         )
+        .chain(profiles.iter().enumerate().filter_map(|(index, profile)| {
+            let engine = match profile.engine() {
+                Engine::OpenEdge => return None,
+                Engine::PostgreSql => sql::Engine::PostgreSql,
+                Engine::MySql => sql::Engine::MySql,
+            };
+            Some((
+                Choice::BrowseSql(index, engine),
+                format!(
+                    "Consultar {} · {}",
+                    profile.value(0),
+                    profile.engine().label()
+                ),
+            ))
+        }))
         .chain(Engine::ALL.into_iter().map(|engine| {
             (
                 Choice::New(engine),
@@ -70,7 +86,7 @@ fn engine_details(engine: Engine, has_abl_profile: bool) -> &'static str {
             "Configura .cide/progress.local.ini en este proyecto para poder actualizar el esquema ABL."
         }
         Engine::PostgreSql | Engine::MySql => {
-            "Configuración local. El proveedor aún no permite probar la conexión ni consultar tablas. TLS admite verificar-servidor, requerido o deshabilitado."
+            "Consulta el perfil guardado desde la lista de conexiones. TLS admite verificar-servidor, requerido o deshabilitado."
         }
     }
 }
@@ -97,6 +113,18 @@ unsafe fn manage(hwnd: Hwnd, root: &Path, has_catalog: bool) -> Result<Outcome, 
             Choice::New(engine) => (None, engine),
             Choice::RefreshSchema => return Ok(Outcome::RefreshSchema),
             Choice::BrowseRecords => return Ok(Outcome::BrowseRecords),
+            Choice::BrowseSql(index, engine) => {
+                let profile = &store.profiles()[index];
+                let options =
+                    sql_worker::options(engine, std::array::from_fn(|index| profile.value(index)))?;
+                let title = format!(
+                    "Registros SQL · {} · {}",
+                    profile.value(0),
+                    profile.engine().label()
+                );
+                sql_records::show(hwnd, &title, options)?;
+                continue;
+            }
         };
         let defaults = Draft::new(engine);
         let initial = editing.map_or(&defaults, |index| &store.profiles()[index]);
@@ -211,5 +239,30 @@ mod tests {
         assert!(choices(&[profile], true, false)
             .iter()
             .all(|(action, _)| *action != Choice::BrowseRecords));
+    }
+
+    #[test]
+    fn project_connections_offers_a_separate_sql_query_for_each_saved_profile() {
+        let mut postgres = Draft::new(Engine::PostgreSql);
+        postgres.set_value(0, "Inventario").unwrap();
+        let mut mysql = Draft::new(Engine::MySql);
+        mysql.set_value(0, "Ventas").unwrap();
+        let items = choices(&[postgres, mysql], false, false);
+        assert_eq!(items[0].0, Choice::Edit(0, Engine::PostgreSql));
+        assert_eq!(items[1].0, Choice::Edit(1, Engine::MySql));
+        assert_eq!(
+            items[2],
+            (
+                Choice::BrowseSql(0, sql::Engine::PostgreSql),
+                "Consultar Inventario · PostgreSQL".into()
+            ),
+        );
+        assert_eq!(
+            items[3],
+            (
+                Choice::BrowseSql(1, sql::Engine::MySql),
+                "Consultar Ventas · MySQL".into()
+            ),
+        );
     }
 }

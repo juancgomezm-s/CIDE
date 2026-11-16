@@ -77,6 +77,13 @@ impl TuiApp {
     }
 
     pub(super) fn handle_data_connections_key(&mut self, key: KeyEvent) {
+        #[cfg(windows)]
+        if key.code == KeyCode::F(6) {
+            if let Some(profile) = self.selected_sql_connection().cloned() {
+                self.open_sql_browser(&profile);
+                return;
+            }
+        }
         if key.code == KeyCode::F(5) && self.can_refresh_connection_schema() {
             self.close_overlay();
             self.dispatch(CommandId::ProgressRefreshSchema);
@@ -189,6 +196,21 @@ impl TuiApp {
             && self
                 .registry
                 .is_enabled(CommandId::ProgressBrowseRecords, &self.command_context())
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn selected_sql_connection(&self) -> Option<&Draft> {
+        let dialog = self.data_connections.as_ref()?;
+        if self.project_root.as_ref() != Some(&dialog.root)
+            || !matches!(dialog.stage, Stage::Profiles)
+        {
+            return None;
+        }
+        dialog
+            .store
+            .profiles()
+            .get(dialog.profile_row.checked_sub(1)?)
+            .filter(|profile| profile.engine() != Engine::OpenEdge)
     }
 
     fn openedge_profile_selected(&self) -> bool {
@@ -305,6 +327,57 @@ mod tests {
         (0..screen.height()).any(|row| screen.row_text(row).contains(label))
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn project_connections_sql_opens_saved_profile_and_keeps_editor_on_error() {
+        use jc_text::TextEncoding;
+
+        let project = Project::new();
+        let mut draft = Draft::new(Engine::PostgreSql);
+        for (field, value) in [
+            (0, "Demo SQL"),
+            (1, "127.0.0.1"),
+            (2, "1"),
+            (3, "demo"),
+            (4, "lector"),
+        ] {
+            draft.set_value(field, value).unwrap();
+        }
+        ProfileStore::open(&project.0)
+            .unwrap()
+            .save(draft, None)
+            .unwrap();
+
+        let mut app = TuiApp::new(LaunchOptions::default());
+        app.set_explorer_root(project.0.clone()).unwrap();
+        app.workbench.new_file("editor.txt", TextEncoding::Utf8);
+        app.workbench.insert_text("Documento en edición").unwrap();
+        let original = app.workbench.active_bytes().unwrap();
+        app.dispatch(CommandId::ProjectDataConnections);
+        key(&mut app, KeyCode::Down);
+        assert!(screen_contains(&mut app, "F6 conectar y explorar SQL"));
+        key(&mut app, KeyCode::F(6));
+        assert_eq!(app.overlay, UiOverlay::SqlRecords);
+        assert!(screen_contains(&mut app, "Registros SQL"));
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while app.sql_browser.as_ref().unwrap().busy() {
+            assert!(Instant::now() < deadline);
+            app.poll_tasks();
+            thread::sleep(Duration::from_millis(15));
+        }
+        let browser = app.sql_browser.as_ref().unwrap();
+        assert!(browser.tables.is_empty());
+        assert!(
+            browser.message.contains("ODBC") || browser.message.contains("conectar"),
+            "{}",
+            browser.message
+        );
+        key(&mut app, KeyCode::Esc);
+        assert_eq!(app.overlay, UiOverlay::None);
+        assert!(app.sql_browser.is_none());
+        assert_eq!(app.workbench.active_bytes().unwrap(), original);
+    }
+
     #[test]
     fn project_connections_keyboard_creates_edits_and_cancels() {
         let project = Project::new();
@@ -330,7 +403,14 @@ mod tests {
         let _ = app.frame(10, 7);
         key(&mut app, KeyCode::Enter);
         key(&mut app, KeyCode::Down);
-        assert!(screen_contains(&mut app, "proveedor pendiente"));
+        assert!(screen_contains(
+            &mut app,
+            if cfg!(windows) {
+                "SQL de solo lectura"
+            } else {
+                "Perfiles SQL"
+            }
+        ));
         key(&mut app, KeyCode::Enter);
         key(&mut app, KeyCode::F(9));
         assert!(screen_contains(&mut app, "Completa el campo «Nombre»"));

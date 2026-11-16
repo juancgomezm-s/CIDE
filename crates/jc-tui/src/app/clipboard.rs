@@ -25,6 +25,8 @@ impl TuiApp {
         match &self.overlay {
             UiOverlay::DataConnections => self.data_connection_paste_budget(),
             UiOverlay::BrowseRecords => self.browse_field_paste_budget(),
+            #[cfg(windows)]
+            UiOverlay::SqlRecords => self.sql_filter_paste_budget(),
             UiOverlay::Find { input } => Some(4096usize.saturating_sub(input.len()).max(1)),
             UiOverlay::Replace {
                 find,
