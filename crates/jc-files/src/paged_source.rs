@@ -1,6 +1,5 @@
-//! Read-only, immutable-handle source for future Document storage. It is not
-//! connected to Document/FileSession/editor opening yet. Reads block and belong
-//! in explicit worker jobs, never rendering or frontend input preparation.
+//! Read-only paged byte source backed by an immutable file handle. Cache misses
+//! can block and belong in workers, never rendering or frontend input preparation.
 use jc_core::source::{ImmutableByteSource, ReadChunk, SourceReadError, MAX_READ_CHUNK_BYTES};
 #[cfg(all(windows, target_pointer_width = "64"))]
 use std::fs::File;
@@ -77,42 +76,13 @@ impl PagedFileSource {
         }
         #[cfg(all(windows, target_pointer_width = "64"))]
         {
-            use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+            use std::os::windows::fs::OpenOptionsExt;
             let file = std::fs::OpenOptions::new()
                 .read(true)
                 .share_mode(0x1 | 0x4)
                 .custom_flags(0x0020_0000 | 0x1000_0000)
                 .open(path)?;
-            let metadata = file.metadata()?;
-            if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "La fuente debe ser un archivo regular sin punto de reanálisis",
-                )
-                .into());
-            }
-            let len = metadata.len();
-            let mut pages = Vec::new();
-            pages.try_reserve_exact(limits.max_pages).map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::OutOfMemory,
-                    "No se pudo reservar el catálogo de páginas",
-                )
-            })?;
-            Ok(Self {
-                file,
-                len,
-                limits,
-                cache: Mutex::new(Cache {
-                    pages,
-                    tick: 0,
-                    statistics: PageCacheStatistics {
-                        source_len: len,
-                        budget_bytes: limits.budget_bytes(),
-                        ..Default::default()
-                    },
-                }),
-            })
+            Self::from_file(file, limits)
         }
         #[cfg(not(all(windows, target_pointer_width = "64")))]
         {
@@ -123,6 +93,43 @@ impl PagedFileSource {
             )
             .into())
         }
+    }
+
+    /// The caller owns an exclusive private handle or a stable read handle.
+    /// The source consumes it and never exposes a writable handle.
+    #[cfg(all(windows, target_pointer_width = "64"))]
+    pub(crate) fn from_file(file: File, limits: PageCacheLimits) -> Result<Self, SourceReadError> {
+        use std::os::windows::fs::MetadataExt;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.file_attributes() & 0x400 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "La fuente debe ser un archivo regular sin punto de reanálisis",
+            )
+            .into());
+        }
+        let len = metadata.len();
+        let mut pages = Vec::new();
+        pages.try_reserve_exact(limits.max_pages).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::OutOfMemory,
+                "No se pudo reservar el catálogo de páginas",
+            )
+        })?;
+        Ok(Self {
+            file,
+            len,
+            limits,
+            cache: Mutex::new(Cache {
+                pages,
+                tick: 0,
+                statistics: PageCacheStatistics {
+                    source_len: len,
+                    budget_bytes: limits.budget_bytes(),
+                    ..Default::default()
+                },
+            }),
+        })
     }
     fn lock(&self) -> Result<MutexGuard<'_, Cache>, SourceReadError> {
         self.cache

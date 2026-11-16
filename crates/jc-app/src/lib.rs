@@ -79,9 +79,9 @@ pub use tabs::{CloseRequest, Tab, TabId, TabManager};
 pub use workbench::rectangular::RectangleBounds;
 pub use workbench::{
     CaptureChunk, CaptureError, ClipboardExport, ClipboardTarget, CommandOutcome, DisplayCell,
-    DocumentId, EditorDocument, EditorRead, RecoveryCapture, RecoveryKey, SaveTarget,
-    SearchHistoryEntry, SearchState, SyntaxRows, SyntaxStats, TextReplacement, Workbench,
-    WorkbenchError,
+    DocumentId, EditorDocument, EditorRead, LargeViewport, LargeViewportLookup, LargeViewportRow,
+    PreparedLargeDocument, RecoveryCapture, RecoveryKey, SaveTarget, SearchHistoryEntry,
+    SearchState, SyntaxRows, SyntaxStats, TextReplacement, Workbench, WorkbenchError,
 };
 pub mod data_connections;
 mod project_search;

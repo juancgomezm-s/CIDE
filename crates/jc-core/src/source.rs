@@ -1,6 +1,5 @@
-//! Immutable byte-source admission for future paged document storage. This is
-//! deliberately separate from Document until its read/transaction/projection
-//! APIs can propagate fallible reads. No UI, encoding or path policy lives here.
+//! Immutable backing for paged documents and other bounded byte reads.
+//! Providers supply leases and report read failures at the storage boundary.
 use std::{
     fmt, io,
     ops::{Deref, Range},

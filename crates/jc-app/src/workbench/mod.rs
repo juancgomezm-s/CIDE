@@ -7,8 +7,13 @@ pub use recovery::{CaptureChunk, CaptureError, RecoveryCapture, RecoveryKey};
 mod clipboard_transfer;
 pub use clipboard_transfer::{ClipboardExport, ClipboardTarget};
 mod edit;
+mod large_document;
+pub use large_document::{
+    LargeViewport, LargeViewportLookup, LargeViewportRow, PreparedLargeDocument,
+};
 mod line_commands;
 mod line_index;
+mod progressive_lines;
 pub(crate) mod rectangular;
 mod save_target;
 mod search;

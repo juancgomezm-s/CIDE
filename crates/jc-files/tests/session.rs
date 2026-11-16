@@ -86,7 +86,7 @@ fn opening_and_saving_without_edits_preserves_every_byte() {
 
     assert_eq!(fs::read(&path).unwrap(), original);
     assert!(!session.document().is_modified());
-    let inspection = session.inspection();
+    let inspection = session.inspection().unwrap();
     assert_eq!(inspection.line_endings.kind, LineEndingKind::CrLf);
     assert!(inspection.line_endings.final_newline);
 }

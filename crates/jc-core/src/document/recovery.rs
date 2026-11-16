@@ -199,6 +199,11 @@ pub struct RecoveryCursor {
 impl RecoveryCursor {
     /// Constant work; callers may perform separate admission before capture.
     pub fn new(document: &Document) -> Result<Self, RecoveryError> {
+        if document.is_paged() {
+            return Err(RecoveryError::LimitExceeded(
+                "la instantánea paginada requiere recuperación por streaming",
+            ));
+        }
         if document.recovery_identity == 0 || document.recovery_epoch == u64::MAX {
             return Err(RecoveryError::StaleCapture);
         }
@@ -395,9 +400,11 @@ impl Document {
             }
             if matches!(cursor.phase, CapturePhase::Original | CapturePhase::Added) {
                 let arena = if cursor.phase == CapturePhase::Original {
-                    &self.original
+                    self.original
+                        .resident()
+                        .ok_or(RecoveryError::StaleCapture)?
                 } else {
-                    &self.added
+                    self.added.as_slice()
                 };
                 let count = (arena.len() - cursor.arena_offset).min(max_bytes - output.len());
                 output.extend_from_slice(&arena[cursor.arena_offset..cursor.arena_offset + count]);
@@ -741,10 +748,10 @@ impl Document {
         size(writer, self.history_bytes_limit)?;
         size(writer, self.undo.len())?;
         size(writer, self.redo.len())?;
-        for arena in [&self.original, &self.added] {
-            for bytes in arena.chunks(CHUNK) {
-                writer.write_all(bytes)?;
-            }
+        self.original
+            .visit(0..self.original.len(), &mut |bytes| writer.write_all(bytes))?;
+        for bytes in self.added.chunks(CHUNK) {
+            writer.write_all(bytes)?;
         }
         write_state(writer, &self.state)?;
         for state in &self.undo {
@@ -764,6 +771,42 @@ impl Document {
     pub fn read_recovery(
         reader: &mut dyn Read,
         limits: RecoveryLimits,
+    ) -> Result<Self, RecoveryError> {
+        Self::read_recovery_using(reader, limits, limits.max_source_bytes, |decoder, len| {
+            decoder.arena(len).map(Original::Resident)
+        })
+    }
+
+    /// Recover the original arena through a caller-owned immutable disk source.
+    /// The callback must consume exactly the bounded original arena, even if the
+    /// underlying recovery stream contains more bytes.
+    pub fn read_recovery_with_source(
+        reader: &mut dyn Read,
+        limits: RecoveryLimits,
+        max_added_bytes: usize,
+        restore: impl FnOnce(&mut dyn Read, u64) -> io::Result<Arc<dyn ImmutableByteSource>>,
+    ) -> Result<Self, RecoveryError> {
+        Self::read_recovery_using(reader, limits, max_added_bytes, |decoder, len| {
+            let end = decoder
+                .encoded
+                .checked_add(len as u64)
+                .filter(|end| *end <= decoder.limits.max_encoded_bytes)
+                .ok_or(RecoveryError::LimitExceeded("arena codificada"))?;
+            let mut reader = (&mut *decoder.reader).take(len as u64);
+            let source = restore(&mut reader, len as u64)?;
+            if reader.limit() != 0 || source.len() != len as u64 {
+                return Err(invalid("longitud de fuente paginada"));
+            }
+            decoder.encoded = end;
+            Ok(Original::Paged { source, len })
+        })
+    }
+
+    fn read_recovery_using(
+        reader: &mut dyn Read,
+        limits: RecoveryLimits,
+        max_added_bytes: usize,
+        load_original: impl FnOnce(&mut Decoder<'_>, usize) -> Result<Original, RecoveryError>,
     ) -> Result<Self, RecoveryError> {
         let mut decoder = Decoder {
             reader,
@@ -787,7 +830,7 @@ impl Document {
         let source_len = original_len
             .checked_add(added_len)
             .ok_or(invalid("longitud de fuentes"))?;
-        if source_len > limits.max_source_bytes {
+        if source_len > limits.max_source_bytes || added_len > max_added_bytes {
             return Err(RecoveryError::LimitExceeded("arenas de bytes"));
         }
         let saved_revision = decoder.integer()?;
@@ -810,7 +853,7 @@ impl Document {
             return Err(invalid("límite de pasos del historial"));
         }
         decoder.charge_metadata(std::mem::size_of::<Document>())?;
-        let original = decoder.arena(original_len)?;
+        let original = load_original(&mut decoder, original_len)?;
         let added = decoder.arena(added_len)?;
         let state = decoder.state(original_len, added_len, next_revision)?;
         let mut undo = decoder.vector::<State>(undo_count)?;
@@ -1297,7 +1340,7 @@ mod tests {
         let mut recovered = restore(&encoded).unwrap();
         same(&document, &recovered);
         assert_eq!(encode(&recovered), encoded);
-        assert_eq!(document.original, recovered.original);
+        assert_eq!(document.original.resident(), recovered.original.resident());
         assert_eq!(document.added, recovered.added);
         while document.can_undo() {
             let old_len = document.len();
@@ -1340,7 +1383,7 @@ mod tests {
         assert!(document.undo());
         let recovered = restore(&encode(&document)).unwrap();
         same(&document, &recovered);
-        assert_eq!(document.original, recovered.original);
+        assert_eq!(document.original.resident(), recovered.original.resident());
         assert_eq!(document.added, recovered.added);
         document.compact_storage();
         document.mark_saved();
@@ -1360,7 +1403,7 @@ mod tests {
         let mut collected = Document::from_bytes(vec![0xff; 2 * CHUNK]);
         collected.set_history_bytes_limit(0);
         collected.delete(0..2 * CHUNK).unwrap();
-        assert!(collected.original.is_empty());
+        assert!(collected.original.len() == 0);
         let recovered = restore(&encode(&collected)).unwrap();
         same(&collected, &recovered);
     }
@@ -1587,7 +1630,7 @@ mod tests {
         let encoded = encode(&repeated);
         let restored = Document::read_recovery(&mut &encoded[..], limits).unwrap();
         assert_eq!(restored.to_bytes(), b"abcabc");
-        assert_eq!(restored.original, b"abc");
+        assert_eq!(restored.original.resident(), Some(b"abc".as_slice()));
         assert_eq!(
             encoded.len() as u64,
             repeated.recovery_encoded_len().unwrap()
@@ -1623,7 +1666,7 @@ mod tests {
         let mut document = Document::from_bytes(vec![0xff; CHUNK * 2]);
         document.set_history_bytes_limit(0);
         document.delete(0..CHUNK * 2).unwrap();
-        assert!(document.original.is_empty());
+        assert!(document.original.len() == 0);
         let limits = RecoveryLimits {
             max_source_bytes: 0,
             ..Default::default()

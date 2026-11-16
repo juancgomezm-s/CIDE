@@ -29,11 +29,12 @@ mod windows;
 #[cfg(all(windows, test))]
 use windows::replace_path;
 pub mod paged_source;
+pub mod private_snapshot;
 pub mod recovery;
 mod session_recovery;
 pub use session_recovery::{
-    read_recovery_path, write_recovery_path, SessionRecoveryError, SessionRecoveryInfo,
-    SessionRecoveryLimits,
+    read_recovery_document_in, read_recovery_path, write_recovery_path, SessionRecoveryError,
+    SessionRecoveryInfo, SessionRecoveryLimits,
 };
 
 type Fingerprint = ContentFingerprint;
@@ -150,6 +151,31 @@ impl FileSession {
         Ok(Self::from_open_bytes(path, bytes, explicit))
     }
 
+    /// Create a byte-exact, independently owned disk snapshot on a worker.
+    /// The source's original path remains the save target.
+    pub fn open_private_snapshot(
+        path: impl Into<PathBuf>,
+        explicit: Option<TextEncoding>,
+        depot: &Path,
+        max_bytes: u64,
+        progress: impl FnMut(u64, u64) -> io::Result<()>,
+    ) -> Result<Self, FileError> {
+        let path = path.into();
+        let snapshot =
+            private_snapshot::PrivateSnapshot::capture(&path, depot, max_bytes, progress)?;
+        let (encoding, encoding_source) = explicit.map_or(
+            (snapshot.encoding.encoding, snapshot.encoding.source),
+            |encoding| (Some(encoding), EncodingSource::Explicit),
+        );
+        Ok(Self {
+            path,
+            document: Document::from_source(snapshot.source)?,
+            encoding,
+            encoding_source,
+            disk_fingerprint: Some(snapshot.fingerprint),
+        })
+    }
+
     /// Explicit project opening validates the actual handle before reading bytes.
     /// The byte limit also applies if the file grows after its initial metadata.
     pub fn open_in_root(
@@ -235,11 +261,18 @@ impl FileSession {
         self.encoding_source = EncodingSource::Explicit;
     }
 
-    pub fn inspection(&self) -> TextInspection {
+    pub fn inspection(&self) -> Result<TextInspection, FileError> {
+        if self.document.is_paged() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "La inspección completa requiere un documento residente",
+            )
+            .into());
+        }
         let bytes = self.document.to_bytes();
         let mut inspection = inspect_text(&bytes, self.encoding);
         inspection.probe.source = self.encoding_source;
-        inspection
+        Ok(inspection)
     }
 
     pub fn insert_text(&mut self, offset: usize, text: &str) -> Result<(), FileError> {

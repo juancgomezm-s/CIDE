@@ -130,6 +130,102 @@ mod windows {
             bytes = &bytes[count..];
         }
     }
+
+    #[test]
+    #[ignore = "usa hasta 16 GiB de disco temporal; ejecutar explícitamente en Windows x64"]
+    fn private_snapshot_edits_saves_and_recovers_a_file_above_four_gib() {
+        use jc_core::RecoveryLimits;
+        use jc_files::{read_recovery_document_in, FileSession};
+        const OFFSET: u64 = (1 << 32) + 5;
+        const LEN: u64 = OFFSET + 65_536;
+        let workspace = Workspace::new();
+        let path = workspace.path("paginas-grandes.txt");
+        let original = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        let mut returned = 0;
+        assert_ne!(
+            unsafe {
+                DeviceIoControl(
+                    original.as_raw_handle(),
+                    0x900c4,
+                    null(),
+                    0,
+                    null_mut(),
+                    0,
+                    &mut returned,
+                    null_mut(),
+                )
+            },
+            0,
+            "El filesystem requiere soporte de archivos dispersos"
+        );
+        original.set_len(LEN).unwrap();
+        write_at(&original, 0, b"inicio\r\n");
+        write_at(&original, OFFSET, b"original\n");
+        original.sync_all().unwrap();
+        drop(original);
+        let mut session =
+            FileSession::open_private_snapshot(&path, None, &workspace.root, LEN, |_, _| Ok(()))
+                .unwrap();
+        let at = OFFSET as usize;
+        assert!(session.document().is_paged());
+        assert_eq!(
+            session.document().read_range(at..at + 9).unwrap(),
+            b"original\n"
+        );
+        assert_eq!(session.document().retained_source_bytes(), 0);
+        session.insert_text(at, "CIDE ").unwrap();
+        session.save().unwrap();
+        {
+            let saved = File::open(&path).unwrap();
+            assert_eq!(saved.metadata().unwrap().len(), LEN + 5);
+            let mut bytes = [0; 14];
+            assert_eq!(saved.seek_read(&mut bytes, OFFSET).unwrap(), bytes.len());
+            assert_eq!(&bytes, b"CIDE original\n");
+        }
+        session.insert_text(at, "sin guardar ").unwrap();
+        let recovery_path = workspace.path("recuperacion.bin");
+        {
+            let mut recovery = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&recovery_path)
+                .unwrap();
+            session.document().write_recovery(&mut recovery).unwrap();
+            recovery.sync_all().unwrap();
+        }
+        drop(session);
+        let mut recovery = File::open(&recovery_path).unwrap();
+        let mut document = read_recovery_document_in(
+            &mut recovery,
+            RecoveryLimits {
+                max_source_bytes: LEN as usize + 1024,
+                max_encoded_bytes: LEN + 1024 * 1024,
+                ..RecoveryLimits::default()
+            },
+            1024,
+            &workspace.root,
+        )
+        .unwrap();
+        assert!(document.is_paged());
+        assert!(document.is_modified());
+        assert_eq!(
+            document.read_range(at..at + 26).unwrap(),
+            b"sin guardar CIDE original\n"
+        );
+        assert!(document.undo());
+        assert!(!document.is_modified());
+        assert_eq!(
+            document.read_range(at..at + 14).unwrap(),
+            b"CIDE original\n"
+        );
+        assert!(document.retained_source_bytes() <= 1024);
+        println!("Longitud de la fuente: {LEN} bytes. Edición, guardado y recuperación verificados en offset {OFFSET}.");
+    }
     struct WritableView(*mut c_void);
     impl Drop for WritableView {
         fn drop(&mut self) {

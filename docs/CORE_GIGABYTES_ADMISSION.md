@@ -1,7 +1,31 @@
 # Archivos de gigabytes — auditoría y admisión propuesta
 
-2026-11-03. **El editor completo todavía no admite documentos de varios GB.**
-Hay una base local de lectura paginada y guardado streaming, detallada abajo.
+## Estado de la integración — 2026-11-16
+
+El núcleo ya admite una fuente privada en disco en el mismo documento que usa
+las piezas y el historial. En Windows x64, `FileSession::open_private_snapshot`
+copia en tramos de hasta 64 KiB, calcula la huella, comprueba la codificación y
+libera el original al terminar. El manejador privado elimina la instantánea al
+cerrarse. El guardado escribe las piezas al temporal y aplica la comprobación
+de cambios externos de la sesión.
+
+La prueba optimizada de sesión abrió 4.295.032.837 bytes desde un archivo
+disperso, editó en el offset 4.294.967.301, guardó al mismo nombre y recuperó
+una edición posterior sin guardar. Comprobó también deshacer al estado
+guardado. La prueba ejercitó una copia privada real con lectura y escritura
+por tramos. La asignación dispersa del original no sirve para inferir
+rendimiento de lectura fría, latencia visible ni memoria del proceso completo.
+
+La preparación compartida de la primera vista ya puede entregar hasta 256
+filas de 64 KiB iniciales, con un índice progresivo por intervalos. Sigue
+pendiente publicar y renovar esas vistas desde las aperturas normales de GUI y
+TUI. El guardado de `FileSession` y el códec de recuperación se comprobaron
+en una sesión aislada. El editor todavía necesita sus trabajos versionados de
+guardado, captura periódica, cierre y reapertura, con cuotas para archivos de
+este tamaño.
+
+## Admisión inicial — 2026-11-03
+
 Este documento responde a la nueva prioridad de Juan: el núcleo debe manejar
 archivos inmensos, incluidos archivos que crucen4GiB. La auditoría inicial de las
 secciones siguientes es histórica; sus fórmulas son estimaciones de estructura.

@@ -1,6 +1,8 @@
+use crate::source::{ImmutableByteSource, MAX_READ_CHUNK_BYTES};
 use std::fmt;
 use std::io::{self, Write};
 use std::ops::Range;
+use std::sync::Arc;
 mod recovery;
 pub use recovery::{RecoveryCursor, RecoveryError, RecoveryLimits};
 
@@ -12,6 +14,7 @@ pub enum EditError {
         len: usize,
     },
     CapacityOverflow,
+    SourceRead(String),
     StaleRevision {
         expected: u64,
         actual: u64,
@@ -35,6 +38,7 @@ impl fmt::Display for EditError {
             Self::CapacityOverflow => {
                 write!(f, "desbordamiento de capacidad o revisión del documento")
             }
+            Self::SourceRead(error) => f.write_str(error),
         }
     }
 }
@@ -201,7 +205,7 @@ pub struct HistoryTransition {
 pub struct Document {
     recovery_identity: u64,
     recovery_epoch: u64,
-    original: Vec<u8>,
+    original: Original,
     added: Vec<u8>,
     state: State,
     undo: Vec<State>,
@@ -211,6 +215,103 @@ pub struct Document {
     history_limit: usize,
     history_bytes_limit: usize,
     last_edit: Option<ChangeSet>,
+}
+
+/// An owned, revision-bound read of a paged document. The worker shares the
+/// immutable original and copies only referenced insertions under its budget.
+pub struct PagedReadPlan {
+    document_identity: u64,
+    revision: u64,
+    range: Range<usize>,
+    original: Original,
+    pieces: Vec<Piece>,
+    added: Vec<u8>,
+}
+
+impl PagedReadPlan {
+    pub fn document_identity(&self) -> u64 {
+        self.document_identity
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn range(&self) -> Range<usize> {
+        self.range.clone()
+    }
+
+    pub fn visit(&self, mut visitor: impl FnMut(&[u8]) -> io::Result<()>) -> io::Result<()> {
+        for piece in &self.pieces {
+            visit_piece(
+                &self.original,
+                &self.added,
+                piece.source,
+                piece.start..piece.start + piece.len,
+                &mut visitor,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+enum Original {
+    Resident(Vec<u8>),
+    Paged {
+        source: Arc<dyn ImmutableByteSource>,
+        len: usize,
+    },
+}
+
+impl Original {
+    fn len(&self) -> usize {
+        match self {
+            Self::Resident(bytes) => bytes.len(),
+            Self::Paged { len, .. } => *len,
+        }
+    }
+
+    fn resident(&self) -> Option<&[u8]> {
+        match self {
+            Self::Resident(bytes) => Some(bytes),
+            Self::Paged { .. } => None,
+        }
+    }
+
+    fn visit(
+        &self,
+        range: Range<usize>,
+        visitor: &mut impl FnMut(&[u8]) -> io::Result<()>,
+    ) -> io::Result<()> {
+        match self {
+            Self::Resident(bytes) => {
+                for part in bytes[range].chunks(MAX_READ_CHUNK_BYTES) {
+                    visitor(part)?;
+                }
+            }
+            Self::Paged { source, .. } => {
+                let mut offset = range.start;
+                while offset < range.end {
+                    let limit = (range.end - offset).min(MAX_READ_CHUNK_BYTES);
+                    let chunk = source
+                        .read_chunk(offset as u64, limit)
+                        .map_err(io::Error::other)?;
+                    if chunk.source_offset() != offset as u64
+                        || chunk.is_empty()
+                        || chunk.len() > limit
+                    {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "La fuente devolvió un tramo inválido",
+                        ));
+                    }
+                    visitor(&chunk)?;
+                    offset += chunk.len();
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 impl fmt::Debug for Document {
@@ -248,7 +349,21 @@ impl Document {
         self.recovery_epoch = self.recovery_epoch.saturating_add(1);
     }
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        let len = bytes.len();
+        Self::from_original(Original::Resident(bytes))
+    }
+
+    /// Admit immutable backing without reading or indexing its contents.
+    pub fn from_source(source: Arc<dyn ImmutableByteSource>) -> Result<Self, EditError> {
+        let len = usize::try_from(source.len()).map_err(|_| EditError::CapacityOverflow)?;
+        Ok(Self::from_original(Original::Paged { source, len }))
+    }
+
+    pub fn is_paged(&self) -> bool {
+        matches!(self.original, Original::Paged { .. })
+    }
+
+    fn from_original(original: Original) -> Self {
+        let len = original.len();
         let pieces = if len == 0 {
             Vec::new()
         } else {
@@ -261,7 +376,7 @@ impl Document {
         Self {
             recovery_identity: Self::new_recovery_identity(),
             recovery_epoch: 0,
-            original: bytes,
+            original,
             added: Vec::new(),
             state: State {
                 pieces,
@@ -397,12 +512,16 @@ impl Document {
             self.history_bytes_limit
         };
         let threshold = self.len().saturating_add(budget).saturating_add(64 * 1024);
-        if self.added.len() > threshold || self.original.len() > threshold {
+        if self.added.len() > threshold || (!self.is_paged() && self.original.len() > threshold) {
             self.reclaim_unused_storage();
         }
     }
     pub fn retained_source_bytes(&self) -> usize {
-        self.original.capacity() + self.added.capacity()
+        let original = match &self.original {
+            Original::Resident(bytes) => bytes.capacity(),
+            Original::Paged { .. } => 0,
+        };
+        original + self.added.capacity()
     }
 
     /// Relocate only reachable source intervals; revisions, history and maps remain unchanged.
@@ -410,6 +529,13 @@ impl Document {
         self.bump_recovery_epoch();
         type RelocationMap = Vec<(Range<usize>, usize)>;
         fn collect(document: &Document, source: Source) -> (Option<Vec<u8>>, RelocationMap) {
+            let bytes = match source {
+                Source::Original => match document.original.resident() {
+                    Some(bytes) => bytes,
+                    None => return (None, Vec::new()),
+                },
+                Source::Added => document.added.as_slice(),
+            };
             let mut ranges: Vec<_> = std::iter::once(&document.state)
                 .chain(&document.undo)
                 .chain(&document.redo)
@@ -426,24 +552,20 @@ impl Document {
                     merged.push(range);
                 }
             }
-            let source = match source {
-                Source::Original => &document.original,
-                Source::Added => &document.added,
-            };
             // The entire arena is still reachable: its offsets are already the
             // desired mapping. Reusing it avoids a source-sized temporary just
             // to collect a different arena or change a history budget.
-            if merged.len() == 1 && merged[0] == (0..source.len()) {
+            if merged.len() == 1 && merged[0] == (0..bytes.len()) {
                 return (None, Vec::new());
             }
-            let mut bytes = Vec::with_capacity(merged.iter().map(|r| r.len()).sum());
+            let mut collected = Vec::with_capacity(merged.iter().map(|r| r.len()).sum());
             let mut mapping = Vec::with_capacity(merged.len());
             for range in merged {
-                let base = bytes.len();
-                bytes.extend_from_slice(&source[range.clone()]);
+                let base = collected.len();
+                collected.extend_from_slice(&bytes[range.clone()]);
                 mapping.push((range, base));
             }
-            (Some(bytes), mapping)
+            (Some(collected), mapping)
         }
         let (original, original_map) = collect(self, Source::Original);
         let (added, added_map) = collect(self, Source::Added);
@@ -463,9 +585,9 @@ impl Document {
             }
         }
         if let Some(original) = original {
-            self.original = original;
-        } else {
-            self.original.shrink_to_fit();
+            self.original = Original::Resident(original);
+        } else if let Original::Resident(bytes) = &mut self.original {
+            bytes.shrink_to_fit();
         }
         if let Some(added) = added {
             self.added = added;
@@ -475,9 +597,13 @@ impl Document {
     }
     pub fn compact_storage(&mut self) {
         self.bump_recovery_epoch();
+        if self.is_paged() {
+            self.reclaim_unused_storage();
+            return;
+        }
         let bytes = self.to_bytes();
         let len = bytes.len();
-        self.original = bytes;
+        self.original = Original::Resident(bytes);
         self.added = Vec::new();
         self.state.pieces = if len == 0 {
             Vec::new()
@@ -500,7 +626,9 @@ impl Document {
         self.redo.clear();
     }
 
+    /// Borrow resident segments. Use visit_range for storage-independent reads.
     pub fn chunks(&self) -> impl Iterator<Item = &[u8]> {
+        assert!(!self.is_paged(), "para una fuente paginada usa visit_range");
         self.state
             .pieces
             .iter()
@@ -508,8 +636,9 @@ impl Document {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
+        let chunks = self.chunks();
         let mut bytes = Vec::with_capacity(self.len());
-        for chunk in self.chunks() {
+        for chunk in chunks {
             bytes.extend_from_slice(chunk);
         }
         bytes
@@ -518,6 +647,11 @@ impl Document {
     /// Borrow only the requested segments, locating the first piece in O(log P).
     pub fn range_chunks(&self, range: Range<usize>) -> Result<RangeChunks<'_>, EditError> {
         self.validate_range(&range)?;
+        if self.is_paged() {
+            return Err(EditError::SourceRead(
+                "La fuente paginada requiere una lectura por tramos".into(),
+            ));
+        }
         let (index, position) = self.state.ends.locate(range.start);
         Ok(RangeChunks {
             document: self,
@@ -528,12 +662,115 @@ impl Document {
     }
 
     pub fn read_range(&self, range: Range<usize>) -> Result<Vec<u8>, EditError> {
-        let chunks = self.range_chunks(range.clone())?;
-        let mut bytes = Vec::with_capacity(range.len());
-        for chunk in chunks {
-            bytes.extend_from_slice(chunk);
+        self.validate_range(&range)?;
+        if self.is_paged() && range.len() > 1024 * 1024 {
+            return Err(EditError::SourceRead(
+                "Para leer más de 1 MiB paginado usa una visita por tramos".into(),
+            ));
         }
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(range.len())
+            .map_err(|_| EditError::CapacityOverflow)?;
+        self.visit_range(range, |chunk| {
+            bytes.extend_from_slice(chunk);
+            Ok(())
+        })
+        .map_err(|error| EditError::SourceRead(error.to_string()))?;
         Ok(bytes)
+    }
+
+    /// Iterate over bounded segments without retaining or copying the full range.
+    /// On paged storage this can perform I/O and belongs in a worker.
+    pub fn visit_range(
+        &self,
+        range: Range<usize>,
+        mut visitor: impl FnMut(&[u8]) -> io::Result<()>,
+    ) -> io::Result<()> {
+        self.validate_range(&range)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+        let (first, mut position) = self.state.ends.locate(range.start);
+        for piece in &self.state.pieces[first..] {
+            if position >= range.end {
+                break;
+            }
+            let from = piece.start + range.start.saturating_sub(position);
+            let to = piece.start + piece.len.min(range.end - position);
+            if from < to {
+                visit_piece(
+                    &self.original,
+                    &self.added,
+                    piece.source,
+                    from..to,
+                    &mut visitor,
+                )?;
+            }
+            position += piece.len;
+        }
+        Ok(())
+    }
+
+    /// Prepare one bounded worker request without performing source I/O.
+    pub fn prepare_paged_read(
+        &self,
+        range: Range<usize>,
+        max_added_bytes: usize,
+    ) -> Result<PagedReadPlan, EditError> {
+        self.validate_range(&range)?;
+        let Original::Paged { source, len } = &self.original else {
+            return Err(EditError::SourceRead(
+                "La lectura diferida requiere una fuente paginada".into(),
+            ));
+        };
+        let first = self.state.ends.locate(range.start).0;
+        let count = if range.is_empty() {
+            0
+        } else {
+            self.state.ends.locate(range.end - 1).0 - first + 1
+        };
+        if count > 8192 {
+            return Err(EditError::SourceRead(
+                "La lectura diferida excede el presupuesto de piezas".into(),
+            ));
+        }
+        let mut pieces = Vec::new();
+        pieces
+            .try_reserve_exact(count)
+            .map_err(|_| EditError::CapacityOverflow)?;
+        self.append_range(range.clone(), &mut pieces);
+        let added_bytes = pieces
+            .iter()
+            .filter(|piece| piece.source == Source::Added)
+            .try_fold(0usize, |sum, piece| sum.checked_add(piece.len))
+            .filter(|sum| *sum <= max_added_bytes)
+            .ok_or_else(|| {
+                EditError::SourceRead(
+                    "La lectura diferida excede el presupuesto de inserciones".into(),
+                )
+            })?;
+        let mut added = Vec::new();
+        added
+            .try_reserve_exact(added_bytes)
+            .map_err(|_| EditError::CapacityOverflow)?;
+        for piece in pieces
+            .iter_mut()
+            .filter(|piece| piece.source == Source::Added)
+        {
+            let next = added.len();
+            added.extend_from_slice(&self.added[piece.start..piece.start + piece.len]);
+            piece.start = next;
+        }
+        Ok(PagedReadPlan {
+            document_identity: self.recovery_identity,
+            revision: self.revision(),
+            range,
+            original: Original::Paged {
+                source: source.clone(),
+                len: *len,
+            },
+            pieces,
+            added,
+        })
     }
 
     /// A revision-consistent borrowed read. Rust prevents edits while it is held.
@@ -542,10 +779,7 @@ impl Document {
     }
 
     pub fn write_to<W: Write + ?Sized>(&self, writer: &mut W) -> io::Result<()> {
-        for chunk in self.chunks() {
-            writer.write_all(chunk)?;
-        }
-        Ok(())
+        self.visit_range(0..self.len(), |chunk| writer.write_all(chunk))
     }
 
     pub fn insert(&mut self, offset: usize, bytes: &[u8]) -> Result<(), EditError> {
@@ -586,9 +820,22 @@ impl Document {
                 return Err(EditError::OverlappingEdits);
             }
         }
-        batch
-            .edits
-            .retain(|edit| !self.range_matches(&edit.range, &edit.bytes));
+        let mut failure = None;
+        batch.edits.retain(|edit| {
+            if failure.is_some() {
+                return false;
+            }
+            match self.range_matches(&edit.range, &edit.bytes) {
+                Ok(matches) => !matches,
+                Err(error) => {
+                    failure = Some(error);
+                    false
+                }
+            }
+        });
+        if let Some(error) = failure {
+            return Err(error);
+        }
         if batch.edits.is_empty() {
             self.last_edit = None;
             return Ok(());
@@ -757,27 +1004,29 @@ impl Document {
 
     fn piece_bytes(&self, piece: &Piece) -> &[u8] {
         let source = match piece.source {
-            Source::Original => &self.original,
-            Source::Added => &self.added,
+            Source::Original => self.original.resident().expect("segmento residente"),
+            Source::Added => self.added.as_slice(),
         };
         &source[piece.start..piece.start + piece.len]
     }
 
-    fn range_matches(&self, range: &Range<usize>, bytes: &[u8]) -> bool {
+    fn range_matches(&self, range: &Range<usize>, bytes: &[u8]) -> Result<bool, EditError> {
         if range.end - range.start != bytes.len() {
-            return false;
+            return Ok(false);
         }
         let mut compared = 0;
-        for chunk in self
-            .range_chunks(range.clone())
-            .expect("validated replacement")
-        {
+        let result = self.visit_range(range.clone(), |chunk| {
             if chunk != &bytes[compared..compared + chunk.len()] {
-                return false;
+                return Err(io::Error::from(io::ErrorKind::Interrupted));
             }
             compared += chunk.len();
+            Ok(())
+        });
+        match result {
+            Ok(()) => Ok(compared == bytes.len()),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => Ok(false),
+            Err(error) => Err(EditError::SourceRead(error.to_string())),
         }
-        compared == bytes.len()
     }
 
     fn append_range(&self, range: Range<usize>, pieces: &mut Vec<Piece>) {
@@ -803,6 +1052,24 @@ impl Document {
                 );
             }
             position = end;
+        }
+    }
+}
+
+fn visit_piece(
+    original: &Original,
+    added: &[u8],
+    source: Source,
+    range: Range<usize>,
+    visitor: &mut impl FnMut(&[u8]) -> io::Result<()>,
+) -> io::Result<()> {
+    match source {
+        Source::Original => original.visit(range, visitor),
+        Source::Added => {
+            for part in added[range].chunks(MAX_READ_CHUNK_BYTES) {
+                visitor(part)?;
+            }
+            Ok(())
         }
     }
 }
@@ -860,6 +1127,15 @@ impl DocumentRead<'_> {
     }
     pub fn chunks(&self, range: Range<usize>) -> Result<RangeChunks<'_>, EditError> {
         self.document.range_chunks(range)
+    }
+
+    /// Fallible traversal, including for disk-backed originals.
+    pub fn visit_range(
+        &self,
+        range: Range<usize>,
+        visitor: impl FnMut(&[u8]) -> io::Result<()>,
+    ) -> io::Result<()> {
+        self.document.visit_range(range, visitor)
     }
 }
 

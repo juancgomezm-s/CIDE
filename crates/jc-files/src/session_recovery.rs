@@ -1,12 +1,12 @@
 //! Durable FileSession metadata. Restoring it does not touch the original path:
 //! the separately validated Document payload remains the sole byte/undo model.
-use crate::{ContentFingerprint, FileSession};
-use jc_core::Document;
+use crate::{private_snapshot::PrivateSnapshot, ContentFingerprint, FileError, FileSession};
+use jc_core::{Document, RecoveryError, RecoveryLimits};
 use jc_text::{EncodingSource, TextEncoding};
 use std::{
     fmt,
     io::{self, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 const MAGIC: &[u8; 8] = b"CIDEFSR1";
@@ -263,6 +263,26 @@ impl FileSession {
             disk_fingerprint: info.disk_fingerprint,
         })
     }
+}
+
+/// Rebuild the original arena of a large recovery in the private disk depot.
+/// The caller selects this reader only for admitted large-document payloads.
+pub fn read_recovery_document_in(
+    reader: &mut dyn Read,
+    limits: RecoveryLimits,
+    max_added_bytes: usize,
+    depot: &Path,
+) -> Result<Document, RecoveryError> {
+    Document::read_recovery_with_source(reader, limits, max_added_bytes, |arena, len| {
+        PrivateSnapshot::capture_reader(arena, depot, len, |_, _| Ok(()))
+            .map(|snapshot| {
+                snapshot.source as std::sync::Arc<dyn jc_core::source::ImmutableByteSource>
+            })
+            .map_err(|error| match error {
+                FileError::Io(io_error) => io_error,
+                other => io::Error::other(other),
+            })
+    })
 }
 /// Standalone native path record for project roots and other outer metadata.
 /// Uses the identical platform tag/count/body representation as FileSession.
