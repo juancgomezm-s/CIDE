@@ -37,6 +37,8 @@ DEFINE VARIABLE lRead AS LOGICAL NO-UNDO.
 DEFINE VARIABLE lCommitted AS LOGICAL INITIAL FALSE.
 DEFINE VARIABLE lReadOnly AS LOGICAL NO-UNDO.
 DEFINE VARIABLE lTriggers AS LOGICAL NO-UNDO.
+DEFINE VARIABLE lActive AS LOGICAL NO-UNDO INITIAL FALSE.
+DEFINE VARIABLE lSafe AS LOGICAL NO-UNDO.
 
 FUNCTION SafeName RETURNS LOGICAL (INPUT pcName AS CHARACTER):
     DEFINE VARIABLE idx AS INTEGER NO-UNDO.
@@ -153,9 +155,11 @@ IF cMode BEGINS "trigger-" THEN DO:
 END.
 IF LOOKUP(cMode, "preview,apply,inspect,insert,delete,recreate") = 0 THEN RUN Fail("shape").
 lReadOnly = LOOKUP(cMode, "preview,inspect") > 0.
+IF OS-GETENV("CIDE_RECORD_ACTIVE") = "1" THEN lActive = TRUE.
 IF cVersion <> PROVERSION THEN RUN Fail("version").
 IF NUM-DBS <> 1 OR LDBNAME(1) <> cDb THEN RUN Fail("connection").
-IF (INDEX(DBRESTRICTIONS(1), "READ-ONLY") > 0) <> lReadOnly THEN RUN Fail("connection").
+IF (INDEX(DBRESTRICTIONS(1), "READ-ONLY") > 0) <> (lReadOnly AND NOT lActive)
+   OR (lActive AND lTriggers) THEN RUN Fail("connection").
 IF NOT SafeName(cDb) OR NOT SafeName(cTable) OR NOT SafeName(cIndex) OR NOT SafeName(cKeyField)
    OR NOT SafeName(cColumn) OR cColumn = cKeyField THEN RUN Fail("shape").
 iKey = INTEGER(cKey) NO-ERROR.
@@ -165,7 +169,7 @@ CREATE BUFFER hBuffer FOR TABLE (cDb + "." + cTable) BUFFER-NAME "cide_edit" NO-
 IF NOT VALID-HANDLE(hBuffer) THEN RUN Fail("shape").
 lOk = hBuffer:DISABLE-DUMP-TRIGGERS() NO-ERROR.
 IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN RUN Fail("triggers").
-IF NOT lReadOnly AND NOT lTriggers THEN DO:
+IF NOT lReadOnly AND NOT lTriggers AND NOT lActive THEN DO:
     lOk = hBuffer:DISABLE-LOAD-TRIGGERS(FALSE) NO-ERROR.
     IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN RUN Fail("triggers").
 END.
@@ -191,8 +195,15 @@ CREATE ttImage.
 hRaw = BUFFER ttImage:BUFFER-FIELD("payload").
 
 IF lReadOnly THEN DO:
-    lOk = hBuffer:FIND-UNIQUE(cPredicate, NO-LOCK, NO-WAIT) NO-ERROR.
-    IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN DO:
+    IF lActive THEN DO:
+        IF cMode = "preview" THEN DO:
+            RUN CheckLiveWrite(OUTPUT lSafe).
+            IF lSafe <> TRUE THEN RUN Fail("active-triggers").
+        END.
+        lOk = hBuffer:FIND-UNIQUE(cPredicate, SHARE-LOCK, NO-WAIT) NO-ERROR.
+    END.
+    ELSE lOk = hBuffer:FIND-UNIQUE(cPredicate, NO-LOCK, NO-WAIT) NO-ERROR.
+    IF lOk <> TRUE OR ERROR-STATUS:ERROR OR ERROR-STATUS:NUM-MESSAGES > 0 THEN DO:
         IF cMode = "inspect" AND ERROR-STATUS:NUM-MESSAGES = 1
            AND ERROR-STATUS:GET-NUMBER(1) = 138 THEN RUN AbsentRow.
         RUN Fail("conflict").
@@ -211,9 +222,14 @@ ELSE IF cMode = "apply" THEN DO:
         IF ERROR-STATUS:ERROR OR iNext = ? OR TRIM(STRING(iNext)) <> cValue THEN RUN Fail("shape").
     END.
     DO TRANSACTION ON ERROR UNDO, LEAVE ON STOP UNDO, LEAVE:
+        IF lActive THEN DO:
+            cStatus = "active-triggers".
+            RUN CheckLiveWrite(OUTPUT lSafe).
+            IF lSafe <> TRUE THEN UNDO, LEAVE.
+        END.
         lOk = hBuffer:FIND-UNIQUE(cPredicate, EXCLUSIVE-LOCK, NO-WAIT) NO-ERROR.
         cStatus = "conflict".
-        IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
+        IF lOk <> TRUE OR ERROR-STATUS:ERROR OR ERROR-STATUS:NUM-MESSAGES > 0 THEN UNDO, LEAVE.
         lOk = hBuffer:RAW-TRANSFER(TRUE, hRaw) NO-ERROR.
         IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
         ASSIGN cImage = RawHex(ttImage.payload)
@@ -238,10 +254,15 @@ ELSE IF cMode = "apply" THEN DO:
 END.
 ELSE DO:
     DO TRANSACTION ON ERROR UNDO, LEAVE ON STOP UNDO, LEAVE:
+        IF lActive THEN DO:
+            cStatus = "active-triggers".
+            RUN CheckLiveWrite(OUTPUT lSafe).
+            IF lSafe <> TRUE THEN UNDO, LEAVE.
+        END.
         lOk = hBuffer:FIND-UNIQUE(cPredicate, EXCLUSIVE-LOCK, NO-WAIT) NO-ERROR.
         cStatus = "conflict".
         IF cMode = "delete" THEN DO:
-            IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
+            IF lOk <> TRUE OR ERROR-STATUS:ERROR OR ERROR-STATUS:NUM-MESSAGES > 0 THEN UNDO, LEAVE.
             lOk = hBuffer:RAW-TRANSFER(TRUE, hRaw) NO-ERROR.
             IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
             IF STRING(hBuffer:ROWID) <> cOldRow OR RawHex(ttImage.payload) <> cOldImage THEN UNDO, LEAVE.
@@ -312,6 +333,30 @@ PUT STREAM outputFile UNFORMATTED "ROW|" cRow SKIP "IMAGE|" cImage SKIP "VALUE|"
 OUTPUT STREAM outputFile CLOSE.
 DELETE OBJECT hBuffer.
 QUIT.
+
+PROCEDURE CheckLiveWrite:
+    DEFINE OUTPUT PARAMETER plSafe AS LOGICAL NO-UNDO.
+    DEFINE VARIABLE cOtherEvents AS CHARACTER NO-UNDO.
+    plSafe = FALSE.
+    /* 11.7 requires an exclusive schema lock to install/change triggers. */
+    IF PROVERSION <> "11.7" THEN RETURN.
+    IF LOOKUP(cMode, "apply,preview") > 0 THEN
+        cOtherEvents = "FIND,CREATE,DELETE,REPLICATION-CREATE,REPLICATION-DELETE".
+    ELSE IF cMode = "delete" THEN cOtherEvents = "FIND,CREATE,REPLICATION-CREATE".
+    ELSE cOtherEvents = "FIND,DELETE,REPLICATION-DELETE".
+    FIND FIRST _File WHERE _File._File-name = cTable NO-LOCK NO-ERROR.
+    IF NOT AVAILABLE _File OR ERROR-STATUS:ERROR THEN RETURN.
+    FIND FIRST _File-Trig WHERE _File-Trig._File-Recid = RECID(_File)
+        AND LOOKUP(_File-Trig._Event, cOtherEvents) = 0 NO-LOCK NO-ERROR.
+    IF AVAILABLE _File-Trig OR ERROR-STATUS:NUM-MESSAGES <> 1
+       OR ERROR-STATUS:GET-NUMBER(1) <> 565 THEN RETURN.
+    FOR EACH _Field OF _File NO-LOCK:
+        FIND FIRST _Field-Trig WHERE _Field-Trig._Field-Recid = RECID(_Field) NO-LOCK NO-ERROR.
+        IF AVAILABLE _Field-Trig OR ERROR-STATUS:NUM-MESSAGES <> 1
+           OR ERROR-STATUS:GET-NUMBER(1) <> 565 THEN RETURN.
+    END.
+    plSafe = TRUE.
+END PROCEDURE.
 
 PROCEDURE Fail:
     DEFINE INPUT PARAMETER pcError AS CHARACTER NO-UNDO.

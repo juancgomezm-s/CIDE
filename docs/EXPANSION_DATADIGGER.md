@@ -35,8 +35,8 @@ F9 guarda el formulario y Esc vuelve a la lista sin guardar el borrador.
 
 ### Lectura de registros OpenEdge
 
-Para esta primera cuadrícula, usa una copia cerrada de la base y un `.pf`
-dentro del proyecto, con una conexión local por línea. Por ejemplo:
+Para consultar una copia cerrada, usa un `.pf` dentro del proyecto, con
+una conexión local por línea. Por ejemplo:
 
 ```text
 -db "C:/bases/demo/sports2000" -ld sports2000 -1 -RO
@@ -211,6 +211,43 @@ un borrado, rechaza la operación si la clave volvió a ocuparse y verifica
 que la imagen binaria recuperada sea igual al respaldo. La restauración
 estructural usa la última operación de fila confirmada para la clave.
 
+### Edición directa en una base activa local
+
+En OpenEdge 11.7, CIDE admite un servidor multiusuario local en memoria
+compartida. En el `.pf`, declara la base como activa:
+
+```text
+-db "C:/bases/demo/sports2000.db" -ld sports2000
+```
+
+Para habilitar la escritura, añade `modo=activa` después de `archivo=`
+en `.cide/edicion-registros.local.ini`. Con `base=` y `archivo=`,
+el perfil debe coincidir con la base del `.pf`. Refresca Esquema ABL y
+abre Ver registros ABL. La vista previa distingue la base activa de la
+copia cerrada.
+
+CIDE obtiene la imagen para la revisión con bloqueo compartido sin espera.
+Tras confirmar, verifica el respaldo en disco, adquiere el bloqueo
+exclusivo sin espera y compara la imagen completa y el identificador de la
+fila. Para un alta verifica la ausencia de la clave y deja que OpenEdge
+impida duplicados. Un bloqueo o una imagen distinta cancela la operación.
+Para restaurar, se aplica la misma comprobación con el recibo seleccionado.
+
+El auxiliar lee los disparadores del esquema antes de escribir dentro de
+la transacción. Solo admite operaciones cuyos cambios quedan cubiertos por
+el respaldo de una fila. Si hay un disparador aplicable, usa el modo
+de respaldo completo descrito abajo. [Modos de conexión ABL](https://docs.progress.com/bundle/openedge-abl-manage-applications/page/Connection-modes.html).
+
+La prueba con Sports2000 11.7 mantuvo un bloqueo desde una segunda sesión
+durante la confirmación. CIDE rechazó el cambio mientras la otra sesión
+estaba todavía conectada. También rechazó la edición cuando otra sesión
+cambió una columna distinta de la seleccionada, y el borrado cuando
+detectó el disparador DELETE de Customer.
+Otra copia de Sports2000, preparada con Customer sin disparadores, pasó
+edición, altas, borrados y restauración en la GUI con ventanas ocultas y
+en la TUI. La prueba de lectura de la copia cerrada con `-1 -RO` también
+pasó y comparó los archivos de la base byte por byte.
+
 ### Edición con disparadores y respaldo completo
 
 Para un proyecto de confianza, crea `.cide/disparadores-registros.local.ini`
@@ -238,8 +275,7 @@ revierte y CIDE conserva el respaldo sin publicar ese marcador.
 Este modo protege los cambios en la única base abierta por CIDE. Actívalo
 con disparadores propios que operen dentro de esa transacción. La reversión
 de efectos en servicios, archivos u otras bases requiere mecanismos de
-recuperación propios de esos destinos. La escritura directa en bases
-activas sigue pendiente.
+recuperación propios de esos destinos.
 
 Validado localmente con copias separadas de Sports2000 en OpenEdge 11.7. La
 GUI con ventanas propias ocultas y la TUI comprobaron la cancelación, la

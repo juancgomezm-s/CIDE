@@ -1,8 +1,8 @@
 //! Native full checkpoints for edits that run trusted database triggers.
 use super::{
     avm_path, bounded_read, fs, io, io_error, load_profile, new_backup_id, publish_verified,
-    read_in_root, run_mode_with_triggers, wait, AvmMode, Cancellation, Command, Path, PathBuf,
-    RecordEvent, Selection, Stdio,
+    read_in_root, run_mode_with_triggers, wait, AvmMode, Cancellation, Command, LocalDatabase,
+    Path, PathBuf, RecordEvent, Selection, Stdio,
 };
 
 const PROFILE: &str = ".cide/disparadores-registros.local.ini";
@@ -109,7 +109,10 @@ pub(super) fn apply(
     if !anterior.is_file() || !resultado.is_file() {
         return Err("OpenEdge no creó las dos bases del punto de restauración".into());
     }
-    let target = directory.join("resultado.db");
+    let target = LocalDatabase {
+        path: directory.join("resultado.db"),
+        active: false,
+    };
     run_mode_with_triggers(root, selection, &target, mode, Some(propath), cancel).map_err(
         |error| {
             format!(

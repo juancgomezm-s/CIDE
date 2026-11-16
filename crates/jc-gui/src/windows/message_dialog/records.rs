@@ -795,6 +795,8 @@ impl Browser<'_> {
         };
         if preview.with_triggers {
             message.push_str("\r\n\r\nCIDE ejecutará los disparadores del proyecto en una base nueva. Se conservarán la base de origen y un respaldo completo anterior al cambio.");
+        } else if preview.active_database {
+            message.push_str("\r\n\r\nEl cambio se aplicará en la base activa. CIDE verifica el respaldo y comprueba el registro con bloqueo exclusivo antes de escribir.");
         }
         self.page.borrow_mut().reviewing = true;
         let answer = self

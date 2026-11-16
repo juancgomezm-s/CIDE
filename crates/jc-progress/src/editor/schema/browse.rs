@@ -1,4 +1,4 @@
-//! Bounded record reads through an isolated, explicitly read-only ABL session.
+//! Bounded record reads through isolated ABL sessions.
 use super::{Catalog, SchemaController};
 use crate::{
     editor::{avm_path, bounded_read, decode, load_profile, wait, JobDir},
@@ -382,9 +382,6 @@ fn read_page(
     let (_, bytes) = jc_files::read_in_root(root, pf, 16 * 1024)
         .map_err(|error| format!("Ver registros requiere un .pf dentro del proyecto: {error}"))?;
     let db = local_database(root, &bytes, &target.database)?;
-    if db.with_extension("lk").try_exists().map_err(io_error)? {
-        return Err("Usa una copia cerrada de la base para la lectura local -RO".into());
-    }
     let job = JobDir::create().map_err(io_error)?;
     let work = avm_path(&job.path);
     let helper = work.join("jc-browse.p");
@@ -395,28 +392,26 @@ fn read_page(
     fs::write(&request_path, input).map_err(io_error)?;
     let log = File::create(&log_path).map_err(io_error)?;
     let mut cmd = Command::new(config.avm.executable);
-    cmd.arg("-db")
-        .arg(avm_path(&db))
-        .args(["-ld", &target.database, "-1", "-RO"])
-        .args([
-            "-cpinternal",
-            &config.avm.cpinternal,
-            "-cpstream",
-            &config.avm.cpstream,
-            "-b",
-            "-p",
-        ])
-        .arg(helper)
-        .arg("-param")
-        .arg(request_path)
-        .arg("-T")
-        .arg(&work)
-        .current_dir(&work)
-        .env_remove("PROPATH")
-        .env_remove("PROSTARTUP")
-        .stdin(Stdio::null())
-        .stdout(log.try_clone().map_err(io_error)?)
-        .stderr(log);
+    db.connect(&mut cmd, &target.database, true)?;
+    cmd.args([
+        "-cpinternal",
+        &config.avm.cpinternal,
+        "-cpstream",
+        &config.avm.cpstream,
+        "-b",
+        "-p",
+    ])
+    .arg(helper)
+    .arg("-param")
+    .arg(request_path)
+    .arg("-T")
+    .arg(&work)
+    .current_dir(&work)
+    .env_remove("PROPATH")
+    .env_remove("PROSTARTUP")
+    .stdin(Stdio::null())
+    .stdout(log.try_clone().map_err(io_error)?)
+    .stderr(log);
     if let Some(dlc) = Path::new(cmd.get_program()).parent().and_then(Path::parent) {
         let dlc = dlc.to_owned();
         cmd.env("DLC", dlc);
@@ -462,7 +457,42 @@ fn read_page(
     )
 }
 
-fn local_database(root: &Path, bytes: &[u8], database: &str) -> Result<PathBuf, String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalDatabase {
+    path: PathBuf,
+    active: bool,
+}
+
+impl LocalDatabase {
+    fn connect(&self, cmd: &mut Command, name: &str, read: bool) -> Result<(), String> {
+        let locked = self
+            .path
+            .with_extension("lk")
+            .try_exists()
+            .map_err(io_error)?;
+        if locked != self.active {
+            return Err(if self.active {
+                "La base activa requiere un servidor local OpenEdge iniciado"
+            } else {
+                "Cierra la copia de la base antes de abrirla en modo local"
+            }
+            .into());
+        }
+        cmd.arg("-db").arg(avm_path(&self.path)).args(["-ld", name]);
+        cmd.env_remove("CIDE_RECORD_ACTIVE");
+        if self.active {
+            cmd.env("CIDE_RECORD_ACTIVE", "1");
+        } else {
+            cmd.arg("-1");
+            if read {
+                cmd.arg("-RO");
+            }
+        }
+        Ok(())
+    }
+}
+
+fn local_database(root: &Path, bytes: &[u8], database: &str) -> Result<LocalDatabase, String> {
     let text = std::str::from_utf8(bytes).map_err(|_| "El .pf de lectura debe estar en UTF-8")?;
     let mut selected = None;
     let mut names = std::collections::BTreeSet::new();
@@ -471,7 +501,7 @@ fn local_database(root: &Path, bytes: &[u8], database: &str) -> Result<PathBuf, 
             continue;
         }
         let invalid =
-            "Para Ver registros usa una conexión por línea: -db \"ruta\" -ld nombre -1 -RO";
+            "Para Ver registros usa -db \"ruta\" -ld nombre con -1 -RO para copia cerrada o sin esos parámetros para una base activa local";
         let remainder = line.strip_prefix("-db ").ok_or(invalid)?.trim_start();
         let (path, rest) = if let Some(quoted) = remainder.strip_prefix('"') {
             let (path, rest) = quoted.split_once('"').ok_or(invalid)?;
@@ -483,9 +513,10 @@ fn local_database(root: &Path, bytes: &[u8], database: &str) -> Result<PathBuf, 
             remainder.split_once(char::is_whitespace).ok_or(invalid)?
         };
         let options: Vec<_> = rest.split_ascii_whitespace().collect();
-        let (["-ld", logical, "-1", "-RO"] | ["-ld", logical, "-RO", "-1"]) = options.as_slice()
-        else {
-            return Err(invalid.into());
+        let (logical, active) = match options.as_slice() {
+            ["-ld", logical, "-1", "-RO"] | ["-ld", logical, "-RO", "-1"] => (*logical, false),
+            ["-ld", logical] => (*logical, true),
+            _ => return Err(invalid.into()),
         };
         if path.is_empty()
             || path.chars().any(char::is_control)
@@ -495,13 +526,11 @@ fn local_database(root: &Path, bytes: &[u8], database: &str) -> Result<PathBuf, 
             return Err(invalid.into());
         }
         if logical.eq_ignore_ascii_case(database) {
-            selected = Some(path);
+            selected = Some((path, active));
         }
     }
-    let path = root.join(
-        selected
-            .ok_or("La base lógica no está declarada como local y de solo lectura en el .pf")?,
-    );
+    let (path, active) = selected.ok_or("La base lógica no está declarada como local en el .pf")?;
+    let path = root.join(path);
     let path = match path.extension() {
         None => path.with_extension("db"),
         Some(ext) if ext.eq_ignore_ascii_case("db") => path,
@@ -517,7 +546,7 @@ fn local_database(root: &Path, bytes: &[u8], database: &str) -> Result<PathBuf, 
     if !path.is_file() {
         return Err("No se encontró el archivo local de la base".into());
     }
-    Ok(path)
+    Ok(LocalDatabase { path, active })
 }
 
 fn parse_page(
@@ -565,7 +594,7 @@ fn parse_page(
             return Err(match error {
                 "scan" => "Se alcanzó el límite de lectura de esta tabla",
                 "cell" => "Una celda supera el tamaño admitido para esta cuadrícula",
-                "readonly" => "El AVM no confirmó una única conexión de solo lectura",
+                "readonly" => "El AVM no confirmó una única conexión en el modo solicitado",
                 "triggers" => {
                     "La cuenta debe poder desactivar los disparadores FIND para consultar registros"
                 }

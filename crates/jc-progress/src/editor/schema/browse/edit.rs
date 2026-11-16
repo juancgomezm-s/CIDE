@@ -1,5 +1,7 @@
 //! Reviewed edits and restores for explicitly enrolled local copies.
-use super::{decode_cell, encoding, io_error, local_database, BrowseTable, ColumnKind};
+use super::{
+    decode_cell, encoding, io_error, local_database, BrowseTable, ColumnKind, LocalDatabase,
+};
 use crate::editor::{avm_path, bounded_read, decode, load_profile, wait, JobDir};
 use jc_app::{Cancellation, Wakeup};
 use jc_files::{publish_new_bytes, read_in_root, ContentFingerprint};
@@ -48,7 +50,7 @@ pub enum RecordEvent {
 
 pub struct RecordHistory {
     selection: Selection,
-    database_path: PathBuf,
+    database: LocalDatabase,
     entries: Vec<RecordHistoryEntry>,
 }
 
@@ -87,6 +89,7 @@ pub struct RecordPreview {
     pub restoring: bool,
     pub structural_title: Option<&'static str>,
     pub with_triggers: bool,
+    pub active_database: bool,
     operation: RecordAction,
 }
 
@@ -99,7 +102,7 @@ struct RecordOperation {
     selection: Selection,
     snapshot: Snapshot,
     next: String,
-    database_path: PathBuf,
+    database: LocalDatabase,
     restore: Option<RestoreSource>,
     triggers: Option<PathBuf>,
 }
@@ -229,7 +232,7 @@ impl RecordController {
             replica::require_row_restore(root)?;
             let db = write_database(root, &selection, false)?;
             let directory = journal_directory(root, &selection, false)?;
-            let (source, backup, recorded_after) = latest_backup(root, &directory, &db)?;
+            let (source, backup, recorded_after) = latest_backup(root, &directory, &db.path)?;
             if backup.restoring {
                 return Err("El último cambio de este registro ya fue restaurado".into());
             }
@@ -258,7 +261,7 @@ impl RecordController {
             let entries = read_history(
                 root,
                 &directory,
-                &db,
+                &db.path,
                 &selection.table.catalog.codec,
                 cancel,
                 || {
@@ -274,7 +277,7 @@ impl RecordController {
             )?;
             Ok(RecordEvent::History(RecordHistory {
                 selection,
-                database_path: db,
+                database: db,
                 entries,
             }))
         })
@@ -293,17 +296,17 @@ impl RecordController {
             .ok_or("La restauración requiere un respaldo con recibo válido")?;
         history.selection.check_catalog(root)?;
         let mut selection = history.selection.clone();
-        let database_path = history.database_path.clone();
+        let database = history.database.clone();
         let id = entry.id.clone();
         self.start(root, wakeup, false, move |root, cancel| {
             replica::require_row_restore(root)?;
             let db = write_database(root, &selection, false)?;
-            if db != database_path {
+            if db != database {
                 return Err("Cambió la base desde la consulta del historial".into());
             }
             let directory = journal_directory(root, &selection, false)?;
             let (backup, recorded_after, current_receipt) =
-                confirmed_backup(root, &directory, &db, &id)?;
+                confirmed_backup(root, &directory, &db.path, &id)?;
             if receipt != current_receipt {
                 return Err("Conflicto: el recibo cambió desde la consulta del historial".into());
             }
@@ -438,7 +441,7 @@ fn hex(bytes: &[u8]) -> String {
 
 fn prepare(
     selection: Selection,
-    db: PathBuf,
+    db: LocalDatabase,
     snapshot: Snapshot,
     next: String,
     restore: Option<RestoreSource>,
@@ -461,11 +464,12 @@ fn prepare(
         restoring: restore.is_some(),
         structural_title: None,
         with_triggers: triggers.is_some(),
+        active_database: db.active,
         operation: RecordAction::Edit(Box::new(RecordOperation {
             selection,
             snapshot,
             next,
-            database_path: db,
+            database: db,
             restore,
             triggers,
         })),
@@ -474,7 +478,7 @@ fn prepare(
 
 fn prepare_history_restore(
     selection: Selection,
-    db: PathBuf,
+    db: LocalDatabase,
     snapshot: Snapshot,
     source: RestoreSource,
     backup: Backup,
@@ -502,7 +506,7 @@ fn write_database(
     root: &Path,
     selection: &Selection,
     create_replica: bool,
-) -> Result<PathBuf, String> {
+) -> Result<LocalDatabase, String> {
     selection.check_catalog(root)?;
     let config = load_profile(root)?;
     let (_, bytes) = read_in_root(root, &root.join(EDIT_PROFILE), 4096).map_err(|err| {
@@ -522,11 +526,16 @@ fn write_database(
         .next()
         .and_then(|line| line.strip_prefix("archivo="))
         .ok_or("Falta archivo en el perfil de edición")?;
+    let active = match lines.next() {
+        None => false,
+        Some("modo=activa") => true,
+        Some(_) => return Err("El modo de edición ABL no es válido".into()),
+    };
     if lines.next().is_some() || base != selection.table.target.database {
         return Err("El perfil de edición no autoriza esta base local".into());
     }
     let db = root.join(path).canonicalize().map_err(io_error)?;
-    if (Path::new(path).is_absolute() || !db.starts_with(root)) && !create_replica {
+    if (Path::new(path).is_absolute() || !db.starts_with(root)) && !create_replica && !active {
         return Err(
             "La edición en el archivo original requiere una copia dentro del proyecto".into(),
         );
@@ -536,10 +545,14 @@ fn write_database(
         .parameter_file
         .ok_or("La copia editable requiere un .pf local")?;
     let (_, params) = read_in_root(root, &pf, 16 * 1024).map_err(io_error)?;
-    if local_database(root, &params, base)? != db {
-        return Err("La copia de edición y la base del esquema son distintas".into());
+    let configured = local_database(root, &params, base)?;
+    if configured.path != db || configured.active != active {
+        return Err("La ruta o el modo de edición no coincide con el .pf del esquema".into());
     }
-    Ok(db)
+    if active && create_replica {
+        return Err("El respaldo con disparadores requiere una base cerrada".into());
+    }
+    Ok(configured)
 }
 
 fn apply(
@@ -550,14 +563,14 @@ fn apply(
     let selection = &operation.selection;
     replica::check_propath(root, operation.triggers.as_deref())?;
     let db = write_database(root, selection, operation.triggers.is_some())?;
-    if db != operation.database_path {
+    if db != operation.database {
         return Err("Cambió la base desde la vista previa".into());
     }
     if let Some(propath) = &operation.triggers {
         return replica::apply(
             root,
             selection,
-            &db,
+            &db.path,
             propath,
             AvmMode::Apply(&operation.snapshot, &operation.next),
             cancel,
@@ -566,7 +579,7 @@ fn apply(
     let directory = journal_directory(root, selection, true)?;
     if let Some(source) = &operation.restore {
         let (backup, recorded_after, receipt) =
-            confirmed_backup(root, &directory, &db, &source.id)?;
+            confirmed_backup(root, &directory, &db.path, &source.id)?;
         if receipt != source.receipt
             || backup.column != selection.column_name()
             || recorded_after != operation.snapshot
@@ -576,6 +589,7 @@ fn apply(
         }
     }
     let path_key = hex(db
+        .path
         .to_str()
         .ok_or("La ruta de la copia ABL no es válida")?
         .as_bytes());
@@ -945,7 +959,7 @@ fn parse_snapshot(mut lines: std::str::Lines<'_>) -> Result<Snapshot, String> {
 fn run_avm(
     root: &Path,
     selection: &Selection,
-    db: &Path,
+    db: &LocalDatabase,
     apply: Option<(&Snapshot, &str)>,
     cancel: &Cancellation,
 ) -> Result<Snapshot, String> {
@@ -967,7 +981,7 @@ enum AvmMode<'a> {
 fn run_mode(
     root: &Path,
     selection: &Selection,
-    db: &Path,
+    db: &LocalDatabase,
     mode: AvmMode<'_>,
     cancel: &Cancellation,
 ) -> Result<Option<Snapshot>, String> {
@@ -977,7 +991,7 @@ fn run_mode(
 fn run_mode_with_triggers(
     root: &Path,
     selection: &Selection,
-    db: &Path,
+    db: &LocalDatabase,
     mode: AvmMode<'_>,
     propath: Option<&Path>,
     cancel: &Cancellation,
@@ -987,9 +1001,6 @@ fn run_mode_with_triggers(
         .map_err(|_| "Página de códigos ABL inválida")?;
     if encoding(&config.avm.cpinternal)? != encoding(&selection.table.catalog.codec)? {
         return Err("Cambió la codificación del perfil. Actualiza el esquema".into());
-    }
-    if db.with_extension("lk").try_exists().map_err(io_error)? {
-        return Err("Cierra la copia de la base antes de editarla".into());
     }
     let target = &selection.table.target;
     let key = target.key.as_ref().unwrap();
@@ -1031,12 +1042,11 @@ fn run_mode_with_triggers(
     fs::write(&request, input).map_err(io_error)?;
     let log = fs::File::create(&log_path).map_err(io_error)?;
     let mut cmd = Command::new(&config.avm.executable);
-    cmd.arg("-db")
-        .arg(avm_path(db))
-        .args(["-ld", &target.database, "-1"]);
-    if matches!(mode, "preview" | "inspect") {
-        cmd.arg("-RO");
-    }
+    db.connect(
+        &mut cmd,
+        &target.database,
+        matches!(mode, "preview" | "inspect"),
+    )?;
     cmd.args([
         "-cpinternal",
         &config.avm.cpinternal,
@@ -1111,6 +1121,7 @@ fn run_mode_with_triggers(
             "conflict" => "Conflicto: el registro cambió, ya no existe o está bloqueado",
             "shape" => "La clave o el tipo del registro ya no coincide con el esquema",
             "triggers" => "La cuenta no permite aislar los disparadores en la copia de prueba",
+            "active-triggers" => "La escritura activa requiere OpenEdge 11.7 y una operación sin disparadores aplicables",
             "connection" => "OpenEdge no confirmó la conexión requerida para esta operación",
             _ => "OpenEdge rechazó la escritura y revirtió la transacción",
         }
@@ -1209,7 +1220,13 @@ mod tests {
 
         let selection = Selection::new(customer, &row, column).unwrap();
         let cancel = Cancellation::new(Duration::from_secs(30));
-        let read = |file| run_avm(&root, &selection, &directory.join(file), None, &cancel).unwrap();
+        let read = |file| {
+            let db = LocalDatabase {
+                path: directory.join(file),
+                active: false,
+            };
+            run_avm(&root, &selection, &db, None, &cancel).unwrap()
+        };
         assert_eq!(
             read("anterior.db").value,
             value_wire(&selection, row[column].as_deref().unwrap()).unwrap()
@@ -1405,6 +1422,76 @@ mod tests {
         assert!(run_avm(&root, &selection, &db, None, &cancel).unwrap() == initial);
         fs::remove_file(journal).unwrap();
 
+        if db.active {
+            controller
+                .request_edit(&root, &table, &row, column, next.into(), wakeup.clone())
+                .unwrap();
+            let preview = review(&root, &mut controller, &wakeup);
+            assert!(preview.active_database);
+            let job = JobDir::create().unwrap();
+            let work = avm_path(&job.path);
+            let holder = work.join("lock.p");
+            fs::write(
+                &holder,
+                format!(
+                    r#"
+                DEFINE VARIABLE iReset AS INTEGER NO-UNDO.
+                DO TRANSACTION:
+                    FIND Customer WHERE Customer.CustNum = {} EXCLUSIVE-LOCK.
+                    OUTPUT TO "locked".
+                    PUT UNFORMATTED "ok".
+                    OUTPUT CLOSE.
+                    iReset = ETIME(TRUE).
+                    REPEAT WHILE ETIME < 15000:
+                        FILE-INFO:FILE-NAME = "release".
+                        IF FILE-INFO:FULL-PATHNAME <> ? THEN LEAVE.
+                        PAUSE 1 NO-MESSAGE.
+                    END.
+                END.
+                QUIT.
+            "#,
+                    selection.key
+                ),
+            )
+            .unwrap();
+            let config = load_profile(&root).unwrap();
+            let mut command = Command::new(config.avm.executable);
+            db.connect(&mut command, &selection.table.database, false)
+                .unwrap();
+            command
+                .args(["-b", "-p"])
+                .arg(holder)
+                .current_dir(&work)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                command.creation_flags(0x0800_0000);
+            }
+            let mut child = command.spawn().unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while !work.join("locked").is_file() {
+                assert!(
+                    std::time::Instant::now() < deadline && child.try_wait().unwrap().is_none(),
+                    "La segunda sesión no obtuvo el bloqueo de prueba"
+                );
+                thread::sleep(Duration::from_millis(25));
+            }
+            controller.apply(&root, preview, wakeup.clone()).unwrap();
+            let conflict = finish(&root, &mut controller, &wakeup);
+            let still_locked = child.try_wait().unwrap().is_none();
+            fs::write(work.join("release"), []).unwrap();
+            assert!(child.wait().unwrap().success());
+            assert!(
+                still_locked,
+                "La operación esperó a que se liberara el bloqueo"
+            );
+            assert!(conflict.err().unwrap().contains("Conflicto"));
+            assert!(run_avm(&root, &selection, &db, None, &cancel).unwrap() == initial);
+        }
+
         // An external change to a different column invalidates the whole image.
         controller
             .request_edit(&root, &table, &row, column, next.into(), wakeup.clone())
@@ -1447,7 +1534,7 @@ mod tests {
             Ok(RecordEvent::Applied)
         ));
         let directory = journal_directory(&root, &selection, false).unwrap();
-        let (source, backup, receipt) = latest_backup(&root, &directory, &db).unwrap();
+        let (source, backup, receipt) = latest_backup(&root, &directory, &db.path).unwrap();
         assert_eq!(backup.before.value, initial.value);
         assert!(run_avm(&root, &selection, &db, None, &cancel).unwrap() == receipt);
         row[column] = Some(next.into());
@@ -1590,5 +1677,15 @@ mod tests {
             result == initial,
             "la restauración debe recuperar la imagen original"
         );
+        if db.active {
+            // The stock Sports2000 Customer table has a DELETE trigger.
+            controller
+                .request_delete(&root, &table, &page.rows[0], wakeup.clone())
+                .unwrap();
+            let guarded = review(&root, &mut controller, &wakeup);
+            controller.apply(&root, guarded, wakeup.clone()).unwrap();
+            assert!(failure(&root, &mut controller, &wakeup).contains("disparadores aplicables"));
+            assert!(run_avm(&root, &selection, &db, None, &cancel).unwrap() == initial);
+        }
     }
 }

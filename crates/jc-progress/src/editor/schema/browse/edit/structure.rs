@@ -2,8 +2,8 @@
 use super::{
     decode_cell, hex, io_error, journal_directory, new_backup_id, parse_snapshot, publish_verified,
     read_in_root, replica, run_mode, snapshot_wire, value_wire, write_database, AvmMode,
-    BrowseTable, ColumnKind, RecordAction, RecordController, RecordEvent, RecordPreview, Selection,
-    Snapshot, MAX_PROTOCOL,
+    BrowseTable, ColumnKind, LocalDatabase, RecordAction, RecordController, RecordEvent,
+    RecordPreview, Selection, Snapshot, MAX_PROTOCOL,
 };
 use jc_app::{Cancellation, Wakeup};
 use jc_files::ContentFingerprint;
@@ -18,7 +18,7 @@ const ABSENT: &str = "ABSENT\nEND\n";
 
 pub(super) struct Operation {
     pub(super) selection: Selection,
-    database: PathBuf,
+    database: LocalDatabase,
     before: Option<Snapshot>,
     action: Change,
     source: Option<Source>,
@@ -136,7 +136,7 @@ impl RecordController {
             let directory = journal_directory(root, &selection, false)?;
             let source =
                 latest_id(&directory)?.ok_or("La clave no tiene un alta o borrado confirmado")?;
-            let (before, after, sealed) = read_verified(root, &directory, &database, &source)?;
+            let (before, after, sealed) = read_verified(root, &directory, &database.path, &source)?;
             let live = run_mode(root, &selection, &database, AvmMode::Inspect, cancel)?;
             if live != after {
                 return Err("Conflicto: la clave o el registro cambió desde el respaldo".into());
@@ -217,6 +217,7 @@ fn preview(
         restoring: operation.source.is_some(),
         structural_title: Some(title),
         with_triggers: operation.triggers.is_some(),
+        active_database: operation.database.active,
         operation: RecordAction::Structure(Box::new(operation)),
     })
 }
@@ -243,17 +244,17 @@ pub(super) fn apply(
         Change::Recreate(image) => AvmMode::Recreate(image),
     };
     if let Some(propath) = &operation.triggers {
-        return replica::apply(root, selection, &database, propath, mode, cancel);
+        return replica::apply(root, selection, &database.path, propath, mode, cancel);
     }
     let directory = journal_directory(root, selection, true)?;
     if let Some(source) = &operation.source {
-        let (_, after, sealed) = read_verified(root, &directory, &database, &source.id)?;
+        let (_, after, sealed) = read_verified(root, &directory, &database.path, &source.id)?;
         if sealed != source.sealed || after != operation.before {
             return Err("Conflicto: cambió el respaldo revisado".into());
         }
     }
     let id = new_backup_id()?;
-    let path = database.to_str().ok_or("Ruta de base inválida")?;
+    let path = database.path.to_str().ok_or("Ruta de base inválida")?;
     let backup = format!(
         "{HEADER}\n{}\n{}",
         hex(path.as_bytes()),
