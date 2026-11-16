@@ -374,8 +374,13 @@ pub(super) unsafe fn edit_dialog<'a>(
 }
 
 #[cfg(test)]
+type ScriptedRowAction = (usize, Vec<(String, String)>);
+
+#[cfg(test)]
 thread_local! {
     static SCRIPTED_VALUE: RefCell<Option<(String, String)>> = const { RefCell::new(None) };
+    static SCRIPTED_HISTORY: Cell<Option<usize>> = const { Cell::new(None) };
+    static SCRIPTED_ROW_ACTION: RefCell<Option<ScriptedRowAction>> = const { RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -384,29 +389,77 @@ pub(super) fn script_record_edit(column: &str, value: &str) {
 }
 
 #[cfg(test)]
+pub(super) fn script_record_history(index: usize) {
+    SCRIPTED_HISTORY.set(Some(index));
+}
+
+#[cfg(test)]
+pub(super) fn script_row_action(action: usize, fields: &[(&str, &str)]) {
+    let fields = fields
+        .iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect();
+    SCRIPTED_ROW_ACTION.set(Some((action, fields)));
+}
+
+#[cfg(test)]
 unsafe fn drive_scripted_form(hwnd: Hwnd, form: &Form<'_>) {
-    let instructed = SCRIPTED_VALUE.with(|script| {
+    let history = if form.dialog.title == "Historial de respaldos" {
+        SCRIPTED_HISTORY.take().map(|index| {
+            SendMessageW(GetDlgItem(hwnd, i32::from(LIST)), LB_SETCURSEL, index, 0);
+        })
+    } else {
+        None
+    };
+    let row_action = SCRIPTED_ROW_ACTION.with(|script| {
         let mut script = script.borrow_mut();
-        match (&form.mode, form.dialog.title, script.as_ref()) {
-            (Mode::Choose(items), "Editar columna", Some((column, _))) => {
-                let index = items
-                    .iter()
-                    .position(|item| item == column)
-                    .unwrap_or(usize::MAX);
-                let list = GetDlgItem(hwnd, i32::from(LIST));
-                SendMessageW(list, LB_SETCURSEL, index, 0);
+        match (&form.mode, form.dialog.title) {
+            (Mode::Choose(_), "Operaciones de fila") => {
+                let index = script.as_ref()?.0;
+                SendMessageW(GetDlgItem(hwnd, i32::from(LIST)), LB_SETCURSEL, index, 0);
+                if index == 2 {
+                    script.take();
+                }
                 Some(())
             }
-            (Mode::Edit(_, _), "Editar registro", Some(_)) => {
-                let (_, value) = script.take()?;
-                SetWindowTextW(
-                    GetDlgItem(hwnd, i32::from(EDIT_START)),
-                    wide(&value).as_ptr(),
-                );
+            (Mode::Edit(fields, _), "Alta de registro" | "Restaurar alta o borrado") => {
+                let (_, values) = script.take()?;
+                for (name, value) in values {
+                    let index = fields.iter().position(|field| field.label == name).unwrap();
+                    SetWindowTextW(
+                        GetDlgItem(hwnd, i32::from(EDIT_START) + index as i32),
+                        wide(&value).as_ptr(),
+                    );
+                }
                 Some(())
             }
             _ => None,
         }
+    });
+    let instructed = history.or(row_action).or_else(|| {
+        SCRIPTED_VALUE.with(|script| {
+            let mut script = script.borrow_mut();
+            match (&form.mode, form.dialog.title, script.as_ref()) {
+                (Mode::Choose(items), "Editar columna", Some((column, _))) => {
+                    let index = items
+                        .iter()
+                        .position(|item| item == column)
+                        .unwrap_or(usize::MAX);
+                    let list = GetDlgItem(hwnd, i32::from(LIST));
+                    SendMessageW(list, LB_SETCURSEL, index, 0);
+                    Some(())
+                }
+                (Mode::Edit(_, _), "Editar registro", Some(_)) => {
+                    let (_, value) = script.take()?;
+                    SetWindowTextW(
+                        GetDlgItem(hwnd, i32::from(EDIT_START)),
+                        wide(&value).as_ptr(),
+                    );
+                    Some(())
+                }
+                _ => None,
+            }
+        })
     });
     if instructed.is_some() {
         ShowWindow(hwnd, 0);

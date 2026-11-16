@@ -163,9 +163,9 @@ base=sports2000
 archivo=sports2000.db
 ```
 
-En **Ver registros ABL**, selecciona un registro. La GUI ofrece **Editar**
-y **Restaurar respaldo**. En la TUI, **E** edita la celda seleccionada y
-**R** revisa el último respaldo. La vista previa muestra el valor actual y
+En **Ver registros ABL**, selecciona un registro. La GUI ofrece **Editar**,
+**Historial** y **Fila…**. En la TUI, **E** edita la celda seleccionada y
+**R** abre el historial por registro. La vista previa muestra el valor actual y
 el propuesto. Confirma en el diálogo o con **F9** en la TUI. La cuadrícula
 vuelve a consultar la página tras el cambio confirmado.
 
@@ -174,15 +174,27 @@ OpenEdge localiza la fila con bloqueo exclusivo, compara la identidad y
 la imagen binaria completa y aplica el cambio en una transacción. Una
 restauración verifica también el recibo del último cambio confirmado y
 crea su propio respaldo. El almacén está en `.cide/respaldos-registros/`.
-Una copia con respaldo publicado y resultado incierto queda registrada sin
-recibo. Solo una operación con recibo puede iniciar una restauración desde
-la cuadrícula. [Método ABL para capturar la imagen del registro](https://docs.progress.com/bundle/openedge-abl-reference-128/page/RAW-TRANSFER-method.html).
+Una operación de edición con respaldo publicado y resultado incierto aparece
+como pendiente. Para restaurar una edición histórica se requiere el recibo
+seleccionado. CIDE lo revalida al confirmar y compara el registro completo con
+la imagen posterior a esa edición. Si difieren, muestra el valor actual y el
+esperado, y conserva el registro. [Método ABL para capturar la imagen del registro](https://docs.progress.com/bundle/openedge-abl-reference-128/page/RAW-TRANSFER-method.html).
 
 Este bloque admite cambios de texto y entero en filas existentes con una
 clave primaria entera de una columna y con imagen binaria completa. La
 escritura se ejecuta sobre copias locales autorizadas y desactiva los
-disparadores de búsqueda y carga. Las altas, borrados y selección de un
-respaldo histórico específico quedan para el siguiente alcance.
+disparadores de búsqueda y carga. La edición con efectos de disparadores
+sigue fuera del alcance verificado.
+
+**Fila…** ofrece alta, borrado y restauración de alta o borrado por clave.
+En la TUI se usan **N**, **D** y **U**, respectivamente. El alta permite
+introducir valores iniciales de texto y entero. Los campos omitidos usan los
+valores iniciales de OpenEdge. El respaldo del alta registra la ausencia
+anterior de la clave. El borrado conserva la imagen binaria completa. Al
+revertir un alta, CIDE exige que la fila coincida con la creada. Al recuperar
+un borrado, rechaza la operación si la clave volvió a ocuparse y verifica
+que la imagen binaria recuperada sea igual al respaldo. La restauración
+estructural usa la última operación de fila confirmada para la clave.
 
 Validado localmente con copias separadas de Sports2000 en OpenEdge 11.7. La
 GUI con ventanas propias ocultas y la TUI comprobaron la cancelación, la
@@ -190,6 +202,9 @@ edición confirmada y la restauración tras volver a consultar. El núcleo
 comprobó que un fallo de respaldo bloquea la escritura, que un cambio externo
 en otra columna invalida la vista previa de edición o restauración y que
 un respaldo alterado se rechaza al compararlo con su recibo.
+Las pruebas de fila también comprobaron el alta de una clave nueva, la
+reversión del alta, el borrado y la recuperación exacta. Una clave ocupada
+entre la revisión y la confirmación mantuvo el registro que ya existía.
 
 ## Bloques y criterios de aceptación
 

@@ -5,7 +5,7 @@ use super::{
 };
 use crate::{
     app::{
-        browse_records::{RecordBrowser, ValueField},
+        browse_records::{RecordBrowser, RecordValues, ValueField},
         TuiApp,
     },
     screen::{CellStyle, Screen},
@@ -74,41 +74,73 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
                 draw_line(screen, left, y + 3, columns, "Esc cancelar", CellStyle::Dim);
                 return;
             }
-            let action = if review.preview.restoring {
-                "Restaurar"
+            let action = review
+                .preview
+                .structural_title
+                .unwrap_or(if review.preview.restoring {
+                    "Restaurar"
+                } else {
+                    "Editar"
+                });
+            let label = if review.preview.structural_title.is_some() {
+                format!("{action} · {}", review.preview.column)
             } else {
-                "Editar"
+                format!(
+                    "{action} · {} · Fila {}",
+                    review.preview.column,
+                    page.offset + browser.row + 1
+                )
             };
-            let label = format!(
-                "{action} · {} · Fila {}",
-                review.preview.column,
-                page.offset + browser.row + 1
-            );
             draw_line(screen, left, y + 2, columns, &label, CellStyle::Accent);
-            for (after, label, value) in [
-                (false, "Actual", review.preview.before.as_deref()),
-                (true, "Propuesto", review.preview.after.as_deref()),
-            ] {
-                let active = after == review.after_selected;
-                let offset = if active { review.offset } else { 0 };
-                let value = match value {
-                    Some("") => Cow::Borrowed("⟨texto vacío⟩"),
-                    Some(value) => {
-                        let byte = grapheme::graphemes(value)
-                            .take(offset)
-                            .map(str::len)
-                            .sum::<usize>();
-                        Cow::Owned(format!("«{}»", printable(&value[byte..])))
-                    }
-                    None => Cow::Borrowed("⟨desconocido⟩"),
-                };
+            let absent = review.preview.structural_title.map(|_| "Registro ausente");
+            draw_comparison(
+                screen,
+                (left, y + 3, columns),
+                &review.values,
+                [
+                    ("Actual", review.preview.before.as_deref().or(absent)),
+                    ("Propuesto", review.preview.after.as_deref().or(absent)),
+                ],
+            );
+            (
+                "F9 confirmar · Esc cancelar",
+                "↑↓ elegir valor · ←→ desplazar",
+            )
+        } else if let Some(conflict) = &browser.conflict {
+            let label = format!("Conflicto de restauración · {}", conflict.conflict.column);
+            draw_line(screen, left, y + 2, columns, &label, CellStyle::Accent);
+            draw_comparison(
+                screen,
+                (left, y + 3, columns),
+                &conflict.values,
+                [
+                    ("Actual", conflict.conflict.actual.as_deref()),
+                    ("Después del cambio", conflict.conflict.expected.as_deref()),
+                ],
+            );
+            (
+                "Esc volver al historial · ↑↓ elegir valor · ←→ desplazar",
+                "La imagen completa del registro difiere del respaldo",
+            )
+        } else if let Some(history) = &browser.history {
+            draw_line(
+                screen,
+                left,
+                y + 2,
+                columns,
+                "Historial de respaldos",
+                CellStyle::Accent,
+            );
+            let entries = history.history.entries();
+            let start = history.selected.saturating_sub(rows.saturating_sub(1));
+            for (index, entry) in entries.iter().enumerate().skip(start).take(rows) {
                 draw_line(
                     screen,
                     left,
-                    y + 3 + u16::from(after),
+                    y + 3 + (index - start) as u16,
                     columns,
-                    &format!("{label} · {value}"),
-                    if active {
+                    entry.label(),
+                    if index == history.selected {
                         CellStyle::Reverse
                     } else {
                         CellStyle::Normal
@@ -116,9 +148,38 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
                 );
             }
             (
-                "F9 confirmar · Esc cancelar",
-                "↑↓ elegir valor · ←→ desplazar",
+                "↑↓ elegir · RePág/AvPág · Esc volver a registros",
+                match entries.get(history.selected) {
+                    Some(entry) if entry.confirmed() => "Intro revisar restauración",
+                    Some(_) => "Se requiere un recibo confirmado para restaurar",
+                    None => "El registro aún no tiene respaldos",
+                },
             )
+        } else if let Some(input) = &browser.structure {
+            draw_line(
+                screen,
+                left,
+                y + 2,
+                columns,
+                &input.label(&page.columns),
+                CellStyle::Accent,
+            );
+            draw_input(
+                screen,
+                &input.field,
+                left,
+                y + 3,
+                columns,
+                !app.progress_records_busy(),
+            );
+            if input.entering_values() {
+                (
+                    "Intro siguiente · F9 revisar · Esc cancelar",
+                    "Vacío conserva el valor inicial",
+                )
+            } else {
+                ("Intro continuar · Esc cancelar", "Ctrl+U borrar valor")
+            }
         } else if let Some(field) = &browser.edit {
             let label = format!("Nuevo valor · {}", page.columns[browser.column]);
             draw_line(screen, left, y + 2, columns, &label, CellStyle::Accent);
@@ -159,9 +220,9 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
             (
                 "↑↓ filas · ←→ columnas · Intro valor · F5 actualizar · Esc tablas",
                 if browser.can_edit() {
-                    "E editar · R restaurar · RePág/AvPág · F filtrar · X quitar · O orden"
+                    "E editar · R historial · N alta · D borrar · U restaurar fila · F filtrar · O orden"
                 } else if browser.can_restore() {
-                    "R restaurar · RePág/AvPág · F filtrar · X quitar · O orden"
+                    "R historial · N alta · D borrar · U restaurar fila · F filtrar · O orden"
                 } else {
                     "RePág/AvPág página · F filtrar · X quitar · O orden"
                 },
@@ -228,6 +289,9 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
         && browser.filter.is_none()
         && browser.edit.is_none()
         && browser.review.is_none()
+        && browser.structure.is_none()
+        && browser.history.is_none()
+        && browser.conflict.is_none()
     {
         if let Some((page, filter)) = browser
             .accepted
@@ -258,6 +322,41 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
         actions,
         CellStyle::Dim,
     );
+}
+
+fn draw_comparison(
+    screen: &mut Screen,
+    (left, top, width): (u16, u16, u16),
+    values: &RecordValues,
+    lines: [(&str, Option<&str>); 2],
+) {
+    for (index, (label, value)) in lines.into_iter().enumerate() {
+        let active = (index == 1) == values.after_selected;
+        let offset = if active { values.offset } else { 0 };
+        let value = match value {
+            Some("") => Cow::Borrowed("⟨texto vacío⟩"),
+            Some(value) => {
+                let byte = grapheme::graphemes(value)
+                    .take(offset)
+                    .map(str::len)
+                    .sum::<usize>();
+                Cow::Owned(format!("«{}»", printable(&value[byte..])))
+            }
+            None => Cow::Borrowed("⟨desconocido⟩"),
+        };
+        draw_line(
+            screen,
+            left,
+            top + index as u16,
+            width,
+            &format!("{label} · {value}"),
+            if active {
+                CellStyle::Reverse
+            } else {
+                CellStyle::Normal
+            },
+        );
+    }
 }
 
 fn draw_input(

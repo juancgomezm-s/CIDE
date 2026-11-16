@@ -3,8 +3,9 @@ use crate::{input::is_plain_text, state::UiOverlay};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{edit_field, FieldEdit, Overlay};
 use jc_progress::editor::{
-    BrowseFilter, BrowsePage, BrowseRequest, BrowseTable, RecordEvent, RecordPreview,
-    BROWSE_MAX_FILTER_BYTES, BROWSE_PAGE_SIZE, RECORD_EDIT_MAX_VALUE_BYTES,
+    BrowseFilter, BrowsePage, BrowseRequest, BrowseTable, RecordConflict, RecordEvent,
+    RecordHistory, RecordPreview, BROWSE_MAX_FILTER_BYTES, BROWSE_PAGE_SIZE,
+    RECORD_EDIT_MAX_VALUE_BYTES,
 };
 
 pub(crate) struct RecordBrowser {
@@ -14,7 +15,10 @@ pub(crate) struct RecordBrowser {
     pending: Option<Query>,
     pub(crate) filter: Option<ValueField>,
     pub(crate) edit: Option<ValueField>,
+    pub(crate) structure: Option<StructureField>,
     pub(crate) review: Option<RecordReview>,
+    pub(crate) history: Option<HistoryReview>,
+    pub(crate) conflict: Option<ConflictReview>,
     stale: bool,
     pub(crate) row: usize,
     pub(crate) column: usize,
@@ -48,11 +52,71 @@ pub(crate) struct ValueField {
     pub(crate) cursor: usize,
 }
 
+pub(crate) struct StructureField {
+    pub(crate) field: ValueField,
+    mode: StructureMode,
+}
+
+enum StructureMode {
+    CreateKey,
+    RestoreKey,
+    Values {
+        key: i32,
+        remaining: Vec<usize>,
+        values: Vec<(usize, String)>,
+    },
+}
+
+impl StructureField {
+    fn key(restoring: bool) -> Self {
+        Self {
+            field: ValueField {
+                value: String::new(),
+                cursor: 0,
+            },
+            mode: if restoring {
+                StructureMode::RestoreKey
+            } else {
+                StructureMode::CreateKey
+            },
+        }
+    }
+
+    pub(crate) fn label(&self, columns: &[String]) -> String {
+        match &self.mode {
+            StructureMode::CreateKey => "Alta · Clave primaria entera".into(),
+            StructureMode::RestoreKey => "Restaurar alta o borrado · Clave primaria entera".into(),
+            StructureMode::Values { remaining, .. } => {
+                format!("Alta · {}", columns[*remaining.last().unwrap()])
+            }
+        }
+    }
+
+    pub(crate) fn entering_values(&self) -> bool {
+        matches!(self.mode, StructureMode::Values { .. })
+    }
+}
+
 pub(crate) struct RecordReview {
     pub(crate) preview: RecordPreview,
+    pub(crate) values: RecordValues,
+    pub(crate) presented: bool,
+}
+
+pub(crate) struct HistoryReview {
+    pub(crate) history: RecordHistory,
+    pub(crate) selected: usize,
+}
+
+pub(crate) struct ConflictReview {
+    pub(crate) conflict: RecordConflict,
+    pub(crate) values: RecordValues,
+}
+
+#[derive(Default)]
+pub(crate) struct RecordValues {
     pub(crate) after_selected: bool,
     pub(crate) offset: usize,
-    pub(crate) presented: bool,
 }
 
 pub(crate) const REVIEW_MIN_WIDTH: u16 = 32;
@@ -67,7 +131,10 @@ impl RecordBrowser {
             pending: None,
             filter: None,
             edit: None,
+            structure: None,
             review: None,
+            history: None,
+            conflict: None,
             stale: false,
             row: 0,
             column: 0,
@@ -150,12 +217,24 @@ impl TuiApp {
                         browser.edit = None;
                         browser.review = Some(RecordReview {
                             preview,
-                            after_selected: false,
-                            offset: 0,
+                            values: RecordValues::default(),
                             presented: false,
                         });
                     }
+                    Ok(RecordEvent::History(history)) => {
+                        browser.history = Some(HistoryReview {
+                            history,
+                            selected: 0,
+                        });
+                    }
+                    Ok(RecordEvent::Conflict(conflict)) => {
+                        browser.conflict = Some(ConflictReview {
+                            conflict,
+                            values: RecordValues::default(),
+                        });
+                    }
                     Ok(RecordEvent::Applied) => {
+                        browser.history = None;
                         browser.stale = true;
                         refresh = browser
                             .accepted
@@ -220,7 +299,10 @@ impl TuiApp {
             if browser.filter.take().is_some()
                 || browser.detail.take().is_some()
                 || browser.edit.take().is_some()
+                || browser.structure.take().is_some()
                 || browser.review.take().is_some()
+                || browser.conflict.take().is_some()
+                || browser.history.take().is_some()
             {
                 browser.message = None;
             } else if browser.pending.take().is_some() {
@@ -246,14 +328,56 @@ impl TuiApp {
             if key.code == KeyCode::F(9) && key.modifiers.is_empty() && review.presented {
                 self.apply_record_review();
             } else {
-                review.navigate(key.code);
+                review
+                    .values
+                    .navigate(key.code, &review.preview.before, &review.preview.after);
+            }
+            return;
+        }
+        if let Some(conflict) = &mut browser.conflict {
+            conflict.values.navigate(
+                key.code,
+                &conflict.conflict.actual,
+                &conflict.conflict.expected,
+            );
+            return;
+        }
+        if let Some(history) = &mut browser.history {
+            let last = history.history.entries().len().saturating_sub(1);
+            if key.code == KeyCode::Enter && key.modifiers.is_empty() {
+                if let Some(root) = &self.project_root {
+                    browser.message = self
+                        .progress_records
+                        .request_history_restore(
+                            root,
+                            &history.history,
+                            history.selected,
+                            self.syntax_wakeup.clone(),
+                        )
+                        .err();
+                }
+            } else {
+                history.selected = match key.code {
+                    KeyCode::PageUp => history.selected.saturating_sub(10),
+                    KeyCode::PageDown => (history.selected + 10).min(last),
+                    _ => move_selection(history.selected, last, key.code),
+                };
+                browser.message = None;
             }
             return;
         }
         if let Some(field) = &browser.edit {
             if key.code == KeyCode::Enter {
                 let value = field.value.clone();
-                self.request_record_review(Some(value));
+                self.request_record_edit(value);
+            } else {
+                self.handle_browse_field_key(key);
+            }
+            return;
+        }
+        if browser.structure.is_some() {
+            if matches!(key.code, KeyCode::Enter | KeyCode::F(9)) && key.modifiers.is_empty() {
+                self.submit_structure_field(key.code == KeyCode::F(9));
             } else {
                 self.handle_browse_field_key(key);
             }
@@ -351,7 +475,19 @@ impl TuiApp {
                     None
                 }
                 KeyCode::Char('r') if is_plain_text(key) && browser.can_restore() => {
-                    self.request_record_review(None);
+                    self.request_record_history();
+                    return;
+                }
+                KeyCode::Char(ch @ ('n' | 'u'))
+                    if is_plain_text(key)
+                        && browser.tables[browser.table].edit_key_column().is_some() =>
+                {
+                    browser.structure = Some(StructureField::key(ch == 'u'));
+                    browser.message = None;
+                    None
+                }
+                KeyCode::Char('d') if is_plain_text(key) && browser.can_restore() => {
+                    self.request_delete_record();
                     return;
                 }
                 KeyCode::F(5) => Some((page.offset, query.clone())),
@@ -450,6 +586,12 @@ impl TuiApp {
                 BROWSE_MAX_FILTER_BYTES,
                 "El filtro debe ocupar una sola línea",
             )
+        } else if let Some(input) = &mut browser.structure {
+            (
+                &mut input.field,
+                RECORD_EDIT_MAX_VALUE_BYTES,
+                "Usa una sola línea",
+            )
         } else {
             return;
         };
@@ -471,13 +613,104 @@ impl TuiApp {
         let browser = self.record_browser.as_ref()?;
         let (field, limit) = if let Some(field) = &browser.edit {
             (field, RECORD_EDIT_MAX_VALUE_BYTES)
+        } else if let Some(input) = &browser.structure {
+            (&input.field, RECORD_EDIT_MAX_VALUE_BYTES)
         } else {
             (browser.filter.as_ref()?, BROWSE_MAX_FILTER_BYTES)
         };
         Some(limit.saturating_sub(field.value.len()).max(1))
     }
 
-    fn request_record_review(&mut self, value: Option<String>) {
+    fn submit_structure_field(&mut self, review_now: bool) {
+        let (Some(browser), Some(root)) = (&mut self.record_browser, self.project_root.as_deref())
+        else {
+            return;
+        };
+        let Some(mut input) = browser.structure.take() else {
+            return;
+        };
+        let table = &browser.tables[browser.table];
+        if self.progress_schema.busy() || self.tasks.has_job(jc_progress::editor::JOB_KEY) {
+            browser.structure = Some(input);
+            browser.message = Some("Ya hay una tarea ABL en curso".into());
+            return;
+        }
+        let wakeup = self.syntax_wakeup.clone();
+        let result = match &mut input.mode {
+            StructureMode::CreateKey | StructureMode::RestoreKey => {
+                let Ok(key) = input.field.value.trim().parse::<i32>() else {
+                    browser.structure = Some(input);
+                    browser.message = Some("Escribe una clave entera válida".into());
+                    return;
+                };
+                if matches!(input.mode, StructureMode::RestoreKey) {
+                    self.progress_records
+                        .request_structure_restore(root, table, key, wakeup)
+                } else {
+                    let mut remaining: Vec<_> = (0..table.columns.len())
+                        .rev()
+                        .filter(|i| table.can_edit_column(*i))
+                        .collect();
+                    if let Some(index) = remaining
+                        .iter()
+                        .position(|column| *column == browser.column)
+                    {
+                        let selected = remaining.remove(index);
+                        remaining.push(selected);
+                    }
+                    if remaining.is_empty() || review_now {
+                        self.progress_records
+                            .request_create(root, table, key, Vec::new(), wakeup)
+                    } else {
+                        browser.structure = Some(StructureField {
+                            field: ValueField {
+                                value: String::new(),
+                                cursor: 0,
+                            },
+                            mode: StructureMode::Values {
+                                key,
+                                remaining,
+                                values: Vec::new(),
+                            },
+                        });
+                        browser.message = None;
+                        return;
+                    }
+                }
+            }
+            StructureMode::Values {
+                key,
+                remaining,
+                values,
+            } => {
+                let current = *remaining.last().unwrap();
+                let mut next = values.clone();
+                if !input.field.value.is_empty() {
+                    next.push((current, input.field.value.clone()));
+                }
+                if review_now || remaining.len() == 1 {
+                    self.progress_records
+                        .request_create(root, table, *key, next, wakeup)
+                } else {
+                    remaining.pop();
+                    *values = next;
+                    input.field.value.clear();
+                    input.field.cursor = 0;
+                    browser.structure = Some(input);
+                    browser.message = None;
+                    return;
+                }
+            }
+        };
+        if let Err(error) = result {
+            browser.structure = Some(input);
+            browser.message = Some(error);
+        } else {
+            browser.message = None;
+        }
+    }
+
+    fn request_delete_record(&mut self) {
         let (Some(browser), Some(root)) = (&mut self.record_browser, self.project_root.as_deref())
         else {
             return;
@@ -490,17 +723,55 @@ impl TuiApp {
             browser.message = Some("Ya hay una tarea ABL en curso".into());
             return;
         }
-        let wakeup = self.syntax_wakeup.clone();
-        let result = match value {
-            Some(value) => {
-                self.progress_records
-                    .request_edit(root, table, row, browser.column, value, wakeup)
-            }
-            None => self
-                .progress_records
-                .request_restore(root, table, row, wakeup),
+        browser.message = self
+            .progress_records
+            .request_delete(root, table, row, self.syntax_wakeup.clone())
+            .err();
+    }
+
+    fn request_record_edit(&mut self, value: String) {
+        let (Some(browser), Some(root)) = (&mut self.record_browser, self.project_root.as_deref())
+        else {
+            return;
         };
-        browser.message = result.err();
+        let (Some(table), Some(row)) = (browser.tables.get(browser.table), browser.selected_row())
+        else {
+            return;
+        };
+        if self.progress_schema.busy() || self.tasks.has_job(jc_progress::editor::JOB_KEY) {
+            browser.message = Some("Ya hay una tarea ABL en curso".into());
+            return;
+        }
+        browser.message = self
+            .progress_records
+            .request_edit(
+                root,
+                table,
+                row,
+                browser.column,
+                value,
+                self.syntax_wakeup.clone(),
+            )
+            .err();
+    }
+
+    fn request_record_history(&mut self) {
+        let (Some(browser), Some(root)) = (&mut self.record_browser, self.project_root.as_deref())
+        else {
+            return;
+        };
+        let (Some(table), Some(row)) = (browser.tables.get(browser.table), browser.selected_row())
+        else {
+            return;
+        };
+        if self.progress_schema.busy() || self.tasks.has_job(jc_progress::editor::JOB_KEY) {
+            browser.message = Some("Ya hay una tarea ABL en curso".into());
+            return;
+        }
+        browser.message = self
+            .progress_records
+            .request_history(root, table, row, self.syntax_wakeup.clone())
+            .err();
     }
 
     fn apply_record_review(&mut self) {
@@ -518,8 +789,8 @@ impl TuiApp {
     }
 }
 
-impl RecordReview {
-    fn navigate(&mut self, code: KeyCode) {
+impl RecordValues {
+    fn navigate(&mut self, code: KeyCode, before: &Option<String>, after: &Option<String>) {
         match code {
             KeyCode::Up | KeyCode::Down | KeyCode::Tab => {
                 self.after_selected = !self.after_selected;
@@ -528,11 +799,7 @@ impl RecordReview {
             KeyCode::Home => self.offset = 0,
             KeyCode::Left => self.offset = self.offset.saturating_sub(1),
             KeyCode::Right | KeyCode::End => {
-                let value = if self.after_selected {
-                    &self.preview.after
-                } else {
-                    &self.preview.before
-                };
+                let value = if self.after_selected { after } else { before };
                 let last = value.as_ref().map_or(0, |value| {
                     jc_text::grapheme::graphemes(value)
                         .count()
@@ -734,6 +1001,9 @@ mod tests {
 
         key(&mut app, KeyCode::Char('r'));
         wait(&mut app);
+        assert!(shows(&mut app, "Historial de respaldos"));
+        key(&mut app, KeyCode::Enter);
+        wait(&mut app);
         let browser = app.record_browser.as_ref().unwrap();
         let review = &browser
             .review
@@ -749,6 +1019,34 @@ mod tests {
         wait(&mut app);
         assert!(shows(&mut app, "Cambio confirmado"));
         assert_eq!(selected(&app), Some(original.as_str()));
+        key(&mut app, KeyCode::Char('n'));
+        assert!(shows(&mut app, "Clave primaria entera"));
+        app.handle_event(Event::Paste("19999".into()));
+        key(&mut app, KeyCode::Enter);
+        assert!(shows(&mut app, "Alta · Name"));
+        app.handle_event(Event::Paste("Alta TUI CIDE".into()));
+        key(&mut app, KeyCode::F(9));
+        wait(&mut app);
+        assert!(shows(&mut app, "Alta de registro"));
+        key(&mut app, KeyCode::F(9));
+        wait(&mut app);
+        key(&mut app, KeyCode::Char('o'));
+        wait(&mut app);
+        assert_eq!(selected(&app), Some("Alta TUI CIDE"));
+        key(&mut app, KeyCode::Char('d'));
+        wait(&mut app);
+        assert!(shows(&mut app, "Borrado de registro"));
+        key(&mut app, KeyCode::F(9));
+        wait(&mut app);
+        assert_ne!(selected(&app), Some("Alta TUI CIDE"));
+        key(&mut app, KeyCode::Char('u'));
+        app.handle_event(Event::Paste("19999".into()));
+        key(&mut app, KeyCode::Enter);
+        wait(&mut app);
+        assert!(shows(&mut app, "Restauración de alta o borrado"));
+        key(&mut app, KeyCode::F(9));
+        wait(&mut app);
+        assert_eq!(selected(&app), Some("Alta TUI CIDE"));
         assert_eq!(app.workbench.active_bytes().unwrap(), editor);
     }
 }

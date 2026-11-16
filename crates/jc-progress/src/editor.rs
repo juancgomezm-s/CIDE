@@ -14,7 +14,8 @@ use jc_app::{
 use jc_files::read_in_root;
 use jc_text::{DecodedScalars, TextEncoding};
 pub use schema::browse::edit::{
-    RecordController, RecordEvent, RecordPreview, RECORD_EDIT_MAX_VALUE_BYTES,
+    RecordConflict, RecordController, RecordEvent, RecordHistory, RecordHistoryEntry,
+    RecordPreview, RECORD_EDIT_MAX_VALUE_BYTES,
 };
 pub use schema::browse::{
     BrowseController, BrowseFilter, BrowsePage, BrowseRequest, BrowseTable,

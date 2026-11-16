@@ -2,9 +2,10 @@
 use super::{decode_cell, encoding, io_error, local_database, BrowseTable, ColumnKind};
 use crate::editor::{avm_path, bounded_read, decode, load_profile, wait, JobDir};
 use jc_app::{Cancellation, Wakeup};
-use jc_files::{publish_new_bytes, read_in_root};
+use jc_files::{publish_new_bytes, read_in_root, ContentFingerprint};
 use jc_text::encode;
 use std::{
+    collections::BTreeMap,
     fmt::Write,
     fs, io,
     path::{Path, PathBuf},
@@ -22,6 +23,7 @@ const EDIT_PROFILE: &str = ".cide/edicion-registros.local.ini";
 const PROTOCOL: &str = "JCIDE-RECORD/1";
 const MAX_PROTOCOL: usize = 64 * 1024;
 const HELPER: &[u8] = include_bytes!("../../../../../../progress/abl/jc-record-edit.p");
+mod structure;
 
 #[derive(Default)]
 pub struct RecordController {
@@ -37,7 +39,43 @@ struct Pending {
 
 pub enum RecordEvent {
     Preview(RecordPreview),
+    History(RecordHistory),
+    Conflict(RecordConflict),
     Applied,
+}
+
+pub struct RecordHistory {
+    selection: Selection,
+    database_path: PathBuf,
+    entries: Vec<RecordHistoryEntry>,
+}
+
+pub struct RecordHistoryEntry {
+    id: String,
+    label: String,
+    receipt: Option<ContentFingerprint>,
+}
+
+impl RecordHistory {
+    pub fn entries(&self) -> &[RecordHistoryEntry] {
+        &self.entries
+    }
+}
+
+impl RecordHistoryEntry {
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    pub fn confirmed(&self) -> bool {
+        self.receipt.is_some()
+    }
+}
+
+pub struct RecordConflict {
+    pub column: String,
+    pub expected: Option<String>,
+    pub actual: Option<String>,
 }
 
 pub struct RecordPreview {
@@ -45,7 +83,13 @@ pub struct RecordPreview {
     pub before: Option<String>,
     pub after: Option<String>,
     pub restoring: bool,
-    operation: Box<RecordOperation>,
+    pub structural_title: Option<&'static str>,
+    operation: RecordAction,
+}
+
+enum RecordAction {
+    Edit(Box<RecordOperation>),
+    Structure(Box<structure::Operation>),
 }
 
 struct RecordOperation {
@@ -53,7 +97,12 @@ struct RecordOperation {
     snapshot: Snapshot,
     next: String,
     database_path: PathBuf,
-    restore_id: Option<String>,
+    restore: Option<RestoreSource>,
+}
+
+struct RestoreSource {
+    id: String,
+    receipt: ContentFingerprint,
 }
 
 #[derive(Clone)]
@@ -174,7 +223,7 @@ impl RecordController {
         self.start(root, wakeup, false, move |root, cancel| {
             let db = write_database(root, &selection)?;
             let directory = journal_directory(root, &selection, false)?;
-            let (id, backup, recorded_after) = latest_backup(root, &directory, &db)?;
+            let (source, backup, recorded_after) = latest_backup(root, &directory, &db)?;
             if backup.restoring {
                 return Err("El último cambio de este registro ya fue restaurado".into());
             }
@@ -184,7 +233,80 @@ impl RecordController {
             if snapshot != recorded_after || snapshot.value != backup.next {
                 return Err("Conflicto: el registro cambió después del respaldo. La restauración se canceló".into());
             }
-            prepare(selection, db, snapshot, backup.before.value, Some(id))
+            prepare(selection, db, snapshot, backup.before.value, Some(source))
+        })
+    }
+
+    pub fn request_history(
+        &mut self,
+        root: &Path,
+        table: &BrowseTable,
+        row: &[Option<String>],
+        wakeup: Wakeup,
+    ) -> Result<(), String> {
+        let selection = Selection::new(table, row, 0)?;
+        selection.check_catalog(root)?;
+        self.start(root, wakeup, false, move |root, cancel| {
+            let db = write_database(root, &selection)?;
+            let directory = journal_directory(root, &selection, false)?;
+            let entries = read_history(
+                root,
+                &directory,
+                &db,
+                &selection.table.catalog.codec,
+                cancel,
+            )?;
+            Ok(RecordEvent::History(RecordHistory {
+                selection,
+                database_path: db,
+                entries,
+            }))
+        })
+    }
+
+    pub fn request_history_restore(
+        &mut self,
+        root: &Path,
+        history: &RecordHistory,
+        index: usize,
+        wakeup: Wakeup,
+    ) -> Result<(), String> {
+        let entry = history.entries.get(index).ok_or("Elige un respaldo")?;
+        let receipt = entry
+            .receipt
+            .ok_or("La restauración requiere un respaldo con recibo válido")?;
+        history.selection.check_catalog(root)?;
+        let mut selection = history.selection.clone();
+        let database_path = history.database_path.clone();
+        let id = entry.id.clone();
+        self.start(root, wakeup, false, move |root, cancel| {
+            let db = write_database(root, &selection)?;
+            if db != database_path {
+                return Err("Cambió la base desde la consulta del historial".into());
+            }
+            let directory = journal_directory(root, &selection, false)?;
+            let (backup, recorded_after, current_receipt) =
+                confirmed_backup(root, &directory, &db, &id)?;
+            if receipt != current_receipt {
+                return Err("Conflicto: el recibo cambió desde la consulta del historial".into());
+            }
+            selection.column = selection
+                .table
+                .target
+                .columns
+                .iter()
+                .position(|(column, _)| column == &backup.column)
+                .filter(|index| selection.table.can_edit_column(*index))
+                .ok_or("El campo del respaldo ya no es editable")?;
+            let snapshot = run_avm(root, &selection, &db, None, cancel)?;
+            prepare_history_restore(
+                selection,
+                db,
+                snapshot,
+                RestoreSource { id, receipt },
+                backup,
+                recorded_after,
+            )
         })
     }
 
@@ -194,10 +316,20 @@ impl RecordController {
         preview: RecordPreview,
         wakeup: Wakeup,
     ) -> Result<(), String> {
-        preview.operation.selection.check_catalog(root)?;
-        self.start(root, wakeup, true, move |root, cancel| {
-            apply(root, preview, cancel)
-        })
+        match preview.operation {
+            RecordAction::Edit(operation) => {
+                operation.selection.check_catalog(root)?;
+                self.start(root, wakeup, true, move |root, cancel| {
+                    apply(root, &operation, cancel)
+                })
+            }
+            RecordAction::Structure(operation) => {
+                operation.selection.check_catalog(root)?;
+                self.start(root, wakeup, true, move |root, cancel| {
+                    structure::apply(root, &operation, cancel)
+                })
+            }
+        }
     }
 
     fn start(
@@ -292,7 +424,7 @@ fn prepare(
     db: PathBuf,
     snapshot: Snapshot,
     next: String,
-    restore_id: Option<String>,
+    restore: Option<RestoreSource>,
 ) -> Result<RecordEvent, String> {
     if snapshot.value == next {
         return Err("El valor propuesto coincide con el actual".into());
@@ -308,15 +440,35 @@ fn prepare(
         column: selection.column_name().into(),
         before: decode_cell(&snapshot.value, codec)?,
         after: decode_cell(&next, codec)?,
-        restoring: restore_id.is_some(),
-        operation: Box::new(RecordOperation {
+        restoring: restore.is_some(),
+        structural_title: None,
+        operation: RecordAction::Edit(Box::new(RecordOperation {
             selection,
             snapshot,
             next,
             database_path: db,
-            restore_id,
-        }),
+            restore,
+        })),
     }))
+}
+
+fn prepare_history_restore(
+    selection: Selection,
+    db: PathBuf,
+    snapshot: Snapshot,
+    source: RestoreSource,
+    backup: Backup,
+    recorded_after: Snapshot,
+) -> Result<RecordEvent, String> {
+    if snapshot != recorded_after {
+        let codec = &selection.table.catalog.codec;
+        return Ok(RecordEvent::Conflict(RecordConflict {
+            column: backup.column,
+            expected: decode_cell(&recorded_after.value, codec)?,
+            actual: decode_cell(&snapshot.value, codec)?,
+        }));
+    }
+    prepare(selection, db, snapshot, backup.before.value, Some(source))
 }
 
 fn write_database(root: &Path, selection: &Selection) -> Result<PathBuf, String> {
@@ -362,19 +514,24 @@ fn write_database(root: &Path, selection: &Selection) -> Result<PathBuf, String>
 
 fn apply(
     root: &Path,
-    preview: RecordPreview,
+    operation: &RecordOperation,
     cancel: &Cancellation,
 ) -> Result<RecordEvent, String> {
-    let operation = &preview.operation;
     let selection = &operation.selection;
     let db = write_database(root, selection)?;
     if db != operation.database_path {
         return Err("Cambió la base desde la vista previa".into());
     }
     let directory = journal_directory(root, selection, true)?;
-    if let Some(id) = &operation.restore_id {
-        if latest_id(&directory)?.as_ref() != Some(id) {
-            return Err("Conflicto: existe un respaldo posterior a esta vista previa".into());
+    if let Some(source) = &operation.restore {
+        let (backup, recorded_after, receipt) =
+            confirmed_backup(root, &directory, &db, &source.id)?;
+        if receipt != source.receipt
+            || backup.column != selection.column_name()
+            || recorded_after != operation.snapshot
+            || backup.before.value != operation.next
+        {
+            return Err("Conflicto: el respaldo cambió desde la vista previa".into());
         }
     }
     let path_key = hex(db
@@ -384,20 +541,11 @@ fn apply(
     let backup = format!(
         "{PROTOCOL}\n{path_key}\n{}\n{}\n{}\n{}",
         selection.column_name(),
-        u8::from(preview.restoring),
+        u8::from(operation.restore.is_some()),
         operation.next,
         snapshot_wire(&operation.snapshot)
     );
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| "La hora del equipo no permite identificar el respaldo")?;
-    let id = format!(
-        "{:039}-{:010}-{:020}",
-        timestamp.as_nanos(),
-        std::process::id(),
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    );
+    let id = new_backup_id()?;
     publish_verified(
         root,
         &directory.join(format!("{id}.respaldo")),
@@ -423,6 +571,19 @@ fn apply(
         )
     })?;
     Ok(RecordEvent::Applied)
+}
+
+fn new_backup_id() -> Result<String, String> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "La hora del equipo no permite identificar el respaldo")?;
+    Ok(format!(
+        "{:039}-{:010}-{:020}",
+        timestamp.as_nanos(),
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ))
 }
 
 fn journal_directory(root: &Path, selection: &Selection, create: bool) -> Result<PathBuf, String> {
@@ -476,26 +637,101 @@ fn publish_verified(root: &Path, path: &Path, bytes: &[u8]) -> Result<(), String
     Ok(())
 }
 
-fn latest_id(directory: &Path) -> Result<Option<String>, String> {
-    let mut latest: Option<String> = None;
+fn journal_entries(directory: &Path) -> Result<BTreeMap<String, JournalFiles>, String> {
+    let mut entries = BTreeMap::<_, JournalFiles>::new();
     for (i, entry) in fs::read_dir(directory).map_err(io_error)?.enumerate() {
         if i == 8192 {
             return Err("El historial del registro excede el límite de revisión".into());
         }
         let name = entry.map_err(io_error)?.file_name();
-        if let Some(id) = name
-            .to_str()
-            .and_then(|name| name.strip_suffix(".confirmado"))
+        let Some((id, extension)) = name.to_str().and_then(|name| name.rsplit_once('.')) else {
+            continue;
+        };
+        if id.len() != 71
+            || !id.bytes().enumerate().all(|(position, byte)| {
+                if matches!(position, 39 | 50) {
+                    byte == b'-'
+                } else {
+                    byte.is_ascii_digit()
+                }
+            })
+            || !matches!(extension, "respaldo" | "confirmado")
         {
-            if id.len() == 71
-                && id.bytes().all(|byte| byte.is_ascii_digit() || byte == b'-')
-                && latest.as_deref().is_none_or(|previous| id > previous)
-            {
-                latest = Some(id.to_owned());
-            }
+            continue;
+        }
+        let files = entries.entry(id.to_owned()).or_default();
+        if extension == "confirmado" {
+            files.receipt = true;
         }
     }
-    Ok(latest)
+    Ok(entries)
+}
+
+#[derive(Default)]
+struct JournalFiles {
+    receipt: bool,
+}
+
+fn read_history(
+    root: &Path,
+    directory: &Path,
+    db: &Path,
+    codec: &str,
+    cancel: &Cancellation,
+) -> Result<Vec<RecordHistoryEntry>, String> {
+    let files = journal_entries(directory)?;
+    let mut entries = Vec::with_capacity(files.len());
+    for (index, (id, files)) in files.into_iter().rev().enumerate() {
+        if cancel.is_cancelled() {
+            return Err("Se canceló la consulta del historial de respaldos".into());
+        }
+        let parsed = if files.receipt {
+            confirmed_backup(root, directory, db, &id)
+                .map(|(backup, _, receipt)| ("Confirmado", backup, Some(receipt)))
+        } else {
+            read_backup(root, directory, db, &id).map(|(backup, _)| ("Pendiente", backup, None))
+        };
+        let (label, receipt) = match parsed {
+            Ok((status, backup, receipt)) => {
+                let action = if backup.restoring {
+                    "Restauración"
+                } else {
+                    "Edición"
+                };
+                let prior = history_value(&backup.before.value, codec);
+                let next = history_value(&backup.next, codec);
+                (
+                    format!(
+                        "{status} · {action} de {} · {prior} → {next}",
+                        backup.column
+                    ),
+                    receipt,
+                )
+            }
+            Err(error) => (format!("Respaldo no verificable · {error}"), None),
+        };
+        entries.push(RecordHistoryEntry {
+            id,
+            label: format!("{}. {label}", index + 1),
+            receipt,
+        });
+    }
+    Ok(entries)
+}
+
+fn history_value(wire: &str, codec: &str) -> String {
+    match decode_cell(wire, codec) {
+        Ok(None) => "?".into(),
+        Ok(Some(value)) => {
+            let mut chars = value.chars().flat_map(char::escape_debug);
+            let mut abbreviation: String = chars.by_ref().take(24).collect();
+            if chars.next().is_some() {
+                abbreviation.push('…');
+            }
+            format!("«{abbreviation}»")
+        }
+        Err(_) => "Valor ilegible".into(),
+    }
 }
 
 struct Backup {
@@ -509,18 +745,26 @@ fn latest_backup(
     root: &Path,
     directory: &Path,
     db: &Path,
-) -> Result<(String, Backup, Snapshot), String> {
-    let id = latest_id(directory)?.ok_or("No hay respaldo confirmado para el registro")?;
+) -> Result<(RestoreSource, Backup, Snapshot), String> {
+    let (id, _) = journal_entries(directory)?
+        .into_iter()
+        .rev()
+        .find(|(_, files)| files.receipt)
+        .ok_or("No hay respaldo confirmado para el registro")?;
+    let (backup, after, receipt) = confirmed_backup(root, directory, db, &id)?;
+    Ok((RestoreSource { id, receipt }, backup, after))
+}
+
+fn read_backup(
+    root: &Path,
+    directory: &Path,
+    db: &Path,
+    id: &str,
+) -> Result<(Backup, Vec<u8>), String> {
     let invalid = "El respaldo o su recibo están incompletos";
     let (_, bytes) = read_in_root(
         root,
         &directory.join(format!("{id}.respaldo")),
-        MAX_PROTOCOL,
-    )
-    .map_err(io_error)?;
-    let (_, receipt) = read_in_root(
-        root,
-        &directory.join(format!("{id}.confirmado")),
         MAX_PROTOCOL,
     )
     .map_err(io_error)?;
@@ -529,7 +773,10 @@ fn latest_backup(
     if lines.next() != Some(PROTOCOL) || lines.next() != Some(&path) {
         return Err("El respaldo pertenece a otra base o versión".into());
     }
-    let column = lines.next().ok_or(invalid)?.to_owned();
+    let column = lines
+        .next()
+        .and_then(|column| super::name(column.as_bytes()))
+        .ok_or(invalid)?;
     let restoring = match lines.next() {
         Some("0") => false,
         Some("1") => true,
@@ -541,23 +788,39 @@ fn latest_backup(
         .ok_or(invalid)?
         .to_owned();
     let before = parse_snapshot(lines)?;
-    let sealed = receipt
-        .strip_prefix(bytes.as_slice())
-        .ok_or("El respaldo no coincide con el recibo confirmado")?;
-    let after = parse_snapshot(std::str::from_utf8(sealed).map_err(|_| invalid)?.lines())?;
-    if after.row_id != before.row_id || after.value != next {
-        return Err(invalid.into());
-    }
     Ok((
-        id,
         Backup {
             column,
             restoring,
             next,
             before,
         },
-        after,
+        bytes,
     ))
+}
+
+fn confirmed_backup(
+    root: &Path,
+    directory: &Path,
+    db: &Path,
+    id: &str,
+) -> Result<(Backup, Snapshot, ContentFingerprint), String> {
+    let invalid = "El respaldo o su recibo están incompletos";
+    let (backup, bytes) = read_backup(root, directory, db, id)?;
+    let (_, receipt) = read_in_root(
+        root,
+        &directory.join(format!("{id}.confirmado")),
+        MAX_PROTOCOL,
+    )
+    .map_err(io_error)?;
+    let sealed = receipt
+        .strip_prefix(bytes.as_slice())
+        .ok_or("El respaldo no coincide con el recibo confirmado")?;
+    let after = parse_snapshot(std::str::from_utf8(sealed).map_err(|_| invalid)?.lines())?;
+    if after.row_id != backup.before.row_id || after.value != backup.next {
+        return Err(invalid.into());
+    }
+    Ok((backup, after, ContentFingerprint::of(&receipt)))
 }
 
 fn snapshot_wire(snapshot: &Snapshot) -> String {
@@ -618,6 +881,28 @@ fn run_avm(
     apply: Option<(&Snapshot, &str)>,
     cancel: &Cancellation,
 ) -> Result<Snapshot, String> {
+    let mode = apply.map_or(AvmMode::Preview, |(snapshot, value)| {
+        AvmMode::Apply(snapshot, value)
+    });
+    run_mode(root, selection, db, mode, cancel)?.ok_or_else(|| "La fila ya no existe".into())
+}
+
+enum AvmMode<'a> {
+    Preview,
+    Apply(&'a Snapshot, &'a str),
+    Inspect,
+    Insert(&'a str),
+    Delete(&'a Snapshot),
+    Recreate(&'a Snapshot),
+}
+
+fn run_mode(
+    root: &Path,
+    selection: &Selection,
+    db: &Path,
+    mode: AvmMode<'_>,
+    cancel: &Cancellation,
+) -> Result<Option<Snapshot>, String> {
     let config = load_profile(root)?;
     crate::code_page(&config.avm.cpstream, "cpstream")
         .map_err(|_| "Página de códigos ABL inválida")?;
@@ -629,14 +914,19 @@ fn run_avm(
     }
     let target = &selection.table.target;
     let key = target.key.as_ref().unwrap();
-    let (mode, row, image, value) = apply.map_or(("preview", "", "", ""), |(expected, value)| {
-        (
+    let (mode, row, image, value) = match mode {
+        AvmMode::Preview => ("preview", "", "", ""),
+        AvmMode::Apply(before, value) => (
             "apply",
-            expected.row_id.as_str(),
-            expected.image.as_str(),
+            before.row_id.as_str(),
+            before.image.as_str(),
             value,
-        )
-    });
+        ),
+        AvmMode::Inspect => ("inspect", "", "", ""),
+        AvmMode::Insert(value) => ("insert", "", "", value),
+        AvmMode::Delete(before) => ("delete", before.row_id.as_str(), before.image.as_str(), ""),
+        AvmMode::Recreate(before) => ("recreate", "", before.image.as_str(), ""),
+    };
     let version = &selection.table.catalog.version;
     let input = format!(
         "{PROTOCOL}\n{mode}\n{version}\n{}\n{}\n{}\n{}\n{}\n{}\n{row}\n{image}\n{value}\n",
@@ -660,7 +950,7 @@ fn run_avm(
     cmd.arg("-db")
         .arg(avm_path(db))
         .args(["-ld", &target.database, "-1"]);
-    if apply.is_none() {
+    if matches!(mode, "preview" | "inspect") {
         cmd.arg("-RO");
     }
     cmd.args([
@@ -739,7 +1029,13 @@ fn run_avm(
         }
         .into());
     }
-    parse_snapshot(lines)
+    if next == Some("ABSENT") && matches!(mode, "inspect" | "delete") {
+        lines.next();
+        if lines.next() == Some("END") && lines.next().is_none() {
+            return Ok(None);
+        }
+    }
+    parse_snapshot(lines).map(Some)
 }
 
 #[cfg(test)]
@@ -782,6 +1078,53 @@ mod tests {
         finish(root, worker, wakeup)
             .err()
             .expect("la operación debía fallar")
+    }
+
+    #[test]
+    fn record_history_verifies_receipts_and_keeps_pending_backups() {
+        let fixture = JobDir::create().unwrap();
+        let root = &fixture.path;
+        let db = root.join("sports2000.db");
+        let path = hex(db.to_str().unwrap().as_bytes());
+        let before = Snapshot {
+            row_id: "record".into(),
+            image: "A1".into(),
+            value: "41".into(),
+        };
+        let after = Snapshot {
+            row_id: "record".into(),
+            image: "B1".into(),
+            value: "42".into(),
+        };
+        let backup = format!(
+            "{PROTOCOL}\n{path}\nName\n0\n42\n{}",
+            snapshot_wire(&before)
+        );
+        for index in 1..=3 {
+            let id = format!("{index:039}-{:010}-{:020}", 0, 0);
+            fs::write(root.join(format!("{id}.respaldo")), &backup).unwrap();
+            if index != 2 {
+                let receipt = if index == 1 {
+                    format!("{backup}{}", snapshot_wire(&after))
+                } else {
+                    format!("{backup}{}", snapshot_wire(&before))
+                };
+                fs::write(root.join(format!("{id}.confirmado")), receipt).unwrap();
+            }
+        }
+        fs::write(root.join("malformed.confirmado"), b"foreign").unwrap();
+        let cancel = Cancellation::new(Duration::from_secs(10));
+        let history = read_history(root, root, &db, "iso8859-1", &cancel).unwrap();
+        assert_eq!(history.len(), 3);
+        assert!(history[0].label().contains("no verificable"));
+        assert!(!history[0].confirmed());
+        assert!(history[1].label().contains("Pendiente"));
+        assert!(!history[1].confirmed());
+        assert!(history[2]
+            .label()
+            .contains("Confirmado · Edición de Name · «A» → «B»"));
+        assert!(history[2].confirmed());
+        assert_eq!(fs::read_dir(root).unwrap().count(), 6);
     }
 
     #[test]
@@ -844,7 +1187,12 @@ mod tests {
         let next = "CIDE revisión ñ";
 
         // Make the journal unwritable using an ordinary file in the fixture.
-        let journal = root.join(".cide/respaldos-registros");
+        let journal = root
+            .join(".cide/respaldos-registros")
+            .join(&table.database)
+            .join(&table.name)
+            .join(selection.key.to_string());
+        fs::create_dir_all(journal.parent().unwrap()).unwrap();
         fs::write(&journal, b"bloqueo de prueba").unwrap();
         controller
             .request_edit(&root, &table, &row, column, next.into(), wakeup.clone())
@@ -897,12 +1245,12 @@ mod tests {
             Ok(RecordEvent::Applied)
         ));
         let directory = journal_directory(&root, &selection, false).unwrap();
-        let (id, backup, receipt) = latest_backup(&root, &directory, &db).unwrap();
+        let (source, backup, receipt) = latest_backup(&root, &directory, &db).unwrap();
         assert_eq!(backup.before.value, initial.value);
         assert!(run_avm(&root, &selection, &db, None, &cancel).unwrap() == receipt);
         row[column] = Some(next.into());
 
-        let backup_path = directory.join(format!("{id}.respaldo"));
+        let backup_path = directory.join(format!("{}.respaldo", source.id));
         let original_backup = fs::read(&backup_path).unwrap();
         let mut altered = original_backup.clone();
         let position = altered
@@ -943,6 +1291,29 @@ mod tests {
             .request_restore(&root, &table, &row, wakeup.clone())
             .unwrap();
         assert!(failure(&root, &mut controller, &wakeup).contains("Conflicto"));
+        controller
+            .request_history(&root, &table, &row, wakeup.clone())
+            .unwrap();
+        let Ok(RecordEvent::History(history)) = finish(&root, &mut controller, &wakeup) else {
+            panic!("No se recibió el historial de respaldos");
+        };
+        let selected = history
+            .entries
+            .iter()
+            .position(|entry| entry.id == source.id)
+            .unwrap();
+        assert!(history
+            .entries
+            .iter()
+            .any(|entry| entry.label().contains("Pendiente")));
+        controller
+            .request_history_restore(&root, &history, selected, wakeup.clone())
+            .unwrap();
+        let Ok(RecordEvent::Conflict(conflict)) = finish(&root, &mut controller, &wakeup) else {
+            panic!("La imagen alterada debía mostrarse como conflicto");
+        };
+        assert_eq!(conflict.expected.as_deref(), Some(next));
+        assert_eq!(conflict.actual.as_deref(), Some(next));
         run_avm(
             &root,
             &external,
@@ -952,8 +1323,57 @@ mod tests {
         )
         .unwrap();
 
+        // A later edition and its restoration leave the selected older postimage current.
+        controller
+            .request_edit(
+                &root,
+                &table,
+                &row,
+                column,
+                "CIDE historial posterior".into(),
+                wakeup.clone(),
+            )
+            .unwrap();
+        let preview = review(&root, &mut controller, &wakeup);
+        controller.apply(&root, preview, wakeup.clone()).unwrap();
+        assert!(matches!(
+            finish(&root, &mut controller, &wakeup),
+            Ok(RecordEvent::Applied)
+        ));
         controller
             .request_restore(&root, &table, &row, wakeup.clone())
+            .unwrap();
+        let preview = review(&root, &mut controller, &wakeup);
+        assert_eq!(preview.after.as_deref(), Some(next));
+        controller.apply(&root, preview, wakeup.clone()).unwrap();
+        assert!(matches!(
+            finish(&root, &mut controller, &wakeup),
+            Ok(RecordEvent::Applied)
+        ));
+
+        controller
+            .request_history(&root, &table, &row, wakeup.clone())
+            .unwrap();
+        let Ok(RecordEvent::History(history)) = finish(&root, &mut controller, &wakeup) else {
+            panic!("No se recibió el historial actualizado");
+        };
+        let selected = history
+            .entries
+            .iter()
+            .position(|entry| entry.id == source.id)
+            .unwrap();
+        assert!(selected > 0);
+        let pending = history
+            .entries
+            .iter()
+            .position(|entry| !entry.confirmed())
+            .unwrap();
+        assert!(controller
+            .request_history_restore(&root, &history, pending, wakeup.clone())
+            .is_err());
+        assert!(!controller.busy());
+        controller
+            .request_history_restore(&root, &history, selected, wakeup.clone())
             .unwrap();
         let preview = review(&root, &mut controller, &wakeup);
         assert!(preview.restoring);

@@ -14,6 +14,10 @@ DEFINE VARIABLE cColumn AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cOldRow AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cOldImage AS CHARACTER NO-UNDO.
 DEFINE VARIABLE cNext AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cPair AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cFieldName AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cSeen AS CHARACTER NO-UNDO.
+DEFINE VARIABLE cInitial AS CHARACTER CASE-SENSITIVE NO-UNDO.
 DEFINE VARIABLE cValue AS CHARACTER CASE-SENSITIVE NO-UNDO.
 DEFINE VARIABLE cAfter AS CHARACTER CASE-SENSITIVE NO-UNDO.
 DEFINE VARIABLE cImage AS CHARACTER CASE-SENSITIVE NO-UNDO.
@@ -31,6 +35,7 @@ DEFINE VARIABLE hField AS HANDLE NO-UNDO.
 DEFINE VARIABLE lOk AS LOGICAL NO-UNDO.
 DEFINE VARIABLE lRead AS LOGICAL NO-UNDO.
 DEFINE VARIABLE lCommitted AS LOGICAL INITIAL FALSE.
+DEFINE VARIABLE lReadOnly AS LOGICAL NO-UNDO.
 
 FUNCTION SafeName RETURNS LOGICAL (INPUT pcName AS CHARACTER):
     DEFINE VARIABLE idx AS INTEGER NO-UNDO.
@@ -95,6 +100,23 @@ FUNCTION TextFromHex RETURNS CHARACTER (INPUT pcHex AS CHARACTER):
     RETURN cResult.
 END FUNCTION.
 
+FUNCTION ImageFromHex RETURNS RAW (INPUT pcHex AS CHARACTER):
+    DEFINE VARIABLE dataBytes AS RAW NO-UNDO.
+    DEFINE VARIABLE idx AS INTEGER NO-UNDO.
+    DEFINE VARIABLE hi AS INTEGER NO-UNDO.
+    DEFINE VARIABLE lo AS INTEGER NO-UNDO.
+    DEFINE VARIABLE digits AS CHARACTER NO-UNDO INITIAL "0123456789ABCDEF".
+    IF LENGTH(pcHex) < 2 OR LENGTH(pcHex) > 16384 OR LENGTH(pcHex) MODULO 2 <> 0 THEN RETURN ?.
+    LENGTH(dataBytes) = INTEGER(LENGTH(pcHex) / 2).
+    DO idx = 1 TO LENGTH(pcHex) BY 2:
+        ASSIGN hi = INDEX(digits, SUBSTRING(pcHex, idx, 1))
+               lo = INDEX(digits, SUBSTRING(pcHex, idx + 1, 1)).
+        IF hi = 0 OR lo = 0 THEN RETURN ?.
+        PUT-BYTE(dataBytes, INTEGER((idx + 1) / 2)) = (hi - 1) * 16 + lo - 1.
+    END.
+    RETURN dataBytes.
+END FUNCTION.
+
 FUNCTION FieldValue RETURNS CHARACTER (INPUT fieldHandle AS HANDLE):
     IF fieldHandle:BUFFER-VALUE = ? THEN RETURN "-".
     IF fieldHandle:DATA-TYPE = "INTEGER" THEN RETURN TextHex(TRIM(STRING(INTEGER(fieldHandle:BUFFER-VALUE)))).
@@ -121,10 +143,11 @@ END.
 IF NOT lRead OR cHeader <> "JCIDE-RECORD/1" THEN QUIT.
 OUTPUT STREAM outputFile TO VALUE(SUBSTRING(SESSION:PARAMETER, 1, R-INDEX(SESSION:PARAMETER, ".")) + "out") NO-CONVERT.
 PUT STREAM outputFile UNFORMATTED cHeader SKIP "AVM|" PROVERSION SKIP.
-IF cMode <> "preview" AND cMode <> "apply" THEN RUN Fail("shape").
+IF LOOKUP(cMode, "preview,apply,inspect,insert,delete,recreate") = 0 THEN RUN Fail("shape").
+lReadOnly = LOOKUP(cMode, "preview,inspect") > 0.
 IF cVersion <> PROVERSION THEN RUN Fail("version").
 IF NUM-DBS <> 1 OR LDBNAME(1) <> cDb THEN RUN Fail("connection").
-IF (INDEX(DBRESTRICTIONS(1), "READ-ONLY") > 0) <> (cMode = "preview") THEN RUN Fail("connection").
+IF (INDEX(DBRESTRICTIONS(1), "READ-ONLY") > 0) <> lReadOnly THEN RUN Fail("connection").
 IF NOT SafeName(cDb) OR NOT SafeName(cTable) OR NOT SafeName(cIndex) OR NOT SafeName(cKeyField)
    OR NOT SafeName(cColumn) OR cColumn = cKeyField THEN RUN Fail("shape").
 iKey = INTEGER(cKey) NO-ERROR.
@@ -134,7 +157,7 @@ CREATE BUFFER hBuffer FOR TABLE (cDb + "." + cTable) BUFFER-NAME "cide_edit" NO-
 IF NOT VALID-HANDLE(hBuffer) THEN RUN Fail("shape").
 lOk = hBuffer:DISABLE-DUMP-TRIGGERS() NO-ERROR.
 IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN RUN Fail("triggers").
-IF cMode = "apply" THEN DO:
+IF NOT lReadOnly THEN DO:
     lOk = hBuffer:DISABLE-LOAD-TRIGGERS(FALSE) NO-ERROR.
     IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN RUN Fail("triggers").
 END.
@@ -159,16 +182,20 @@ cPredicate = "WHERE cide_edit." + cKeyField + " = " + cKey + " USE-INDEX " + cIn
 CREATE ttImage.
 hRaw = BUFFER ttImage:BUFFER-FIELD("payload").
 
-IF cMode = "preview" THEN DO:
+IF lReadOnly THEN DO:
     lOk = hBuffer:FIND-UNIQUE(cPredicate, NO-LOCK, NO-WAIT) NO-ERROR.
-    IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN RUN Fail("conflict").
+    IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN DO:
+        IF cMode = "inspect" AND ERROR-STATUS:NUM-MESSAGES = 1
+           AND ERROR-STATUS:GET-NUMBER(1) = 138 THEN RUN AbsentRow.
+        RUN Fail("conflict").
+    END.
     lOk = hBuffer:RAW-TRANSFER(TRUE, hRaw) NO-ERROR.
     IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN RUN Fail("shape").
     ASSIGN cImage = RawHex(ttImage.payload)
            cValue = FieldValue(hEdit)
            cRow = STRING(hBuffer:ROWID).
 END.
-ELSE DO:
+ELSE IF cMode = "apply" THEN DO:
     cValue = TextFromHex(cNext).
     IF cNext <> "-" AND (cValue = ? OR TextHex(cValue) <> cNext) THEN RUN Fail("shape").
     IF hEdit:DATA-TYPE = "INTEGER" AND cValue <> ? THEN DO:
@@ -201,6 +228,76 @@ ELSE DO:
     IF NOT lCommitted THEN RUN Fail(cStatus).
     cValue = cAfter.
 END.
+ELSE DO:
+    DO TRANSACTION ON ERROR UNDO, LEAVE ON STOP UNDO, LEAVE:
+        lOk = hBuffer:FIND-UNIQUE(cPredicate, EXCLUSIVE-LOCK, NO-WAIT) NO-ERROR.
+        cStatus = "conflict".
+        IF cMode = "delete" THEN DO:
+            IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
+            lOk = hBuffer:RAW-TRANSFER(TRUE, hRaw) NO-ERROR.
+            IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
+            IF STRING(hBuffer:ROWID) <> cOldRow OR RawHex(ttImage.payload) <> cOldImage THEN UNDO, LEAVE.
+            cStatus = "write".
+            lOk = hBuffer:BUFFER-DELETE() NO-ERROR.
+            IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
+        END.
+        ELSE DO:
+            IF lOk = TRUE OR ERROR-STATUS:NUM-MESSAGES <> 1
+               OR ERROR-STATUS:GET-NUMBER(1) <> 138 THEN UNDO, LEAVE.
+            cStatus = "write".
+            lOk = hBuffer:BUFFER-CREATE() NO-ERROR.
+            IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
+            IF cMode = "recreate" THEN DO:
+                ttImage.payload = ImageFromHex(cOldImage).
+                IF ttImage.payload = ? THEN UNDO, LEAVE.
+                lOk = hBuffer:RAW-TRANSFER(FALSE, hRaw) NO-ERROR.
+                IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
+            END.
+            ELSE DO:
+                hField = hBuffer:BUFFER-FIELD(cKeyField).
+                hField:BUFFER-VALUE = iKey NO-ERROR.
+                IF ERROR-STATUS:ERROR OR NUM-ENTRIES(cNext) > 12 THEN UNDO, LEAVE.
+                DO i = 1 TO NUM-ENTRIES(cNext):
+                    cPair = ENTRY(i, cNext).
+                    IF NUM-ENTRIES(cPair, ":") <> 2 THEN UNDO, LEAVE.
+                    ASSIGN cFieldName = ENTRY(1, cPair, ":")
+                           cInitial = ENTRY(2, cPair, ":").
+                    IF NOT SafeName(cFieldName) OR cFieldName = cKeyField
+                       OR LOOKUP(cFieldName, cSeen) <> 0 THEN UNDO, LEAVE.
+                    cSeen = cSeen + (IF cSeen = "" THEN "" ELSE ",") + cFieldName.
+                    hField = hBuffer:BUFFER-FIELD(cFieldName) NO-ERROR.
+                    IF NOT VALID-HANDLE(hField) OR hField:NAME <> cFieldName OR hField:EXTENT <> 0 THEN UNDO, LEAVE.
+                    cValue = TextFromHex(cInitial).
+                    IF cValue = ? OR TextHex(cValue) <> cInitial THEN UNDO, LEAVE.
+                    CASE hField:DATA-TYPE:
+                        WHEN "CHARACTER" THEN hField:BUFFER-VALUE = cValue NO-ERROR.
+                        WHEN "INTEGER" THEN DO:
+                            iNext = INTEGER(cValue) NO-ERROR.
+                            IF ERROR-STATUS:ERROR OR iNext = ? OR TRIM(STRING(iNext)) <> cValue THEN UNDO, LEAVE.
+                            hField:BUFFER-VALUE = iNext NO-ERROR.
+                        END.
+                        OTHERWISE UNDO, LEAVE.
+                    END CASE.
+                    IF ERROR-STATUS:ERROR OR FieldValue(hField) <> cInitial THEN UNDO, LEAVE.
+                END.
+            END.
+            hField = hBuffer:BUFFER-FIELD(cKeyField).
+            IF hField:BUFFER-VALUE = ? OR INTEGER(hField:BUFFER-VALUE) <> iKey THEN UNDO, LEAVE.
+            lOk = hBuffer:BUFFER-VALIDATE() NO-ERROR.
+            IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
+            lOk = hBuffer:RAW-TRANSFER(TRUE, hRaw) NO-ERROR.
+            IF lOk <> TRUE OR ERROR-STATUS:ERROR THEN UNDO, LEAVE.
+            ASSIGN cImage = RawHex(ttImage.payload)
+                   cValue = FieldValue(hEdit)
+                   cRow = STRING(hBuffer:ROWID).
+            IF cImage = ? OR cValue = ? OR cRow = ? THEN UNDO, LEAVE.
+            IF cMode = "recreate" AND cImage <> cOldImage THEN UNDO, LEAVE.
+        END.
+        lCommitted = TRUE.
+    END.
+    IF NOT lCommitted THEN RUN Fail(cStatus).
+    IF cMode = "delete" THEN RUN AbsentRow.
+END.
 
 IF cValue = ? OR cImage = ? OR cRow = ? THEN RUN Fail("shape").
 PUT STREAM outputFile UNFORMATTED "ROW|" cRow SKIP "IMAGE|" cImage SKIP "VALUE|" cValue SKIP "END" SKIP.
@@ -211,6 +308,12 @@ QUIT.
 PROCEDURE Fail:
     DEFINE INPUT PARAMETER pcError AS CHARACTER NO-UNDO.
     PUT STREAM outputFile UNFORMATTED "ERROR|" pcError SKIP.
+    OUTPUT STREAM outputFile CLOSE.
+    QUIT.
+END PROCEDURE.
+
+PROCEDURE AbsentRow:
+    PUT STREAM outputFile UNFORMATTED "ABSENT" SKIP "END" SKIP.
     OUTPUT STREAM outputFile CLOSE.
     QUIT.
 END PROCEDURE.

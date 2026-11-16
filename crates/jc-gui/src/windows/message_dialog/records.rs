@@ -3,9 +3,9 @@ use super::*;
 use crate::windows::notify::Bridge;
 use jc_app::Wakeup;
 use jc_progress::editor::{
-    BrowseController, BrowseFilter, BrowsePage, BrowseRequest, BrowseTable, RecordController,
-    RecordEvent, RecordPreview, BROWSE_MAX_FILTER_BYTES, BROWSE_PAGE_SIZE,
-    RECORD_EDIT_MAX_VALUE_BYTES,
+    BrowseController, BrowseFilter, BrowsePage, BrowseRequest, BrowseTable, RecordConflict,
+    RecordController, RecordEvent, RecordHistory, RecordPreview, BROWSE_MAX_FILTER_BYTES,
+    BROWSE_PAGE_SIZE, RECORD_EDIT_MAX_VALUE_BYTES,
 };
 use std::{cell::RefCell, path::Path, ptr::null_mut, sync::Arc};
 
@@ -21,13 +21,15 @@ const PREVIOUS: u16 = 107;
 const NEXT: u16 = 108;
 const EDIT: u16 = 109;
 const RESTORE: u16 = 110;
-const BUTTONS: [(u16, &str); 7] = [
+const ROW_ACTIONS: u16 = 111;
+const BUTTONS: [(u16, &str); 8] = [
     (APPLY, "Aplicar filtro"),
     (SORT, "Invertir orden"),
     (PREVIOUS, "Anterior"),
     (NEXT, "Siguiente"),
     (EDIT, "Editar…"),
-    (RESTORE, "Restaurar respaldo…"),
+    (RESTORE, "Historial…"),
+    (ROW_ACTIONS, "Fila…"),
     (CLOSE, "Cerrar"),
 ];
 
@@ -179,7 +181,7 @@ impl Browser<'_> {
         let editable = self.editable();
         BUTTONS
             .into_iter()
-            .filter(move |(id, _)| editable || !matches!(*id, EDIT | RESTORE))
+            .filter(move |(id, _)| editable || !matches!(*id, EDIT | RESTORE | ROW_ACTIONS))
     }
 
     fn template(&self) -> Vec<u32> {
@@ -239,8 +241,9 @@ impl Browser<'_> {
             }
         }
         if self.editable()
-            && (!place(EDIT, p(220), height - p(46), p(92), p(30))
-                || !place(RESTORE, p(320), height - p(46), p(168), p(30)))
+            && (!place(EDIT, p(220), height - p(46), p(78), p(30))
+                || !place(RESTORE, p(306), height - p(46), p(108), p(30))
+                || !place(ROW_ACTIONS, p(422), height - p(46), p(78), p(30)))
         {
             return false;
         }
@@ -412,7 +415,131 @@ impl Browser<'_> {
             let enabled = ready && page.selected_record(hwnd, key).is_some();
             EnableWindow(child(hwnd, EDIT), i32::from(enabled));
             EnableWindow(child(hwnd, RESTORE), i32::from(enabled));
+            let row_actions = ready
+                && page.needs_refresh.is_none()
+                && (0..self.table.columns.len()).any(|column| self.table.can_edit_column(column));
+            EnableWindow(child(hwnd, ROW_ACTIONS), i32::from(row_actions));
         }
+    }
+
+    unsafe fn row_command(&self, hwnd: Hwnd) {
+        let Some(key) = self.table.edit_key_column() else {
+            return;
+        };
+        let row = {
+            let page = self.page.borrow();
+            if !self.editable() || page.busy() || page.needs_refresh.is_some() {
+                return;
+            }
+            page.selected_record(hwnd, key).map(<[_]>::to_vec)
+        };
+        self.page.borrow_mut().reviewing = true;
+        let result = self.choose_row_action(hwnd, key, row.as_deref());
+        self.page.borrow_mut().reviewing = false;
+        match result {
+            Ok(true) => {
+                set_status(hwnd, "Preparando la vista previa…");
+                self.poll(hwnd);
+            }
+            Ok(false) => {}
+            Err(error) => set_status(hwnd, &error),
+        }
+        self.sync_controls(hwnd);
+    }
+
+    unsafe fn choose_row_action(
+        &self,
+        hwnd: Hwnd,
+        key: usize,
+        row: Option<&[Option<String>]>,
+    ) -> Result<bool, String> {
+        let mut options = vec![
+            "Alta de registro".into(),
+            "Restaurar alta o borrado por clave".into(),
+        ];
+        if row.is_some() {
+            options.push("Borrar registro seleccionado".into());
+        }
+        let table = format!("{}.{}", self.table.database, self.table.name);
+        let chooser = self
+            .dialog
+            .child(hwnd, "Operaciones de fila", &table, "Continuar")?;
+        match form::choose_dialog(chooser, &options)? {
+            Some(0) => self.row_key_form(hwnd, key, true),
+            Some(1) => self.row_key_form(hwnd, key, false),
+            Some(2) => {
+                let Some(row) = row else { return Ok(false) };
+                let mut page = self.page.borrow_mut();
+                page.records
+                    .request_delete(self.root, self.table, row, self.wakeup.clone())?;
+                page.record_key = row[key].clone();
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
+    }
+
+    unsafe fn row_key_form(&self, hwnd: Hwnd, key: usize, create: bool) -> Result<bool, String> {
+        let mut columns = vec![key];
+        let (title, details) = if create {
+            columns.extend(
+                (0..self.table.columns.len()).filter(|&column| self.table.can_edit_column(column)),
+            );
+            (
+                "Alta de registro",
+                "Escribe la clave. Los campos vacíos usan el valor inicial de la tabla.",
+            )
+        } else {
+            (
+                "Restaurar alta o borrado",
+                "Escribe la clave del registro en el respaldo.",
+            )
+        };
+        let fields: Vec<_> = columns
+            .iter()
+            .map(|&column| form::Field {
+                label: &self.table.columns[column],
+                value: "",
+                limit: if column == key {
+                    11
+                } else {
+                    RECORD_EDIT_MAX_VALUE_BYTES
+                },
+            })
+            .collect();
+        let dialog = self.dialog.child(hwnd, title, details, "Vista previa")?;
+        form::edit_dialog(dialog, &fields, &mut |values| {
+            let key: i32 = values[0]
+                .trim()
+                .parse()
+                .map_err(|_| "Escribe una clave entera ABL válida")?;
+            let mut page = self.page.borrow_mut();
+            if create {
+                let assignments = columns[1..]
+                    .iter()
+                    .copied()
+                    .zip(values[1..].iter())
+                    .filter(|(_, value)| !value.is_empty())
+                    .map(|(column, value)| (column, value.clone()))
+                    .collect();
+                page.records.request_create(
+                    self.root,
+                    self.table,
+                    key,
+                    assignments,
+                    self.wakeup.clone(),
+                )?;
+            } else {
+                page.records.request_structure_restore(
+                    self.root,
+                    self.table,
+                    key,
+                    self.wakeup.clone(),
+                )?;
+            }
+            page.record_key = Some(key.to_string());
+            Ok(())
+        })
     }
 
     unsafe fn record_command(&self, hwnd: Hwnd, id: u16) {
@@ -436,14 +563,21 @@ impl Browser<'_> {
             self.page
                 .borrow_mut()
                 .records
-                .request_restore(self.root, self.table, &row, self.wakeup.clone())
+                .request_history(self.root, self.table, &row, self.wakeup.clone())
                 .map(|()| true)
         };
         self.page.borrow_mut().reviewing = false;
         match result {
             Ok(true) => {
                 self.page.borrow_mut().record_key = row[key].clone();
-                set_status(hwnd, "Preparando la vista previa…");
+                set_status(
+                    hwnd,
+                    if id == EDIT {
+                        "Preparando la vista previa…"
+                    } else {
+                        "Consultando respaldos…"
+                    },
+                );
                 self.poll(hwnd);
             }
             Ok(false) => {}
@@ -497,6 +631,8 @@ impl Browser<'_> {
     unsafe fn record_event(&self, hwnd: Hwnd, event: Result<RecordEvent, String>) {
         match event {
             Ok(RecordEvent::Preview(preview)) => self.review(hwnd, preview),
+            Ok(RecordEvent::History(history)) => self.history(hwnd, history),
+            Ok(RecordEvent::Conflict(conflict)) => self.restore_conflict(hwnd, conflict),
             Ok(RecordEvent::Applied) => {
                 let (query, offset) = {
                     let mut page = self.page.borrow_mut();
@@ -520,22 +656,99 @@ impl Browser<'_> {
         }
     }
 
-    unsafe fn review(&self, hwnd: Hwnd, preview: RecordPreview) {
-        let target = {
-            let page = self.page.borrow();
-            self.table
-                .edit_key_column()
-                .zip(page.record_key.as_deref())
-                .map(|(key, value)| self.record_label(key, Some(value)))
+    unsafe fn history(&self, hwnd: Hwnd, history: RecordHistory) {
+        let Some(target) = self.selected_record_label() else {
+            return;
         };
-        let Some(target) = target else {
+        if history.entries().is_empty() {
+            self.page.borrow_mut().record_key = None;
+            set_status(hwnd, "El registro aún no tiene respaldos");
+            return;
+        }
+        let names: Vec<_> = history
+            .entries()
+            .iter()
+            .map(|entry| entry.label().to_owned())
+            .collect();
+        self.page.borrow_mut().reviewing = true;
+        let choice = self
+            .dialog
+            .child(hwnd, "Historial de respaldos", &target, "Revisar")
+            .and_then(|chooser| form::choose_dialog(chooser, &names));
+        let mut page = self.page.borrow_mut();
+        page.reviewing = false;
+        let result = choice.and_then(|index| {
+            if let Some(index) = index {
+                page.records.request_history_restore(
+                    self.root,
+                    &history,
+                    index,
+                    self.wakeup.clone(),
+                )?;
+            }
+            Ok(index)
+        });
+        match result {
+            Ok(Some(_)) => set_status(hwnd, "Verificando el respaldo seleccionado…"),
+            Ok(None) => {
+                page.record_key = None;
+                set_status(hwnd, "Historial cerrado");
+            }
+            Err(error) => {
+                page.record_key = None;
+                set_status(hwnd, &error);
+            }
+        }
+    }
+
+    unsafe fn restore_conflict(&self, hwnd: Hwnd, conflict: RecordConflict) {
+        let Some(target) = self.selected_record_label() else {
+            return;
+        };
+        let message = format!(
+            "{target}\r\nColumna: {}\r\n\r\nLa imagen completa del registro difiere del respaldo.\r\n\r\nValor actual\r\n{}\r\n\r\nValor registrado después del cambio\r\n{}",
+            conflict.column,
+            display_value(conflict.actual.as_deref()),
+            display_value(conflict.expected.as_deref())
+        );
+        self.page.borrow_mut().reviewing = true;
+        let answer = self
+            .dialog
+            .child(hwnd, "Conflicto de restauración", &message, "Cerrar")
+            .and_then(|mut dialog| {
+                dialog.scrollable = true;
+                super::show(hwnd, &mut dialog)
+            });
+        let mut page = self.page.borrow_mut();
+        page.reviewing = false;
+        page.record_key = None;
+        set_status(
+            hwnd,
+            &answer
+                .err()
+                .unwrap_or_else(|| "Conflicto de restauración".into()),
+        );
+    }
+
+    fn selected_record_label(&self) -> Option<String> {
+        let page = self.page.borrow();
+        self.table
+            .edit_key_column()
+            .zip(page.record_key.as_deref())
+            .map(|(key, value)| self.record_label(key, Some(value)))
+    }
+
+    unsafe fn review(&self, hwnd: Hwnd, preview: RecordPreview) {
+        let Some(target) = self.selected_record_label() else {
             set_status(
                 hwnd,
                 "No se pudo identificar el registro de la vista previa",
             );
             return;
         };
-        let (title, action, completed) = if preview.restoring {
+        let (title, action, completed) = if let Some(title) = preview.structural_title {
+            (title, "Confirmar", "Operación de fila confirmada")
+        } else if preview.restoring {
             (
                 "Vista previa de restauración",
                 "Restaurar",
@@ -548,12 +761,16 @@ impl Browser<'_> {
                 "Edición respaldada y guardada",
             )
         };
-        let message = preview_message(
-            &target,
-            &preview.column,
-            preview.before.as_deref(),
-            preview.after.as_deref(),
-        );
+        let message = if preview.structural_title.is_some() {
+            structural_preview_message(&target, preview.before.as_deref(), preview.after.as_deref())
+        } else {
+            preview_message(
+                &target,
+                &preview.column,
+                preview.before.as_deref(),
+                preview.after.as_deref(),
+            )
+        };
         self.page.borrow_mut().reviewing = true;
         let answer = self
             .dialog
@@ -687,6 +904,14 @@ fn preview_message(
 fn display_value(value: Option<&str>) -> String {
     // Quotes distinguish empty text and literal "(desconocido)" from ABL ?.
     value.map_or_else(|| "(desconocido)".into(), |value| format!("{value:?}"))
+}
+
+fn structural_preview_message(target: &str, before: Option<&str>, after: Option<&str>) -> String {
+    format!(
+        "{target}\r\n\r\nEstado actual\r\n{}\r\n\r\nEstado propuesto\r\n{}",
+        before.unwrap_or("Registro ausente").replace('\n', "\r\n"),
+        after.unwrap_or("Registro ausente").replace('\n', "\r\n")
+    )
 }
 
 unsafe fn selected_index(grid: Hwnd) -> Option<usize> {
@@ -913,6 +1138,10 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
             }
             (id @ (EDIT | RESTORE), 0) => {
                 browser.record_command(hwnd, id);
+                1
+            }
+            (ROW_ACTIONS, 0) => {
+                browser.row_command(hwnd);
                 1
             }
             _ => 0,
@@ -1193,10 +1422,38 @@ mod tests {
                 assert_eq!(selected_index(grid), Some(0));
             }
             browser.review_answer.set(Some(true));
+            form::script_record_history(0);
             SendMessageW(hwnd, WM_COMMAND, usize::from(RESTORE), 0);
             let status = wait_for_window(&browser, hwnd);
             assert!(status.starts_with("Respaldo restaurado"), "{status}");
             assert_eq!(name(), original);
+
+            let key = &table.columns[table.edit_key_column().unwrap()];
+            let new_key = "-12345678";
+            let inserted = "CIDE fila GUI";
+            for (action, fields, expected) in [
+                (
+                    0,
+                    vec![
+                        (key.as_str(), new_key),
+                        (table.columns[column].as_str(), inserted),
+                    ],
+                    inserted,
+                ),
+                (1, vec![(key.as_str(), new_key)], original.as_str()),
+                (1, vec![(key.as_str(), new_key)], inserted),
+                (2, Vec::new(), original.as_str()),
+            ] {
+                browser.review_answer.set(Some(true));
+                form::script_row_action(action, &fields);
+                SendMessageW(hwnd, WM_COMMAND, usize::from(ROW_ACTIONS), 0);
+                let status = wait_for_window(&browser, hwnd);
+                assert!(
+                    status.starts_with("Operación de fila confirmada"),
+                    "{status}"
+                );
+                assert_eq!(name(), expected);
+            }
         }
     }
 
