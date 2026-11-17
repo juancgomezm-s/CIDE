@@ -162,6 +162,9 @@ pub struct TuiApp {
     replace_files: usize,
     replace_conflicts: usize,
     should_exit: bool,
+    exit_waiting_for_save: bool,
+    save_closing_tab: Option<jc_app::TabId>,
+    save_batch: Option<std::collections::VecDeque<(jc_app::DocumentId, u64, bool)>>,
     recovery: Option<jc_app::session::EditorRecovery>,
     pub(crate) periodic_recovery: jc_app::session::PeriodicRecovery,
     default_encoding: Option<TextEncoding>,
@@ -261,6 +264,9 @@ impl TuiApp {
             tasks: jc_app::JobSystem::new(jc_app::JobLimits::default(), wakeup)
                 .expect("valid default task quotas"),
             should_exit: false,
+            exit_waiting_for_save: false,
+            save_closing_tab: None,
+            save_batch: None,
             recovery: None,
             periodic_recovery: Default::default(),
             default_encoding: options.encoding,
@@ -280,6 +286,7 @@ impl TuiApp {
             changed: self.syntax_pending | self.poll_large_file(),
             ..TaskUpdate::default()
         };
+        update.changed |= self.poll_save();
         if let Some(result) = self.workbench.poll_large_view() {
             update.changed = true;
             if let Err(error) = result {
@@ -506,10 +513,22 @@ impl TuiApp {
             self.status = "Espera a que termine la operación de registros ABL".into();
             return;
         }
-        match self.checkpoint_session() {
-            Ok(()) => self.should_exit = true,
-            Err(error) => self.status = format!("No se cerró el editor: {error}"),
+        if self.workbench.save_pending() || self.save_batch.is_some() {
+            self.exit_waiting_for_save = true;
+            self.status = "Cerrando cuando termine el guardado…".into();
+            return;
         }
+        self.exit_waiting_for_save = false;
+        if self.recovery.is_none() && !self.periodic_recovery.active() {
+            if self.workbench.modified_documents().next().is_none() {
+                self.should_exit = true;
+            } else {
+                self.status = "Hay documentos sin guardar; guárdalos o ciérralos primero".into();
+            }
+            return;
+        }
+        self.periodic_recovery.request_final(&self.syntax_wakeup);
+        self.status = "Guardando la sesión antes de cerrar…".into();
     }
 }
 

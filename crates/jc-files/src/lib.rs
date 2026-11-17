@@ -141,7 +141,68 @@ pub struct FileSession {
     disk_fingerprint: Option<Fingerprint>,
 }
 
+pub struct PagedSave {
+    plan: jc_core::PagedReadPlan,
+    origin: PathBuf,
+    destination: PathBuf,
+    baseline: Option<Fingerprint>,
+}
+
+pub struct PublishedSave {
+    identity: u64,
+    revision: u64,
+    origin: PathBuf,
+    destination: PathBuf,
+    baseline: Option<Fingerprint>,
+    fingerprint: Fingerprint,
+}
+
+impl PagedSave {
+    pub fn publish(self) -> Result<PublishedSave, FileError> {
+        let expected = if self.destination == self.origin {
+            self.baseline
+        } else {
+            None
+        };
+        let fingerprint =
+            write_fingerprinted(&self.destination, expected.is_none(), expected, |writer| {
+                self.plan.visit(|bytes| writer.write_all(bytes))
+            })?;
+        Ok(PublishedSave {
+            identity: self.plan.document_identity(),
+            revision: self.plan.revision(),
+            origin: self.origin,
+            destination: self.destination,
+            baseline: self.baseline,
+            fingerprint,
+        })
+    }
+}
+
 impl FileSession {
+    pub fn prepare_paged_save(&self, destination: Option<PathBuf>) -> Result<PagedSave, FileError> {
+        Ok(PagedSave {
+            plan: self.document.prepare_paged_save()?,
+            origin: self.path.clone(),
+            destination: destination.unwrap_or_else(|| self.path.clone()),
+            baseline: self.disk_fingerprint,
+        })
+    }
+
+    pub fn accept_paged_save(&mut self, saved: PublishedSave) -> Result<(), FileError> {
+        if self.document.recovery_identity() != saved.identity
+            || self.path != saved.origin
+            || self.disk_fingerprint != saved.baseline
+        {
+            return Err(
+                io::Error::other("Se publicó el archivo, pero la sesión de origen cambió").into(),
+            );
+        }
+        self.path = saved.destination;
+        self.disk_fingerprint = Some(saved.fingerprint);
+        self.document.mark_saved_revision(saved.revision);
+        Ok(())
+    }
     pub fn open(
         path: impl Into<PathBuf>,
         explicit: Option<TextEncoding>,
@@ -401,22 +462,36 @@ impl FileSession {
         create_only: bool,
         expected: Option<Fingerprint>,
     ) -> Result<(), FileError> {
-        let mut saved_fingerprint = None;
-        atomic_replace_with_commit(
+        self.disk_fingerprint = Some(write_fingerprinted(
             path,
             create_only,
-            |file| {
-                let mut writer = FingerprintingWriter::new(file);
-                self.document.write_to(&mut writer)?;
-                saved_fingerprint = Some(writer.fingerprint());
-                Ok(())
-            },
-            |temporary, target| replace_expected(temporary, target, expected),
-        )?;
-        self.disk_fingerprint = saved_fingerprint;
+            expected,
+            |writer| self.document.write_to(writer),
+        )?);
         self.document.mark_saved();
         Ok(())
     }
+}
+
+fn write_fingerprinted(
+    path: &Path,
+    create_only: bool,
+    expected: Option<Fingerprint>,
+    write: impl FnOnce(&mut dyn Write) -> io::Result<()>,
+) -> Result<Fingerprint, FileError> {
+    let mut saved = None;
+    atomic_replace_with_commit(
+        path,
+        create_only,
+        |file| {
+            let mut writer = FingerprintingWriter::new(file);
+            write(&mut writer)?;
+            saved = Some(writer.fingerprint());
+            Ok(())
+        },
+        |temporary, target| replace_expected(temporary, target, expected),
+    )?;
+    Ok(saved.expect("la publicación requiere la escritura completa"))
 }
 
 fn replace_expected(

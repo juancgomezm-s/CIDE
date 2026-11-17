@@ -124,6 +124,7 @@ impl TuiApp {
         }
         Ok(metadata)
     }
+    #[cfg(test)]
     pub(crate) fn checkpoint_session(&mut self) -> Result<(), String> {
         self.periodic_recovery.cancel_and_join(&mut self.recovery);
         if self.recovery.is_none() {
@@ -144,20 +145,55 @@ impl TuiApp {
                 Ok(value) => value,
                 Err(error) => {
                     self.periodic_recovery.defer_failure(now);
-                    self.status = error;
+                    if self.periodic_recovery.finalizing() {
+                        self.periodic_recovery.cancel_final();
+                        self.status = format!("No se cerró el editor: {error}");
+                    } else {
+                        self.status = error;
+                    }
                     return true;
                 }
             }
         } else {
             Vec::new()
         };
-        if let Some(message) = self.periodic_recovery.poll(
+        let message = self.periodic_recovery.poll(
             &mut self.recovery,
             &self.workbench,
             &metadata,
             now,
             &self.syntax_wakeup,
-        ) {
+        );
+        if self.periodic_recovery.finalizing()
+            && !self.periodic_recovery.active()
+            && !self.workbench.save_pending()
+            && self.save_batch.is_none()
+        {
+            let result = self.recovery_metadata().and_then(|live| {
+                self.periodic_recovery
+                    .final_result(
+                        self.recovery.as_ref(),
+                        &self.workbench,
+                        &live,
+                        message.as_deref(),
+                        &self.syntax_wakeup,
+                    )
+                    .transpose()
+            });
+            match result {
+                Ok(Some(())) => {
+                    self.should_exit = true;
+                    return true;
+                }
+                Err(error) => {
+                    self.periodic_recovery.cancel_final();
+                    self.status = format!("No se cerró el editor: {error}");
+                    return true;
+                }
+                Ok(None) => {}
+            }
+        }
+        if let Some(message) = message {
             self.status = message;
             true
         } else {
@@ -222,6 +258,19 @@ mod tests {
             }
         }
     }
+    fn settle_exit(app: &mut TuiApp) {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while app.periodic_recovery.finalizing() || app.exit_waiting_for_save {
+            assert!(
+                std::time::Instant::now() < until,
+                "Cierre pendiente: {}",
+                app.status
+            );
+            app.poll_tasks();
+            app.poll_periodic_recovery();
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
     #[test]
     fn paged_tui_opens_draws_saves_and_recovers_an_unsaved_edit() {
         let fixture = Fixture::new();
@@ -263,6 +312,13 @@ mod tests {
         assert!((0..25).any(|row| screen.row_text(row).contains("final")));
         app.workbench.insert_text("guardado ").unwrap();
         app.dispatch(CommandId::FileSave);
+        assert!(app.workbench.save_pending());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while app.workbench.save_pending() {
+            assert!(std::time::Instant::now() < deadline);
+            app.poll_tasks();
+            std::thread::yield_now();
+        }
         bytes.splice(cursor..cursor, b"guardado ".iter().copied());
         assert_eq!(fs::read(&path).unwrap(), bytes);
         app.workbench.insert_text("pendiente ").unwrap();
@@ -406,6 +462,7 @@ mod tests {
         app.workbench.insert_text("dos ").unwrap();
         let live = app.workbench.active_bytes().unwrap();
         app.request_exit();
+        settle_exit(&mut app);
         assert!(!app.should_exit());
         assert!(app.status.starts_with("No se cerró el editor:"));
         assert_eq!(app.workbench.active_bytes().unwrap(), live);
@@ -420,6 +477,8 @@ mod tests {
         assert_eq!(previous.active_bytes().unwrap(), first);
         assert_eq!(app.workbench.active_bytes().unwrap(), live);
         app.request_exit();
+        assert!(!app.should_exit());
+        settle_exit(&mut app);
         assert!(app.should_exit());
         drop(app);
         let mut recovered = TuiApp::new(LaunchOptions::default());
@@ -492,6 +551,8 @@ mod tests {
             .document()
             .undo_steps();
         app.dispatch(CommandId::FileExit);
+        assert!(!app.should_exit());
+        settle_exit(&mut app);
         assert!(app.should_exit(), "FileExit debe reconocer la recuperación activa aunque el trabajador posea la concesión");
         assert!(!app.periodic_recovery.active() && app.recovery.is_some());
         let mut backup = app

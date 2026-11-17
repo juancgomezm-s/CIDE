@@ -201,6 +201,7 @@ pub enum CommandOutcome {
 #[derive(Debug, Default)]
 pub struct Workbench {
     large_open: large_open::LargeOpen,
+    paged_save: Option<save_target::PendingSave>,
     selection_transaction: Option<DocumentId>,
     show_invisibles: bool,
     pub(crate) tabs: TabManager,
@@ -927,6 +928,7 @@ impl Workbench {
     }
 
     pub fn save_active(&mut self) -> Result<(), WorkbenchError> {
+        self.require_no_pending_save()?;
         self.active_document_mut()
             .ok_or(WorkbenchError::NoDocument)?
             .session
@@ -943,6 +945,7 @@ impl Workbench {
     }
 
     pub fn save_all(&mut self) -> Result<(), WorkbenchError> {
+        self.require_no_pending_save()?;
         for document in &mut self.documents {
             if document.session.document().is_modified() {
                 document.session.save()?;
@@ -971,6 +974,15 @@ impl Workbench {
             return Ok(None);
         }
         let document = self.active_document().ok_or(WorkbenchError::NoDocument)?;
+        if self
+            .paged_save
+            .as_ref()
+            .is_some_and(|save| save.document == document.id)
+        {
+            return Err(WorkbenchError::Save(
+                "Espera a que termine el guardado de esta pestaña".into(),
+            ));
+        }
         if !discard_dirty && document.session.document().is_modified() {
             return Ok(Some(tab));
         }

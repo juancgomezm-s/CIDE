@@ -117,6 +117,17 @@ impl TuiApp {
             self.open_data_connections();
             return;
         }
+        if command == CommandId::FileSave && self.workbench.active_paged_byte().is_some() {
+            self.status = match self.workbench.request_save_active(None) {
+                Ok(_) => "Guardando archivo en segundo plano…".into(),
+                Err(error) => error.to_string(),
+            };
+            return;
+        }
+        if command == CommandId::FileSaveAll {
+            self.request_save_all();
+            return;
+        }
         match self.workbench.execute(command) {
             Ok(outcome) => {
                 self.handle_outcome(outcome);
@@ -211,15 +222,7 @@ impl TuiApp {
                 self.overlay = UiOverlay::CloseDialog { tab };
             }
             CommandOutcome::ExitRequested => {
-                if self.recovery.is_some()
-                    || self.periodic_recovery.active()
-                    || self.workbench.context().dirty_documents == 0
-                {
-                    self.request_exit();
-                } else {
-                    self.status =
-                        "Hay documentos sin guardar; guárdalos o ciérralos primero".to_owned();
-                }
+                self.request_exit();
             }
         }
     }

@@ -195,10 +195,18 @@ impl TuiApp {
                 KeyCode::Char(ch)
                     if ch.eq_ignore_ascii_case(&'g') || ch.eq_ignore_ascii_case(&'s') =>
                 {
-                    match self.workbench.save_active() {
-                        Ok(()) => {
+                    if self.workbench.tabs().active_id() != Some(tab) {
+                        return;
+                    }
+                    match self.workbench.request_save_active(None) {
+                        Ok(true) => {
                             let _ = self.workbench.close_active(true);
                             self.status = "Guardado y cerrado".to_owned();
+                            self.close_overlay();
+                        }
+                        Ok(false) => {
+                            self.save_closing_tab = Some(tab);
+                            self.status = "Guardando archivo en segundo plano…".into();
                             self.close_overlay();
                         }
                         Err(error) => self.status = error.to_string(),

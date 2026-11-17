@@ -20,7 +20,7 @@ const SNAPSHOT_LIMIT: u64 = 7 * 1024 * 1024 * 1024;
 
 #[derive(Default)]
 pub(super) struct LargeOpen {
-    wakeup: Wakeup,
+    pub(super) wakeup: Wakeup,
     pending: Option<PendingOpen>,
     view: Option<PendingView>,
     next_view: Option<ViewRequest>,
@@ -564,9 +564,26 @@ mod tests {
         bench.insert_text("á ").unwrap();
         settle(&wake, Duration::from_secs(10), || bench.poll_large_view()).unwrap();
         assert!(bench.active_position().is_some());
-        bench.save_active().unwrap();
+        assert!(!bench.request_save_active(None).unwrap());
+        assert!(bench.save_pending());
+        assert!(bench.close_active(true).is_err());
+        bench.insert_text("pendiente ").unwrap();
+        settle(&wake, Duration::from_secs(10), || bench.poll_save()).unwrap();
+        assert!(bench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .is_modified());
         contents.splice(tail + 2..tail + 2, "á ".bytes());
         assert_eq!(std::fs::read(&path).unwrap(), contents);
+        bench.undo().unwrap();
+        assert!(!bench
+            .active_document()
+            .unwrap()
+            .session
+            .document()
+            .is_modified());
         std::fs::write(&path, b"cambio externo").unwrap();
         assert_eq!(
             bench
@@ -578,9 +595,26 @@ mod tests {
                 .unwrap(),
             "á ".as_bytes()
         );
-        bench.undo().unwrap();
-        settle(&wake, Duration::from_secs(10), || bench.poll_large_view()).unwrap();
-        assert!(bench.save_active().is_err());
+        assert!(!bench.request_save_active(None).unwrap());
+        assert!(settle(&wake, Duration::from_secs(10), || bench.poll_save()).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"cambio externo");
+
+        let destination = path.with_extension("nuevo.txt");
+        let _destination_cleanup = Cleanup(destination.clone());
+        std::fs::write(&destination, b"existente").unwrap();
+        assert!(!bench
+            .request_save_active(Some(destination.clone()))
+            .unwrap());
+        assert!(settle(&wake, Duration::from_secs(10), || bench.poll_save()).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"existente");
+        std::fs::remove_file(&destination).unwrap();
+        assert!(!bench
+            .request_save_active(Some(destination.clone()))
+            .unwrap());
+        settle(&wake, Duration::from_secs(10), || bench.poll_save()).unwrap();
+        assert_eq!(bench.active_path(), Some(destination.as_path()));
+        assert_eq!(std::fs::read(&destination).unwrap(), contents);
+        assert_eq!(std::fs::read(&path).unwrap(), b"cambio externo");
     }
 
     #[test]
@@ -681,7 +715,8 @@ mod tests {
         .unwrap();
         assert_eq!(workbench.active_paged_byte(), Some(OFFSET + 2));
         workbench.insert_text("publicado ").unwrap();
-        workbench.save_active().unwrap();
+        assert!(!workbench.request_save_active(None).unwrap());
+        settle(&wake, Duration::from_secs(300), || workbench.poll_save()).unwrap();
         let mut disk = [0; 10];
         assert_eq!(
             fs::File::open(&path)
@@ -695,12 +730,21 @@ mod tests {
         // Verify that recovery uses its immutable arena even if the original
         // disappears. Removing this owned fixture also bounds peak disk usage.
         fs::remove_file(&path).unwrap();
-        {
-            let mut recovery = EditorRecovery::open_in(&depot).unwrap();
-            workbench
-                .checkpoint_recovery(&mut recovery.store, &fixture.root, b"")
-                .unwrap();
-        }
+        let mut recovery = Some(EditorRecovery::open_in(&depot).unwrap());
+        let mut periodic = crate::session::PeriodicRecovery::default();
+        periodic.request_final(&wake);
+        settle(&wake, Duration::from_secs(300), || {
+            let message = periodic.poll(&mut recovery, &workbench, b"", Instant::now(), &wake);
+            periodic.final_result(
+                recovery.as_ref(),
+                &workbench,
+                b"",
+                message.as_deref(),
+                &wake,
+            )
+        })
+        .unwrap();
+        drop(recovery);
         drop(workbench);
         let mut recovery = EditorRecovery::open_in(&depot).unwrap();
         let (mut restored, _, used_backup) = Workbench::restore_recovery(&mut recovery.store)

@@ -201,6 +201,7 @@ impl State {
         metadata.extend_from_slice(&self.minimap_width.to_le_bytes());
         Ok(metadata)
     }
+    #[cfg(test)]
     pub(super) fn checkpoint_session(&mut self) -> Result<bool, String> {
         self.periodic_recovery.cancel_and_join(&mut self.recovery);
         if self.recovery.is_none() {
@@ -214,14 +215,24 @@ impl State {
         let _ = recovery.store.prune_obsolete();
         Ok(true)
     }
-    pub(super) fn prepare_exit(&mut self) -> Result<(), String> {
-        if !self.checkpoint_session()? && self.workbench.context().dirty_documents > 0 {
-            return Err(
-                "La recuperación está desactivada en esta ejecución. Se conservó la ventana con los cambios sin guardar."
-                    .into(),
-            );
+    pub(super) fn request_exit(&mut self) -> Result<bool, String> {
+        if self.workbench.save_pending() || self.save_all_active {
+            self.exit_waiting_for_save = true;
+            self.status = "Cerrando cuando termine el guardado…".into();
+            return Ok(false);
         }
-        Ok(())
+        self.exit_waiting_for_save = false;
+        if self.recovery.is_none() && !self.periodic_recovery.active() {
+            if self.workbench.modified_documents().next().is_some() {
+                return Err(
+                    "La recuperación está desactivada. Guarda los cambios antes de cerrar".into(),
+                );
+            }
+            return Ok(true);
+        }
+        self.periodic_recovery.request_final(&self.wakeup);
+        self.status = "Guardando la sesión antes de cerrar…".into();
+        Ok(false)
     }
     pub(super) fn poll_periodic_recovery(&mut self) -> bool {
         let now = std::time::Instant::now();
@@ -230,20 +241,55 @@ impl State {
                 Ok(value) => value,
                 Err(error) => {
                     self.periodic_recovery.defer_failure(now);
-                    self.status = error;
+                    if self.periodic_recovery.finalizing() {
+                        self.periodic_recovery.cancel_final();
+                        self.error(format!("No se cerró el editor: {error}"));
+                    } else {
+                        self.status = error;
+                    }
                     return true;
                 }
             }
         } else {
             Vec::new()
         };
-        if let Some(message) = self.periodic_recovery.poll(
+        let message = self.periodic_recovery.poll(
             &mut self.recovery,
             &self.workbench,
             &metadata,
             now,
             &self.wakeup,
-        ) {
+        );
+        if self.periodic_recovery.finalizing()
+            && !self.periodic_recovery.active()
+            && !self.workbench.save_pending()
+            && !self.save_all_active
+        {
+            let result = self.recovery_metadata().and_then(|live| {
+                self.periodic_recovery
+                    .final_result(
+                        self.recovery.as_ref(),
+                        &self.workbench,
+                        &live,
+                        message.as_deref(),
+                        &self.wakeup,
+                    )
+                    .transpose()
+            });
+            match result {
+                Ok(Some(())) => {
+                    self.exit_ready = true;
+                    return true;
+                }
+                Err(error) => {
+                    self.periodic_recovery.cancel_final();
+                    self.error(format!("No se cerró el editor: {error}"));
+                    return true;
+                }
+                Ok(None) => {}
+            }
+        }
+        if let Some(message) = message {
             self.status = message;
             true
         } else {
@@ -308,6 +354,18 @@ mod tests {
             }
         }
     }
+    fn settle_exit(state: &mut State) {
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while state.periodic_recovery.finalizing() {
+            assert!(
+                std::time::Instant::now() < until,
+                "Cierre pendiente: {}",
+                state.status
+            );
+            state.poll_periodic_recovery();
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
     #[test]
     fn paged_gui_opens_draws_saves_and_recovers_an_unsaved_edit() {
         let fixture = Fixture::new();
@@ -339,6 +397,7 @@ mod tests {
                     "Entrega de archivo paginado incompleta"
                 );
                 state.poll_tasks();
+                state.poll_periodic_recovery();
                 std::thread::yield_now();
             }
         };
@@ -358,10 +417,22 @@ mod tests {
         super::super::paint::prepare(&mut state);
         state.workbench.insert_text("guardado ").unwrap();
         state.execute_menu(CommandId::FileSave);
+        assert!(state.workbench.save_pending());
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if let Some(result) = state.workbench.poll_save() {
+                result.unwrap();
+                break;
+            }
+            assert!(std::time::Instant::now() < until);
+            std::thread::yield_now();
+        }
         bytes.splice(cursor..cursor, b"guardado ".iter().copied());
         assert_eq!(fs::read(&path).unwrap(), bytes);
         state.workbench.insert_text("pendiente ").unwrap();
-        assert!(state.checkpoint_session().unwrap());
+        assert!(!state.request_exit().unwrap());
+        assert!(!state.exit_ready);
+        poll_until(&mut state, |state| state.exit_ready);
         drop(state);
         let mut restored = State::new(&GuiOptions::default()).unwrap();
         restored.restore_from(fixture.recovery()).unwrap();
@@ -388,7 +459,7 @@ mod tests {
             .workbench
             .new_file("sin-guardar.txt", TextEncoding::Utf8);
         state.workbench.insert_text("pendiente\r\n").unwrap();
-        assert!(state.prepare_exit().is_err());
+        assert!(state.request_exit().is_err());
         assert_eq!(state.workbench.active_bytes().unwrap(), b"pendiente\r\n");
         state.workbench.undo().unwrap();
         assert_eq!(state.workbench.active_bytes().unwrap(), b"");
@@ -662,7 +733,9 @@ mod tests {
             .unwrap();
         state.workbench.insert_text("dos ").unwrap();
         let live = state.workbench.active_bytes().unwrap();
-        assert!(state.prepare_exit().is_err());
+        assert!(!state.request_exit().unwrap());
+        settle_exit(&mut state);
+        assert!(!state.exit_ready && state.status.starts_with("No se cerró el editor:"));
         assert_eq!(state.workbench.active_bytes().unwrap(), live);
         assert!(state
             .workbench
@@ -681,7 +754,9 @@ mod tests {
         assert!(backup);
         assert_eq!(previous.active_bytes().unwrap(), first);
         assert_eq!(state.workbench.active_bytes().unwrap(), live);
-        assert!(state.checkpoint_session().unwrap());
+        assert!(!state.request_exit().unwrap());
+        settle_exit(&mut state);
+        assert!(state.exit_ready);
         drop(state);
         let mut recovered = State::new(&GuiOptions::default()).unwrap();
         recovered.restore_from(fixture.recovery()).unwrap();
@@ -690,7 +765,7 @@ mod tests {
     }
 
     #[test]
-    fn gui_hot_exit_joins_active_periodic_writer_then_checkpoints_latest_edits() {
+    fn gui_hot_exit_finishes_active_periodic_writer_then_checkpoints_latest_edits() {
         use jc_app::session::{PeriodicRecovery, RecoveryPolicy};
         use std::time::{Duration, Instant};
         let fixture = Fixture::new();
@@ -739,7 +814,7 @@ mod tests {
             .is_none());
         assert!(state.periodic_recovery.active() && state.recovery.is_none());
         // No End has been emitted. The worker owns the store while the model
-        // receives an edit that must be captured by the final synchronous save.
+        // receives an edit that the final checkpoint must capture.
         state.workbench.insert_text("último ").unwrap();
         let latest = state.workbench.active_bytes().unwrap();
         let caret = state
@@ -757,7 +832,10 @@ mod tests {
             .session
             .document()
             .undo_steps();
-        assert!(state.checkpoint_session().unwrap());
+        assert!(!state.request_exit().unwrap());
+        assert!(!state.exit_ready);
+        settle_exit(&mut state);
+        assert!(state.exit_ready);
         assert!(!state.periodic_recovery.active() && state.recovery.is_some());
         let mut backup = state
             .recovery

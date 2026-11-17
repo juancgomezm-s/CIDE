@@ -467,12 +467,15 @@ enum Action {
     SaveAll,
     CloseTab,
     Exit,
+    FinishExit,
     Minimize,
     MaxRestore,
 }
 struct State {
     recovery: Option<jc_app::session::EditorRecovery>,
     periodic_recovery: jc_app::session::PeriodicRecovery,
+    exit_waiting_for_save: bool,
+    exit_ready: bool,
     restore_window: Option<(i32, i32, bool)>,
     open_diff: jc_app::open_diff::OpenDiffController,
     open_diff_view: jc_app::open_diff_view::OpenDiffView,
@@ -578,6 +581,7 @@ struct State {
     smoke_save_paths: std::collections::VecDeque<Option<PathBuf>>,
     smoke_close_decisions: std::collections::VecDeque<bool>,
     save_all_active: bool,
+    pending_save_all: Option<save_plan::SavePlan>,
     pub key_override: Option<Modifiers>,
 }
 impl Drop for State {
@@ -632,6 +636,8 @@ impl State {
             startup_files: Default::default(),
             recovery: None,
             periodic_recovery: Default::default(),
+            exit_waiting_for_save: false,
+            exit_ready: false,
             restore_window: None,
             registry: default_registry(),
             keymap: default_keymap(),
@@ -734,6 +740,7 @@ impl State {
             smoke_save_paths: Default::default(),
             smoke_close_decisions: Default::default(),
             save_all_active: false,
+            pending_save_all: None,
             key_override: None,
         };
         if let Some(root) = options
@@ -1244,6 +1251,13 @@ impl State {
                     .is_some_and(|document| document.session.is_new()) =>
             {
                 return Action::SaveAs
+            }
+            CommandId::FileSave if self.workbench.active_paged_byte().is_some() => {
+                match self.workbench.request_save_active(None) {
+                    Ok(_) => self.status = "Guardando archivo en segundo plano…".into(),
+                    Err(error) => self.error(error),
+                }
+                return Action::None;
             }
             _ => {}
         }
@@ -2241,6 +2255,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             WM_CLOSE => action = Action::Exit,
             _ => handled = false,
         }
+        if state.exit_ready {
+            action = Action::FinishExit;
+        }
         state.schedule_search();
         redraw |= state.validate_project_search();
         redraw |= state.validate_git_context();
@@ -2262,6 +2279,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     release_idle_capture(hwnd);
     recovery::arm(hwnd);
     perform(hwnd, action);
+    if message == TASKS_MESSAGE {
+        redraw |= save_flow::poll_paged_save(hwnd);
+    }
     if let Some(current) = self::owner(hwnd) {
         let mut state = current.state.borrow_mut();
         if message != TASKS_MESSAGE && state.workbench.large_open_pending() {
@@ -2526,12 +2546,14 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             if let Some(owner) = owner(hwnd) {
                 let mut state = owner.state.borrow_mut();
                 match selected {
-                    Ok(Some(path)) => match state.workbench.save_target(target, Some(path)) {
-                        Ok(()) => {
+                    Ok(Some(path)) => match state.workbench.request_save_target(target, Some(path))
+                    {
+                        Ok(true) => {
                             state.save_count += 1;
                             state.status = "Guardado".into();
                             state.schedule_git_status();
                         }
+                        Ok(false) => state.status = "Guardando archivo en segundo plano…".into(),
                         Err(error) => state.error(error),
                     },
                     Ok(None) => {}
@@ -2549,15 +2571,28 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         }
         Action::Exit => {
             if let Some(owner) = owner(hwnd) {
-                let result = owner.state.borrow_mut().prepare_exit();
-                if let Err(error) = result {
-                    owner
-                        .state
-                        .borrow_mut()
-                        .error(format!("No se cerró el editor: {error}"));
-                    return;
+                let result = owner.state.borrow_mut().request_exit();
+                match result {
+                    Ok(false) => {
+                        owner.frame_dirty.set(true);
+                        InvalidateRect(hwnd, std::ptr::null(), 0);
+                        return;
+                    }
+                    Err(error) => {
+                        owner
+                            .state
+                            .borrow_mut()
+                            .error(format!("No se cerró el editor: {error}"));
+                        owner.frame_dirty.set(true);
+                        InvalidateRect(hwnd, std::ptr::null(), 0);
+                        return;
+                    }
+                    Ok(true) => {}
                 }
             }
+            DestroyWindow(hwnd);
+        }
+        Action::FinishExit => {
             DestroyWindow(hwnd);
         }
     }

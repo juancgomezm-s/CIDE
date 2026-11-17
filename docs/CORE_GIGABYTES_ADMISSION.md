@@ -33,13 +33,21 @@ teclas de página pueden pasar de un tramo al siguiente. Fuera del tramo
 inicial se muestra el byte de la selección en la barra inferior. La vista
 solo acepta resultados de la revisión y la codificación vigentes.
 
-El guardado conserva el reemplazo atómico condicionado a la huella en disco.
+El guardado de archivos paginados publica en segundo plano y conserva el
+reemplazo atómico condicionado a la huella en disco. El trabajador fija la
+revisión solicitada y comparte el original inmutable. Si se edita después de
+solicitar el guardado, la revisión publicada actualiza la huella y los cambios
+posteriores siguen pendientes. Guardar como crea el destino exclusivamente y
+Guardar todo espera la confirmación de cada archivo antes de pasar al siguiente.
 La recuperación periódica entrega la fuente original al trabajador, que la
 escribe por tramos junto con las ediciones y el historial. El formato de
 sesión distingue fuentes residentes y paginadas y sigue leyendo las versiones
 anteriores. Al recuperar una sesión, se reconstruye la vista alrededor del
 cursor que se guardó. Las inserciones retenidas tienen un límite de 64 MiB
 por documento paginado y el almacén admite hasta 16 GiB por generación.
+Al cerrar, el editor espera el guardado que esté en curso y pide la captura
+final al mismo trabajador. Solo sale al confirmar la versión vigente, incluida
+la posición del cursor. Si la publicación falla, el editor queda abierto.
 
 Las pruebas dirigidas recorrieron la GUI y la TUI desde el modelo y la
 presentación de cada interfaz, con apertura paginada, salto, edición, guardado
@@ -48,11 +56,15 @@ la captura periódica. Una ejecución optimizada del editor compartido abrió
 4.294.967.314 bytes, saltó al byte 4.294.967.307, editó y guardó. Después de
 retirar el original de prueba, restauró una edición pendiente y deshizo al
 estado guardado. Tardó 92,15 segundos en Windows x64 y limpió su directorio.
-Pasaron el formato, Clippy dirigido y la compilación optimizada local del
-workspace. Los ejecutables y sus huellas están en
-`target/gb-editor-next/release`, con la caché reutilizada de `target/build-cache`.
+La repetición con guardado y captura final en el trabajador pasó en 76,96
+segundos. Las regresiones dirigidas confirmaron que los cambios posteriores
+siguen pendientes, que Guardar como respeta destinos existentes y que un
+bloqueo de la recuperación deja abierta la GUI o la TUI hasta poder reintentar.
+Pasaron el formato, Clippy dirigido y la compilación optimizada local de GUI
+y TUI. Los ejecutables y sus huellas están en `target/gb-background-next/release`,
+con la caché reutilizada de `target/build-cache`.
 Quedan pendientes la medición interactiva con varios GB,
-el guardado no bloqueante, el minimapa global y la búsqueda completa sobre la
+el minimapa global y la búsqueda completa sobre la
 fuente paginada. El historial de pestañas cerradas conserva solo metadatos;
 para abrir de nuevo un archivo grande descartado se usa `Abrir archivo`.
 

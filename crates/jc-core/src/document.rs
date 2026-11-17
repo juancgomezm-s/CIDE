@@ -426,8 +426,14 @@ impl Document {
         self.state.revision != self.saved_revision
     }
     pub fn mark_saved(&mut self) {
+        self.mark_saved_revision(self.state.revision);
+    }
+
+    /// Record the revision published by a save of this same document.
+    pub fn mark_saved_revision(&mut self, revision: u64) {
+        assert!(revision < self.next_revision);
         self.bump_recovery_epoch();
-        self.saved_revision = self.state.revision;
+        self.saved_revision = revision;
     }
     pub fn piece_count(&self) -> usize {
         self.state.pieces.len()
@@ -722,6 +728,19 @@ impl Document {
         range: Range<usize>,
         max_added_bytes: usize,
     ) -> Result<PagedReadPlan, EditError> {
+        self.prepare_paged_plan(range, max_added_bytes, 8192)
+    }
+
+    pub fn prepare_paged_save(&self) -> Result<PagedReadPlan, EditError> {
+        self.prepare_paged_plan(0..self.len(), PAGED_ADDED_LIMIT, 1_000_000)
+    }
+
+    fn prepare_paged_plan(
+        &self,
+        range: Range<usize>,
+        max_added_bytes: usize,
+        max_pieces: usize,
+    ) -> Result<PagedReadPlan, EditError> {
         self.validate_range(&range)?;
         let Original::Paged { source, len } = &self.original else {
             return Err(EditError::SourceRead(
@@ -734,7 +753,7 @@ impl Document {
         } else {
             self.state.ends.locate(range.end - 1).0 - first + 1
         };
-        if count > 8192 {
+        if count > max_pieces {
             return Err(EditError::SourceRead(
                 "La lectura diferida excede el presupuesto de piezas".into(),
             ));

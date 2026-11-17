@@ -121,6 +121,7 @@ pub struct PeriodicRecovery {
     last_activity: Instant,
     retry_at: Option<Instant>,
     last_key: Option<RecoveryKey>,
+    final_failures: Option<u64>,
     job: Option<Job>,
     maintenance: Option<Maintenance>,
     maintenance_due: Option<Instant>,
@@ -147,6 +148,7 @@ impl PeriodicRecovery {
             last_activity: now,
             retry_at: None,
             last_key: None,
+            final_failures: None,
             job: None,
             maintenance: None,
             maintenance_due: None,
@@ -168,9 +170,65 @@ impl PeriodicRecovery {
     pub fn active(&self) -> bool {
         self.job.is_some() || self.maintenance.is_some()
     }
+    pub fn finalizing(&self) -> bool {
+        self.final_failures.is_some()
+    }
+
+    pub fn request_final(&mut self, wakeup: &Wakeup) {
+        if self.finalizing() {
+            return;
+        }
+        self.final_failures = Some(self.stats.failed);
+        self.last_key = None;
+        wakeup.signal();
+    }
+
+    pub fn cancel_final(&mut self) {
+        self.final_failures = None;
+    }
+
+    /// Confirm the checkpoint against the live model and frontend state.
+    pub fn final_result(
+        &mut self,
+        recovery: Option<&EditorRecovery>,
+        bench: &Workbench,
+        frontend: &[u8],
+        message: Option<&str>,
+        wakeup: &Wakeup,
+    ) -> Option<Result<(), String>> {
+        let failures = self.final_failures?;
+        if self.stats.failed != failures {
+            self.cancel_final();
+            return Some(Err(message
+                .unwrap_or("No se confirmó la recuperación final")
+                .into()));
+        }
+        if self.active() {
+            return None;
+        }
+        let recovery = recovery?;
+        let current = bench.begin_recovery_capture(&recovery.base, frontend);
+        match current {
+            Ok(capture) if self.last_key.as_ref() == Some(capture.key()) => {
+                self.cancel_final();
+                Some(Ok(()))
+            }
+            Ok(_) => {
+                wakeup.signal();
+                None
+            }
+            Err(error) => {
+                self.cancel_final();
+                Some(Err(error))
+            }
+        }
+    }
     fn capture_deadline(&self) -> Option<Instant> {
         if self.active() {
             return None;
+        }
+        if self.finalizing() {
+            return Some(self.last_activity);
         }
         let first = self.dirty_since?;
         let due = (self.last_activity + self.policy.idle).min(first + self.policy.maximum_delay);
@@ -241,6 +299,8 @@ impl PeriodicRecovery {
                     self.dirty_since = Some(now);
                     self.last_activity = now;
                     self.retry_at = None;
+                    wakeup.signal();
+                    return None;
                 } else {
                     match finished.outcome.checkpoint {
                         Ok(_) => {

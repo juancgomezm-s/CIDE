@@ -14,7 +14,7 @@ pub(super) unsafe fn perform(hwnd: Hwnd) {
         return;
     }
     model.state.borrow_mut().save_all_active = true;
-    let mut plan = {
+    let plan = {
         let state = model.state.borrow();
         match SavePlan::new(
             state
@@ -38,12 +38,25 @@ pub(super) unsafe fn perform(hwnd: Hwnd) {
             }
         }
     };
+    resume(hwnd, plan);
+}
+
+unsafe fn resume(hwnd: Hwnd, mut plan: SavePlan) {
     let result = run(hwnd, &mut plan);
     if let Some(model) = owner(hwnd) {
         let mut state = model.state.borrow_mut();
+        if matches!(result, Ok(false)) {
+            state.pending_save_all = Some(plan);
+            state.status = "Guardando archivo en segundo plano…".into();
+            return;
+        }
         state.save_all_active = false;
+        if result.is_err() || plan.remaining() > 0 {
+            state.exit_waiting_for_save = false;
+            state.periodic_recovery.cancel_final();
+        }
         state.status = match result {
-            Ok(()) => format!(
+            Ok(_) => format!(
                 "Guardar todo {}: {} guardados; {} pendientes",
                 if plan.remaining() > 0 {
                     "cancelado"
@@ -63,8 +76,9 @@ pub(super) unsafe fn perform(hwnd: Hwnd) {
             .collect(),
         };
     }
+    finish_waiting_exit(hwnd);
 }
-unsafe fn run(hwnd: Hwnd, plan: &mut SavePlan) -> Result<(), String> {
+unsafe fn run(hwnd: Hwnd, plan: &mut SavePlan) -> Result<bool, String> {
     while let Some(candidate) = plan.next() {
         let (target, title) = {
             let state = owner(hwnd)
@@ -117,7 +131,7 @@ unsafe fn run(hwnd: Hwnd, plan: &mut SavePlan) -> Result<(), String> {
             };
             let Some(path) = chosen else {
                 plan.cancel();
-                return Ok(());
+                return Ok(true);
             };
             if smoke {
                 validate_smoke_destination(hwnd, &path)?;
@@ -130,15 +144,87 @@ unsafe fn run(hwnd: Hwnd, plan: &mut SavePlan) -> Result<(), String> {
             .ok_or("Se cerró la ventana de Guardar todo antes de publicar")?
             .state
             .borrow_mut();
-        state
+        let completed = state
             .workbench
-            .save_target(target, destination)
+            .request_save_target(target, destination)
             .map_err(|e| e.to_string())?;
+        if !completed {
+            return Ok(false);
+        }
         state.save_count = state.save_count.saturating_add(1);
         state.schedule_git_status();
         plan.saved(candidate).map_err(str::to_owned)?;
     }
-    Ok(())
+    Ok(true)
+}
+
+pub(super) unsafe fn poll_paged_save(hwnd: Hwnd) -> bool {
+    let Some(model) = owner(hwnd) else {
+        return false;
+    };
+    let continuation = {
+        let mut state = model.state.borrow_mut();
+        let Some(result) = state.workbench.poll_save() else {
+            return false;
+        };
+        let mut continuation = state.pending_save_all.take();
+        match result {
+            Ok(id) => {
+                state.save_count = state.save_count.saturating_add(1);
+                state.schedule_git_status();
+                state
+                    .periodic_recovery
+                    .note_activity(std::time::Instant::now());
+                state.status = if state
+                    .workbench
+                    .document_by_id(id)
+                    .is_some_and(|doc| doc.session.document().is_modified())
+                {
+                    "Guardado · hay cambios posteriores pendientes"
+                } else {
+                    "Guardado"
+                }
+                .into();
+                if let Some(plan) = &mut continuation {
+                    if let Some(candidate) = plan.next() {
+                        // The cursor remains on the candidate until its worker publishes.
+                        let _ = plan.saved(candidate);
+                    }
+                }
+            }
+            Err(error) => {
+                state.save_all_active = false;
+                state.exit_waiting_for_save = false;
+                state.periodic_recovery.cancel_final();
+                if let Some(plan) = continuation {
+                    state.error(format!(
+                        "Guardar todo detenido: {} guardados; {} pendientes · {error}",
+                        plan.saved_count(),
+                        plan.remaining()
+                    ));
+                } else {
+                    state.error(error);
+                }
+                return true;
+            }
+        }
+        continuation
+    };
+    if let Some(plan) = continuation {
+        resume(hwnd, plan);
+    } else {
+        finish_waiting_exit(hwnd);
+    }
+    true
+}
+
+unsafe fn finish_waiting_exit(hwnd: Hwnd) {
+    if owner(hwnd).is_some_and(|model| {
+        let state = model.state.borrow();
+        state.exit_waiting_for_save && !state.workbench.save_pending() && !state.save_all_active
+    }) {
+        super::perform(hwnd, super::Action::Exit);
+    }
 }
 unsafe fn validate_smoke_destination(hwnd: Hwnd, path: &Path) -> Result<(), String> {
     use std::os::windows::fs::MetadataExt;
