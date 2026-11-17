@@ -177,6 +177,7 @@ impl State {
             self.bridge.signal();
         }
         changed |= self.workbench.poll_document_search();
+        changed |= self.poll_paged_editor_maps();
         changed |= self.project_search.poll(&self.workbench, 2);
         changed |= self.apply_project_replace_step();
         changed |= self.poll_git();

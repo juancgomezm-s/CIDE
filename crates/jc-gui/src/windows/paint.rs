@@ -293,7 +293,7 @@ pub(super) fn text_areas(state: &State) -> Vec<TextArea> {
             let geometry = editor_scroll::Geometry::with_minimap(
                 rect,
                 state.dpi,
-                state.minimap_visible && !state.workbench.is_paged_tab(tab),
+                state.minimap_visible,
                 state.minimap_width,
             );
             let rect = geometry.text;
@@ -328,13 +328,7 @@ pub(super) fn source_pane_at(state: &State, x: i32, y: i32) -> Option<(PaneId, u
         let text = editor_scroll::Geometry::with_minimap(
             rect,
             state.dpi,
-            state.minimap_visible
-                && state
-                    .workbench
-                    .panes()
-                    .view(pane)
-                    .and_then(|view| view.location())
-                    .is_none_or(|location| !state.workbench.is_paged_tab(location.tab)),
+            state.minimap_visible,
             state.minimap_width,
         )
         .text;

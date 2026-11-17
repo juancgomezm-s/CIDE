@@ -5,8 +5,14 @@ use super::{
     pointer_input::PointerContext,
     shell, State,
 };
-use jc_app::{PaneId, TabId};
-use std::{path::PathBuf, sync::Arc};
+use jc_app::{PaneId, TabId, ViewId, Workbench};
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
+};
 
 const RAIL: i32 = 10;
 #[cfg(test)]
@@ -14,6 +20,8 @@ const MAP_WIDTH: i32 = 76;
 const MAX_SAMPLES: usize = 256;
 const PREFIX_BYTES: usize = 80;
 const MAX_MARKS_PER_ROW: usize = 16;
+const PAGED_SAMPLE_BYTES: usize = 512;
+const PAGED_SAMPLE_BATCH: usize = 16;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Axis {
@@ -165,6 +173,54 @@ struct Mark {
     kind: jc_app::SyntaxKind,
 }
 type MapRow = Vec<Mark>;
+fn row_marks(bytes: &[u8]) -> MapRow {
+    let mut column = 0usize;
+    let mut marks = Vec::<Mark>::with_capacity(8);
+    let mut token_start: Option<(u8, u8, u8)> = None;
+    for (byte_index, byte) in bytes.iter().copied().enumerate() {
+        let next = if byte == b'\t' {
+            column + 4 - column % 4
+        } else {
+            column + 1
+        };
+        if byte.is_ascii_whitespace() {
+            if let Some((start, end, source_start)) = token_start.take() {
+                if marks.len() < MAX_MARKS_PER_ROW {
+                    marks.push(Mark {
+                        start,
+                        end,
+                        source_start,
+                        kind: jc_app::SyntaxKind::Plain,
+                    });
+                }
+            }
+            column = next.min(PREFIX_BYTES);
+            continue;
+        }
+        if let Some(start) = token_start.as_mut() {
+            start.1 = next.min(PREFIX_BYTES) as u8;
+        } else {
+            token_start = Some((
+                column.min(PREFIX_BYTES - 1) as u8,
+                next.min(PREFIX_BYTES) as u8,
+                byte_index.min(PREFIX_BYTES - 1) as u8,
+            ));
+        }
+        column = next.min(PREFIX_BYTES);
+    }
+    if let Some((start, end, source_start)) = token_start {
+        if marks.len() < MAX_MARKS_PER_ROW {
+            marks.push(Mark {
+                start,
+                end,
+                source_start,
+                kind: jc_app::SyntaxKind::Plain,
+            });
+        }
+    }
+    marks
+}
+
 #[derive(Default)]
 pub(super) struct MapCache {
     key: Option<SampleKey>,
@@ -172,6 +228,7 @@ pub(super) struct MapCache {
     lines: Vec<usize>,
     colored: usize,
     color_limited: bool,
+    paged: PagedMap,
 }
 impl MapCache {
     fn prepare(&mut self, app: &jc_app::Workbench, tab: TabId, lines: usize, pixels: i32) -> bool {
@@ -212,51 +269,7 @@ impl MapCache {
                     let Ok(bytes) = source.read_range(range.start..end) else {
                         return Vec::new();
                     };
-                    let mut column = 0usize;
-                    let mut marks = Vec::<Mark>::with_capacity(8);
-                    let mut token_start: Option<(u8, u8, u8)> = None;
-                    for (byte_index, byte) in bytes.into_iter().enumerate() {
-                        let next = if byte == b'\t' {
-                            column + 4 - column % 4
-                        } else {
-                            column + 1
-                        };
-                        if byte.is_ascii_whitespace() {
-                            if let Some((start, end, source_start)) = token_start.take() {
-                                if marks.len() < MAX_MARKS_PER_ROW {
-                                    marks.push(Mark {
-                                        start,
-                                        end,
-                                        source_start,
-                                        kind: jc_app::SyntaxKind::Plain,
-                                    });
-                                }
-                            }
-                            column = next.min(PREFIX_BYTES);
-                            continue;
-                        }
-                        if let Some(start) = token_start.as_mut() {
-                            start.1 = next.min(PREFIX_BYTES) as u8;
-                        } else {
-                            token_start = Some((
-                                column.min(PREFIX_BYTES - 1) as u8,
-                                next.min(PREFIX_BYTES) as u8,
-                                byte_index.min(PREFIX_BYTES - 1) as u8,
-                            ));
-                        }
-                        column = next.min(PREFIX_BYTES);
-                    }
-                    if let Some((start, end, source_start)) = token_start {
-                        if marks.len() < MAX_MARKS_PER_ROW {
-                            marks.push(Mark {
-                                start,
-                                end,
-                                source_start,
-                                kind: jc_app::SyntaxKind::Plain,
-                            });
-                        }
-                    }
-                    marks
+                    row_marks(&bytes)
                 })
                 .collect::<Vec<_>>();
             self.samples = marks.into();
@@ -317,6 +330,191 @@ impl MapCache {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct PagedMapKey {
+    tab: TabId,
+    identity: u64,
+    revision: u64,
+    bytes: usize,
+    count: usize,
+}
+
+impl PagedMapKey {
+    fn for_area(app: &Workbench, area: &paint::TextArea) -> Option<Self> {
+        let rect = area.geometry.map?;
+        let doc = app.document_by_tab(area.tab)?.session.document();
+        if !doc.is_paged() || doc.is_empty() {
+            return None;
+        }
+        let count = ((rect.bottom - rect.top).max(0) as usize / 2)
+            .min(MAX_SAMPLES)
+            .min(doc.len().div_ceil(PREFIX_BYTES));
+        (count != 0).then(|| Self {
+            tab: area.tab,
+            identity: doc.recovery_identity(),
+            revision: doc.revision(),
+            bytes: doc.len(),
+            count,
+        })
+    }
+
+    fn sample_offset(self, index: usize) -> usize {
+        let last = self.bytes.saturating_sub(PAGED_SAMPLE_BYTES);
+        if self.count <= 1 {
+            return 0;
+        }
+        (index as u128 * last as u128 / (self.count - 1) as u128) as usize
+    }
+}
+
+type PagedBatch = Result<(usize, Vec<MapRow>), String>;
+
+struct PagedMapWorker {
+    result: mpsc::Receiver<PagedBatch>,
+    cancel: Arc<AtomicBool>,
+}
+
+impl Drop for PagedMapWorker {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
+}
+
+#[derive(Default)]
+struct PagedMap {
+    key: Option<PagedMapKey>,
+    worker: Option<PagedMapWorker>,
+    samples: Arc<[MapRow]>,
+}
+
+impl PagedMap {
+    // Only the GUI's task poll admits I/O or publishes results.
+    fn poll(
+        &mut self,
+        app: &Workbench,
+        wanted: Option<PagedMapKey>,
+        wakeup: &jc_app::Wakeup,
+    ) -> Result<bool, String> {
+        let mut changed = false;
+        if let Some(worker) = &self.worker {
+            if self.key != wanted {
+                worker.cancel.store(true, Ordering::Relaxed);
+                // The same key may become visible again before the old
+                // worker finishes. Its partial result must stay rejected.
+                self.key = None;
+                self.samples = Arc::default();
+            }
+            match worker.result.try_recv() {
+                Ok(Ok((start, rows))) if self.key == wanted => {
+                    let samples = Arc::make_mut(&mut self.samples);
+                    for (sample, row) in samples[start..].iter_mut().zip(rows) {
+                        *sample = row;
+                    }
+                    changed = true;
+                    // A worker can publish the next batch before this delivery
+                    // is acknowledged. Poll again even if its wake coalesces.
+                    wakeup.signal();
+                }
+                Ok(Err(error)) if self.key == wanted => {
+                    self.worker = None;
+                    return Err(error);
+                }
+                Ok(_) => {
+                    wakeup.signal();
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.worker = None;
+                }
+            }
+        }
+        if self.worker.is_some() || self.key == wanted {
+            return Ok(changed);
+        }
+        self.key = wanted;
+        let Some(key) = wanted else {
+            self.samples = Arc::default();
+            return Ok(changed);
+        };
+        self.samples = vec![Vec::new(); key.count].into();
+        let doc = app
+            .document_by_tab(key.tab)
+            .ok_or("El documento del minimapa ya no está abierto")?;
+        let source = doc.session.document();
+        let plans = (0..key.count)
+            .map(|index| {
+                let start = key.sample_offset(index);
+                let end = start.saturating_add(PAGED_SAMPLE_BYTES).min(key.bytes);
+                source.prepare_paged_read(start..end, PAGED_SAMPLE_BYTES)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = Arc::clone(&cancel);
+        let wakeup = wakeup.clone();
+        std::thread::Builder::new()
+            .name("cide-minimapa".into())
+            .spawn(move || {
+                let sampled = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let mut batch = Vec::with_capacity(PAGED_SAMPLE_BATCH);
+                    let mut first = 0;
+                    for (index, plan) in plans.into_iter().enumerate() {
+                        if worker_cancel.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let mut bytes = Vec::with_capacity(plan.range().len());
+                        if let Err(error) = plan.visit(|chunk| {
+                            bytes.extend_from_slice(chunk);
+                            Ok(())
+                        }) {
+                            let _ =
+                                sender.send(Err(format!("No se pudo leer el minimapa: {error}")));
+                            break;
+                        }
+                        batch.push(paged_sample_row(&bytes, index == 0));
+                        if batch.len() == PAGED_SAMPLE_BATCH || index + 1 == key.count {
+                            let rows = std::mem::replace(
+                                &mut batch,
+                                Vec::with_capacity(PAGED_SAMPLE_BATCH),
+                            );
+                            if sender.send(Ok((first, rows))).is_err() {
+                                break;
+                            }
+                            first = index + 1;
+                            wakeup.signal();
+                        }
+                    }
+                }));
+                if sampled.is_err() {
+                    let _ = sender.send(Err("Falló el trabajador del minimapa".into()));
+                }
+                drop(sender);
+                wakeup.signal();
+            })
+            .map_err(|error| format!("No se pudo iniciar el minimapa: {error}"))?;
+        self.worker = Some(PagedMapWorker {
+            result: receiver,
+            cancel,
+        });
+        Ok(true)
+    }
+}
+
+fn paged_sample_row(bytes: &[u8], first: bool) -> MapRow {
+    let mut lines = bytes.split(|byte| matches!(byte, b'\r' | b'\n'));
+    let fragment = lines.next().unwrap_or_default();
+    let body = if first {
+        fragment.strip_prefix(b"\xef\xbb\xbf").unwrap_or(fragment)
+    } else {
+        lines
+            .find(|line| line.iter().any(|byte| !byte.is_ascii_whitespace()))
+            .unwrap_or(fragment)
+    };
+    row_marks(&body[..body.len().min(PREFIX_BYTES)])
+}
+
 pub(super) struct Frame {
     vertical: Track,
     horizontal: Track,
@@ -329,7 +527,7 @@ impl Frame {
         let geometry = area.geometry;
         let app = &state.workbench;
         let page = area.capacity_rows.max(1);
-        let vertical = Track {
+        let mut vertical = Track {
             axis: Axis::Vertical,
             rect: geometry.vertical,
             offset: area.first,
@@ -337,6 +535,25 @@ impl Frame {
             page,
             minimum_thumb: state.dpi.pixels(12),
         };
+        let paged = app.is_paged_tab(area.tab);
+        if paged {
+            if let Some(document) = app.document_by_tab(area.tab) {
+                vertical.limit = document.session.document().len();
+            }
+            vertical.page = 1;
+            if let Some(viewport) = app.paged_viewport_for_tab(area.tab) {
+                vertical.offset = viewport
+                    .rows()
+                    .get(area.first)
+                    .map_or(viewport.origin(), |row| row.content.start);
+                vertical.page = viewport
+                    .rows()
+                    .get(area.first + area.rows.saturating_sub(1))
+                    .map_or(1, |row| {
+                        row.content.end.saturating_sub(vertical.offset).max(1)
+                    });
+            }
+        }
         let horizontal = Track {
             axis: Axis::Horizontal,
             rect: geometry.horizontal,
@@ -355,6 +572,17 @@ impl Frame {
         };
         let mut overview_pending = false;
         let overview = geometry.map.map(|rect| {
+            let cache = &mut state.editor_maps[usize::from(area.pane == PaneId::Secondary)];
+            if paged {
+                let key = PagedMapKey::for_area(app, area);
+                overview_pending = cache.paged.key != key && cache.paged.worker.is_none();
+                let samples = if cache.paged.key == key {
+                    Arc::clone(&cache.paged.samples)
+                } else {
+                    Arc::default()
+                };
+                return (rect, Track { rect, ..vertical }, samples);
+            }
             let mini_line = state.dpi.pixels(2).max(1);
             let content_height =
                 area.count
@@ -364,7 +592,6 @@ impl Frame {
                 bottom: rect.top + content_height,
                 ..rect
             };
-            let cache = &mut state.editor_maps[usize::from(area.pane == PaneId::Secondary)];
             overview_pending = cache.prepare(app, area.tab, area.count, content_height);
             (
                 rect,
@@ -463,8 +690,37 @@ pub(super) struct Drag {
     track: Track,
     grab: i32,
     anchor_pixel: Option<i32>,
+    paged: Option<PagedDrag>,
 }
+
+struct PagedDrag {
+    tab: TabId,
+    identity: u64,
+    revision: u64,
+    view: ViewId,
+    last_target: Option<usize>,
+}
+
 impl State {
+    pub(super) fn poll_paged_editor_maps(&mut self) -> bool {
+        let mut wanted = [None; 2];
+        for area in paint::text_areas(self) {
+            wanted[usize::from(area.pane == PaneId::Secondary)] =
+                PagedMapKey::for_area(&self.workbench, &area);
+        }
+        let mut changed = false;
+        for (cache, key) in self.editor_maps.iter_mut().zip(wanted) {
+            match cache.paged.poll(&self.workbench, key, &self.wakeup) {
+                Ok(updated) => changed |= updated,
+                Err(message) => {
+                    self.status = message;
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+
     pub(super) fn begin_editor_scroll(&mut self, x: i32, y: i32) -> bool {
         if !self.pointer_source_available() {
             return false;
@@ -491,6 +747,36 @@ impl State {
         } else {
             return false;
         };
+        let paged = if track.axis == Axis::Vertical && self.workbench.is_paged_tab(area.tab) {
+            if !self.workbench.focus_editor_pane(area.pane) {
+                return false;
+            }
+            self.explorer_focused = false;
+            self.bottom.focused = false;
+            let doc = self
+                .workbench
+                .document_by_tab(area.tab)
+                .unwrap()
+                .session
+                .document();
+            let Some(view) = self
+                .workbench
+                .panes()
+                .view(area.pane)
+                .and_then(|view| view.view_id())
+            else {
+                return false;
+            };
+            Some(PagedDrag {
+                tab: area.tab,
+                identity: doc.recovery_identity(),
+                revision: doc.revision(),
+                view,
+                last_target: Some(track.offset),
+            })
+        } else {
+            None
+        };
         let Some(context) = self.pointer_context(area.pane) else {
             return false;
         };
@@ -504,6 +790,7 @@ impl State {
             track,
             grab,
             anchor_pixel: on_thumb.then_some(pixel),
+            paged,
         });
         self.update_editor_scroll(x, y);
         true
@@ -512,9 +799,26 @@ impl State {
         let Some(drag) = &self.editor_scroll_drag else {
             return false;
         };
-        if !self.pointer_source_available()
-            || self.pointer_context(drag.pane).as_ref() != Some(&drag.context)
-        {
+        let context_matches = if let Some(paged) = &drag.paged {
+            self.workbench.panes().active() == drag.pane
+                && self.workbench.panes().view(drag.pane).is_some_and(|view| {
+                    view.view_id() == Some(paged.view)
+                        && view
+                            .location()
+                            .is_some_and(|location| location.tab == paged.tab)
+                })
+                && self
+                    .workbench
+                    .document_by_tab(paged.tab)
+                    .is_some_and(|doc| {
+                        let source = doc.session.document();
+                        source.recovery_identity() == paged.identity
+                            && source.revision() == paged.revision
+                    })
+        } else {
+            self.pointer_context(drag.pane).as_ref() == Some(&drag.context)
+        };
+        if !self.pointer_source_available() || !context_matches {
             self.editor_scroll_drag = None;
             return false;
         }
@@ -524,6 +828,23 @@ impl State {
             track.offset
         } else {
             track.target(pixel, drag.grab)
+        };
+        if let Some(paged) = self
+            .editor_scroll_drag
+            .as_mut()
+            .and_then(|drag| drag.paged.as_mut())
+        {
+            if paged.last_target == Some(target) {
+                return false;
+            }
+            paged.last_target = Some(target);
+            if let Err(error) = self.workbench.go_to_paged_near_byte(target) {
+                self.error(error);
+            }
+            return true;
+        }
+        let Some(drag) = &self.editor_scroll_drag else {
+            return false;
         };
         let Some(view) = self.workbench.panes().view(drag.pane) else {
             return false;
@@ -558,6 +879,116 @@ mod tests {
     use super::*;
     use crate::GuiOptions;
     use jc_text::TextEncoding;
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn paged_minimap_samples_the_full_extent_and_drags_to_safe_boundaries() {
+        use std::{
+            fs,
+            time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+        };
+
+        let root = std::env::temp_dir().join(format!(
+            "cide-minimapa-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("muestra.txt");
+        struct Fixture(PathBuf, PathBuf);
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = fs::remove_file(&self.1);
+                let _ = fs::remove_dir(&self.0);
+            }
+        }
+        let _fixture = Fixture(root.clone(), path.clone());
+        let text = "    resumen ☀ valor\r\n".repeat(20_000);
+        fs::write(&path, &text).unwrap();
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.width = 1100;
+        state.height = 660;
+        assert_eq!(
+            state
+                .workbench
+                .request_file_open_in_root(&root, &path, Some(TextEncoding::Utf8), false, 16)
+                .unwrap(),
+            None
+        );
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let tab = loop {
+            if let Some(result) = state.workbench.poll_large_open() {
+                break result.unwrap();
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        let area = paint::text_areas(&state).pop().unwrap();
+        let frame = Frame::prepare(&mut state, &area);
+        assert!(frame.overview_pending);
+        assert!(frame.overview.as_ref().unwrap().2.is_empty());
+        loop {
+            state.poll_paged_editor_maps();
+            let map = &state.editor_maps[0].paged;
+            if map.key.is_some() && map.worker.is_none() {
+                assert!(map.samples.len() <= MAX_SAMPLES);
+                assert!(map.samples.iter().all(|row| !row.is_empty()));
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        let frame = Frame::prepare(&mut state, &area);
+        let track = frame.overview.unwrap().1;
+        assert_eq!(track.limit, text.len());
+        let large = PagedMapKey {
+            bytes: 7 * 1024 * 1024 * 1024,
+            count: MAX_SAMPLES,
+            ..state.editor_maps[0].paged.key.unwrap()
+        };
+        assert_eq!(large.sample_offset(0), 0);
+        assert_eq!(
+            large.sample_offset(large.count - 1) + PAGED_SAMPLE_BYTES,
+            large.bytes
+        );
+        let large_track = Track {
+            limit: large.bytes,
+            offset: (1usize << 32) + 7,
+            page: 64 * 1024,
+            ..track
+        };
+        assert!(large_track.thumb().0 > track.rect.top + track.length() / 2);
+        assert_eq!(large_track.target(track.rect.bottom - 1, 0), large.bytes);
+        let x = track.rect.left + 1;
+        let y = track.rect.top + track.length() / 2;
+        assert!(state.begin_editor_scroll(x, y));
+        loop {
+            if let Some(result) = state.workbench.poll_large_view() {
+                result.unwrap();
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        let middle = state.workbench.active_paged_byte().unwrap();
+        assert!((text.len() / 3..text.len() * 2 / 3).contains(&middle));
+        assert!(text.is_char_boundary(middle));
+        assert!(state.workbench.position_for_tab(tab, middle).is_some());
+        assert!(state.update_editor_scroll(x, track.rect.bottom - 1));
+        loop {
+            if let Some(result) = state.workbench.poll_large_view() {
+                result.unwrap();
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert_eq!(state.workbench.active_paged_byte(), Some(text.len()));
+        assert_eq!(fs::read(&path).unwrap(), text.as_bytes());
+    }
 
     #[test]
     fn native_editor_scroll_preserves_caret_and_uses_real_view_origins() {

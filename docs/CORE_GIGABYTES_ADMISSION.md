@@ -61,8 +61,8 @@ segundos. Las regresiones dirigidas confirmaron que los cambios posteriores
 siguen pendientes, que Guardar como respeta destinos existentes y que un
 bloqueo de la recuperación deja abierta la GUI o la TUI hasta poder reintentar.
 Pasaron el formato, Clippy dirigido y la compilación optimizada local de GUI
-y TUI. Los ejecutables y sus huellas están en `target/gb-background-next/release`,
-con la caché reutilizada de `target/build-cache`.
+y TUI. La entrega del guardado en segundo plano está en
+`target/gb-background-next/release`.
 La búsqueda literal, con palabra completa o con expresiones regulares usa
 el mismo motor de los documentos residentes. En GUI y TUI recorre una
 revisión fija del archivo paginado en un trabajador cancelable y muestra
@@ -76,9 +76,19 @@ El caso optimizado recorrió los 4.294.967.314 bytes de la instantánea y
 seleccionó la coincidencia en el byte 4.294.967.307. Tardó 29,12 segundos,
 incluida la apertura de la instantánea.
 
-Quedan pendientes la medición interactiva con varios GB y el minimapa
-global sobre la fuente paginada. Para abrir de nuevo un archivo grande
-descartado se usa `Abrir archivo`.
+El minimapa de la GUI toma hasta 256 muestras del archivo, con un máximo de
+512 bytes por muestra e incluyendo ambos extremos. El trabajador publica
+las muestras por lotes para la revisión vigente. En archivos paginados las
+marcas muestran la distribución del texto. El minimapa y la barra vertical
+usan offsets absolutos. Un clic o arrastre abre el tramo y lleva el cursor
+a un límite de texto válido.
+Pasaron las cuatro pruebas dirigidas del desplazamiento gráfico. El caso
+paginado comprobó muestras desde el principio hasta el final, un salto en
+texto con UTF-8 y CRLF y la escala de la barra con una extensión sintética
+de 7 GiB.
+
+Queda pendiente la medición interactiva con varios GB. Para abrir de nuevo
+un archivo grande descartado se usa `Abrir archivo`.
 
 ## Admisión inicial — 2026-11-03
 
