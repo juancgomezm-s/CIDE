@@ -1055,6 +1055,9 @@ impl Workbench {
     }
 
     pub fn undo(&mut self) -> Result<(), WorkbenchError> {
+        if self.apply_workspace_history(true)? {
+            return Ok(());
+        }
         self.cancel_rectangle();
         let editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         let after = editor.session.document().revision();
@@ -1082,6 +1085,9 @@ impl Workbench {
     }
 
     pub fn redo(&mut self) -> Result<(), WorkbenchError> {
+        if self.apply_workspace_history(false)? {
+            return Ok(());
+        }
         self.cancel_rectangle();
         let editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         let before = editor.session.document().revision();

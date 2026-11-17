@@ -271,8 +271,9 @@ impl TuiApp {
             self.status = "Cambió el destino del renombrado; vuelve a abrir el comando".into();
             return;
         }
-        match self.source.request_rename(
+        match self.source.request_rename_with_project(
             name,
+            Some(jc_progress::project_rename::propose),
             &self.source_registry,
             &self.workbench,
             self.project_root.as_deref(),
@@ -334,6 +335,23 @@ impl TuiApp {
             }
             CommandId::SourceAccept | CommandId::SourceOpenToSide => {
                 let side = command == CommandId::SourceOpenToSide;
+                if !side && self.source.mode() == Some(SourceMode::Rename) {
+                    match self.source.confirm_project_rename(
+                        &self.workbench,
+                        self.project_root.as_deref(),
+                        &mut self.tasks,
+                    ) {
+                        Ok(true) => {
+                            self.status = self.source.message().into();
+                            return;
+                        }
+                        Ok(false) => {}
+                        Err(error) => {
+                            self.status = error;
+                            return;
+                        }
+                    }
+                }
                 let result = if let Some((paths, index)) = &self.source_candidates {
                     paths
                         .get(*index)

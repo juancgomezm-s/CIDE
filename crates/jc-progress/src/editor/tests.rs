@@ -100,6 +100,82 @@ fn progress_real_rename_local_reviews_compile_and_undo() {
 
 #[test]
 #[ignore = "requiere CIDE_TEST_PROGRESS_EXE apuntando a un AVM local por lotes"]
+fn progress_real_project_rename_compiles_and_undoes_include_and_consumers() {
+    use jc_app::source_services::{SourceController, SourceRegistry, SourceState};
+
+    let executable = std::env::var("CIDE_TEST_PROGRESS_EXE").unwrap();
+    let fixture = JobDir::create().unwrap();
+    let root = &fixture.path;
+    fs::create_dir(root.join(".cide")).unwrap();
+    fs::create_dir(root.join("includes")).unwrap();
+    fs::write(
+        root.join(PROFILE),
+        format!("executable={executable}\ncpinternal=iso8859-1\ncpstream=ibm850\n"),
+    )
+    .unwrap();
+    fs::write(root.join(".cide/propath"), "includes\n").unwrap();
+    let shared =
+        "FUNCTION amount RETURNS INTEGER (INPUT n AS INTEGER):\r\nRETURN n.\r\nEND FUNCTION.\r\n";
+    let caller = "{shared.i}\r\nDISPLAY amount(7).\r\n";
+    for name in ["one.p", "two.p"] {
+        fs::write(root.join(name), caller).unwrap();
+    }
+    let mut app = Workbench::default();
+    let mut jobs = JobSystem::new(JobLimits::default(), Wakeup::default()).unwrap();
+    open(&mut app, root, "includes/shared.i", shared);
+    app.go_to_position(jc_text::TextPosition {
+        line: 0,
+        column: 10,
+    })
+    .unwrap();
+    let mut registry = SourceRegistry::default();
+    registry
+        .register(crate::source_services::descriptor())
+        .unwrap();
+    let mut source = SourceController::default();
+    source
+        .request_rename_with_project(
+            "newAmount",
+            Some(crate::project_rename::propose),
+            &registry,
+            &app,
+            Some(root),
+            &mut jobs,
+        )
+        .unwrap();
+    let mut task = complete(&mut app, &mut jobs);
+    source.accept_editor(&mut app, Some(root), &mut task);
+    assert_eq!(source.state(), SourceState::Ready, "{}", source.message());
+    assert_eq!(source.items().len(), 3);
+    assert!(source
+        .confirm_project_rename(&app, Some(root), &mut jobs)
+        .unwrap());
+    let mut task = complete(&mut app, &mut jobs);
+    source.accept_editor(&mut app, Some(root), &mut task);
+    assert!(source.take_project_rename_applied(), "{}", source.message());
+    app.save_all().unwrap();
+    for name in ["one.p", "two.p"] {
+        app.open_file(root.join(name), None).unwrap();
+        app.reset_task_panels();
+        submit(Action::Check, &app, &mut jobs, Some(root)).unwrap();
+        assert!(
+            !completion(&complete(&mut app, &mut jobs)).1,
+            "{:?}",
+            app.problems()
+        );
+        assert_eq!(
+            app.active_bytes().unwrap(),
+            caller.replace("amount", "newAmount").as_bytes()
+        );
+    }
+    app.undo().unwrap();
+    assert_eq!(app.active_bytes().unwrap(), caller.as_bytes());
+    app.open_file(root.join("includes/shared.i"), None).unwrap();
+    assert_eq!(app.active_bytes().unwrap(), shared.as_bytes());
+}
+
+#[test]
+#[ignore = "requiere CIDE_TEST_PROGRESS_EXE apuntando a un AVM local por lotes"]
 fn progress_real_review_imports_and_prototype_compile_and_undo() {
     use jc_app::source_services::{ReviewedEdit, SourceController, SourceMode, SourceRegistry};
 

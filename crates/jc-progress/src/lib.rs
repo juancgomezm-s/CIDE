@@ -6,6 +6,8 @@
 #[cfg(feature = "source-services")]
 pub mod editor;
 #[cfg(feature = "source-services")]
+pub mod project_rename;
+#[cfg(feature = "source-services")]
 pub mod rename;
 #[cfg(feature = "source-services")]
 pub mod snippets;

@@ -1,5 +1,8 @@
 //! A recovery generation owns documents once; views refer to their tab identity.
 use super::selection_history::{SelectionHistory, SelectionRecord, SelectionState};
+use super::workspace_edit::{
+    WorkspaceGroup, WorkspaceMember, MAX_WORKSPACE_FILES, MAX_WORKSPACE_GROUPS,
+};
 use super::*;
 use crate::session::{MAX_PAGED_RECOVERY_DOCUMENT, MAX_RECOVERY_PAYLOAD};
 use jc_core::PAGED_ADDED_LIMIT;
@@ -8,13 +11,14 @@ use jc_files::{
     recovery::{LoadedRecovery, RecoveryStore},
     SessionRecoveryInfo, SessionRecoveryLimits,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Cursor, Read, Write};
 mod capture;
 pub use capture::{CaptureChunk, CaptureError, RecoveryCapture, RecoveryKey};
 
 const MAGIC: &[u8; 8] = b"CIDEAPP2";
 const PAGED_MAGIC: &[u8; 8] = b"CIDEAPP3";
+const WORKSPACE_MAGIC: &[u8; 8] = b"CIDEAPP4";
 const LEGACY_MAGIC: &[u8; 8] = b"CIDEAPP1";
 const MAX_SELECTION_RECORDS: usize = 1024;
 const MAX_SELECTION_BYTES: usize = 256 * 1024;
@@ -218,15 +222,7 @@ fn write_selection_record(writer: &mut dyn Write, record: SelectionRecord) -> io
     number(writer, record.before_revision)?;
     number(writer, record.after_revision)?;
     number(writer, record.view.0)?;
-    number(
-        writer,
-        match record.encoding {
-            TextEncoding::Utf8 => 1,
-            TextEncoding::Windows1252 => 2,
-            TextEncoding::Iso8859_1 => 3,
-            TextEncoding::Ibm850 => 4,
-        },
-    )?;
+    write_encoding(writer, record.encoding)?;
     write_selection_state(writer, record.before)?;
     write_selection_state(writer, record.after)
 }
@@ -234,13 +230,7 @@ fn read_selection_record(reader: &mut dyn Read) -> io::Result<SelectionRecord> {
     let before_revision = read_number(reader)?;
     let after_revision = read_number(reader)?;
     let view = crate::ViewId(read_number(reader)?);
-    let encoding = match read_number(reader)? {
-        1 => TextEncoding::Utf8,
-        2 => TextEncoding::Windows1252,
-        3 => TextEncoding::Iso8859_1,
-        4 => TextEncoding::Ibm850,
-        _ => return Err(invalid()),
-    };
+    let encoding = read_encoding(reader)?;
     Ok(SelectionRecord {
         before_revision,
         after_revision,
@@ -249,6 +239,101 @@ fn read_selection_record(reader: &mut dyn Read) -> io::Result<SelectionRecord> {
         before: read_selection_state(reader)?,
         after: read_selection_state(reader)?,
     })
+}
+
+fn write_encoding(writer: &mut dyn Write, encoding: TextEncoding) -> io::Result<()> {
+    number(
+        writer,
+        match encoding {
+            TextEncoding::Utf8 => 1,
+            TextEncoding::Windows1252 => 2,
+            TextEncoding::Iso8859_1 => 3,
+            TextEncoding::Ibm850 => 4,
+        },
+    )
+}
+
+fn read_encoding(reader: &mut dyn Read) -> io::Result<TextEncoding> {
+    match read_number(reader)? {
+        1 => Ok(TextEncoding::Utf8),
+        2 => Ok(TextEncoding::Windows1252),
+        3 => Ok(TextEncoding::Iso8859_1),
+        4 => Ok(TextEncoding::Ibm850),
+        _ => Err(invalid()),
+    }
+}
+
+fn write_workspace_groups(
+    writer: &mut dyn Write,
+    app: &Workbench,
+    groups: &[&WorkspaceGroup],
+) -> io::Result<()> {
+    number(writer, groups.len() as u64)?;
+    for group in groups {
+        number(writer, group.0.len() as u64)?;
+        for member in &group.0 {
+            let tab = member
+                .document
+                .and_then(|id| app.document_by_id(id))
+                .map(|doc| doc.tab_id);
+            // Zero identifies a closed member. Continuing to track it keeps a
+            // surviving member's transition guarded after recovery.
+            let tag = tab
+                .map_or(Some(0), |tab| tab.0.checked_add(1))
+                .ok_or_else(invalid)?;
+            number(writer, tag)?;
+            number(writer, member.before)?;
+            number(writer, member.after)?;
+            write_encoding(writer, member.encoding)?;
+        }
+    }
+    Ok(())
+}
+
+fn read_workspace_groups(
+    reader: &mut dyn Read,
+    app: &Workbench,
+    tab_remap: &HashMap<TabId, DocumentId>,
+) -> io::Result<Vec<WorkspaceGroup>> {
+    let groups = count(reader, MAX_WORKSPACE_GROUPS)?;
+    let mut result = Vec::with_capacity(groups);
+    let mut transitions = HashSet::new();
+    for _ in 0..groups {
+        let members = count(reader, MAX_WORKSPACE_FILES)?;
+        if members == 0 {
+            return Err(invalid());
+        }
+        let mut group = Vec::with_capacity(members);
+        let mut documents = HashSet::new();
+        for _ in 0..members {
+            let tab = read_number(reader)?;
+            let document = match tab.checked_sub(1) {
+                Some(tab) => Some(*tab_remap.get(&TabId(tab)).ok_or_else(invalid)?),
+                None => None,
+            };
+            let before = read_number(reader)?;
+            let after = read_number(reader)?;
+            let encoding = read_encoding(reader)?;
+            if before >= after
+                || document.is_some_and(|id| {
+                    !documents.insert(id) || !transitions.insert((id, before, after))
+                })
+            {
+                return Err(invalid());
+            }
+            group.push(WorkspaceMember {
+                document,
+                before,
+                after,
+                encoding,
+            });
+        }
+        if !group.iter().any(|member| member.retained(app)) {
+            return Err(invalid());
+        }
+        result.push(WorkspaceGroup(group));
+    }
+    Ok(result)
 }
 
 impl Workbench {
@@ -293,14 +378,26 @@ impl Workbench {
                 .map_err(|e| e.to_string())?;
         }
         let mut metadata = Metadata(Vec::new());
+        let workspace_groups: Vec<_> = self
+            .workspace_history
+            .iter()
+            .filter(|group| group.0.iter().any(|member| member.retained(self)))
+            .collect();
+        let has_workspace_groups = !workspace_groups.is_empty();
         let mut build = || -> io::Result<()> {
-            metadata.write_all(if has_paged { PAGED_MAGIC } else { MAGIC })?;
+            metadata.write_all(if has_workspace_groups {
+                WORKSPACE_MAGIC
+            } else if has_paged {
+                PAGED_MAGIC
+            } else {
+                MAGIC
+            })?;
             number(&mut metadata, tabs.len() as u64)?;
             for tab in tabs {
                 let document = documents.get(&tab.id).copied().ok_or_else(invalid)?;
                 number(&mut metadata, tab.id.0)?;
                 write_string(&mut metadata, &tab.title)?;
-                if has_paged {
+                if has_paged || has_workspace_groups {
                     metadata.write_all(&[u8::from(document.session.document().is_paged())])?;
                 }
                 let mut info = document.session.recovery_info();
@@ -335,6 +432,9 @@ impl Workbench {
                 for record in records {
                     write_selection_record(&mut metadata, record)?;
                 }
+            }
+            if has_workspace_groups {
+                write_workspace_groups(&mut metadata, self, &workspace_groups)?;
             }
             number(&mut metadata, frontend.len() as u64)?;
             metadata.write_all(frontend)
@@ -397,7 +497,12 @@ impl Workbench {
         let mut reader = Cursor::new(loaded.metadata.as_slice());
         let mut magic = [0; 8];
         reader.read_exact(&mut magic)?;
-        if &magic != PAGED_MAGIC && &magic != MAGIC && &magic != LEGACY_MAGIC {
+        let has_workspace_groups = &magic == WORKSPACE_MAGIC;
+        if !has_workspace_groups
+            && &magic != PAGED_MAGIC
+            && &magic != MAGIC
+            && &magic != LEGACY_MAGIC
+        {
             return Err(invalid());
         }
         let n = count(&mut reader, MAX_DOCUMENTS)?;
@@ -413,7 +518,7 @@ impl Workbench {
                 return Err(invalid());
             }
             let title = read_string(&mut reader)?;
-            let paged = if &magic == PAGED_MAGIC {
+            let paged = if has_workspace_groups || &magic == PAGED_MAGIC {
                 let mut flag = [0];
                 reader.read_exact(&mut flag)?;
                 match flag[0] {
@@ -561,6 +666,14 @@ impl Workbench {
         {
             result.tabs.select(tab);
         }
+        if has_workspace_groups {
+            let tab_remap = mapping
+                .iter()
+                .zip(&result.documents)
+                .map(|((old, _, _, _), document)| (*old, document.id))
+                .collect();
+            result.workspace_history = read_workspace_groups(&mut reader, &result, &tab_remap)?;
+        }
         let mut frontend = vec![0; count(&mut reader, 1024 * 1024)?];
         reader.read_exact(&mut frontend)?;
         if reader.position() != loaded.metadata.len() as u64 {
@@ -683,6 +796,94 @@ mod selection_recovery_tests {
         // Fixture owns one document and three opaque frontend bytes.
         metadata.len() - 3 - 8 - 16 - SELECTION_RECORD_BYTES * records
     }
+
+    #[test]
+    fn workspace_edit_rejects_every_member_on_conflict_and_recovers_grouped_history() {
+        use jc_files::ContentFingerprint;
+        let mut fixture = Fixture::new();
+        let first = fixture.root.join("primero.p");
+        let second = fixture.root.join("segundo.p");
+        fixture.files.extend([first.clone(), second.clone()]);
+        let original = b"RUN anterior.p.\r\n";
+        let renamed = b"RUN nuevo.p.\r\n";
+        fs::write(&first, original).unwrap();
+        fs::write(&second, original).unwrap();
+        let mut bench = Workbench::default();
+        let tab = bench.open_file(&first, Some(TextEncoding::Utf8)).unwrap();
+        let document = bench.document_by_tab(tab).unwrap();
+        let stamp = crate::TaskStamp {
+            document: document.id,
+            revision: 0,
+            encoding: TextEncoding::Utf8,
+            view: None,
+        };
+        let plan = |path, origin| WorkspaceFileEdit {
+            path,
+            origin,
+            encoding: TextEncoding::Utf8,
+            edits: vec![TextReplacement {
+                range: 4..12,
+                text: "nuevo".to_string(),
+            }],
+        };
+        let plans = vec![
+            plan(first.clone(), crate::SearchOrigin::Open(stamp)),
+            plan(
+                second.clone(),
+                crate::SearchOrigin::Disk(ContentFingerprint::of(original)),
+            ),
+        ];
+        fs::write(&second, b"/* actualizado */").unwrap();
+        assert!(bench
+            .apply_workspace_edits(&fixture.root, plans.clone())
+            .is_err());
+        assert_eq!(bench.active_bytes().unwrap(), original);
+        assert_eq!(bench.documents.len(), 1);
+
+        fs::write(&second, original).unwrap();
+        bench.apply_workspace_edits(&fixture.root, plans).unwrap();
+        assert_eq!(bench.tabs.active_id(), Some(tab));
+        assert!(bench.tabs.tabs().iter().all(|tab| tab.dirty));
+        assert!(bench
+            .documents
+            .iter()
+            .all(|doc| doc.session.document().to_bytes() == renamed));
+        assert_eq!(fs::read(&first).unwrap(), original);
+        assert_eq!(fs::read(&second).unwrap(), original);
+
+        bench.select_tab(2);
+        bench.insert_text("/* local */").unwrap();
+        bench.select_tab(1);
+        assert!(bench.undo().is_err());
+        bench.select_tab(2);
+        bench.undo().unwrap();
+        assert_eq!(bench.active_bytes().unwrap(), renamed);
+        bench.undo().unwrap();
+        assert!(bench
+            .documents
+            .iter()
+            .all(|doc| doc.session.document().to_bytes() == original));
+
+        let metadata = bench.recovery_metadata(&fixture.root, b"gui").unwrap();
+        assert_eq!(&metadata[..8], WORKSPACE_MAGIC);
+        let loaded = fixture.load(&bench, metadata);
+        let (mut restored, frontend, _) =
+            Workbench::decode_recovery(loaded, &fixture.root).unwrap();
+        assert_eq!(frontend, b"gui");
+        restored.redo().unwrap();
+        assert!(restored
+            .documents
+            .iter()
+            .all(|doc| doc.session.document().to_bytes() == renamed));
+        restored.select_tab(2);
+        restored.close_active(true).unwrap();
+        let metadata = restored.recovery_metadata(&fixture.root, b"gui").unwrap();
+        let loaded = fixture.load(&restored, metadata);
+        let (mut restored, _, _) = Workbench::decode_recovery(loaded, &fixture.root).unwrap();
+        assert!(restored.undo().is_err());
+        assert_eq!(restored.active_bytes().unwrap(), renamed);
+    }
+
     #[test]
     fn selection_recovery_app2_remaps_views_and_preserves_linear_and_rectangular_geometry() {
         let mut fixture = Fixture::new();

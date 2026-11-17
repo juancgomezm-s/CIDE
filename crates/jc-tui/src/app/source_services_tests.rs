@@ -831,6 +831,68 @@ fn source_tui_rename_previews_scoped_ranges_and_applies_one_undo() {
     assert_eq!(a.workbench.active_bytes().unwrap(), text.as_bytes());
 }
 #[test]
+fn source_tui_project_rename_previews_and_undoes_two_files() {
+    let root = std::env::temp_dir().join(format!("cide-tui-project-rename-{}", std::process::id()));
+    let include = root.join("shared.i");
+    let main = root.join("main.p");
+    let include_text = "DEFINE VARIABLE total AS INTEGER NO-UNDO.\n";
+    let main_text = "{shared.i}\nASSIGN total = 1.\n";
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(&include, include_text).unwrap();
+    std::fs::write(&main, main_text).unwrap();
+    let mut app = TuiApp::new(LaunchOptions::default());
+    app.project_root = Some(root.canonicalize().unwrap());
+    app.workbench
+        .open_file(&include, Some(TextEncoding::Utf8))
+        .unwrap();
+    app.workbench
+        .go_to_position(TextPosition {
+            line: 0,
+            column: 17,
+        })
+        .unwrap();
+    key(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+    for ch in "sum-value".chars() {
+        key(&mut app, KeyCode::Char(ch), KeyModifiers::NONE);
+    }
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    finish(&mut app);
+    assert_eq!(app.source.items().len(), 2, "{}", app.status);
+    assert!(app
+        .source
+        .items()
+        .iter()
+        .any(|row| row.label.contains("main.p:2")));
+    assert_eq!(
+        app.workbench.active_bytes().unwrap(),
+        include_text.as_bytes()
+    );
+    key(&mut app, KeyCode::F(9), KeyModifiers::NONE);
+    finish(&mut app);
+    assert!(!app.source_popup, "{}", app.status);
+    assert_eq!(
+        app.workbench.active_bytes().unwrap(),
+        include_text.replace("total", "sum-value").as_bytes()
+    );
+    app.workbench.open_file(&main, None).unwrap();
+    assert_eq!(
+        app.workbench.active_bytes().unwrap(),
+        main_text.replace("total", "sum-value").as_bytes()
+    );
+    app.workbench.undo().unwrap();
+    assert_eq!(app.workbench.active_bytes().unwrap(), main_text.as_bytes());
+    app.workbench.open_file(&include, None).unwrap();
+    assert_eq!(
+        app.workbench.active_bytes().unwrap(),
+        include_text.as_bytes()
+    );
+    assert_eq!(std::fs::read(&main).unwrap(), main_text.as_bytes());
+    drop(app);
+    std::fs::remove_file(&main).unwrap();
+    std::fs::remove_file(&include).unwrap();
+    std::fs::remove_dir(&root).unwrap();
+}
+#[test]
 fn source_tui_reviewed_imports_previews_and_applies_in_one_undo() {
     let root = std::env::temp_dir().join(format!(
         "cide-reviewed-imports-{}-{}",

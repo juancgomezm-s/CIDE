@@ -398,6 +398,21 @@ impl State {
                         .controller
                         .ready(&self.workbench, self.project_root.as_deref())
                 {
+                    match self.source_gui.controller.confirm_project_rename(
+                        &self.workbench,
+                        self.project_root.as_deref(),
+                        &mut self.jobs,
+                    ) {
+                        Ok(true) => {
+                            self.status = self.source_gui.controller.message().into();
+                            return true;
+                        }
+                        Ok(false) => {}
+                        Err(error) => {
+                            self.error(error);
+                            return true;
+                        }
+                    }
                     match self.source_gui.controller.activate(
                         &mut self.workbench,
                         self.project_root.as_deref(),
@@ -428,8 +443,9 @@ impl State {
                 self.status = "Cambió el destino; cancela y vuelve a abrir".into();
                 return true;
             }
-            match self.source_gui.controller.request_rename(
+            match self.source_gui.controller.request_rename_with_project(
                 &draft.name,
+                Some(jc_progress::project_rename::propose),
                 &self.source_gui.registry,
                 &self.workbench,
                 self.project_root.as_deref(),
@@ -577,6 +593,11 @@ impl State {
                 || self.source_gui.controller.mode() == Some(SourceMode::LspDiagnostics))
         {
             self.status = self.source_gui.controller.message().into();
+        }
+        if consumed && self.source_gui.controller.take_project_rename_applied() {
+            self.close_source_ui();
+            self.periodic_recovery
+                .note_activity(std::time::Instant::now());
         }
         consumed
     }
@@ -1407,6 +1428,95 @@ mod tests {
         assert!(!state.source_visible());
         state.workbench.undo().unwrap();
         assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+    }
+    #[test]
+    fn source_gui_project_rename_rejects_changed_preview_and_undoes_all_files() {
+        let root =
+            std::env::temp_dir().join(format!("cide-gui-project-rename-{}", std::process::id()));
+        let include = root.join("shared.i");
+        let main = root.join("main.p");
+        let include_text = "PROCEDURE worker:\nEND PROCEDURE.\n";
+        let main_text = "{shared.i}\nRUN worker.\n";
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(&include, include_text).unwrap();
+        std::fs::write(&main, main_text).unwrap();
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.project_root = Some(root.canonicalize().unwrap());
+        state
+            .workbench
+            .open_file(&include, Some(TextEncoding::Utf8))
+            .unwrap();
+        state
+            .workbench
+            .go_to_position(jc_text::TextPosition {
+                line: 0,
+                column: 11,
+            })
+            .unwrap();
+        let preview = |state: &mut State| {
+            state.source_command(CommandId::SourceRename);
+            for ch in "work-new".chars() {
+                state.source_character(ch);
+            }
+            state.source_key(0x0d, Modifiers::NONE);
+            finish(state);
+            assert_eq!(
+                state.source_gui.controller.items().len(),
+                2,
+                "{}",
+                state.status
+            );
+            assert!(state
+                .source_gui
+                .controller
+                .items()
+                .iter()
+                .any(|row| row.label.contains("main.p:2")));
+        };
+        preview(&mut state);
+        std::fs::write(&main, format!("{main_text}RUN worker.\n")).unwrap();
+        state.source_key(0x78, Modifiers::NONE);
+        finish(&mut state);
+        assert_eq!(
+            state.source_gui.controller.state(),
+            SourceState::Stale,
+            "{}",
+            state.status
+        );
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            include_text.as_bytes()
+        );
+        state.source_command(CommandId::SourceCancel);
+        std::fs::write(&main, main_text).unwrap();
+        preview(&mut state);
+        state.source_key(0x78, Modifiers::NONE);
+        finish(&mut state);
+        assert!(!state.source_visible(), "{}", state.status);
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            include_text.replace("worker", "work-new").as_bytes()
+        );
+        state.workbench.open_file(&main, None).unwrap();
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            main_text.replace("worker", "work-new").as_bytes()
+        );
+        state.workbench.undo().unwrap();
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            main_text.as_bytes()
+        );
+        state.workbench.open_file(&include, None).unwrap();
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            include_text.as_bytes()
+        );
+        assert_eq!(std::fs::read(&main).unwrap(), main_text.as_bytes());
+        drop(state);
+        std::fs::remove_file(&main).unwrap();
+        std::fs::remove_file(&include).unwrap();
+        std::fs::remove_dir(&root).unwrap();
     }
     #[test]
     fn source_gui_reviewed_prototype_rejects_stale_preview_and_undoes_once() {

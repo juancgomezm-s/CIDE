@@ -362,6 +362,14 @@ impl TuiApp {
                 &mut completion,
             ) {
                 self.status = self.source.message().into();
+                if self.source.take_project_rename_applied() {
+                    self.source_popup = false;
+                    self.source_candidates = None;
+                    self.close_overlay();
+                    let _ = self.focus.focus(jc_app::PrimaryFocus::Editor, &self.panels);
+                    self.periodic_recovery
+                        .note_activity(std::time::Instant::now());
+                }
                 update.changed = true;
                 continue;
             }

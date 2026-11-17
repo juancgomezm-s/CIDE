@@ -571,6 +571,25 @@ pub(crate) fn bom_prefix(bytes: &[u8], encoding: TextEncoding) -> usize {
     usize::from(encoding == TextEncoding::Utf8 && bytes.starts_with(b"\xef\xbb\xbf")) * 3
 }
 
+pub(crate) fn is_project_declaration(
+    bytes: &[u8],
+    encoding: TextEncoding,
+    cursor: usize,
+) -> Result<bool, String> {
+    if bytes.len() > SOURCE_LIMIT {
+        return Err("El renombrado admite documentos de hasta 256 KiB".into());
+    }
+    let prefix = bom_prefix(bytes, encoding);
+    let tokens = tokenize(&bytes[prefix..])?;
+    let occurrences = classify(&tokens)?;
+    Ok(occurrences.iter().any(|occurrence| {
+        let range = &tokens[occurrence.token].range;
+        (matches!(occurrence.role, Role::RoutineDeclaration(_) | Role::Forward)
+            || occurrence.scope == 0 && matches!(occurrence.role, Role::Declaration(true)))
+            && (range.start + prefix..range.end + prefix).contains(&cursor)
+    }))
+}
+
 /// Returns the declaration and uses in the closed lexical subset, in source order.
 /// All supported editor encodings preserve ASCII identifier bytes unchanged.
 pub fn propose(

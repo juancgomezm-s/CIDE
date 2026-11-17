@@ -98,7 +98,19 @@ impl Workbench {
     }
 
     pub(super) fn restore_history_selection(&mut self, before: u64, after: u64, undo: bool) {
-        let Some(document) = self.active_document() else {
+        if let Some(document) = self.active_document() {
+            self.restore_document_history_selection(document.id, before, after, undo);
+        }
+    }
+
+    pub(super) fn restore_document_history_selection(
+        &mut self,
+        id: DocumentId,
+        before: u64,
+        after: u64,
+        undo: bool,
+    ) {
+        let Some(document) = self.document_by_id(id) else {
             return;
         };
         let Some(record) = document.selection_history.find(before, after) else {

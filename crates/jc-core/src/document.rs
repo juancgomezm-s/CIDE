@@ -23,6 +23,7 @@ pub enum EditError {
         actual: u64,
     },
     OverlappingEdits,
+    StalePreparedBatch,
 }
 
 impl fmt::Display for EditError {
@@ -38,6 +39,9 @@ impl fmt::Display for EditError {
                 write!(f, "se esperaba revisión {expected}; se encontró {actual}")
             }
             Self::OverlappingEdits => write!(f, "ediciones solapadas o ambiguas"),
+            Self::StalePreparedBatch => {
+                f.write_str("La edición preparada ya no pertenece a esta revisión")
+            }
             Self::CapacityOverflow => {
                 write!(f, "desbordamiento de capacidad o revisión del documento")
             }
@@ -158,6 +162,34 @@ pub struct Replacement {
 pub struct EditBatch {
     pub expected_revision: u64,
     pub edits: Vec<Replacement>,
+}
+
+/// A validated batch whose pieces and allocation requirements are prepared.
+/// A document mutation invalidates this token, even if undo restores its revision.
+pub struct PreparedEditBatch {
+    identity: u64,
+    epoch: u64,
+    revision: u64,
+    staged: Option<StagedBatch>,
+    retains_undo: bool,
+}
+
+struct StagedBatch {
+    replacements: Vec<Replacement>,
+    state: State,
+    change: ChangeSet,
+    following_revision: u64,
+}
+
+impl PreparedEditBatch {
+    pub fn transition(&self) -> Option<(u64, u64)> {
+        let staged = self.staged.as_ref()?;
+        Some((self.revision, staged.state.revision))
+    }
+
+    pub fn retains_undo(&self) -> bool {
+        self.retains_undo
+    }
 }
 
 /// Edits are ordered for sequential position mapping (rightmost first on commit).
@@ -863,8 +895,17 @@ impl Document {
         })
     }
 
-    pub fn apply_batch(&mut self, mut batch: EditBatch) -> Result<(), EditError> {
-        self.bump_recovery_epoch();
+    pub fn apply_batch(&mut self, batch: EditBatch) -> Result<(), EditError> {
+        match self.prepare_batch(batch) {
+            Ok(prepared) => self.commit_prepared_batch(prepared),
+            Err(error) => {
+                self.bump_recovery_epoch();
+                Err(error)
+            }
+        }
+    }
+
+    pub fn prepare_batch(&mut self, mut batch: EditBatch) -> Result<PreparedEditBatch, EditError> {
         if batch.expected_revision != self.revision() {
             return Err(EditError::StaleRevision {
                 expected: batch.expected_revision,
@@ -899,9 +940,15 @@ impl Document {
         if let Some(error) = failure {
             return Err(error);
         }
+        let mut prepared = PreparedEditBatch {
+            identity: self.recovery_identity,
+            epoch: self.recovery_epoch,
+            revision: self.revision(),
+            staged: None,
+            retains_undo: false,
+        };
         if batch.edits.is_empty() {
-            self.last_edit = None;
-            return Ok(());
+            return Ok(prepared);
         }
         let mut new_len = self.len();
         let mut added_len = 0usize;
@@ -993,9 +1040,6 @@ impl Document {
             edits: state_edits,
         };
         let ends = PieceIndex::build(&pieces)?;
-        for edit in batch.edits {
-            self.added.extend_from_slice(&edit.bytes);
-        }
         let history_charge = std::mem::size_of::<State>()
             + pieces
                 .capacity()
@@ -1006,9 +1050,13 @@ impl Document {
             n.saturating_add(e.replaced.len())
                 .saturating_add(e.inserted_len)
         });
-        let previous = std::mem::replace(
-            &mut self.state,
-            State {
+        prepared.retains_undo = self.history_limit > 0
+            && self.state.history_charge.saturating_add(history_payload)
+                <= self.history_bytes_limit
+            && history_charge.saturating_add(history_payload) <= self.history_bytes_limit;
+        prepared.staged = Some(StagedBatch {
+            replacements: batch.edits,
+            state: State {
                 pieces,
                 ends,
                 history_charge,
@@ -1017,14 +1065,39 @@ impl Document {
                 revision: self.next_revision,
                 edit: Some(state_change),
             },
-        );
-        self.next_revision = following_revision;
+            change,
+            following_revision,
+        });
+        Ok(prepared)
+    }
+
+    pub fn prepared_batch_is_current(&self, prepared: &PreparedEditBatch) -> bool {
+        prepared.identity == self.recovery_identity
+            && prepared.epoch == self.recovery_epoch
+            && prepared.revision == self.revision()
+            && prepared.epoch != u64::MAX
+    }
+
+    pub fn commit_prepared_batch(&mut self, prepared: PreparedEditBatch) -> Result<(), EditError> {
+        if !self.prepared_batch_is_current(&prepared) {
+            return Err(EditError::StalePreparedBatch);
+        }
+        self.bump_recovery_epoch();
+        let Some(staged) = prepared.staged else {
+            self.last_edit = None;
+            return Ok(());
+        };
+        for edit in staged.replacements {
+            self.added.extend_from_slice(&edit.bytes);
+        }
+        let previous = std::mem::replace(&mut self.state, staged.state);
+        self.next_revision = staged.following_revision;
         if self.history_limit > 0 {
             self.undo.push(previous);
             trim_history(&mut self.undo, self.history_limit);
         }
         self.redo.clear();
-        self.last_edit = Some(change);
+        self.last_edit = Some(staged.change);
         self.enforce_history_budget();
         Ok(())
     }
@@ -1034,6 +1107,14 @@ impl Document {
     }
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
+    }
+
+    pub fn undo_revision(&self) -> Option<u64> {
+        self.undo.last().map(|state| state.revision)
+    }
+
+    pub fn redo_revision(&self) -> Option<u64> {
+        self.redo.last().map(|state| state.revision)
     }
 
     pub fn undo(&mut self) -> bool {

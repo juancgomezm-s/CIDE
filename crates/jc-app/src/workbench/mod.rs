@@ -19,6 +19,8 @@ pub(crate) mod rectangular;
 mod save_target;
 mod search;
 mod selection_history;
+mod workspace_edit;
+pub use workspace_edit::WorkspaceFileEdit;
 mod selection_transactions;
 pub use save_target::SaveTarget;
 mod syntax;
@@ -51,6 +53,7 @@ pub enum WorkbenchError {
     SearchIncomplete,
     Rectangle(String),
     LineCommand(String),
+    WorkspaceEdit(String),
 }
 
 impl fmt::Display for WorkbenchError {
@@ -61,6 +64,7 @@ impl fmt::Display for WorkbenchError {
             Self::ClipboardStale => f.write_str("Cambió el destino del portapapeles; repite la acción"),
             Self::Rectangle(message) => f.write_str(message),
             Self::LineCommand(message) => f.write_str(message),
+            Self::WorkspaceEdit(message) => f.write_str(message),
             Self::NoDocument => f.write_str("No hay un documento activo"),
             Self::File(error) => write!(f, "{error}"),
             Self::Position(error) => write!(f, "{error}"),
@@ -205,6 +209,7 @@ pub struct Workbench {
     large_open: large_open::LargeOpen,
     paged_save: Option<save_target::PendingSave>,
     selection_transaction: Option<DocumentId>,
+    workspace_history: Vec<workspace_edit::WorkspaceGroup>,
     show_invisibles: bool,
     pub(crate) tabs: TabManager,
     panes: PaneManager,
@@ -1097,38 +1102,28 @@ impl Workbench {
             .iter_mut()
             .find(|d| d.id == id)
             .ok_or(WorkbenchError::NoDocument)?;
-        let encoding = document
-            .session
-            .encoding()
-            .ok_or(FileError::EncodingRequired)?;
-        let projection = document.text.get_mut();
-        let source = document.session.document();
-        if source.is_paged() {
-            return Err(WorkbenchError::LineCommand(
-                "La edición por lotes todavía requiere un documento residente".into(),
-            ));
-        }
-        projection.ensure(source, encoding);
-        let mut replacements = Vec::with_capacity(edits.len());
-        for edit in edits {
-            for offset in [edit.range.start, edit.range.end] {
-                if offset != 0 {
-                    projection.position(document.session.document(), offset)?;
-                }
-            }
-            replacements.push(jc_core::Replacement {
-                range: edit.range,
-                bytes: jc_text::encode(&edit.text, encoding).map_err(FileError::from)?,
-            });
-        }
+        let batch = prepare_text_batch(
+            &document.session,
+            document.text.get_mut(),
+            expected_revision,
+            edits,
+        )?;
         document
             .session
             .document_mut()
-            .apply_batch(jc_core::EditBatch {
-                expected_revision,
-                edits: replacements,
-            })
+            .apply_batch(batch)
             .map_err(FileError::from)?;
+        self.publish_batch_change(id);
+        let _ = self.rebuild_search();
+        Ok(())
+    }
+
+    fn publish_batch_change(&mut self, id: DocumentId) {
+        let document = self
+            .documents
+            .iter_mut()
+            .find(|document| document.id == id)
+            .expect("the edited document remains open");
         let tab = document.tab_id;
         document.notified_revision = document.session.document().revision();
         let change = document.session.document().last_change().cloned();
@@ -1145,8 +1140,6 @@ impl Workbench {
         self.normalize_views(tab);
         self.tabs.set_dirty(tab, dirty);
         self.task_panels.clear_lsp(id);
-        let _ = self.rebuild_search();
-        Ok(())
     }
 
     pub fn select_tab(&mut self, one_based: usize) -> bool {
@@ -1209,6 +1202,38 @@ impl Workbench {
             self.tabs.set_dirty(id, dirty);
         }
     }
+}
+
+fn prepare_text_batch(
+    session: &FileSession,
+    projection: &mut TextProjection,
+    expected_revision: u64,
+    edits: Vec<TextReplacement>,
+) -> Result<jc_core::EditBatch, WorkbenchError> {
+    let encoding = session.encoding().ok_or(FileError::EncodingRequired)?;
+    let source = session.document();
+    if source.is_paged() {
+        return Err(WorkbenchError::LineCommand(
+            "La edición por lotes todavía requiere un documento residente".into(),
+        ));
+    }
+    projection.ensure(source, encoding);
+    let mut replacements = Vec::with_capacity(edits.len());
+    for edit in edits {
+        for offset in [edit.range.start, edit.range.end] {
+            if offset != 0 {
+                projection.position(source, offset)?;
+            }
+        }
+        replacements.push(jc_core::Replacement {
+            range: edit.range,
+            bytes: jc_text::encode(&edit.text, encoding).map_err(FileError::from)?,
+        });
+    }
+    Ok(jc_core::EditBatch {
+        expected_revision,
+        edits: replacements,
+    })
 }
 
 fn session_content_start(session: &FileSession) -> usize {

@@ -120,6 +120,7 @@ pub enum SourceAction {
     RelativeFile(String),
     Unresolved(String),
     Replace(String),
+    ProjectRename(ProjectRenameEdit, String),
     ReviewLine,
     LspCompletion(Vec<crate::TextReplacement>),
     Caller {
@@ -151,6 +152,9 @@ impl SourceItem {
                 | SourceAction::ScopedSymbol { .. }
                 | SourceAction::ReviewLine => 0,
                 SourceAction::ProjectLocation { path, .. } => path.capacity(),
+                SourceAction::ProjectRename(edit, name) => {
+                    edit.path.capacity() + edit.before.capacity() + name.capacity()
+                }
                 SourceAction::LspCompletion(edits) => {
                     edits.capacity() * std::mem::size_of::<crate::TextReplacement>()
                         + edits.iter().map(|edit| edit.text.capacity()).sum::<usize>()
@@ -198,6 +202,14 @@ impl SourceItem {
                     (1..=9).contains(&edits.len())
                 }
                 (SourceAction::Replace(text), SourceMode::Rename) => text.len() <= 64,
+                (SourceAction::ProjectRename(edit, name), SourceMode::Rename) => {
+                    edit.path.is_absolute()
+                        && edit.path.as_os_str().len() <= 4096
+                        && !edit.range.is_empty()
+                        && edit.range.len() <= 64
+                        && edit.before.len() <= 64
+                        && name.len() <= 64
+                }
                 (SourceAction::Replace(text), SourceMode::ReviewEdit(_)) => text.len() <= 4096,
                 (SourceAction::ReviewLine, SourceMode::ReviewEdit(_)) => true,
                 (SourceAction::Caller { path, .. }, SourceMode::Incoming)
@@ -225,6 +237,66 @@ pub enum FileResolution {
 
 pub type RenameProvider =
     fn(&[u8], jc_text::TextEncoding, usize, &str) -> Result<Vec<Range<usize>>, String>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectRenameEdit {
+    pub path: PathBuf,
+    pub version: jc_files::ContentFingerprint,
+    pub encoding: jc_text::TextEncoding,
+    pub range: Range<usize>,
+    pub line: usize,
+    pub before: String,
+}
+
+pub type ProjectRenameProvider = fn(
+    &Path,
+    &Path,
+    &[u8],
+    jc_text::TextEncoding,
+    usize,
+    &str,
+    &Cancellation,
+) -> Result<Option<Vec<ProjectRenameEdit>>, String>;
+
+#[derive(Clone)]
+struct RenameInput {
+    name: String,
+    project: Option<ProjectRenameProvider>,
+    confirmed: Option<Vec<SourceItem>>,
+}
+
+fn project_buffers_clean(app: &Workbench, root: &Path) -> Result<(), String> {
+    let root = root.canonicalize().map_err(|error| error.to_string())?;
+    let active = app.active_document().map(|document| document.id);
+    for document in app.open_documents() {
+        let path = document.session.path();
+        let abl = jc_languages::detect(&path.to_string_lossy()).id == "abl"
+            || path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("abl"));
+        if Some(document.id) != active
+            && abl
+            && !document.session.is_new()
+            && document.session.document().is_modified()
+            && (path.starts_with(&root)
+                || path
+                    .canonicalize()
+                    .is_ok_and(|path| path.starts_with(&root)))
+        {
+            return Err(format!(
+                "Guarda los cambios ABL de {} antes de revisar el proyecto",
+                path.display()
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) struct ProjectRenameJob {
+    provider: ProjectRenameProvider,
+    root: PathBuf,
+    path: PathBuf,
+}
 
 #[derive(Clone, Copy)]
 pub enum CatalogQuery {
@@ -333,6 +405,7 @@ pub(crate) enum SourceJob {
         provider: RenameProvider,
         cursor: usize,
         name: String,
+        project: Option<ProjectRenameJob>,
     },
 }
 
@@ -346,6 +419,9 @@ impl SourceJob {
             Self::Catalog(_, CatalogQuery::References { .. }) => {
                 default.max(std::time::Duration::from_secs(10))
             }
+            Self::Rename {
+                project: Some(_), ..
+            } => default.max(std::time::Duration::from_secs(30)),
             _ => default,
         }
     }
@@ -365,9 +441,51 @@ impl SourceJob {
                 provider,
                 cursor,
                 name,
+                project,
             } => {
                 if cancel.is_cancelled() {
                     return Err(TaskFailure::Cancelled);
+                }
+                if let Some(project) = project {
+                    match (project.provider)(
+                        &project.root,
+                        &project.path,
+                        snapshot.bytes(),
+                        snapshot.stamp.encoding,
+                        *cursor,
+                        name,
+                        cancel,
+                    ) {
+                        Ok(Some(mut edits)) => {
+                            if edits.is_empty() || edits.len() > 128 {
+                                return Err(TaskFailure::LimitExceeded);
+                            }
+                            edits.sort_unstable_by(|left, right| {
+                                left.path
+                                    .cmp(&right.path)
+                                    .then(left.range.start.cmp(&right.range.start))
+                            });
+                            for edit in edits {
+                                let display = display_ui_label(
+                                    &edit
+                                        .path
+                                        .strip_prefix(&project.root)
+                                        .unwrap_or(&edit.path)
+                                        .to_string_lossy(),
+                                    66,
+                                );
+                                let previous = display_ui_label(&edit.before, 32);
+                                output.push(TaskItem::Source(SourceItem {
+                                    range: 0..0,
+                                    label: format!("{display}:{} · {previous} → {name}", edit.line),
+                                    action: SourceAction::ProjectRename(edit, name.clone()),
+                                }))?;
+                            }
+                            return Ok(());
+                        }
+                        Ok(None) => {}
+                        Err(error) => return output.push(TaskItem::Message(error)),
+                    }
                 }
                 let mut ranges =
                     match provider(snapshot.bytes(), snapshot.stamp.encoding, *cursor, name) {
@@ -695,7 +813,7 @@ struct Request {
 #[derive(Clone)]
 enum SourceInput {
     None,
-    Rename(String),
+    Rename(RenameInput),
     Catalog(Arc<dyn CatalogSource>),
 }
 
@@ -727,6 +845,7 @@ pub struct SourceController {
     outline: bool,
     outline_attempt: Option<Origin>,
     lsp: crate::lsp::Client,
+    project_rename_applied: bool,
 }
 pub struct SourceRow {
     pub index: usize,
@@ -973,17 +1092,85 @@ impl SourceController {
         root: Option<&Path>,
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
+        self.request_rename_with_project(name, None, registry, app, root, jobs)
+    }
+
+    pub fn request_rename_with_project(
+        &mut self,
+        name: &str,
+        project: Option<ProjectRenameProvider>,
+        registry: &SourceRegistry,
+        app: &Workbench,
+        root: Option<&Path>,
+        jobs: &mut JobSystem,
+    ) -> Result<(), String> {
         if name.is_empty() || name.len() > 64 || name.chars().any(char::is_control) {
             return Err("Escribe un identificador de hasta 64 bytes".into());
         }
+        let project = project.filter(|_| {
+            root.is_some()
+                && app
+                    .active_document()
+                    .is_some_and(|document| !document.session.is_new())
+        });
         self.request_named(
             SourceMode::Rename,
-            SourceInput::Rename(name.into()),
+            SourceInput::Rename(RenameInput {
+                name: name.into(),
+                project,
+                confirmed: None,
+            }),
             registry,
             app,
             root,
             jobs,
         )
+    }
+
+    pub fn confirm_project_rename(
+        &mut self,
+        app: &Workbench,
+        root: Option<&Path>,
+        jobs: &mut JobSystem,
+    ) -> Result<bool, String> {
+        if !self
+            .items
+            .iter()
+            .any(|item| matches!(item.action, SourceAction::ProjectRename(..)))
+        {
+            return Ok(false);
+        }
+        let mut request = self
+            .accepted
+            .as_ref()
+            .filter(|request| request.current(app, root))
+            .cloned()
+            .ok_or("La vista previa del proyecto ya no está vigente")?;
+        if self.generation == u64::MAX {
+            return Err("Se agotó el historial de revisiones del renombrado".into());
+        }
+        project_buffers_clean(app, root.ok_or("Abre la carpeta del proyecto")?)?;
+        let SourceInput::Rename(input) = &mut request.input else {
+            return Err("Confirmación de renombrado inválida".into());
+        };
+        input.confirmed = Some(std::mem::take(&mut self.items));
+        self.invalidate(jobs);
+        request.generation = self.generation;
+        self.pending = Some(request);
+        self.status(
+            SourceState::Queued,
+            "Verificando de nuevo el renombrado del proyecto…",
+        );
+        self.tick(app, root, jobs);
+        if matches!(self.state, SourceState::Limited | SourceState::Failed) {
+            Err(self.message.clone())
+        } else {
+            Ok(true)
+        }
+    }
+
+    pub fn take_project_rename_applied(&mut self) -> bool {
+        std::mem::take(&mut self.project_rename_applied)
     }
     pub fn request_catalog(
         &mut self,
@@ -1143,45 +1330,57 @@ impl SourceController {
         }
         let mode = r.mode;
         let lsp = mode.lsp_query();
-        let work = if let SourceInput::Catalog(provider) = &r.input {
-            let cursor = r.origin.cursor;
-            let query = match mode {
-                SourceMode::Symbols => CatalogQuery::Symbols,
-                SourceMode::CatalogDefinition => CatalogQuery::Definition { cursor },
-                SourceMode::CatalogReferences => CatalogQuery::References { cursor },
-                SourceMode::CatalogXref => CatalogQuery::Xref { cursor },
-                SourceMode::ReviewEdit(action) => CatalogQuery::ReviewEdit { action, cursor },
-                _ => CatalogQuery::Complete,
-            };
-            SourceJob::Catalog(provider.clone(), query)
-        } else if let Some(query) = lsp {
-            SourceJob::Lsp(crate::lsp::Work {
-                client: self.lsp.clone(),
-                root: r.origin.root.clone().expect("admitted project root"),
-                path: r.origin.path.clone(),
-                profile: r.origin.language.clone(),
-                cursor: r.origin.cursor,
-                query,
-            })
-        } else {
-            let provider = r.provider.expect("admitted source provider");
-            match r.mode {
-                SourceMode::Incoming => SourceJob::Incoming(IncomingScan {
-                    root: r.origin.root.clone().unwrap(),
-                    target: r.origin.path.clone(),
-                    provider,
-                }),
-                SourceMode::Rename => SourceJob::Rename {
-                    provider: provider.rename.unwrap(),
+        let work =
+            if let SourceInput::Catalog(provider) = &r.input {
+                let cursor = r.origin.cursor;
+                let query = match mode {
+                    SourceMode::Symbols => CatalogQuery::Symbols,
+                    SourceMode::CatalogDefinition => CatalogQuery::Definition { cursor },
+                    SourceMode::CatalogReferences => CatalogQuery::References { cursor },
+                    SourceMode::CatalogXref => CatalogQuery::Xref { cursor },
+                    SourceMode::ReviewEdit(action) => CatalogQuery::ReviewEdit { action, cursor },
+                    _ => CatalogQuery::Complete,
+                };
+                SourceJob::Catalog(provider.clone(), query)
+            } else if let Some(query) = lsp {
+                SourceJob::Lsp(crate::lsp::Work {
+                    client: self.lsp.clone(),
+                    root: r.origin.root.clone().expect("admitted project root"),
+                    path: r.origin.path.clone(),
+                    profile: r.origin.language.clone(),
                     cursor: r.origin.cursor,
-                    name: match &r.input {
-                        SourceInput::Rename(name) => name.clone(),
-                        _ => unreachable!("admitted rename input"),
+                    query,
+                })
+            } else {
+                let provider = r.provider.expect("admitted source provider");
+                match r.mode {
+                    SourceMode::Incoming => SourceJob::Incoming(IncomingScan {
+                        root: r.origin.root.clone().unwrap(),
+                        target: r.origin.path.clone(),
+                        provider,
+                    }),
+                    SourceMode::Rename => SourceJob::Rename {
+                        provider: provider.rename.unwrap(),
+                        cursor: r.origin.cursor,
+                        name: match &r.input {
+                            SourceInput::Rename(input) => input.name.clone(),
+                            _ => unreachable!("admitted rename input"),
+                        },
+                        project: match &r.input {
+                            SourceInput::Rename(input) => input
+                                .project
+                                .zip(r.origin.root.clone())
+                                .map(|(provider, root)| ProjectRenameJob {
+                                    provider,
+                                    root,
+                                    path: r.origin.path.clone(),
+                                }),
+                            _ => None,
+                        },
                     },
-                },
-                mode => SourceJob::Plain(provider.provider(mode).unwrap()),
-            }
-        };
+                    mode => SourceJob::Plain(provider.provider(mode).unwrap()),
+                }
+            };
         match jobs.submit_source(app, self.job_key(), r.origin.stamp, len, work) {
             Ok(id) => {
                 let request = self.pending.take().unwrap();
@@ -1342,7 +1541,9 @@ impl SourceController {
                 ) && (item.range.end != request.origin.cursor || item.range.len() > 512)
                 || !matches!(
                     item.action,
-                    SourceAction::Caller { .. } | SourceAction::ProjectLocation { .. }
+                    SourceAction::Caller { .. }
+                        | SourceAction::ProjectLocation { .. }
+                        | SourceAction::ProjectRename(..)
                 ) && (app.position_for_tab(tab, item.range.start).is_none()
                     || app.position_for_tab(tab, item.range.end).is_none())
             {
@@ -1353,6 +1554,18 @@ impl SourceController {
                 return true;
             }
             items.push(item);
+        }
+        if items
+            .iter()
+            .any(|item| matches!(item.action, SourceAction::ProjectRename(..)))
+        {
+            let result = root
+                .ok_or_else(|| "Falta la raíz del proyecto".to_owned())
+                .and_then(|root| project_buffers_clean(app, root));
+            if let Err(error) = result {
+                self.status(SourceState::Failed, error);
+                return true;
+            }
         }
         self.selected = if request
             .provider
@@ -1375,6 +1588,35 @@ impl SourceController {
                 message.push_str(&format!(" · {notice}"));
             }
             message
+        } else if self
+            .items
+            .iter()
+            .any(|item| matches!(item.action, SourceAction::ProjectRename(..)))
+        {
+            let files = self
+                .items
+                .iter()
+                .filter_map(|item| match &item.action {
+                    SourceAction::ProjectRename(edit, _) => Some(&edit.path),
+                    _ => None,
+                })
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+            if files > crate::WorkspaceFileEdit::MAX_FILES {
+                self.items.clear();
+                self.status(
+                    SourceState::Limited,
+                    format!(
+                        "El renombrado afecta {files} archivos y supera el límite de {}",
+                        crate::WorkspaceFileEdit::MAX_FILES
+                    ),
+                );
+                return true;
+            }
+            format!(
+                "{files} archivos · {} cambios · F9 o Ctrl+Intro confirma",
+                self.items.len()
+            )
         } else if request.mode == SourceMode::CatalogCompletion {
             format!("Esquema ABL: {} sugerencias", self.items.len())
         } else if matches!(request.mode, SourceMode::ReviewEdit(_)) {
@@ -1436,7 +1678,57 @@ impl SourceController {
         if consumed && diagnostics && self.state == SourceState::Ready {
             app.replace_lsp_diagnostics(task);
         }
+        if consumed && self.state == SourceState::Ready && self.accepted.as_ref().is_some_and(|request| {
+            matches!(&request.input, SourceInput::Rename(input) if input.confirmed.is_some())
+        }) {
+            let request = self.accepted.take().unwrap();
+            let SourceInput::Rename(input) = &request.input else { unreachable!() };
+            if input.confirmed.as_ref() != Some(&self.items) {
+                self.status(SourceState::Stale, "Cambió la resolución del proyecto. Vuelve a revisar el renombrado");
+            } else {
+                match self.apply_project_rename(app, &request) {
+                    Ok(()) => {
+                        self.project_rename_applied = true;
+                        self.status(SourceState::Ready, "Renombrado del proyecto aplicado · un solo Deshacer");
+                    }
+                    Err(error) => { self.status(SourceState::Failed, error); }
+                }
+            }
+        }
         consumed
+    }
+
+    fn apply_project_rename(&self, app: &mut Workbench, request: &Request) -> Result<(), String> {
+        let root = request
+            .origin
+            .root
+            .as_deref()
+            .ok_or("Falta la raíz del proyecto")?;
+        project_buffers_clean(app, root)?;
+        let mut files = std::collections::BTreeMap::<PathBuf, crate::WorkspaceFileEdit>::new();
+        for item in &self.items {
+            let SourceAction::ProjectRename(edit, name) = &item.action else {
+                return Err("Vista previa de proyecto inválida".into());
+            };
+            let origin = crate::SearchOrigin::Disk(edit.version);
+            let file = files
+                .entry(edit.path.clone())
+                .or_insert_with(|| crate::WorkspaceFileEdit {
+                    path: edit.path.clone(),
+                    origin,
+                    encoding: edit.encoding,
+                    edits: Vec::new(),
+                });
+            if file.origin != origin || file.encoding != edit.encoding {
+                return Err("Versiones inconsistentes en la vista previa".into());
+            }
+            file.edits.push(crate::TextReplacement {
+                range: edit.range.clone(),
+                text: name.clone(),
+            });
+        }
+        app.apply_workspace_edits(root, files.into_values().collect())
+            .map_err(|error| error.to_string())
     }
 
     pub fn activate(
@@ -1501,6 +1793,13 @@ impl SourceController {
             if to_side || self.items.is_empty() {
                 return Err("No hay una propuesta de renombrado para aplicar".into());
             }
+            if self
+                .items
+                .iter()
+                .any(|item| matches!(item.action, SourceAction::ProjectRename(..)))
+            {
+                return Err("Confirma la vista previa del proyecto con F9 o Ctrl+Intro".into());
+            }
             self.apply_replacements(app, request)?;
             return Ok(None);
         }
@@ -1509,6 +1808,9 @@ impl SourceController {
             .get(index)
             .ok_or("No hay elemento de código seleccionado")?;
         match &item.action {
+            SourceAction::ProjectRename(..) => {
+                Err("Confirma el renombrado completo del proyecto".into())
+            }
             SourceAction::ReviewLine => Err("Esta fila solo muestra la vista previa".into()),
             SourceAction::Caller {
                 path,

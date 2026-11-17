@@ -82,6 +82,7 @@ pub use workbench::{
     DocumentId, EditorDocument, EditorRead, LargeViewport, LargeViewportLookup, LargeViewportRow,
     PreparedLargeDocument, RecoveryCapture, RecoveryKey, SaveTarget, SearchHistoryEntry,
     SearchState, SyntaxRows, SyntaxStats, TextReplacement, Workbench, WorkbenchError,
+    WorkspaceFileEdit,
 };
 pub mod data_connections;
 mod project_search;

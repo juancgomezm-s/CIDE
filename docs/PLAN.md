@@ -622,8 +622,10 @@ permanecen en el editor compartido.
 [Uso](PROGRESS_BRIDGE.md#acciones-de-edición-abl) · [Alcance](ABL_EDITOR_COMMAND_SCOPE.md#c--m4-funciones-que-requieren-semántica).
 
 La generación de una interfaz de servicio depende de un contrato real de
-integración. El renombrado entre archivos requiere un bloque posterior con
-validación y recuperación de la transacción de proyecto.
+integración. El [renombrado entre archivos](ABL_PROJECT_RENAME.md) ya cubre
+declaraciones compartidas por inclusiones ABL directas resueltas por PROPATH
+en GUI y TUI. Los cambios se recuperan y se deshacen como grupo. Quedan por
+ampliar los contextos de preprocesador y las referencias indirectas.
 
 ## M5 — Integración y validación local
 
@@ -1240,8 +1242,8 @@ integrados. El proveedor ABL incorpora renombrado de variables de documento
 y locales de procedimiento o función en un subconjunto comprobable, con
 vista previa y una transacción. También admite declaraciones y llamadas
 estáticas a procedimientos y funciones internas en el mismo archivo, incluidos
-los pares de prototipo `FORWARD` e implementación con firmas compatibles. Sigue
-ampliar los contextos y la resolución entre archivos.
+los pares de prototipo `FORWARD` e implementación con firmas compatibles.
+Las inclusiones ABL directas ya cuentan con renombrado de proyecto.
 Ver [alcance y orden de implementación](ENLACES_ESQUEMA_RENOMBRADO.md).
 
 La [navegación por proveedor](NAVEGACION_MULTILENGUAJE.md) separa llamadas ABL

@@ -265,7 +265,7 @@ fn project_propath(root: &Path, source: &Path) -> Result<String, String> {
         .map(|dirs| dirs.join(","))
 }
 
-fn project_propath_dirs(root: &Path, source: &Path) -> Result<Vec<PathBuf>, String> {
+pub(crate) fn project_propath_dirs(root: &Path, source: &Path) -> Result<Vec<PathBuf>, String> {
     let parents = jc_app::source_services::load_propath(root)?.unwrap_or_else(|| {
         let parent = source.parent().unwrap_or(root);
         if parent == root {
