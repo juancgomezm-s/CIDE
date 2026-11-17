@@ -404,6 +404,20 @@ mod tests {
         poll_until(&mut state, |state| {
             state.workbench.active_paged_byte().is_some()
         });
+        state.open_search_panel(false);
+        state.edit_search_input(jc_app::FieldEdit::Insert("final"));
+        state.execute_menu(CommandId::SearchFindNext);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while state.workbench.selection_for_pane(PaneId::Primary) != Some(cursor..cursor + 5) {
+            assert!(
+                std::time::Instant::now() < until,
+                "Buscar no saltó al resultado paginado"
+            );
+            state.poll_tasks();
+            std::thread::yield_now();
+        }
+        state.close_selector();
+        state.workbench.set_search_query("").unwrap();
         state.open_navigation_panel();
         let input = format!("@{cursor}");
         state.edit_navigation_input(jc_app::FieldEdit::Insert(&input));

@@ -104,6 +104,8 @@ pub struct SearchState {
     pub target: Option<crate::TaskStamp>,
     pub generation: u64,
     pub scanned_bytes: usize,
+    pub total_matches: usize,
+    pub scan_error: Option<String>,
     pub history: std::collections::VecDeque<SearchHistoryEntry>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -211,9 +213,11 @@ pub struct Workbench {
     next_document: u64,
     pub(crate) search: SearchState,
     search_work: Option<search::SearchWork>,
+    paged_search: search::PagedSearch,
     search_pattern: Option<search::CompiledQuery>,
     search_limits: crate::SearchLimits,
     search_navigation: Option<search::PendingNavigation>,
+    search_navigation_epoch: u64,
     search_history_index: Option<usize>,
     pub(crate) clipboard: Option<rectangular::Clipboard>,
     pub(crate) task_panels: crate::task_panels::TaskPanels,

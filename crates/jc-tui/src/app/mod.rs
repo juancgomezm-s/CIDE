@@ -326,9 +326,9 @@ impl TuiApp {
             update.changed = true;
             if !self.project_results {
                 self.status = format!(
-                    "Búsqueda del documento {}: {} coincidencias",
+                    "Búsqueda del documento {}: {}",
                     self.workbench.search().status.label(),
-                    self.workbench.search().matches.len()
+                    self.workbench.search_result_summary()
                 );
             }
         }

@@ -63,10 +63,22 @@ bloqueo de la recuperación deja abierta la GUI o la TUI hasta poder reintentar.
 Pasaron el formato, Clippy dirigido y la compilación optimizada local de GUI
 y TUI. Los ejecutables y sus huellas están en `target/gb-background-next/release`,
 con la caché reutilizada de `target/build-cache`.
-Quedan pendientes la medición interactiva con varios GB,
-el minimapa global y la búsqueda completa sobre la
-fuente paginada. El historial de pestañas cerradas conserva solo metadatos;
-para abrir de nuevo un archivo grande descartado se usa `Abrir archivo`.
+La búsqueda literal, con palabra completa o con expresiones regulares usa
+el mismo motor de los documentos residentes. En GUI y TUI recorre una
+revisión fija del archivo paginado en un trabajador cancelable y muestra
+el avance. Cuenta las coincidencias durante todo el recorrido y conserva
+hasta 10.000 para navegar y resaltar. Una expresión regular con demasiados
+reintentos puede terminar con estado `Limitado`. La búsqueda literal puede
+recorrer el archivo hasta el final. Los resultados usan offsets
+absolutos y pueden abrir un tramo que queda fuera de la vista actual.
+Las pruebas de GUI y TUI verificaron el salto y la selección de resultados.
+El caso optimizado recorrió los 4.294.967.314 bytes de la instantánea y
+seleccionó la coincidencia en el byte 4.294.967.307. Tardó 29,12 segundos,
+incluida la apertura de la instantánea.
+
+Quedan pendientes la medición interactiva con varios GB y el minimapa
+global sobre la fuente paginada. Para abrir de nuevo un archivo grande
+descartado se usa `Abrir archivo`.
 
 ## Admisión inicial — 2026-11-03
 

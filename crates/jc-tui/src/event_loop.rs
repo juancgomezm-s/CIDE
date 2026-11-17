@@ -204,7 +204,7 @@ pub(crate) fn run(mut options: LaunchOptions, search_workers: usize) -> io::Resu
             dirty = false;
         }
         if input.shared.pending()
-            || app.workbench.search_running()
+            || app.workbench.search_needs_poll()
             || app.tasks.has_completed()
             || app.git_status.ready()
             || app.git_index.ready()

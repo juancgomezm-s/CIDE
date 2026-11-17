@@ -87,7 +87,7 @@ impl State {
         self.schedule_search();
     }
     pub(super) fn schedule_search(&self) {
-        if self.workbench.search_running() {
+        if self.workbench.search_needs_poll() {
             self.bridge.signal();
         }
     }
@@ -260,12 +260,24 @@ impl State {
             }),
             replacement_active: panel.replacement_active,
             message: format!(
-                "Regex:{} (reemplazo literal) · Mayúsculas:{} Palabra:{} · {} · {} coincidencias · {}",
-                if self.workbench.search().regex { "sí" } else { "no" },
-                if self.workbench.search().case_sensitive { "sí" } else { "no" },
-                if self.workbench.search().whole_word { "sí" } else { "no" },
+                "Regex:{} (reemplazo literal) · Mayúsculas:{} Palabra:{} · {} · {} · {}",
+                if self.workbench.search().regex {
+                    "sí"
+                } else {
+                    "no"
+                },
+                if self.workbench.search().case_sensitive {
+                    "sí"
+                } else {
+                    "no"
+                },
+                if self.workbench.search().whole_word {
+                    "sí"
+                } else {
+                    "no"
+                },
                 self.workbench.search().status.label(),
-                self.workbench.search().matches.len(),
+                self.workbench.search_result_summary(),
                 self.status
             ),
         })

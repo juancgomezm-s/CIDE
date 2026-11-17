@@ -202,6 +202,9 @@ pub(crate) struct Pattern {
     word: bool,
 }
 impl Pattern {
+    pub(crate) fn is_regex(&self) -> bool {
+        self.regex.is_some()
+    }
     pub(crate) fn compile_mode(
         query: &str,
         case: bool,
@@ -428,17 +431,29 @@ impl Scanner {
         limits: SearchLimits,
         mut read: impl FnMut(Range<usize>, &mut Vec<u8>),
     ) -> Step {
+        self.try_step(limits, |range, bytes| {
+            read(range, bytes);
+            Ok(())
+        })
+        .expect("lectura de búsqueda infalible")
+    }
+
+    pub(crate) fn try_step(
+        &mut self,
+        limits: SearchLimits,
+        mut read: impl FnMut(Range<usize>, &mut Vec<u8>) -> std::io::Result<()>,
+    ) -> std::io::Result<Step> {
         if let Some(regex) = &mut self.regex {
             return regex.step(limits, read);
         }
         let started = Instant::now();
         let mut hits = Vec::new();
         if self.status != SearchStatus::Running {
-            return Step {
+            return Ok(Step {
                 matches: hits,
                 status: self.status,
                 scanned: self.offset,
-            };
+            });
         }
         if self.started.elapsed() >= limits.total_time {
             self.status = SearchStatus::TimedOut;
@@ -455,8 +470,27 @@ impl Scanner {
             read(
                 self.offset..(self.chunk_end + 4).min(self.len),
                 &mut self.bytes,
-            );
+            )?;
             self.has_chunk = true;
+        }
+        if self.has_chunk && self.matcher.matched == 0 && self.matcher.pending.is_none() {
+            let plain =
+                &self.bytes[self.offset - self.chunk_start..self.chunk_end - self.chunk_start];
+            let first = self.matcher.pattern.chars[0] as u32;
+            let fold = self.matcher.pattern.fold;
+            if !plain.is_empty()
+                && plain.iter().all(|&b| {
+                    b.is_ascii()
+                        && !matches!(b, b'\r' | b'\n')
+                        && u32::from(if fold { b.to_ascii_lowercase() } else { b }) != first
+                })
+            {
+                self.position.column += plain.len();
+                self.matcher.previous = plain.last().map(|&b| char::from(b));
+                self.cr = false;
+                self.offset = self.chunk_end;
+                self.has_chunk = false;
+            }
         }
         // Move only the Vec header: reuse the owned source capacity while keeping
         // the decoder's borrow local to this cooperative slot (no self-reference).
@@ -527,11 +561,11 @@ impl Scanner {
                 self.status = SearchStatus::Complete;
             }
         }
-        Step {
+        Ok(Step {
             matches: hits,
             status: self.status,
             scanned: self.offset,
-        }
+        })
     }
     fn accept(&mut self, hit: SearchMatch, limits: SearchLimits, hits: &mut Vec<SearchMatch>) {
         if self.total_hits >= limits.max_results {

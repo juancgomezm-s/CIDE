@@ -305,6 +305,14 @@ mod tests {
             }
         };
         wait(&mut app, 0);
+        app.workbench.set_search_query("final").unwrap();
+        app.dispatch(CommandId::SearchFindNext);
+        wait(&mut app, cursor + 5);
+        assert_eq!(
+            app.workbench.selection_for_pane(PaneId::Primary),
+            Some(cursor..cursor + 5)
+        );
+        app.workbench.set_search_query("").unwrap();
         app.dispatch(CommandId::SearchGoToPosition);
         app.submit_prompt(crate::state::PromptKind::GoToPosition, format!("@{cursor}"));
         wait(&mut app, cursor);

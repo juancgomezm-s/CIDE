@@ -159,8 +159,8 @@ impl RegexScanner {
     pub(crate) fn step(
         &mut self,
         limits: SearchLimits,
-        mut read: impl FnMut(Range<usize>, &mut Vec<u8>),
-    ) -> Step {
+        mut read: impl FnMut(Range<usize>, &mut Vec<u8>) -> std::io::Result<()>,
+    ) -> std::io::Result<Step> {
         let began = Instant::now();
         let mut hits = Vec::new();
         let mut slot_work = 0;
@@ -189,7 +189,7 @@ impl RegexScanner {
                 read(
                     self.cursor.byte..(self.cursor.byte + limits.step_bytes + 4).min(self.len),
                     &mut self.bytes,
-                );
+                )?;
             }
             let local = self.cursor.byte.saturating_sub(self.chunk_start);
             let mut decoder = DecodedScalars::new(
@@ -267,10 +267,10 @@ impl RegexScanner {
                 self.status = SearchStatus::Unavailable;
             }
         }
-        Step {
+        Ok(Step {
             matches: hits,
             status: self.status,
             scanned: self.cursor.byte,
-        }
+        })
     }
 }

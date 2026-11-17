@@ -6,6 +6,8 @@ use crate::{
 use jc_files::FileError;
 use jc_text::{decode_fragment, encode, TextPosition};
 use std::ops::Range;
+mod paged;
+pub(super) use paged::PagedSearch;
 
 #[derive(Debug)]
 pub(super) struct SearchWork {
@@ -81,11 +83,15 @@ impl Workbench {
         self.restart_search()
     }
     pub fn search_running(&self) -> bool {
+        self.search.status == SearchStatus::Running
+    }
+    pub fn search_needs_poll(&self) -> bool {
         self.search_work.is_some()
     }
     pub fn cancel_search(&mut self) {
+        self.paged_search.cancel();
         self.search_work = None;
-        self.search_navigation = None;
+        self.cancel_search_navigation();
         if self.search.status == SearchStatus::Running {
             self.search.status = SearchStatus::Cancelled;
         }
@@ -94,6 +100,7 @@ impl Workbench {
     /// navigation intention, without discarding the bounded scan/results.
     pub fn cancel_search_navigation(&mut self) {
         self.search_navigation = None;
+        self.search_navigation_epoch = self.search_navigation_epoch.wrapping_add(1);
     }
     /// Schedule only. All source scanning is in poll_document_search; query input,
     /// edits and view transitions never materialize/decode the document here.
@@ -110,22 +117,18 @@ impl Workbench {
             return Ok(());
         }
         let cancelled = self.search.status == SearchStatus::Cancelled;
+        self.paged_search.cancel();
         self.search_work = None;
         self.search_navigation = None;
         self.search.matches.clear();
         self.search.current = None;
         self.search.scanned_bytes = 0;
+        self.search.total_matches = 0;
+        self.search.scan_error = None;
         self.search.target = stamp;
         self.search.generation = self.search.generation.wrapping_add(1);
         self.search.status = SearchStatus::Idle;
         if self.search.query.is_empty() || self.active_document().is_none() {
-            return Ok(());
-        }
-        if self
-            .active_document()
-            .is_some_and(|document| document.session.document().is_paged())
-        {
-            self.search.status = SearchStatus::Unavailable;
             return Ok(());
         }
         if cancelled {
@@ -167,19 +170,29 @@ impl Workbench {
             regex: self.search.regex,
             pattern: pattern.clone(),
         });
-        let len = self.active_document().unwrap().session.document().len();
-        self.search_work = Some(SearchWork {
-            stamp,
-            scanner: Scanner::new(pattern, stamp.encoding, len),
-        });
+        let source = self.active_document().unwrap().session.document();
+        if source.is_paged() {
+            self.paged_search.request = Some(paged::Request {
+                stamp,
+                generation: self.search.generation,
+                pattern,
+            });
+            self.start_paged_search()?;
+        } else {
+            self.search_work = Some(SearchWork {
+                stamp,
+                scanner: Scanner::new(pattern, stamp.encoding, source.len()),
+            });
+        }
         self.search.status = SearchStatus::Running;
         Ok(())
     }
     /// One chunk/slot. The UI checks input again before scheduling another slot.
     /// Returns true only when visible results/status/selection changed.
     pub fn poll_document_search(&mut self) -> bool {
+        let background = self.poll_paged_search();
         let Some(mut work) = self.search_work.take() else {
-            return false;
+            return background;
         };
         if !self.task_stamp_is_current(work.stamp)
             || self.active_document().map(|d| d.id) != Some(work.stamp.document)
@@ -204,11 +217,15 @@ impl Workbench {
         };
         let changed = !step.matches.is_empty() || step.status != self.search.status;
         self.search.matches.extend(step.matches);
+        self.search.total_matches = self.search.matches.len();
         self.search.status = step.status;
         self.search.scanned_bytes = step.scanned;
         if step.status == SearchStatus::Running {
             self.search_work = Some(work);
         }
+        changed | self.poll_search_navigation() | background
+    }
+    fn poll_search_navigation(&mut self) -> bool {
         let mut navigated = false;
         if let Some(request) = self.search_navigation {
             let view = self
@@ -228,7 +245,7 @@ impl Workbench {
                 self.search_navigation = None;
             }
         }
-        changed || navigated
+        navigated
     }
     fn valid_search(&self, complete: bool) -> Result<TaskStamp, WorkbenchError> {
         let stamp = self.search.target.ok_or(WorkbenchError::NoDocument)?;
@@ -329,6 +346,11 @@ impl Workbench {
             return Ok(false);
         };
         let range = hit.range.clone();
+        if self.active_paged_byte().is_some() {
+            self.reveal_paged_search_result(range)?;
+            self.search.current = Some(index);
+            return Ok(true);
+        }
         self.search.current = Some(index);
         let mut editor = self.active_editor_mut().ok_or(WorkbenchError::NoDocument)?;
         editor.rectangle = None;
@@ -339,6 +361,32 @@ impl Workbench {
     }
     pub fn search_match_position(&self, index: usize) -> Option<TextPosition> {
         self.search.matches.get(index).map(|m| m.position)
+    }
+
+    pub fn search_result_summary(&self) -> String {
+        if let Some(error) = &self.search.scan_error {
+            return error.clone();
+        }
+        let count = self.search.total_matches;
+        let retained = self.search.matches.len();
+        let mut summary = if count > retained {
+            format!("{count} coincidencias · {retained} disponibles para navegar")
+        } else {
+            format!("{count} coincidencias")
+        };
+        if self.search_running() && self.active_paged_byte().is_some() {
+            use std::fmt::Write as _;
+            let len = self
+                .active_document()
+                .unwrap()
+                .session
+                .document()
+                .len()
+                .max(1);
+            let percent = (self.search.scanned_bytes as u128 * 100 / len as u128).min(100);
+            let _ = write!(summary, " · {percent} %");
+        }
+        summary
     }
     pub fn search_matches_for_tab(&self, tab: crate::TabId) -> &[crate::SearchMatch] {
         if self.search.target.is_some_and(|stamp| {
@@ -353,6 +401,13 @@ impl Workbench {
         }
     }
     fn navigation_index(&self, request: Navigation) -> Option<usize> {
+        if !request.forward
+            && self.active_paged_byte().is_some()
+            && self.search_running()
+            && self.search.scanned_bytes < request.from
+        {
+            return None;
+        }
         let matches = &self.search.matches;
         if matches.is_empty() {
             return None;

@@ -232,6 +232,7 @@ pub struct PagedReadPlan {
     original: Original,
     pieces: Vec<Piece>,
     added: Vec<u8>,
+    index: PieceIndex,
 }
 
 impl PagedReadPlan {
@@ -256,6 +257,41 @@ impl PagedReadPlan {
                 piece.start..piece.start + piece.len,
                 &mut visitor,
             )?;
+        }
+        Ok(())
+    }
+
+    /// Read a bounded absolute interval of this pinned revision.
+    pub fn visit_range(
+        &self,
+        range: Range<usize>,
+        mut visitor: impl FnMut(&[u8]) -> io::Result<()>,
+    ) -> io::Result<()> {
+        if range.start < self.range.start || range.end > self.range.end || range.start > range.end {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Tramo fuera de la lectura preparada",
+            ));
+        }
+        let start = range.start - self.range.start;
+        let end = range.end - self.range.start;
+        let (first, mut position) = self.index.locate(start);
+        for piece in &self.pieces[first..] {
+            if position >= end {
+                break;
+            }
+            let from = piece.start + start.saturating_sub(position);
+            let to = piece.start + piece.len.min(end - position);
+            if from < to {
+                visit_piece(
+                    &self.original,
+                    &self.added,
+                    piece.source,
+                    from..to,
+                    &mut visitor,
+                )?;
+            }
+            position += piece.len;
         }
         Ok(())
     }
@@ -785,6 +821,7 @@ impl Document {
             added.extend_from_slice(&self.added[piece.start..piece.start + piece.len]);
             piece.start = next;
         }
+        let index = PieceIndex::build(&pieces)?;
         Ok(PagedReadPlan {
             document_identity: self.recovery_identity,
             revision: self.revision(),
@@ -795,6 +832,7 @@ impl Document {
             },
             pieces,
             added,
+            index,
         })
     }
 

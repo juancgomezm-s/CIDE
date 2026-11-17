@@ -55,6 +55,7 @@ struct ViewJump {
     origin: NavLocation,
     offset: Option<usize>,
     select: bool,
+    search_selection: Option<(u64, u64, usize)>,
 }
 
 struct PendingView {
@@ -311,6 +312,27 @@ impl Workbench {
                 origin,
                 offset: Some(offset),
                 select,
+                search_selection: None,
+            }),
+        )
+    }
+
+    /// Move to a prepared text boundary near a byte chosen from an overview.
+    pub fn go_to_paged_near_byte(&mut self, offset: usize) -> Result<(), WorkbenchError> {
+        let pane = self.panes.active();
+        let current = self.panes.view(pane).ok_or(WorkbenchError::NoDocument)?;
+        let view = current.view_id().ok_or(WorkbenchError::NoDocument)?;
+        let origin = current.location().ok_or(WorkbenchError::NoDocument)?;
+        self.queue_paged_view(
+            origin.tab,
+            offset,
+            Some(ViewJump {
+                pane,
+                view,
+                origin,
+                offset: None,
+                select: false,
+                search_selection: None,
             }),
         )
     }
@@ -358,6 +380,7 @@ impl Workbench {
                 origin,
                 offset: None,
                 select,
+                search_selection: None,
             }),
         )?;
         Ok(true)
@@ -383,6 +406,41 @@ impl Workbench {
         if let Err(error) = self.queue_paged_view(tab, start, None) {
             self.push_problem(error.to_string());
         }
+    }
+
+    pub(super) fn reveal_paged_search_result(
+        &mut self,
+        range: std::ops::Range<usize>,
+    ) -> Result<(), WorkbenchError> {
+        let pane = self.panes.active();
+        let current = self.panes.view(pane).ok_or(WorkbenchError::NoDocument)?;
+        let view = current.view_id().ok_or(WorkbenchError::NoDocument)?;
+        let origin = current.location().ok_or(WorkbenchError::NoDocument)?;
+        self.search_navigation_epoch = self.search_navigation_epoch.wrapping_add(1);
+        if self.position_for_tab(origin.tab, range.end).is_some() {
+            self.move_cursor_to(range.end, false)?;
+            self.panes
+                .active_state_mut()
+                .ok_or(WorkbenchError::NoDocument)?
+                .anchor = Some(range.start);
+            return Ok(());
+        }
+        self.queue_paged_view(
+            origin.tab,
+            range.end.saturating_sub(96),
+            Some(ViewJump {
+                pane,
+                view,
+                origin,
+                offset: Some(range.end),
+                select: false,
+                search_selection: Some((
+                    self.search.generation,
+                    self.search_navigation_epoch,
+                    range.start,
+                )),
+            }),
+        )
     }
 
     fn queue_paged_view(
@@ -457,6 +515,10 @@ impl Workbench {
                     || self.panes.view(jump.pane).is_none_or(|view| {
                         view.view_id() != Some(jump.view) || view.location() != Some(jump.origin)
                     })
+                    || jump.search_selection.is_some_and(|(generation, epoch, _)| {
+                        generation != self.search.generation
+                            || epoch != self.search_navigation_epoch
+                    })
                 {
                     return Ok(());
                 }
@@ -501,6 +563,12 @@ impl Workbench {
             }
             if let (Some(jump), Some(offset)) = (pending.jump, offset) {
                 self.move_cursor_to(offset, jump.select)?;
+                if let Some((_, _, start)) = jump.search_selection {
+                    self.panes
+                        .active_state_mut()
+                        .ok_or(WorkbenchError::NoDocument)?
+                        .anchor = Some(start);
+                }
             }
             Ok(())
         }))
@@ -556,6 +624,36 @@ mod tests {
         assert!(bench.is_paged_tab(tab));
         assert!(bench.active_bytes().is_none());
         assert!(!bench.visual_row(tab, 0, 0, 10).unwrap().is_empty());
+        bench
+            .set_search_limits(crate::SearchLimits {
+                max_results: 2,
+                ..Default::default()
+            })
+            .unwrap();
+        bench.set_search_query("x").unwrap();
+        settle(&wake, Duration::from_secs(10), || {
+            bench.poll_document_search();
+            (!bench.search_running()).then_some(())
+        });
+        assert_eq!(bench.search().status, crate::SearchStatus::Complete);
+        assert_eq!(bench.search().total_matches, tail + 1);
+        assert_eq!(bench.search().matches.len(), 2);
+        bench.toggle_search_regex().unwrap();
+        bench.set_search_query("ul.imo").unwrap();
+        settle(&wake, Duration::from_secs(10), || {
+            bench.poll_document_search();
+            (!bench.search_running()).then_some(())
+        });
+        assert_eq!(bench.search().status, crate::SearchStatus::Complete);
+        assert_eq!(bench.find_next().unwrap(), Some(tail + 2..tail + 8));
+        settle(&wake, Duration::from_secs(10), || bench.poll_large_view()).unwrap();
+        assert_eq!(
+            bench.active_editor().unwrap().selection(),
+            Some(tail + 2..tail + 8)
+        );
+        bench.set_search_query("").unwrap();
+        bench.go_to_paged_byte(0, false).unwrap();
+        settle(&wake, Duration::from_secs(10), || bench.poll_large_view()).unwrap();
         bench.go_to_paged_byte(tail + 3, false).unwrap();
         bench.go_to_paged_byte(tail + 2, false).unwrap();
         settle(&wake, Duration::from_secs(10), || bench.poll_large_view()).unwrap();
@@ -620,6 +718,16 @@ mod tests {
     #[test]
     #[ignore = "usa alrededor de 8 GiB de espacio temporal; ejecutar en Windows x64"]
     fn shared_editor_opens_saves_and_recovers_over_four_gib() {
+        exercise_large_file(false);
+    }
+
+    #[test]
+    #[ignore = "usa alrededor de 4 GiB de espacio temporal; ejecutar en Windows x64"]
+    fn paged_search_scans_and_selects_above_four_gib() {
+        exercise_large_file(true);
+    }
+
+    fn exercise_large_file(search_only: bool) {
         use crate::session::EditorRecovery;
         use std::{
             ffi::c_void,
@@ -706,6 +814,31 @@ mod tests {
         })
         .unwrap();
         assert!(workbench.is_paged_tab(tab));
+        if search_only {
+            workbench.set_search_query("final").unwrap();
+            settle(&wake, Duration::from_secs(300), || {
+                workbench.poll_document_search();
+                (!workbench.search_running()).then_some(())
+            });
+            assert_eq!(workbench.search().scanned_bytes, OFFSET + 9);
+            assert_eq!(workbench.search().status, crate::SearchStatus::Complete);
+            assert_eq!(workbench.find_next().unwrap(), Some(OFFSET + 2..OFFSET + 7));
+            settle(&wake, Duration::from_secs(10), || {
+                workbench.poll_large_view()
+            })
+            .unwrap();
+            assert_eq!(
+                workbench.active_editor().unwrap().selection(),
+                Some(OFFSET + 2..OFFSET + 7)
+            );
+            println!(
+                "Búsqueda completa: {} bytes recorridos. Coincidencia seleccionada en {}..{}.",
+                OFFSET + 9,
+                OFFSET + 2,
+                OFFSET + 7
+            );
+            return;
+        }
         workbench
             .go_to_paged_input(&format!("@{}", OFFSET + 2))
             .unwrap();

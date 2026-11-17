@@ -233,14 +233,14 @@ fn draw_search_fields(
         y + 1,
         &clip(
             &format!(
-                "Buscar R:{} M:{} P:{} {}/{} {}, {} coincidencias",
+                "Buscar R:{} M:{} P:{} {}/{} {}, {}",
                 u8::from(app.workbench.search().regex),
                 u8::from(app.workbench.search().case_sensitive),
                 u8::from(app.workbench.search().whole_word),
                 field.first_row + 1,
                 field.total_rows,
                 app.workbench.search().status.label(),
-                app.workbench.search().matches.len()
+                app.workbench.search_result_summary()
             ),
             width.saturating_sub(4),
         ),
