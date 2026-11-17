@@ -623,9 +623,10 @@ permanecen en el editor compartido.
 
 La generación de una interfaz de servicio depende de un contrato real de
 integración. El [renombrado entre archivos](ABL_PROJECT_RENAME.md) ya cubre
-declaraciones compartidas por inclusiones ABL directas resueltas por PROPATH
-en GUI y TUI. Los cambios se recuperan y se deshacen como grupo. Quedan por
-ampliar los contextos de preprocesador y las referencias indirectas.
+declaraciones compartidas por inclusiones ABL encadenadas resueltas por PROPATH
+en GUI y TUI y llamadas indirectas con destino literal y handle comprobado.
+Los cambios se recuperan y se deshacen como grupo. Quedan por ampliar los
+contextos de preprocesador dinámico y los destinos calculados en ejecución.
 
 ## M5 — Integración y validación local
 
@@ -1243,7 +1244,8 @@ y locales de procedimiento o función en un subconjunto comprobable, con
 vista previa y una transacción. También admite declaraciones y llamadas
 estáticas a procedimientos y funciones internas en el mismo archivo, incluidos
 los pares de prototipo `FORWARD` e implementación con firmas compatibles.
-Las inclusiones ABL directas ya cuentan con renombrado de proyecto.
+Las inclusiones ABL encadenadas y las llamadas indirectas comprobables
+ya cuentan con renombrado de proyecto.
 Ver [alcance y orden de implementación](ENLACES_ESQUEMA_RENOMBRADO.md).
 
 La [navegación por proveedor](NAVEGACION_MULTILENGUAJE.md) separa llamadas ABL

@@ -266,19 +266,35 @@ fn project_propath(root: &Path, source: &Path) -> Result<String, String> {
 }
 
 pub(crate) fn project_propath_dirs(root: &Path, source: &Path) -> Result<Vec<PathBuf>, String> {
-    let parents = jc_app::source_services::load_propath(root)?.unwrap_or_else(|| {
+    project_propath_dirs_for(
+        root,
+        source,
+        jc_app::source_services::load_propath(root)?.as_deref(),
+    )
+}
+
+pub(crate) fn project_propath_dirs_for(
+    root: &Path,
+    source: &Path,
+    configured: Option<&[PathBuf]>,
+) -> Result<Vec<PathBuf>, String> {
+    let defaults;
+    let parents = if let Some(configured) = configured {
+        configured
+    } else {
         let parent = source.parent().unwrap_or(root);
-        if parent == root {
+        defaults = if parent == root {
             vec![root.to_owned()]
         } else {
             vec![parent.to_owned(), root.to_owned()]
-        }
-    });
+        };
+        &defaults
+    };
     if parents.is_empty() {
         return Err("El PROPATH explícito del proyecto está vacío".into());
     }
     parents
-        .into_iter()
+        .iter()
         .map(|path| {
             let resolved = path
                 .canonicalize()

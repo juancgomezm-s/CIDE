@@ -113,10 +113,13 @@ fn progress_real_project_rename_compiles_and_undoes_include_and_consumers() {
         format!("executable={executable}\ncpinternal=iso8859-1\ncpstream=ibm850\n"),
     )
     .unwrap();
-    fs::write(root.join(".cide/propath"), "includes\n").unwrap();
+    fs::write(root.join(".cide/propath"), "includes\n.\n").unwrap();
     let shared =
         "FUNCTION amount RETURNS INTEGER (INPUT n AS INTEGER):\r\nRETURN n.\r\nEND FUNCTION.\r\n";
-    let caller = "{shared.i}\r\nDISPLAY amount(7).\r\n";
+    fs::write(root.join("includes/bridge.i"), "{shared.i}\r\n").unwrap();
+    let caller = "{bridge.i}\r\nDISPLAY amount(7).\r\n";
+    let driver = "DEFINE VARIABLE targetHandle AS HANDLE NO-UNDO.\r\nRUN one.p PERSISTENT SET targetHandle.\r\nDISPLAY DYNAMIC-FUNCTION('amount' IN targetHandle, 7).\r\n";
+    fs::write(root.join("driver.p"), driver).unwrap();
     for name in ["one.p", "two.p"] {
         fs::write(root.join(name), caller).unwrap();
     }
@@ -146,7 +149,11 @@ fn progress_real_project_rename_compiles_and_undoes_include_and_consumers() {
     let mut task = complete(&mut app, &mut jobs);
     source.accept_editor(&mut app, Some(root), &mut task);
     assert_eq!(source.state(), SourceState::Ready, "{}", source.message());
-    assert_eq!(source.items().len(), 3);
+    assert_eq!(source.items().len(), 4);
+    assert!(source
+        .items()
+        .iter()
+        .any(|row| row.label.contains("driver.p:3")));
     assert!(source
         .confirm_project_rename(&app, Some(root), &mut jobs)
         .unwrap());
@@ -168,7 +175,21 @@ fn progress_real_project_rename_compiles_and_undoes_include_and_consumers() {
             caller.replace("amount", "newAmount").as_bytes()
         );
     }
+    app.open_file(root.join("driver.p"), None).unwrap();
+    assert_eq!(
+        app.active_bytes().unwrap(),
+        driver.replace("amount", "newAmount").as_bytes()
+    );
+    app.reset_task_panels();
+    submit(Action::Run, &app, &mut jobs, Some(root)).unwrap();
+    assert!(
+        !completion(&complete(&mut app, &mut jobs)).1,
+        "{:?}",
+        app.problems()
+    );
     app.undo().unwrap();
+    assert_eq!(app.active_bytes().unwrap(), driver.as_bytes());
+    app.open_file(root.join("two.p"), None).unwrap();
     assert_eq!(app.active_bytes().unwrap(), caller.as_bytes());
     app.open_file(root.join("includes/shared.i"), None).unwrap();
     assert_eq!(app.active_bytes().unwrap(), shared.as_bytes());

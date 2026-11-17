@@ -1435,11 +1435,14 @@ mod tests {
             std::env::temp_dir().join(format!("cide-gui-project-rename-{}", std::process::id()));
         let include = root.join("shared.i");
         let main = root.join("main.p");
+        let driver = root.join("driver.p");
         let include_text = "PROCEDURE worker:\nEND PROCEDURE.\n";
         let main_text = "{shared.i}\nRUN worker.\n";
+        let driver_text = "DEFINE VARIABLE targetHandle AS HANDLE NO-UNDO.\nRUN main.p PERSISTENT SET targetHandle.\nRUN worker IN targetHandle.\n";
         std::fs::create_dir(&root).unwrap();
         std::fs::write(&include, include_text).unwrap();
         std::fs::write(&main, main_text).unwrap();
+        std::fs::write(&driver, driver_text).unwrap();
         let mut state = State::new(&GuiOptions::default()).unwrap();
         state.project_root = Some(root.canonicalize().unwrap());
         state
@@ -1462,7 +1465,7 @@ mod tests {
             finish(state);
             assert_eq!(
                 state.source_gui.controller.items().len(),
-                2,
+                3,
                 "{}",
                 state.status
             );
@@ -1472,6 +1475,12 @@ mod tests {
                 .items()
                 .iter()
                 .any(|row| row.label.contains("main.p:2")));
+            assert!(state
+                .source_gui
+                .controller
+                .items()
+                .iter()
+                .any(|row| row.label.contains("driver.p:3")));
         };
         preview(&mut state);
         std::fs::write(&main, format!("{main_text}RUN worker.\n")).unwrap();
@@ -1502,7 +1511,17 @@ mod tests {
             state.workbench.active_bytes().unwrap(),
             main_text.replace("worker", "work-new").as_bytes()
         );
+        state.workbench.open_file(&driver, None).unwrap();
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            driver_text.replace("worker", "work-new").as_bytes()
+        );
         state.workbench.undo().unwrap();
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            driver_text.as_bytes()
+        );
+        state.workbench.open_file(&main, None).unwrap();
         assert_eq!(
             state.workbench.active_bytes().unwrap(),
             main_text.as_bytes()
@@ -1515,6 +1534,7 @@ mod tests {
         assert_eq!(std::fs::read(&main).unwrap(), main_text.as_bytes());
         drop(state);
         std::fs::remove_file(&main).unwrap();
+        std::fs::remove_file(&driver).unwrap();
         std::fs::remove_file(&include).unwrap();
         std::fs::remove_dir(&root).unwrap();
     }

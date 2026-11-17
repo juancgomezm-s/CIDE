@@ -831,14 +831,17 @@ fn source_tui_rename_previews_scoped_ranges_and_applies_one_undo() {
     assert_eq!(a.workbench.active_bytes().unwrap(), text.as_bytes());
 }
 #[test]
-fn source_tui_project_rename_previews_and_undoes_two_files() {
+fn source_tui_project_rename_previews_and_undoes_include_chain() {
     let root = std::env::temp_dir().join(format!("cide-tui-project-rename-{}", std::process::id()));
     let include = root.join("shared.i");
+    let bridge = root.join("bridge.i");
     let main = root.join("main.p");
     let include_text = "DEFINE VARIABLE total AS INTEGER NO-UNDO.\n";
-    let main_text = "{shared.i}\nASSIGN total = 1.\n";
+    let bridge_text = "{shared.i}\nASSIGN total = 2.\n";
+    let main_text = "{bridge.i}\nASSIGN total = 1.\n";
     std::fs::create_dir(&root).unwrap();
     std::fs::write(&include, include_text).unwrap();
+    std::fs::write(&bridge, bridge_text).unwrap();
     std::fs::write(&main, main_text).unwrap();
     let mut app = TuiApp::new(LaunchOptions::default());
     app.project_root = Some(root.canonicalize().unwrap());
@@ -857,7 +860,12 @@ fn source_tui_project_rename_previews_and_undoes_two_files() {
     }
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     finish(&mut app);
-    assert_eq!(app.source.items().len(), 2, "{}", app.status);
+    assert_eq!(app.source.items().len(), 3, "{}", app.status);
+    assert!(app
+        .source
+        .items()
+        .iter()
+        .any(|row| row.label.contains("bridge.i:2")));
     assert!(app
         .source
         .items()
@@ -881,6 +889,11 @@ fn source_tui_project_rename_previews_and_undoes_two_files() {
     );
     app.workbench.undo().unwrap();
     assert_eq!(app.workbench.active_bytes().unwrap(), main_text.as_bytes());
+    app.workbench.open_file(&bridge, None).unwrap();
+    assert_eq!(
+        app.workbench.active_bytes().unwrap(),
+        bridge_text.as_bytes()
+    );
     app.workbench.open_file(&include, None).unwrap();
     assert_eq!(
         app.workbench.active_bytes().unwrap(),
@@ -889,6 +902,7 @@ fn source_tui_project_rename_previews_and_undoes_two_files() {
     assert_eq!(std::fs::read(&main).unwrap(), main_text.as_bytes());
     drop(app);
     std::fs::remove_file(&main).unwrap();
+    std::fs::remove_file(&bridge).unwrap();
     std::fs::remove_file(&include).unwrap();
     std::fs::remove_dir(&root).unwrap();
 }

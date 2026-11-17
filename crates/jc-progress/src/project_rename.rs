@@ -1,11 +1,16 @@
-//! Reviewed project-wide symbol rename for parameterless direct includes.
-use crate::{editor::project_propath_dirs, rename};
-use jc_app::{source_services::ProjectRenameEdit, Cancellation};
+//! Reviewed project-wide rename with physical source coordinates.
+mod indirect;
+
+use crate::{editor::project_propath_dirs_for, rename};
+use jc_app::{
+    source_services::{load_propath, ProjectRenameEdit},
+    Cancellation,
+};
 use jc_files::{list_directory_in_root, read_in_root, ContentFingerprint};
 use jc_languages::syntax::{scan, LexerState, SyntaxKind, SyntaxProfile};
 use jc_text::{probe_encoding, TextEncoding};
 use std::{
-    collections::VecDeque,
+    collections::{BTreeMap, BTreeSet, VecDeque},
     io::ErrorKind,
     ops::Range,
     path::{Component, Path, PathBuf},
@@ -16,11 +21,14 @@ const MAX_TOTAL_BYTES: usize = 8 * 1024 * 1024;
 const MAX_FILES: usize = 256;
 const MAX_DIRECTORIES: usize = 64;
 const MAX_DIRECTIVES: usize = 256;
+const MAX_INCLUDE_DEPTH: usize = 16;
+const MAX_EXPANDED_BYTES: usize = 16 * 1024 * 1024;
+const MAX_EXPANSION_NODES: usize = 4096;
 const MAX_EDITS: usize = 64;
 const LIMIT: &str = "El proyecto supera los límites de la revisión de renombrado ABL";
 const CANCELLED: &str = "Se canceló la revisión de renombrado ABL";
 const UNSUPPORTED: &str =
-    "La revisión de proyecto admite un include directo, estático y sin parámetros por fuente";
+    "El renombrado requiere inclusiones estáticas, sin parámetros y en su propio renglón";
 
 struct Include {
     range: Range<usize>,
@@ -41,8 +49,6 @@ fn directives(bytes: &[u8], encoding: TextEncoding) -> Result<Vec<Include>, Stri
     let mut state = LexerState::default();
     let mut spans: Vec<Range<usize>> = Vec::new();
     let mut too_many = false;
-    let mut in_run = false;
-    let mut indirect_call = false;
     let offset = rename::bom_prefix(bytes, encoding);
     scan(
         SyntaxProfile::Abl,
@@ -51,22 +57,7 @@ fn directives(bytes: &[u8], encoding: TextEncoding) -> Result<Vec<Include>, Stri
         offset,
         true,
         |span| {
-            if too_many || indirect_call {
-                return;
-            }
-            if span.kind != SyntaxKind::Preprocessor {
-                let token = &bytes[span.source];
-                if span.kind == SyntaxKind::Keyword && token.eq_ignore_ascii_case(b"RUN") {
-                    in_run = true;
-                } else if span.kind == SyntaxKind::Operator && token == b"." {
-                    in_run = false;
-                } else {
-                    indirect_call = in_run
-                        && span.kind == SyntaxKind::Keyword
-                        && token.eq_ignore_ascii_case(b"IN")
-                        || matches!(span.kind, SyntaxKind::Keyword | SyntaxKind::Plain)
-                            && token.eq_ignore_ascii_case(b"DYNAMIC-FUNCTION");
-                }
+            if too_many || span.kind != SyntaxKind::Preprocessor {
                 return;
             }
             if let Some(last) = spans
@@ -83,12 +74,6 @@ fn directives(bytes: &[u8], encoding: TextEncoding) -> Result<Vec<Include>, Stri
     );
     if state.limited() || too_many {
         return Err(LIMIT.into());
-    }
-    if indirect_call {
-        return Err(
-            "El proyecto contiene una llamada indirecta que no permite comprobar el renombrado"
-                .into(),
-        );
     }
     spans
         .into_iter()
@@ -122,8 +107,7 @@ fn directives(bytes: &[u8], encoding: TextEncoding) -> Result<Vec<Include>, Stri
 
 fn resolve_include(root: &Path, dirs: &[PathBuf], name: &str) -> Result<PathBuf, String> {
     for dir in dirs {
-        // Resolve the first candidate. Project bytes are captured separately
-        // through the confined reader and only the reviewed target is expanded.
+        // The first PROPATH candidate owns the binding.
         let candidate = dir.join(name);
         match candidate.canonicalize() {
             Ok(path) if path.starts_with(root) && path.is_file() => return Ok(path),
@@ -148,25 +132,27 @@ fn standalone(bytes: &[u8], range: &Range<usize>, bom: usize) -> bool {
             .all(line_space)
 }
 
-struct Source<'a> {
-    path: &'a Path,
-    bytes: &'a [u8],
+struct Source {
+    bytes: Vec<u8>,
     encoding: TextEncoding,
+    includes: Vec<Include>,
 }
 
-impl Source<'_> {
+impl Source {
     fn edits(
         &self,
-        ranges: Vec<Range<usize>>,
+        path: &Path,
+        ranges: &BTreeSet<(usize, usize)>,
         edits: &mut Vec<ProjectRenameEdit>,
     ) -> Result<(), String> {
         if edits.len().saturating_add(ranges.len()) > MAX_EDITS {
             return Err(LIMIT.into());
         }
-        let version = ContentFingerprint::of(self.bytes);
+        let version = ContentFingerprint::of(&self.bytes);
         let mut line = 1;
         let mut offset = 0;
-        for range in ranges {
+        for &(start, end) in ranges {
+            let range = start..end;
             line += (offset..range.start)
                 .filter(|&index| {
                     self.bytes[index] == b'\n'
@@ -177,7 +163,7 @@ impl Source<'_> {
             let before = std::str::from_utf8(&self.bytes[range.clone()])
                 .map_err(|_| "El nombre original del símbolo debe estar en ASCII")?;
             edits.push(ProjectRenameEdit {
-                path: self.path.to_owned(),
+                path: path.to_owned(),
                 version,
                 encoding: self.encoding,
                 range,
@@ -189,62 +175,126 @@ impl Source<'_> {
     }
 }
 
-fn caller_ranges(
-    caller: &Source<'_>,
-    directive: Include,
-    target: &Source<'_>,
-    cursor: usize,
-    new_name: &str,
-    target_ranges: &[Range<usize>],
-) -> Result<Vec<Range<usize>>, String> {
-    let insertion = directive.range;
-    if !standalone(
-        caller.bytes,
-        &insertion,
-        rename::bom_prefix(caller.bytes, caller.encoding),
-    ) {
-        return Err(UNSUPPORTED.into());
-    }
-    let bom = rename::bom_prefix(target.bytes, target.encoding);
-    let body = &target.bytes[bom..];
-    let expanded_len = caller.bytes.len() - insertion.len() + body.len();
-    if expanded_len > MAX_FILE_BYTES {
-        return Err(LIMIT.into());
-    }
-    let mut expanded = Vec::with_capacity(expanded_len);
-    expanded.extend_from_slice(&caller.bytes[..insertion.start]);
-    expanded.extend_from_slice(body);
-    expanded.extend_from_slice(&caller.bytes[insertion.end..]);
-    let ranges = rename::propose(
-        &expanded,
-        caller.encoding,
-        insertion.start + cursor - bom,
-        new_name,
-    )
-    .map_err(|error| format!("{}: {error}", caller.path.display()))?;
-    let include_end = insertion.start + body.len();
-    let mut confirmed = Vec::new();
-    let mut external = Vec::new();
-    for range in ranges {
-        if range.end <= insertion.start {
-            external.push(range);
-        } else if range.start >= include_end {
-            external.push(
-                insertion.end + range.start - include_end..insertion.end + range.end - include_end,
-            );
-        } else if range.start >= insertion.start && range.end <= include_end {
-            confirmed.push(bom + range.start - insertion.start..bom + range.end - insertion.start);
-        } else {
-            return Err("La referencia atraviesa el límite del include".into());
+type Ranges = BTreeSet<(usize, usize)>;
+type Changes<'a> = BTreeMap<&'a Path, Ranges>;
+
+struct Segment<'a> {
+    path: &'a Path,
+    from: usize,
+    expanded: Range<usize>,
+}
+
+#[derive(Default)]
+struct Expansion<'a> {
+    bytes: Vec<u8>,
+    segments: Vec<Segment<'a>>,
+}
+
+impl<'a> Expansion<'a> {
+    fn append(&mut self, path: &'a Path, source: &[u8], range: Range<usize>) -> Result<(), String> {
+        let start = self.bytes.len();
+        if start + range.len() > MAX_FILE_BYTES {
+            return Err(LIMIT.into());
         }
+        if !range.is_empty() {
+            self.bytes.extend_from_slice(&source[range.clone()]);
+            self.segments.push(Segment {
+                path,
+                from: range.start,
+                expanded: start..self.bytes.len(),
+            });
+        }
+        Ok(())
     }
-    if confirmed != target_ranges {
-        return Err(
-            "El símbolo tiene un conjunto de referencias distinto en el fuente que lo incluye"
-                .into(),
-        );
+
+    fn locate(&self, range: Range<usize>) -> Result<(&'a Path, (usize, usize)), String> {
+        let index = self
+            .segments
+            .partition_point(|segment| segment.expanded.end <= range.start);
+        let segment = self
+            .segments
+            .get(index)
+            .filter(|segment| {
+                segment.expanded.start <= range.start && range.end <= segment.expanded.end
+            })
+            .ok_or("La referencia atraviesa el límite de una inclusión")?;
+        let start = segment.from + range.start - segment.expanded.start;
+        Ok((segment.path, (start, start + range.len())))
     }
-    Ok(external)
+}
+
+struct Project<'a> {
+    root: &'a Path,
+    sources: &'a BTreeMap<PathBuf, Source>,
+    cancelled: &'a dyn Fn() -> bool,
+    nodes: usize,
+}
+
+impl<'a> Project<'a> {
+    fn expand(
+        &mut self,
+        path: &'a Path,
+        dirs: &[PathBuf],
+        chain: &mut Vec<&'a Path>,
+        expansion: &mut Expansion<'a>,
+    ) -> Result<(), String> {
+        if (self.cancelled)() {
+            return Err(CANCELLED.into());
+        }
+        if chain.contains(&path) {
+            return Err(format!(
+                "Inclusión circular por PROPATH: {}",
+                path.display()
+            ));
+        }
+        self.nodes += 1;
+        if chain.len() == MAX_INCLUDE_DEPTH || self.nodes > MAX_EXPANSION_NODES {
+            return Err(LIMIT.into());
+        }
+        let source = &self.sources[path];
+        let bom = rename::bom_prefix(&source.bytes, source.encoding);
+        let mut from = if chain.is_empty() { 0 } else { bom };
+        chain.push(path);
+        for include in &source.includes {
+            if !standalone(&source.bytes, &include.range, bom) {
+                return Err(format!("{}: {UNSUPPORTED}", path.display()));
+            }
+            let resolved = resolve_include(self.root, dirs, &include.name)?;
+            let (target, _) = self.sources.get_key_value(&resolved).ok_or_else(|| {
+                format!(
+                    "El include queda fuera de las fuentes revisadas: {}",
+                    resolved.display()
+                )
+            })?;
+            expansion.append(path, &source.bytes, from..include.range.start)?;
+            self.expand(target, dirs, chain, expansion)?;
+            from = include.range.end;
+        }
+        expansion.append(path, &source.bytes, from..source.bytes.len())?;
+        chain.pop();
+        Ok(())
+    }
+}
+
+struct Unit<'a> {
+    sources: BTreeSet<&'a Path>,
+    dirs: Vec<PathBuf>,
+    declaration: Option<rename::ProjectDeclaration>,
+    changes: Changes<'a>,
+    calls: Vec<BoundCall<'a>>,
+}
+
+struct BoundCall<'a> {
+    program: PathBuf,
+    source: &'a Path,
+    range: (usize, usize),
+    function: bool,
+}
+
+fn compilation_unit(path: &Path) -> bool {
+    ["p", "w", "abl", "cls"]
+        .iter()
+        .any(|ext| extension(path).eq_ignore_ascii_case(ext))
 }
 
 /// Supports a shared symbol selected in its standalone .i declaration. Normal
@@ -285,29 +335,25 @@ fn review(
         return Err(CANCELLED.into());
     }
     let root = root.canonicalize().map_err(|error| error.to_string())?;
-    let (path, disk) = read_in_root(&root, active_source, MAX_FILE_BYTES)
+    let (target_path, disk) = read_in_root(&root, active_source, MAX_FILE_BYTES)
         .map_err(|error| format!("Guarda el include antes del renombrado de proyecto: {error}"))?;
     if disk != bytes {
         return Err("Guarda el include antes del renombrado de proyecto".into());
     }
-    if !rename::is_project_declaration(bytes, encoding, cursor)? {
-        return Err(
-            "Coloca el cursor sobre la declaración de una rutina o variable global del include"
-                .into(),
-        );
-    }
-    let ranges = rename::propose(bytes, encoding, cursor, new_name)?;
-    let target = Source {
-        path: &path,
-        bytes,
-        encoding,
-    };
-    let mut edits = Vec::new();
+    let mut sources = BTreeMap::new();
+    let mut remaining = MAX_TOTAL_BYTES - disk.len();
+    let includes = directives(&disk, encoding)?;
+    sources.insert(
+        target_path.clone(),
+        Source {
+            bytes: disk,
+            encoding,
+            includes,
+        },
+    );
     let mut dirs = VecDeque::from([root.clone()]);
     let mut directories = 1;
     let mut files = 0;
-    let mut remaining = MAX_TOTAL_BYTES - disk.len();
-    let mut found = false;
     while let Some(directory) = dirs.pop_front() {
         let mut listing = list_directory_in_root(&root, &directory, 2048, 512 * 1024, &cancelled)
             .map_err(|error| {
@@ -339,10 +385,7 @@ fn review(
                 dirs.push_back(path);
                 continue;
             }
-            if path == target.path
-                || !(jc_languages::detect(&path.to_string_lossy()).id == "abl"
-                    || extension(&path).eq_ignore_ascii_case("abl"))
-            {
+            if path == target_path || !(compilation_unit(&path) || is_include(&path)) {
                 continue;
             }
             files += 1;
@@ -351,58 +394,176 @@ fn review(
             }
             let (path, bytes) = read_in_root(&root, &path, MAX_FILE_BYTES.min(remaining))
                 .map_err(|error| format!("{}: {error}", path.display()))?;
-            remaining -= bytes.len();
-            if path == target.path {
+            if path == target_path {
                 continue;
             }
+            remaining -= bytes.len();
             let encoding = probe_encoding(&bytes, None).encoding.unwrap_or(encoding);
-            let caller = Source {
-                path: &path,
-                bytes: &bytes,
-                encoding,
-            };
             let includes = directives(&bytes, encoding)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
-            if includes.is_empty() {
-                continue;
-            }
-            let propath = project_propath_dirs(&root, &path)?;
-            let mut includes_target = false;
-            for include in &includes {
-                if cancelled() {
-                    return Err(CANCELLED.into());
-                }
-                includes_target |= resolve_include(&root, &propath, &include.name)? == target.path;
-            }
-            if !includes_target {
-                continue;
-            }
-            if includes.len() != 1
-                || !matches!(
-                    extension(&path).to_ascii_lowercase().as_str(),
-                    "p" | "w" | "abl"
-                )
-            {
-                return Err(format!("{}: {UNSUPPORTED}", path.display()));
-            }
-            let include = includes.into_iter().next().unwrap();
-            let caller_edits = caller_ranges(&caller, include, &target, cursor, new_name, &ranges)?;
-            caller.edits(caller_edits, &mut edits)?;
-            found = true;
+            sources.insert(
+                path,
+                Source {
+                    bytes,
+                    encoding,
+                    includes,
+                },
+            );
         }
     }
-    if !found {
-        return Err(
-            "Ningún fuente del proyecto incluye esta declaración mediante el PROPATH".into(),
-        );
+    analyze(&root, &sources, &target_path, cursor, new_name, &cancelled).map(Some)
+}
+
+fn analyze(
+    root: &Path,
+    sources: &BTreeMap<PathBuf, Source>,
+    target: &Path,
+    cursor: usize,
+    new_name: &str,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Vec<ProjectRenameEdit>, String> {
+    let mut project = Project {
+        root,
+        sources,
+        cancelled,
+        nodes: 0,
+    };
+    let mut units = BTreeMap::new();
+    let mut remaining = MAX_EXPANDED_BYTES;
+    let mut selected = None;
+    let configured = load_propath(root)?;
+    for (path, source) in sources.iter().filter(|(path, _)| compilation_unit(path)) {
+        let dirs = project_propath_dirs_for(root, path, configured.as_deref())?;
+        let mut expanded = Expansion::default();
+        project
+            .expand(path, &dirs, &mut Vec::new(), &mut expanded)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        remaining = remaining.checked_sub(expanded.bytes.len()).ok_or(LIMIT)?;
+        let lowered = indirect::lower(root, &dirs, &expanded.bytes, source.encoding)
+            .map_err(|error| format!("{}: {error}", path.display()))?;
+        let mut unit = Unit {
+            sources: expanded
+                .segments
+                .iter()
+                .map(|segment| segment.path)
+                .collect(),
+            dirs,
+            declaration: None,
+            changes: Changes::new(),
+            calls: Vec::new(),
+        };
+        if let Some(position) = expanded.segments.iter().find_map(|segment| {
+            (segment.path == target
+                && (segment.from..segment.from + segment.expanded.len()).contains(&cursor))
+            .then(|| segment.expanded.start + cursor - segment.from)
+        }) {
+            let (kind, name) = rename::project_declaration(
+                &lowered.bytes,
+                source.encoding,
+                position,
+            )
+            .map_err(|error| format!("{}: {error}", path.display()))?
+            .ok_or(
+                "Coloca el cursor sobre la declaración de una rutina o variable global del include",
+            )?;
+            let physical = expanded.locate(name)?;
+            if physical.0 != target
+                || selected.is_some_and(|previous| previous != (kind, physical.1))
+            {
+                return Err("La declaración cambia de significado entre programas".into());
+            }
+            selected = Some((kind, physical.1));
+            unit.declaration = Some(kind);
+            let ranges = rename::propose(&lowered.bytes, source.encoding, position, new_name)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
+            if ranges.len() > MAX_EDITS {
+                return Err(LIMIT.into());
+            }
+            for range in ranges {
+                let (path, range) = expanded.locate(range)?;
+                unit.changes.entry(path).or_default().insert(range);
+            }
+        }
+        for call in lowered.calls {
+            let (source, range) = expanded.locate(call.name)?;
+            unit.calls.push(BoundCall {
+                program: call.program,
+                source,
+                range,
+                function: call.function,
+            });
+        }
+        units.insert(path.as_path(), unit);
     }
-    target.edits(ranges, &mut edits)?;
-    edits.sort_unstable_by(|left, right| {
-        left.path
-            .cmp(&right.path)
-            .then(left.range.start.cmp(&right.range.start))
-    });
-    Ok(Some(edits))
+    let (selected_kind, (start, end)) = selected
+        .ok_or("Ningún programa del proyecto incluye esta declaración mediante el PROPATH")?;
+    let old_name = &sources[target].bytes[start..end];
+    let contexts: BTreeMap<_, _> = units
+        .iter()
+        .map(|(&path, unit)| (path, (unit.declaration, unit.dirs.clone())))
+        .collect();
+    let mut changes = Changes::new();
+    for unit in units.values_mut() {
+        if cancelled() {
+            return Err(CANCELLED.into());
+        }
+        for call in &unit.calls {
+            let kind = if call.function {
+                rename::ProjectDeclaration::Function
+            } else {
+                rename::ProjectDeclaration::Procedure
+            };
+            let (start, end) = call.range;
+            let name = &sources[call.source].bytes[start..end];
+            let is_old = name.eq_ignore_ascii_case(old_name);
+            let is_new = name.eq_ignore_ascii_case(new_name.as_bytes());
+            if kind != selected_kind || !(is_old || is_new) {
+                continue;
+            }
+            let (declaration, dirs) = contexts
+                .get(call.program.as_path())
+                .ok_or("El programa de una llamada indirecta queda fuera de la revisión")?;
+            if dirs != &unit.dirs {
+                return Err(
+                    "El PROPATH del programa persistente difiere del PROPATH de la llamada".into(),
+                );
+            }
+            if *declaration != Some(kind) {
+                continue;
+            }
+            if is_old {
+                unit.changes
+                    .entry(call.source)
+                    .or_default()
+                    .insert(call.range);
+            } else {
+                return Err(
+                    "El nombre nuevo cambiaría el destino de otra llamada indirecta".into(),
+                );
+            }
+        }
+        for (&path, ranges) in &unit.changes {
+            changes.entry(path).or_default().extend(ranges);
+        }
+    }
+    for unit in units.values() {
+        for &path in &unit.sources {
+            if changes
+                .get(path)
+                .is_some_and(|ranges| unit.changes.get(path) != Some(ranges))
+            {
+                return Err(format!(
+                    "El símbolo se vincula de forma distinta según el programa que incluye {}",
+                    path.display()
+                ));
+            }
+        }
+    }
+    let mut edits = Vec::new();
+    for (path, ranges) in changes {
+        sources[path].edits(path, &ranges, &mut edits)?;
+    }
+    Ok(edits)
 }
 
 #[cfg(test)]
@@ -451,6 +612,25 @@ mod tests {
         fs::write(&propath, "second\nfirst\n").unwrap();
         assert!(run().is_err());
         fs::write(&propath, "first\nsecond\n").unwrap();
+        let bridge = root.join("first/bridge.i");
+        let call_fragment = root.join("first/call.i");
+        fs::write(&bridge, "{shared.i}\n").unwrap();
+        fs::write(&call_fragment, "RUN calculate.\n").unwrap();
+        fs::write(root.join("caller.p"), "{bridge.i}\n{call.i}\n").unwrap();
+        let edits = run().unwrap().unwrap();
+        assert_eq!(edits.len(), 2);
+        assert!(edits
+            .iter()
+            .any(|edit| edit.path.ends_with("first/call.i") && edit.line == 1));
+        fs::write(root.join("unrelated.p"), "{../second/shared.i}\n{call.i}\n").unwrap();
+        assert!(run().is_err()); // traversal may not escape a PROPATH entry
+        fs::write(root.join("second/alternate.i"), include).unwrap();
+        fs::write(root.join("unrelated.p"), "{alternate.i}\n{call.i}\n").unwrap();
+        assert!(run().unwrap_err().contains("vincula de forma distinta"));
+        fs::write(root.join("unrelated.p"), local).unwrap();
+        fs::write(&bridge, "{bridge.i}\n").unwrap();
+        assert!(run().unwrap_err().contains("Inclusión circular"));
+
         fs::write(
             root.join("caller.p"),
             b"{shared.i &ARG=yes}\nRUN calculate.",
@@ -467,7 +647,10 @@ mod tests {
             "caller.p",
             "unrelated.p",
             "first/shared.i",
+            "first/bridge.i",
+            "first/call.i",
             "second/shared.i",
+            "second/alternate.i",
             ".cide/propath",
         ] {
             fs::remove_file(root.join(file)).unwrap();
@@ -476,5 +659,57 @@ mod tests {
             fs::remove_dir(root.join(dir)).unwrap();
         }
         fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn indirect_calls_follow_only_the_program_that_owns_the_include() {
+        let root = std::env::temp_dir().join(format!(
+            "cide-rename-indirect-project-{}",
+            std::process::id()
+        ));
+        fs::create_dir(&root).unwrap();
+        let target = root.join("shared.i");
+        let declaration = b"PROCEDURE worker:\nEND PROCEDURE.\n";
+        fs::write(&target, declaration).unwrap();
+        fs::write(root.join("one.p"), "{shared.i}\n").unwrap();
+        fs::write(root.join("other.p"), declaration).unwrap();
+        let driver = concat!(
+            "DEFINE VARIABLE oneHandle AS HANDLE NO-UNDO.\n",
+            "DEFINE VARIABLE otherHandle AS HANDLE NO-UNDO.\n",
+            "RUN one.p PERSISTENT SET oneHandle.\n",
+            "RUN other.p PERSISTENT SET otherHandle.\n",
+            "RUN VALUE('worker') IN oneHandle.\n",
+            "RUN worker IN otherHandle.\n",
+        );
+        fs::write(root.join("driver.p"), driver).unwrap();
+        let review = || {
+            super::review(
+                &root,
+                &target,
+                declaration,
+                TextEncoding::Utf8,
+                11,
+                "newWorker",
+                || false,
+            )
+        };
+        let edits = review().unwrap().unwrap();
+        assert_eq!(edits.len(), 2);
+        let call = edits
+            .iter()
+            .find(|edit| edit.path.ends_with("driver.p"))
+            .unwrap();
+        assert_eq!(&driver.as_bytes()[call.range.clone()], b"worker");
+        assert_eq!(call.line, 5);
+        fs::write(
+            root.join("driver.p"),
+            driver.replace("RUN VALUE('worker')", "RUN VALUE('newWorker')"),
+        )
+        .unwrap();
+        assert!(review().unwrap_err().contains("nombre nuevo"));
+        for file in ["shared.i", "one.p", "other.p", "driver.p"] {
+            fs::remove_file(root.join(file)).unwrap();
+        }
+        fs::remove_dir(&root).unwrap();
     }
 }
