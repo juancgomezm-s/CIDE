@@ -53,7 +53,7 @@ fn draw_prompt(app: &TuiApp, screen: &mut Screen, kind: PromptKind, input: &str)
         PromptKind::ProjectExclude => "Excluir patrones (.git/target/work siempre excluidos)",
         PromptKind::ProjectReplacement => "Texto de reemplazo (vacío elimina coincidencias)",
         PromptKind::GoToPosition if app.workbench.active_paged_byte().is_some() => {
-            "Ir a @byte (desde cero)"
+            "Ir al byte (desde cero)"
         }
         PromptKind::GoToPosition => "Ir a línea[:columna] (escalares desde uno)",
         PromptKind::RenameSymbol => "Renombrar símbolo ABL · nombre nuevo",

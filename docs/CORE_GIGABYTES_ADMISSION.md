@@ -27,8 +27,9 @@ handle y su umbral residente puede ser menor. El trabajo pendiente conserva
 la pestaña en uso si el usuario cambia de vista antes de que termine la copia.
 
 El editor conserva una ventana de hasta 256 filas y 64 KiB de texto fuente,
-con unos bytes de contexto para UTF-8 y CRLF. `Ir a posición` acepta `@byte`
-desde cero, y Ctrl+Inicio/Ctrl+Fin saltan a los extremos. Las flechas y las
+con unos bytes de contexto para UTF-8 y CRLF. En un archivo paginado,
+`Ctrl+G` acepta el número de byte desde cero, con el prefijo `@` opcional.
+Ctrl+Inicio/Ctrl+Fin saltan a los extremos. Las flechas y las
 teclas de página pueden pasar de un tramo al siguiente. Fuera del tramo
 inicial se muestra el byte de la selección en la barra inferior. La vista
 solo acepta resultados de la revisión y la codificación vigentes.
@@ -87,8 +88,16 @@ paginado comprobó muestras desde el principio hasta el final, un salto en
 texto con UTF-8 y CRLF y la escala de la barra con una extensión sintética
 de 7 GiB.
 
-Queda pendiente la medición interactiva con varios GB. Para abrir de nuevo
-un archivo grande descartado se usa `Abrir archivo`.
+En una ConPTY privada de Windows x64, la TUI optimizada abrió un original
+disperso de 4.295.032.856 bytes y mostró el primer marcador en 10,409 s.
+Se midieron 12 saltos alternos entre el byte 0 y el 4.295.032.832 con
+`Ctrl+G`. Desde Intro hasta el marcador y desplazamiento visibles en la
+salida de la terminal, la mediana fue de 15,91 ms y el máximo de 16,76 ms.
+Se verificaron la longitud y los marcadores del original tras el cierre
+normal. Pasaron las tres regresiones dirigidas de archivos paginados,
+formato, Clippy y la compilación optimizada de GUI y TUI. Queda pendiente
+medir varios GB con la GUI visible. Para volver a abrir un archivo grande
+descartado se usa `Abrir archivo`.
 
 ## Admisión inicial — 2026-11-03
 

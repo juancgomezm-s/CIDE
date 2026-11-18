@@ -717,7 +717,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                 position.column + 1
             )
         },
-        |offset| format!("Byte {offset} · Ir a posición con @byte"),
+        |offset| format!("Byte {offset} · Ir al byte con Ctrl+G"),
     );
     let status = wide(&format!(
         "{location} · {encoding}{}{}{} · {}",

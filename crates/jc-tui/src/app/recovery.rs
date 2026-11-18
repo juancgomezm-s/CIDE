@@ -206,6 +206,7 @@ impl TuiApp {
 mod tests {
     use super::*;
     use crate::LaunchOptions;
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
     use jc_app::{CommandId, PaneId};
     use jc_text::TextEncoding;
     use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
@@ -314,7 +315,14 @@ mod tests {
         );
         app.workbench.set_search_query("").unwrap();
         app.dispatch(CommandId::SearchGoToPosition);
-        app.submit_prompt(crate::state::PromptKind::GoToPosition, format!("@{cursor}"));
+        for key in cursor
+            .to_string()
+            .chars()
+            .map(KeyCode::Char)
+            .chain([KeyCode::Enter])
+        {
+            app.handle_event(Event::Key(KeyEvent::new(key, KeyModifiers::NONE)));
+        }
         wait(&mut app, cursor);
         let screen = app.frame(96, 25);
         assert!((0..25).any(|row| screen.row_text(row).contains("final")));

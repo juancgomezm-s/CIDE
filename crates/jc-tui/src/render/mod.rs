@@ -691,7 +691,7 @@ fn draw_status(frame: &Presentation<'_>, screen: &mut Screen, y: u16) {
             .unwrap_or(jc_text::TextPosition { line: 0, column: 0 });
         if let Some(offset) = app.workbench.active_paged_byte() {
             format!(
-                " Byte {offset} | Ir a posición con @byte | {encoding} | {} ",
+                " Byte {offset} | Ctrl+G ir al byte | {encoding} | {} ",
                 path.display()
             )
         } else {

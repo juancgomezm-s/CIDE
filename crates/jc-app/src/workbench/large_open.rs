@@ -72,12 +72,15 @@ impl Drop for PendingOpen {
 
 impl Workbench {
     pub fn go_to_paged_input(&mut self, input: &str) -> Result<(), WorkbenchError> {
+        let input = input.trim();
         let offset = input
-            .trim()
             .strip_prefix('@')
-            .and_then(|text| text.parse().ok())
-            .ok_or_else(|| {
-                WorkbenchError::LineCommand("Usa @byte, por ejemplo @4294967296".into())
+            .unwrap_or(input)
+            .parse()
+            .map_err(|_| {
+                WorkbenchError::LineCommand(
+                    "Escribe un número de byte, por ejemplo 4294967296".into(),
+                )
             })?;
         self.go_to_paged_byte(offset, false)
     }

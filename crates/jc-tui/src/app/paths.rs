@@ -112,7 +112,7 @@ impl TuiApp {
         let input = self.start_file_browser(kind).unwrap_or_default();
         self.overlay = UiOverlay::Prompt { kind, input };
         if kind == PromptKind::GoToPosition && self.workbench.active_paged_byte().is_some() {
-            self.status = "Usa @byte, desde cero".into();
+            self.status = "Escribe el número de byte, desde cero".into();
         }
     }
 

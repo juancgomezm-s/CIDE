@@ -51,7 +51,7 @@ impl State {
             generation,
         });
         self.status = if self.workbench.active_paged_byte().is_some() {
-            "Usa @byte, desde cero, para ir a cualquier tramo del archivo"
+            "Escribe el número de byte, desde cero, para ir a cualquier tramo"
         } else {
             "Usa línea[:columna], coordenadas escalares del fuente desde1"
         }
