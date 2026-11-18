@@ -55,6 +55,15 @@ una TUI en una pseudoconsola privada. Ambas recuperaron cambios sin
 guardar desde 0.1.1 y conservaron el historial en una segunda reapertura
 con 0.1.2. Los documentos originales quedaron intactos.
 
-El recorrido de instalación por máquina, actualización desde 0.1.1 y
-desinstalación queda pendiente de una sesión elevada de Windows. Los
-informes de esta entrega están en `work/m5-release-ng50jw25`.
+El 18 de noviembre de 2026 pasó el ciclo real por máquina en segundo plano.
+Windows Installer instaló 0.1.1, la sustituyó por 0.1.2, desinstaló 0.1.2,
+la reinstaló y la retiró al terminar. La GUI verificó el texto sin guardar,
+el cursor y el historial. La TUI recuperó la edición y comprobó Deshacer
+y Rehacer. Ambas recuperaron la sesión después de actualizar y después
+de reinstalar. Los originales conservaron sus bytes y se retiraron
+los dos registros de producto, los binarios y los accesos de prueba.
+
+El ejecutor elevado devolvió código 0. La evidencia accesible desde una
+sesión ordinaria está en
+`work/m5-release-ng50jw25/msi-machine-verification.json`, con los cinco
+eventos correspondientes de Windows Installer y el inventario final.

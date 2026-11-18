@@ -631,6 +631,13 @@ contextos de preprocesador dinámico y los destinos calculados en ejecución.
 
 ## M5 — Integración y validación local
 
+**Cerrado localmente el 18 de noviembre de 2026.** Windows x64 y Debian 13
+en WSL2 completaron formato, pruebas, Clippy, compilación optimizada y
+demo. Se verificó el ciclo real del MSI de 0.1.1 a 0.1.2, incluida la
+desinstalación, la reinstalación y la recuperación de sesiones en GUI
+y TUI. [Entrega y evidencia del instalador](../installer/README.md#validación-local-de-012).
+La validación con OpenEdge 10.0B permanece reservada para el final.
+
 **Avance en Windows.** En una corrida transversal pasaron 975 pruebas
 con tres fallos. Las tres regresiones pasaron al repetir sus casos
 dirigidos, junto con la nueva prueba del comando Git con `PATH` vacío.
