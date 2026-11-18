@@ -44,6 +44,37 @@ def create_sparse_source(path):
         source.write(b"\r\n" + LAST_MARKER)
 
 
+def create_dense_source(path):
+    line = b"DEFINE VARIABLE texto AS CHARACTER NO-UNDO. /* Prueba de apertura CIDE */\r\n"
+    block = line * ((1 << 20) // len(line))
+    with path.open("xb") as source:
+        source.write(FIRST_MARKER)
+        blocks, remainder = divmod(FAR_OFFSET - len(FIRST_MARKER) - 2, len(block))
+        for _ in range(blocks):
+            source.write(block)
+        source.write(block[:remainder])
+        source.write(b"\r\n" + LAST_MARKER)
+        source.flush()
+        os.fsync(source.fileno())
+
+
+def dense_allocation(path):
+    size_on_disk = c.WinDLL("kernel32", use_last_error=True).GetCompressedFileSizeW
+    size_on_disk.argtypes = (w.LPCWSTR, c.POINTER(w.DWORD))
+    size_on_disk.restype = w.DWORD
+    high = w.DWORD()
+    c.set_last_error(0)
+    low = size_on_disk(str(path), c.byref(high))
+    if low == 0xFFFFFFFF and c.get_last_error():
+        raise c.WinError(c.get_last_error())
+    allocated = (high.value << 32) | low
+    attributes = path.stat().st_file_attributes
+    if (attributes & (stat.FILE_ATTRIBUTE_SPARSE_FILE | stat.FILE_ATTRIBUTE_COMPRESSED)
+            or allocated < EXPECTED_SIZE):
+        raise RuntimeError("El archivo de prueba denso no está asignado íntegramente")
+    return allocated
+
+
 def verify_source(path, initial_mtime_ns):
     metadata = path.stat()
     with path.open("rb") as source:
@@ -62,29 +93,11 @@ def distribution(values):
                 max_ms=ordered[-1])
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--exe", required=True, type=Path)
-    args = parser.parse_args()
-    if sys.platform != "win32" or c.sizeof(c.c_void_p) != 8:
-        parser.error("esta medición requiere Windows de 64 bits")
-    root = Path(__file__).resolve().parents[1]
-    exe = (root / args.exe).resolve(strict=True)
-    if not exe.is_relative_to(root) or exe.name != "cide-gui.exe" or not exe.is_file():
-        parser.error("use el cide-gui.exe compilado dentro del proyecto")
-
-    work = root / "work"
-    temporary = work / "test-temp"
-    for directory in (work, temporary):
-        directory.mkdir(exist_ok=True)
-        if (not directory.resolve(strict=True).is_relative_to(root)
-                or directory.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT):
-            raise RuntimeError("El directorio de prueba no es una carpeta propia del proyecto")
-    folder = Path(tempfile.mkdtemp(prefix="cide-gb-gui-timing-", dir=temporary))
-    fixture = folder / "smoke-fixture.txt"
-    source = folder / "multi-gib.txt"
-    native_report = folder / "native.json"
-    report_path = folder / "report.json"
+def measure(exe, source, fixture, sample, source_metadata, processes):
+    folder = source.parent
+    native_report = folder / f"{sample}-native.json"
+    report_path = folder / f"{sample}-report.json"
+    stderr_path = folder / f"{sample}-stderr.log"
     report = {
         "executable": str(exe),
         "executable_sha256": hashlib.sha256(exe.read_bytes()).hexdigest(),
@@ -92,28 +105,28 @@ def main():
         "visible": False,
         "physical_display_verified": False,
         "native_report": str(native_report),
+        **source_metadata,
     }
     process = None
     try:
-        fixture.write_bytes(SMOKE_FIXTURE)
-        create_sparse_source(source)
         initial_mtime_ns = source.stat().st_mtime_ns
         environment = dict(os.environ, CIDE_NO_SESSION="1",
                            CIDE_STATE_DIR=str(folder / "state"),
                            TEMP=str(folder), TMP=str(folder))
         started = time.perf_counter()
-        with (folder / "stdout.log").open("xb") as stdout, (folder / "stderr.log").open("xb") as stderr:
+        with (folder / f"{sample}-stdout.log").open("xb") as stdout, stderr_path.open("xb") as stderr:
             process = subprocess.Popen(
                 [str(exe), "--encoding", "utf8", "--smoke-fixture", str(fixture),
                  "--smoke-report", str(native_report), "--smoke-performance-paged-only", str(source)],
                 cwd=folder, env=environment, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr,
             )
+            processes.append(process)
             report["pid"] = process.pid
             code = process.wait(timeout=180)
         report["process_wall_ms"] = (time.perf_counter() - started) * 1000
         report["exit_code"] = code
         if code != 0:
-            raise RuntimeError(f"CIDE salió con código {code}. Consulta {folder / 'stderr.log'}")
+            raise RuntimeError(f"CIDE salió con código {code}. Consulta {stderr_path}")
         native = json.loads(native_report.read_text(encoding="utf-8"))
         jump_samples = native["jump_samples_ms"]
         if (native["ok"] is not True or native["visible"] is not False
@@ -136,11 +149,56 @@ def main():
                       owned_process_still_running=process is not None and process.poll() is None)
         raise
     finally:
-        if process is None or process.poll() is not None:
-            for temporary_file in (source, fixture):
-                temporary_file.unlink(missing_ok=True)
         report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({**report, "report": str(report_path)}, ensure_ascii=False), flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--exe", action="append", required=True, type=Path,
+                        help="Puede repetirse para comparar distintas compilaciones")
+    parser.add_argument("--dense", action="store_true", help="Escribe el archivo completo en disco")
+    parser.add_argument("--repeat", type=int, default=1, help="Corridas por compilación")
+    args = parser.parse_args()
+    if sys.platform != "win32" or c.sizeof(c.c_void_p) != 8:
+        parser.error("esta medición requiere Windows de 64 bits")
+    if args.repeat < 1:
+        parser.error("--repeat debe ser mayor o igual a 1")
+    root = Path(__file__).resolve().parents[1]
+    executables = [(root / path).resolve(strict=True) for path in args.exe]
+    if any(not exe.is_relative_to(root) or exe.name != "cide-gui.exe" or not exe.is_file()
+           for exe in executables):
+        parser.error("use ejecutables cide-gui.exe compilados dentro del proyecto")
+
+    work = root / "work"
+    temporary = work / "test-temp"
+    for directory in (work, temporary):
+        directory.mkdir(exist_ok=True)
+        if (not directory.resolve(strict=True).is_relative_to(root)
+                or directory.lstat().st_file_attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT):
+            raise RuntimeError("El directorio de prueba no es una carpeta propia del proyecto")
+    folder = Path(tempfile.mkdtemp(prefix="cide-gb-gui-timing-", dir=temporary))
+    source = folder / "multi-gib.txt"
+    fixture = folder / "smoke-fixture.txt"
+    metadata = {"source_layout": "dense" if args.dense else "sparse"}
+    processes = []
+    try:
+        fixture.write_bytes(SMOKE_FIXTURE)
+        if args.dense:
+            create_dense_source(source)
+            metadata["source_allocated_bytes"] = dense_allocation(source)
+        else:
+            create_sparse_source(source)
+        # Reuse the source and rotate the first executable across rounds.
+        for round_index in range(args.repeat):
+            first = round_index % len(executables)
+            order = executables[first:] + executables[:first]
+            for index, exe in enumerate(order, start=1):
+                measure(exe, source, fixture, f"round-{round_index + 1}-{index}", metadata, processes)
+    finally:
+        if all(process.poll() is not None for process in processes):
+            source.unlink(missing_ok=True)
+            fixture.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -146,6 +146,43 @@ Las regresiones dirigidas cubrieron los huecos al principio y al final, los
 bytes multibyte, la huella, la lectura parcial y la cancelación. Pasaron
 siete casos distintos, formato, Clippy y la compilación optimizada de la GUI.
 
+### Apertura de un archivo denso de 4 GiB
+
+El medidor escribe 4.295.032.856 bytes de texto sintético, sincroniza
+el archivo y comprueba su tamaño en disco y sus atributos de Windows.
+La apertura se mide hasta la primera composición nativa con la ventana
+oculta. Cada corrida también valida los dos marcadores con 12 saltos.
+La opción `--repeat` reutiliza el archivo original y la opción `--exe`
+puede repetirse para alternar compilaciones. El orden de arranque rota en
+cada ronda. La caché de Windows se deja en su estado normal.
+[API de tamaño en disco de Windows](https://learn.microsoft.com/es-es/windows/win32/api/fileapi/nf-fileapi-getcompressedfilesizew)
+
+```console
+python -B scripts/measure-gui-paged.py --dense --repeat 3 --exe target/build-cache/release/cide-gui.exe
+```
+
+En Windows x64 10.0.26300 con Rust 1.88.0 se probaron tres compilaciones
+optimizadas sobre el mismo archivo. Cada fila muestra las aperturas por
+ronda, en segundos.
+
+| Compilación | Ronda 1 | Ronda 2 | Ronda 3 | Mediana |
+| --- | ---: | ---: | ---: | ---: |
+| Antes de conservar huecos (`1bd2630`) | 11,71 | 43,63 | 13,12 | 13,12 |
+| Después de conservar huecos (`5359f3a`) | 11,05 | 12,13 | 12,71 | 12,13 |
+| Copia densa experimental de 1 MiB | 11,05 | 21,91 | 30,51 | 21,91 |
+
+La segunda revisión registró una mediana 7,6 % menor en estas tres rondas.
+Las corridas exploratorias con archivos recién generados dieron 10,85,
+51,52 y 11,76 s antes, y 11,43, 11,59 y 36,43 s después. La dispersión
+limita la conclusión sobre la ganancia. Se conservó la copia de 64 KiB
+tras descartar el bloque de 1 MiB por sus tiempos de apertura.
+
+Las nueve corridas sobre el mismo archivo confirmaron 108 saltos, 117
+composiciones nativas y cero errores de pintado. La memoria privada
+muestreada llegó a 17,51 MiB. Los informes se conservan en
+`work/test-temp/cide-dense-baseline-okhvlwl0/source/work/test-temp/cide-gb-gui-timing-hf7i3wly`.
+La prueba mide la GUI en segundo plano en este equipo.
+
 ## Admisión inicial — 2026-11-03
 
 Este documento responde a la nueva prioridad de Juan: el núcleo debe manejar
