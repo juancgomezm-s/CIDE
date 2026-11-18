@@ -6,12 +6,13 @@ use jc_app::CommandId;
 use std::{
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::PathBuf,
     ptr::null_mut,
     time::{Duration, Instant},
 };
 
 mod geometry;
+mod paged;
 mod services;
 
 #[repr(C)]
@@ -67,8 +68,12 @@ extern "system" {
     ) -> u32;
 }
 
-pub(super) fn validate_sources(paths: &[PathBuf], fixture: &Path) -> Result<(), String> {
+pub(super) fn validate_sources(paths: &[PathBuf], options: &SmokeOptions) -> Result<(), String> {
     use std::os::windows::fs::MetadataExt;
+    let fixture = options.fixture.canonicalize().map_err(|e| e.to_string())?;
+    if options.performance_paged_only && paths.len() != 1 {
+        return Err("La medición paginada requiere un archivo de prueba".into());
+    }
     if paths.is_empty() || paths.len() > 8 {
         return Err("Performance probe requires 1..8 owned files".into());
     }
@@ -80,13 +85,21 @@ pub(super) fn validate_sources(paths: &[PathBuf], fixture: &Path) -> Result<(), 
     for path in paths {
         let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
         let path = path.canonicalize().map_err(|e| e.to_string())?;
+        let expected_len = if options.performance_paged_only {
+            paged::FILE_BYTES..=paged::FILE_BYTES
+        } else {
+            0..=(32 * 1024 * 1024)
+        };
         if !meta.is_file()
             || meta.file_attributes() & 0x400 != 0
-            || meta.len() > 32 * 1024 * 1024
+            || !expected_len.contains(&meta.len())
             || path.parent() != Some(parent.as_path())
             || path == fixture
         {
-            return Err("Performance sources must be ordinary owned sibling files <=32MiB".into());
+            return Err(
+                "Las fuentes de prueba deben ser archivos hermanos ordinarios del tamaño esperado"
+                    .into(),
+            );
         }
     }
     Ok(())
@@ -220,6 +233,9 @@ fn samples(values: &[f64]) -> String {
 }
 
 pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
+    if options.performance_paged_only {
+        return paged::run(hwnd, options);
+    }
     if options.performance_geometry_only {
         return geometry::run(hwnd, options);
     }

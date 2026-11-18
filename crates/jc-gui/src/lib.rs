@@ -36,11 +36,15 @@ pub struct SmokeOptions {
     pub performance_only: bool,
     pub performance_services_only: bool,
     pub performance_geometry_only: bool,
+    pub performance_paged_only: bool,
 }
 
 impl SmokeOptions {
     pub fn measures_performance(&self) -> bool {
-        self.performance_only || self.performance_services_only || self.performance_geometry_only
+        self.performance_only
+            || self.performance_services_only
+            || self.performance_geometry_only
+            || self.performance_paged_only
     }
 }
 

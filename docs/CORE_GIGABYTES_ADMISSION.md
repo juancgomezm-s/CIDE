@@ -95,9 +95,34 @@ Se midieron 12 saltos alternos entre el byte 0 y el 4.295.032.832 con
 salida de la terminal, la mediana fue de 15,91 ms y el máximo de 16,76 ms.
 Se verificaron la longitud y los marcadores del original tras el cierre
 normal. Pasaron las tres regresiones dirigidas de archivos paginados,
-formato, Clippy y la compilación optimizada de GUI y TUI. Queda pendiente
-medir varios GB con la GUI visible. Para volver a abrir un archivo grande
-descartado se usa `Abrir archivo`.
+formato, Clippy y la compilación optimizada de GUI y TUI. Para volver a
+abrir un archivo grande descartado se usa `Abrir archivo`.
+
+### Medición nativa de la GUI
+
+En Windows x64 10.0.26300, la GUI optimizada abrió un original disperso
+de 4.295.032.856 bytes en **10,35 s** desde el inicio de la medición en
+el marco nativo. Alternó 12 saltos entre el byte 0 y el 4.295.032.832.
+Desde Intro hasta la composición GDI con `WM_PRINTCLIENT`, la mediana
+fue **3,31 ms** y el máximo **5,62 ms**. Se verificaron los marcadores
+en cada vista, 13 composiciones, cero errores de pintado y salida normal.
+El máximo de memoria privada observado en las muestras fue **16,54 MiB**,
+incluido el DIB de medición de 2.600.000 bytes.
+
+La medición se ejecuta con una ventana oculta propia. Windows devolvió
+`ERROR_ACCESS_DENIED` al consultar el escritorio, por lo que sigue
+pendiente la medición con la GUI visible en pantalla física. El ejecutor
+verifica longitud, fecha de modificación y marcadores del original.
+Conserva los informes JSON y retira los dos archivos sintéticos después
+de que salga el proceso.
+
+```console
+python -B scripts/measure-gui-paged.py --exe target/build-cache/release/cide-gui.exe
+```
+
+Pasaron las dos regresiones paginadas de GUI, ocho pruebas de opciones
+de inicio, formato, Clippy y la compilación optimizada local. Informe
+de la ejecución en `work/test-temp/cide-gb-gui-timing-8oh3f4ku/report.json`.
 
 ## Admisión inicial — 2026-11-03
 

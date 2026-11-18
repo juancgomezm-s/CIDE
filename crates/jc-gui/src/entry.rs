@@ -27,6 +27,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
     let mut performance_only = false;
     let mut performance_services_only = false;
     let mut performance_geometry_only = false;
+    let mut performance_paged_only = false;
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -48,6 +49,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
                     return Err("Opción --smoke-performance-geometry-only duplicada".into());
                 }
                 performance_geometry_only = true;
+            }
+            Some("--smoke-performance-paged-only") => {
+                if performance_paged_only {
+                    return Err("Opción --smoke-performance-paged-only duplicada".into());
+                }
+                performance_paged_only = true;
             }
             Some("--smoke-navigation-only") => {
                 if navigation_only {
@@ -217,6 +224,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         + usize::from(performance_only)
         + usize::from(performance_services_only)
         + usize::from(performance_geometry_only)
+        + usize::from(performance_paged_only)
         > 1
     {
         return Err("Elige una sola sección de prueba".into());
@@ -241,10 +249,12 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
         || performance_only
         || performance_services_only
         || performance_geometry_only
+        || performance_paged_only
     {
         if !(performance_only
             || performance_services_only
             || performance_geometry_only
+            || performance_paged_only
             || options.paths.is_empty())
             || options.project_root.is_some()
         {
@@ -280,6 +290,7 @@ fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Option<GuiOptions>,
             performance_only,
             performance_services_only,
             performance_geometry_only,
+            performance_paged_only,
         });
     }
     Ok(Some(options))

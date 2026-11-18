@@ -752,7 +752,11 @@ impl State {
             state.set_project_root(root.to_owned())?;
         }
         if let Some(smoke) = &options.smoke {
-            if smoke.measures_performance() {
+            if smoke.performance_paged_only {
+                state.workbench.set_large_open_wakeup(state.wakeup.clone());
+                state.startup_files.extend(options.paths.iter().cloned());
+                state.advance_startup_files();
+            } else if smoke.measures_performance() {
                 for path in &options.paths {
                     state
                         .workbench
@@ -2616,7 +2620,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
     if let Some(smoke) = &options.smoke {
         smoke::validate(smoke)?;
         if smoke.measures_performance() {
-            performance_probe::validate_sources(&options.paths, &smoke.fixture)?;
+            performance_probe::validate_sources(&options.paths, smoke)?;
         }
     }
     // The HWND adopts this thread context when it is created.
