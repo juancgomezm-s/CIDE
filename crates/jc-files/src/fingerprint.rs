@@ -22,14 +22,14 @@ impl ContentFingerprint {
     pub(crate) fn from_words(len: u64, first: u64, second: u64) -> Self {
         Self { len, first, second }
     }
-    fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             len: 0,
             first: 0xcbf2_9ce4_8422_2325,
             second: 0x9e37_79b9_7f4a_7c15,
         }
     }
-    fn update(&mut self, bytes: &[u8]) {
+    pub(crate) fn update(&mut self, bytes: &[u8]) {
         self.len = self.len.saturating_add(bytes.len() as u64);
         for byte in bytes {
             self.first ^= u64::from(*byte);

@@ -1,6 +1,6 @@
 //! Bounded private snapshots backed by an exclusively held file. Capture is a
 //! blocking operation for a worker. The source is exposed only after copying
-//! and synchronizing the complete expected length.
+//! and synchronizing the complete logical length.
 use crate::{paged_source::PagedFileSource, ContentFingerprint, FileError};
 use jc_text::EncodingProbe;
 #[cfg(all(windows, target_pointer_width = "64"))]
@@ -66,7 +66,13 @@ impl PrivateSnapshot {
                 .into());
             }
             let mut reader = EncodingReader::new(input);
-            let mut snapshot = Self::capture_reader(&mut reader, depot, metadata.len(), progress)?;
+            let mut snapshot = Self::copy_from(
+                &mut reader,
+                depot,
+                metadata.len(),
+                metadata.file_attributes() & FILE_ATTRIBUTE_SPARSE_FILE != 0,
+                progress,
+            )?;
             snapshot.encoding = reader.probe();
             Ok(snapshot)
         }
@@ -87,45 +93,69 @@ impl PrivateSnapshot {
     ) -> Result<Self, FileError> {
         #[cfg(all(windows, target_pointer_width = "64"))]
         {
-            use crate::{fingerprint::FingerprintingWriter, paged_source::PageCacheLimits};
-            use jc_core::source::MAX_READ_CHUNK_BYTES;
-            use std::io::Write;
-
-            let mut progress = progress;
-            progress(0, len)?;
-            let mut file = private_file(depot)?;
-            let mut buffer = [0; MAX_READ_CHUNK_BYTES];
-            let mut writer = FingerprintingWriter::new(&mut file);
-            let mut copied = 0;
-            while copied < len {
-                let count = (len - copied).min(buffer.len() as u64) as usize;
-                let count = match input.read(&mut buffer[..count]) {
-                    Ok(0) => return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into()),
-                    Ok(count) => count,
-                    Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(error) => return Err(error.into()),
-                };
-                writer.write_all(&buffer[..count])?;
-                copied += count as u64;
-                progress(copied, len)?;
-            }
-            writer.flush()?;
-            let fingerprint = writer.fingerprint();
-            file.sync_all()?;
-            progress(copied, len)?;
-            let source = PagedFileSource::from_file(file, PageCacheLimits::default())
-                .map_err(io::Error::other)?;
-            Ok(Self {
-                source: Arc::new(source),
-                fingerprint,
-                encoding: unknown_encoding(),
-            })
+            Self::copy_from(input, depot, len, false, progress)
         }
         #[cfg(not(all(windows, target_pointer_width = "64")))]
         {
             let _ = (input, depot, len, progress);
             Err(unsupported())
         }
+    }
+
+    #[cfg(all(windows, target_pointer_width = "64"))]
+    fn copy_from(
+        input: &mut (impl Read + ?Sized),
+        depot: &Path,
+        len: u64,
+        preserve_sparse: bool,
+        mut progress: impl FnMut(u64, u64) -> io::Result<()>,
+    ) -> Result<Self, FileError> {
+        use crate::paged_source::PageCacheLimits;
+        use jc_core::source::MAX_READ_CHUNK_BYTES;
+        use std::io::{Seek, SeekFrom, Write};
+
+        static ZEROES: [u8; MAX_READ_CHUNK_BYTES] = [0; MAX_READ_CHUNK_BYTES];
+        progress(0, len)?;
+        let mut file = private_file(depot)?;
+        let sparse = preserve_sparse && mark_sparse(&file);
+        let mut buffer = [0; MAX_READ_CHUNK_BYTES];
+        let mut fingerprint = ContentFingerprint::empty();
+        let mut copied = 0;
+        let mut written_end = 0;
+        while copied < len {
+            let requested = (len - copied).min(buffer.len() as u64) as usize;
+            let count = match input.read(&mut buffer[..requested]) {
+                Ok(0) => return Err(io::Error::from(io::ErrorKind::UnexpectedEof).into()),
+                Ok(count) => count,
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error.into()),
+            };
+            let bytes = &buffer[..count];
+            let end = copied + count as u64;
+            if !sparse || bytes != &ZEROES[..count] {
+                if written_end != copied {
+                    file.seek(SeekFrom::Start(copied))?;
+                }
+                file.write_all(bytes)?;
+                written_end = end;
+            }
+            fingerprint.update(bytes);
+            copied = end;
+            progress(copied, len)?;
+        }
+        if written_end < len {
+            file.set_len(len)?;
+        }
+        file.flush()?;
+        file.sync_all()?;
+        progress(copied, len)?;
+        let source = PagedFileSource::from_file(file, PageCacheLimits::default())
+            .map_err(io::Error::other)?;
+        Ok(Self {
+            source: Arc::new(source),
+            fingerprint,
+            encoding: unknown_encoding(),
+        })
     }
 }
 
@@ -194,7 +224,11 @@ impl<R> EncodingReader<R> {
         if self.invalid {
             return;
         }
-        self.ascii &= bytes.is_ascii();
+        let ascii = bytes.is_ascii();
+        self.ascii &= ascii;
+        if ascii && self.partial_len == 0 {
+            return;
+        }
         if self.partial_len != 0 {
             let width = match self.partial[0] {
                 0xc2..=0xdf => 2,
@@ -250,6 +284,8 @@ const FILE_SHARE_READ: u32 = 0x1;
 #[cfg(all(windows, target_pointer_width = "64"))]
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 #[cfg(all(windows, target_pointer_width = "64"))]
+const FILE_ATTRIBUTE_SPARSE_FILE: u32 = 0x200;
+#[cfg(all(windows, target_pointer_width = "64"))]
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 #[cfg(all(windows, target_pointer_width = "64"))]
 const FILE_FLAG_SEQUENTIAL_SCAN: u32 = 0x0800_0000;
@@ -263,6 +299,38 @@ const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
 #[cfg(all(windows, target_pointer_width = "64"))]
 const DELETE: u32 = 0x0001_0000;
+
+#[cfg(all(windows, target_pointer_width = "64"))]
+fn mark_sparse(file: &std::fs::File) -> bool {
+    use std::{ffi::c_void, os::windows::io::AsRawHandle, ptr::null_mut};
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn DeviceIoControl(
+            handle: *mut c_void,
+            code: u32,
+            input: *mut c_void,
+            input_len: u32,
+            output: *mut c_void,
+            output_len: u32,
+            returned: *mut u32,
+            overlapped: *mut c_void,
+        ) -> i32;
+    }
+    const FSCTL_SET_SPARSE: u32 = 0x0009_00c4;
+    let mut returned = 0;
+    unsafe {
+        DeviceIoControl(
+            file.as_raw_handle(),
+            FSCTL_SET_SPARSE,
+            null_mut(),
+            0,
+            null_mut(),
+            0,
+            &mut returned,
+            null_mut(),
+        ) != 0
+    }
+}
 
 #[cfg(all(windows, target_pointer_width = "64"))]
 fn private_file(depot: &Path) -> io::Result<std::fs::File> {
@@ -377,6 +445,45 @@ mod tests {
         drop(retained);
         assert!(fs::read_dir(&fixture.depot).unwrap().next().is_none());
         assert_eq!(tail.as_slice(), b"\x00\xff\r\n");
+    }
+
+    #[test]
+    fn sparse_snapshot_preserves_logical_bytes_and_fingerprint() {
+        use std::io::{Seek, SeekFrom, Write};
+
+        let fixture = Fixture::new();
+        let path = fixture.path.join("source.bin");
+        let mut original = fs::File::create(&path).unwrap();
+        assert!(mark_sparse(&original));
+        let offset = 3 * MAX_READ_CHUNK_BYTES;
+        let mut expected = vec![0; 6 * MAX_READ_CHUNK_BYTES + 7];
+        let island = "renglón\r\n".as_bytes();
+        expected[offset..offset + island.len()].copy_from_slice(island);
+        original.seek(SeekFrom::Start(offset as u64)).unwrap();
+        original.write_all(island).unwrap();
+        original.set_len(expected.len() as u64).unwrap();
+        drop(original);
+
+        let snapshot =
+            PrivateSnapshot::capture(&path, &fixture.depot, expected.len() as u64, |_, _| Ok(()))
+                .unwrap();
+        assert_eq!(snapshot.fingerprint, ContentFingerprint::of(&expected));
+        assert_eq!(snapshot.encoding.source, EncodingSource::ValidUtf8);
+        assert_eq!(snapshot.source.len(), expected.len() as u64);
+        for (page, bytes) in expected.chunks(MAX_READ_CHUNK_BYTES).enumerate() {
+            let offset = (page * MAX_READ_CHUNK_BYTES) as u64;
+            let copied = snapshot.source.read_chunk(offset, bytes.len()).unwrap();
+            assert_eq!(copied.as_slice(), bytes);
+        }
+        let backup = fs::read_dir(&fixture.depot)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap();
+        assert_ne!(
+            backup.metadata().unwrap().file_attributes() & FILE_ATTRIBUTE_SPARSE_FILE,
+            0
+        );
     }
 
     #[test]

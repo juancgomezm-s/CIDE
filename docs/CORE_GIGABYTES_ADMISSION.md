@@ -124,6 +124,28 @@ Pasaron las dos regresiones paginadas de GUI, ocho pruebas de opciones
 de inicio, formato, Clippy y la compilación optimizada local. Informe
 de la ejecución en `work/test-temp/cide-gb-gui-timing-8oh3f4ku/report.json`.
 
+### Apertura de archivos dispersos
+
+La instantánea privada conserva los bloques enteros de ceros como huecos
+cuando el original es disperso y el volumen de destino lo admite. CIDE
+sigue leyendo todos los bytes lógicos para calcular la misma huella,
+validar la codificación y respetar la cancelación. Si el destino carece
+de soporte, copia por tramos con la ruta habitual. Los bloques ASCII con
+una frontera UTF-8 completa pasan una sola comprobación de codificación.
+[Archivos dispersos de Windows](https://learn.microsoft.com/en-us/windows/win32/fileio/sparse-file-operations)
+
+Con el mismo archivo disperso sintético de 4.295.032.856 bytes y el mismo
+medidor oculto, dos aperturas antes del cambio tardaron **10,35 s** y
+**10,03 s**. Después del cambio tardaron **7,76 s** y **7,72 s**, un
+**24 % menos** al comparar las medianas de ambas parejas. Las dos ejecuciones
+optimizadas completaron sus doce saltos y trece composiciones. Los informes
+quedaron en `work/test-temp/cide-gb-gui-timing-7q8bf4eo/report.json` y
+`work/test-temp/cide-gb-gui-timing-7z47l3k6/report.json`.
+
+Las regresiones dirigidas cubrieron los huecos al principio y al final, los
+bytes multibyte, la huella, la lectura parcial y la cancelación. Pasaron
+siete casos distintos, formato, Clippy y la compilación optimizada de la GUI.
+
 ## Admisión inicial — 2026-11-03
 
 Este documento responde a la nueva prioridad de Juan: el núcleo debe manejar
