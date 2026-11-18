@@ -536,5 +536,8 @@ fn exercise_progress_schema_tui(root: std::path::PathBuf, synthetic: bool) {
             .iter()
             .any(|row| row.starts_with("Base vacia")));
     }
-    assert_eq!(app.status, "Esquema ABL · consulta Salida");
+    assert_eq!(
+        app.status,
+        "Esquema ABL · consulta Salida · Ver → Ver registros ABL"
+    );
 }
