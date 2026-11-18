@@ -115,9 +115,13 @@ fn progress_real_project_rename_compiles_and_undoes_include_and_consumers() {
     .unwrap();
     fs::write(root.join(".cide/propath"), "includes\n.\n").unwrap();
     let shared =
-        "FUNCTION amount RETURNS INTEGER (INPUT n AS INTEGER):\r\nRETURN n.\r\nEND FUNCTION.\r\n";
-    fs::write(root.join("includes/bridge.i"), "{shared.i}\r\n").unwrap();
-    let caller = "{bridge.i}\r\nDISPLAY amount(7).\r\n";
+        "FUNCTION {&function} RETURNS {&returnType} (INPUT n AS INTEGER):\r\nRETURN n.\r\nEND FUNCTION.\r\n";
+    fs::write(
+        root.join("includes/bridge.i"),
+        "{shared.i &function={1} &returnType={2}}\r\n",
+    )
+    .unwrap();
+    let caller = "{bridge.i \"amount\" INTEGER}\r\nDISPLAY amount(7).\r\n";
     let driver = "DEFINE VARIABLE targetHandle AS HANDLE NO-UNDO.\r\nRUN one.p PERSISTENT SET targetHandle.\r\nDISPLAY DYNAMIC-FUNCTION('amount' IN targetHandle, 7).\r\n";
     fs::write(root.join("driver.p"), driver).unwrap();
     for name in ["one.p", "two.p"] {
@@ -149,7 +153,7 @@ fn progress_real_project_rename_compiles_and_undoes_include_and_consumers() {
     let mut task = complete(&mut app, &mut jobs);
     source.accept_editor(&mut app, Some(root), &mut task);
     assert_eq!(source.state(), SourceState::Ready, "{}", source.message());
-    assert_eq!(source.items().len(), 4);
+    assert_eq!(source.items().len(), 5);
     assert!(source
         .items()
         .iter()

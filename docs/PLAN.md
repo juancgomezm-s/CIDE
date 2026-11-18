@@ -623,7 +623,8 @@ permanecen en el editor compartido.
 
 La generación de una interfaz de servicio depende de un contrato real de
 integración. El [renombrado entre archivos](ABL_PROJECT_RENAME.md) ya cubre
-declaraciones compartidas por inclusiones ABL encadenadas resueltas por PROPATH
+declaraciones compartidas por inclusiones ABL encadenadas con argumentos
+nombrados o posicionales y reenvío explícito, resueltas por PROPATH
 en GUI y TUI y llamadas indirectas con destino literal y handle comprobado.
 Los cambios se recuperan y se deshacen como grupo. Quedan por ampliar los
 contextos de preprocesador dinámico y los destinos calculados en ejecución.

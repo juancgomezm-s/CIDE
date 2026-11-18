@@ -836,9 +836,9 @@ fn source_tui_project_rename_previews_and_undoes_include_chain() {
     let include = root.join("shared.i");
     let bridge = root.join("bridge.i");
     let main = root.join("main.p");
-    let include_text = "DEFINE VARIABLE total AS INTEGER NO-UNDO.\n";
-    let bridge_text = "{shared.i}\nASSIGN total = 2.\n";
-    let main_text = "{bridge.i}\nASSIGN total = 1.\n";
+    let include_text = "DEFINE VARIABLE total AS INTEGER NO-UNDO INITIAL {&initial}.\n";
+    let bridge_text = "{shared.i &initial={1}}\nASSIGN total = 2.\n";
+    let main_text = "{bridge.i 0}\nASSIGN total = 1.\n";
     std::fs::create_dir(&root).unwrap();
     std::fs::write(&include, include_text).unwrap();
     std::fs::write(&bridge, bridge_text).unwrap();

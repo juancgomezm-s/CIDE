@@ -1436,8 +1436,8 @@ mod tests {
         let include = root.join("shared.i");
         let main = root.join("main.p");
         let driver = root.join("driver.p");
-        let include_text = "PROCEDURE worker:\nEND PROCEDURE.\n";
-        let main_text = "{shared.i}\nRUN worker.\n";
+        let include_text = "PROCEDURE {&operation}:\nEND PROCEDURE.\n";
+        let main_text = "{shared.i &operation=\"worker\"}\nRUN worker.\n";
         let driver_text = "DEFINE VARIABLE targetHandle AS HANDLE NO-UNDO.\nRUN main.p PERSISTENT SET targetHandle.\nRUN worker IN targetHandle.\n";
         std::fs::create_dir(&root).unwrap();
         std::fs::write(&include, include_text).unwrap();
@@ -1445,6 +1445,14 @@ mod tests {
         std::fs::write(&driver, driver_text).unwrap();
         let mut state = State::new(&GuiOptions::default()).unwrap();
         state.project_root = Some(root.canonicalize().unwrap());
+        state
+            .workbench
+            .open_file(&driver, Some(TextEncoding::Utf8))
+            .unwrap();
+        state
+            .workbench
+            .open_file(&main, Some(TextEncoding::Utf8))
+            .unwrap();
         state
             .workbench
             .open_file(&include, Some(TextEncoding::Utf8))
@@ -1502,10 +1510,18 @@ mod tests {
         state.source_key(0x78, Modifiers::NONE);
         finish(&mut state);
         assert!(!state.source_visible(), "{}", state.status);
+        // The template stays unchanged. Focus a changed transaction member so
+        // the first Undo can revert every argument and indirect call together.
         assert_eq!(
             state.workbench.active_bytes().unwrap(),
-            include_text.replace("worker", "work-new").as_bytes()
+            driver_text.replace("worker", "work-new").as_bytes()
         );
+        state.workbench.undo().unwrap();
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            driver_text.as_bytes()
+        );
+        state.workbench.redo().unwrap();
         state.workbench.open_file(&main, None).unwrap();
         assert_eq!(
             state.workbench.active_bytes().unwrap(),

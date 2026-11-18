@@ -1727,8 +1727,42 @@ impl SourceController {
                 text: name.clone(),
             });
         }
+        let active_changed = app.active_document().is_some_and(|document| {
+            let path = document.session.path();
+            files.contains_key(path)
+                || path
+                    .canonicalize()
+                    .is_ok_and(|path| files.contains_key(&path))
+        });
+        let first = files.keys().next().cloned();
+        let first_open_tab = app
+            .open_documents()
+            .find(|document| {
+                let path = document.session.path();
+                Some(path) == first.as_deref()
+                    || path.canonicalize().ok().as_deref() == first.as_deref()
+            })
+            .map(|document| document.tab_id);
         app.apply_workspace_edits(root, files.into_values().collect())
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        // A parameterized declaration can edit its arguments while leaving the
+        // template untouched. Keep Undo attached to an actual transaction member.
+        if !active_changed {
+            let tab = first_open_tab.or_else(|| {
+                app.open_documents()
+                    .find(|document| Some(document.session.path()) == first.as_deref())
+                    .map(|document| document.tab_id)
+            });
+            if let Some(index) = app
+                .tabs()
+                .tabs()
+                .iter()
+                .position(|entry| Some(entry.id) == tab)
+            {
+                app.select_tab(index + 1);
+            }
+        }
+        Ok(())
     }
 
     pub fn activate(

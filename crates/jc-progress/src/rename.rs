@@ -417,10 +417,10 @@ fn classify(tokens: &[Token<'_>]) -> Result<Vec<Occurrence>, String> {
             if !name.name() || !as_word.is(b"AS") || !scalar(datatype) {
                 return Err(UNSUPPORTED.into());
             }
-            let tail = if tail.last().is_some_and(|word| word.is(b"NO-UNDO")) {
-                &tail[..tail.len() - 1]
-            } else {
-                tail
+            let tail = match tail {
+                [flag, rest @ ..] if flag.is(b"NO-UNDO") => rest,
+                [rest @ .., flag] if flag.is(b"NO-UNDO") => rest,
+                _ => tail,
             };
             match tail {
                 [] => {}
