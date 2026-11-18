@@ -2,7 +2,7 @@
   "scope": "New registry package identities versus git 4b08d4861f53d735dbce990058857e2c1e819f62:Cargo.lock; includes target-conditional lock entries, not a built-package claim",
   "baseline": "4b08d4861f53d735dbce990058857e2c1e819f62",
   "baseline_cargo_lock_sha256": "17749f71519b69edf3a5a341423d3c9ac8685a23b3cae503427127e014d81319",
-  "cargo_lock_sha256": "12e389f49676f136190073e1409fc98bb57986ce7d11b7ec13f7a86553716b72",
+  "cargo_lock_sha256": "b858d202847541db22b70c20e7b18c607d612ec2439b8a2b546f9b9d9fc21fce",
   "packages": [
     {
       "name": "adler2",

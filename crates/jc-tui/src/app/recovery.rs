@@ -124,7 +124,7 @@ impl TuiApp {
         }
         Ok(metadata)
     }
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     pub(crate) fn checkpoint_session(&mut self) -> Result<(), String> {
         self.periodic_recovery.cancel_and_join(&mut self.recovery);
         if self.recovery.is_none() {

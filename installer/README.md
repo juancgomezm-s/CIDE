@@ -39,3 +39,22 @@ El paquete local es `work/packages/CIDE-0.1.1-m5-windows-x64.msi`.
 El ciclo de instalación por máquina de 0.1.1, actualización desde 0.1.0
 y desinstalación requiere una sesión elevada de Windows. La extracción
 administrativa y las pruebas de recuperación usaron carpetas de prueba.
+
+## Validación local de 0.1.2
+
+Las matrices locales de M5 pasaron formato, pruebas, Clippy, compilación
+optimizada y demo. Windows x64 registró 1.032 pruebas aprobadas y 51
+marcadas para recorridos aparte. Debian 13 en WSL2 registró 714 aprobadas
+y 28 marcadas para recorridos aparte. Se revalidaron las cuatro pruebas
+de recuperación de TUI en Windows tras ajustar su auxiliar de prueba.
+
+El MSI `work/packages/CIDE-0.1.2-m5-windows-x64.msi` pasó ICE con WiX
+6.0.2. Windows Installer extrajo 666 archivos que coincidieron por
+longitud y SHA-256 con el manifiesto. La prueba abrió una GUI oculta y
+una TUI en una pseudoconsola privada. Ambas recuperaron cambios sin
+guardar desde 0.1.1 y conservaron el historial en una segunda reapertura
+con 0.1.2. Los documentos originales quedaron intactos.
+
+El recorrido de instalación por máquina, actualización desde 0.1.1 y
+desinstalación queda pendiente de una sesión elevada de Windows. Los
+informes de esta entrega están en `work/m5-release-ng50jw25`.
