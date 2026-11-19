@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>cide-omni-turn-v2</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="OmniCore.Host" HintPath="$(OmniCoreRuntime)/OmniCore.Host.dll" Private="false" />
+    <Reference Include="OmniCore.Client" HintPath="$(OmniCoreRuntime)/OmniCore.Client.dll" Private="false" />
+    <Reference Include="OmniCore.Abstractions" HintPath="$(OmniCoreRuntime)/OmniCore.Abstractions.dll" Private="false" />
+    <Reference Include="OmniCore.Domain" HintPath="$(OmniCoreRuntime)/OmniCore.Domain.dll" Private="false" />
+    <Reference Include="OmniCore.Protocol" HintPath="$(OmniCoreRuntime)/OmniCore.Protocol.dll" Private="false" />
+  </ItemGroup>
+</Project>

@@ -6,12 +6,14 @@ import json
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
+import runpy
 import subprocess
 from tempfile import TemporaryDirectory
 import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
+OMNICORE_REQUIRED = runpy.run_path(str(ROOT / 'scripts/package-cide.py'))['OMNICORE_REQUIRED']
 RUNTIME_FILES = {
     'LICENSE', 'LICENSING.md',
     'assets/branding/cide-gui.ico', 'assets/branding/cide-tui.ico',
@@ -39,7 +41,10 @@ def prepare_payload(package, payload):
         installed = set()
         for entry in manifest['files']:
             name = entry['path']
-            if name not in RUNTIME_FILES and not name.startswith('third_party/'):
+            if name.startswith('bin/omnicore/'):
+                if manifest.get('omnicore') is not True:
+                    raise ValueError('El paquete contiene un componente OmniCore no declarado.')
+            elif name not in RUNTIME_FILES and not name.startswith('third_party/'):
                 continue
             parts = PurePosixPath(name).parts
             if any(
@@ -58,6 +63,10 @@ def prepare_payload(package, payload):
             installed.add(name)
         if not RUNTIME_FILES <= installed or 'third_party/gitoxide/DEPENDENCIES.json' not in installed:
             raise ValueError('El paquete no contiene todos los binarios y avisos requeridos.')
+        if manifest.get('omnicore') is True and not {
+            f'bin/omnicore/{name}' for name in OMNICORE_REQUIRED
+        } <= installed:
+            raise ValueError('El paquete OmniCore está incompleto.')
 
 
 def main():

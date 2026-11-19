@@ -84,17 +84,29 @@ pub(super) fn region(state: &State) -> Option<Rect> {
     }
     let panel_width = state.dpi.pixels(260).min(state.width / 3);
     let left = super::explorer_panel::region(state).map_or(0, |r| r.right + 1);
-    if state.workbench.panes().is_split()
-        && (state.width - left - panel_width - 1) / state.cell_width.max(1) < 90
+    let right = state
+        .omnicore_region()
+        .map_or(state.width, |panel| panel.left - 1);
+    let remaining = right - left - panel_width - 1;
+    if remaining < state.dpi.pixels(200)
+        || (state.workbench.panes().is_split() && remaining / state.cell_width.max(1) < 90)
     {
         return None;
     }
     Some(Rect {
-        left: state.width - panel_width,
-        right: state.width,
+        left: right - panel_width,
+        right,
         top: state.chrome_layout().top(),
         bottom: (state.height - state.cell_height - 8).max(0),
     })
+}
+
+pub(super) fn editor_horizontal(state: &State) -> (i32, i32) {
+    let left = super::explorer_panel::region(state).map_or(0, |panel| panel.right + 1);
+    let right = region(state)
+        .or_else(|| state.omnicore_region())
+        .map_or(state.width.clamp(1, 8192), |panel| panel.left - 1);
+    (left, right.max(left))
 }
 
 fn tools(rect: Rect, dpi: super::dpi::Dpi) -> Vec<(Rect, SourceMode)> {

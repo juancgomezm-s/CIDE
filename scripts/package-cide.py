@@ -21,6 +21,17 @@ CHUNK = 64 * 1024
 MAX_PAYLOAD = 512 * 1024 * 1024
 MAX_NOTICE = 512 * 1024
 MAX_NOTICE_TOTAL = 32 * 1024 * 1024
+MAX_OMNICORE_TOTAL = 256 * 1024 * 1024
+OMNICORE_REQUIRED = {
+    "omni.exe", "omni.dll", "omni.deps.json", "omni.runtimeconfig.json",
+    "hostfxr.dll", "hostpolicy.dll", "coreclr.dll", "licenses/OmniCore-LICENSE.txt",
+    "licenses/OmniCore-THIRD-PARTY-NOTICES.md", "licenses/dotnet-LICENSE.txt",
+    "licenses/dotnet-THIRD-PARTY-NOTICES.txt",
+}
+OMNICORE_EDIT_BRIDGE = {
+    "cide-omni-turn-v2.exe", "cide-omni-turn-v2.dll", "cide-omni-turn-v2.deps.json",
+    "cide-omni-turn-v2.runtimeconfig.json",
+}
 ALIASES = {"cide": "jc-ide", "cide-tui": "jc-ide-tui", "cide-gui": "jc-ide-gui"}
 BINARIES = [name + ".exe" for pair in ALIASES.items() for name in pair]
 FIXED = [
@@ -244,10 +255,45 @@ def embedded_git_notices(workspace: Path) -> tuple[list[tuple[Path, str]], set[s
     return result, preserved
 
 
+def omnicore_sources(workspace: Path, directory: Path) -> list[tuple[Path, str]]:
+    root = checked(directory, workspace, directory=True)
+    files = []
+    total = 0
+    for path in sorted(root.rglob("*")):
+        if path.is_dir():
+            checked(path, workspace, directory=True)
+            continue
+        relative = path.relative_to(root)
+        name = relative.as_posix()
+        top = relative.parts[0]
+        if len(relative.parts) == 1:
+            if name not in OMNICORE_REQUIRED | OMNICORE_EDIT_BRIDGE and path.suffix.lower() != ".dll":
+                continue
+        elif top in {"licenses", "native", "skills"}:
+            if any(part.startswith(".") or part == "__pycache__" for part in relative.parts):
+                continue
+            if path.suffix.lower() in {".pdb", ".pyc"}:
+                continue
+        elif not (len(relative.parts) == 2 and path.name.endswith(".resources.dll")):
+            continue
+        path = checked(path, workspace)
+        total += path.stat().st_size
+        if len(files) >= 1024 or total > MAX_OMNICORE_TOTAL:
+            raise PackagingError("OmniCore excede el tamaño admitido para este paquete")
+        files.append((path, "bin/omnicore/" + name))
+    if not {"bin/omnicore/" + name for name in OMNICORE_REQUIRED} <= {name for _, name in files}:
+        raise PackagingError("Faltan componentes autónomos o licencias de OmniCore")
+    edit_files = {name.removeprefix("bin/omnicore/") for _, name in files} & OMNICORE_EDIT_BRIDGE
+    if edit_files and edit_files != OMNICORE_EDIT_BRIDGE:
+        raise PackagingError("La integración de edición de OmniCore está incompleta")
+    return files
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("work/packages/CIDE-windows-dev.zip"))
     parser.add_argument("--bin-dir", type=Path, default=Path("target/release"), help="built binaries inside this workspace")
+    parser.add_argument("--omnicore-dir", type=Path, help="self-contained OmniCore build inside this workspace")
     args = parser.parse_args()
     workspace = Path(__file__).resolve().parents[1]
     output = args.output if args.output.is_absolute() else workspace / args.output
@@ -264,6 +310,8 @@ def main() -> int:
         binary_directory = args.bin_dir if args.bin_dir.is_absolute() else workspace / args.bin_dir
         checked(binary_directory, workspace, directory=True)
         payload = [(checked(binary_directory / name, workspace), "bin/" + name) for name in BINARIES]
+        if args.omnicore_dir:
+            payload += omnicore_sources(workspace, workspace / args.omnicore_dir)
         payload += [(checked(workspace / relative, workspace), relative) for relative in FIXED]
         embedded, preserved = embedded_git_notices(workspace)
         payload += embedded
@@ -278,12 +326,17 @@ def main() -> int:
             with zipfile.ZipFile(file, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
                 members = []
                 notice_bytes = 0
+                omnicore_bytes = 0
                 for path, name in payload:
                     member = copy_member(archive, path, name, workspace)
                     if name.startswith("third_party/registry/"):
                         notice_bytes += member["bytes"]
                         if notice_bytes > MAX_NOTICE_TOTAL:
                             raise PackagingError("registry notices grew beyond total budget")
+                    if name.startswith("bin/omnicore/"):
+                        omnicore_bytes += member["bytes"]
+                        if omnicore_bytes > MAX_OMNICORE_TOTAL:
+                            raise PackagingError("OmniCore excedió el tamaño admitido al empaquetar")
                     members.append(member)
                 development = DEVELOPMENT.encode("utf-8")
                 archive.writestr("DEVELOPMENT.txt", development)
@@ -292,6 +345,7 @@ def main() -> int:
                     "product": "CIDE", "version": "0.1.0",
                     "platform": "Windows MSVC x64", "channel": "development",
                     "canonical_to_legacy": ALIASES,
+                    "omnicore": bool(args.omnicore_dir),
                     "files": members,
                     "hash_scope": "all payload files except manifest.json itself",
                     "notices_scope": "registry packages from Cargo.lock present in workspace offline cache; conservative superset, exact Windows linked graph not established",

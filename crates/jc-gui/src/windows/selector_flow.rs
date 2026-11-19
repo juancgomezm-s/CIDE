@@ -22,10 +22,12 @@ impl State {
         self.explorer_hits = None;
         self.close_selector();
         self.clear_git();
+        self.reset_omnicore_project();
         self.project_search.clear();
         self.project_panel = None;
         self.project_options = None;
         self.project_root = Some(root);
+        self.start_omnicore();
         self.schedule_git_status();
         self.status = "Carpeta de proyecto elegida · Ctrl+P apertura rápida".into();
         Ok(())
@@ -184,6 +186,7 @@ impl State {
         changed |= self.poll_progress_schema();
         changed |= self.poll_explorer();
         changed |= self.poll_markdown();
+        changed |= self.poll_omnicore();
         if self.project_search.take_recovery() {
             self.status =
                 "Falló la tarea de búsqueda del proyecto; actualiza para reintentar".into();

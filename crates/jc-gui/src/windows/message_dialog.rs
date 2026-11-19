@@ -467,6 +467,17 @@ pub(super) unsafe fn confirm(
     show(parent, &mut dialog)
 }
 
+pub(super) unsafe fn confirm_review(
+    parent: Hwnd,
+    title: &str,
+    message: &str,
+    accept: &str,
+) -> Result<bool, String> {
+    let mut dialog = create(parent, title, message, accept)?;
+    dialog.scrollable = true;
+    show(parent, &mut dialog)
+}
+
 impl Dialog<'_> {
     unsafe fn child<'a>(
         &self,

@@ -140,6 +140,7 @@ pub(super) struct Frame {
     markdown: Option<super::markdown_panel::MarkdownFrame>,
     explorer: Option<super::explorer_panel::ExplorerFrame>,
     outline: Option<super::outline_panel::OutlineFrame>,
+    omnicore: Option<super::omnicore_panel::Frame>,
     bottom: Option<super::bottom_panel::BottomFrame>,
 }
 impl Frame {
@@ -211,6 +212,9 @@ impl Frame {
     pub(super) fn outline_hits(&self) -> Option<super::outline_panel::OutlineHits> {
         self.outline.as_ref().map(|frame| frame.hits())
     }
+    pub(super) fn omnicore_hits(&self) -> Option<super::omnicore_panel::Hits> {
+        self.omnicore.as_ref().map(|frame| frame.hits())
+    }
     pub(super) fn contains_source_row(&self, needle: &str) -> bool {
         self.panes.iter().flat_map(|p| &p.rows).any(|row| {
             let mut text = String::new();
@@ -223,13 +227,11 @@ impl Frame {
 }
 
 pub(super) fn areas(state: &State) -> Vec<(PaneId, Rect)> {
-    let width =
-        super::outline_panel::region(state).map_or(state.width.clamp(1, 8192), |r| r.left - 1);
+    let (left, width) = super::outline_panel::editor_horizontal(state);
     let height = state.height.clamp(1, 8192);
     let bottom = super::bottom_panel::region(state)
         .map_or((height - state.cell_height - 8).max(0), |r| r.top);
     let top = state.dpi.pixels(super::shell::TABS).min(bottom);
-    let left = super::explorer_panel::region(state).map_or(0, |r| r.right + 1);
     let available = width - left;
     if state.workbench.panes().is_split() && available / state.cell_width.clamp(1, 8192) >= 90 {
         let middle = left + available / 2;
@@ -804,6 +806,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         } else {
             state.outline_presentation()
         },
+        omnicore: state.omnicore_presentation(),
         bottom: state.bottom_presentation(),
         selector: state.selector_presentation(super::selector_paint::list_capacity(
             state.width,
@@ -1056,6 +1059,9 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
     }
     if let Some(outline) = &frame.outline {
         super::outline_panel::draw(dc, outline)?;
+    }
+    if let Some(panel) = &frame.omnicore {
+        super::omnicore_panel::draw(dc, panel)?;
     }
     if let Some(bottom) = &frame.bottom {
         super::bottom_paint::draw(dc, bottom, frame.cell_height)?;

@@ -138,7 +138,6 @@ impl OpenDiffView {
         side_by_side: bool,
     ) -> OpenDiffPresentation {
         let cols = max_cols.min(COLS);
-        let rows = max_rows.min(ROWS);
         let mut p = OpenDiffPresentation {
             title: crate::source_services::display_ui_label(
                 "Comparación de documentos abiertos (solo lectura)",
@@ -173,7 +172,48 @@ impl OpenDiffView {
             ),
             cols,
         );
-        let Some(hunk) = result.model.hunks().nth(p.selected) else {
+        self.project(
+            p,
+            &result.model,
+            [result.left.stamp.encoding, result.right.stamp.encoding],
+            (max_rows, max_cols, side_by_side),
+        )
+    }
+
+    /// Show a comparison of immutable UTF-8 text supplied by another host.
+    pub fn prepare_utf8_comparison(
+        &mut self,
+        model: &OwnedDiffModel,
+        selected: usize,
+        max_rows: usize,
+        max_cols: usize,
+        side_by_side: bool,
+    ) -> OpenDiffPresentation {
+        let total = model.hunks().count();
+        self.project(
+            OpenDiffPresentation {
+                title: String::new(),
+                message: String::new(),
+                rows: Vec::new(),
+                selected: selected.min(total.saturating_sub(1)),
+                total,
+            },
+            model,
+            [TextEncoding::Utf8; 2],
+            (max_rows, max_cols, side_by_side),
+        )
+    }
+
+    fn project(
+        &mut self,
+        mut p: OpenDiffPresentation,
+        model: &OwnedDiffModel,
+        [left_encoding, right_encoding]: [TextEncoding; 2],
+        (max_rows, max_cols, side_by_side): (usize, usize, bool),
+    ) -> OpenDiffPresentation {
+        let cols = max_cols.min(COLS);
+        let rows = max_rows.min(ROWS);
+        let Some(hunk) = model.hunks().nth(p.selected) else {
             self.total = 0;
             self.page = 0;
             self.scroll = 0;
@@ -192,19 +232,17 @@ impl OpenDiffView {
         if rows == 0 || cols == 0 {
             return p;
         }
-        let at = result
-            .model
+        let at = model
             .spans()
             .iter()
             .position(|s| std::ptr::eq(s, hunk))
             .unwrap();
         let before = at
             .checked_sub(1)
-            .and_then(|i| result.model.spans().get(i))
+            .and_then(|i| model.spans().get(i))
             .filter(|s| s.kind == DiffKind::Equal)
             .map_or(0, |s| (s.left.end.0 - s.left.start.0).min(3));
-        let after = result
-            .model
+        let after = model
             .spans()
             .get(at + 1)
             .filter(|s| s.kind == DiffKind::Equal)
@@ -260,33 +298,21 @@ impl OpenDiffView {
             let mut label = if dual {
                 let width = (cols - 3) / 2;
                 let l = l.map_or_else(String::new, |n| {
-                    line(
-                        &result.model,
-                        DiffSide::Left,
-                        n,
-                        result.left.stamp.encoding,
-                        width,
-                    )
+                    line(model, DiffSide::Left, n, left_encoding, width)
                 });
                 let r = r.map_or_else(String::new, |n| {
-                    line(
-                        &result.model,
-                        DiffSide::Right,
-                        n,
-                        result.right.stamp.encoding,
-                        cols - width - 3,
-                    )
+                    line(model, DiffSide::Right, n, right_encoding, cols - width - 3)
                 });
                 format!("{l:width$} | {r}")
             } else {
                 let (side, n, encoding) = if let Some(n) = r {
-                    (DiffSide::Right, n, result.right.stamp.encoding)
+                    (DiffSide::Right, n, right_encoding)
                 } else {
-                    (DiffSide::Left, l.unwrap(), result.left.stamp.encoding)
+                    (DiffSide::Left, l.unwrap(), left_encoding)
                 };
                 format!(
                     "{sign} {}",
-                    line(&result.model, side, n, encoding, cols.saturating_sub(2))
+                    line(model, side, n, encoding, cols.saturating_sub(2))
                 )
             };
             label.truncate(cols); // ASCII escaped labels, including narrow prefixes.

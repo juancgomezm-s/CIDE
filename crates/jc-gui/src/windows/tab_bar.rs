@@ -289,8 +289,9 @@ impl State {
     pub(super) fn tab_click(&mut self, x: i32, y: i32) -> Option<Action> {
         let bars = self.tab_hits.as_ref()?;
         let strip = bars.strips.iter().find(|strip| inside(strip.rect, x, y))?;
-        let comparison_can_close =
-            self.git_code.active && self.pointer_overlays_clear() && !self.open_diff_visible;
+        let comparison_can_close = self.pointer_overlays_clear()
+            && ((self.git_code.active && !self.open_diff_visible)
+                || (self.open_diff_visible && self.omnicore_diff.is_some()));
         if !(self.pointer_source_available() || comparison_can_close) {
             return Some(Action::None);
         }
@@ -351,6 +352,11 @@ impl State {
                         },
                     );
                 }
+                if matches!(target, Target::Close(..)) && self.close_omnicore_diff_for(tab) {
+                    self.tab_hits = None;
+                    return Some(Action::None);
+                }
+                self.clear_omnicore_diff();
                 let position = self
                     .workbench
                     .tabs()

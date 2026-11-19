@@ -48,10 +48,12 @@ pub(super) struct Frame {
     rect: Rect,
     left: Rect,
     right: Rect,
+    omni: Rect,
     zoom: Rect,
     zoom_label: Vec<u16>,
     explorer: bool,
     code: bool,
+    omni_visible: bool,
     summary: Vec<u16>,
 }
 fn region(s: &State) -> Rect {
@@ -62,7 +64,7 @@ fn region(s: &State) -> Rect {
         bottom: s.height.max(0),
     }
 }
-fn parts(s: &State) -> (Rect, Rect, Rect, Rect) {
+fn parts(s: &State) -> (Rect, Rect, Rect, Rect, Rect) {
     let rect = region(s);
     let button = s.dpi.pixels(76).min((rect.right / 3).max(0));
     let left = Rect {
@@ -73,17 +75,22 @@ fn parts(s: &State) -> (Rect, Rect, Rect, Rect) {
         left: rect.right - button,
         ..rect
     };
-    let available = right.left - left.right;
-    let summary_width = ((rect.bottom - rect.top) * 10).min(available / 2).max(0);
-    let zoom = Rect {
-        right: right.left - summary_width,
-        left: (right.left - summary_width - s.dpi.pixels(64)).max(left.right),
+    let omni = Rect {
+        right: right.left,
+        left: right.left - s.dpi.pixels(86).min((rect.right / 5).max(0)),
         ..rect
     };
-    (rect, left, right, zoom)
+    let available = omni.left - left.right;
+    let summary_width = ((rect.bottom - rect.top) * 10).min(available / 2).max(0);
+    let zoom = Rect {
+        right: omni.left - summary_width,
+        left: (omni.left - summary_width - s.dpi.pixels(64)).max(left.right),
+        ..rect
+    };
+    (rect, left, right, zoom, omni)
 }
 pub(super) fn prepare(s: &State) -> Frame {
-    let (rect, left, right, zoom) = parts(s);
+    let (rect, left, right, zoom, omni) = parts(s);
     let language = s
         .workbench
         .context()
@@ -94,21 +101,23 @@ pub(super) fn prepare(s: &State) -> Frame {
         rect,
         left,
         right,
+        omni,
         zoom,
         zoom_label: wide(&format!("{} % ▾", s.editor_zoom)),
         explorer: s.explorer_visible,
         code: s.outline.visible,
+        omni_visible: s.omnicore.visible,
         summary: wide(&format!("{language} · {git}")),
     }
 }
 impl State {
     pub(super) fn status_git_click(&mut self, x: i32, y: i32) -> Option<super::Action> {
-        let (rect, _, right, zoom) = parts(self);
+        let (rect, _, _, zoom, omni) = parts(self);
         if self.pointer_source_available()
             && y >= rect.top
             && y < rect.bottom
             && x >= zoom.right
-            && x < right.left
+            && x < omni.left
         {
             Some(self.request_git(super::git_panel::GitIntent::Status))
         } else {
@@ -116,9 +125,16 @@ impl State {
         }
     }
     pub(super) fn status_click(&mut self, x: i32, y: i32) -> bool {
-        let (rect, left, right, _) = parts(self);
+        let (rect, left, right, _, omni) = parts(self);
         if y < rect.top || y >= rect.bottom || x < 0 || x >= rect.right {
             return false;
+        }
+        if (omni.left..omni.right).contains(&x)
+            && self.pointer_overlays_clear()
+            && (self.git_panel.is_none() || self.git_code.active)
+        {
+            self.toggle_omnicore();
+            return true;
         }
         if !self.pointer_source_available() {
             return true;
@@ -142,6 +158,7 @@ pub(super) unsafe fn draw(dc: Hdc, f: &Frame, status: &[u16]) -> Result<(), Stri
     for (r, label, active) in [
         (f.left, "Archivos", f.explorer),
         (f.right, "Esquema", f.code),
+        (f.omni, "OmniCore", f.omni_visible),
     ] {
         let background = if active {
             shell::RAISED
@@ -183,12 +200,12 @@ pub(super) unsafe fn draw(dc: Hdc, f: &Frame, status: &[u16]) -> Result<(), Stri
             status,
         )?;
     }
-    if f.zoom.right < f.right.left {
+    if f.zoom.right < f.omni.left {
         label(
             dc,
             Rect {
                 left: f.zoom.right + 6,
-                right: f.right.left,
+                right: f.omni.left,
                 top: f.rect.top + 3,
                 ..f.rect
             },
@@ -210,7 +227,7 @@ mod tests {
         assert_eq!(s.git_summary(), "Git: consultar");
         let f = prepare(&s);
         assert!(matches!(
-            s.status_git_click(f.right.left - 20, f.rect.top + 2),
+            s.status_git_click(f.omni.left - 20, f.rect.top + 2),
             Some(super::super::Action::None)
         ));
         assert!(s.git_status_options.is_some());
@@ -235,6 +252,9 @@ mod tests {
         assert_eq!(s.explorer_visible, !left);
         assert_eq!(s.outline.visible, code);
         assert!(s.status_click(f.right.left + 2, f.right.top + 2));
+        assert_eq!(s.outline.visible, !code);
+        assert!(s.status_click(f.omni.left + 2, f.omni.top + 2));
+        assert!(s.omnicore.visible);
         assert_eq!(s.outline.visible, !code);
         assert_eq!(s.workbench.active_bytes().unwrap(), before);
         assert!(super::super::outline_panel::region(&s).is_none());

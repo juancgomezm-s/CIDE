@@ -39,6 +39,9 @@ mod navigation_paint;
 mod navigation_panel;
 mod navigation_smoke;
 mod notify;
+mod omnicore_panel;
+mod omnicore_runtime;
+mod omnicore_transport;
 mod open_diff_panel;
 mod outline_panel;
 mod paint;
@@ -460,6 +463,10 @@ enum Action {
     OpenWeb(String),
     ExportGitPatch(Arc<jc_app::git_revision::RevisionComparison>),
     ChooseFolder,
+    ChooseOmniCore,
+    ChooseOmniCoreModel,
+    ConfirmOmniCoreEdit,
+    PasteOmniCore(std::rc::Rc<()>),
     DataConnections,
     BrowseRecords,
     Open(bool),
@@ -480,6 +487,8 @@ struct State {
     open_diff: jc_app::open_diff::OpenDiffController,
     open_diff_view: jc_app::open_diff_view::OpenDiffView,
     open_diff_visible: bool,
+    omnicore: omnicore_panel::Panel,
+    omnicore_diff: Option<open_diff_panel::OmniCoreComparison>,
     source_gui: source_panel::SourceGui,
     snippet_gui: Option<snippet_panel::SnippetGui>,
     markdown_gui: Option<markdown_panel::MarkdownGui>,
@@ -628,6 +637,8 @@ impl State {
             open_diff: Default::default(),
             open_diff_view: Default::default(),
             open_diff_visible: false,
+            omnicore: omnicore_panel::Panel::default(),
+            omnicore_diff: None,
             source_gui: source_panel::SourceGui::new(),
             snippet_gui: None,
             markdown_gui: None,
@@ -1427,6 +1438,17 @@ impl State {
         if code == 0x79 && modifiers == Modifiers::NONE {
             return (true, Action::NativeMenu(native_menu::NativeMenuGroup::File));
         }
+        if code == usize::from(b'L')
+            && modifiers == Modifiers::CTRL
+            && self.pointer_source_available()
+            && self.context().focus == jc_app::PrimaryFocus::Editor
+        {
+            self.attach_current_code_to_omnicore();
+            return (true, Action::None);
+        }
+        if let Some(action) = self.omnicore_key(code, modifiers) {
+            return (true, action);
+        }
         let key = match code {
             0x20 => Some(Key::Char(' ')),
             0x09 => Some(Key::Tab),
@@ -1617,6 +1639,9 @@ impl State {
         }
         self.cancel_pointer();
         if ch.is_control() {
+            return;
+        }
+        if self.omnicore_character(ch) {
             return;
         }
         let mut bytes = [0u8; 4];
@@ -1881,6 +1906,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 state.explorer_hits = frame.explorer_hits();
                 state.git_workspace.hits = frame.git_hits();
                 state.outline.hits = frame.outline_hits();
+                state.omnicore.hits = frame.omnicore_hits();
                 state.bottom_hits = frame.bottom_hits();
                 state.tab_hits = Some(frame.tab_hits());
                 *owner.frame.borrow_mut() = Some(frame.clone());
@@ -2120,13 +2146,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     action = state.zoom_step(((wparam >> 16) as u16 as i16 as i32).signum());
                 } else if let Some((point, lines)) = wheel {
                     let lines = state.smoke_wheel_lines.unwrap_or(lines);
-                    redraw = state.pointer_wheel(
-                        point.x,
-                        point.y,
-                        ((wparam >> 16) as u16) as i16 as i32,
-                        lines,
-                        wparam & 0xffff,
-                    );
+                    let delta = ((wparam >> 16) as u16) as i16 as i32;
+                    redraw = state.omnicore_wheel(point.x, point.y, delta)
+                        || state.omnicore_diff_wheel(point.x, point.y, delta)
+                        || state.pointer_wheel(point.x, point.y, delta, lines, wparam & 0xffff);
                 } else {
                     state.cancel_pointer();
                 }
@@ -2134,6 +2157,11 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
                 let x = (lparam as u16) as i16 as i32;
                 let y = ((lparam as usize >> 16) as u16) as i16 as i32;
+                if !state.omnicore_region().is_some_and(|rect| {
+                    x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
+                }) {
+                    state.blur_omnicore();
+                }
                 state.cancel_pointer();
                 let chrome_action = chrome::action_at(state.chrome_layout(), x, y);
                 let zoom_action = if chrome_action.is_none() {
@@ -2166,6 +2194,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     action = git_action;
                 } else if state.status_click(x, y) {
                     // Status controls consume the click before source hit-testing.
+                } else if let Some(omnicore_action) = state.omnicore_click(x, y) {
+                    action = omnicore_action;
+                } else if state.omnicore_diff_click(x, y) {
+                    // Comparison coordinates never fall through to the document.
                 } else if state.git_code.active {
                     if message == WM_LBUTTONDOWN && state.begin_explorer_scroll(x, y) {
                         action = Action::CapturePointer;
@@ -2268,6 +2300,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         redraw |= state.validate_open_diff();
         redraw |= state.validate_source();
         state.schedule_outline();
+        state.schedule_omnicore();
         state.validate_explorer_scroll();
         state.validate_rectangle_drag();
         state.validate_linear_drag();
@@ -2293,6 +2326,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         }
         state.schedule_search();
         state.schedule_outline();
+        state.schedule_omnicore();
     }
     release_idle_capture(hwnd);
     if redraw && IsWindow(hwnd) != 0 {
@@ -2420,6 +2454,9 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::Open(_)
             | Action::SaveAs
             | Action::ChooseFolder
+            | Action::ChooseOmniCore
+            | Action::ChooseOmniCoreModel
+            | Action::ConfirmOmniCoreEdit
             | Action::DataConnections
             | Action::ExportGitPatch(_)
     ) && owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke)
@@ -2465,6 +2502,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::PasteSearch(generation) => clipboard_flow::paste_search(hwnd, generation),
         Action::PasteGitSearch(token) => git_workspace::paste_commit_query(hwnd, token),
         Action::PasteGitCommit(token) => git_workspace::paste_commit_message(hwnd, token),
+        Action::PasteOmniCore(stamp) => omnicore_panel::paste(hwnd, stamp),
         Action::PasteNavigation(generation) => clipboard_flow::paste_navigation(hwnd, generation),
         Action::PasteSnippet(target) => clipboard_flow::paste_snippet(hwnd, target),
         Action::SelectorClipboard(command, target) => {
@@ -2475,6 +2513,30 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::SaveAll => save_flow::perform(hwnd),
         Action::DataConnections => data_connections::open(hwnd),
         Action::BrowseRecords => records::open(hwnd),
+        Action::ChooseOmniCoreModel => omnicore_panel::choose_model(hwnd),
+        Action::ConfirmOmniCoreEdit => omnicore_panel::confirm_edit(hwnd),
+        Action::ChooseOmniCore => {
+            let (root, initial) = owner(hwnd)
+                .map(|model| {
+                    let state = model.state.borrow();
+                    (
+                        state.project_root.clone(),
+                        state.omnicore_executable_folder(),
+                    )
+                })
+                .unwrap_or_default();
+            let selected = folder::choose_file(hwnd, initial.as_deref());
+            if let Some(owner) = owner(hwnd) {
+                let mut state = owner.state.borrow_mut();
+                if state.project_root == root {
+                    match selected {
+                        Ok(Some(path)) => state.connect_omnicore(path),
+                        Ok(None) => {}
+                        Err(error) => state.error(error),
+                    }
+                }
+            }
+        }
         Action::ChooseFolder => {
             let initial = owner(hwnd).and_then(|o| o.state.borrow().project_root.clone());
             let selected = folder::choose_folder(hwnd, initial.as_deref());
