@@ -248,6 +248,15 @@ impl Session {
         })
     }
 
+    pub fn column_types(
+        &self,
+        relation: &Relation,
+        cancelled: impl Fn() -> bool,
+    ) -> Result<Vec<Column>, String> {
+        self.check_relation(relation)?;
+        self.columns(relation, &cancelled)
+    }
+
     pub fn page(
         &self,
         relation: &Relation,

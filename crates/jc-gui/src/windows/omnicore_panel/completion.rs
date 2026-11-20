@@ -13,6 +13,8 @@ use std::{
     sync::mpsc,
     time::{Duration, Instant},
 };
+#[path = "completion_sql.rs"]
+mod sql;
 const SEMANTIC_STATUS: &str = "Consultando símbolos y tipos para completar el bloque…";
 
 const CONTEXT_BYTES: usize = 768;
@@ -40,6 +42,12 @@ enum Phase {
         deadline: Instant,
         _timer: mpsc::Sender<()>,
     },
+    SqlSemantic {
+        block: super::block::Block,
+        context: sql::Context,
+        deadline: Instant,
+        _timer: mpsc::Sender<()>,
+    },
     Pending {
         child: Query,
         block: Option<super::block::Block>,
@@ -54,6 +62,22 @@ impl Completion {
     pub(super) fn pending(&self) -> bool {
         !matches!(self.phase, Phase::Ready { .. })
     }
+}
+
+fn semantic_timer(wakeup: jc_app::Wakeup) -> Option<(Instant, mpsc::Sender<()>)> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let (timer, cancel) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("cide-contexto-semantico".into())
+        .spawn(move || {
+            if cancel.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                == Err(mpsc::RecvTimeoutError::Timeout)
+            {
+                wakeup.signal();
+            }
+        })
+        .ok()?;
+    Some((deadline, timer))
 }
 
 fn prefix(editor: &EditorRead<'_>, budget: usize) -> Option<String> {
@@ -252,7 +276,34 @@ impl State {
             let profile = self.workbench.syntax_profile_for_tab(editor.tab_id);
             match super::block::Block::capture(&editor, profile) {
                 Ok(block) => {
-                    if let Some((root, deadline, timer)) = self.begin_omnicore_semantics(profile) {
+                    if let Some(relations) = block.sql_relations() {
+                        let context = self.project_root.clone().and_then(|root| {
+                            sql::Context::start(
+                                root,
+                                relations,
+                                &self.omnicore.sql_context_busy,
+                                self.wakeup.clone(),
+                            )
+                        });
+                        if let Some((context, deadline, timer)) = context.and_then(|context| {
+                            semantic_timer(self.wakeup.clone())
+                                .map(|(deadline, timer)| (context, deadline, timer))
+                        }) {
+                            self.omnicore.completion = Some(Completion {
+                                target,
+                                phase: Phase::SqlSemantic {
+                                    block,
+                                    context,
+                                    deadline,
+                                    _timer: timer,
+                                },
+                            });
+                            self.status = SEMANTIC_STATUS.into();
+                            return;
+                        }
+                    } else if let Some((root, deadline, timer)) =
+                        self.begin_omnicore_semantics(profile)
+                    {
                         self.omnicore.completion = Some(Completion {
                             target,
                             phase: Phase::Semantic {
@@ -325,23 +376,10 @@ impl State {
         if result.is_err() {
             return None;
         }
-        let deadline = Instant::now() + Duration::from_secs(3);
-        let (timer, cancel) = mpsc::channel();
-        let wakeup = self.wakeup.clone();
-        if std::thread::Builder::new()
-            .name("cide-contexto-semantico".into())
-            .spawn(move || {
-                if cancel.recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                    == Err(mpsc::RecvTimeoutError::Timeout)
-                {
-                    wakeup.signal();
-                }
-            })
-            .is_err()
-        {
+        let Some((deadline, timer)) = semantic_timer(self.wakeup.clone()) else {
             controller.cancel(&mut self.jobs);
             return None;
-        }
+        };
         Some((root, deadline, timer))
     }
 
@@ -443,6 +481,27 @@ impl State {
             return true;
         }
         if let Some(Completion {
+            phase: Phase::SqlSemantic {
+                context, deadline, ..
+            },
+            ..
+        }) = &self.omnicore.completion
+        {
+            let symbols = context
+                .poll()
+                .or_else(|| (Instant::now() >= *deadline).then(Vec::new));
+            let Some(symbols) = symbols else { return false };
+            let Some(Completion {
+                target,
+                phase: Phase::SqlSemantic { block, .. },
+            }) = self.omnicore.completion.take()
+            else {
+                unreachable!("polled SQL phase")
+            };
+            self.start_omnicore_completion_turn(target, Some(block), &symbols);
+            return true;
+        }
+        if let Some(Completion {
             phase: Phase::Semantic { root, deadline, .. },
             ..
         }) = &self.omnicore.completion
@@ -535,7 +594,7 @@ impl State {
         }
         match &completion.phase {
             Phase::Ready { text, painted } => Some((text.as_str(), Rc::clone(painted))),
-            Phase::Pending { .. } | Phase::Semantic { .. } => None,
+            Phase::Pending { .. } | Phase::Semantic { .. } | Phase::SqlSemantic { .. } => None,
         }
     }
 

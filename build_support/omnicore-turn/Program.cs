@@ -37,13 +37,16 @@ _ = Task.Run(() => WatchCancellation(input, cancellation));
 using var runtime = OmniCliRuntime.Create(Directory.GetCurrentDirectory());
 var localization = new Localization("es");
 runtime.UiLocale = "es";
-runtime.Localize = localization.Resolve;
+if (edit)
+    runtime.Localize = localization.Resolve;
 runtime.UseConsoleInput = false;
 try
 {
     return edit
         ? await runtime.ActAsync(request, Console.WriteLine, cancellation.Token)
-        : await runtime.AskAsync(request, Console.WriteLine, cancellation.Token);
+        // Localize known protocol messages after the host emits the full line.
+        // The host's resolver can split arbitrary assistant text at a parenthesis.
+        : await runtime.AskAsync(request, line => Console.WriteLine(localization.ResolveWire(line)), cancellation.Token);
 }
 catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
 {

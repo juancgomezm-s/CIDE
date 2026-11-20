@@ -59,6 +59,7 @@ pub(super) struct Panel {
     selection_query: Option<selection::Pending>,
     completion: Option<completion::Completion>,
     semantic_context: Option<jc_app::source_services::SourceController>,
+    sql_context_busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
     model_catalog: Option<Result<Rc<Vec<Model>>, String>>,
     catalog_request: Option<Catalog>,
     model: Option<Model>,
@@ -310,6 +311,7 @@ fn display_lines(text: &str, width: usize) -> impl Iterator<Item = String> + '_ 
 impl State {
     pub(super) fn omnicore_region(&self) -> Option<Rect> {
         if !self.omnicore.visible
+            || self.omnicore_selection_review_visible()
             || self.width < self.dpi.pixels(480)
             || self.height < self.dpi.pixels(280)
             || (self.git_panel.is_some() && !self.git_code.active)

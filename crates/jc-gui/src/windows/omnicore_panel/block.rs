@@ -1,5 +1,6 @@
 //! Bounded lexical recognition and validation for routine and control bodies.
 mod control;
+mod sql;
 use super::{selection::Proposal, Answer};
 use crate::windows::open_diff_panel::OmniCorePreview;
 use jc_app::{scan_syntax_snippet, ClipboardTarget, EditorRead, SyntaxKind, SyntaxProfile};
@@ -25,6 +26,8 @@ enum Kind {
     AblLoop,
     AblDo,
     AblCase,
+    SqlStatement,
+    SqlCase,
 }
 
 impl Kind {
@@ -43,6 +46,8 @@ impl Kind {
             Self::AblLoop => "ABL loop",
             Self::AblDo => "ABL DO block",
             Self::AblCase => "ABL CASE",
+            Self::SqlStatement => "SQL statement",
+            Self::SqlCase => "SQL CASE expression branch",
         }
     }
     fn closer(self) -> &'static str {
@@ -54,6 +59,8 @@ impl Kind {
             Self::Method => "END METHOD.",
             Self::AblBranch | Self::AblLoop | Self::AblDo => "END.",
             Self::AblCase => "END CASE.",
+            Self::SqlStatement => ";",
+            Self::SqlCase => "END",
         }
     }
     fn routine(self) -> bool {
@@ -393,10 +400,21 @@ pub(super) struct Block {
 }
 
 impl Block {
+    pub(super) fn sql_relations(&self) -> Option<Vec<(Option<String>, String)>> {
+        matches!(self.outline.kind, Kind::SqlStatement | Kind::SqlCase)
+            .then(|| sql::references(&self.source, self.cursor))
+    }
+
     pub(super) fn capture(editor: &EditorRead<'_>, profile: SyntaxProfile) -> Result<Self, String> {
-        if !matches!(profile, SyntaxProfile::Abl | SyntaxProfile::Rust) {
+        let sql_file = editor
+            .session
+            .path()
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("sql"));
+        if !sql_file && !matches!(profile, SyntaxProfile::Abl | SyntaxProfile::Rust) {
             return Err(
-                "Completar bloque admite procedimientos y métodos ABL y funciones Rust.".into(),
+                "Completar bloque admite cuerpos Rust y ABL y sentencias SQL delimitadas.".into(),
             );
         }
         let document = editor.session.document();
@@ -426,9 +444,12 @@ impl Block {
         } else {
             cursor.ok_or("El cursor no está en un límite de texto.")?
         };
-        let outline = outline(&source, profile, cursor).ok_or(
-            "Coloca el cursor en un cuerpo o una rama reconocible con un límite existente.",
-        )?;
+        let outline = if sql_file {
+            sql::outline(&source, cursor)
+        } else {
+            outline(&source, profile, cursor)
+        }
+        .ok_or("Coloca el cursor en un cuerpo o una rama reconocible con un límite existente.")?;
         Ok(Self {
             source,
             cursor,
@@ -450,7 +471,12 @@ impl Block {
         let prefix = &self.source[self.outline.header.end..self.cursor];
         let suffix = &self.source[self.cursor..self.outline.close.unwrap_or(self.source.len())];
         let existing_closer = self.outline.close.map(|offset| {
-            if self.outline.kind == Kind::RustExpressionArm {
+            if self.outline.kind == Kind::SqlCase {
+                self.source[offset..]
+                    .split(|ch: char| !ch.is_ascii_alphabetic())
+                    .next()
+                    .unwrap_or("END")
+            } else if self.outline.kind == Kind::RustExpressionArm {
                 if self.source.as_bytes()[offset] == b'}' {
                     "}"
                 } else {
@@ -469,6 +495,8 @@ impl Block {
             let constraint = match self.outline.kind {
                 Kind::RustExpressionArm => "Preserve one Rust expression. Use an expression block for multiple statements if the arm is empty.",
                 Kind::AblStatementBranch => "Preserve exactly one ABL statement. It can span several lines. Reuse the period already present.",
+                Kind::SqlStatement => "Preserve one SQL statement. Leave the existing semicolon in place and do not add a separate statement.",
+                Kind::SqlCase => "Complete only this SQL CASE expression. Preserve existing WHEN, ELSE and END boundaries.",
                 _ => "Finish all nested blocks opened by the insertion.",
             };
             let mut fields = serde_json::json!({
@@ -550,7 +578,12 @@ impl Block {
             text = text.replace('\n', newline);
         }
 
-        if !balanced_body(&text, self.profile) {
+        let sql = matches!(self.outline.kind, Kind::SqlStatement | Kind::SqlCase);
+        if !(if sql {
+            sql::balanced(&text)
+        } else {
+            balanced_body(&text, self.profile)
+        }) {
             return Err(
                 "La propuesta contiene un cierre de un bloque existente o deja un bloque abierto."
                     .into(),
@@ -578,7 +611,11 @@ impl Block {
         let mut proposed = self.source.clone();
         proposed.insert_str(self.cursor, &text);
         // A completion can extend the identifier immediately before the original cursor.
-        let structural = outline_at(&proposed, self.profile, self.cursor, false);
+        let structural = if sql {
+            sql::outline(&proposed, self.cursor)
+        } else {
+            outline_at(&proposed, self.profile, self.cursor, false)
+        };
         if !structural.is_some_and(|candidate| {
             candidate.kind == self.outline.kind
                 && candidate.header == self.outline.header
@@ -629,7 +666,12 @@ mod tests {
     fn check(source: &str, profile: SyntaxProfile) -> Block {
         let cursor = source.find('|').unwrap();
         let source = source.replacen('|', "", 1);
-        let outline = outline(&source, profile, cursor).unwrap();
+        let outline = if profile == SyntaxProfile::Plain {
+            sql::outline(&source, cursor)
+        } else {
+            outline(&source, profile, cursor)
+        }
+        .unwrap();
         Block {
             source,
             cursor,
@@ -935,6 +977,39 @@ mod tests {
                 .as_deref(),
             Some("me\r\n    WITH NO-LABELS")
         );
+    }
+
+    #[test]
+    fn omnicore_block_sql_keeps_the_case_branch_and_statement_boundaries() {
+        let branch = check(
+            "SELECT CASE WHEN total > 0 THEN | ELSE (SELECT token FROM secret) END FROM sales.invoice; SELECT 9;",
+            SyntaxProfile::Plain,
+        );
+        let prompt = branch.prompt(4096, &[]).unwrap();
+        assert!(prompt.contains("\"existingCloser\":\"ELSE\""));
+        assert!(!prompt.contains("secret"));
+        assert!(!prompt.contains("SELECT 9"));
+        assert_eq!(
+            branch.sql_relations().unwrap(),
+            [(Some("sales".into()), "invoice".into())]
+        );
+        assert!(branch
+            .prepare(answer("CAST(total\nAS DECIMAL(12,2))"), TextEncoding::Utf8)
+            .is_ok());
+        for invalid in ["1; SELECT 2", "1 ELSE 2", "1 END", "1 --"] {
+            assert!(
+                branch.prepare(answer(invalid), TextEncoding::Utf8).is_err(),
+                "{invalid}"
+            );
+        }
+        let statement = check(
+            "SELECT | FROM `invoice`; SELECT 'later;';",
+            SyntaxProfile::Plain,
+        );
+        assert!(statement
+            .prepare(answer("total,\n  1"), TextEncoding::Utf8)
+            .is_ok());
+        assert!(!statement.prompt(4096, &[]).unwrap().contains("later"));
     }
 
     #[test]

@@ -2719,6 +2719,13 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
 }
 
 pub(super) fn run(options: GuiOptions) -> Result<(), String> {
+    run_with_smoke(options, smoke::run)
+}
+
+fn run_with_smoke(
+    options: GuiOptions,
+    exercise: unsafe fn(Hwnd, &crate::SmokeOptions) -> Result<(), String>,
+) -> Result<(), String> {
     if options
         .search_workers
         .is_some_and(|n| !(1..=4).contains(&n))
@@ -2854,7 +2861,7 @@ pub(super) fn run(options: GuiOptions) -> Result<(), String> {
             }
             if message.hwnd == hwnd && message.message == SMOKE_MESSAGE {
                 if let Some(config) = &options.smoke {
-                    smoke_result = Some(smoke::run(hwnd, config));
+                    smoke_result = Some(exercise(hwnd, config));
                 }
                 // Test failures must also close without a modal dirty prompt.
                 if IsWindow(hwnd) != 0 {

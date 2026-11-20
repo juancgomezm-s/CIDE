@@ -1,5 +1,6 @@
 """Validate CIDE against OmniCore and a deterministic local model."""
 import argparse
+from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
@@ -11,6 +12,8 @@ import subprocess
 import sys
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from threading import Thread
+import time
+from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,7 +70,9 @@ class Model(BaseHTTPRequestHandler):
         abl_statement = any('"kind":"ABL single-statement branch"' in str(message.get("content", ""))
                             for message in messages)
         prompt = "\n".join(str(message.get("content", "")) for message in messages)
-        if segment_prompt and "777 =>" in prompt:
+        if segment_prompt and '"kind":"SQL CASE expression branch"' in prompt:
+            answer = json.dumps({"insertion": "CAST(total\n        AS DECIMAL(12,2))"})
+        elif segment_prompt and "777 =>" in prompt:
             answer = json.dumps({"insertion": "{\n            let output = subtotal * 2;\n            output\n        }"})
         elif segment_prompt and "IF semanticAbl THEN" in prompt:
             insertion = "me\n    WITH NO-LABELS" if "negocio.customer.na" in prompt else "DISPLAY amount\n    WITH NO-LABELS"
@@ -107,10 +112,22 @@ def main():
     parser.add_argument("--omnicore", type=Path, required=True)
     parser.add_argument("--rust-analyzer", type=Path)
     parser.add_argument("--openedge", type=Path, help="OpenEdge root containing bin and sports2000.db")
+    parser.add_argument("--sql-bitmap", type=Path, help="run the native SQL window check and save its diff bitmap")
+    database = parser.add_mutually_exclusive_group()
+    database.add_argument("--mysql-bin", type=Path, help="start disposable MySQL for the native SQL window check")
+    database.add_argument("--postgres-port", type=int,
+                          help="loopback port of a PostgreSQL test database cide_test with public.invoice and cide_reader")
+    parser.add_argument("--postgres-driver", type=Path,
+                        help="use an extracted Windows psqlODBC Unicode DLL only in the test process")
     parser.add_argument("--bundled", action="store_true", help="discover OmniCore beside the test executable in a workspace extraction")
     args = parser.parse_args()
     if bool(args.rust_analyzer) != bool(args.openedge):
         parser.error("--rust-analyzer y --openedge deben usarse juntos")
+    if args.postgres_port is not None and not 1 <= args.postgres_port <= 65535:
+        parser.error("--postgres-port requiere un puerto entre 1 y 65535")
+    if args.postgres_driver and not args.postgres_port:
+        parser.error("--postgres-driver requiere --postgres-port")
+    sql = bool(args.sql_bitmap or args.mysql_bin or args.postgres_port)
     executable = args.omnicore.resolve(strict=True)
     if args.bundled and (not executable.is_relative_to(ROOT) or executable.parts[-2:] != ("omnicore", "omni.exe")):
         parser.error("--bundled requiere el bin/omnicore/omni.exe de una extracción del MSI dentro del proyecto.")
@@ -124,10 +141,19 @@ def main():
         temporary = ROOT / "work/test-temp"
         temporary.mkdir(parents=True, exist_ok=True)
         env = {**os.environ, "TEMP": str(temporary), "TMP": str(temporary)}
-    with TemporaryDirectory(prefix="cide-omnicore-", dir=env["TEMP"]) as directory:
+    with ExitStack() as cleanup:
+        env.pop("CIDE_OMNICORE_ODBC_TEST_REGISTRY", None)
+        if args.postgres_driver:
+            prepare_odbc_registry(args.postgres_driver, env, cleanup)
+            env["CIDE_OMNICORE_ODBC_TEST_PGPORT"] = str(args.postgres_port)
+        directory = cleanup.enter_context(TemporaryDirectory(prefix="cide-omnicore-", dir=env["TEMP"]))
         root = Path(directory)
         fixture = root / "semantic-project"
         fixture.mkdir()
+        if args.mysql_bin:
+            prepare_mysql(fixture, root, args.mysql_bin.resolve(strict=True), env, cleanup)
+        elif args.postgres_port:
+            write_sql_profile(fixture, "postgresql", args.postgres_port)
         if args.rust_analyzer:
             rust_binary = args.rust_analyzer.resolve(strict=True)
             lsp = {"command": str(rust_binary), "initializationOptions": {
@@ -181,12 +207,48 @@ def main():
                 NO_PROXY="127.0.0.1",
             )
             env.setdefault("CARGO_TARGET_DIR", str(ROOT / "target/embedded-git-next"))
+            env.pop("CIDE_OMNICORE_SQL_BITMAP", None)
+            if sql:
+                env.pop("OMNI_BASE_URL", None)
+            if args.sql_bitmap:
+                env["CIDE_OMNICORE_SQL_BITMAP"] = str(args.sql_bitmap.resolve())
             thread = Thread(target=model.serve_forever, daemon=True)
             thread.start()
             try:
-                run_test(cargo, env, executable.parent.parent if args.bundled else None)
+                try:
+                    run_test(cargo, env, executable.parent.parent if args.bundled else None,
+                         "omnicore_sql_native_window" if sql else TEST_FILTER)
+                except subprocess.CalledProcessError:
+                    if sql and model.questions:
+                        print("Último contexto SQL de prueba:", ascii([
+                            message.get("content", "") for message in model.questions[-1]
+                            if message.get("role") == "user"
+                        ]), flush=True)
+                    raise
                 requests = ["\n".join(str(message.get("content", "")) for message in messages)
                             for messages in model.questions]
+                if sql:
+                    request, = requests
+                    context = json.loads(next(line for line in request.splitlines() if line.startswith("{")))
+                    assert context["kind"] == "SQL CASE expression branch"
+                    assert context["existingCloser"] == "ELSE"
+                    assert "neighbor_sql_statement" not in request and "ELSE 0" not in request
+                    assert "98765.43" not in request
+                    expected = (
+                        ("MySQL", "cide_test.invoice.total", "decimal(12,2)") if args.mysql_bin else
+                        ("PostgreSQL", "public.invoice.total", "numeric(12,2)") if args.postgres_port else
+                        None
+                    )
+                    if expected:
+                        engine, symbol, data_type = expected
+                        assert any(
+                            row["provider"] == engine and row["symbol"] == symbol
+                            and row["typeOrSignature"].casefold() == data_type
+                            for row in context.get("semanticContext", [])
+                        ), context
+                        print(f"{engine} ODBC: {symbol} ({data_type})")
+                    print("Ventana Win32: diff SQL, rama vecina, aplicación y Ctrl+Z verificados.")
+                    return
                 assert len(requests) == 14 and QUESTION in requests[0]
                 assert all(text in requests[1] for text in (
                     QUESTION, ANSWER, "Modo Plan", "ejemplo.p", "México", "contexto.",
@@ -253,10 +315,125 @@ def prepare_openedge(fixture, openedge, env):
     )
 
 
-def run_test(cargo, env, bundled_dir):
+def prepare_mysql(fixture, root, bin_dir, env, cleanup):
+    server = bin_dir / "mysqld.exe"
+    client = bin_dir / "mysql.exe"
+    data = root / "mysql"
+    log = root / "mysql.log"
+    base = [server, "--no-defaults", f"--basedir={bin_dir.parent}", f"--datadir={data}",
+            f"--log-error={log}", "--innodb-redo-log-capacity=8388608"]
+    setup = subprocess.run([*base, "--initialize-insecure"], env=env, timeout=60)
+    if setup.returncode:
+        raise RuntimeError(log.read_text(encoding="utf-8", errors="replace"))
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    bootstrap = root / "mysql-fixture.sql"
+    bootstrap.write_text(
+        "CREATE DATABASE cide_test;\n"
+        "CREATE TABLE cide_test.invoice (total DECIMAL(12,2) NOT NULL);\n"
+        "INSERT INTO cide_test.invoice VALUES (98765.43);\n"
+        "CREATE USER 'cide_reader'@'localhost';\n"
+        "CREATE USER 'cide_reader'@'127.0.0.1';\n"
+        "GRANT SELECT ON cide_test.* TO 'cide_reader'@'localhost';\n"
+        "GRANT SELECT ON cide_test.* TO 'cide_reader'@'127.0.0.1';\n",
+        encoding="ascii",
+    )
+    process = subprocess.Popen(
+        [*base, "--bind-address=127.0.0.1", f"--port={port}", "--mysqlx=OFF",
+         "--skip-log-bin", f"--init-file={bootstrap}"],
+        env=env, creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    tcp = ["--no-defaults", "--protocol=TCP", "--host=127.0.0.1", f"--port={port}", "--connect-timeout=1"]
+
+    def stop_mysql():
+        if process.poll() is None:
+            shutdown = subprocess.run(
+                [bin_dir / "mysqladmin.exe", *tcp, "--user=root", "shutdown"],
+                env=env, capture_output=True, timeout=10,
+            )
+            if shutdown.returncode:
+                process.terminate()
+            process.wait(timeout=15)
+
+    cleanup.callback(stop_mysql)
+    client_cmd = [client, *tcp, "--user=cide_reader"]
+    deadline = time.monotonic() + 30
+    diagnostic = ""
+    while time.monotonic() < deadline and process.poll() is None:
+        ready = subprocess.run([*client_cmd, "--execute=SHOW COLUMNS FROM cide_test.invoice"], env=env, capture_output=True, timeout=4)
+        if ready.returncode == 0:
+            print(ready.stdout.decode(errors="replace").strip(), flush=True)
+            break
+        diagnostic = ready.stderr.decode(errors="replace").strip()
+        time.sleep(0.25)
+    else:
+        raise RuntimeError(f"{diagnostic}\n{log.read_text(encoding='utf-8', errors='replace')}")
+    write_sql_profile(fixture, "mysql", port)
+
+
+def write_sql_profile(fixture, engine, port):
+    config = fixture / ".cide"
+    config.mkdir(exist_ok=True)
+    fields = {
+        "nombre": f"{engine} local de prueba", "servidor": "127.0.0.1", "puerto": str(port),
+        "base": "cide_test", "usuario": "cide_reader", "tls": "deshabilitado", "credencial": "",
+    }
+    if engine == "postgresql":
+        fields["esquemas"] = "public"
+    (config / "conexiones.local.json").write_text(json.dumps({
+        "version": 1, "conexiones": [{"motor": engine, "campos": fields}],
+    }), encoding="utf-8")
+
+
+def prepare_odbc_registry(driver, env, cleanup):
+    import winreg
+
+    driver = driver.resolve(strict=True)
+    if not driver.is_file() or driver.suffix.lower() != ".dll":
+        raise ValueError("--postgres-driver requiere la DLL Unicode de psqlODBC.")
+    base = f"Software\\CIDE-PruebaODBC-{uuid4().hex}"
+    cleanup.callback(remove_odbc_registry, base)
+    branch = r"Software\ODBC\ODBCINST.INI"
+    name = "PostgreSQL Unicode(x64)"
+    entries = (
+        ("", {}),
+        ("Software", {}),
+        (r"Software\ODBC", {}),
+        (branch, {}),
+        (branch + r"\ODBC Drivers", {name: "Installed"}),
+        (branch + "\\" + name, {"Driver": str(driver), "Setup": str(driver)}),
+    )
+    for subkey, values in entries:
+        key_name = base + "\\" + subkey if subkey else base
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_name, 0, winreg.KEY_WRITE) as key:
+            for key_value, value in values.items():
+                winreg.SetValueEx(key, key_value, 0, winreg.REG_SZ, value)
+    env["CIDE_OMNICORE_ODBC_TEST_REGISTRY"] = base
+    env["CIDE_OMNICORE_ODBC_TEST_LIBPQ"] = str(driver.with_name("libpq.dll").resolve(strict=True))
+    env["PATH"] = str(driver.parent) + os.pathsep + env["PATH"]
+
+
+def remove_odbc_registry(base):
+    import ctypes
+    from ctypes import wintypes
+
+    prefix = r"Software\CIDE-PruebaODBC-"
+    suffix = base.removeprefix(prefix)
+    if not base.startswith(prefix) or len(suffix) != 32 or any(ch not in "0123456789abcdef" for ch in suffix):
+        raise ValueError("Rama temporal ODBC inválida.")
+    delete = ctypes.WinDLL("advapi32").RegDeleteTreeW
+    delete.argtypes = (wintypes.HKEY, wintypes.LPCWSTR)
+    delete.restype = wintypes.LONG
+    result = delete(wintypes.HKEY(-2147483647), base)  # HKEY_CURRENT_USER
+    if result not in (0, 2):
+        raise ctypes.WinError(result)
+
+
+def run_test(cargo, env, bundled_dir, test_filter):
     args = [cargo, "test", "-p", "jc-gui", "--lib", "--locked", "--offline"]
     if bundled_dir is None:
-        subprocess.run([*args, TEST_FILTER, "--", "--ignored"], cwd=ROOT, env=env, check=True, timeout=240)
+        subprocess.run([*args, test_filter, "--", "--ignored"], cwd=ROOT, env=env, check=True, timeout=240)
         return
     env.pop("CIDE_OMNICORE_EXE", None)
     output = subprocess.run([*args, "--no-run", "--message-format=json"], cwd=ROOT, env=env,
@@ -267,7 +444,7 @@ def run_test(cargo, env, bundled_dir):
         copy = Path(temporary.name)
     try:
         shutil.copyfile(binary, copy)
-        subprocess.run([copy, TEST_FILTER, "--ignored"], cwd=ROOT, env=env, check=True, timeout=60)
+        subprocess.run([copy, test_filter, "--ignored"], cwd=ROOT, env=env, check=True, timeout=100)
     finally:
         copy.unlink()
 

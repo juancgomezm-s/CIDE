@@ -423,12 +423,14 @@ fn query_failure(output: &str, model: Option<&Model>) -> String {
 fn answer_from_console(output: &str) -> &str {
     const LEGACY_AUTH_WARNING: &str =
         "aviso: el formato auth de providers.yaml está obsoleto; usa authRef.";
+    const LEGACY_AUTH_NOTICE: &str = "aviso: config.legacyAuthDeprecated";
     let output = output.trim();
-    if output == LEGACY_AUTH_WARNING {
+    if matches!(output, LEGACY_AUTH_WARNING | LEGACY_AUTH_NOTICE) {
         return "";
     }
     let answer = output
         .strip_prefix(LEGACY_AUTH_WARNING)
+        .or_else(|| output.strip_prefix(LEGACY_AUTH_NOTICE))
         .and_then(|rest| rest.trim_start_matches('\r').strip_prefix('\n'))
         .map_or(output, str::trim_start);
 

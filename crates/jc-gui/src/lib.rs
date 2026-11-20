@@ -15,6 +15,7 @@ pub struct GuiOptions {
 /// Internal automation is confined to an owned hidden HWND and a small fixture
 /// beneath workspace/work. It never sends input to another application's window.
 #[derive(Debug)]
+#[cfg_attr(test, derive(Default))]
 pub struct SmokeOptions {
     pub fixture: PathBuf,
     pub report: PathBuf,
