@@ -523,6 +523,7 @@ impl TuiApp {
                             columns,
                         ),
                         selected: i == *index,
+                        relation: None,
                     })
                     .collect(),
             };

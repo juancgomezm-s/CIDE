@@ -154,7 +154,7 @@ impl Selector {
             title: "Preferencias de apariencia",
             query: self.input.clone(),
             input_selection: self.input_selection,
-            message: "Tamaños base de interfaz, editor y minimapa".into(),
+            message: "Tamaños de texto, minimapa y posición de Esquema".into(),
             footer: "↑↓ elegir · Intro aplicar · Esc volver",
             rows,
             total,

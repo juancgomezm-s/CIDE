@@ -31,8 +31,8 @@ impl State {
     pub(super) fn open_git_restore(&mut self) {
         if self.git_restore_label().is_some() {
             if let Some((root, comparison)) = self
-                .project_root
-                .clone()
+                .git_root()
+                .map(std::path::Path::to_owned)
                 .zip(self.git_revision.share_comparison())
             {
                 self.git_commit.open_restore(root, comparison);
@@ -66,7 +66,7 @@ impl State {
     }
 
     pub(super) fn git_index_action(&mut self, block: bool) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         let Some((comparison, local)) = self.index_comparison() else {
@@ -119,8 +119,7 @@ impl State {
             if let Some(publication) = self.git_index.publication() {
                 match &publication.result {
                     Ok(()) => {
-                        let same_root =
-                            self.project_root.as_ref() == Some(&publication.target.root);
+                        let same_root = self.git_root() == Some(&publication.target.root);
                         self.status = match (publication.target.action, publication.target.hunk) {
                             (IndexAction::Stage, Some(h)) => {
                                 format!("Bloque {} preparado en el índice Git", h + 1)
@@ -146,7 +145,7 @@ impl State {
         } else if let Some(failure) = self.git_index.preparation_failure() {
             self.error(failure.error.to_string());
         } else if let Some(review) = self.git_index.review() {
-            if self.project_root.as_ref() == Some(&review.target.root) {
+            if self.git_root() == Some(&review.target.root) {
                 self.status = match review.target.hunk {
                     Some(h) => format!("Revisa el bloque {} y pulsa Confirmar bloque", h + 1),
                     None => "Revisa el archivo completo y pulsa Confirmar índice".into(),

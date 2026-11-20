@@ -3,6 +3,7 @@ use super::references::{binding_context, ReferenceScan};
 use super::{
     fold, Catalog, Context, Site, SourceAction, SourceItem, Target, Token, MAX_LOCAL_NAMES,
 };
+use jc_app::source_services::ValueType;
 use jc_app::{TaskFailure, TaskItem, TaskOutput};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
@@ -48,6 +49,7 @@ struct Binding {
     kind: &'static str,
     record: Option<Record>,
     object_type: Option<String>,
+    declared_type: Option<String>,
     site: Site,
 }
 
@@ -88,6 +90,7 @@ struct OutlineRow {
     site: Site,
     label: String,
     extent: Option<Range<usize>>,
+    value_type: Option<ValueType>,
 }
 
 impl Outline {
@@ -116,6 +119,7 @@ impl Outline {
             site,
             label: format!("{name} · {kind}"),
             extent: None,
+            value_type: None,
         });
         Some(index)
     }
@@ -143,6 +147,7 @@ pub(super) struct Symbols {
     local: Option<Routine>,
     tables: Vec<TempTable>,
     declarations: usize,
+    pub(super) semantic: bool,
     references: Option<ReferenceScan>,
     outline: Option<Outline>,
     imports: Option<Imports>,
@@ -176,6 +181,7 @@ impl Symbols {
         let outline = self.outline.expect("active outline");
         for row in outline.rows {
             let mut item = row.site.item(row.label, 0..0);
+            item.value_type = row.value_type;
             if let Some(extent) = row.extent.filter(|extent| !extent.is_empty()) {
                 item.action = SourceAction::ScopedSymbol { extent };
             }
@@ -255,9 +261,15 @@ impl Symbols {
             .observe(context, binding, forward)
     }
 
-    fn register(&mut self, binding: Binding) -> Result<(), TaskFailure> {
+    fn register(
+        &mut self,
+        binding: Binding,
+        value_type: Option<ValueType>,
+    ) -> Result<(), TaskFailure> {
         if let Some(outline) = &mut self.outline {
-            outline.add(binding.kind, &binding.name, binding.site);
+            if let Some(row) = outline.add(binding.kind, &binding.name, binding.site) {
+                outline.rows[row].value_type = value_type;
+            }
             if let Some(Record::Temp(_)) = binding.record {
                 let table = self.tables.pop().expect("just declared temp-table");
                 for (kind, members) in [("Campo", table.fields), ("Índice", table.indexes)] {
@@ -296,6 +308,7 @@ impl Symbols {
                 existing.kind = "";
                 existing.record = None;
                 existing.object_type = None;
+                existing.declared_type = None;
             }
         } else {
             target.insert(key, binding);
@@ -426,6 +439,45 @@ impl Symbols {
 
     pub(super) fn has_record(&self, key: &str) -> bool {
         self.record(key).is_some()
+    }
+
+    pub(super) fn semantic_table<'a>(&'a self, names: &'a [String]) -> Option<&'a [String]> {
+        match names {
+            [name] => match self.record(&fold(name)) {
+                Some(binding) => match &binding.record {
+                    Some(Record::Database(table)) => Some(table),
+                    _ => None,
+                },
+                None => Some(names),
+            },
+            [_, _] => Some(names),
+            _ => None,
+        }
+    }
+
+    pub(super) fn semantic_items(&self, cursor: usize) -> impl Iterator<Item = SourceItem> + '_ {
+        let local = self.local.as_ref();
+        self.values(false)
+            .chain(
+                local
+                    .into_iter()
+                    .flat_map(|routine| &routine.scope.records)
+                    .chain(self.global.records.iter().filter(move |(name, _)| {
+                        !local.is_some_and(|routine| routine.scope.records.contains_key(*name))
+                    })),
+            )
+            .filter(|(_, binding)| !binding.kind.is_empty())
+            .map(move |(_, binding)| SourceItem {
+                range: cursor..cursor,
+                label: binding.name.chars().take(96).collect(),
+                value_type: None,
+                action: SourceAction::SemanticSymbol(
+                    binding
+                        .declared_type
+                        .as_ref()
+                        .map(|text| text.chars().take(110).collect()),
+                ),
+            })
     }
 
     pub(super) fn value_names(&self, prefix: &str, run: bool) -> Vec<(String, String)> {
@@ -612,13 +664,22 @@ impl Symbols {
         {
             if !kind.is_empty() && self.local.is_none() {
                 if let Some(name) = word(1) {
-                    self.register(Binding {
-                        name,
-                        kind,
-                        record: None,
-                        object_type: None,
-                        site: context.site(&tokens[1]),
-                    })?;
+                    if keyword == "FUNCTION" && end == b"." && is(tokens.len() - 1, b"FORWARD") {
+                        if let Some(outline) = &mut self.outline {
+                            outline.add("Prototipo", &name, context.site(&tokens[1]));
+                        }
+                    }
+                    self.register(
+                        Binding {
+                            name,
+                            kind,
+                            record: None,
+                            object_type: None,
+                            declared_type: None,
+                            site: context.site(&tokens[1]),
+                        },
+                        None,
+                    )?;
                 }
             }
             if end == b":" && self.local.is_none() {
@@ -634,6 +695,36 @@ impl Symbols {
                     scope: Scope::default(),
                     outline_scope: routine_outline,
                 });
+                if self.semantic {
+                    if let Some(open) = (1..tokens.len()).find(|&i| is(i, b"(")) {
+                        for i in open + 2..tokens.len().saturating_sub(1) {
+                            if is(i, b")") {
+                                break;
+                            }
+                            if !is(i, b"AS") {
+                                continue;
+                            }
+                            let Some(name) = word(i - 1) else {
+                                continue;
+                            };
+                            let start = i + 1 + usize::from(is(i + 1, b"CLASS"));
+                            let declared_type = tokens.get(start).and_then(|token| {
+                                super::classes::declared_type(context, token.range.start)
+                            });
+                            self.register(
+                                Binding {
+                                    name,
+                                    kind: "Parámetro",
+                                    record: None,
+                                    object_type: None,
+                                    declared_type,
+                                    site: context.site(&tokens[i - 1]),
+                                },
+                                None,
+                            )?;
+                        }
+                    }
+                }
             }
         } else if end == b"." && (is(0, b"DEFINE") || is(0, b"DEF")) {
             self.define(context, catalog)?;
@@ -766,13 +857,31 @@ impl Symbols {
         } else {
             None
         };
-        self.register(Binding {
-            name,
-            kind,
-            record,
-            object_type,
-            site: context.site(&tokens[index + 1]),
-        })
+        let value_type = if self.outline.is_some() && kind == "Variable" && is(start, b"AS") {
+            tokens
+                .get(start + 1)
+                .and_then(|token| crate::source_services::declared_value_type(context.bytes(token)))
+        } else {
+            None
+        };
+        let declared_type = if self.semantic && is(start, b"AS") {
+            tokens
+                .get(start + 1 + usize::from(is(start + 1, b"CLASS")))
+                .and_then(|token| super::classes::declared_type(context, token.range.start))
+        } else {
+            None
+        };
+        self.register(
+            Binding {
+                name,
+                kind,
+                record,
+                object_type,
+                declared_type,
+                site: context.site(&tokens[index + 1]),
+            },
+            value_type,
+        )
     }
 }
 

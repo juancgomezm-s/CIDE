@@ -63,7 +63,7 @@ impl State {
             .flatten()
             .and_then(|r| r.status().entries().get(selected))
             .map(|e| e.path().to_vec());
-        match (self.project_root.clone(), path) {
+        match (self.git_root().map(std::path::Path::to_owned), path) {
             (Some(root), Some(path)) => {
                 self.git_workspace.selected_path = Some(path.clone());
                 if let Err(error) = self.git_revision.request_local_file(root, path, kind) {

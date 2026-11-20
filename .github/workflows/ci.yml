@@ -1,7 +1,8 @@
-name: M5 CI (deferred)
+name: Remote validation (explicit manual request only)
 
-# CI is intentionally dormant until milestone M5.
-# Do not add push/pull_request triggers before M5 without explicit owner approval.
+# Local checks: python scripts/check-local.py
+# Push/PR never authorizes remote CI, including M5.
+# Dispatch/rerun only for a separate explicit owner request for that run.
 on:
   workflow_dispatch:
 
@@ -22,11 +23,8 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
-          toolchain: 1.85.1
+          toolchain: 1.88.0
           components: rustfmt, clippy
-      - run: cargo fmt --all -- --check
+      # Only this explicitly requested remote run may provision its crate cache.
       - run: cargo fetch --locked
-      - run: cargo test --workspace --locked --offline
-      - run: cargo clippy --workspace --all-targets --locked --offline -- -D warnings
-      - run: cargo build --workspace --release --locked --offline
-      - run: cargo run --locked --offline -p jc-cli -- demo
+      - run: python scripts/check-local.py

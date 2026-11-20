@@ -13,7 +13,7 @@ use std::{
 /// The saved CIDE profile passes its eight ordered field slots here.
 /// MySQL leaves the eighth slot empty and uses its database as schema.
 pub fn options(engine: Engine, values: [&str; 8]) -> Result<ConnectOptions, String> {
-    let [_, server, port, database, user, tls, credential, schemas] = values;
+    let [_, server, port, database, user, tls, credential, schemas] = values.map(str::trim);
     let port = port
         .parse::<u16>()
         .ok()
@@ -43,6 +43,24 @@ pub fn options(engine: Engine, values: [&str; 8]) -> Result<ConnectOptions, Stri
             Vec::new()
         },
     })
+}
+
+pub fn test_connection(
+    options: &ConnectOptions,
+    cancelled: impl Fn() -> bool,
+) -> Result<String, String> {
+    if cancelled() {
+        return Err("Prueba de conexión cancelada.".into());
+    }
+    Session::connect(options)?.test_connection(cancelled)?;
+    let engine = match options.engine {
+        Engine::PostgreSql => "PostgreSQL",
+        Engine::MySql => "MySQL",
+    };
+    Ok(format!(
+        "Conexión correcta a {engine} · Base: {}",
+        options.database
+    ))
 }
 
 pub struct Reader {

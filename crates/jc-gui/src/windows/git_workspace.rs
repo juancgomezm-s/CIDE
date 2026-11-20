@@ -427,7 +427,7 @@ impl State {
             column: self.git_workspace.diff_column,
             menu: self.git_workspace.menu,
             local: self.git_workspace.local_kind,
-            root: self.project_root.clone(),
+            root: self.git_root().map(std::path::Path::to_owned),
             epoch: self.git_workspace.epoch,
             geometry: (self.width, self.height),
             metrics: (self.cell_width, self.cell_height, self.dpi.pixels(100)),
@@ -621,8 +621,7 @@ impl State {
             buttons.push((r, text.to_owned(), selected));
         }
         let title = self
-            .project_root
-            .as_ref()
+            .git_root()
             .and_then(|r| r.file_name())
             .and_then(|n| n.to_str())
             .map_or_else(|| "Repositorio Git".into(), |n| label(n, 80));
@@ -1287,8 +1286,8 @@ impl State {
             return Err("La ruta Git no es una ruta relativa válida".into());
         }
         let root = self
-            .project_root
-            .clone()
+            .git_root()
+            .map(std::path::Path::to_owned)
             .ok_or("Abre la carpeta del repositorio")?;
         self.workbench
             .open_project_file(
@@ -2035,7 +2034,7 @@ mod tests {
         s.git_workspace.hits = Some(frame.hits);
         s.git_workspace_click(target.left + 1, target.top + 1);
         assert!(!s.git_code.active);
-        assert!(s.status.contains("carpeta del repositorio"));
+        assert!(s.status.contains("archivo de un repositorio"));
         assert_eq!(
             before,
             s.workbench

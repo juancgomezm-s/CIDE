@@ -1,7 +1,7 @@
 //! Native OmniCore queries and the change journal for the active workspace.
 use super::{
     ffi::{Hdc, Hwnd, Rect},
-    omnicore_runtime::{self, Answer, Query, LEGACY_INPUT_BYTES},
+    omnicore_runtime::{self, Answer, Query, Turn, LEGACY_INPUT_BYTES},
     omnicore_transport::{Catalog, ChangeKind, ChangedFile, Model, Opened, Transport, Update},
     paint, shell, Action, State,
 };
@@ -12,10 +12,14 @@ use std::{
     rc::Rc,
 };
 
+mod block;
 mod chat;
+pub(super) mod completion;
 mod composer;
+pub(super) mod selection;
 mod sessions;
 use chat::{Attachment, Mode, Outgoing, Prompt};
+pub(super) use selection::edit_selection;
 use sessions::Sessions;
 
 const ROW: i32 = 26;
@@ -52,6 +56,9 @@ pub(super) struct Panel {
     chat_notice: Option<String>,
     sessions: Sessions,
     query: Option<PendingQuery>,
+    selection_query: Option<selection::Pending>,
+    completion: Option<completion::Completion>,
+    semantic_context: Option<jc_app::source_services::SourceController>,
     model_catalog: Option<Result<Rc<Vec<Model>>, String>>,
     catalog_request: Option<Catalog>,
     model: Option<Model>,
@@ -169,6 +176,8 @@ impl Panel {
         self.first = 0;
         self.focused = false;
         self.query = None;
+        self.selection_query = None;
+        self.completion = None;
         self.model_catalog = None;
         self.catalog_request = None;
         self.chat_notice = None;
@@ -331,6 +340,7 @@ impl State {
     }
 
     pub(super) fn reset_omnicore_project(&mut self) {
+        self.clear_omnicore_completion();
         self.omnicore.stop();
         self.omnicore.status = None;
         self.clear_omnicore_diff();
@@ -344,6 +354,7 @@ impl State {
         self.omnicore
             .finish_query(Err("La conexión con OmniCore cambió.".into()));
         let sessions = std::mem::take(&mut self.omnicore.sessions);
+        self.clear_omnicore_completion();
         self.omnicore.stop();
         self.omnicore.sessions = sessions;
         self.omnicore.executable = Some(executable);
@@ -396,7 +407,9 @@ impl State {
     }
 
     fn omnicore_accepts_open(&self) -> bool {
-        self.pointer_overlays_clear()
+        self.omnicore.selection_query.is_none()
+            && !self.omnicore_selection_review_visible()
+            && self.pointer_overlays_clear()
             && self.menu_stamp.is_none()
             && self.git_panel.is_none()
             && !self.zoom.open
@@ -413,7 +426,8 @@ impl State {
     }
 
     pub(super) fn poll_omnicore(&mut self) -> bool {
-        let mut changed = false;
+        let mut changed = self.poll_omnicore_selection();
+        changed |= self.poll_omnicore_completion();
         if let Some(models) = self
             .omnicore
             .catalog_request
@@ -638,7 +652,14 @@ impl State {
         }
         let panel = &self.omnicore;
         let question = panel.sessions.active.draft.trim();
-        if question.is_empty() || panel.query.is_some() {
+        if question.is_empty()
+            || panel.query.is_some()
+            || panel.selection_query.is_some()
+            || panel
+                .completion
+                .as_ref()
+                .is_some_and(completion::Completion::pending)
+        {
             return;
         }
         if !panel.can_compose() {
@@ -670,7 +691,7 @@ impl State {
             panel.model.clone(),
             outgoing.input,
             capacity,
-            edit,
+            if edit { Turn::Edit } else { Turn::Ask },
             self.wakeup.clone(),
         ) {
             Ok(query) => {
@@ -2274,5 +2295,9 @@ mod tests {
             );
             assert!(matches!(turn.answer, Some(Ok(ref answer)) if answer.complete));
         }
+        selection::tests::verify_provider_selection(&mut state);
+        completion::tests::verify_provider_completion(&mut state);
+        completion::tests::verify_provider_block(&mut state);
+        completion::tests::verify_provider_segments(&mut state);
     }
 }

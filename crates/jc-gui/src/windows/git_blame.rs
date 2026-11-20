@@ -42,7 +42,7 @@ impl State {
         let Some((start, path, first)) = self.git_workspace.blame_query.clone() else {
             return;
         };
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         self.git_workspace.blame_comparing = false;
@@ -89,7 +89,7 @@ impl State {
             self.git_workspace.invalidate();
             return;
         };
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         self.git_workspace.blame_viewport = (

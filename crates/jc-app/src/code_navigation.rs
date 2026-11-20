@@ -1,4 +1,4 @@
-//! Shared lexical navigation for C#, Java and PHP.
+//! Shared lexical navigation for C#, Java, PHP and Rust.
 use crate::{
     source_services::{FileResolution, SourceAction, SourceItem, SourceProviderDescriptor},
     Cancellation, TaskFailure, TaskItem, TaskOutput, TaskSnapshot,
@@ -7,18 +7,23 @@ use jc_languages::syntax::{scan, LexerState, SyntaxKind, SyntaxProfile};
 use jc_text::{decode_fragment, TextEncoding};
 use std::ops::Range;
 
+pub(crate) mod routines;
+pub(crate) mod rust;
+
 const CSHARP: u8 = 0;
 const JAVA: u8 = 1;
 const PHP: u8 = 2;
 
 pub(crate) fn descriptors() -> [SourceProviderDescriptor; 3] {
     let descriptor =
-        |id, language, symbols, dependencies, file_resolution| SourceProviderDescriptor {
+        |id, language, symbols, dependencies, routines, file_resolution| SourceProviderDescriptor {
             id,
             language,
             symbols: Some(symbols),
             references: Some(dependencies),
             calls: None,
+            callers: None,
+            routines: Some(routines),
             dependencies: Some(dependencies),
             file_resolution,
             completion: None,
@@ -31,6 +36,7 @@ pub(crate) fn descriptors() -> [SourceProviderDescriptor; 3] {
             "csharp",
             symbols::<CSHARP>,
             dependencies::<CSHARP>,
+            routines::analyze::<0>,
             FileResolution::ProjectImports,
         ),
         descriptor(
@@ -38,6 +44,7 @@ pub(crate) fn descriptors() -> [SourceProviderDescriptor; 3] {
             "java",
             symbols::<JAVA>,
             dependencies::<JAVA>,
+            routines::analyze::<1>,
             FileResolution::ProjectImports,
         ),
         descriptor(
@@ -45,6 +52,7 @@ pub(crate) fn descriptors() -> [SourceProviderDescriptor; 3] {
             "php",
             symbols::<PHP>,
             dependencies::<PHP>,
+            routines::analyze::<2>,
             FileResolution::DocumentRelative,
         ),
     ]
@@ -103,8 +111,8 @@ fn tokens(
                     SyntaxKind::String => Kind::String,
                     SyntaxKind::Comment | SyntaxKind::Preprocessor => return,
                     SyntaxKind::Operator if bytes.len() == 1 => Kind::Punct(bytes[0]),
-                    SyntaxKind::Plain | SyntaxKind::Keyword
-                        if bytes.first().is_some_and(|b| {
+                    kind if kind.is_word()
+                        && bytes.first().is_some_and(|b| {
                             b.is_ascii_alphabetic() || matches!(b, b'_' | b'$') || *b >= 128
                         }) =>
                     {
@@ -352,6 +360,7 @@ impl Source<'_> {
     ) -> Result<(), TaskFailure> {
         if let Some(name) = self.text(range.clone()) {
             out.push(TaskItem::Source(SourceItem {
+                value_type: None,
                 range,
                 label: format!("{kind}: {name}"),
                 action: SourceAction::Navigate,
@@ -428,6 +437,7 @@ impl Source<'_> {
             SourceAction::RelativeFile(path.into())
         };
         Some(SourceItem {
+            value_type: None,
             range: token.range.clone(),
             label: format!("Inclusión: {name}"),
             action,
@@ -490,6 +500,7 @@ impl Source<'_> {
                 ))
             };
         Some(SourceItem {
+            value_type: None,
             range: first..tokens[after - 1].range.end,
             label: format!("Importación: {label}"),
             action,

@@ -171,6 +171,12 @@ impl State {
         }
     }
     fn request_source(&mut self, mode: SourceMode) {
+        if matches!(
+            mode,
+            SourceMode::Completion | SourceMode::LspCompletion | SourceMode::CatalogCompletion
+        ) {
+            self.clear_omnicore_completion();
+        }
         let catalog = if matches!(mode, SourceMode::ReviewEdit(_)) {
             let Some(provider) = self
                 .progress_schema
@@ -685,6 +691,7 @@ impl State {
                                     columns,
                                 ),
                                 selected: index == *selected,
+                                relation: None,
                             })
                             .collect(),
                     },

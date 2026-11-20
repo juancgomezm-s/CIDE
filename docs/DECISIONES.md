@@ -30,7 +30,49 @@
 
 ## D08 — Integración con OmniCore
 
-**Diferida.** OmniCore conserva su núcleo C# y contratos propios. JC-IDE podrá intercambiar revisiones y cambios sin fusionar los dos historiales de undo.
+OmniCore conserva su núcleo C# y el registro de cambios de cada sesión.
+La GUI de CIDE muestra los cambios atribuidos a OmniCore en un panel
+derecho. El observador consulta la sesión actual del mismo proyecto y
+usa las vistas de antes y después que conserva OmniCore.
+
+Pulsa **OmniCore** en la barra inferior para abrir el panel. CIDE detecta
+el componente que acompaña al programa. **Chat** reúne la conversación y el
+compositor. Funciona incluso con el editor vacío. Ofrece **Consulta** y **Plan**,
+con hasta ocho turnos por conversación para las preguntas de seguimiento.
+**Mayús+Intro** agrega un renglón al mensaje.
+
+**Sesiones** es otra pestaña del mismo panel. Agrupa hasta ocho conversaciones
+bajo la carpeta activa durante la ejecución de CIDE. **Nueva** inicia otra
+conversación. Cambiar de conversación conserva su historial, su borrador y su
+adjunto. Una respuesta en curso vuelve a la conversación que la solicitó.
+
+**Adjuntar código** o **Ctrl+L** coloca la selección del editor en el próximo
+mensaje. Si el archivo activo es pequeño y la selección está vacía, adjunta
+el contenido actual, incluidos los cambios sin guardar. El adjunto se envía
+cuando pulsas **Enviar** y puede retirarse con **×**. Al cambiar de proyecto
+se inicia otra conversación. Si hay
+una carpeta de proyecto, OmniCore usa esa carpeta. En un editor vacío usa
+su espacio de trabajo en `%LOCALAPPDATA%\CIDE\OmniCore`. **Carpeta…**
+permite elegir otra. **Terminal**, en **Sesiones**, abre la terminal de OmniCore para
+configurar el modelo, editar archivos y gestionar las aprobaciones.
+
+**Cambios**, en **Sesiones**, muestra los archivos modificados del espacio activo. Los archivos nuevos
+se abren como documentos normales y los editados muestran el antes y el
+después. La lista permite revisar cambios anteriores manualmente. La
+comparación se cierra con **Esc** o **×**. CIDE conserva el búfer y su
+historial si la pestaña ya estaba abierta. Si falta la versión anterior,
+se abre el archivo y el panel muestra el motivo.
+
+El observador arranca en segundo plano con `host --stdio --observe`.
+La consulta requiere la capacidad `ask.stdin.v1` y usa el modo `ask`
+de OmniCore. El texto viaja por la entrada del proceso, con respuesta
+y cancelación en el panel. El siguiente bloque de integración requiere
+el canal autenticado de OmniCore para proyectar las solicitudes de
+aprobación y enlazar sus efectos con la vista de Código.
+
+**Ver → Preferencias de apariencia → Esquema · Izquierda** coloca el
+esquema debajo del Explorador. **Esquema · Derecha** lo devuelve a su
+posición inicial. La sesión guarda esa elección.
 
 ## D09 — Multilenguaje desde la base
 

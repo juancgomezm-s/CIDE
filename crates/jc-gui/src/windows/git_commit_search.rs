@@ -137,7 +137,7 @@ impl State {
         }
     }
     pub(super) fn run_git_commit_search(&mut self) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         let Some(s) = &mut self.git_workspace.commit_search else {
@@ -167,7 +167,7 @@ impl State {
         self.git_workspace.invalidate();
     }
     pub(super) fn next_git_commit_search(&mut self) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         if let Err(e) = self.git_revision.request_commit_search_next(root) {

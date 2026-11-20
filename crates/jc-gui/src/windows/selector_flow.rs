@@ -26,6 +26,7 @@ impl State {
         self.project_search.clear();
         self.project_panel = None;
         self.project_options = None;
+        self.git_repositories.reset(&root);
         self.project_root = Some(root);
         self.start_omnicore();
         self.schedule_git_status();
@@ -182,9 +183,9 @@ impl State {
         changed |= self.poll_paged_editor_maps();
         changed |= self.project_search.poll(&self.workbench, 2);
         changed |= self.apply_project_replace_step();
+        changed |= self.poll_explorer();
         changed |= self.poll_git();
         changed |= self.poll_progress_schema();
-        changed |= self.poll_explorer();
         changed |= self.poll_markdown();
         changed |= self.poll_omnicore();
         if self.project_search.take_recovery() {
@@ -202,10 +203,12 @@ impl State {
         use super::appearance::Choice;
         let context = self.context();
         let current = [
+            Choice::Theme(self.editor_theme),
             Choice::Ui(self.ui_text_size),
             Choice::Editor(self.editor_text_size),
             Choice::Minimap(self.minimap_visible),
             Choice::MinimapWidth(self.minimap_width),
+            Choice::OutlineLeft(self.outline.left),
         ];
         let selector = self.selector.as_mut()?;
         Some(match selector.kind() {

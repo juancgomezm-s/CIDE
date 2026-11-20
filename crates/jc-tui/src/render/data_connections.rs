@@ -42,8 +42,12 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
         ),
         Stage::Form(form) => (
             form.draft.engine().label(),
-            availability(form.draft.engine()),
-            "↑↓/Tab campo · F9 guardar · Esc cancelar",
+            form.draft.guidance(form.field),
+            if form.probe.is_some() {
+                "Esc cancelar prueba"
+            } else {
+                "↑↓/Tab campo · F8 probar conexión · F9 guardar · Esc cancelar"
+            },
         ),
     };
     panel(screen, x, y, width, height, title);
@@ -68,14 +72,23 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
                 rows = rows.saturating_sub(1);
             }
             let selected = dialog.profile_row();
-            let start = first_row(selected, rows, dialog.store.profiles().len() + 1);
-            let labels = std::iter::once("Nueva conexión…".to_owned()).chain(
-                dialog
-                    .store
-                    .profiles()
-                    .iter()
-                    .map(|draft| format!("{} · {}", draft.value(0), draft.engine().label())),
+            let start = first_row(
+                selected,
+                rows,
+                dialog.store.profiles().len() + 1 + usize::from(dialog.virtual_openedge()),
             );
+            let labels =
+                std::iter::once("Nueva conexión…".to_owned())
+                    .chain(
+                        dialog.store.profiles().iter().map(|draft| {
+                            format!("{} · {}", draft.value(0), draft.engine().label())
+                        }),
+                    )
+                    .chain(
+                        dialog
+                            .virtual_openedge()
+                            .then_some("OpenEdge · Perfil del proyecto".into()),
+                    );
             for (index, label) in labels.enumerate().skip(start).take(rows) {
                 screen.text_styled(
                     left,
@@ -97,11 +110,15 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
             }
         }
         Stage::Form(form) => {
-            let label = form.draft.fields()[form.field].label();
-            let extra = form.error.as_deref().or_else(|| {
-                (jc_text::grapheme::width(label) >= usize::from(label_width(columns)))
-                    .then_some(label)
-            });
+            let label = form.draft.label(form.field);
+            let extra = form
+                .error
+                .as_deref()
+                .or(form.test_result.as_deref())
+                .or_else(|| {
+                    (jc_text::grapheme::width(label) >= usize::from(label_width(columns)))
+                        .then_some(label)
+                });
             if let Some(text) = extra {
                 screen.text_styled(
                     left,
@@ -116,15 +133,14 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen) {
 }
 
 fn draw_form(screen: &mut Screen, form: &Form, x: u16, y: u16, columns: u16, rows: usize) {
-    let fields = form.draft.fields();
-    let start = first_row(form.field, rows, fields.len());
+    let start = first_row(form.field, rows, form.draft.len());
     let label_width = label_width(columns);
     let value_width = columns - label_width;
-    for (index, field) in fields.iter().enumerate().skip(start).take(rows) {
+    for index in (start..form.draft.len()).take(rows) {
         let y = y + (index - start) as u16;
         let active = index == form.field;
         let style = row_style(active);
-        screen.text_styled(x, y, &clip(field.label(), label_width - 1), style);
+        screen.text_styled(x, y, &clip(form.draft.label(index), label_width - 1), style);
         let value = form.draft.value(index);
         let value_column = x + label_width;
         if active {
@@ -171,7 +187,9 @@ fn first_row(selected: usize, rows: usize, total: usize) -> usize {
 
 fn availability(engine: Engine) -> &'static str {
     match engine {
-        Engine::OpenEdge => "Esquema ABL con .cide/progress.local.ini",
+        Engine::OpenEdge => {
+            "Configura el AVM y el .pf del proyecto o genera uno para una base local"
+        }
         Engine::PostgreSql | Engine::MySql if cfg!(windows) => "SQL de solo lectura mediante ODBC",
         Engine::PostgreSql | Engine::MySql => "Perfiles SQL · conexión disponible en Windows",
     }

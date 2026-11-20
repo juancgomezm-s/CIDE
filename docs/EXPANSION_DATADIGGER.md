@@ -20,15 +20,37 @@ libera la conexión cuando termina la llamada que esté en curso.
 
 ## Configuración de conexiones
 
-**Proyecto → Conexiones de datos** permite crear y editar perfiles en español.
-El formulario muestra los campos del motor seleccionado. OpenEdge usa el perfil
-Progress existente en `.cide/progress.local.ini`. Para abrir una conexión SQL
-guardada, elige **Consultar** en la GUI o pulsa F6 sobre el perfil en la TUI.
-El visor muestra el catálogo cuando la conexión responde y el diagnóstico si
-falla.
+**Proyecto → Conexiones de datos** abre los asistentes en español. Para
+**OpenEdge**, indica el AVM y las páginas de códigos. Selecciona un `.pf` de
+confianza o elige el archivo `.db` de una copia cerrada para que CIDE genere
+los parámetros de solo lectura. Guardar crea o actualiza el INI del proyecto.
 
-Si el proyecto tiene `.cide/progress.local.ini` y ya se guardó un perfil
-OpenEdge, el selector ofrece **Actualizar esquema ABL**. En la TUI se
+Para **PostgreSQL** y **MySQL**, CIDE propone los puertos 5432 y 3306,
+respectivamente, y verifica la identidad del servidor TLS por defecto.
+La GUI presenta las opciones TLS antes de los campos de servidor. En la TUI,
+F4 cambia el modo cuando el campo TLS tiene el foco. Si la conexión usa
+contraseña, agrega una credencial genérica en el Administrador de credenciales
+de Windows con un nombre como `cide/datadigger/inventario` y usa ese nombre
+en **Referencia de credencial**. El perfil guarda esa referencia. Para abrir
+una conexión guardada, elige **Consultar** en la GUI o F6 sobre el perfil
+en la TUI. El visor muestra el catálogo o el diagnóstico de conexión.
+
+Antes de guardar, usa **Probar conexión** en la GUI o **F8** en la TUI.
+La prueba usa los valores que están en el formulario. OpenEdge indica la
+versión del AVM y las bases conectadas. Para una copia local, usa un `.pf`
+temporal de solo lectura. PostgreSQL y MySQL usan el mismo controlador y
+los mismos ajustes que el visor, comprueban `SELECT 1` y cierran la sesión.
+Guardar sigue siendo una acción separada.
+
+En Windows x64 pasó la prueba previa al guardado con OpenEdge 11.7 y
+una copia de Sports2000. Un alias inexistente presentó el diagnóstico en
+español y el proyecto siguió sin perfil hasta pulsar Guardar. PostgreSQL
+17.11 con psqlODBC Unicode 17.00.0004 y MySQL 8.0.45 con Connector/ODBC 9.6
+respondieron en bases desechables mediante `127.0.0.1`. Las dos rechazaron
+una base inexistente. Esas conexiones locales se probaron con TLS deshabilitado.
+
+Si el proyecto tiene `.cide/progress.local.ini`, el selector ofrece
+**Actualizar esquema ABL**. En la TUI se
 ejecuta con F5 sobre ese perfil. La operación reutiliza el trabajo ABL del
 editor y publica el resultado en **Salida** o **Problemas**. En la TUI,
 F9 guarda el formulario y Esc vuelve a la lista sin guardar el borrador.
@@ -61,7 +83,7 @@ un filtro, **X** lo quita, **O** invierte el orden e **Intro** abre el detalle.
 
 | Motor | Configuración |
 | --- | --- |
-| OpenEdge | Referencia al perfil Progress existente. Reutiliza el AVM, el `.pf`, los aliases y las páginas de códigos. |
+| OpenEdge | AVM, páginas de códigos, versión y aliases. Admite un `.pf` existente o genera uno para una copia local. |
 | PostgreSQL | Host, puerto, base, usuario, esquemas incluidos y configuración TLS. |
 | MySQL | Host, puerto, base, usuario y configuración TLS. |
 

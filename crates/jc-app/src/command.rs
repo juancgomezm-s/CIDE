@@ -134,6 +134,9 @@ pub enum CommandId {
     SourceOpenToSide,
     EditInsertSnippet,
     EditSurroundWith,
+    EditSelectionWithAi,
+    EditCompleteWithAi,
+    EditCompleteBlockWithAi,
     SnippetNext,
     SnippetPrevious,
     SnippetAccept,
@@ -488,6 +491,21 @@ fn snippet_surround(ctx: &CommandContext) -> bool {
         && ctx.has_selection
         && !ctx.rectangular_selection
         && ctx.snippet_surround_available
+}
+fn ai_completion(ctx: &CommandContext) -> bool {
+    cfg!(windows)
+        && ctx.editor_input
+        && ctx.focus == PrimaryFocus::Editor
+        && ctx.has_document
+        && !ctx.has_selection
+        && !ctx.rectangular_selection
+}
+fn ai_selection(ctx: &CommandContext) -> bool {
+    cfg!(windows)
+        && ctx.editor_input
+        && ctx.focus == PrimaryFocus::Editor
+        && ctx.has_selection
+        && !ctx.rectangular_selection
 }
 fn snippet_active(ctx: &CommandContext) -> bool {
     ctx.snippet_active
@@ -910,6 +928,24 @@ pub fn default_registry() -> CommandRegistry {
             Edit,
             "Envolver selección",
             snippet_surround
+        ),
+        spec!(
+            EditSelectionWithAi,
+            Edit,
+            "Editar selección con IA…",
+            ai_selection
+        ),
+        spec!(
+            EditCompleteWithAi,
+            Edit,
+            "Completar con OmniCore",
+            ai_completion
+        ),
+        spec!(
+            EditCompleteBlockWithAi,
+            Edit,
+            "Completar bloque con OmniCore",
+            ai_completion
         ),
         spec!(SnippetNext, Edit, "Plantilla: paso siguiente", snippet_next),
         spec!(

@@ -25,6 +25,7 @@ pub enum Action {
     Compile,
     Run,
     Schema,
+    Probe,
     Xref,
 }
 
@@ -35,6 +36,7 @@ impl Action {
             Self::Compile => "compile",
             Self::Run => "run",
             Self::Schema => "schema",
+            Self::Probe => "probe",
             Self::Xref => "xref",
         }
     }
@@ -153,9 +155,11 @@ impl BridgeRequest {
     ) -> Result<Vec<u8>, BridgeError> {
         let output = path_line(&self.output_dir, "output_dir")?;
         let source = match (&self.action, &self.source) {
-            (Action::Schema, None) => "",
-            (Action::Schema, Some(_)) => {
-                return Err(config_error("schema requests must not specify source"))
+            (Action::Schema | Action::Probe, None) => "",
+            (Action::Schema | Action::Probe, Some(_)) => {
+                return Err(config_error(
+                    "schema/probe requests must not specify source",
+                ))
             }
             (_, Some(path)) => path_line(path, "source")?,
             (_, None) => return Err(config_error("check/compile/run requests require source")),

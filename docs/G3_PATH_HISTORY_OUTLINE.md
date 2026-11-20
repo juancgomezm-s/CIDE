@@ -69,12 +69,24 @@ No se navega desde el diff histórico al buffer editable como si fuera su revisi
 
 ## Esquema / outline
 
+En **Contenido**, la GUI reúne los símbolos y las dependencias del documento en
+un solo árbol con carpetas desplegables. Ordena las categorías y sus elementos
+alfabéticamente. Las inclusiones y los módulos con ruta se agrupan por carpeta.
+Cuando el proveedor ABL identifica la estructura, las rutinas conservan sus
+declaraciones locales, las clases contienen sus métodos y cada tabla temporal
+agrupa sus campos e índices. Los prototipos FORWARD tienen su propia carpeta.
+**Llama a** y **Llamado por** siguen disponibles en la cabecera.
+
+Haz clic en la carpeta o usa **←** y **→** para recorrer la jerarquía.
+**Intro** o doble clic en un resultado abre su ubicación y **Ctrl+Intro** la
+abre al lado. El árbol se actualiza con el documento y conserva las carpetas
+expandidas que siguen presentes.
+
 La GUI muestra una **×** explícita en la cabecera **ESQUEMA**. Ocultar cancela
-solo su controlador, retira candidatos/hits y devuelve el foco; una entrega tardía
+solo sus consultas, retira candidatos/hits y devuelve el foco; una entrega tardía
 no lo reactiva. El botón **Esquema** de la barra inferior lo muestra de nuevo.
 Se conserva la preferencia de visibilidad en los metadatos existentes, sin cambiar
-el formato de recuperación. Ayuda: doble clic o Intro abre; Ctrl permite apertura
-lateral. Las consultas léxicas existentes siguen siendo opcionales según lenguaje;
+el formato de recuperación. Las consultas léxicas existentes siguen siendo opcionales según lenguaje;
 no se añadieron proveedores semánticos, AVM, LSP ni funciones simuladas.
 
 ## Validación

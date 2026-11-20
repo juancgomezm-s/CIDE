@@ -77,10 +77,7 @@ impl ReferenceScan {
         let Some(token) = context.tokens.last() else {
             return false;
         };
-        if !matches!(
-            token.kind,
-            super::SyntaxKind::Plain | super::SyntaxKind::Keyword
-        ) {
+        if !token.kind.is_word() {
             return false;
         }
         let bytes = context.bytes(token);

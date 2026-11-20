@@ -1,6 +1,8 @@
 //! Bounded lexical navigation for JavaScript ES modules.
 use crate::{
-    source_services::{FileResolution, SourceAction, SourceItem, SourceProviderDescriptor},
+    source_services::{
+        FileResolution, SourceAction, SourceItem, SourceProviderDescriptor, ValueType,
+    },
     Cancellation, TaskFailure, TaskItem, TaskOutput, TaskSnapshot,
 };
 use jc_text::{decode_fragment, TextEncoding};
@@ -29,6 +31,12 @@ pub(crate) fn descriptor(typescript: bool) -> SourceProviderDescriptor {
             dependencies::<false>
         }),
         calls: None,
+        callers: None,
+        routines: Some(if typescript {
+            crate::code_navigation::routines::analyze::<5>
+        } else {
+            crate::code_navigation::routines::analyze::<4>
+        }),
         dependencies: Some(if typescript {
             dependencies::<true>
         } else {
@@ -300,6 +308,7 @@ fn dependency(bytes: &[u8], encoding: TextEncoding, token: Token) -> SourceItem 
         )
     };
     SourceItem {
+        value_type: None,
         range: token.range,
         label,
         action,
@@ -388,7 +397,11 @@ fn scan<const TYPESCRIPT: bool>(
                             .next()
                             .is_some_and(|ch| ch.is_alphabetic() || matches!(ch, '_' | '$'))
                     {
+                        let value_type = matches!(kind, "Variable" | "Constante")
+                            .then(|| variable_type(lookahead))
+                            .flatten();
                         emit(SourceItem {
+                            value_type,
                             range: name.range,
                             label: format!("{kind}: {}", value.text),
                             action: SourceAction::Navigate,
@@ -421,6 +434,7 @@ fn scan<const TYPESCRIPT: bool>(
                             continue;
                         }
                         emit(SourceItem {
+                            value_type: None,
                             range: token.range,
                             label: "Importación dinámica".into(),
                             action: SourceAction::Unresolved(
@@ -442,6 +456,81 @@ fn scan<const TYPESCRIPT: bool>(
         }
     }
     Ok(())
+}
+
+fn variable_type(mut lexer: Lexer<'_>) -> Option<ValueType> {
+    use ValueType::*;
+    let separator = lexer.next()?.kind;
+    if lexer.typescript && separator == Kind::Punct(b':') {
+        let annotation = lexer.next()?;
+        if declaration_boundary(&lexer, true) {
+            return Some(match &lexer.bytes[annotation.range] {
+                b"string" => Text,
+                b"number" => Decimal,
+                b"bigint" => Integer,
+                b"boolean" => Boolean,
+                b"Date" => DateTime,
+                _ => return None,
+            });
+        }
+        return (annotation.kind == Kind::Word
+            && lexer.next()?.kind == Kind::Punct(b'[')
+            && lexer.next()?.kind == Kind::Punct(b']')
+            && declaration_boundary(&lexer, true))
+        .then_some(Array);
+    }
+    if separator != Kind::Punct(b'=') {
+        return None;
+    }
+    let value = lexer.next()?;
+    let value_type = match value.kind {
+        Kind::String => Text,
+        Kind::Word if matches!(&lexer.bytes[value.range.clone()], b"true" | b"false") => Boolean,
+        Kind::Punct(b'[') if lexer.next()?.kind == Kind::Punct(b']') => Array,
+        Kind::Punct(b'{') if lexer.next()?.kind == Kind::Punct(b'}') => Object,
+        Kind::Word | Kind::Punct(b'-' | b'+' | b'.') => {
+            let tail = &lexer.bytes[value.range.start..];
+            let tail = &tail[..tail.len().min(129)];
+            let end = tail
+                .iter()
+                .position(|b| !b.is_ascii_alphanumeric() && !matches!(b, b'.' | b'-' | b'+'))
+                .unwrap_or(tail.len());
+            if end > 128 {
+                return None;
+            }
+            let literal = std::str::from_utf8(&tail[..end]).ok()?;
+            let number = literal.strip_prefix(['-', '+']).unwrap_or(literal);
+            let integer = number.strip_suffix('n').unwrap_or(number);
+            lexer.at = value.range.start + end;
+            if !integer.is_empty() && integer.bytes().all(|b| b.is_ascii_digit()) {
+                Integer
+            } else if number.starts_with(|ch: char| ch.is_ascii_digit() || ch == '.')
+                && number.parse::<f64>().is_ok()
+            {
+                Decimal
+            } else {
+                return None;
+            }
+        }
+        _ => return None,
+    };
+    declaration_boundary(&lexer, false).then_some(value_type)
+}
+
+fn declaration_boundary(lexer: &Lexer<'_>, allow_initializer: bool) -> bool {
+    let mut lookahead = lexer.clone();
+    let Some(next) = lookahead.next() else {
+        return lexer.bytes[lexer.at..].iter().all(u8::is_ascii_whitespace);
+    };
+    matches!(next.kind, Kind::Punct(b';' | b','))
+        || (allow_initializer && next.kind == Kind::Punct(b'='))
+        || (lexer.bytes[lexer.at..next.range.start]
+            .iter()
+            .any(|ch| matches!(ch, b'\r' | b'\n'))
+            && matches!(
+                &lexer.bytes[next.range],
+                b"const" | b"let" | b"var" | b"export" | b"import" | b"class" | b"function"
+            ))
 }
 
 fn require_target(lexer: &mut Lexer<'_>) -> Option<Token> {
@@ -537,5 +626,44 @@ function load() { import('./dynamic.js'); }
         assert_eq!(results.len(), 2);
         assert_eq!(&source[results[0].range.clone()], b"read");
         assert_eq!(&source[results[1].range.clone()], b"Item");
+    }
+
+    #[test]
+    fn javascript_value_type_uses_literals_and_typescript_annotations() {
+        let source = br#"
+const titulo: string = leer();
+const total = -42;
+const precio = 1.5;
+const habilitado = true;
+let nombres: string[] = cargar();
+const sinTipo = 1 + " texto";
+"#;
+        let mut types = Vec::new();
+        scan::<true>(
+            source,
+            TextEncoding::Utf8,
+            &Cancellation::new(Duration::from_secs(5)),
+            true,
+            |item| {
+                types.push(item.value_type);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            types,
+            [
+                Some(ValueType::Text),
+                Some(ValueType::Integer),
+                Some(ValueType::Decimal),
+                Some(ValueType::Boolean),
+                Some(ValueType::Array),
+                None,
+            ]
+        );
+        assert_eq!(
+            scan_js(b"const texto = 'hola';", true)[0].value_type,
+            Some(ValueType::Text)
+        );
     }
 }

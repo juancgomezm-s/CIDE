@@ -99,10 +99,16 @@ fn read_workspace(
     root: &Path,
     model: Option<&Model>,
     context_supported: bool,
+    turn: Turn,
 ) -> Result<PathBuf, String> {
     // The companion can resume an existing ACT Run. Consultations always use
     // their own PLAN workspace, separate from the project and its edit journal.
     let mut key = Sha256::new();
+    match turn {
+        Turn::Selection => key.update(b"CIDE selection preview\0"),
+        Turn::Completion => key.update(b"CIDE inline completion\0"),
+        _ => {}
+    }
     if context_supported {
         // Old runs can retain objectives admitted under the larger estimate.
         key.update(b"CIDE chat reserved context\0");
@@ -145,6 +151,14 @@ pub(super) struct Answer {
     pub complete: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Turn {
+    Ask,
+    Edit,
+    Selection,
+    Completion,
+}
+
 pub(super) struct Query {
     cancelled: Arc<AtomicBool>,
     result: Receiver<Result<Answer, String>>,
@@ -157,7 +171,7 @@ impl Query {
         model: Option<Model>,
         question: String,
         capacity: usize,
-        edit: bool,
+        turn: Turn,
         wake: Wakeup,
     ) -> Result<Self, String> {
         let (send, result) = mpsc::sync_channel(1);
@@ -172,7 +186,7 @@ impl Query {
                     model.as_ref(),
                     question,
                     capacity,
-                    edit,
+                    turn,
                     &running,
                 );
                 if send.send(answer).is_ok() {
@@ -214,13 +228,15 @@ fn run_turn(
     model: Option<&Model>,
     question: String,
     capacity: usize,
-    edit: bool,
+    turn: Turn,
     cancelled: &AtomicBool,
 ) -> Result<Answer, String> {
     if cancelled.load(Ordering::Relaxed) || question.len() > capacity || question.trim().is_empty()
     {
         return Err("Consulta vacía, demasiado larga o cancelada.".into());
     }
+    let edit = turn == Turn::Edit;
+    let isolated = matches!(turn, Turn::Selection | Turn::Completion);
     let compatible = context_bridge(executable);
     let framed = edit || compatible.is_some();
     if compatible.is_none() && question.len() > LEGACY_INPUT_BYTES {
@@ -229,10 +245,25 @@ fn run_turn(
     let turn_root = if edit {
         root.to_path_buf()
     } else {
-        read_workspace(root, model, compatible.is_some())?
+        read_workspace(root, model, compatible.is_some(), turn)?
     };
+    // Editor proposals must not resume a previous request's PLAN working state.
+    // Keep the private directory alive until the child has exited.
+    let scratch = if isolated {
+        Some(
+            tempfile::Builder::new()
+                .prefix("editor-")
+                .tempdir_in(&turn_root)
+                .map_err(|error| format!("No se pudo preparar la consulta del editor: {error}"))?,
+        )
+    } else {
+        None
+    };
+    let turn_root = scratch
+        .as_ref()
+        .map_or(turn_root.as_path(), tempfile::TempDir::path);
     let mut process = if let Some(bridge) = &compatible {
-        let mut process = command(bridge, &turn_root);
+        let mut process = command(bridge, turn_root);
         process
             .arg(if edit { "edit" } else { "ask" })
             .arg(capacity.to_string());
@@ -240,11 +271,11 @@ fn run_turn(
     } else if edit {
         let bridge = edit_bridge(executable)
             .ok_or("Esta instalación de OmniCore ya no tiene habilitada la edición.")?;
-        let mut process = command(&bridge, &turn_root);
+        let mut process = command(&bridge, turn_root);
         process.arg("edit");
         process
     } else {
-        let mut process = command(executable, &turn_root);
+        let mut process = command(executable, turn_root);
         process.args(["ask", "--stdin"]);
         process
     };
@@ -307,7 +338,8 @@ fn run_turn(
                 }
             })
             .map_err(|error| error.to_string())?;
-        let deadline = Instant::now() + Duration::from_secs(180);
+        let timeout = if turn == Turn::Completion { 30 } else { 180 };
+        let deadline = Instant::now() + Duration::from_secs(timeout);
         let mut cancel_send = Some(cancel_send);
         let mut output = None;
         loop {
@@ -335,6 +367,12 @@ fn run_turn(
             }
             let bytes = output.as_ref().unwrap();
             if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+                if isolated && (bytes.len() > ANSWER_BYTES || std::str::from_utf8(bytes).is_err()) {
+                    return Err(
+                        "La propuesta de OmniCore está incompleta o contiene texto inválido."
+                            .into(),
+                    );
+                }
                 let output = String::from_utf8_lossy(&bytes[..bytes.len().min(ANSWER_BYTES)]);
                 let edit_report =
                     edit && output.lines().any(|line| line.starts_with("[herramienta]"));

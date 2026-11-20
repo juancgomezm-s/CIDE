@@ -13,7 +13,9 @@ use std::{
 pub const SOURCE_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0001);
 mod incoming;
 pub(crate) use incoming::IncomingScan;
+const SEMANTIC_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0004);
 const OUTLINE_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0002);
+const OUTLINE_DEPENDENCIES_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0003);
 const SNAPSHOT: usize = 2 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceMode {
@@ -118,11 +120,17 @@ pub enum SourceAction {
         extent: Range<usize>,
     },
     RelativeFile(String),
+    /// Static dependency with an optional lexical caller, consumed by the reverse scan.
+    IncomingReference {
+        relative: String,
+        routine: Option<CallerRoutine>,
+    },
     Unresolved(String),
     Replace(String),
     ProjectRename(ProjectRenameEdit, String),
     ReviewLine,
     LspCompletion(Vec<crate::TextReplacement>),
+    SemanticSymbol(Option<String>),
     Caller {
         path: PathBuf,
         offset: usize,
@@ -138,12 +146,43 @@ pub enum SourceAction {
     },
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallerRoutine {
+    pub declaration: usize,
+    pub name: String,
+}
+/// Value categories provided by a language service for a declared symbol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueType {
+    Text,
+    Integer,
+    Decimal,
+    Boolean,
+    Date,
+    DateTime,
+    Binary,
+    Object,
+    Array,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceItem {
     pub range: Range<usize>,
     pub label: String,
     pub action: SourceAction,
+    pub value_type: Option<ValueType>,
 }
 impl SourceItem {
+    pub fn relation_mark(&self, mode: SourceMode) -> Option<RelationMark> {
+        match mode {
+            SourceMode::Calls if matches!(self.action, SourceAction::Unresolved(_)) => {
+                Some(RelationMark::Unresolved)
+            }
+            SourceMode::Calls => Some(RelationMark::Outgoing),
+            SourceMode::Incoming => Some(RelationMark::Incoming),
+            _ => None,
+        }
+    }
+
     pub(crate) fn allocation(&self) -> usize {
         std::mem::size_of::<Self>()
             + self.label.capacity()
@@ -155,6 +194,7 @@ impl SourceItem {
                 SourceAction::ProjectRename(edit, name) => {
                     edit.path.capacity() + edit.before.capacity() + name.capacity()
                 }
+                SourceAction::SemanticSymbol(detail) => detail.as_ref().map_or(0, String::capacity),
                 SourceAction::LspCompletion(edits) => {
                     edits.capacity() * std::mem::size_of::<crate::TextReplacement>()
                         + edits.iter().map(|edit| edit.text.capacity()).sum::<usize>()
@@ -162,6 +202,12 @@ impl SourceItem {
                 SourceAction::RelativeFile(s)
                 | SourceAction::Unresolved(s)
                 | SourceAction::Replace(s) => s.capacity(),
+                SourceAction::IncomingReference { relative, routine } => {
+                    relative.capacity()
+                        + routine
+                            .as_ref()
+                            .map_or(0, |routine| routine.name.capacity())
+                }
                 SourceAction::Caller { path, relative, .. } => {
                     path.capacity() + relative.capacity()
                 }
@@ -179,6 +225,7 @@ impl SourceItem {
                     SourceMode::Symbols
                     | SourceMode::References
                     | SourceMode::Calls
+                    | SourceMode::Incoming
                     | SourceMode::Dependencies
                     | SourceMode::Definition
                     | SourceMode::CatalogDefinition
@@ -226,6 +273,31 @@ impl SourceItem {
             }
     }
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RelationMark {
+    Outgoing,
+    Incoming,
+    Unresolved,
+}
+
+impl RelationMark {
+    pub const fn icon(self) -> &'static str {
+        match self {
+            Self::Outgoing => "↗",
+            Self::Incoming => "↙",
+            Self::Unresolved => "?",
+        }
+    }
+
+    pub const fn color(self) -> crate::syntax_theme::Rgb {
+        let (r, g, b) = match self {
+            Self::Outgoing => (150, 216, 172),
+            Self::Incoming => (140, 202, 228),
+            Self::Unresolved => (242, 190, 118),
+        };
+        crate::syntax_theme::Rgb { r, g, b }
+    }
+}
 #[derive(Clone, Copy)]
 pub enum FileResolution {
     ProjectCandidates,
@@ -237,6 +309,16 @@ pub enum FileResolution {
 
 pub type RenameProvider =
     fn(&[u8], jc_text::TextEncoding, usize, &str) -> Result<Vec<Range<usize>>, String>;
+
+/// Returns false when the cursor is outside a routine and file navigation can
+/// take over. Results are tied to the editor snapshot and cursor.
+pub type RoutineProvider = fn(
+    &TaskSnapshot,
+    &Cancellation,
+    usize,
+    SourceMode,
+    &mut TaskOutput,
+) -> Result<bool, TaskFailure>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectRenameEdit {
@@ -302,6 +384,7 @@ pub(crate) struct ProjectRenameJob {
 pub enum CatalogQuery {
     Symbols,
     Complete,
+    SemanticContext,
     Definition { cursor: usize },
     References { cursor: usize },
     Xref { cursor: usize },
@@ -364,6 +447,7 @@ pub fn publish_review(
         for (sign, text) in [('-', decoded.text.as_str()), ('+', edit.text.as_str())] {
             let mut push_line = |chunk: &str| {
                 output.push(TaskItem::Source(SourceItem {
+                    value_type: None,
                     range: edit.range.start..edit.range.start,
                     label: format!("{sign} {chunk}"),
                     action: SourceAction::ReviewLine,
@@ -388,6 +472,7 @@ pub fn publish_review(
             }
         }
         output.push(TaskItem::Source(SourceItem {
+            value_type: None,
             range: edit.range,
             label: format!("Línea {line} · cambio completo arriba"),
             action: SourceAction::Replace(edit.text),
@@ -398,6 +483,19 @@ pub fn publish_review(
 
 pub(crate) enum SourceJob {
     Plain(TaskProvider),
+    RustSymbols(TaskProvider),
+    Routine {
+        provider: RoutineProvider,
+        mode: SourceMode,
+        cursor: usize,
+        fallback: Option<Box<SourceJob>>,
+    },
+    Calls {
+        provider: TaskProvider,
+        resolution: FileResolution,
+        root: Option<PathBuf>,
+        source: PathBuf,
+    },
     Catalog(Arc<dyn CatalogSource>, CatalogQuery),
     Lsp(crate::lsp::Work),
     Incoming(IncomingScan),
@@ -409,9 +507,65 @@ pub(crate) enum SourceJob {
     },
 }
 
+fn publish_calls(
+    mut found: TaskOutput,
+    output: &mut TaskOutput,
+    cancel: &Cancellation,
+    resolution: FileResolution,
+    root: Option<&Path>,
+    source: &Path,
+) -> Result<(), TaskFailure> {
+    let root = root.and_then(|path| path.canonicalize().ok());
+    let ordered = matches!(resolution, FileResolution::OrderedProjectPath);
+    let propath = root.as_deref().filter(|_| ordered).map(load_propath);
+    let mut targets = std::collections::HashSet::new();
+    for item in found.take_items() {
+        if cancel.is_cancelled() {
+            return Err(TaskFailure::Cancelled);
+        }
+        if let (
+            Some(root),
+            TaskItem::Source(SourceItem {
+                action: SourceAction::RelativeFile(relative),
+                ..
+            }),
+        ) = (root.as_deref(), &item)
+        {
+            let paths = match &propath {
+                Some(Ok(paths)) => resolve_ordered(root, source, relative, paths.as_deref(), false),
+                Some(Err(_)) => Ok(Vec::new()),
+                None => resolve_from(root, source, relative, resolution, SourceMode::Calls),
+            };
+            let canonical = paths.ok().and_then(|paths| match paths.as_slice() {
+                [path] => path.canonicalize().ok(),
+                _ => None,
+            });
+            if canonical.is_some_and(|path| !targets.insert(path)) {
+                continue;
+            }
+        }
+        output.push(item)?;
+    }
+    Ok(())
+}
+
 impl SourceJob {
+    pub(crate) fn output_limits(&self, mut limits: crate::JobLimits) -> crate::JobLimits {
+        if matches!(self, Self::RustSymbols(_)) {
+            // Ordinary .rs files can contain hundreds of fields and associated items.
+            // Only this provider opts in to a larger, still bounded result set.
+            limits.result_items = limits.result_items.max(512);
+            limits.result_bytes = limits.result_bytes.max(256 * 1024);
+        }
+        limits
+    }
+
     pub(crate) fn timeout(&self, default: std::time::Duration) -> std::time::Duration {
         match self {
+            Self::Routine {
+                fallback: Some(fallback),
+                ..
+            } => fallback.timeout(default),
             Self::Lsp(_) => crate::lsp::TIMEOUT,
             Self::Catalog(_, CatalogQuery::Xref { .. }) => {
                 default.max(std::time::Duration::from_secs(45))
@@ -433,7 +587,54 @@ impl SourceJob {
         output: &mut TaskOutput,
     ) -> Result<(), TaskFailure> {
         match self {
-            Self::Plain(provider) => provider(snapshot, cancel, output),
+            Self::Plain(provider) | Self::RustSymbols(provider) => {
+                provider(snapshot, cancel, output)
+            }
+            Self::Routine {
+                provider,
+                mode,
+                cursor,
+                fallback,
+            } => {
+                if let Some(Self::Calls {
+                    resolution,
+                    root,
+                    source,
+                    ..
+                }) = fallback.as_deref()
+                {
+                    let mut scoped = TaskOutput::for_source_scan(snapshot);
+                    if provider(snapshot, cancel, *cursor, *mode, &mut scoped)? {
+                        return publish_calls(
+                            scoped,
+                            output,
+                            cancel,
+                            *resolution,
+                            root.as_deref(),
+                            source,
+                        );
+                    }
+                } else if provider(snapshot, cancel, *cursor, *mode, output)? {
+                    return Ok(());
+                }
+                if let Some(fallback) = fallback {
+                    fallback.run(snapshot, cancel, output)
+                } else {
+                    output.push(TaskItem::Message(
+                        "Coloca el cursor dentro de una rutina".into(),
+                    ))
+                }
+            }
+            Self::Calls {
+                provider,
+                resolution,
+                root,
+                source,
+            } => {
+                let mut found = TaskOutput::for_source_scan(snapshot);
+                provider(snapshot, cancel, &mut found)?;
+                publish_calls(found, output, cancel, *resolution, root.as_deref(), source)
+            }
             Self::Catalog(provider, query) => provider.query(*query, snapshot, cancel, output),
             Self::Lsp(work) => work.run(snapshot, cancel, output),
             Self::Incoming(scan) => scan.run(snapshot.stamp, cancel, output),
@@ -476,6 +677,7 @@ impl SourceJob {
                                 );
                                 let previous = display_ui_label(&edit.before, 32);
                                 output.push(TaskItem::Source(SourceItem {
+                                    value_type: None,
                                     range: 0..0,
                                     label: format!("{display}:{} · {previous} → {name}", edit.line),
                                     action: SourceAction::ProjectRename(edit, name.clone()),
@@ -526,6 +728,7 @@ impl SourceJob {
                     previous = range.end;
                     let column = range.start - line_start + 1;
                     output.push(TaskItem::Source(SourceItem {
+                        value_type: None,
                         range,
                         label: format!("Línea {line}, byte {column}  {} → {name}", old.text),
                         action: SourceAction::Replace(name.clone()),
@@ -544,6 +747,8 @@ pub struct SourceProviderDescriptor {
     pub symbols: Option<TaskProvider>,
     pub references: Option<TaskProvider>,
     pub calls: Option<TaskProvider>,
+    pub callers: Option<TaskProvider>,
+    pub routines: Option<RoutineProvider>,
     pub dependencies: Option<TaskProvider>,
     pub file_resolution: FileResolution,
     pub completion: Option<TaskProvider>,
@@ -556,7 +761,7 @@ impl SourceProviderDescriptor {
             SourceMode::Symbols => self.symbols,
             SourceMode::References => self.references,
             SourceMode::Calls => self.calls,
-            SourceMode::Incoming => self.dependencies.and(self.references),
+            SourceMode::Incoming => self.callers.or(self.dependencies.and(self.references)),
             SourceMode::Dependencies => self.dependencies,
             SourceMode::Completion => self.completion,
             SourceMode::Rename
@@ -576,6 +781,8 @@ impl SourceProviderDescriptor {
             self.rename.is_some()
         } else {
             self.provider(mode).is_some()
+                || matches!(mode, SourceMode::Calls | SourceMode::Incoming)
+                    && self.routines.is_some()
         }
     }
 }
@@ -589,12 +796,15 @@ impl Default for SourceRegistry {
                 crate::document_links::descriptor(),
                 crate::javascript_navigation::descriptor(false),
                 crate::javascript_navigation::descriptor(true),
+                crate::code_navigation::rust::descriptor(),
                 SourceProviderDescriptor {
                     id: "core.words",
                     language: "*",
                     symbols: None,
                     references: None,
                     calls: None,
+                    callers: None,
+                    routines: None,
                     dependencies: None,
                     file_resolution: FileResolution::ProjectCandidates,
                     completion: Some(local_words),
@@ -624,11 +834,15 @@ impl SourceRegistry {
     }
 
     pub fn supports_incoming(&self, app: &Workbench, root: Option<&Path>) -> bool {
-        root.is_some()
-            && app
-                .active_document()
-                .is_some_and(|doc| !doc.session.is_new() && doc.session.encoding().is_some())
-            && self.supports_document(app, SourceMode::Incoming)
+        app.active_document().is_some_and(|doc| {
+            let language = jc_languages::detect(&doc.session.path().to_string_lossy()).id;
+            doc.session.encoding().is_some()
+                && self
+                    .resolve(language, SourceMode::Incoming)
+                    .is_some_and(|provider| {
+                        provider.routines.is_some() || root.is_some() && !doc.session.is_new()
+                    })
+        })
     }
     pub fn supports_document(&self, app: &Workbench, mode: SourceMode) -> bool {
         app.active_document().is_some_and(|document| {
@@ -820,6 +1034,13 @@ enum SourceInput {
 impl Request {
     fn current(&self, app: &Workbench, root: Option<&Path>) -> bool {
         self.origin.current(app, root, self.mode)
+            && (!(matches!(self.mode, SourceMode::Calls | SourceMode::Incoming)
+                && self
+                    .provider
+                    .is_some_and(|provider| provider.routines.is_some()))
+                || app
+                    .active_editor()
+                    .is_some_and(|editor| editor.cursor == self.origin.cursor))
             && match &self.input {
                 SourceInput::Catalog(provider) => provider.is_current(),
                 _ => true,
@@ -842,7 +1063,8 @@ pub struct SourceController {
     state: SourceState,
     message: String,
     mode: Option<SourceMode>,
-    outline: bool,
+    outline_key: Option<JobKey>,
+    semantic: bool,
     outline_attempt: Option<Origin>,
     lsp: crate::lsp::Client,
     project_rename_applied: bool,
@@ -851,6 +1073,7 @@ pub struct SourceRow {
     pub index: usize,
     pub label: String,
     pub selected: bool,
+    pub relation: Option<RelationMark>,
 }
 pub struct SourcePresentation {
     pub title: String,
@@ -911,25 +1134,51 @@ pub fn display_ui_label(text: &str, columns: usize) -> String {
 impl SourceController {
     pub fn outline() -> Self {
         Self {
-            outline: true,
+            outline_key: Some(OUTLINE_JOB_KEY),
+            ..Self::default()
+        }
+    }
+    pub fn outline_dependencies() -> Self {
+        Self {
+            outline_key: Some(OUTLINE_DEPENDENCIES_JOB_KEY),
+            ..Self::default()
+        }
+    }
+    /// Independent read-only completion metadata, with the editor's existing LSP session.
+    pub fn semantic_context(&self) -> Self {
+        Self {
+            semantic: true,
+            lsp: self.lsp.clone(),
             ..Self::default()
         }
     }
     fn job_key(&self) -> JobKey {
-        if self.outline {
-            OUTLINE_JOB_KEY
+        if self.semantic {
+            SEMANTIC_JOB_KEY
         } else {
-            SOURCE_JOB_KEY
+            self.outline_key.unwrap_or(SOURCE_JOB_KEY)
         }
     }
     /// A failed attempt is remembered until its source context changes.
     /// This checks only metadata; actual capture belongs in the task path.
     pub fn needs_outline_refresh(&self, app: &Workbench, root: Option<&Path>) -> bool {
-        self.outline
-            && !self
-                .outline_attempt
-                .as_ref()
-                .is_some_and(|origin| origin.current(app, root, SourceMode::Symbols))
+        self.needs_outline_refresh_for(app, root, SourceMode::Symbols)
+    }
+
+    pub fn needs_outline_refresh_for(
+        &self,
+        app: &Workbench,
+        root: Option<&Path>,
+        mode: SourceMode,
+    ) -> bool {
+        self.outline_key.is_some()
+            && !self.outline_attempt.as_ref().is_some_and(|origin| {
+                origin.current(app, root, mode)
+                    && (!matches!(mode, SourceMode::Calls | SourceMode::Incoming)
+                        || app
+                            .active_editor()
+                            .is_some_and(|editor| editor.cursor == origin.cursor))
+            })
             && app.active_document().is_some_and(|document| {
                 document.session.encoding().is_some()
                     && document.session.path().as_os_str().len() <= 4096
@@ -1015,7 +1264,7 @@ impl SourceController {
                     Some(SourceMode::Symbols) => "Símbolos (léxicos)",
                     Some(SourceMode::References) => "Referencias (léxicas)",
                     Some(SourceMode::Calls) => "Llama a",
-                    Some(SourceMode::Incoming) => "Llamado por (fuentes en disco)",
+                    Some(SourceMode::Incoming) => "Llamado por",
                     Some(SourceMode::Rename) => "Vista previa del renombrado",
                     Some(SourceMode::Dependencies) => "Dependencias",
                     Some(mode) if mode.is_lsp() || mode.is_catalog() => mode.label(),
@@ -1030,10 +1279,17 @@ impl SourceController {
                 .enumerate()
                 .skip(first)
                 .take(count)
-                .map(|(index, item)| SourceRow {
-                    index,
-                    label: display_ui_label(&item.label, columns),
-                    selected: index == self.selected,
+                .map(|(index, item)| {
+                    let relation = self.mode.and_then(|mode| item.relation_mark(mode));
+                    SourceRow {
+                        index,
+                        label: display_ui_label(
+                            &item.label,
+                            columns.saturating_sub(2 * usize::from(relation.is_some())),
+                        ),
+                        selected: index == self.selected,
+                        relation,
+                    }
                 })
                 .collect(),
         }
@@ -1202,10 +1458,18 @@ impl SourceController {
         root: Option<&Path>,
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
+        if self.semantic
+            && !matches!(
+                mode,
+                SourceMode::LspCompletion | SourceMode::CatalogCompletion
+            )
+        {
+            return Err("El contexto semántico requiere un proveedor de completado".into());
+        }
         if mode == SourceMode::Rename && !matches!(input, SourceInput::Rename(_)) {
             return Err("Escribe primero el nombre nuevo".into());
         }
-        if self.outline
+        if self.outline_key.is_some()
             && (matches!(mode, SourceMode::Completion | SourceMode::Rename)
                 || mode.is_catalog()
                 || mode.is_lsp())
@@ -1231,17 +1495,12 @@ impl SourceController {
             return Err("Coloca el cursor en el texto, sin selección".into());
         }
         let origin = Origin::capture(app, root)?;
-        if mode == SourceMode::Incoming
-            && (root.is_none()
-                || app
-                    .active_document()
-                    .is_some_and(|doc| doc.session.is_new()))
-        {
+        if mode == SourceMode::Incoming && !registry.supports_incoming(app, root) {
             return Err(
                 "Llamado por requiere un archivo guardado y una carpeta de proyecto".into(),
             );
         }
-        if self.outline {
+        if self.outline_key.is_some() {
             self.outline_attempt = Some(origin.clone());
         }
         let provider = if let SourceInput::Catalog(provider) = &input {
@@ -1310,7 +1569,10 @@ impl SourceController {
         let Some(r) = self.pending.as_ref() else {
             return changed;
         };
-        let len = if r.mode == SourceMode::Incoming {
+        let len = if r.mode == SourceMode::Incoming
+            && r.provider
+                .is_none_or(|provider| provider.routines.is_none())
+        {
             0
         } else if matches!(
             r.mode,
@@ -1329,7 +1591,11 @@ impl SourceController {
             );
         }
         let mode = r.mode;
-        let lsp = mode.lsp_query();
+        let lsp = if self.semantic && mode == SourceMode::LspCompletion {
+            Some(crate::lsp::Query::SemanticContext)
+        } else {
+            mode.lsp_query()
+        };
         let work =
             if let SourceInput::Catalog(provider) = &r.input {
                 let cursor = r.origin.cursor;
@@ -1339,6 +1605,7 @@ impl SourceController {
                     SourceMode::CatalogReferences => CatalogQuery::References { cursor },
                     SourceMode::CatalogXref => CatalogQuery::Xref { cursor },
                     SourceMode::ReviewEdit(action) => CatalogQuery::ReviewEdit { action, cursor },
+                    SourceMode::CatalogCompletion if self.semantic => CatalogQuery::SemanticContext,
                     _ => CatalogQuery::Complete,
                 };
                 SourceJob::Catalog(provider.clone(), query)
@@ -1354,11 +1621,42 @@ impl SourceController {
             } else {
                 let provider = r.provider.expect("admitted source provider");
                 match r.mode {
-                    SourceMode::Incoming => SourceJob::Incoming(IncomingScan {
-                        root: r.origin.root.clone().unwrap(),
-                        target: r.origin.path.clone(),
-                        provider,
-                    }),
+                    SourceMode::Calls | SourceMode::Incoming => {
+                        let fallback = if mode == SourceMode::Calls {
+                            provider.calls.map(|calls| SourceJob::Calls {
+                                provider: calls,
+                                resolution: provider.file_resolution,
+                                root: reference_root(root, r).ok().map(Path::to_owned),
+                                source: r.origin.path.clone(),
+                            })
+                        } else {
+                            r.origin
+                                .root
+                                .as_ref()
+                                .filter(|_| {
+                                    app.active_document()
+                                        .is_some_and(|doc| !doc.session.is_new())
+                                })
+                                .filter(|_| provider.provider(mode).is_some())
+                                .map(|root| {
+                                    SourceJob::Incoming(IncomingScan {
+                                        root: root.clone(),
+                                        target: r.origin.path.clone(),
+                                        provider,
+                                    })
+                                })
+                        };
+                        if let Some(routines) = provider.routines {
+                            SourceJob::Routine {
+                                provider: routines,
+                                mode,
+                                cursor: r.origin.cursor,
+                                fallback: fallback.map(Box::new),
+                            }
+                        } else {
+                            fallback.expect("admitted relationship provider")
+                        }
+                    }
                     SourceMode::Rename => SourceJob::Rename {
                         provider: provider.rename.unwrap(),
                         cursor: r.origin.cursor,
@@ -1378,6 +1676,9 @@ impl SourceController {
                             _ => None,
                         },
                     },
+                    SourceMode::Symbols if provider.id == "core.rust" => {
+                        SourceJob::RustSymbols(provider.symbols.unwrap())
+                    }
                     mode => SourceJob::Plain(provider.provider(mode).unwrap()),
                 }
             };
@@ -1518,6 +1819,10 @@ impl SourceController {
                 }
             }
             if let TaskItem::Message(message) = &item {
+                if matches!(request.mode, SourceMode::Calls | SourceMode::Incoming) {
+                    notice = Some(display_ui_label(message, 128));
+                    continue;
+                }
                 if matches!(request.mode, SourceMode::Rename | SourceMode::ReviewEdit(_)) {
                     self.status(SourceState::Failed, message.clone());
                     return true;
@@ -1530,7 +1835,16 @@ impl SourceController {
                 );
                 return true;
             };
-            if !item.valid_for(request.mode)
+            let valid = if self.semantic {
+                item.label.len() <= 512
+                    && !item.label.chars().any(char::is_control)
+                    && item.range == (request.origin.cursor..request.origin.cursor)
+                    && matches!(&item.action, SourceAction::SemanticSymbol(detail)
+                        if detail.as_ref().is_none_or(|d| d.len() <= 512 && !d.chars().any(char::is_control)))
+            } else {
+                item.valid_for(request.mode)
+            };
+            if !valid
                 || matches!(&item.action, SourceAction::ScopedSymbol { extent }
                     if extent.end > source_len)
                 || request.mode == SourceMode::LspCompletion
@@ -1645,6 +1959,14 @@ impl SourceController {
                 message.push_str(&format!(" · {notice}"));
             }
             message
+        } else if matches!(request.mode, SourceMode::Calls | SourceMode::Incoming)
+            && notice.is_some()
+        {
+            format!(
+                "{} · {} relaciones",
+                notice.unwrap_or_default(),
+                self.items.len()
+            )
         } else if let Some(provider) = request.provider {
             format!(
                 "{}: {} resultados léxicos (sin verificación del compilador)",
@@ -1915,6 +2237,9 @@ impl SourceController {
             SourceAction::Unresolved(reason) => {
                 Err(format!("Referencia léxica sin resolver: {reason}"))
             }
+            SourceAction::IncomingReference { .. } => {
+                Err("Referencia de llamada sin procesar".into())
+            }
             SourceAction::Navigate | SourceAction::ScopedSymbol { .. } => {
                 let tab = app
                     .document_by_id(request.origin.stamp.document)
@@ -1932,6 +2257,9 @@ impl SourceController {
                     return Err("Destino de código inválido".into());
                 }
                 Ok(None)
+            }
+            SourceAction::SemanticSymbol(_) => {
+                Err("El contexto semántico es de solo lectura".into())
             }
             SourceAction::LspCompletion(edits) => {
                 if to_side {
@@ -2298,6 +2626,7 @@ fn local_words(
      -> Result<(), TaskFailure> {
         if word.starts_with(&prefix) && *word != prefix && seen.insert(word.clone()) {
             out.push(TaskItem::Source(SourceItem {
+                value_type: None,
                 range: range.clone(),
                 label: format!("{word} (palabra local)"),
                 action: SourceAction::Replace(word.clone()),

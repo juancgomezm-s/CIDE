@@ -10,6 +10,7 @@ pub(super) struct ExplorerFrame {
     pub rect: Rect,
     pub dpi: super::dpi::Dpi,
     pub presentation: ExplorerPresentation,
+    pub git: Vec<Option<super::git_repositories::Decoration>>,
     pub focused: bool,
 }
 pub(super) struct ExplorerHits {
@@ -56,7 +57,7 @@ impl ExplorerFrame {
         }
     }
 }
-pub(super) fn region(state: &State) -> Option<Rect> {
+pub(super) fn full_region(state: &State) -> Option<Rect> {
     let width = state.width.clamp(1, 8192);
     let height = state.height.clamp(1, 8192);
     if !state.explorer_visible || width < state.dpi.pixels(640) || height < state.dpi.pixels(200) {
@@ -73,6 +74,15 @@ pub(super) fn region(state: &State) -> Option<Rect> {
         right: state.dpi.pixels(250).min(width / 3),
         bottom: (height - ch - 8).max(ch + 8),
     })
+}
+pub(super) fn region(state: &State) -> Option<Rect> {
+    let mut rect = full_region(state)?;
+    if state.outline.left {
+        if let Some(outline) = super::outline_panel::region(state) {
+            rect.bottom = outline.top - 1;
+        }
+    }
+    Some(rect)
 }
 fn tree_region(state: &State) -> Option<Rect> {
     region(state)
@@ -122,8 +132,9 @@ impl State {
         let columns =
             ((rect.right - rect.left - 12) / self.cell_width.clamp(1, 8192)).clamp(0, 256) as usize;
         let mut presentation = self.explorer_view.prepare(&self.explorer, rows, columns);
+        let mut git = Vec::with_capacity(presentation.rows.len());
         for row in &mut presentation.rows {
-            if let Some(path) = self.explorer.path(row.id) {
+            let decoration = self.explorer.path(row.id).and_then(|path| {
                 if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
                     row.label = jc_app::source_services::display_ui_label(name, 64);
                 } else {
@@ -134,12 +145,15 @@ impl State {
                         .trim_start_matches("[+] ")
                         .to_owned();
                 }
-            }
+                self.git_repositories.decoration(&path, row.is_dir)
+            });
+            git.push(decoration);
         }
         Some(ExplorerFrame {
             rect,
             dpi: self.dpi,
             presentation,
+            git,
             focused: self.explorer_focused && !self.outline_focused(),
         })
     }
@@ -154,6 +168,8 @@ impl State {
         }
     }
     pub(super) fn refresh_explorer(&mut self) {
+        self.refresh_git_repositories();
+        self.schedule_git_status();
         self.explorer_view.prepare(&self.explorer, 0, 0);
         self.explorer_hits = None;
         if let Some(id) = self.explorer_directory() {
@@ -189,6 +205,10 @@ impl State {
         if node.is_dir() {
             let expanded = node.expanded();
             let first = node.children().first().copied();
+            if let Some(path) = self.explorer.path(id) {
+                self.select_git_directory(path);
+                self.schedule_git_status();
+            }
             let result = if expand_only && expanded {
                 if let Some(id) = first {
                     self.explorer_view.select(id);
@@ -208,6 +228,7 @@ impl State {
         if expand_only {
             return;
         }
+        self.git_follows_document();
         match self.explorer.request_file_open(
             id,
             &mut self.workbench,
@@ -299,6 +320,11 @@ impl State {
         self.outline.focused = false;
         self.bottom.focused = false;
         self.explorer_view.select(id);
+        if is_dir {
+            if let Some(path) = self.explorer.path(id) {
+                self.select_git_directory(path);
+            }
+        }
         if (is_dir && disclosure && !double) || (double && !disclosure) || (double && !is_dir) {
             let side = self.modifiers().contains(Modifiers::CTRL);
             self.activate_explorer(side, false);

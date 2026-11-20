@@ -81,7 +81,7 @@ impl Layout {
         (left, width, density)
     }
 
-    fn title_rect(self) -> Rect {
+    pub(super) fn title_rect(self) -> Rect {
         let (menu_left, menu_width, _) = self.menu_space();
         Rect {
             left: menu_left + menu_width + self.dpi.pixels(8),

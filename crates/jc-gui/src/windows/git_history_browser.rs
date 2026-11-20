@@ -58,7 +58,7 @@ impl State {
     }
 
     fn request_git_history_directory(&mut self, path: Vec<u8>) -> bool {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return false;
         };
         if self.git_workspace.history_file.is_some()
@@ -193,7 +193,7 @@ impl State {
     }
 
     pub(super) fn request_git_history_path(&mut self, path: Vec<u8>) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         let Some(revision) = self.git_revision.revision() else {

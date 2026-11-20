@@ -49,6 +49,9 @@ impl ExplorerNode {
     pub fn is_dir(&self) -> bool {
         self.is_dir
     }
+    pub fn relative_path(&self) -> &Path {
+        &self.relative
+    }
     pub fn expanded(&self) -> bool {
         self.expanded
     }

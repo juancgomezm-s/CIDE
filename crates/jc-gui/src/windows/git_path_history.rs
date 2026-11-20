@@ -49,7 +49,7 @@ impl State {
                     .map(|e| e.path().to_vec())
             })
             .or_else(|| {
-                let root = self.project_root.as_ref()?;
+                let root = self.git_root()?;
                 let doc = self.workbench.active_document()?;
                 let relative = doc.session.path().strip_prefix(root).ok()?;
                 if !relative
@@ -98,7 +98,7 @@ impl State {
         let Some((start, path)) = self.git_workspace.path_query.clone() else {
             return;
         };
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         self.reset_path_view();
@@ -108,7 +108,7 @@ impl State {
         }
     }
     pub(super) fn next_git_path_history(&mut self) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         if let Err(e) = self.git_revision.request_path_history_next(root) {
@@ -125,7 +125,7 @@ impl State {
         else {
             return;
         };
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         self.git_workspace.path_selected = index;

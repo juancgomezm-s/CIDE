@@ -2,7 +2,9 @@ use super::State;
 use jc_app::{session::EditorRecovery, Workbench};
 use std::io::{Cursor, Read};
 pub(super) const TIMER_ID: usize = 0xc1de1;
+const GUI_METADATA_VERSION: u8 = 8;
 const APPEARANCE_BYTES: usize = 6;
+const OUTLINE_POSITION_BYTES: usize = 1;
 #[link(name = "user32")]
 extern "system" {
     fn SetTimer(hwnd: super::ffi::Hwnd, id: usize, milliseconds: u32, callback: usize) -> usize;
@@ -65,7 +67,8 @@ impl State {
             let mut reader = Cursor::new(metadata.as_slice());
             let mut header = [0; 20];
             reader.read_exact(&mut header).map_err(|e| e.to_string())?;
-            if !matches!(header[0], 1..=6) || header[1..8].iter().any(|v| *v > 1) {
+            if !matches!(header[0], 1..=GUI_METADATA_VERSION) || header[1..8].iter().any(|v| *v > 1)
+            {
                 return Err("Estado visual de la sesión inválido".into());
             }
             let width = u32::from_le_bytes(header[8..12].try_into().unwrap());
@@ -123,7 +126,10 @@ impl State {
                 let mut bytes = [0; APPEARANCE_BYTES];
                 reader.read_exact(&mut bytes).map_err(|e| e.to_string())?;
                 let [ui, editor, zoom, visible, lo, hi] = bytes;
-                let width = u16::from_le_bytes([lo, hi]);
+                let width = match u16::from_le_bytes([lo, hi]) {
+                    76 => super::appearance::DEFAULT_MINIMAP,
+                    width => width,
+                };
                 if !super::appearance::valid(ui, editor, zoom, visible, width) {
                     return Err("Preferencias de apariencia recuperadas inválidas".into());
                 }
@@ -131,11 +137,31 @@ impl State {
             } else {
                 None
             };
+            let outline_left = if header[0] >= 7 {
+                let mut side = [0; OUTLINE_POSITION_BYTES];
+                reader.read_exact(&mut side).map_err(|e| e.to_string())?;
+                match side[0] {
+                    0 => false,
+                    1 => true,
+                    _ => return Err("Posición recuperada de Esquema inválida".into()),
+                }
+            } else {
+                false
+            };
+            let editor_theme = if header[0] >= 8 {
+                let mut id = [0];
+                reader.read_exact(&mut id).map_err(|e| e.to_string())?;
+                super::appearance::Theme::from_id(id[0]).ok_or("Tema recuperado inválido")?
+            } else {
+                super::appearance::Theme::Current
+            };
             if reader.position() != metadata.len() as u64 {
                 return Err("Metadatos de ventana incompletos".into());
             }
             self.workbench = workbench;
+            self.editor_theme = editor_theme;
             self.outline.visible = code_visible;
+            self.outline.left = outline_left;
             if let Some(root) = root {
                 if let Err(error) = self.set_project_root(root) {
                     self.status = error;
@@ -174,7 +200,7 @@ impl State {
     }
     pub(super) fn recovery_metadata(&self) -> Result<Vec<u8>, String> {
         let mut metadata = vec![
-            6,
+            GUI_METADATA_VERSION,
             u8::from(self.project_root.is_some()),
             u8::from(self.explorer_visible),
             u8::from(self.explorer_focused),
@@ -199,6 +225,8 @@ impl State {
             u8::from(self.minimap_visible),
         ]);
         metadata.extend_from_slice(&self.minimap_width.to_le_bytes());
+        metadata.push(u8::from(self.outline.left));
+        metadata.push(self.editor_theme as u8);
         Ok(metadata)
     }
     #[cfg(test)]
@@ -509,7 +537,7 @@ mod tests {
         let fixture = Fixture::new();
         let state = State::new(&GuiOptions::default()).unwrap();
         let mut legacy = state.recovery_metadata().unwrap();
-        legacy.truncate(legacy.len() - 7 - APPEARANCE_BYTES);
+        legacy.truncate(legacy.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 1);
         legacy[0] = 1;
         legacy.remove(20);
         let mut recovery = fixture.recovery();
@@ -527,8 +555,8 @@ mod tests {
         let fixture = Fixture::new();
         let state = State::new(&GuiOptions::default()).unwrap();
         let mut legacy = state.recovery_metadata().unwrap();
-        assert_eq!(legacy[0], 6);
-        legacy.truncate(legacy.len() - 7 - APPEARANCE_BYTES);
+        assert_eq!(legacy[0], GUI_METADATA_VERSION);
+        legacy.truncate(legacy.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 1);
         legacy[0] = 3;
         legacy.push(1);
         let path = fixture.root.join("obsolete-git.exe");
@@ -541,12 +569,15 @@ mod tests {
         drop(depot);
         let mut restored = State::new(&GuiOptions::default()).unwrap();
         restored.restore_from(fixture.recovery()).unwrap();
-        assert_eq!(restored.recovery_metadata().unwrap()[0], 6);
+        assert_eq!(
+            restored.recovery_metadata().unwrap()[0],
+            GUI_METADATA_VERSION
+        );
         assert!(!restored.git_status_due);
         drop(restored);
         let other = Fixture::new();
         let mut v2 = state.recovery_metadata().unwrap();
-        v2.truncate(v2.len() - 7 - APPEARANCE_BYTES);
+        v2.truncate(v2.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 1);
         v2[0] = 2;
         let mut depot = other.recovery();
         state
@@ -556,7 +587,10 @@ mod tests {
         drop(depot);
         let mut restored = State::new(&GuiOptions::default()).unwrap();
         restored.restore_from(other.recovery()).unwrap();
-        assert_eq!(restored.recovery_metadata().unwrap()[0], 6);
+        assert_eq!(
+            restored.recovery_metadata().unwrap()[0],
+            GUI_METADATA_VERSION
+        );
     }
     #[test]
     fn gui_git_layout_preferences_survive_restart_and_v4_defaults_remain_readable() {
@@ -568,7 +602,9 @@ mod tests {
         state.editor_text_size = 20;
         state.editor_zoom = 125;
         state.minimap_visible = false;
-        state.minimap_width = 96;
+        state.editor_theme = super::super::appearance::Theme::Light;
+        state.minimap_width = 200;
+        state.outline.left = true;
         state.clear_git();
         assert_eq!(state.git_workspace.preference_bytes(), prefs);
         let mut depot = fixture.recovery();
@@ -593,12 +629,17 @@ mod tests {
             (16, 20, 125)
         );
         assert!(!restored.minimap_visible);
-        assert_eq!(restored.minimap_width, 96);
+        assert_eq!(
+            restored.editor_theme,
+            super::super::appearance::Theme::Light
+        );
+        assert_eq!(restored.minimap_width, 200);
+        assert!(restored.outline.left);
         drop(restored);
         let legacy = Fixture::new();
         let defaults = State::new(&GuiOptions::default()).unwrap();
         let mut metadata = defaults.recovery_metadata().unwrap();
-        metadata.truncate(metadata.len() - 7 - APPEARANCE_BYTES);
+        metadata.truncate(metadata.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 1);
         metadata[0] = 4;
         let mut depot = legacy.recovery();
         defaults
@@ -613,6 +654,37 @@ mod tests {
             defaults.git_workspace.preference_bytes()
         );
         assert_eq!(restored.editor_zoom, super::super::appearance::DEFAULT_ZOOM);
+        assert!(!restored.outline.left);
+    }
+    #[test]
+    fn gui_v6_appearance_keeps_its_values_and_defaults_outline_to_right() {
+        let fixture = Fixture::new();
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.editor_zoom = 125;
+        state.minimap_width = 76;
+        state.outline.left = true;
+        let mut v6 = state.recovery_metadata().unwrap();
+        v6.truncate(v6.len() - OUTLINE_POSITION_BYTES - 1);
+        v6[0] = 6;
+        let mut recovery = fixture.recovery();
+        state
+            .workbench
+            .checkpoint_recovery(&mut recovery.store, &recovery.base, &v6)
+            .unwrap();
+        drop(recovery);
+
+        let mut restored = State::new(&GuiOptions::default()).unwrap();
+        restored.restore_from(fixture.recovery()).unwrap();
+        assert_eq!(
+            restored.editor_theme,
+            super::super::appearance::Theme::Current
+        );
+        assert!(!restored.outline.left);
+        assert_eq!(restored.editor_zoom, 125);
+        assert_eq!(
+            restored.minimap_width,
+            super::super::appearance::DEFAULT_MINIMAP
+        );
     }
     #[test]
     fn gui_recovery_restores_window_panels_project_and_dirty_editor_without_environment_or_original_writes(

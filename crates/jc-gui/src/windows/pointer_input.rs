@@ -159,10 +159,11 @@ impl State {
             && !modifiers.contains(Modifiers::CTRL)
             && !modifiers.contains(Modifiers::ALT)
         {
-            if let Some(region) = super::explorer_panel::region(self) {
-                if x < region.right {
-                    return self.explorer_wheel(x, y, delta, lines).unwrap_or(false);
-                }
+            let (left, right) = super::outline_panel::editor_horizontal(self);
+            if x < left || x >= right {
+                return self
+                    .explorer_wheel(x, y, delta, lines)
+                    .unwrap_or_else(|| self.outline_wheel(x, y, delta, lines));
             }
             return self.git_code_wheel(
                 delta,
@@ -175,22 +176,15 @@ impl State {
             && modifiers == Modifiers::NONE
             && flags & 0x0c == 0
         {
-            if let Some(region) = super::explorer_panel::region(self) {
-                if x < region.right {
-                    return self.explorer_wheel(x, y, delta, lines).unwrap_or(false);
-                }
+            let (left, right) = super::outline_panel::editor_horizontal(self);
+            if x < left || x >= right {
+                return self
+                    .explorer_wheel(x, y, delta, lines)
+                    .unwrap_or_else(|| self.outline_wheel(x, y, delta, lines));
             }
-        }
-        if self.markdown_gui.is_some()
-            && self.selector.is_none()
-            && flags & 0x0c == 0
-            && modifiers == Modifiers::NONE
-            && x >= 0
-            && x < self.width
-            && y >= self.dpi.pixels(super::shell::TABS)
-            && y < self.height
-        {
-            return self.markdown_wheel(delta, lines);
+            if y >= self.dpi.pixels(super::shell::TABS) && y < self.height {
+                return self.markdown_wheel(delta, lines);
+            }
         }
         if self.git_panel.is_some()
             && flags & 0x08 == 0

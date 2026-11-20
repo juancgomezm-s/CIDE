@@ -167,14 +167,17 @@ impl State {
         )
     }
     pub(super) fn open_git_code(&mut self, source: GitBlobSource) -> Action {
-        if self.project_root.is_none() {
-            self.error("Abre la carpeta del repositorio para comparar en Código");
-            return Action::None;
-        }
         if self.git_commit.view().is_some()
             || self.git_index.state() == jc_app::git_index::IndexState::Applying
         {
             self.error("Termina o cancela la operación Git antes de abrir Código");
+            return Action::None;
+        }
+        self.git_follows_document();
+        if self.git_root().is_none() {
+            if !self.defer_git_until_discovered(super::git_repositories::Pending::Code(source)) {
+                self.status = "Abre un archivo de un repositorio para comparar en Código".into();
+            }
             return Action::None;
         }
         let _ = self.git_index.discard_review();
@@ -186,6 +189,17 @@ impl State {
             unified,
             ..Default::default()
         };
+        action
+    }
+    pub(super) fn open_document_git_history(&mut self) -> Action {
+        self.git_follows_document();
+        if self.defer_git_until_discovered(super::git_repositories::Pending::CodeHistory) {
+            return Action::None;
+        }
+        let action = self.open_git_code(self.git_source);
+        if self.git_code.active {
+            self.choose_code_revision();
+        }
         action
     }
     pub(super) fn open_git_code_from_workspace(&mut self) -> Action {
@@ -260,7 +274,7 @@ impl State {
         if self.git_code.selecting {
             self.git_code.selecting = false;
             self.git_revision.cancel();
-        } else if let Some(root) = self.project_root.clone() {
+        } else if let Some(root) = self.git_root().map(std::path::Path::to_owned) {
             match self.git_revision.request_graph(root) {
                 Ok(()) => {
                     self.git_code.selecting = true;
@@ -312,7 +326,7 @@ impl State {
                 self.git_code.selected = 0;
             }
             Intent::Reference(row) => {
-                if let Some(root) = self.project_root.clone() {
+                if let Some(root) = self.git_root().map(std::path::Path::to_owned) {
                     match self.git_revision.request_graph_reference(root, row) {
                         Ok(()) => {
                             self.git_code.references = false;
@@ -326,7 +340,7 @@ impl State {
                 if self.git_code.references {
                     return Action::None;
                 }
-                if let Some(root) = self.project_root.clone() {
+                if let Some(root) = self.git_root().map(std::path::Path::to_owned) {
                     match self.git_revision.request_graph_next(root) {
                         Ok(()) => self.git_code.selected = 0,
                         Err(error) => self.error(error),
@@ -417,7 +431,7 @@ impl State {
         }
         let Some(hits) = self.git_code.hits.as_ref().filter(|h| {
             Rc::ptr_eq(&h.token, &self.git_code.token)
-                && h.root == self.project_root
+                && h.root.as_deref() == self.git_root()
                 && h.geometry == self.code_geometry()
                 && self.workbench.task_stamp_is_current(h.stamp)
         }) else {
@@ -474,7 +488,7 @@ impl State {
         };
         if !self.git_code.active
             || drag.geometry != self.code_geometry()
-            || drag.root != self.project_root
+            || drag.root.as_deref() != self.git_root()
             || drag.source != self.git_source
             || !self.workbench.task_stamp_is_current(drag.stamp)
         {
@@ -556,10 +570,11 @@ impl State {
                 .and_then(|v| v.view_id()),
         };
         let p = |n| self.dpi.pixels(n);
+        let (left, right) = super::outline_panel::editor_horizontal(self);
         let area = rect(
-            super::explorer_panel::region(self).map_or(0, |r| r.right + 1),
+            left,
             p(shell::TABS),
-            super::outline_panel::region(self).map_or(self.width, |r| r.left - 1),
+            right,
             super::bottom_panel::region(self).map_or(self.height - self.cell_height - 5, |r| r.top),
         );
         if area.right - area.left < p(80) || area.bottom - area.top < p(72) {
@@ -602,7 +617,7 @@ impl State {
             hits: Hits {
                 token: self.git_code.token.clone(),
                 stamp,
-                root: self.project_root.clone(),
+                root: self.git_root().map(std::path::Path::to_owned),
                 geometry: self.code_geometry(),
                 targets: Vec::new(),
                 rails: Vec::new(),

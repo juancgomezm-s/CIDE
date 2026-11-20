@@ -7,6 +7,7 @@ import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import runpy
+import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 import zipfile
@@ -69,21 +70,52 @@ def prepare_payload(package, payload):
             raise ValueError('El paquete OmniCore está incompleto.')
 
 
+def build_shortcut_icons(payload, output, rc, link):
+    # Windows Installer publishes advertised shortcut icons from separate PE files
+    # with the same extension as the target. These PE files contain only resources.
+    output.mkdir()
+    for frontend, stem in (('gui', 'CideGuiIcon'), ('tui', 'CideTuiIcon')):
+        icon = output / f'cide-{frontend}.ico'
+        shutil.copyfile(payload / 'assets' / 'branding' / icon.name, icon)
+        script = output / f'{stem}.rc'
+        resource = output / f'{stem}.res'
+        script.write_text(f'101 ICON "{icon.name}"\n', encoding='ascii')
+        subprocess.run([
+            str(rc), '/nologo', '/fo', resource.name, script.name,
+        ], cwd=output, check=True)
+        subprocess.run([
+            str(link), '/nologo', '/dll', '/noentry', '/nodefaultlib',
+            '/machine:x64', '/manifest:no', '/incremental:no', '/brepro',
+            f'/out:{stem}.exe', resource.name,
+        ], cwd=output, check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package', required=True, type=Path)
     parser.add_argument('--wix', required=True, type=Path)
     parser.add_argument('--ui-extension', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
+    parser.add_argument('--rc', type=Path, default=shutil.which('rc.exe'),
+                        help='Compilador de recursos de Windows SDK.')
+    parser.add_argument('--link', type=Path, default=shutil.which('link.exe'),
+                        help='Enlazador de MSVC para x64.')
     parser.add_argument('--msi-version', default='0.1.0', type=msi_version)
+    parser.add_argument('--allow-same-version-upgrade', action='store_true',
+                        help='Permite reemplazar una compilación anterior de la misma versión MSI.')
     args = parser.parse_args()
     output = args.output.absolute()
     if os.name != 'nt' or output.suffix.lower() != '.msi' or os.path.lexists(output):
         parser.error('Se requiere Windows y una ruta MSI nueva.')
+    if args.rc is None or args.link is None:
+        parser.error('Usa una consola de desarrollo x64 o indica --rc y --link.')
+    rc, link = (path.resolve(strict=True) for path in (args.rc, args.link))
     with TemporaryDirectory(prefix='cide-msi-', dir=output.parent) as directory:
         work = Path(directory)
         payload = work / 'payload'
         prepare_payload(args.package, payload)
+        icons = work / 'icons'
+        build_shortcut_icons(payload, icons, rc, link)
         license_text = (payload / 'LICENSE').read_text(encoding='utf-8')
         for character in ('\\', '{', '}'):
             license_text = license_text.replace(character, '\\' + character)
@@ -97,6 +129,8 @@ def main():
             str(args.wix.resolve(strict=True)), 'build', '-arch', 'x64', '-culture', 'es-ES',
             '-ext', str(args.ui_extension.resolve(strict=True)), '-d', f'Payload={payload}',
             '-d', f'MsiVersion={args.msi_version}',
+            '-d', 'AllowSameVersionUpgrade=' + ('yes' if args.allow_same_version_upgrade else 'no'),
+            '-d', f'ShortcutIcons={icons}',
             '-d', f'LicenseRtf={license_rtf}', '-out', str(candidate), '-pdbtype', 'none',
             str(ROOT / 'installer/CIDE.wxs'),
         ], cwd=work, check=True)

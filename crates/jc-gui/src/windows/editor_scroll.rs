@@ -1,25 +1,25 @@
 //! Per-pane scroll rails and a sampled source overview. No document access in GDI drawing.
 use super::{
+    appearance,
     ffi::{Hdc, Rect},
     paint,
     pointer_input::PointerContext,
     shell, State,
 };
-use jc_app::{PaneId, TabId, ViewId, Workbench};
-use std::{
-    path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
-    },
+use jc_app::{PaneId, SyntaxKind, SyntaxProfile, TabId, ViewId, Workbench};
+use jc_text::{DecodedScalars, TextEncoding};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    mpsc, Arc,
 };
 
+mod minimap;
+
 const RAIL: i32 = 10;
-#[cfg(test)]
-const MAP_WIDTH: i32 = 76;
-const MAX_SAMPLES: usize = 256;
-const PREFIX_BYTES: usize = 80;
-const MAX_MARKS_PER_ROW: usize = 16;
+const MAX_SAMPLES: usize = 512;
+const PREFIX_BYTES: usize = 192;
+const MAX_MARKS_PER_ROW: usize = 48;
+const RESIDENT_SAMPLE_BATCH: usize = 32;
 const PAGED_SAMPLE_BYTES: usize = 512;
 const PAGED_SAMPLE_BATCH: usize = 16;
 
@@ -39,7 +39,7 @@ pub(super) struct Geometry {
 impl Geometry {
     #[cfg(test)]
     pub fn new(pane: Rect, dpi: super::dpi::Dpi) -> Self {
-        Self::with_minimap(pane, dpi, true, MAP_WIDTH as u16)
+        Self::with_minimap(pane, dpi, true, appearance::DEFAULT_MINIMAP)
     }
     pub fn with_minimap(
         pane: Rect,
@@ -50,14 +50,19 @@ impl Geometry {
         let top = (pane.top + dpi.pixels(shell::HEADER)).min(pane.bottom);
         let bottom = (pane.bottom - dpi.pixels(RAIL)).max(top);
         let right = (pane.right - dpi.pixels(RAIL)).max(pane.left);
-        let width = dpi.pixels(i32::from(minimap_width.clamp(60, 128)));
-        let map =
-            (minimap_visible && right - pane.left - width >= dpi.pixels(320)).then_some(Rect {
-                left: right - width,
-                right,
-                top,
-                bottom,
-            });
+        let preferred = minimap_width.clamp(appearance::MIN_MINIMAP, appearance::MAX_MINIMAP);
+        let width = dpi
+            .pixels(i32::from(preferred))
+            .min(right - pane.left - dpi.pixels(320));
+        let map = (minimap_visible
+            && bottom > top
+            && width >= dpi.pixels(i32::from(appearance::MIN_MINIMAP)))
+        .then_some(Rect {
+            left: right - width,
+            right,
+            top,
+            bottom,
+        });
         let text = Rect {
             left: pane.left,
             right: map.map_or(right, |r| r.left),
@@ -156,82 +161,95 @@ fn contains(rect: Rect, x: i32, y: i32) -> bool {
     x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct SampleKey {
     identity: u64,
     revision: u64,
+    lines: usize,
     count: usize,
     tab: TabId,
-    path: PathBuf,
-    encoding: Option<jc_text::TextEncoding>,
+    profile: SyntaxProfile,
+    encoding: Option<TextEncoding>,
 }
+
 #[derive(Clone, Copy)]
 struct Mark {
     start: u8,
     end: u8,
-    source_start: u8,
-    kind: jc_app::SyntaxKind,
+    kind: SyntaxKind,
 }
-type MapRow = Vec<Mark>;
-fn row_marks(bytes: &[u8]) -> MapRow {
-    let mut column = 0usize;
-    let mut marks = Vec::<Mark>::with_capacity(8);
-    let mut token_start: Option<(u8, u8, u8)> = None;
-    for (byte_index, byte) in bytes.iter().copied().enumerate() {
-        let next = if byte == b'\t' {
-            column + 4 - column % 4
-        } else {
-            column + 1
+#[derive(Clone, Default)]
+struct MapRow {
+    marks: Vec<Mark>,
+    glyphs: Vec<u8>,
+}
+
+fn row_marks(
+    bytes: &[u8],
+    complete: bool,
+    profile: SyntaxProfile,
+    encoding: Option<TextEncoding>,
+) -> MapRow {
+    let mut colors = [SyntaxKind::Plain; PREFIX_BYTES];
+    if encoding.is_some() && profile != SyntaxProfile::Plain {
+        jc_app::scan_syntax_snippet(profile, bytes, complete, |span| {
+            colors[span.source].fill(span.kind);
+        });
+    }
+    let encoding = encoding.unwrap_or(TextEncoding::Iso8859_1);
+    // The file-level BOM has already been handled by the caller.
+    let scalars = DecodedScalars::new(bytes, encoding, 1);
+    let mut column = 0u8;
+    let mut row = MapRow::default();
+    for scalar in scalars {
+        let ch = scalar.character;
+        let start = column;
+        let width = match ch {
+            '\t' => 4 - column % 4,
+            ch if ch.is_ascii() => 1,
+            ch => jc_text::grapheme::width(ch.encode_utf8(&mut [0; 4])) as u8,
         };
-        if byte.is_ascii_whitespace() {
-            if let Some((start, end, source_start)) = token_start.take() {
-                if marks.len() < MAX_MARKS_PER_ROW {
-                    marks.push(Mark {
-                        start,
-                        end,
-                        source_start,
-                        kind: jc_app::SyntaxKind::Plain,
-                    });
-                }
-            }
-            column = next.min(PREFIX_BYTES);
+        column = column.saturating_add(width).min(PREFIX_BYTES as u8);
+        if ch.is_whitespace() || start == column {
             continue;
         }
-        if let Some(start) = token_start.as_mut() {
-            start.1 = next.min(PREFIX_BYTES) as u8;
-        } else {
-            token_start = Some((
-                column.min(PREFIX_BYTES - 1) as u8,
-                next.min(PREFIX_BYTES) as u8,
-                byte_index.min(PREFIX_BYTES - 1) as u8,
-            ));
-        }
-        column = next.min(PREFIX_BYTES);
-    }
-    if let Some((start, end, source_start)) = token_start {
-        if marks.len() < MAX_MARKS_PER_ROW {
-            marks.push(Mark {
+        let kind = colors[scalar.source_range.start - 1];
+        if let Some(mark) = row
+            .marks
+            .last_mut()
+            .filter(|mark| mark.end == start && mark.kind == kind)
+        {
+            mark.end = column;
+        } else if row.marks.len() < MAX_MARKS_PER_ROW {
+            row.marks.push(Mark {
                 start,
-                end,
-                source_start,
-                kind: jc_app::SyntaxKind::Plain,
+                end: column,
+                kind,
             });
+        } else {
+            break;
         }
+        row.glyphs.resize(usize::from(start), b' ');
+        let glyph = if ch.is_ascii_graphic() { ch as u8 } else { 127 };
+        row.glyphs.resize(usize::from(column), glyph);
     }
-    marks
+    row
+}
+
+fn sample_position(index: usize, count: usize, last: usize) -> usize {
+    (index as u128 * last as u128 / count.saturating_sub(1).max(1) as u128) as usize
 }
 
 #[derive(Default)]
 pub(super) struct MapCache {
     key: Option<SampleKey>,
     samples: Arc<[MapRow]>,
-    lines: Vec<usize>,
-    colored: usize,
-    color_limited: bool,
+    prepared: usize,
     paged: PagedMap,
+    raster: minimap::Cache,
 }
 impl MapCache {
-    fn prepare(&mut self, app: &jc_app::Workbench, tab: TabId, lines: usize, pixels: i32) -> bool {
+    fn prepare(&mut self, app: &Workbench, tab: TabId, lines: usize, pixels: i32) -> bool {
         let Some(doc) = app.document_by_tab(tab) else {
             return false;
         };
@@ -240,93 +258,44 @@ impl MapCache {
         let key = SampleKey {
             identity: source.recovery_identity(),
             revision: source.revision(),
+            lines,
             count,
             tab,
-            path: doc.session.path().to_owned(),
+            profile: app.syntax_profile_for_tab(tab),
             encoding: doc.session.encoding(),
         };
-        if self.key.as_ref() != Some(&key) {
-            self.lines = (0..count)
-                .map(|index| {
-                    if count <= 1 {
-                        0
-                    } else {
-                        (index as u128 * lines.saturating_sub(1) as u128 / (count - 1) as u128)
-                            as usize
-                    }
-                })
-                .collect();
-            self.colored = 0;
-            self.color_limited = false;
-            let marks = self
-                .lines
-                .iter()
-                .map(|&line| {
-                    let Some((range, _)) = app.line_range_for_tab(tab, line) else {
-                        return Vec::new();
-                    };
-                    let end = range.start + range.len().min(PREFIX_BYTES);
-                    let Ok(bytes) = source.read_range(range.start..end) else {
-                        return Vec::new();
-                    };
-                    row_marks(&bytes)
-                })
-                .collect::<Vec<_>>();
-            self.samples = marks.into();
+        if self.key != Some(key) {
+            self.prepared = 0;
+            self.samples = vec![MapRow::default(); count].into();
             self.key = Some(key);
         }
-        if self.color_limited || self.colored >= self.samples.len() {
+        if self.prepared == count {
             return false;
         }
-        let finish = self.colored.saturating_add(24).min(self.samples.len());
-        let syntax = app.syntax_samples(tab, &self.lines[self.colored..finish], PREFIX_BYTES);
-        if syntax.limited {
-            self.color_limited = true;
-            self.colored = self.samples.len();
-            return false;
-        }
-        let mut updated = self.samples.to_vec();
-        for row in syntax.rows {
-            let Some(index) = self.lines[self.colored..finish]
-                .iter()
-                .position(|line| *line == row.line)
-                .map(|index| self.colored + index)
-            else {
+        let end = (self.prepared + RESIDENT_SAMPLE_BATCH).min(count);
+        let samples = Arc::make_mut(&mut self.samples);
+        for (index, sample) in samples.iter_mut().enumerate().take(end).skip(self.prepared) {
+            let line = sample_position(index, count, lines.saturating_sub(1));
+            let Some((range, _)) = app.line_range_for_tab(tab, line) else {
                 continue;
             };
-            if row.spans.is_empty() {
+            let end = range.start + range.len().min(PREFIX_BYTES);
+            let Ok(bytes) = source.read_range(range.start..end) else {
                 continue;
-            }
-            let marks = std::mem::take(&mut updated[index]);
-            for mark in marks {
-                let start = row.source.start + usize::from(mark.source_start);
-                let end = start + usize::from(mark.end - mark.start);
-                let mut cursor = start;
-                let mut piece = |from: usize, to: usize, kind| {
-                    if from < to && updated[index].len() < MAX_MARKS_PER_ROW {
-                        updated[index].push(Mark {
-                            start: mark.start + (from - start) as u8,
-                            end: mark.start + (to - start) as u8,
-                            source_start: (from - row.source.start) as u8,
-                            kind,
-                        });
-                    }
-                };
-                for span in &row.spans {
-                    let from = span.source.start.max(cursor);
-                    let to = span.source.end.min(end);
-                    if from < to {
-                        piece(cursor, from, jc_app::SyntaxKind::Plain);
-                        piece(from, to, span.kind);
-                        cursor = to;
-                    }
-                }
-                piece(cursor, end, jc_app::SyntaxKind::Plain);
-            }
+            };
+            let bytes = sample_without_bom(&bytes, range.start == 0, key.encoding);
+            *sample = row_marks(bytes, end == range.end, key.profile, key.encoding);
         }
-        self.samples = updated.into();
-        self.colored = finish;
-        self.colored < self.samples.len()
+        self.prepared = end;
+        end < count
+    }
+}
+
+fn sample_without_bom(bytes: &[u8], first: bool, encoding: Option<TextEncoding>) -> &[u8] {
+    if first && encoding == Some(TextEncoding::Utf8) {
+        bytes.strip_prefix(b"\xef\xbb\xbf").unwrap_or(bytes)
+    } else {
+        bytes
     }
 }
 
@@ -337,12 +306,15 @@ struct PagedMapKey {
     revision: u64,
     bytes: usize,
     count: usize,
+    profile: SyntaxProfile,
+    encoding: Option<TextEncoding>,
 }
 
 impl PagedMapKey {
     fn for_area(app: &Workbench, area: &paint::TextArea) -> Option<Self> {
         let rect = area.geometry.map?;
-        let doc = app.document_by_tab(area.tab)?.session.document();
+        let session = &app.document_by_tab(area.tab)?.session;
+        let doc = session.document();
         if !doc.is_paged() || doc.is_empty() {
             return None;
         }
@@ -355,15 +327,17 @@ impl PagedMapKey {
             revision: doc.revision(),
             bytes: doc.len(),
             count,
+            profile: app.syntax_profile_for_tab(area.tab),
+            encoding: session.encoding(),
         })
     }
 
     fn sample_offset(self, index: usize) -> usize {
-        let last = self.bytes.saturating_sub(PAGED_SAMPLE_BYTES);
-        if self.count <= 1 {
-            return 0;
-        }
-        (index as u128 * last as u128 / (self.count - 1) as u128) as usize
+        sample_position(
+            index,
+            self.count,
+            self.bytes.saturating_sub(PAGED_SAMPLE_BYTES),
+        )
     }
 }
 
@@ -405,7 +379,7 @@ impl PagedMap {
                 self.samples = Arc::default();
             }
             match worker.result.try_recv() {
-                Ok(Ok((start, rows))) if self.key == wanted => {
+                Ok(Ok((start, rows))) if self.key.is_some() && self.key == wanted => {
                     let samples = Arc::make_mut(&mut self.samples);
                     for (sample, row) in samples[start..].iter_mut().zip(rows) {
                         *sample = row;
@@ -415,7 +389,7 @@ impl PagedMap {
                     // is acknowledged. Poll again even if its wake coalesces.
                     wakeup.signal();
                 }
-                Ok(Err(error)) if self.key == wanted => {
+                Ok(Err(error)) if self.key.is_some() && self.key == wanted => {
                     self.worker = None;
                     return Err(error);
                 }
@@ -436,7 +410,7 @@ impl PagedMap {
             self.samples = Arc::default();
             return Ok(changed);
         };
-        self.samples = vec![Vec::new(); key.count].into();
+        self.samples = vec![MapRow::default(); key.count].into();
         let doc = app
             .document_by_tab(key.tab)
             .ok_or("El documento del minimapa ya no está abierto")?;
@@ -464,7 +438,8 @@ impl PagedMap {
                         if worker_cancel.load(Ordering::Relaxed) {
                             break;
                         }
-                        let mut bytes = Vec::with_capacity(plan.range().len());
+                        let range = plan.range();
+                        let mut bytes = Vec::with_capacity(range.len());
                         if let Err(error) = plan.visit(|chunk| {
                             bytes.extend_from_slice(chunk);
                             Ok(())
@@ -473,7 +448,13 @@ impl PagedMap {
                                 sender.send(Err(format!("No se pudo leer el minimapa: {error}")));
                             break;
                         }
-                        batch.push(paged_sample_row(&bytes, index == 0));
+                        batch.push(paged_sample_row(
+                            &bytes,
+                            index == 0,
+                            range.end == key.bytes,
+                            key.profile,
+                            key.encoding,
+                        ));
                         if batch.len() == PAGED_SAMPLE_BATCH || index + 1 == key.count {
                             let rows = std::mem::replace(
                                 &mut batch,
@@ -502,23 +483,39 @@ impl PagedMap {
     }
 }
 
-fn paged_sample_row(bytes: &[u8], first: bool) -> MapRow {
-    let mut lines = bytes.split(|byte| matches!(byte, b'\r' | b'\n'));
+fn paged_sample_row(
+    bytes: &[u8],
+    first: bool,
+    eof: bool,
+    profile: SyntaxProfile,
+    encoding: Option<TextEncoding>,
+) -> MapRow {
+    let mut lines = bytes.split_inclusive(|byte| matches!(byte, b'\r' | b'\n'));
     let fragment = lines.next().unwrap_or_default();
-    let body = if first {
-        fragment.strip_prefix(b"\xef\xbb\xbf").unwrap_or(fragment)
+    let (line, profile) = if first {
+        (sample_without_bom(fragment, true, encoding), profile)
     } else {
         lines
             .find(|line| line.iter().any(|byte| !byte.is_ascii_whitespace()))
-            .unwrap_or(fragment)
+            .map_or((fragment, SyntaxProfile::Plain), |line| (line, profile))
     };
-    row_marks(&body[..body.len().min(PREFIX_BYTES)])
+    let end = line
+        .last()
+        .is_some_and(|byte| matches!(byte, b'\r' | b'\n'));
+    let body = &line[..line.len() - usize::from(end)];
+    row_marks(
+        &body[..body.len().min(PREFIX_BYTES)],
+        (end || eof) && body.len() <= PREFIX_BYTES,
+        profile,
+        encoding,
+    )
 }
 
 pub(super) struct Frame {
     vertical: Track,
     horizontal: Track,
-    overview: Option<(Rect, Track, Arc<[MapRow]>)>,
+    overview: Option<minimap::Frame>,
+    theme: appearance::Theme,
     pub(super) overview_pending: bool,
     dpi: super::dpi::Dpi,
 }
@@ -581,9 +578,15 @@ impl Frame {
                 } else {
                     Arc::default()
                 };
-                return (rect, Track { rect, ..vertical }, samples);
+                return cache.raster.prepare(
+                    rect,
+                    Track { rect, ..vertical },
+                    samples,
+                    state.dpi,
+                    state.editor_theme,
+                );
             }
-            let mini_line = state.dpi.pixels(2).max(1);
+            let mini_line = state.dpi.pixels(3).max(1);
             let content_height =
                 area.count
                     .saturating_mul(mini_line as usize)
@@ -593,13 +596,15 @@ impl Frame {
                 ..rect
             };
             overview_pending = cache.prepare(app, area.tab, area.count, content_height);
-            (
+            cache.raster.prepare(
                 rect,
                 Track {
                     rect: channel,
                     ..vertical
                 },
                 Arc::clone(&cache.samples),
+                state.dpi,
+                state.editor_theme,
             )
         });
         Self {
@@ -607,13 +612,14 @@ impl Frame {
             horizontal,
             overview,
             overview_pending,
+            theme: state.editor_theme,
             dpi: state.dpi,
         }
     }
 
     pub unsafe fn draw(&self, dc: Hdc) -> Result<(), String> {
         for track in [self.vertical, self.horizontal] {
-            paint::fill(dc, track.rect, shell::SURFACE)?;
+            paint::fill(dc, track.rect, self.theme.role_surface())?;
             if track.limit != 0 {
                 let mut thumb = track.thumb_rect();
                 match track.axis {
@@ -626,62 +632,14 @@ impl Frame {
                         thumb.bottom -= self.dpi.pixels(2);
                     }
                 }
-                paint::fill(dc, thumb, shell::MUTED)?;
+                paint::fill(dc, thumb, self.theme.muted())?;
             }
         }
-        if let Some((channel, map, samples)) = &self.overview {
-            paint::fill(dc, *channel, shell::SURFACE)?;
-            let window = map.thumb_rect();
-            paint::fill(dc, window, shell::SELECTED)?;
-            let left = map.rect.left + self.dpi.pixels(3);
-            let width = map.rect.right - left - self.dpi.pixels(3);
-            let row_height = (map.length() / samples.len().max(1) as i32).clamp(1, 3);
-            let mut marks = Vec::with_capacity(samples.len().saturating_mul(MAX_MARKS_PER_ROW));
-            for (index, row) in samples.iter().enumerate() {
-                let y = map.rect.top + scale(index, samples.len(), map.length());
-                for mark in row {
-                    let x = left + scale(usize::from(mark.start), PREFIX_BYTES, width);
-                    let end = left + scale(usize::from(mark.end), PREFIX_BYTES, width);
-                    marks.push((
-                        Rect {
-                            left: x,
-                            right: end.max(x + 1).min(map.rect.right),
-                            top: y,
-                            bottom: (y + row_height).min(map.rect.bottom),
-                        },
-                        syntax_color(mark.kind),
-                    ));
-                }
-            }
-            paint::fill_color_marks(dc, marks.into_iter())?;
-            // Keep the visible-range boundary clear above the miniature code.
-            paint::fill(
-                dc,
-                Rect {
-                    bottom: window.top + self.dpi.pixels(1),
-                    ..window
-                },
-                shell::ACCENT,
-            )?;
-            paint::fill(
-                dc,
-                Rect {
-                    top: window.bottom - self.dpi.pixels(1),
-                    ..window
-                },
-                shell::ACCENT,
-            )?;
+        if let Some(map) = &self.overview {
+            map.draw(dc, self.dpi, self.theme)?;
         }
         Ok(())
     }
-}
-
-fn syntax_color(kind: jc_app::SyntaxKind) -> u32 {
-    if kind == jc_app::SyntaxKind::Plain {
-        return shell::MUTED;
-    }
-    let rgb = jc_app::syntax_theme::foreground(kind);
-    u32::from(rgb.r) | (u32::from(rgb.g) << 8) | (u32::from(rgb.b) << 16)
 }
 
 pub(super) struct Drag {
@@ -738,12 +696,12 @@ impl State {
             frame.vertical
         } else if contains(frame.horizontal.rect, x, y) {
             frame.horizontal
-        } else if let Some((_, track, _)) = frame
+        } else if let Some(map) = frame
             .overview
             .as_ref()
-            .filter(|(_, track, _)| contains(track.rect, x, y))
+            .filter(|map| contains(map.track.rect, x, y))
         {
-            *track
+            map.track
         } else {
             return false;
         };
@@ -879,6 +837,7 @@ mod tests {
     use super::*;
     use crate::GuiOptions;
     use jc_text::TextEncoding;
+    use std::path::PathBuf;
 
     #[test]
     #[cfg(target_pointer_width = "64")]
@@ -929,20 +888,20 @@ mod tests {
         let area = paint::text_areas(&state).pop().unwrap();
         let frame = Frame::prepare(&mut state, &area);
         assert!(frame.overview_pending);
-        assert!(frame.overview.as_ref().unwrap().2.is_empty());
+        assert!(frame.overview.as_ref().unwrap().samples.is_empty());
         loop {
             state.poll_paged_editor_maps();
             let map = &state.editor_maps[0].paged;
             if map.key.is_some() && map.worker.is_none() {
                 assert!(map.samples.len() <= MAX_SAMPLES);
-                assert!(map.samples.iter().all(|row| !row.is_empty()));
+                assert!(map.samples.iter().all(|row| !row.marks.is_empty()));
                 break;
             }
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
         }
         let frame = Frame::prepare(&mut state, &area);
-        let track = frame.overview.unwrap().1;
+        let track = frame.overview.unwrap().track;
         assert_eq!(track.limit, text.len());
         let large = PagedMapKey {
             bytes: 7 * 1024 * 1024 * 1024,
@@ -1012,7 +971,7 @@ mod tests {
         assert!(!state.update_editor_scroll(horizontal.left - 1, y));
         assert_eq!(state.workbench.horizontal_scroll_for_pane(pane), Some(0));
         state.cancel_pointer();
-        let overview = frame.overview.unwrap().1.rect;
+        let overview = frame.overview.unwrap().track.rect;
         let x = overview.left + 1;
         assert!(state.begin_editor_scroll(x, overview.bottom - 1));
         assert!(state.workbench.panes().view(pane).unwrap().scroll_line() > 0);
@@ -1044,7 +1003,7 @@ mod tests {
             );
             assert_eq!(
                 geometry.map.unwrap().right - geometry.map.unwrap().left,
-                dpi.pixels(MAP_WIDTH)
+                dpi.pixels(i32::from(appearance::DEFAULT_MINIMAP))
             );
             let compact = Geometry::new(
                 Rect {
@@ -1070,16 +1029,23 @@ mod tests {
             bottom: 620,
         };
         let narrow = Geometry::with_minimap(pane, dpi, true, 60);
-        let wide = Geometry::with_minimap(pane, dpi, true, 96);
+        let wide = Geometry::with_minimap(pane, dpi, true, 200);
         assert_eq!(narrow.map.unwrap().right - narrow.map.unwrap().left, 60);
-        assert_eq!(wide.map.unwrap().right - wide.map.unwrap().left, 96);
+        assert_eq!(wide.map.unwrap().right - wide.map.unwrap().left, 200);
         assert!(Geometry::with_minimap(pane, dpi, false, 96).map.is_none());
+        let compact = Geometry::with_minimap(Rect { right: 430, ..pane }, dpi, true, 200);
+        assert_eq!(compact.text.right - compact.text.left, 320);
+        assert_eq!(compact.map.unwrap().right - compact.map.unwrap().left, 100);
 
         let mut state = State::new(&GuiOptions::default()).unwrap();
         state.width = 1100;
         state.height = 700;
         state.workbench.new_file("overview.p", TextEncoding::Utf8);
-        let source = "IF condition THEN DISPLAY \"value\".\n".repeat(160);
+        let source = format!(
+            "\tDEFINE VARIABLE nombre AS CHARACTER. IF YES THEN DISPLAY \"área\".{}42.\n",
+            " ".repeat(40)
+        )
+        .repeat(160);
         state.workbench.insert_text(&source).unwrap();
         let area = paint::text_areas(&state)
             .into_iter()
@@ -1095,10 +1061,44 @@ mod tests {
         }
         let rows = &state.editor_maps[0].samples;
         assert!(rows.len() > area.capacity_rows);
-        assert!(rows
+        let offscreen = &rows[rows.len() - 2];
+        assert_eq!(offscreen.marks[0].start, 4);
+        for kind in [
+            SyntaxKind::Keyword,
+            SyntaxKind::Type,
+            SyntaxKind::Boolean,
+            SyntaxKind::String,
+        ] {
+            assert!(offscreen.marks.iter().any(|mark| mark.kind == kind));
+        }
+        assert!(offscreen
+            .marks
             .iter()
-            .flatten()
-            .any(|mark| mark.kind == jc_app::SyntaxKind::Keyword));
-        assert!(state.editor_maps[0].colored >= rows.len());
+            .any(|mark| mark.kind == SyntaxKind::Number && mark.start > 80));
+        assert_eq!(state.editor_maps[0].prepared, rows.len());
+    }
+
+    #[test]
+    fn paged_minimap_colors_complete_lines_without_claiming_a_partial_first_token() {
+        let profile = SyntaxProfile::Abl;
+        let encoding = Some(TextEncoding::Utf8);
+        let sample = paged_sample_row(
+            b"fragmento\r\n\tDISPLAY YES, 42.",
+            false,
+            true,
+            profile,
+            encoding,
+        );
+        assert_eq!(sample.marks[0].start, 4);
+        assert_eq!(sample.marks[0].kind, SyntaxKind::Keyword);
+        assert!(sample
+            .marks
+            .iter()
+            .any(|mark| mark.kind == SyntaxKind::Boolean));
+        let fragment = paged_sample_row(b"DISPLAY YES,", false, false, profile, encoding);
+        assert!(fragment
+            .marks
+            .iter()
+            .all(|mark| mark.kind == SyntaxKind::Plain));
     }
 }

@@ -197,6 +197,7 @@ pub(super) fn completions(
             }
             let label = display(candidate.label, 110);
             Some(SourceItem {
+                value_type: None,
                 range,
                 label,
                 action: SourceAction::LspCompletion(edits),
@@ -221,6 +222,47 @@ pub(super) fn completions(
         }
     }
     Ok((output, omitted))
+}
+
+pub(super) fn semantic_context(
+    response: &Value,
+    cursor: usize,
+) -> Result<(Vec<TaskItem>, usize), String> {
+    let items = match response {
+        Value::Null => &[][..],
+        Value::Array(items) => items.as_slice(),
+        _ => response["items"]
+            .as_array()
+            .ok_or("Lista de completado LSP inválida")?,
+    };
+    let mut result = Vec::new();
+    for item in items.iter().take(RESULT_LIMIT) {
+        let Some(label) = item["label"]
+            .as_str()
+            .filter(|label| !label.trim().is_empty())
+        else {
+            continue;
+        };
+        let detail = item["detail"]
+            .as_str()
+            .or_else(|| item["labelDetails"]["description"].as_str())
+            .or_else(|| item["labelDetails"]["detail"].as_str())
+            .map(|text| display(text, 110))
+            .filter(|text| !text.trim().is_empty());
+        let symbol = TaskItem::Source(SourceItem {
+            range: cursor..cursor,
+            label: display(label, 96),
+            value_type: None,
+            action: SourceAction::SemanticSymbol(detail),
+        });
+        if !result.contains(&symbol) {
+            result.push(symbol);
+        }
+        if result.len() == 24 {
+            break;
+        }
+    }
+    Ok((result, 0))
 }
 
 pub(super) fn diagnostics(

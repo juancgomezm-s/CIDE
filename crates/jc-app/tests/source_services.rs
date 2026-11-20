@@ -15,6 +15,200 @@ fn app(text: &str) -> Workbench {
 }
 
 #[test]
+fn rust_outline_tracks_members_and_skips_non_code_in_an_unfinished_document() {
+    let mut a = Workbench::default();
+    a.new_file("esquema.rs", TextEncoding::Utf8);
+    let text = r###"
+//! struct Comentario;
+macro_rules! generar { () => { fn MacroExpandida() {} } }
+mod interno {
+    #[doc = "struct Atributo;"]
+    pub(crate) struct Conteo<T> { pub valor: T, r#type: usize }
+    enum Estado { Inicio = 1 << 3, Lista { clave: String }, Otro }
+    pub trait Resumen { fn obtener(&self); type Valor; }
+    impl<T> Resumen for Conteo<T> where T: Copy {
+        type Valor = T;
+        fn obtener(&self) { let _ = r#"fn cadena() {}"#; fn interna() {} }
+    }
+    const fn versión() -> usize { 1 }
+}
+pub fn incompleta() {
+"###;
+    a.insert_text(text).unwrap();
+    let registry = SourceRegistry::default();
+    assert!(registry.supports_document(&a, SourceMode::Calls));
+    let mut c = SourceController::outline();
+    let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+    c.request(SourceMode::Symbols, &registry, &a, None, &mut jobs)
+        .unwrap();
+    finish(&mut c, &a, &mut jobs);
+    assert_eq!(c.state(), SourceState::Ready);
+    let items = c.items();
+    for expected in [
+        "generar · Macro",
+        "interno · Módulo",
+        "Conteo · Estructura",
+        "valor · Campo",
+        "r#type · Campo",
+        "Inicio · Variante",
+        "Lista · Variante",
+        "clave · Campo",
+        "Otro · Variante",
+        "Resumen · Rasgo",
+        "<T> Resumen for Conteo<T> · Implementación",
+        "Valor · Tipo",
+        "obtener · Método",
+        "versión · Función",
+        "incompleta · Función",
+    ] {
+        assert!(
+            items.iter().any(|item| item.label == expected),
+            "{expected}"
+        );
+    }
+    for excluded in [
+        "Comentario",
+        "MacroExpandida",
+        "Atributo",
+        "cadena",
+        "interna",
+    ] {
+        assert!(!items.iter().any(|item| item.label.starts_with(excluded)));
+    }
+    let implementation = items
+        .iter()
+        .find(|item| item.label.ends_with(" · Implementación"))
+        .unwrap();
+    let method = items
+        .iter()
+        .rfind(|item| item.label == "obtener · Método")
+        .unwrap();
+    assert!(
+        matches!(&implementation.action, SourceAction::ScopedSymbol { extent } if extent.contains(&method.range.start))
+    );
+    let written = items
+        .iter()
+        .find(|item| item.label == "versión · Función")
+        .unwrap();
+    assert_eq!(
+        &text.as_bytes()[written.range.clone()],
+        "versión".as_bytes()
+    );
+}
+
+#[test]
+fn routine_relationships_follow_the_caret_in_each_code_provider() {
+    for (name, source) in [
+        (
+            "demo.cs",
+            r#"class Demo { void principal() { this.siguiente(); siguiente(); } void siguiente() {} } class Otro { void siguiente() {} }"#,
+        ),
+        (
+            "Demo.java",
+            r#"class Demo { void principal() { siguiente(); siguiente(); } void siguiente() {} } class Otro { void siguiente() {} }"#,
+        ),
+        (
+            "demo.php",
+            r#"<?php function principal() { SIGUIENTE(); siguiente(); } function siguiente() {} function otro() { externo(); }"#,
+        ),
+        (
+            "miembros.php",
+            r#"<?php class Demo { function principal() { $this->SIGUIENTE(); $this->siguiente(); } function siguiente() {} } class Otro { function siguiente() {} }"#,
+        ),
+        (
+            "demo.rs",
+            r#"fn principal() { siguiente(); siguiente(); } fn siguiente() {} fn otro() { externo(); }"#,
+        ),
+        (
+            "demo.js",
+            r#"function principal() { siguiente(); siguiente(); } const siguiente = () => {}; function otro() { externo(); }"#,
+        ),
+        (
+            "demo.ts",
+            r#"class Demo { principal(): void { this.siguiente(); this.siguiente(); } siguiente(): void {} } class Otro { siguiente(): void {} }"#,
+        ),
+    ] {
+        let mut app = Workbench::default();
+        app.new_file(name, TextEncoding::Utf8);
+        app.insert_text(source).unwrap();
+        let registry = SourceRegistry::default();
+        let mut controller = SourceController::outline();
+        let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+        let principal = source.find("principal").unwrap();
+        app.set_linear_selection_bytes(principal, principal)
+            .unwrap();
+        controller
+            .request(SourceMode::Calls, &registry, &app, None, &mut jobs)
+            .unwrap();
+        finish(&mut controller, &app, &mut jobs);
+        assert_eq!(
+            controller.state(),
+            SourceState::Ready,
+            "{name}: {}",
+            controller.message()
+        );
+        let [target] = controller.items() else {
+            panic!("{name}: {:?}", controller.items())
+        };
+        assert_eq!(target.label, "siguiente", "{name}");
+        assert!(matches!(target.action, SourceAction::Navigate));
+        assert!(controller.message().starts_with("principal ·"), "{name}");
+        assert!(registry.supports_incoming(&app, None));
+        let definition = target.range.start;
+        controller.activate(&mut app, None, false).unwrap();
+        assert_eq!(app.active_editor().unwrap().cursor, definition);
+        assert!(controller.validate_context(&app, None, &mut jobs));
+        controller
+            .request(SourceMode::Incoming, &registry, &app, None, &mut jobs)
+            .unwrap();
+        finish(&mut controller, &app, &mut jobs);
+        assert_eq!(
+            controller.state(),
+            SourceState::Ready,
+            "{name}: {}",
+            controller.message()
+        );
+        let [caller] = controller.items() else {
+            panic!("{name}: {:?}", controller.items())
+        };
+        assert_eq!(caller.label, "principal", "{name}");
+        assert!(
+            source[caller.range.clone()].eq_ignore_ascii_case("siguiente"),
+            "{name}"
+        );
+        assert!(caller.range.start < definition);
+    }
+}
+
+#[test]
+fn routine_relationships_do_not_resolve_qualified_or_ambiguous_calls() {
+    let mut app = Workbench::default();
+    let source = r#"function principal() { otro.duplicado(); duplicado(); privada(); /* ficticio() */ "oculto()"; }
+function duplicado() {} function duplicado(x) {} function otra() { function privada() {} }"#;
+    app.new_file("ambiguo.js", TextEncoding::Utf8);
+    app.insert_text(source).unwrap();
+    let at = source.find("principal").unwrap();
+    app.set_linear_selection_bytes(at, at).unwrap();
+    let mut controller = SourceController::default();
+    let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+    controller
+        .request(
+            SourceMode::Calls,
+            &SourceRegistry::default(),
+            &app,
+            None,
+            &mut jobs,
+        )
+        .unwrap();
+    finish(&mut controller, &app, &mut jobs);
+    assert_eq!(controller.items().len(), 3);
+    assert!(controller
+        .items()
+        .iter()
+        .all(|item| matches!(item.action, SourceAction::Unresolved(_))));
+}
+
+#[test]
 fn markdown_references_select_link_at_caret_and_ignore_code_and_images() {
     let mut a = Workbench::default();
     a.new_file("enlaces.md", TextEncoding::Utf8);
@@ -128,7 +322,7 @@ fn javascript_incoming_opens_static_import_at_its_line_in_other_group() {
     fs::create_dir(&root).unwrap();
     let source = root.join("caller.js");
     let target = root.join("target.js");
-    let text = "// origen\r\nimport './target.js';\r\nimport('./target.js');";
+    let text = "// origen\r\nimport './target.js';\r\nexport * from './target.js';\r\nimport('./target.js');";
     fs::write(&source, text).unwrap();
     fs::write(&target, "export function demo() {}").unwrap();
     let mut a = Workbench::default();
@@ -171,6 +365,7 @@ fn javascript_incoming_opens_static_import_at_its_line_in_other_group() {
 }
 fn symbols(_: &TaskSnapshot, _: &Cancellation, out: &mut TaskOutput) -> Result<(), TaskFailure> {
     out.push(TaskItem::Source(SourceItem {
+        value_type: None,
         range: 0..1,
         label: "one (lexical)".into(),
         action: SourceAction::Navigate,
@@ -184,6 +379,8 @@ fn registry() -> SourceRegistry {
         symbols: Some(symbols),
         references: None,
         calls: None,
+        callers: None,
+        routines: None,
         dependencies: None,
         file_resolution: FileResolution::ProjectCandidates,
         completion: None,
@@ -198,7 +395,11 @@ fn source_registry_capabilities_are_optional_namespaced_and_default_completion_n
 ) {
     let mut r = registry();
     assert!(r.resolve("text", SourceMode::Symbols).is_some());
-    assert!(r.resolve("rust", SourceMode::Symbols).is_none());
+    assert_eq!(
+        r.resolve("rust", SourceMode::Symbols).unwrap().id,
+        "core.rust"
+    );
+    assert!(r.resolve("rust", SourceMode::Dependencies).is_none());
     assert_eq!(
         r.resolve("rust", SourceMode::Completion).unwrap().id,
         "core.words"
@@ -210,6 +411,8 @@ fn source_registry_capabilities_are_optional_namespaced_and_default_completion_n
             symbols: Some(symbols),
             references: None,
             calls: None,
+            callers: None,
+            routines: None,
             dependencies: None,
             file_resolution: FileResolution::ProjectCandidates,
             completion: None,
@@ -224,6 +427,8 @@ fn source_registry_capabilities_are_optional_namespaced_and_default_completion_n
             symbols: Some(symbols),
             references: None,
             calls: None,
+            callers: None,
+            routines: None,
             dependencies: None,
             file_resolution: FileResolution::ProjectCandidates,
             completion: None,
@@ -326,6 +531,7 @@ fn source_refresh_storm_cancel_and_bounded_presentation_do_not_retain_extra_snap
 }
 fn wrong_mode(_: &TaskSnapshot, _: &Cancellation, out: &mut TaskOutput) -> Result<(), TaskFailure> {
     out.push(TaskItem::Source(SourceItem {
+        value_type: None,
         range: 0..1,
         label: "unexpected edit".into(),
         action: SourceAction::Replace("X".into()),
@@ -334,6 +540,7 @@ fn wrong_mode(_: &TaskSnapshot, _: &Cancellation, out: &mut TaskOutput) -> Resul
 fn too_many(_: &TaskSnapshot, _: &Cancellation, out: &mut TaskOutput) -> Result<(), TaskFailure> {
     for _ in 0..65 {
         out.push(TaskItem::Source(SourceItem {
+            value_type: None,
             range: 0..1,
             label: "symbol".into(),
             action: SourceAction::Navigate,
@@ -354,6 +561,8 @@ fn source_provider_wrong_action_and_result_quota_cannot_publish_or_edit() {
             symbols: Some(provider),
             references: None,
             calls: None,
+            callers: None,
+            routines: None,
             dependencies: None,
             file_resolution: FileResolution::ProjectCandidates,
             completion: None,

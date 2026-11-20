@@ -6,12 +6,77 @@ use serde_json::{json, Map, Value};
 use std::{
     fs, io,
     path::{Path, PathBuf},
+    sync::mpsc,
+    thread,
+    time::Duration,
 };
+
+/// A single probe owns its immutable draft and never writes a profile.
+pub struct ConnectionTest {
+    cancel: crate::Cancellation,
+    result: mpsc::Receiver<Result<String, String>>,
+}
+
+impl ConnectionTest {
+    pub fn start(
+        run: impl FnOnce(&crate::Cancellation) -> Result<String, String> + Send + 'static,
+        notify: impl FnOnce() + Send + 'static,
+    ) -> Result<Self, String> {
+        let cancel = crate::Cancellation::new(Duration::from_secs(15));
+        let worker_cancel = cancel.clone();
+        let (send, result) = mpsc::sync_channel(1);
+        thread::Builder::new()
+            .name("cide-probar-conexion".into())
+            .spawn(move || {
+                let result = run(&worker_cancel);
+                let result = if worker_cancel.is_cancelled() {
+                    Err("Se agotó el tiempo para probar la conexión.".into())
+                } else {
+                    result
+                };
+                let _ = send.send(result);
+                notify();
+            })
+            .map_err(|error| format!("No se pudo iniciar la prueba de conexión: {error}"))?;
+        Ok(Self { cancel, result })
+    }
+
+    pub fn poll(&self) -> Option<Result<String, String>> {
+        match self.result.try_recv() {
+            Ok(result) => Some(result),
+            Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Some(Err("La prueba de conexión terminó sin responder.".into()))
+            }
+        }
+    }
+}
+
+impl Drop for ConnectionTest {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+    }
+}
 
 const FILE: &str = "conexiones.local.json";
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_PROFILES: usize = 32;
 pub const MAX_VALUE_BYTES: usize = 256;
+pub const SQL_TLS_FIELD: usize = 5;
+pub const SQL_TLS_MODES: [(&str, &str); 3] = [
+    (
+        "verificar-servidor",
+        "Verificar identidad del servidor (recomendado)",
+    ),
+    (
+        "requerido",
+        "Cifrar sin verificar la identidad del servidor",
+    ),
+    (
+        "deshabilitado",
+        "Sin TLS, para una conexión local de pruebas",
+    ),
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Engine {
@@ -57,6 +122,20 @@ impl Field {
 
     pub fn label(&self) -> &'static str {
         self.label
+    }
+
+    pub fn guidance(&self) -> &'static str {
+        match self.key {
+            "nombre" => "Identifica esta conexión dentro del proyecto.",
+            "servidor" => "Nombre DNS o dirección IP del servidor SQL.",
+            "puerto" => "Puerto TCP del servidor, entre 1 y 65535.",
+            "base" => "Nombre de la base de datos en el servidor.",
+            "usuario" => "Usuario de la base de datos con permisos de consulta.",
+            "tls" => "F4 elige TLS: verificar-servidor, requerido o deshabilitado.",
+            "credencial" => "Opcional. Nombre genérico de Windows: cide/datadigger/nombre.",
+            "esquemas" => "Esquemas PostgreSQL separados por coma. El inicial es public.",
+            _ => "",
+        }
     }
 }
 
@@ -143,10 +222,7 @@ impl Draft {
                     .bytes()
                     .all(|ch| ch.is_ascii_alphanumeric() || b".-_:[]".contains(&ch)),
                 "puerto" => value.parse::<u16>().is_ok_and(|port| port != 0),
-                "tls" => matches!(
-                    value.as_str(),
-                    "verificar-servidor" | "requerido" | "deshabilitado"
-                ),
+                "tls" => SQL_TLS_MODES.iter().any(|(mode, _)| value == mode),
                 "credencial" => {
                     value.is_empty()
                         || value.strip_prefix("cide/datadigger/").is_some_and(|id| {

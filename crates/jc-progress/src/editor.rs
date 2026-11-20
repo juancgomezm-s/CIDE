@@ -1,4 +1,5 @@
 //! Explicit batch AVM jobs shared by both editors.
+mod profile_setup;
 mod schema;
 #[cfg(test)]
 mod tests;
@@ -13,6 +14,7 @@ use jc_app::{
 };
 use jc_files::read_in_root;
 use jc_text::{DecodedScalars, TextEncoding};
+pub use profile_setup::{OpenEdgeTest, ProfileSetup, OPENEDGE_FIELDS, OPENEDGE_VALUE_BYTES};
 pub use schema::browse::edit::{
     RecordConflict, RecordController, RecordEvent, RecordHistory, RecordHistoryEntry,
     RecordPreview, RECORD_EDIT_MAX_VALUE_BYTES,
@@ -95,7 +97,7 @@ pub fn submit(
         .extension()
         .and_then(|s| s.to_str())
         .unwrap_or_default();
-    if matches!(action, Action::Schema | Action::Xref)
+    if matches!(action, Action::Schema | Action::Xref | Action::Probe)
         || !["p", "w", "cls"]
             .iter()
             .any(|ext| extension.eq_ignore_ascii_case(ext))
@@ -115,7 +117,7 @@ pub fn submit(
         Action::Check => "Comprobación ABL",
         Action::Compile => "Compilación ABL",
         Action::Run => "Ejecución ABL",
-        Action::Schema | Action::Xref => unreachable!(),
+        Action::Schema | Action::Xref | Action::Probe => unreachable!(),
     };
     jobs.submit_document(
         app,
@@ -148,13 +150,6 @@ struct DatabaseAlias {
 }
 
 fn parse_aliases(value: &str) -> Result<Vec<DatabaseAlias>, String> {
-    fn valid(name: &str) -> bool {
-        name.len() <= 32
-            && name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
-            && name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-    }
     let mut aliases: Vec<DatabaseAlias> = Vec::new();
     for pair in value.split(',') {
         let (name, database) = pair
@@ -162,8 +157,8 @@ fn parse_aliases(value: &str) -> Result<Vec<DatabaseAlias>, String> {
             .ok_or("Usa aliases=alias:base_logica en el perfil Progress")?;
         let (name, database) = (name.trim(), database.trim());
         if aliases.len() == 32
-            || !valid(name)
-            || !valid(database)
+            || !valid_logical_name(name)
+            || !valid_logical_name(database)
             || name.eq_ignore_ascii_case("DICTDB")
             || aliases.iter().any(|a| a.name.eq_ignore_ascii_case(name))
         {
@@ -177,6 +172,14 @@ fn parse_aliases(value: &str) -> Result<Vec<DatabaseAlias>, String> {
     Ok(aliases)
 }
 
+fn valid_logical_name(name: &str) -> bool {
+    name.len() <= 32
+        && name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+}
+
 fn load_profile(root: &Path) -> Result<EditorProfile, String> {
     let (_, bytes) = read_in_root(root, &root.join(PROFILE), 8192).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
@@ -185,56 +188,7 @@ fn load_profile(root: &Path) -> Result<EditorProfile, String> {
             format!("No se pudo leer {PROFILE}: {error}")
         }
     })?;
-    let text = std::str::from_utf8(&bytes).map_err(|_| format!("{PROFILE} debe estar en UTF-8"))?;
-    let mut executable = None;
-    let mut parameter_file = None;
-    let mut ini_file = None;
-    let mut cpstream = None;
-    let mut cpinternal = None;
-    let mut aliases = None;
-    let mut version = None;
-    for (index, line) in text.trim_start_matches('\u{feff}').lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let invalid = || format!("{PROFILE}: entrada inválida en línea {}", index + 1);
-        let (key, value) = line.split_once('=').ok_or_else(invalid)?;
-        let value = value.trim();
-        if value.is_empty() || value.chars().any(char::is_control) {
-            return Err(invalid());
-        }
-        let repeated = match key.trim() {
-            "executable" => executable.replace(root.join(value)).is_some(),
-            "pf" => parameter_file.replace(root.join(value)).is_some(),
-            "ini" => ini_file.replace(root.join(value)).is_some(),
-            "cpstream" => cpstream.replace(value.to_owned()).is_some(),
-            "cpinternal" => cpinternal.replace(value.to_owned()).is_some(),
-            "aliases" => aliases.replace(parse_aliases(value)?).is_some(),
-            "version" if crate::valid_avm_version(value) => {
-                version.replace(value.to_owned()).is_some()
-            }
-            _ => return Err(invalid()),
-        };
-        if repeated {
-            return Err(invalid());
-        }
-    }
-    let executable = executable
-        .ok_or(format!("Falta executable en {PROFILE}"))?
-        .canonicalize()
-        .map_err(|e| format!("Ejecutable Progress: {e}"))?;
-    Ok(EditorProfile {
-        avm: ProgressProfile {
-            executable: avm_path(&executable),
-            parameter_file: parameter_file.map(|p| avm_path(&p)),
-            ini_file: ini_file.map(|p| avm_path(&p)),
-            cpstream: cpstream.ok_or(format!("Falta cpstream en {PROFILE}"))?,
-            cpinternal: cpinternal.ok_or(format!("Falta cpinternal en {PROFILE}"))?,
-        },
-        aliases: aliases.unwrap_or_default(),
-        version,
-    })
+    profile_setup::resolve(root, &profile_setup::parse(&bytes)?)
 }
 
 fn avm_path(path: &Path) -> PathBuf {
@@ -380,7 +334,7 @@ fn execute(
             Action::Check => "Sintaxis ABL comprobada".into(),
             Action::Compile => format!("Código r generado en {}", job.path.display()),
             Action::Run => "Ejecución ABL finalizada".into(),
-            Action::Schema | Action::Xref => unreachable!(),
+            Action::Schema | Action::Xref | Action::Probe => unreachable!(),
         };
         output
             .push(TaskItem::Message(message))

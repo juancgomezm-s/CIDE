@@ -18,8 +18,6 @@ const MAX_ROWS: usize = 128;
 const MAX_CHECKPOINTS: usize = 256;
 const MAX_TOKENS: usize = 1536;
 const MAX_VISIBLE_BYTES: usize = 256 * 1024;
-const MAX_OVERVIEW_ROWS: usize = 32;
-const MAX_OVERVIEW_BYTES: usize = 4096;
 const MAX_PATH: usize = 4096;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -336,6 +334,21 @@ impl SyntaxCache {
 }
 
 impl Workbench {
+    pub fn syntax_profile_for_tab(&self, tab: TabId) -> SyntaxProfile {
+        self.document_by_tab(tab)
+            .map_or(SyntaxProfile::Plain, |document| {
+                jc_languages::detect(
+                    document
+                        .session
+                        .path()
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or(""),
+                )
+                .syntax_profile()
+            })
+    }
+
     /// Owner-thread continuation of an already requested window. No frame or
     /// source snapshot is constructed, and stale metadata cannot resume work.
     pub fn continue_syntax(&self, tab: TabId) -> bool {
@@ -374,15 +387,7 @@ impl Workbench {
                 encoding: None,
             };
         };
-        let profile = jc_languages::detect(
-            document
-                .session
-                .path()
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(""),
-        )
-        .syntax_profile();
+        let profile = self.syntax_profile_for_tab(tab);
         let mut ranges = Vec::with_capacity(rows.min(MAX_ROWS));
         for line in first_line..first_line.saturating_add(rows.min(MAX_ROWS)) {
             let Some((content, eol)) = self.line_range_for_tab(tab, line) else {
@@ -397,84 +402,6 @@ impl Workbench {
             document.session.encoding(),
             ranges,
         )
-    }
-
-    /// Tokenize a bounded set of short, non-contiguous overview samples.
-    /// Each line is treated as an independent snippet, so this is suitable for
-    /// a minimap silhouette but does not claim multiline lexical context. It
-    /// uses the shared language scanner and reads at most 4 KiB per call.
-    pub fn syntax_samples(&self, tab: TabId, lines: &[usize], bytes_per_line: usize) -> SyntaxRows {
-        let Some(document) = self.document_by_tab(tab) else {
-            return SyntaxRows::default();
-        };
-        let profile = jc_languages::detect(
-            document
-                .session
-                .path()
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(""),
-        )
-        .syntax_profile();
-        let encoding = document.session.encoding();
-        let mut result = SyntaxRows {
-            rows: Vec::with_capacity(lines.len().min(MAX_OVERVIEW_ROWS)),
-            pending: false,
-            limited: lines.len() > MAX_OVERVIEW_ROWS
-                || bytes_per_line == 0
-                || bytes_per_line > 256
-                || lines.len().saturating_mul(bytes_per_line) > MAX_OVERVIEW_BYTES,
-            stats: SyntaxStats::default(),
-            revision: document.session.document().revision(),
-            profile,
-            encoding,
-        };
-        if result.limited {
-            return result;
-        }
-        let source = document.session.document();
-        for &line in lines {
-            if result
-                .rows
-                .last()
-                .is_some_and(|previous: &SyntaxRow| previous.line >= line)
-            {
-                result.limited = true;
-                result.rows.clear();
-                return result;
-            }
-            let Some((range, _)) = self.line_range_for_tab(tab, line) else {
-                result.limited = true;
-                result.rows.clear();
-                return result;
-            };
-            let end = range.start + range.len().min(bytes_per_line);
-            let Ok(bytes) = source.read_range(range.start..end) else {
-                result.limited = true;
-                result.rows.clear();
-                return result;
-            };
-            let mut lexer = LexerState::default();
-            let mut spans = Vec::new();
-            scan(profile, &mut lexer, &bytes, range.start, true, |token| {
-                if token.kind != SyntaxKind::Plain && spans.len() < MAX_TOKENS {
-                    spans.push(token);
-                }
-            });
-            result.stats.processed_bytes = result.stats.processed_bytes.saturating_add(bytes.len());
-            result.rows.push(SyntaxRow {
-                line,
-                source: range.start..end,
-                spans,
-            });
-            if result.stats.processed_bytes > MAX_OVERVIEW_BYTES || lexer.limited() {
-                result.limited = true;
-                result.rows.clear();
-                return result;
-            }
-        }
-        result.stats.scanned_to = result.stats.processed_bytes;
-        result
     }
 }
 

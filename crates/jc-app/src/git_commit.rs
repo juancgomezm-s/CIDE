@@ -595,6 +595,13 @@ impl CommitController {
             }),
         );
     }
+    pub fn cloning_in(&self, folder: Option<&Path>) -> bool {
+        self.view.as_ref().is_some_and(|view| {
+            Some(view.root.as_path()) == folder
+                && matches!(&view.draft, WriteDraft::Repository(draft)
+                    if draft.action == RepositoryAction::CloneWorktree)
+        })
+    }
     pub fn select_repository_action(&mut self, index: usize) {
         if self.busy() {
             return;

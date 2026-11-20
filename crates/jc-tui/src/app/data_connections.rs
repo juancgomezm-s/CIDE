@@ -2,9 +2,12 @@ use super::TuiApp;
 use crate::{input::is_plain_text, state::UiOverlay};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use jc_app::{
-    data_connections::{Draft, Engine, ProfileStore, MAX_VALUE_BYTES},
+    data_connections::{
+        ConnectionTest, Draft, Engine, ProfileStore, MAX_VALUE_BYTES, SQL_TLS_FIELD, SQL_TLS_MODES,
+    },
     edit_field, CommandId, FieldEdit, Overlay,
 };
+use jc_progress::editor::{ProfileSetup, OPENEDGE_FIELDS, OPENEDGE_VALUE_BYTES};
 use std::path::PathBuf;
 
 pub(super) const PROJECT_REQUIRED: &str =
@@ -25,21 +28,141 @@ pub(crate) enum Stage {
 }
 
 pub(crate) struct Form {
-    pub(crate) draft: Draft,
+    pub(crate) draft: SetupDraft,
     editing: Option<usize>,
     pub(crate) field: usize,
     pub(crate) cursor: usize,
     pub(crate) error: Option<String>,
+    pub(crate) test_result: Option<String>,
+    pub(crate) probe: Option<ConnectionTest>,
+}
+
+pub(crate) enum SetupDraft {
+    Sql(Draft),
+    OpenEdge(Box<ProfileSetup>),
+}
+
+impl SetupDraft {
+    fn open(
+        root: &std::path::Path,
+        engine: Engine,
+        existing: Option<&Draft>,
+    ) -> Result<Self, String> {
+        if engine == Engine::OpenEdge {
+            ProfileSetup::open(root).map(Box::new).map(Self::OpenEdge)
+        } else {
+            Ok(Self::Sql(
+                existing.cloned().unwrap_or_else(|| Draft::new(engine)),
+            ))
+        }
+    }
+
+    pub(crate) fn engine(&self) -> Engine {
+        match self {
+            Self::Sql(draft) => draft.engine(),
+            Self::OpenEdge(_) => Engine::OpenEdge,
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Self::Sql(draft) => draft.fields().len(),
+            Self::OpenEdge(_) => OPENEDGE_FIELDS.len(),
+        }
+    }
+
+    pub(crate) fn label(&self, index: usize) -> &str {
+        match self {
+            Self::Sql(draft) => draft.fields()[index].label(),
+            Self::OpenEdge(_) => OPENEDGE_FIELDS[index].0,
+        }
+    }
+
+    pub(crate) fn guidance(&self, index: usize) -> &str {
+        match self {
+            Self::Sql(draft) => draft.fields()[index].guidance(),
+            Self::OpenEdge(_) => OPENEDGE_FIELDS[index].1,
+        }
+    }
+
+    pub(crate) fn value(&self, index: usize) -> &str {
+        match self {
+            Self::Sql(draft) => draft.value(index),
+            Self::OpenEdge(draft) => draft.value(index),
+        }
+    }
+
+    fn set_value(&mut self, index: usize, value: &str) -> Result<(), String> {
+        match self {
+            Self::Sql(draft) => draft.set_value(index, value),
+            Self::OpenEdge(draft) => draft.set_value(index, value),
+        }
+    }
+
+    fn limit(&self) -> usize {
+        match self {
+            Self::Sql(_) => MAX_VALUE_BYTES,
+            Self::OpenEdge(_) => OPENEDGE_VALUE_BYTES,
+        }
+    }
+
+    fn test(&self, wakeup: jc_app::Wakeup) -> Result<ConnectionTest, String> {
+        match self {
+            Self::OpenEdge(setup) => {
+                let probe = setup.test_request();
+                ConnectionTest::start(move |cancel| probe.run(cancel), move || wakeup.signal())
+            }
+            #[cfg(windows)]
+            Self::Sql(draft) => {
+                use jc_platform::{sql, sql_worker};
+                let engine = if draft.engine() == Engine::PostgreSql {
+                    sql::Engine::PostgreSql
+                } else {
+                    sql::Engine::MySql
+                };
+                let options =
+                    sql_worker::options(engine, std::array::from_fn(|index| draft.value(index)))?;
+                ConnectionTest::start(
+                    move |cancel| sql_worker::test_connection(&options, || cancel.is_cancelled()),
+                    move || wakeup.signal(),
+                )
+            }
+            #[cfg(not(windows))]
+            Self::Sql(_) => Err("La prueba SQL por ODBC está disponible en Windows.".into()),
+        }
+    }
 }
 
 impl ConnectionsDialog {
     pub(crate) fn profile_row(&self) -> usize {
         self.profile_row
     }
+
+    pub(crate) fn virtual_openedge(&self) -> bool {
+        self.has_progress_profile
+            && !self
+                .store
+                .profiles()
+                .iter()
+                .any(|draft| draft.engine() == Engine::OpenEdge)
+    }
+
+    fn profile_at(&self, row: usize) -> Option<&Draft> {
+        self.store.profiles().get(row.checked_sub(1)?)
+    }
+
+    fn open_form(&mut self, engine: Engine, editing: Option<usize>) -> Result<(), String> {
+        let existing = editing.and_then(|index| self.store.profiles().get(index));
+        self.stage = Stage::Form(Form::new(
+            SetupDraft::open(&self.root, engine, existing)?,
+            editing,
+        ));
+        Ok(())
+    }
 }
 
 impl Form {
-    fn new(draft: Draft, editing: Option<usize>) -> Self {
+    fn new(draft: SetupDraft, editing: Option<usize>) -> Self {
         let cursor = draft.value(0).len();
         Self {
             draft,
@@ -47,6 +170,8 @@ impl Form {
             field: 0,
             cursor,
             error: None,
+            test_result: None,
+            probe: None,
         }
     }
 }
@@ -115,46 +240,98 @@ impl TuiApp {
 
         match &mut dialog.stage {
             Stage::Profiles => {
-                move_row(
-                    &mut dialog.profile_row,
-                    dialog.store.profiles().len(),
-                    key.code,
-                );
+                let last = dialog.store.profiles().len() + usize::from(dialog.virtual_openedge());
+                move_row(&mut dialog.profile_row, last, key.code);
                 if key.code == KeyCode::Enter {
-                    dialog.stage = match dialog.profile_row.checked_sub(1) {
-                        None => Stage::Engines { selected: 0 },
-                        Some(index) => {
-                            let draft = dialog.store.profiles()[index].clone();
-                            Stage::Form(Form::new(draft, Some(index)))
+                    if dialog.profile_row == 0 {
+                        dialog.stage = Stage::Engines { selected: 0 };
+                        self.status = "Elige el motor de la conexión".into();
+                    } else {
+                        let engine = dialog
+                            .profile_at(dialog.profile_row)
+                            .map_or(Engine::OpenEdge, Draft::engine);
+                        if let Err(error) =
+                            dialog.open_form(engine, dialog.profile_row.checked_sub(1))
+                        {
+                            self.status = error;
                         }
-                    };
-                    self.status = "Conexiones de datos del proyecto".into();
+                    }
                 }
             }
             Stage::Engines { selected } => {
                 move_row(selected, Engine::ALL.len() - 1, key.code);
                 if key.code == KeyCode::Enter {
-                    dialog.stage = Stage::Form(Form::new(Draft::new(Engine::ALL[*selected]), None));
+                    let engine = Engine::ALL[*selected];
+                    if let Err(error) = dialog.open_form(engine, None) {
+                        self.status = error;
+                    }
                 }
             }
             Stage::Form(form) => {
+                if form.probe.is_some() {
+                    return;
+                }
+                if key.code == KeyCode::F(8) {
+                    form.error = None;
+                    match form.draft.test(self.syntax_wakeup.clone()) {
+                        Ok(probe) => {
+                            form.probe = Some(probe);
+                            form.test_result = Some("Probando conexión…".into());
+                        }
+                        Err(error) => {
+                            form.test_result =
+                                Some(format!("No se pudo probar la conexión. {error}"))
+                        }
+                    }
+                    return;
+                }
                 if key.code == KeyCode::F(9)
                     || key.code == KeyCode::Enter && key.modifiers == KeyModifiers::CONTROL
                 {
-                    let name = form.draft.value(0).trim().to_owned();
-                    match dialog.store.save(form.draft.clone(), form.editing) {
-                        Ok(()) => {
+                    let result = match &mut form.draft {
+                        SetupDraft::Sql(draft) => {
+                            dialog.store.save(draft.clone(), form.editing).map(|()| {
+                                format!(
+                                    "Conexión «{}» guardada en el proyecto",
+                                    draft.value(0).trim()
+                                )
+                            })
+                        }
+                        SetupDraft::OpenEdge(draft) => draft.save().map(|()| {
+                            "Perfil OpenEdge guardado · F5 en Conexiones actualiza el esquema"
+                                .into()
+                        }),
+                    };
+                    match result {
+                        Ok(message) => {
+                            if form.draft.engine() == Engine::OpenEdge {
+                                self.progress_schema.clear();
+                            }
                             self.close_overlay();
-                            self.status = format!("Conexión «{name}» guardada en el proyecto");
+                            self.status = message;
                         }
                         Err(error) => form.error = Some(error),
                     }
                     return;
                 }
+                if key.code == KeyCode::F(4)
+                    && form.field == SQL_TLS_FIELD
+                    && form.draft.engine() != Engine::OpenEdge
+                {
+                    let next = SQL_TLS_MODES
+                        .iter()
+                        .position(|(value, _)| *value == form.draft.value(form.field))
+                        .map_or(0, |index| (index + 1) % SQL_TLS_MODES.len());
+                    let value = SQL_TLS_MODES[next].0;
+                    form.error = form.draft.set_value(form.field, value).err();
+                    form.test_result = None;
+                    form.cursor = value.len();
+                    return;
+                }
                 let field = match key.code {
                     KeyCode::Up | KeyCode::BackTab => form.field.saturating_sub(1),
                     KeyCode::Down | KeyCode::Tab | KeyCode::Enter => {
-                        (form.field + 1).min(form.draft.fields().len() - 1)
+                        (form.field + 1).min(form.draft.len() - 1)
                     }
                     _ => form.field,
                 };
@@ -220,18 +397,23 @@ impl TuiApp {
         dialog.has_progress_profile
             && self.project_root.as_ref() == Some(&dialog.root)
             && matches!(dialog.stage, Stage::Profiles)
-            && dialog
-                .profile_row
-                .checked_sub(1)
-                .is_some_and(|index| dialog.store.profiles()[index].engine() == Engine::OpenEdge)
+            && (dialog
+                .profile_at(dialog.profile_row)
+                .is_some_and(|draft| draft.engine() == Engine::OpenEdge)
+                || (dialog.virtual_openedge()
+                    && dialog.profile_row == dialog.store.profiles().len() + 1))
     }
 
     pub(super) fn data_connection_paste_budget(&self) -> Option<usize> {
         let Stage::Form(form) = &self.data_connections.as_ref()?.stage else {
             return None;
         };
+        if form.probe.is_some() {
+            return None;
+        }
         Some(
-            MAX_VALUE_BYTES
+            form.draft
+                .limit()
                 .saturating_sub(form.draft.value(form.field).len())
                 .max(1),
         )
@@ -245,13 +427,16 @@ impl TuiApp {
         else {
             return;
         };
+        if form.probe.is_some() {
+            return;
+        }
         if matches!(edit, FieldEdit::Insert(text) if text.chars().any(char::is_control)) {
             form.error = Some("Usa una sola línea por campo".into());
             return;
         }
         let mut value = form.draft.value(form.field).to_owned();
         let mut cursor = form.cursor;
-        let result = edit_field(&mut value, &mut cursor, edit, MAX_VALUE_BYTES)
+        let result = edit_field(&mut value, &mut cursor, edit, form.draft.limit())
             .map_err(str::to_owned)
             .and_then(|changed| {
                 if changed {
@@ -264,10 +449,32 @@ impl TuiApp {
                 form.cursor = cursor;
                 if changed {
                     form.error = None;
+                    form.test_result = None;
                 }
             }
             Err(error) => form.error = Some(error),
         }
+    }
+
+    pub(super) fn poll_data_connection_test(&mut self) -> bool {
+        let Some(ConnectionsDialog {
+            stage: Stage::Form(form),
+            root,
+            ..
+        }) = &mut self.data_connections
+        else {
+            return false;
+        };
+        if self.project_root.as_ref() != Some(root) {
+            return false;
+        }
+        let Some(result) = form.probe.as_ref().and_then(ConnectionTest::poll) else {
+            return false;
+        };
+        form.probe = None;
+        form.test_result =
+            Some(result.unwrap_or_else(|error| format!("Falló la conexión. {error}")));
+        true
     }
 }
 
@@ -311,6 +518,7 @@ mod tests {
 
     impl Drop for Project {
         fn drop(&mut self) {
+            let _ = fs::remove_file(self.0.join("avm.exe"));
             let _ = fs::remove_file(self.0.join(".cide/conexiones.local.json"));
             let _ = fs::remove_file(self.0.join(".cide/progress.local.ini"));
             let _ = fs::remove_dir(self.0.join(".cide"));
@@ -481,5 +689,41 @@ mod tests {
                 .text
                 .contains("Falta executable en .cide/progress.local.ini")
         }));
+    }
+
+    #[test]
+    fn project_connections_wizard_saves_openedge_and_lists_it_without_a_json_profile() {
+        let project = Project::new();
+        fs::write(project.0.join("avm.exe"), "fixture").unwrap();
+        let mut app = TuiApp::new(LaunchOptions::default());
+        app.set_explorer_root(project.0.clone()).unwrap();
+        app.dispatch(CommandId::ProjectDataConnections);
+        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Enter);
+        assert!(screen_contains(&mut app, "Ejecutable AVM"));
+        assert!(screen_contains(&mut app, "F8 probar conexión"));
+        app.handle_event(Event::Key(KeyEvent::new(
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL,
+        )));
+        key(&mut app, KeyCode::F(8));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !screen_contains(&mut app, "Falló la conexión") {
+            assert!(Instant::now() < deadline);
+            app.poll_tasks();
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!project.0.join(".cide").exists());
+        app.handle_event(Event::Paste("avm.exe".into()));
+        assert!(!screen_contains(&mut app, "Falló la conexión"));
+        key(&mut app, KeyCode::F(9));
+        assert_eq!(app.overlay, UiOverlay::None, "{}", app.status);
+        let ini = fs::read_to_string(project.0.join(".cide/progress.local.ini")).unwrap();
+        assert!(ini.contains("executable=avm.exe\n"));
+        assert!(!project.0.join(".cide/conexiones.local.json").exists());
+        app.dispatch(CommandId::ProjectDataConnections);
+        key(&mut app, KeyCode::Down);
+        assert!(screen_contains(&mut app, "OpenEdge · Perfil del proyecto"));
+        assert!(screen_contains(&mut app, "F5 actualizar esquema"));
     }
 }

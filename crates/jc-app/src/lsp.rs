@@ -28,6 +28,7 @@ const RESULT_LIMIT: usize = 48;
 pub(crate) fn language_id(profile: &str, path: &Path) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?;
     match profile {
+        "rust" => Some("rust"),
         "csharp" => Some("csharp"),
         "php" => Some("php"),
         "java" => Some("java"),
@@ -44,6 +45,7 @@ pub(crate) enum Query {
     Definition,
     References,
     Completion,
+    SemanticContext,
     Diagnostics,
 }
 
@@ -236,7 +238,9 @@ impl Server {
         let (method, capability) = match query {
             Query::Definition => ("textDocument/definition", "definitionProvider"),
             Query::References => ("textDocument/references", "referencesProvider"),
-            Query::Completion => ("textDocument/completion", "completionProvider"),
+            Query::Completion | Query::SemanticContext => {
+                ("textDocument/completion", "completionProvider")
+            }
             Query::Diagnostics => ("textDocument/diagnostic", "diagnosticProvider"),
         };
         let available = &self.capabilities[capability];
@@ -251,7 +255,9 @@ impl Server {
         self.sync_document(document, cancel)?;
         match query {
             Query::References => params["context"] = json!({"includeDeclaration":true}),
-            Query::Completion => params["context"] = json!({"triggerKind":1}),
+            Query::Completion | Query::SemanticContext => {
+                params["context"] = json!({"triggerKind":1})
+            }
             Query::Diagnostics if !supported => {
                 return self
                     .transport
@@ -445,6 +451,7 @@ impl Work {
             Query::Completion => {
                 language_items::completions(&response, bytes, encoding, self.cursor, position)
             }
+            Query::SemanticContext => language_items::semantic_context(&response, self.cursor),
             Query::Diagnostics => language_items::diagnostics(&response, bytes, encoding),
             Query::Definition | Query::References => project_locations(
                 &response, &root, &source, bytes, encoding, cancel,
@@ -687,6 +694,7 @@ fn project_locations(
                 None => (SourceAction::Navigate, offset),
             };
             output.push(SourceItem {
+                value_type: None,
                 range: offset..offset,
                 label,
                 action,

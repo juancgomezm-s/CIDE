@@ -972,8 +972,12 @@ fn worker(shared: Arc<Shared>) {
             }
             queue.pending.pop_front().unwrap()
         };
+        let output_limits = match &job.provider {
+            Provider::Source(work) => work.output_limits(shared.limits),
+            _ => shared.limits,
+        };
         let mut output = TaskOutput::new(
-            shared.limits,
+            output_limits,
             job.snapshot.range.clone(),
             job.snapshot.stamp,
             job.artifact_limit,

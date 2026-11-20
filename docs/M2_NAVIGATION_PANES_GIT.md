@@ -109,6 +109,20 @@ Un `DiffModel` común presenta lado izquierdo/derecho, rutas/SHAs, hunks, contex
 - Git hooks son código externo: marcar el posible riesgo y no introducir ejecución encubierta a través de comandos del editor.
 - Multi-repo: cada acción tiene un `RepositoryId` explícito y no asume que todos los directorios pertenecen al mismo repositorio.
 
+En la GUI, **Archivos** puede abrir una carpeta que agrupa varios repositorios.
+Seleccionar o desplegar un subdirectorio, o abrir un archivo, activa el repositorio
+más cercano dentro de la carpeta del proyecto. **Git → Estado del repositorio**
+usa esa raíz para el estado, el historial, las comparaciones y las operaciones
+revisadas. La carpeta del proyecto sigue siendo la raíz del Explorador.
+
+El Explorador muestra la rama y la cantidad de cambios junto al nombre de cada
+repositorio. Los archivos muestran `M` si están modificados, `A` para altas
+preparadas, `E` para bajas, `?` cuando Git aún no los rastrea y `C` en conflicto.
+Un punto marca las carpetas con cambios debajo. **F5** en el Explorador vuelve a
+consultar los metadatos. La detección usa las carpetas que el Explorador ya
+cargó y los padres del archivo activo. El motor integrado consulta su estado
+en segundo plano y aplica las cuotas habituales por repositorio.
+
 ## 5. Resolución de conflictos — editor de tres vías
 
 El merge no es un diff binario con botones ambiguos. Se necesitan **BASE / OURS / THEIRS**, una vista RESULT editable y un estado por conflicto:

@@ -26,7 +26,7 @@ pub mod session;
 pub mod source_services;
 pub mod syntax_theme;
 pub mod ui_theme;
-pub use jc_languages::syntax::{SyntaxKind, SyntaxProfile};
+pub use jc_languages::syntax::{scan_snippet as scan_syntax_snippet, SyntaxKind, SyntaxProfile};
 pub mod explorer;
 mod navigation_input;
 pub use navigation_input::parse_text_position;

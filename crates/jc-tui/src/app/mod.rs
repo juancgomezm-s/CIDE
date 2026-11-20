@@ -287,6 +287,7 @@ impl TuiApp {
             ..TaskUpdate::default()
         };
         update.changed |= self.poll_save();
+        update.changed |= self.poll_data_connection_test();
         if let Some(result) = self.workbench.poll_large_view() {
             update.changed = true;
             if let Err(error) = result {

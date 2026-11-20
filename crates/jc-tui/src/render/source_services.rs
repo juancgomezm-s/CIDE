@@ -2,6 +2,27 @@ use crate::{
     app::Presentation,
     screen::{CellStyle, Screen},
 };
+use jc_app::source_services::SourceRow;
+
+fn row(screen: &mut Screen, (x, y, width): (u16, u16, u16), row: &SourceRow, selected: bool) {
+    let text_style = if selected {
+        CellStyle::Reverse
+    } else {
+        CellStyle::Normal
+    };
+    let mut indent = 0;
+    if let Some(mark) = row.relation.filter(|_| width >= 2) {
+        screen.text_styled(x, y, mark.icon(), CellStyle::Relation(mark));
+        indent = 2;
+    }
+    screen.text_styled(
+        x + indent,
+        y,
+        &super::clip(&row.label, width.saturating_sub(indent)),
+        text_style,
+    );
+}
+
 pub(super) fn sidebar(
     frame: &Presentation<'_>,
     screen: &mut Screen,
@@ -15,24 +36,19 @@ pub(super) fn sidebar(
     if height > 1 {
         screen.text_styled(x + 1, y + 1, &p.message, CellStyle::Dim);
     }
-    for (i, row) in p
+    for (i, item) in p
         .rows
         .iter()
         .take(usize::from(height.saturating_sub(2)))
         .enumerate()
     {
-        screen.text_styled(
-            x + 1,
-            y + 2 + i as u16,
-            &row.label,
-            if row.selected && frame.app.focus.primary() == jc_app::PrimaryFocus::Sidebar {
-                CellStyle::Reverse
-            } else {
-                CellStyle::Normal
-            },
+        row(
+            screen,
+            (x + 1, y + 2 + i as u16, width.saturating_sub(2)),
+            item,
+            item.selected && frame.app.focus.primary() == jc_app::PrimaryFocus::Sidebar,
         );
     }
-    let _ = width;
 }
 pub(super) fn popup(frame: &Presentation<'_>, screen: &mut Screen) {
     if !frame.app.source_popup {
@@ -49,22 +65,18 @@ pub(super) fn popup(frame: &Presentation<'_>, screen: &mut Screen) {
     screen.hide_cursor();
     screen.text_styled(x + 2, y, &frame.source.title, CellStyle::Reverse);
     screen.text_styled(x + 2, y + 1, &frame.source.message, CellStyle::Dim);
-    for (i, row) in frame
+    for (i, item) in frame
         .source
         .rows
         .iter()
         .take(usize::from(height.saturating_sub(4)))
         .enumerate()
     {
-        screen.text_styled(
-            x + 2,
-            y + 2 + i as u16,
-            &row.label,
-            if row.selected {
-                CellStyle::Reverse
-            } else {
-                CellStyle::Normal
-            },
+        row(
+            screen,
+            (x + 2, y + 2 + i as u16, width.saturating_sub(4)),
+            item,
+            item.selected,
         );
     }
     if height > 2 {

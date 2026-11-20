@@ -14,6 +14,8 @@ pub(crate) fn descriptor() -> SourceProviderDescriptor {
         symbols: None,
         references: Some(links),
         calls: None,
+        callers: None,
+        routines: None,
         dependencies: None,
         file_resolution: FileResolution::DocumentRelative,
         completion: None,
@@ -109,6 +111,7 @@ fn links(
                     .take(120)
                     .collect::<String>();
                 result = output.push(TaskItem::Source(SourceItem {
+                    value_type: None,
                     range: at..next,
                     label: format!("Enlace: {label}"),
                     action,

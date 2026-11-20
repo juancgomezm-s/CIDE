@@ -213,7 +213,7 @@ fn text(bytes: &[u8], token: &Token) -> Option<String> {
         && value
             .iter()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'));
-    (identifier && matches!(token.kind, SyntaxKind::Plain | SyntaxKind::Keyword))
+    (identifier && token.kind.is_word())
         .then(|| String::from_utf8(value.to_vec()).expect("ASCII identifier"))
 }
 

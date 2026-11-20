@@ -1,6 +1,6 @@
 //! Bounded, cancelable reverse lookup of static file relationships on disk.
 use super::*;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 pub(crate) struct IncomingScan {
     pub root: PathBuf,
@@ -27,7 +27,10 @@ impl IncomingScan {
         if !target.starts_with(&root) {
             return Err(TaskFailure::Failed);
         }
-        let default_provider = self.provider.references.ok_or(TaskFailure::Failed)?;
+        let default_provider = self
+            .provider
+            .provider(SourceMode::Incoming)
+            .ok_or(TaskFailure::Failed)?;
         let ecmascript = matches!(self.provider.language, "javascript" | "typescript");
         let propath = if matches!(
             self.provider.file_resolution,
@@ -110,13 +113,22 @@ impl IncomingScan {
                 let mut found = TaskOutput::for_source_scan(&snapshot);
                 provider(&snapshot, cancel, &mut found)?;
                 let mut version = None;
+                let mut callers = HashSet::new();
                 for item in found.take_items() {
                     let TaskItem::Source(item) = item else {
                         continue;
                     };
-                    let SourceAction::RelativeFile(relative) = item.action else {
-                        continue;
+                    let (relative, routine) = match item.action {
+                        SourceAction::RelativeFile(relative) => (relative, None),
+                        SourceAction::IncomingReference { relative, routine } => {
+                            (relative, routine)
+                        }
+                        _ => continue,
                     };
+                    let caller = routine.as_ref().map(|routine| routine.declaration);
+                    if callers.contains(&caller) {
+                        continue;
+                    }
                     let paths = match self.provider.file_resolution {
                         FileResolution::OrderedProjectPath => {
                             resolve_ordered(&root, &path, &relative, propath.as_deref(), false)
@@ -134,13 +146,21 @@ impl IncomingScan {
                     if paths.len() != 1 || paths[0].canonicalize().ok().as_ref() != Some(&target) {
                         continue;
                     }
+                    callers.insert(caller);
                     let offset = item.range.start;
                     let line = line_at(&snapshot.bytes()[..offset]);
                     let label = path.strip_prefix(&root).unwrap_or(&path).to_string_lossy();
-                    let label = display_ui_label(&label, 96);
+                    let label = display_ui_label(&label, 72);
+                    let label = if let Some(routine) = routine {
+                        let routine = display_ui_label(&routine.name, 30);
+                        format!("{routine} · {label}:{line}")
+                    } else {
+                        format!("{label}:{line}")
+                    };
                     output.push(TaskItem::Source(SourceItem {
+                        value_type: None,
                         range: 0..0,
-                        label: format!("{label}:{line}"),
+                        label,
                         action: SourceAction::Caller {
                             path: path.clone(),
                             offset,

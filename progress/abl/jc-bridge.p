@@ -177,6 +177,16 @@ IF NOT lFailed THEN CASE cAction:
             END.
         END.
     END.
+    WHEN "probe" THEN DO:
+        IF NUM-DBS = 0 THEN DO:
+            lFailed = TRUE.
+            PUT UNFORMATTED "DIAG|error|-|-|-|"
+                HexText("El AVM inicio, pero no hay bases de datos conectadas.") SKIP.
+        END.
+        ELSE DO iDatabase = 1 TO NUM-DBS:
+            PUT UNFORMATTED "DATABASE|" HexText(LDBNAME(iDatabase)) SKIP.
+        END.
+    END.
     WHEN "schema" THEN DO:
         IF cSource <> "" OR NUM-DBS = 0 THEN DO:
             lFailed = TRUE.
@@ -213,7 +223,7 @@ IF NOT lFailed THEN CASE cAction:
     OTHERWISE DO:
         lFailed = TRUE.
         PUT UNFORMATTED "DIAG|error|-|-|-|"
-            HexText("Unknown action. Supported: check, compile, run, schema, xref.") SKIP.
+            HexText("Accion ABL desconocida.") SKIP.
     END.
 END CASE.
 

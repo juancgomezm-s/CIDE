@@ -26,6 +26,38 @@ fn editor(text: &str, path: &str) -> TuiApp {
 }
 
 #[test]
+fn tui_routine_relationships_show_both_direction_icons() {
+    use crate::screen::{CellStyle, Screen};
+    use jc_app::source_services::RelationMark;
+    let assert_mark = |screen: &Screen, label: &str, mark: RelationMark| {
+        let icon = mark.icon().chars().next().unwrap();
+        assert!((0..screen.height()).any(|y| {
+            screen.row_text(y).contains(label)
+                && (0..screen.width()).any(|x| {
+                    let cell = screen.cell(x, y);
+                    cell.ch == icon && cell.style == CellStyle::Relation(mark)
+                })
+        }));
+    };
+    let source = "fn principal() { destino(); externo(); } fn destino() {}";
+    let mut app = editor(source, "relaciones.rs");
+    let first = source.find("principal").unwrap();
+    app.workbench
+        .set_linear_selection_bytes(first, first)
+        .unwrap();
+    app.dispatch(CommandId::SourceCalls);
+    finish(&mut app);
+    let screen = render::render(&app.prepare_frame(140, 30));
+    assert_mark(&screen, "↗ destino", RelationMark::Outgoing);
+    assert_mark(&screen, "? externo", RelationMark::Unresolved);
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    app.dispatch(CommandId::SourceIncoming);
+    finish(&mut app);
+    let screen = render::render(&app.prepare_frame(140, 30));
+    assert_mark(&screen, "↙ principal", RelationMark::Incoming);
+}
+
+#[test]
 #[ignore = "requiere el proyecto sintético de esquema de OpenEdge"]
 fn progress_real_schema_completion_tui() {
     let root = PathBuf::from(std::env::var_os("CIDE_TEST_PROGRESS_SCHEMA_PROJECT").unwrap());
@@ -734,7 +766,11 @@ fn source_tui_multilanguage_outline_and_side_navigation() {
         );
         assert_eq!(std::fs::read(&source).unwrap(), text.as_bytes());
     }
-    std::fs::write(root.join("reverse.js"), b"import './item.ts';\n").unwrap();
+    std::fs::write(
+        root.join("reverse.js"),
+        b"import './item.ts';\nexport * from './item.ts';\n",
+    )
+    .unwrap();
     let mut app = TuiApp::new(LaunchOptions {
         files: vec![root.join("item.ts")],
         encoding: Some(TextEncoding::Utf8),
@@ -748,11 +784,14 @@ fn source_tui_multilanguage_outline_and_side_navigation() {
         "{}",
         app.source.message()
     );
-    assert!(app
+    let callers: Vec<_> = app
         .source
         .items()
         .iter()
-        .any(|item| item.label == "reverse.js:1"));
+        .filter(|item| item.label.starts_with("reverse.js:"))
+        .map(|item| item.label.as_str())
+        .collect();
+    assert_eq!(callers, ["reverse.js:1"]);
     assert!(app
         .source
         .items()
@@ -958,6 +997,26 @@ fn source_tui_reviewed_imports_previews_and_applies_in_one_undo() {
     std::fs::remove_dir(package).unwrap();
     std::fs::remove_dir(root).unwrap();
 }
+#[test]
+fn rust_outline_in_tui_renders_and_opens_the_selected_method() {
+    let text = "pub struct Datos { total: usize }\nimpl Datos { pub fn sumar(&self) {} }";
+    let mut a = editor(text, "esquema.rs");
+    a.dispatch(CommandId::ViewSymbols);
+    finish(&mut a);
+    assert_eq!(a.source.state(), SourceState::Ready, "{}", a.status);
+    assert_eq!(a.panels.sidebar(), SidebarView::Symbols);
+    let screen = render::render(&a.prepare_frame(140, 30));
+    assert!((0..screen.height()).any(|row| screen.row_text(row).contains("sumar · Método")));
+    key(&mut a, KeyCode::End, KeyModifiers::NONE);
+    key(&mut a, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(a.focus.primary(), PrimaryFocus::Editor);
+    assert_eq!(
+        a.workbench.active_editor().unwrap().cursor,
+        text.find("sumar").unwrap()
+    );
+    assert_eq!(a.workbench.active_bytes().unwrap(), text.as_bytes());
+}
+
 #[test]
 fn source_tui_symbols_keyboard_navigation_readonly_render_and_explicit_refresh() {
     let text="/* PROCEDURE hidden: */\r\nPROCEDURE alpha:\r\nEND PROCEDURE.\r\nFUNCTION beta RETURNS INTEGER():\r\nEND FUNCTION.";

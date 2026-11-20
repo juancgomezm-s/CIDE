@@ -7,7 +7,7 @@ El objetivo es llegar a un editor ligero para Windows con varios lenguajes y una
 
 Instala Rust desde [rustup.rs](https://rustup.rs/). En Windows el destino MSVC requiere
 las herramientas de compilación de Microsoft correspondientes. El archivo
-`rust-toolchain.toml` fija Rust 1.85.1 para reproducir esta base.
+`rust-toolchain.toml` fija Rust 1.88.0 para reproducir esta base.
 
 ```console
 cargo test --workspace --locked --offline
@@ -17,7 +17,13 @@ cargo run -p jc-cli --offline -- demo
 
 El workspace puede usar dependencias externas seleccionadas cuando resuelven un requisito concreto; la TUI, por ejemplo, usa crossterm. La instalación del toolchain y la resolución inicial de dependencias pueden requerir red.
 
-GitHub Actions está **diferido hasta M5**. Durante M2–M4 no se ejecuta automáticamente en push/PR ni se usa como bucle de depuración. El workflow permanece manual y dormido. Las comprobaciones anteriores son para ejecución local selectiva; si no hay toolchain disponible, documenta la validación pendiente en lugar de consumir CI remoto.
+La validacion se ejecuta localmente, tambien en M5: `python scripts/check-local.py`.
+El comando completo comprueba formato, tests, Clippy, build release y demo, sin
+red ni instalaciones. Consulta [la guia local](docs/LOCAL_VALIDATION.md) para
+requisitos, pasos selectivos y limites. Push/PR nunca autoriza solicitar,
+disparar, reintentar ni habilitar CI remota. El workflow manual solo se usa por
+una peticion explicita y separada del propietario para esa ejecucion. Si falta
+un requisito local, documenta el bloqueo; no recurras a GitHub Actions.
 
 ## Distribución del código
 

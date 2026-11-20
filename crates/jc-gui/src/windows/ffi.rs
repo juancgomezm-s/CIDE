@@ -268,6 +268,20 @@ extern "system" {
     ) -> i32;
     pub fn CreateCompatibleDC(dc: Hdc) -> Hdc;
     pub fn DeleteDC(dc: Hdc) -> i32;
+    pub fn SetDIBitsToDevice(
+        dc: Hdc,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+        source_x: i32,
+        source_y: i32,
+        start_scan: u32,
+        lines: u32,
+        bits: *const c_void,
+        info: *const BitmapInfo,
+        usage: u32,
+    ) -> i32;
     pub fn CreateDIBSection(
         dc: Hdc,
         info: *const BitmapInfo,

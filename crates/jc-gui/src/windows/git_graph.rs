@@ -4,7 +4,7 @@ use jc_app::{git_graph::GraphView, git_revision::GitRevisionState, Modifiers};
 
 impl State {
     pub(in crate::windows) fn open_git_graph(&mut self) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         let _ = self.git_index.discard_review();
@@ -21,7 +21,7 @@ impl State {
     }
 
     pub(super) fn add_graph_button(&self, frame: &mut Frame) {
-        if self.project_root.is_none() || self.git_status.is_not_repository() {
+        if self.git_root().is_none() || self.git_status.is_not_repository() {
             return;
         }
         frame.footer = format!("G grafo · {}", frame.footer);
@@ -76,7 +76,8 @@ impl State {
             .graph()
             .and_then(|graph| graph.entries.get(view.selected))
             .map(|entry| entry.commit.id.clone());
-        if let (Some(root), Some(target)) = (self.project_root.clone(), target) {
+        if let (Some(root), Some(target)) = (self.git_root().map(std::path::Path::to_owned), target)
+        {
             self.git_commit.open_reference(root, kind, target);
             self.git_workspace.invalidate();
         }
@@ -94,8 +95,8 @@ impl State {
 
     pub(super) fn open_graph_reference_change(&mut self, rename: bool) {
         if let Some((root, target)) = self
-            .project_root
-            .clone()
+            .git_root()
+            .map(std::path::Path::to_owned)
             .zip(self.graph_write_target().cloned())
         {
             let _ = self.git_index.discard_review();
@@ -116,8 +117,8 @@ impl State {
 
     pub(super) fn open_graph_branch_switch(&mut self) {
         if let Some((root, target)) = self
-            .project_root
-            .clone()
+            .git_root()
+            .map(std::path::Path::to_owned)
             .zip(self.graph_branch_target().cloned())
         {
             let _ = self.git_index.discard_review();
@@ -128,8 +129,8 @@ impl State {
 
     pub(super) fn open_graph_merge(&mut self, intent: Intent) {
         if let Some((root, target)) = self
-            .project_root
-            .clone()
+            .git_root()
+            .map(std::path::Path::to_owned)
             .zip(self.graph_merge_target().cloned())
         {
             let _ = self.git_index.discard_review();
@@ -146,7 +147,7 @@ impl State {
         if self.git_index.state() == jc_app::git_index::IndexState::Applying {
             return;
         }
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         let _ = self.git_index.discard_review();
@@ -173,7 +174,8 @@ impl State {
             .graph()
             .and_then(|graph| graph.entries.get(view.selected))
             .map(|entry| entry.commit.id.clone());
-        if let (Some(root), Some(target)) = (self.project_root.clone(), target) {
+        if let (Some(root), Some(target)) = (self.git_root().map(std::path::Path::to_owned), target)
+        {
             let _ = self.git_index.discard_review();
             if let Some(operation) = operation {
                 self.git_commit
@@ -210,7 +212,7 @@ impl State {
     }
 
     pub(super) fn next_graph_page(&mut self) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         if self.git_revision.graph().is_some_and(|p| p.has_next()) {
@@ -229,7 +231,7 @@ impl State {
     }
 
     pub(super) fn open_graph_repository_menu(&mut self) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         if self.git_index.state() == jc_app::git_index::IndexState::Applying {
@@ -257,7 +259,7 @@ impl State {
     }
 
     pub(super) fn choose_graph_reference(&mut self, index: usize) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         self.git_workspace.notice = self.git_revision.request_graph_reference(root, index).err();

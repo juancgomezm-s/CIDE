@@ -104,6 +104,14 @@ pub struct Session {
 }
 
 impl Session {
+    pub(crate) fn test_connection(&self, cancelled: impl Fn() -> bool) -> Result<(), String> {
+        let rows = self.connection.query("SELECT 1", &[], 1, 1, &cancelled)?;
+        if rows != [vec![Some("1".into())]] {
+            return Err("El servidor SQL devolvió una respuesta inesperada.".into());
+        }
+        Ok(())
+    }
+
     pub fn connect(options: &ConnectOptions) -> Result<Self, String> {
         Self::connect_with_ca(options, None)
     }

@@ -222,7 +222,7 @@ impl State {
             self.markdown_images.cancel();
             return None;
         }
-        let viewport_left = super::explorer_panel::region(self).map_or(0, |r| r.right + 1);
+        let (viewport_left, width) = super::outline_panel::editor_horizontal(self);
         let ui = self.markdown_gui.as_mut()?;
         let tab = self.workbench.document_by_id(ui.stamp.document)?.tab_id;
         let current = self.workbench.task_stamp_is_current(ui.stamp)
@@ -230,7 +230,7 @@ impl State {
                 .workbench
                 .active_document()
                 .is_some_and(|d| d.id == ui.stamp.document);
-        let (width, height) = (self.width.clamp(1, 8192), self.height.clamp(1, 8192));
+        let height = self.height.clamp(1, 8192);
         let top = self.dpi.pixels(super::shell::TABS).min(height);
         let (cw, ch) = (
             self.cell_width.clamp(1, 8192),

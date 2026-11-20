@@ -77,10 +77,11 @@ El caso optimizado recorrió los 4.294.967.314 bytes de la instantánea y
 seleccionó la coincidencia en el byte 4.294.967.307. Tardó 29,12 segundos,
 incluida la apertura de la instantánea.
 
-El minimapa de la GUI toma hasta 256 muestras del archivo, con un máximo de
+El minimapa de la GUI toma hasta 512 muestras del archivo, con un máximo de
 512 bytes por muestra e incluyendo ambos extremos. El trabajador publica
 las muestras por lotes para la revisión vigente. En archivos paginados las
-marcas muestran la distribución del texto. El minimapa y la barra vertical
+marcas muestran la distribución del texto y colorean el fragmento cuando
+se puede localizar el inicio de su línea. El minimapa y la barra vertical
 usan offsets absolutos. Un clic o arrastre abre el tramo y lleva el cursor
 a un límite de texto válido.
 Pasaron las cuatro pruebas dirigidas del desplazamiento gráfico. El caso

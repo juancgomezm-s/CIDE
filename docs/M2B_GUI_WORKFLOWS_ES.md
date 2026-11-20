@@ -11,13 +11,16 @@ validación local están cerradas; la aceptación física/global sigue abierta.
 - GUI: **Ver → Preferencias de apariencia** ajusta por separado el tamaño base
   de la interfaz y del editor. Los tamaños iniciales son 12 y 15 píxeles
   lógicos. En el mismo selector se puede mostrar u ocultar el minimapa y
-  elegir su ancho.
+  elegir su ancho. El ancho inicial es de 160 píxeles lógicos y se puede
+  ampliar a 200. El minimapa se estrecha cuando el grupo tiene menos espacio.
 - GUI: **Ver → Zoom del editor** y el porcentaje de la barra inferior abren
   la misma escala, del 60 % al 200 %. El zoom cambia el texto del editor
   sobre su tamaño base. Las preferencias se recuperan al reabrir la sesión.
 - El minimapa muestra el código en miniatura con sangrías y colores de
   sintaxis. Un clic lleva a la zona elegida y se puede arrastrar el marco
-  del área visible. Las muestras acotadas usan contexto léxico por línea.
+  del área visible. Las muestras acotadas se colorean como fragmentos por
+  línea. En ABL, palabras clave, tipos y valores lógicos tienen colores
+  distintos en el editor y en el minimapa.
 - TUI: F10 abre los menús; Alt+A Archivo, Alt+E Editar, Alt+B Buscar, Alt+P Proyecto,
   Alt+C Compilar, Alt+H Herramientas, Alt+V Ver, Alt+Y Ayuda. Las letras reales se
   subrayan siempre. Flechas recorren menús, Intro acepta, Esc vuelve al editor.

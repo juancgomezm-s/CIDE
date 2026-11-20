@@ -366,6 +366,7 @@ impl State {
                 self.cancel_pointer();
                 self.workbench.focus_editor_pane(pane);
                 self.workbench.select_tab(position + 1);
+                self.git_follows_document();
                 self.tab_scroll[index(pane)].observed = None;
                 self.explorer_focused = false;
                 self.bottom.focused = false;

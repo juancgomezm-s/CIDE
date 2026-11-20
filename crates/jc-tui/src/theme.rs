@@ -67,6 +67,7 @@ pub(crate) fn style(role: CellStyle) -> Style {
             s.bold = true;
         }
         CellStyle::Border => s.foreground = palette(ui_theme::BORDER),
+        CellStyle::Relation(mark) => s.foreground = palette(mark.color()),
         CellStyle::Syntax(kind) => {
             let c = jc_app::syntax_theme::foreground(kind);
             s.foreground = rgb(c.r, c.g, c.b);

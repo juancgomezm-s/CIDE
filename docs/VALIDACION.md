@@ -1,3 +1,19 @@
+## Validacion local en lugar de CI - 2026-11-09
+
+Se incorporo `scripts/check-local.py`: formato, tests, Clippy, build release y
+CLI demo en serie, offline y con el toolchain fijado. Reutiliza caches existentes;
+no instala herramientas ni llama a GitHub. La politica de AGENTS, README y
+CONTRIBUTING impide pedir/disparar/reintentar CI como parte de push/PR, tambien
+en M5. El unico workflow conserva solo workflow_dispatch y usa Rust 1.88.0.
+
+Validacion observada en Windows: cuatro pruebas del ejecutor aprobadas
+(dry-run sin herramientas, corte ante fallo, secuencia/caches y trigger manual),
+plan dry-run, formato Rust y demo real offline aprobados. `git diff --check`
+sin errores. La suite de tests del ejecutor simula Cargo y no acredita tests
+Rust, Clippy ni build release. No se repitieron estas suites historicas por
+este cambio de orquestacion/documentacion. No se ejecuto Linux, CI remota,
+GUI/ConPTY, commit ni push; no se alteraron protecciones de rama.
+
 ## Git · Gestión de referencias, recuperación y árbol histórico
 
 Pasaron 55 pruebas dirigidas, además de formato y Clippy de los cinco

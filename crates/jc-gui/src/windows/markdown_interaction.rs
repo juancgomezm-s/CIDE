@@ -36,11 +36,10 @@ impl MarkdownHits {
             && !state.source_visible()
             && !state.open_diff_visible
             && state.git_panel.is_none()
-            && state.width == self.width
+            && super::super::outline_panel::editor_horizontal(state)
+                == (self.viewport_left, self.width)
             && state.height == self.height
             && state.dpi == self.dpi
-            && super::super::explorer_panel::region(state).map_or(0, |r| r.right + 1)
-                == self.viewport_left
             && state.workbench.task_stamp_is_current(self.stamp)
             && state.markdown_gui.as_ref().is_some_and(|ui| {
                 Rc::ptr_eq(&ui.token, &self.token)

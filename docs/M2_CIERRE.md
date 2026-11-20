@@ -1,3 +1,35 @@
+## Cierre funcional de M2 en Windows — 2026-11-11
+
+Entrega optimizada en `target/windows-open-dialogs-next/release`. Los
+selectores nativos quedaron en el commit local `642fc1c`. En una instancia
+aislada de la GUI se comprobó la selección y cancelación de carpeta, la apertura
+normal y al lado, la ubicación inicial desde el archivo o proyecto y la
+cancelación de archivo sin alterar las pestañas. También pasó la prueba local
+del diálogo COM con ambos modos.
+
+En la GUI visible, Git → Comparar este archivo con un commit abrió el historial
+en Código. Se eligió `81ab998` para `AGENTS.md`, se observaron ambos lados
+con fondos rojo y verde y se desplazaron juntos. El deslizador de la barra
+inferior amplió ambos paneles de 100 % a 125 %. La × cerró la comparación,
+mantuvo el documento abierto y devolvió el foco a edición. La instancia de
+prueba salió normalmente.
+
+En la misma entrega, `smoke-native-gui.py --section git` aprobó 29
+comprobaciones con ventana oculta, entre ellas historial, comparación
+dividida/en línea y cierre con × conservando un documento modificado.
+`--section shell` aprobó 17 comprobaciones, incluido zoom por menú, ratón y
+teclado. `smoke-git-code-conpty.py` aprobó en una terminal privada la
+selección de commit, los colores, el desplazamiento enlazado, la vista compacta,
+el botón Cerrar comparación y el regreso a edición con deshacer. Los fixtures
+y metadatos Git de las pruebas automatizadas quedaron intactos. Pasaron formato
+y Clippy mediante `scripts/check-local.py` y la compilación optimizada local.
+
+Se cierra M2 en el alcance funcional verificado. Quedan fuera de esta
+validación el traslado físico entre monitores, la latencia hasta el panel y la
+prueba interactiva de TUI en un terminal físico. IME queda excluido por decisión
+de Juan y Narrador y la accesibilidad avanzada quedan aplazados. La edición de
+archivos de varios GB conserva su plan independiente. No se ejecutó CI remota.
+
 ## Geometrías grandes de la GUI — 2026-11-07
 
 Corregido el rechazo de superficies superiores a 32 MiB. Un DIB acotado se

@@ -1,7 +1,10 @@
 //! Optional progress.abl source provider. Lexical inference only: no AVM, XREF,
 //! include expansion, filesystem access or compiler certification.
 use jc_app::{
-    source_services::{FileResolution, SourceAction, SourceItem, SourceProviderDescriptor},
+    source_services::{
+        CallerRoutine, FileResolution, SourceAction, SourceItem, SourceProviderDescriptor,
+        ValueType,
+    },
     Cancellation, TaskFailure, TaskItem, TaskOutput, TaskSnapshot,
 };
 use jc_languages::syntax::{scan, LexerState, SyntaxKind, SyntaxProfile};
@@ -9,7 +12,11 @@ use jc_text::decode_fragment;
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
+    path::{Path, PathBuf},
 };
+mod call_origins;
+use call_origins::CallOrigins;
+
 pub fn descriptor() -> SourceProviderDescriptor {
     SourceProviderDescriptor {
         id: "progress.abl",
@@ -17,6 +24,8 @@ pub fn descriptor() -> SourceProviderDescriptor {
         symbols: Some(symbols),
         references: Some(references),
         calls: Some(calls),
+        callers: Some(callers),
+        routines: Some(call_origins::relations),
         dependencies: Some(dependencies),
         completion: None,
         rename: Some(crate::rename::propose),
@@ -28,12 +37,19 @@ struct Symbol {
     kind: &'static str,
     name: String,
     range: Range<usize>,
+    value_type: Option<ValueType>,
 }
 struct Model {
     symbols: Vec<Symbol>,
     references: Vec<SourceItem>,
+    grouped_references: HashSet<ReferenceKey>,
     local_procedures: HashMap<String, Option<Range<usize>>>,
     limited: bool,
+}
+#[derive(Hash, PartialEq, Eq)]
+enum ReferenceKey {
+    Local(String),
+    File(PathBuf, Option<usize>),
 }
 const MAX_SYMBOLS: usize = 64;
 const MAX_REFERENCES: usize = 64;
@@ -44,17 +60,18 @@ enum Analysis<'a> {
     Symbols,
     References,
     Calls,
+    Callers,
     Dependencies,
     LocalProcedures(&'a HashSet<String>),
 }
 
 impl Analysis<'_> {
     fn wants_calls(self) -> bool {
-        matches!(self, Self::References | Self::Calls)
+        matches!(self, Self::References | Self::Calls | Self::Callers)
     }
 
     fn wants_includes(self) -> bool {
-        matches!(self, Self::References | Self::Dependencies)
+        matches!(self, Self::References | Self::Dependencies | Self::Callers)
     }
 }
 
@@ -66,7 +83,37 @@ fn push_symbol(model: &mut Model, symbol: Symbol) {
     }
 }
 
-fn push_reference(model: &mut Model, item: SourceItem) {
+fn push_reference(
+    model: &mut Model,
+    mut item: SourceItem,
+    analysis: Analysis<'_>,
+    routine: Option<&CallerRoutine>,
+) {
+    if matches!(analysis, Analysis::Calls | Analysis::Callers) {
+        let key = match &item.action {
+            SourceAction::RelativeFile(relative) => Some(ReferenceKey::File(
+                Path::new(relative)
+                    .components()
+                    .filter(|part| *part != std::path::Component::CurDir)
+                    .collect(),
+                routine.map(|routine| routine.declaration),
+            )),
+            _ if analysis == Analysis::Callers => return,
+            _ => local_call(&item).map(|name| ReferenceKey::Local(name.to_ascii_lowercase())),
+        };
+        if key.is_some_and(|key| !model.grouped_references.insert(key)) {
+            return;
+        }
+        if analysis == Analysis::Callers {
+            let SourceAction::RelativeFile(relative) = item.action else {
+                unreachable!()
+            };
+            item.action = SourceAction::IncomingReference {
+                relative,
+                routine: routine.cloned(),
+            };
+        }
+    }
     if model.references.len() == MAX_REFERENCES {
         model.limited = true;
     } else {
@@ -95,6 +142,36 @@ pub(crate) fn definition_kind(keyword: &[u8]) -> Option<&'static str> {
     options
         .iter()
         .find_map(|(name, kind)| keyword.eq_ignore_ascii_case(name).then_some(*kind))
+}
+
+pub(crate) fn declared_value_type(word: &[u8]) -> Option<ValueType> {
+    use ValueType::*;
+    let types: &[(&[u8], ValueType)] = &[
+        (b"CHARACTER", Text),
+        (b"CHAR", Text),
+        (b"LONGCHAR", Text),
+        (b"CLOB", Text),
+        (b"INTEGER", Integer),
+        (b"INT", Integer),
+        (b"INT64", Integer),
+        (b"RECID", Integer),
+        (b"DECIMAL", Decimal),
+        (b"DEC", Decimal),
+        (b"LOGICAL", Boolean),
+        (b"DATE", Date),
+        (b"DATETIME", DateTime),
+        (b"DATETIME-TZ", DateTime),
+        (b"RAW", Binary),
+        (b"MEMPTR", Binary),
+        (b"BLOB", Binary),
+        (b"CLASS", Object),
+        (b"HANDLE", Object),
+        (b"COM-HANDLE", Object),
+        (b"ROWID", Object),
+    ];
+    types
+        .iter()
+        .find_map(|(name, value_type)| word.eq_ignore_ascii_case(name).then_some(*value_type))
 }
 
 fn definition(snapshot: &TaskSnapshot, after_define: usize) -> Option<Symbol> {
@@ -150,7 +227,19 @@ fn definition(snapshot: &TaskSnapshot, after_define: usize) -> Option<Symbol> {
     if !name.starts_with(|ch: char| ch.is_alphabetic() || ch == '_') {
         return None;
     }
-    Some(Symbol { kind, name, range })
+    let value_type = if kind == "Variable"
+        && word().is_some_and(|token| bytes[token].eq_ignore_ascii_case(b"AS"))
+    {
+        word().and_then(|token| declared_value_type(&bytes[token]))
+    } else {
+        None
+    };
+    Some(Symbol {
+        kind,
+        name,
+        range,
+        value_type,
+    })
 }
 fn label(mut value: String) -> String {
     if value.len() > 512 {
@@ -236,6 +325,7 @@ fn reference(snapshot: &TaskSnapshot, trigger: Range<usize>, include: bool) -> S
         SourceAction::Unresolved(format!("{LOCAL_CALL}{target}"))
     };
     SourceItem {
+        value_type: None,
         range: trigger,
         label: label(format!(
             "{} {}",
@@ -257,6 +347,7 @@ fn parse(
     let mut model = Model {
         symbols: Vec::new(),
         references: Vec::new(),
+        grouped_references: HashSet::new(),
         local_procedures: HashMap::new(),
         limited: false,
     };
@@ -265,6 +356,7 @@ fn parse(
     let mut pending = None;
     let mut declaration_end = 0;
     let mut method_name: Option<Range<usize>> = None;
+    let mut origins = CallOrigins::default();
     for (chunk, bytes) in snapshot.bytes().chunks(4096).enumerate() {
         if cancel.is_cancelled() {
             return Err(TaskFailure::Cancelled);
@@ -281,9 +373,17 @@ fn parse(
                     return;
                 }
                 let source = &snapshot.bytes()[token.source.clone()];
+                if analysis == Analysis::Callers {
+                    origins.observe(snapshot, &token);
+                }
                 if token.kind == SyntaxKind::Preprocessor && source == b"{" {
                     if analysis.wants_includes() {
-                        push_reference(&mut model, reference(snapshot, token.source, true));
+                        push_reference(
+                            &mut model,
+                            reference(snapshot, token.source, true),
+                            analysis,
+                            origins.current(),
+                        );
                     } else if analysis == Analysis::Symbols {
                         let item = reference(snapshot, token.source, true);
                         if let SourceAction::RelativeFile(name) = item.action {
@@ -293,6 +393,7 @@ fn parse(
                                     kind: "Inclusión",
                                     name,
                                     range: item.range,
+                                    value_type: None,
                                 },
                             );
                         }
@@ -301,13 +402,21 @@ fn parse(
                 }
                 if matches!(
                     analysis,
-                    Analysis::References | Analysis::Calls | Analysis::Dependencies
+                    Analysis::References
+                        | Analysis::Calls
+                        | Analysis::Callers
+                        | Analysis::Dependencies
                 ) {
                     if analysis.wants_calls()
-                        && matches!(token.kind, SyntaxKind::Plain | SyntaxKind::Keyword)
+                        && token.kind.is_word()
                         && source.eq_ignore_ascii_case(b"run")
                     {
-                        push_reference(&mut model, reference(snapshot, token.source, false));
+                        push_reference(
+                            &mut model,
+                            reference(snapshot, token.source, false),
+                            analysis,
+                            origins.current(),
+                        );
                     }
                     return;
                 }
@@ -328,6 +437,7 @@ fn parse(
                                         kind: "Método",
                                         name,
                                         range,
+                                        value_type: None,
                                     },
                                 );
                             }
@@ -340,7 +450,7 @@ fn parse(
                     }
                     return;
                 }
-                if !matches!(token.kind, SyntaxKind::Plain | SyntaxKind::Keyword) {
+                if !token.kind.is_word() {
                     return;
                 }
                 // Plain spans also include whitespace and punctuation. Only code
@@ -422,7 +532,15 @@ fn parse(
                                         .or_insert(Some(range));
                                 }
                             } else {
-                                push_symbol(&mut model, Symbol { kind, name, range });
+                                push_symbol(
+                                    &mut model,
+                                    Symbol {
+                                        kind,
+                                        name,
+                                        range,
+                                        value_type: None,
+                                    },
+                                );
                             }
                             pending = None;
                         }
@@ -445,6 +563,42 @@ fn local_call(item: &SourceItem) -> Option<&str> {
     }
 }
 
+fn function_is_forward(snapshot: &TaskSnapshot, start: usize) -> bool {
+    let bytes = snapshot.bytes();
+    let end = (start + 4096).min(bytes.len());
+    let mut lexer = LexerState::default();
+    let mut forward = false;
+    let mut result = None;
+    scan(
+        SyntaxProfile::Abl,
+        &mut lexer,
+        &bytes[start..end],
+        start,
+        end == bytes.len(),
+        |span| {
+            let text = &bytes[span.source.clone()];
+            if result.is_some()
+                || span.kind == SyntaxKind::Comment
+                || text.iter().all(u8::is_ascii_whitespace)
+            {
+                return;
+            }
+            if text == b"."
+                && bytes
+                    .get(span.source.end)
+                    .is_none_or(u8::is_ascii_whitespace)
+            {
+                result = Some(forward);
+            } else if text == b":" {
+                result = Some(false);
+            } else {
+                forward = span.kind.is_word() && text.eq_ignore_ascii_case(b"FORWARD");
+            }
+        },
+    );
+    result == Some(true)
+}
+
 fn symbols(
     snapshot: &TaskSnapshot,
     cancel: &Cancellation,
@@ -452,10 +606,12 @@ fn symbols(
 ) -> Result<(), TaskFailure> {
     for symbol in parse(snapshot, cancel, Analysis::Symbols)?.symbols {
         output.push(TaskItem::Source(SourceItem {
+            value_type: symbol.value_type,
             label: label(format!(
                 "{} {}",
                 match symbol.kind {
                     "procedure" => "Procedimiento",
+                    "function" if function_is_forward(snapshot, symbol.range.end) => "Prototipo",
                     "function" => "Función",
                     "class" => "Clase",
                     kind => kind,
@@ -482,6 +638,17 @@ fn calls(
     output: &mut TaskOutput,
 ) -> Result<(), TaskFailure> {
     emit_references(snapshot, cancel, output, Analysis::Calls)
+}
+
+fn callers(
+    snapshot: &TaskSnapshot,
+    cancel: &Cancellation,
+    output: &mut TaskOutput,
+) -> Result<(), TaskFailure> {
+    for item in parse(snapshot, cancel, Analysis::Callers)?.references {
+        output.push(TaskItem::Source(item))?;
+    }
+    Ok(())
 }
 
 fn dependencies(

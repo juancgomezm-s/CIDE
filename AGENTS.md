@@ -1,3 +1,16 @@
+# Local validation policy - 2026-11-09 (current)
+
+Validation runs on the local computer, not GitHub Actions. This policy supersedes
+older M5/deferred-CI statements below, including after M5 begins. A push or PR
+never authorizes asking for, dispatching, rerunning or enabling remote CI. Do not
+add automatic workflow triggers, install persistent runners, or use remote CI as
+a fallback when local checks fail or prerequisites are missing. Record the gap.
+Only a separate explicit owner request for a particular remote run authorizes
+the dormant manual workflow. Do not change release/deploy flows incidentally.
+Use `python scripts/check-local.py` for the local CI-equivalent checks; select
+`--steps fmt` (or other named steps) for relevant scoped validation. See
+`docs/LOCAL_VALIDATION.md`. Keep heavy checks serial and preserve deliveries.
+
 # Reviewed Git reference changes, file recovery and history browser
 
 Read docs/G1_GRAPH_VIEW.md, docs/GIT_ADVANCED_FOUNDATIONS.md and
@@ -535,7 +548,7 @@ Local validation commands, used selectively when the local toolchain is availabl
 - `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`
 - `cargo build --workspace --release --locked --offline`
 
-**CI policy: GitHub Actions is deferred to M5.** Do not enable `push` or `pull_request` triggers, do not invoke the manual workflow, and do not spend remote CI runs chasing intermediate M2–M4 failures unless the repository owner explicitly asks for one. If this environment lacks Rust or another required dependency, record the validation gap and continue with best-effort development.
+**CI policy: validation is local, including M5.** Follow the current policy at the top of this file and `docs/LOCAL_VALIDATION.md`. Push/PR does not authorize remote CI; record missing local prerequisites instead of dispatching a remote fallback.
 
 Introduce dependencies only when they solve a concrete requirement and record the cost/benefit.
 Use tests that check observable behavior and regressions, not tests that duplicate implementation details.

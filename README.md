@@ -173,7 +173,11 @@ En Windows, abre la raíz del repositorio y usa View / Git: Active File Diff; la
 
 ## Política de CI
 
-El CI remoto se reserva para **M5 (hardening)**. Durante M2–M4 GitHub Actions no se dispara automáticamente por push/PR y no debe utilizarse como bucle de depuración de código todavía inestable. El workflow permanece manual y dormido hasta M5; la validación intermedia se hace local cuando el entorno lo permite.
+Las comprobaciones se ejecutan en el equipo local, tambien en M5:
+`python scripts/check-local.py`. [Guia de validacion local](docs/LOCAL_VALIDATION.md).
+Push/PR no dispara pruebas en GitHub ni autoriza a un agente a solicitarlas,
+dispararlas o reintentarlas. El workflow queda solo manual, para una peticion
+explicita y separada del propietario. No se instalan runners persistentes.
 
 ## Varios lenguajes
 

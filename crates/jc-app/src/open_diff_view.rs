@@ -57,6 +57,7 @@ fn line(
     index: usize,
     encoding: TextEncoding,
     cols: usize,
+    horizontal: Option<usize>,
 ) -> String {
     let Some(range) = model.line_byte_range(side, DiffLine(index)) else {
         return String::new();
@@ -72,8 +73,15 @@ fn line(
         (bytes, " [EOF]")
     };
     let cols = cols.min(COLS);
-    let budget = cols.saturating_sub(eol.len());
-    let mut out = escaped(&format!("{} ", index + 1), budget);
+    let budget = horizontal.map_or_else(
+        || cols.saturating_sub(eol.len()),
+        |offset| offset.saturating_add(cols + 12).min(8 * 8192),
+    );
+    let mut out = escaped(&format!("{} ", index + 1), COLS);
+    if horizontal.is_none() {
+        out.truncate(budget);
+    }
+    let prefix = if horizontal.is_some() { 8192 } else { PREFIX };
     let bom = usize::from(
         range.start == 0 && encoding == TextEncoding::Utf8 && content.starts_with(b"\xef\xbb\xbf"),
     ) * 3;
@@ -81,11 +89,11 @@ fn line(
         out.push_str("[BOM]");
     }
     let mut consumed = bom;
-    let end = content.len().min(PREFIX + 4);
+    let end = content.len().min(prefix + 4);
     for scalar in DecodedScalars::new(&content[bom..end], encoding, range.start + bom) {
         let start = scalar.source_range.start - range.start;
         let end = scalar.source_range.end - range.start;
-        if end > PREFIX {
+        if end > prefix {
             break;
         }
         let token = if scalar.valid {
@@ -104,13 +112,19 @@ fn line(
         out.push_str(&token);
         consumed = end;
     }
-    if consumed < content.len() {
+    if consumed < content.len() && horizontal.is_none() {
         for _ in 0..budget.saturating_sub(out.len()).min(3) {
             out.push('.');
         }
     }
-    if cols >= eol.len() {
+    if cols >= eol.len() && (horizontal.is_none() || consumed == content.len()) {
         out.push_str(eol);
+    }
+    if let Some(offset) = horizontal {
+        // Labels are ASCII escaped, so display columns are byte offsets.
+        let start = offset.min(out.len());
+        let end = start.saturating_add(cols).min(out.len());
+        return out[start..end].to_owned();
     }
     out
 }
@@ -176,7 +190,7 @@ impl OpenDiffView {
             p,
             &result.model,
             [result.left.stamp.encoding, result.right.stamp.encoding],
-            (max_rows, max_cols, side_by_side),
+            (max_rows, max_cols, side_by_side, None),
         )
     }
 
@@ -189,6 +203,32 @@ impl OpenDiffView {
         max_cols: usize,
         side_by_side: bool,
     ) -> OpenDiffPresentation {
+        self.prepare_utf8_view(model, selected, (max_rows, max_cols, side_by_side, None))
+    }
+
+    /// Review bounded UTF-8 replacements, including lines wider than the panel.
+    pub fn prepare_utf8_review(
+        &mut self,
+        model: &OwnedDiffModel,
+        selected: usize,
+        max_rows: usize,
+        max_cols: usize,
+        side_by_side: bool,
+        horizontal: usize,
+    ) -> OpenDiffPresentation {
+        self.prepare_utf8_view(
+            model,
+            selected,
+            (max_rows, max_cols, side_by_side, Some(horizontal)),
+        )
+    }
+
+    fn prepare_utf8_view(
+        &mut self,
+        model: &OwnedDiffModel,
+        selected: usize,
+        geometry: (usize, usize, bool, Option<usize>),
+    ) -> OpenDiffPresentation {
         let total = model.hunks().count();
         self.project(
             OpenDiffPresentation {
@@ -200,7 +240,7 @@ impl OpenDiffView {
             },
             model,
             [TextEncoding::Utf8; 2],
-            (max_rows, max_cols, side_by_side),
+            geometry,
         )
     }
 
@@ -209,7 +249,7 @@ impl OpenDiffView {
         mut p: OpenDiffPresentation,
         model: &OwnedDiffModel,
         [left_encoding, right_encoding]: [TextEncoding; 2],
-        (max_rows, max_cols, side_by_side): (usize, usize, bool),
+        (max_rows, max_cols, side_by_side, horizontal): (usize, usize, bool, Option<usize>),
     ) -> OpenDiffPresentation {
         let cols = max_cols.min(COLS);
         let rows = max_rows.min(ROWS);
@@ -298,10 +338,17 @@ impl OpenDiffView {
             let mut label = if dual {
                 let width = (cols - 3) / 2;
                 let l = l.map_or_else(String::new, |n| {
-                    line(model, DiffSide::Left, n, left_encoding, width)
+                    line(model, DiffSide::Left, n, left_encoding, width, horizontal)
                 });
                 let r = r.map_or_else(String::new, |n| {
-                    line(model, DiffSide::Right, n, right_encoding, cols - width - 3)
+                    line(
+                        model,
+                        DiffSide::Right,
+                        n,
+                        right_encoding,
+                        cols - width - 3,
+                        horizontal,
+                    )
                 });
                 format!("{l:width$} | {r}")
             } else {
@@ -312,7 +359,7 @@ impl OpenDiffView {
                 };
                 format!(
                     "{sign} {}",
-                    line(model, side, n, encoding, cols.saturating_sub(2))
+                    line(model, side, n, encoding, cols.saturating_sub(2), horizontal)
                 )
             };
             label.truncate(cols); // ASCII escaped labels, including narrow prefixes.

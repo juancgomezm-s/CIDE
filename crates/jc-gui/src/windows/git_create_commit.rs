@@ -57,7 +57,7 @@ impl State {
             self.status = "Espera a que termine el cambio del índice".into();
             return;
         }
-        if let Some(root) = self.project_root.clone() {
+        if let Some(root) = self.git_root().map(std::path::Path::to_owned) {
             let replaces = if amend {
                 let Some((branch, head)) = self.git_amend_head() else {
                     self.status = "Actualiza Estado Git y selecciona una rama con commits".into();
@@ -79,7 +79,7 @@ impl State {
 
     fn git_amend_head(&self) -> Option<(&[u8], &str)> {
         (self.git_status.state() == GitStatusTaskState::Ready
-            && self.git_status.root() == self.project_root.as_deref())
+            && self.git_status.root() == self.git_root())
         .then_some(())?;
         let info = self.git_status.result()?.info()?;
         Some((info.branch.as_deref()?, info.head.as_deref()?))
@@ -206,13 +206,13 @@ impl State {
     }
 
     pub(in crate::windows) fn submit_git_create_commit(&mut self) {
-        self.git_commit
-            .submit(&self.workbench, self.project_root.as_deref());
+        let root = self.git_commit_root().map(std::path::Path::to_owned);
+        self.git_commit.submit(&self.workbench, root.as_deref());
         self.git_workspace.invalidate();
     }
 
     pub(in crate::windows) fn poll_git_create_commit(&mut self) -> bool {
-        if !self.git_commit.matches_root(self.project_root.as_deref()) {
+        if !self.git_commit.matches_root(self.git_commit_root()) {
             self.git_commit.cancel();
         }
         let (changed, outcome) = self.git_commit.poll();
@@ -232,7 +232,7 @@ impl State {
                     .into(),
                 Err(error) => error.clone(),
             };
-            if self.project_root.as_ref() == Some(&outcome.root) {
+            if self.git_root() == Some(&outcome.root) {
                 if refresh_graph {
                     self.open_git_graph();
                 } else if !outcome.reference {
@@ -242,12 +242,26 @@ impl State {
                     self.refresh_explorer();
                 }
                 self.schedule_git_status();
+            } else if self.project_root.as_ref() == Some(&outcome.root)
+                && outcome.refresh_files
+                && outcome.result.is_ok()
+            {
+                self.refresh_explorer();
             }
         }
         if changed {
             self.git_workspace.invalidate();
         }
         changed
+    }
+
+    fn git_commit_root(&self) -> Option<&std::path::Path> {
+        let workspace = self.project_root.as_deref();
+        if self.git_commit.cloning_in(workspace) {
+            workspace
+        } else {
+            self.git_root()
+        }
     }
 
     pub(super) fn add_create_commit_button(&self, frame: &mut Frame) {
@@ -258,7 +272,7 @@ impl State {
         if self.git_amend_head().is_some() {
             frame.footer = format!("Ctrl+Mayús+A modificar último commit · {}", frame.footer);
         }
-        if let Some(notice) = self.git_commit.notice(self.project_root.as_deref()) {
+        if let Some(notice) = self.git_commit.notice(self.git_root()) {
             frame.footer = format!("{notice} · {}", frame.footer);
         }
         if !ready {

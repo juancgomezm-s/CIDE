@@ -5,9 +5,12 @@ use super::{
     message_dialog::{form, sql_records},
     owner,
 };
-use jc_app::data_connections::{Draft, Engine, ProfileStore, MAX_VALUE_BYTES};
+use jc_app::data_connections::{
+    ConnectionTest, Draft, Engine, ProfileStore, MAX_VALUE_BYTES, SQL_TLS_FIELD, SQL_TLS_MODES,
+};
 use jc_app::CommandId;
 use jc_platform::{sql, sql_worker};
+use jc_progress::editor::{OpenEdgeTest, ProfileSetup, OPENEDGE_FIELDS, OPENEDGE_VALUE_BYTES};
 use std::path::Path;
 
 const TITLE: &str = "Conexiones de datos";
@@ -23,16 +26,14 @@ enum Choice {
 
 enum Outcome {
     Saved,
+    SavedOpenEdge,
     Cancelled,
     RefreshSchema,
     BrowseRecords,
 }
 
 fn choices(profiles: &[Draft], has_abl_profile: bool, has_catalog: bool) -> Vec<(Choice, String)> {
-    let refresh_available = has_abl_profile
-        && profiles
-            .iter()
-            .any(|profile| profile.engine() == Engine::OpenEdge);
+    let refresh_available = has_abl_profile;
     profiles
         .iter()
         .enumerate()
@@ -71,24 +72,37 @@ fn choices(profiles: &[Draft], has_abl_profile: bool, has_catalog: bool) -> Vec<
         .chain(Engine::ALL.into_iter().map(|engine| {
             (
                 Choice::New(engine),
-                format!("Nueva conexión · {}", engine.label()),
+                if engine == Engine::OpenEdge {
+                    "Asistente OpenEdge".into()
+                } else {
+                    format!("Nueva conexión · {}", engine.label())
+                },
             )
         }))
         .collect()
 }
 
-fn engine_details(engine: Engine, has_abl_profile: bool) -> &'static str {
-    match engine {
-        Engine::OpenEdge if has_abl_profile => {
-            "Usa el perfil ABL del proyecto. Con un perfil OpenEdge guardado, puedes actualizar el esquema desde la lista de conexiones."
-        }
-        Engine::OpenEdge => {
-            "Configura .cide/progress.local.ini en este proyecto para poder actualizar el esquema ABL."
-        }
-        Engine::PostgreSql | Engine::MySql => {
-            "Consulta el perfil guardado desde la lista de conexiones. TLS admite verificar-servidor, requerido o deshabilitado."
-        }
-    }
+unsafe fn openedge_setup(hwnd: Hwnd, root: &Path) -> Result<bool, String> {
+    let mut setup = ProfileSetup::open(root)?;
+    let values: Vec<_> = (0..OPENEDGE_FIELDS.len())
+        .map(|index| setup.value(index).to_owned())
+        .collect();
+    let fields: Vec<_> = OPENEDGE_FIELDS
+        .iter()
+        .zip(&values)
+        .map(|((label, _), value)| form::Field {
+            label,
+            value,
+            limit: OPENEDGE_VALUE_BYTES,
+        })
+        .collect();
+    form::edit_config(hwnd, "Asistente OpenEdge", "Elige el ejecutable del AVM. Para conectar una base, usa un .pf existente o indica una copia local .db para generar uno de solo lectura.", "Guardar perfil", &fields, &mut |values| {
+        for (index, value) in values.iter().enumerate() { setup.set_value(index, value)?; }
+        setup.save()
+    }, form::ConfigTest { paths: Some((root, &[0, 3, 4, 7])), start: &|values| {
+        let probe = OpenEdgeTest::new(root, values)?;
+        ConnectionTest::start(move |cancel| probe.run(cancel), || {})
+    } })
 }
 
 unsafe fn manage(hwnd: Hwnd, root: &Path, has_catalog: bool) -> Result<Outcome, String> {
@@ -126,38 +140,74 @@ unsafe fn manage(hwnd: Hwnd, root: &Path, has_catalog: bool) -> Result<Outcome, 
                 continue;
             }
         };
+        if engine == Engine::OpenEdge {
+            if openedge_setup(hwnd, root)? {
+                return Ok(Outcome::SavedOpenEdge);
+            }
+            continue;
+        }
         let defaults = Draft::new(engine);
         let initial = editing.map_or(&defaults, |index| &store.profiles()[index]);
-        let values: Vec<_> = initial
-            .fields()
+        let mut tls = SQL_TLS_MODES;
+        if let Some(current) = tls
             .iter()
-            .enumerate()
-            .map(|(index, _)| initial.value(index).to_owned())
+            .position(|(value, _)| *value == initial.value(SQL_TLS_FIELD))
+        {
+            tls.swap(0, current);
+        }
+        let modes = tls.map(|(_, label)| label.to_owned());
+        let title = format!("Asistente {} · 1 de 2", engine.label());
+        let Some(selected) = form::choose(
+            hwnd,
+            &title,
+            "Elige cómo proteger la conexión con el servidor SQL.",
+            &modes,
+        )?
+        else {
+            continue;
+        };
+        let indices: Vec<_> = (0..initial.fields().len())
+            .filter(|index| *index != SQL_TLS_FIELD)
             .collect();
-        let fields: Vec<_> = defaults
-            .fields()
+        let values: Vec<_> = indices
+            .iter()
+            .map(|&index| initial.value(index).to_owned())
+            .collect();
+        let fields: Vec<_> = indices
             .iter()
             .zip(&values)
-            .map(|(field, value)| form::Field {
-                label: field.label(),
+            .map(|(&index, value)| form::Field {
+                label: initial.fields()[index].label(),
                 value,
                 limit: MAX_VALUE_BYTES,
             })
             .collect();
-        let title = format!("{TITLE} · {}", engine.label());
-        let mut submit = |values: &[String]| {
+        let title = format!("Asistente {} · 2 de 2", engine.label());
+        let draft_from = |values: &[String]| {
             let mut draft = Draft::new(engine);
-            for (index, value) in values.iter().enumerate() {
+            draft.set_value(SQL_TLS_FIELD, tls[selected].0)?;
+            for (&index, value) in indices.iter().zip(values) {
                 draft.set_value(index, value)?;
             }
-            store.save(draft, editing)
+            Ok::<_, String>(draft)
         };
-        if form::edit(
+        let sql_engine = match engine {
+            Engine::PostgreSql => sql::Engine::PostgreSql,
+            Engine::MySql => sql::Engine::MySql,
+            Engine::OpenEdge => unreachable!(),
+        };
+        if form::edit_config(
             hwnd,
             &title,
-            engine_details(engine, has_abl_profile),
+            "Completa los datos del servidor. Si necesita contraseña, indica el nombre cide/datadigger/… del Administrador de credenciales de Windows.",
+            "Guardar",
             &fields,
-            &mut submit,
+            &mut |values| store.save(draft_from(values)?, editing),
+            form::ConfigTest { paths: None, start: &|values| {
+                let draft = draft_from(values)?;
+                let options = sql_worker::options(sql_engine, std::array::from_fn(|index| draft.value(index)))?;
+                ConnectionTest::start(move |cancel| sql_worker::test_connection(&options, || cancel.is_cancelled()), || {})
+            } },
         )? {
             return Ok(Outcome::Saved);
         }
@@ -195,7 +245,17 @@ pub(super) unsafe fn open(hwnd: Hwnd) {
         let mut state = owner.state.borrow_mut();
         match result {
             Ok(Outcome::Saved) => state.status = "Perfil de conexión guardado".into(),
-            Ok(Outcome::Cancelled | Outcome::RefreshSchema | Outcome::BrowseRecords) => {}
+            Ok(Outcome::SavedOpenEdge) if state.project_root == root => {
+                state.progress_schema.clear();
+                state.status =
+                    "Perfil OpenEdge guardado. Ya puedes actualizar el esquema ABL.".into();
+            }
+            Ok(
+                Outcome::Cancelled
+                | Outcome::RefreshSchema
+                | Outcome::BrowseRecords
+                | Outcome::SavedOpenEdge,
+            ) => {}
             Err(error) => state.error(error),
         }
     }
@@ -217,24 +277,30 @@ mod tests {
         assert_eq!(items[2].0, Choice::BrowseRecords);
         for ((action, item), engine) in items[3..].iter().zip(Engine::ALL) {
             assert_eq!(*action, Choice::New(engine));
-            assert_eq!(*item, format!("Nueva conexión · {}", engine.label()));
+            assert_eq!(
+                *item,
+                if engine == Engine::OpenEdge {
+                    "Asistente OpenEdge".into()
+                } else {
+                    format!("Nueva conexión · {}", engine.label())
+                }
+            );
         }
     }
 
     #[test]
-    fn project_connections_only_offers_refresh_for_a_saved_openedge_profile_with_abl_config() {
-        for (profiles, has_abl_profile) in [
-            (vec![Draft::new(Engine::PostgreSql)], true),
-            (vec![Draft::new(Engine::OpenEdge)], false),
-            (Vec::new(), true),
-        ] {
-            assert!(choices(&profiles, has_abl_profile, true)
+    fn project_connections_offers_refresh_for_the_abl_config_without_a_legacy_profile() {
+        for profiles in [vec![Draft::new(Engine::OpenEdge)], Vec::new()] {
+            assert!(choices(&profiles, false, true)
                 .iter()
                 .all(|(action, _)| !matches!(
                     action,
                     Choice::RefreshSchema | Choice::BrowseRecords
                 )));
         }
+        assert!(choices(&[], true, false)
+            .iter()
+            .any(|(action, _)| *action == Choice::RefreshSchema));
         let profile = Draft::new(Engine::OpenEdge);
         assert!(choices(&[profile], true, false)
             .iter()

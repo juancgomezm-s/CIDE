@@ -20,6 +20,7 @@ mod git_code;
 mod git_index_panel;
 mod git_panel;
 mod git_patch;
+mod git_repositories;
 mod git_smoke;
 mod git_view;
 mod git_workspace;
@@ -205,6 +206,17 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "Plantilla: aplicar vista previa",
     ),
     (245, CommandId::SnippetCancel, "Plantilla: cancelar"),
+    (272, CommandId::EditCompleteWithAi, "Completar con OmniCore"),
+    (
+        273,
+        CommandId::EditCompleteBlockWithAi,
+        "Completar bloque con OmniCore",
+    ),
+    (
+        270,
+        CommandId::EditSelectionWithAi,
+        "Editar selección con IA…",
+    ),
     (
         250,
         CommandId::ViewMarkdownPreview,
@@ -466,6 +478,7 @@ enum Action {
     ChooseOmniCore,
     ChooseOmniCoreModel,
     ConfirmOmniCoreEdit,
+    EditOmniCoreSelection,
     PasteOmniCore(std::rc::Rc<()>),
     DataConnections,
     BrowseRecords,
@@ -536,6 +549,7 @@ struct State {
     replace_generation: u64,
     git_status_due: bool,
     git_context: Option<PathBuf>,
+    git_repositories: git_repositories::Repositories,
     git_source: jc_app::git_read::GitBlobSource,
     git_panel: Option<git_panel::GitIntent>,
     git_workspace: git_workspace::Workspace,
@@ -568,6 +582,7 @@ struct State {
     zoom: zoom::Zoom,
     minimap_visible: bool,
     minimap_width: u16,
+    editor_theme: appearance::Theme,
     pub font: Handle,
     pub ui_font: Handle,
     ascii_runs: [bool; 128],
@@ -690,6 +705,7 @@ impl State {
             replace_generation: 0,
             git_status_due: false,
             git_context: None,
+            git_repositories: git_repositories::Repositories::new(wakeup.clone()),
             git_source: jc_app::git_read::GitBlobSource::Head,
             git_panel: None,
             git_workspace: Default::default(),
@@ -723,6 +739,7 @@ impl State {
             zoom: Default::default(),
             minimap_visible: true,
             minimap_width: appearance::DEFAULT_MINIMAP,
+            editor_theme: appearance::Theme::Current,
             font,
             ui_font,
             ascii_runs: [false; 128],
@@ -1000,6 +1017,18 @@ impl State {
             self.markdown_gui = None;
             return self.snippet_command(command);
         }
+        if matches!(
+            command,
+            CommandId::EditCompleteWithAi | CommandId::EditCompleteBlockWithAi
+        ) {
+            self.close_selector();
+            self.request_omnicore_completion(command == CommandId::EditCompleteBlockWithAi);
+            return Action::None;
+        }
+        if command == CommandId::EditSelectionWithAi {
+            self.close_selector();
+            return Action::EditOmniCoreSelection;
+        }
         if command == CommandId::ViewMarkdownPreview {
             return self.toggle_markdown();
         }
@@ -1127,11 +1156,20 @@ impl State {
                 return self.request_git(git_panel::GitIntent::Status)
             }
             CommandId::GitCloneWorktree => {
-                if let Some(root) = self.project_root.clone() {
-                    let action = self.request_git(git_panel::GitIntent::Status);
+                if let Some(root) = self
+                    .git_root()
+                    .map(std::path::Path::to_owned)
+                    .or_else(|| self.project_root.clone())
+                {
+                    if self.git_root().is_some() {
+                        self.request_git(git_panel::GitIntent::Status);
+                    } else {
+                        self.validate_git_context();
+                        self.close_selector();
+                        self.git_panel = Some(git_panel::GitIntent::Status);
+                    }
                     self.git_commit.open_worktree_clone(root);
                     self.git_workspace.invalidate();
-                    return action;
                 }
                 return Action::None;
             }
@@ -1139,11 +1177,7 @@ impl State {
                 if self.git_panel.is_some() && !self.git_code.active {
                     return self.open_git_code_from_workspace();
                 }
-                let action = self.open_git_code(self.git_source);
-                if self.git_code.active {
-                    self.choose_code_revision();
-                }
-                return action;
+                return self.open_document_git_history();
             }
             CommandId::GitDiffRefresh => {
                 if self.git_code.active {
@@ -1511,6 +1545,9 @@ impl State {
         if self.open_diff_visible {
             return (true, self.open_diff_key(code, modifiers));
         }
+        if code == 0x1b && modifiers == Modifiers::NONE && self.cancel_omnicore_selection() {
+            return (true, Action::None);
+        }
         if self.markdown_gui.is_some() {
             return (true, self.markdown_key(code, modifiers));
         }
@@ -1557,6 +1594,9 @@ impl State {
                 }
             }
             self.explorer_key(code, modifiers);
+            return (true, Action::None);
+        }
+        if self.omnicore_completion_key(code, modifiers) {
             return (true, Action::None);
         }
         if let Some(key) = key {
@@ -1939,6 +1979,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     })
                 });
             if !printing {
+                if result.is_ok() && composed {
+                    frame.publish_selection_preview();
+                    frame.publish_omnicore_completion();
+                }
                 if let Ok(mut state) = owner.state.try_borrow_mut() {
                     state.publish_markdown_hits(if result.is_ok() && composed {
                         frame.markdown_hits()
@@ -1970,6 +2014,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 return DefWindowProcW(hwnd, message, wparam, lparam);
             };
             state.pending_surrogate = None;
+            if state.clear_omnicore_completion() {
+                owner.frame_dirty.set(true);
+                InvalidateRect(hwnd, std::ptr::null(), 0);
+            }
             state.ime_target = state.ime_editor_target();
             state.ime_target.and_then(|_| state.ime_caret())
         };
@@ -2067,6 +2115,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_SETFOCUS => {
                 state.focused = true;
+                state.refresh_git_repositories();
                 state.schedule_git_status();
             }
             WM_KILLFOCUS => {
@@ -2299,7 +2348,9 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         redraw |= state.validate_git_context();
         redraw |= state.validate_open_diff();
         redraw |= state.validate_source();
+        redraw |= state.validate_omnicore_completion();
         state.schedule_outline();
+        state.schedule_git_discovery();
         state.schedule_omnicore();
         state.validate_explorer_scroll();
         state.validate_rectangle_drag();
@@ -2326,6 +2377,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         }
         state.schedule_search();
         state.schedule_outline();
+        state.schedule_git_discovery();
         state.schedule_omnicore();
     }
     release_idle_capture(hwnd);
@@ -2457,6 +2509,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             | Action::ChooseOmniCore
             | Action::ChooseOmniCoreModel
             | Action::ConfirmOmniCoreEdit
+            | Action::EditOmniCoreSelection
             | Action::DataConnections
             | Action::ExportGitPatch(_)
     ) && owner(hwnd).is_some_and(|owner| owner.state.borrow().smoke)
@@ -2515,6 +2568,7 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
         Action::BrowseRecords => records::open(hwnd),
         Action::ChooseOmniCoreModel => omnicore_panel::choose_model(hwnd),
         Action::ConfirmOmniCoreEdit => omnicore_panel::confirm_edit(hwnd),
+        Action::EditOmniCoreSelection => omnicore_panel::edit_selection(hwnd),
         Action::ChooseOmniCore => {
             let (root, initial) = owner(hwnd)
                 .map(|model| {

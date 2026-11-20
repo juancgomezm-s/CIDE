@@ -1,5 +1,5 @@
 //! Native view of the shared immutable comparison. No source buffer or Git I/O.
-use super::{ffi::*, paint, wide, Action, State};
+use super::{ffi::*, omnicore_panel::selection::Proposal, paint, wide, Action, State};
 use jc_app::{
     diff_model::{DiffLimits, DiffSide, DiffStatus, OwnedDiffModel},
     open_diff::OpenDiffState,
@@ -7,7 +7,7 @@ use jc_app::{
     source_services::display_ui_label,
     CommandId, Modifiers, TabId,
 };
-use std::{path::PathBuf, sync::Arc};
+use std::{cell::Cell, path::PathBuf, rc::Rc, sync::Arc};
 
 #[derive(Debug)]
 pub(super) struct OmniCorePreview {
@@ -45,7 +45,10 @@ pub(super) struct OmniCoreComparison {
     tab: Option<TabId>,
     path: PathBuf,
     preview: OmniCorePreview,
+    selection: Option<Proposal>,
+    review_painted: Rc<Cell<bool>>,
     selected: usize,
+    horizontal: usize,
     wheel_remainder: i32,
 }
 
@@ -65,6 +68,16 @@ pub(super) struct ComparisonFrame {
     origins: Option<[String; 2]>,
     summary: String,
     omnicore: bool,
+    selection_review: bool,
+    block_review: bool,
+    review_painted: Option<Rc<Cell<bool>>>,
+}
+impl ComparisonFrame {
+    pub(super) fn publish_selection_preview(&self) {
+        if let Some(painted) = &self.review_painted {
+            painted.set(true);
+        }
+    }
 }
 #[derive(Clone, Copy)]
 struct Geometry {
@@ -134,6 +147,20 @@ impl Geometry {
     fn split(self) -> i32 {
         self.row(0).left + ((self.columns - 3) / 2) as i32 * self.cw
     }
+    fn review_fits(self) -> bool {
+        self.columns >= 18 && self.rows > if self.dual { 5 } else { 6 }
+    }
+    fn apply(self) -> Option<Rect> {
+        if !self.review_fits() || self.columns < 32 {
+            return None;
+        }
+        let close = self.close();
+        Some(Rect {
+            left: close.left - self.cw * 10,
+            right: close.left,
+            ..close
+        })
+    }
     fn close(self) -> Rect {
         let header = self.row(0);
         Rect {
@@ -155,7 +182,10 @@ impl State {
             tab: self.workbench.active_document().map(|doc| doc.tab_id),
             path,
             preview,
+            selection: None,
+            review_painted: Rc::default(),
             selected: 0,
+            horizontal: 0,
             wheel_remainder: 0,
         });
         self.explorer_focused = false;
@@ -163,6 +193,62 @@ impl State {
         self.bottom.focused = false;
         self.open_diff_visible = true;
         self.status = "Comparación de OmniCore".into();
+    }
+
+    pub(super) fn open_omnicore_selection_diff(
+        &mut self,
+        path: PathBuf,
+        preview: OmniCorePreview,
+        proposal: Proposal,
+    ) {
+        let insertion = proposal.is_insertion();
+        self.open_omnicore_diff(path, preview);
+        self.omnicore_diff.as_mut().unwrap().selection = Some(proposal);
+        self.blur_omnicore();
+        self.status = if insertion {
+            "Revisa el diff del bloque · Ctrl+Intro aplicar · Esc descartar"
+        } else {
+            "Revisa el diff de la selección · Ctrl+Intro aplicar · Esc descartar"
+        }
+        .into();
+    }
+
+    pub(super) fn omnicore_selection_review_visible(&self) -> bool {
+        self.open_diff_visible
+            && self
+                .omnicore_diff
+                .as_ref()
+                .is_some_and(|diff| diff.selection.is_some())
+    }
+
+    fn apply_omnicore_selection(&mut self) {
+        if !self.omnicore_selection_review_visible() || !Geometry::for_omnicore(self).review_fits()
+        {
+            return;
+        }
+        if !self.omnicore_diff.as_ref().unwrap().review_painted.get() {
+            self.status = "Espera a que se muestre el diff antes de aplicar.".into();
+            return;
+        }
+        let proposal = self
+            .omnicore_diff
+            .as_mut()
+            .and_then(|diff| diff.selection.take())
+            .unwrap();
+        self.clear_omnicore_diff();
+        let insertion = proposal.is_insertion();
+        match proposal.apply(&mut self.workbench) {
+            Ok(()) => {
+                self.status = if insertion {
+                    "Bloque insertado · Ctrl+Z deshacer"
+                } else {
+                    "Selección editada · Ctrl+Z deshacer"
+                }
+                .into()
+            }
+            Err(error) => self.error(error),
+        }
+        self.schedule_omnicore();
     }
 
     pub(super) fn clear_omnicore_diff(&mut self) -> bool {
@@ -174,9 +260,16 @@ impl State {
     }
 
     fn close_omnicore_diff(&mut self) -> bool {
+        let selection_review = self.omnicore_selection_review_visible();
         let closed = self.clear_omnicore_diff();
         if closed {
-            self.status = "Comparación de OmniCore cerrada".into();
+            self.status = if selection_review {
+                "Propuesta de selección descartada"
+            } else {
+                "Comparación de OmniCore cerrada"
+            }
+            .into();
+            self.schedule_omnicore();
         }
         closed
     }
@@ -199,7 +292,12 @@ impl State {
             return false;
         }
         let geometry = Geometry::for_omnicore(self);
-        if geometry.rows > 0 && inside(geometry.close(), x, y) {
+        if self.omnicore_selection_review_visible()
+            && geometry.apply().is_some_and(|button| inside(button, x, y))
+        {
+            self.apply_omnicore_selection();
+            true
+        } else if geometry.rows > 0 && inside(geometry.close(), x, y) {
             self.close_omnicore_diff()
         } else {
             inside(geometry.rect, x, y)
@@ -227,6 +325,10 @@ impl State {
             self.close_omnicore_diff();
             return Action::None;
         }
+        if code == 0x0d && mods == Modifiers::CTRL && self.omnicore_selection_review_visible() {
+            self.apply_omnicore_selection();
+            return Action::None;
+        }
         if mods != Modifiers::NONE {
             return Action::None;
         }
@@ -243,8 +345,27 @@ impl State {
                     .min(last);
                 if selected != diff.selected {
                     diff.selected = selected;
+                    diff.horizontal = 0;
                     self.open_diff_view.first();
                 }
+            }
+            0x25 | 0x27 if diff.selection.is_some() => {
+                let columns = if geometry.dual {
+                    (geometry.columns - 3) / 2
+                } else {
+                    geometry.columns.saturating_sub(2)
+                };
+                let step = (columns / 2).max(1) as isize;
+                let limit = diff
+                    .selection
+                    .as_ref()
+                    .unwrap()
+                    .columns()
+                    .saturating_sub(columns);
+                diff.horizontal = diff
+                    .horizontal
+                    .saturating_add_signed(if code == 0x25 { -step } else { step })
+                    .min(limit);
             }
             0x21 | 0x22 => {
                 let page = geometry
@@ -275,6 +396,16 @@ impl State {
     pub(super) fn validate_open_diff(&mut self) -> bool {
         if !self.open_diff_visible {
             self.omnicore_diff = None;
+        } else if self
+            .omnicore_diff
+            .as_ref()
+            .and_then(|diff| diff.selection.as_ref())
+            .is_some_and(|selection| !selection.current(&self.workbench))
+        {
+            self.clear_omnicore_diff();
+            self.status = "Cambió la selección original. Se descartó la propuesta.".into();
+            self.schedule_omnicore();
+            return true;
         } else if self
             .omnicore_diff
             .as_ref()
@@ -379,18 +510,37 @@ impl State {
         }
         if let Some(diff) = &self.omnicore_diff {
             let geometry = Geometry::for_omnicore(self);
-            let mut presentation = self.open_diff_view.prepare_utf8_comparison(
-                &diff.preview.model,
-                diff.selected,
-                geometry
-                    .rows
-                    .saturating_sub(if geometry.dual { 5 } else { 6 }),
-                geometry.columns,
-                geometry.dual,
-            );
+            let rows = geometry
+                .rows
+                .saturating_sub(if geometry.dual { 5 } else { 6 });
+            let mut presentation = if diff.selection.is_some() {
+                self.open_diff_view.prepare_utf8_review(
+                    &diff.preview.model,
+                    diff.selected,
+                    rows,
+                    geometry.columns,
+                    geometry.dual,
+                    diff.horizontal,
+                )
+            } else {
+                self.open_diff_view.prepare_utf8_comparison(
+                    &diff.preview.model,
+                    diff.selected,
+                    rows,
+                    geometry.columns,
+                    geometry.dual,
+                )
+            };
             presentation.title = display_ui_label(
                 &format!(
-                    "OmniCore · {}",
+                    "OmniCore · {}{}",
+                    if diff.selection.as_ref().is_some_and(Proposal::is_insertion) {
+                        "Bloque · "
+                    } else if diff.selection.is_some() {
+                        "Selección · "
+                    } else {
+                        ""
+                    },
                     diff.path
                         .file_name()
                         .and_then(|name| name.to_str())
@@ -414,6 +564,10 @@ impl State {
                 origins: Some(["Antes".into(), "Después".into()]),
                 summary,
                 omnicore: true,
+                selection_review: diff.selection.is_some(),
+                block_review: diff.selection.as_ref().is_some_and(Proposal::is_insertion),
+                review_painted: (diff.selection.is_some() && geometry.review_fits())
+                    .then(|| Rc::clone(&diff.review_painted)),
             });
         }
         let geometry = Geometry::new(
@@ -462,6 +616,9 @@ impl State {
             origins,
             summary,
             omnicore: false,
+            selection_review: false,
+            block_review: false,
+            review_painted: None,
         })
     }
 }
@@ -478,16 +635,20 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &ComparisonFrame) -> Result<(), String
     if g.rows >= 1 {
         if frame.omnicore {
             let close = g.close();
+            let apply = frame.selection_review.then(|| g.apply()).flatten();
             paint::text(
                 dc,
                 Rect {
-                    right: close.left,
+                    right: apply.map_or(close.left, |button| button.left),
                     ..g.row(0)
                 },
                 &wide(&p.title),
                 FG,
                 HEADER,
             )?;
+            if let Some(button) = apply {
+                paint::text(dc, button, &wide("Aplicar"), FG, super::shell::SELECTED)?;
+            }
             paint::text(dc, close, &wide("×"), FG, HEADER)?;
         } else {
             line(0, &p.title, FG, HEADER)?;
@@ -596,7 +757,17 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &ComparisonFrame) -> Result<(), String
     if g.rows >= 3 {
         line(
             g.rows - 2,
-            if frame.omnicore {
+            if frame.selection_review {
+                if g.review_fits() {
+                    if frame.block_review {
+                        "El código se insertará en el cursor"
+                    } else {
+                        "Solo se editará el rango seleccionado"
+                    }
+                } else {
+                    "Amplía la vista para revisar y aplicar"
+                }
+            } else if frame.omnicore {
                 "Vista previa de solo lectura proporcionada por OmniCore"
             } else {
                 "Copias de solo lectura | diferencias de bytes | sin mezcla ni escrituras"
@@ -608,7 +779,9 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &ComparisonFrame) -> Result<(), String
     if g.rows >= 4 {
         line(
             g.rows - 1,
-            if frame.omnicore {
+            if frame.selection_review {
+                "↑↓ bloque · ←→ línea · Pág contenido · Ctrl+Intro aplicar · Esc descartar"
+            } else if frame.omnicore {
                 "↑↓ bloque · Pág contenido · Esc cerrar"
             } else {
                 "↑↓ bloque | Pág contenido | Intro derecha / Mayús+Intro izquierda | F5 actualizar | Esc"

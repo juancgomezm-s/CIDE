@@ -36,6 +36,32 @@ fn scan(a: &Workbench, root: Option<&std::path::Path>, mode: SourceMode) -> Sour
 }
 
 #[test]
+fn abl_routine_relationships_group_local_callers_and_follow_the_active_procedure() {
+    let source = "PROCEDURE principal:\n  RUN Saludo.\n  RUN saludo.\n  DISPLAY cantidad().\nEND PROCEDURE.\nPROCEDURE Saludo:\nEND PROCEDURE.\nFUNCTION cantidad RETURNS INTEGER():\n  RETURN 2.\nEND FUNCTION.\nPROCEDURE otro:\n  RUN saludo.\nEND PROCEDURE.";
+    let mut app = Workbench::default();
+    app.new_file("relaciones.p", TextEncoding::Utf8);
+    app.insert_text(source).unwrap();
+    let at = source.find("principal").unwrap();
+    app.set_linear_selection_bytes(at, at).unwrap();
+    let outgoing = scan(&app, None, SourceMode::Calls);
+    let names: Vec<_> = outgoing
+        .items()
+        .iter()
+        .map(|item| item.label.as_str())
+        .collect();
+    assert_eq!(names, ["Saludo", "cantidad"], "{}", outgoing.message());
+    let at = source.find("PROCEDURE Saludo").unwrap();
+    app.set_linear_selection_bytes(at, at).unwrap();
+    let incoming = scan(&app, None, SourceMode::Incoming);
+    let names: Vec<_> = incoming
+        .items()
+        .iter()
+        .map(|item| item.label.as_str())
+        .collect();
+    assert_eq!(names, ["principal", "otro"], "{}", incoming.message());
+}
+
+#[test]
 fn abl_calls_and_includes_are_separate_and_propath_selects_first_destination() {
     use std::fs;
     let root = std::env::temp_dir().join(format!("cide-source-propath-{}", std::process::id()));
@@ -110,6 +136,103 @@ fn abl_calls_and_includes_are_separate_and_propath_selects_first_destination() {
     }
     fs::remove_dir(root).unwrap();
 }
+#[test]
+fn abl_calls_groups_local_names_before_the_result_limit() {
+    let mut text = "RUN Fail.\n".repeat(100);
+    text.push_str("RUN fAiL.\nRUN Otro.\nRUN otro.\nPROCEDURE Fail:\nEND PROCEDURE.\nPROCEDURE Otro:\nEND PROCEDURE.");
+    let (mut app, mut calls) = run(&text, TextEncoding::Utf8, SourceMode::Calls);
+    assert_eq!(calls.state(), SourceState::Ready, "{}", calls.message());
+    assert_eq!(
+        calls
+            .items()
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>(),
+        ["RUN Fail", "RUN Otro"]
+    );
+    calls.activate(&mut app, None, false).unwrap();
+    assert_eq!(
+        app.active_editor().unwrap().cursor,
+        text.find("PROCEDURE Fail").unwrap() + "PROCEDURE ".len()
+    );
+
+    let (_, refs) = run(
+        "RUN Fail.\nRUN fail.\nPROCEDURE Fail:\nEND PROCEDURE.",
+        TextEncoding::Utf8,
+        SourceMode::References,
+    );
+    assert_eq!(refs.items().len(), 2);
+}
+
+#[test]
+fn abl_call_groups_keep_distinct_targets_and_caller_routines() {
+    use std::fs;
+    let root = std::env::temp_dir().join(format!("cide-source-call-groups-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    for dir in [".cide", "uno", "dos"] {
+        fs::create_dir(root.join(dir)).unwrap();
+    }
+    let origin = root.join("origen.p");
+    let text = format!(
+        "PROCEDURE Primero:\nDO:\n{}END.\nRUN uno/destino.p.\nRUN dos/destino.p.\nEND PROCEDURE.\nFUNCTION Segundo RETURNS INTEGER():\nRUN uno/destino.p.\nRUN destino.p.\nRETURN 0.\nEND FUNCTION.\nRUN destino.p.\n",
+        "RUN destino.p.\n".repeat(90),
+    );
+    fs::write(&origin, &text).unwrap();
+    fs::write(root.join(".cide/propath"), "uno\n.\ndos\n").unwrap();
+    fs::write(root.join("uno/destino.p"), "/* uno */").unwrap();
+    fs::write(root.join("dos/destino.p"), "/* dos */").unwrap();
+
+    let mut app = Workbench::default();
+    app.open_file(&origin, Some(TextEncoding::Utf8)).unwrap();
+    let mut calls = scan(&app, Some(&root), SourceMode::Calls);
+    assert_eq!(calls.state(), SourceState::Ready, "{}", calls.message());
+    assert_eq!(
+        calls
+            .items()
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>(),
+        ["RUN destino.p", "RUN dos/destino.p"]
+    );
+    calls.activate(&mut app, Some(&root), true).unwrap();
+    assert_eq!(app.active_bytes().unwrap(), b"/* uno */");
+
+    let mut incoming = scan(&app, Some(&root), SourceMode::Incoming);
+    assert_eq!(
+        incoming.state(),
+        SourceState::Ready,
+        "{}",
+        incoming.message()
+    );
+    let labels = incoming
+        .items()
+        .iter()
+        .map(|item| item.label.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(labels.len(), 3, "{labels:?}");
+    assert_eq!(labels[0], "Primero · origen.p:3");
+    assert!(labels[1].starts_with("Segundo · origen.p:"));
+    assert!(labels[2].starts_with("origen.p:"));
+    incoming.activate(&mut app, Some(&root), true).unwrap();
+    assert_eq!(
+        app.active_editor().unwrap().cursor,
+        text.find("RUN destino.p.").unwrap()
+    );
+    drop(app);
+    for file in [
+        "origen.p",
+        ".cide/propath",
+        "uno/destino.p",
+        "dos/destino.p",
+    ] {
+        fs::remove_file(root.join(file)).unwrap();
+    }
+    for dir in [".cide", "uno", "dos"] {
+        fs::remove_dir(root.join(dir)).unwrap();
+    }
+    fs::remove_dir(root).unwrap();
+}
+
 #[test]
 fn abl_symbols_ignore_comments_strings_preprocessor_and_end_statements_in_all_encodings() {
     let text="/* PROCEDURE fake: /* FUNCTION nope: */ */\r\nDISPLAY \"PROCEDURE hidden: RUN hidden.p.\".\r\n&SCOPED-DEFINE x PROCEDURE skipped:\r\nPROCEDURE niño:\r\nEND PROCEDURE.\r\nFUNCTION compute RETURNS INTEGER():\r\nEND FUNCTION.\r\nCLASS Example:\r\nMETHOD PUBLIC VOID work():\r\nEND METHOD.\r\nEND CLASS.";

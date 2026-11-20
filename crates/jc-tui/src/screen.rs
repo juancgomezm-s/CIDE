@@ -8,6 +8,7 @@ pub enum CellStyle {
     Reverse,
     Dim,
     Syntax(jc_languages::syntax::SyntaxKind),
+    Relation(jc_app::source_services::RelationMark),
     Menu,
     MenuActive,
     MenuMnemonic,

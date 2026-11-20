@@ -280,6 +280,9 @@ impl Workbench {
             | SourceOpenToSide
             | EditInsertSnippet
             | EditSurroundWith
+            | EditSelectionWithAi
+            | EditCompleteWithAi
+            | EditCompleteBlockWithAi
             | SnippetNext
             | SnippetPrevious
             | SnippetAccept

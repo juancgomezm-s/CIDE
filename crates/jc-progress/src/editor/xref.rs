@@ -211,6 +211,7 @@ pub(super) fn search(
             .collect();
         output
             .push(TaskItem::Source(SourceItem {
+                value_type: None,
                 range: if path == source { offset..offset } else { 0..0 },
                 label: format!("{relative} · lín {line} · {kind}"),
                 action: if path == source {
@@ -461,7 +462,7 @@ fn valid_name(name: &str) -> bool {
 }
 
 fn code_identifier(bytes: &[u8], encoding: TextEncoding, range: &std::ops::Range<usize>) -> bool {
-    use jc_languages::syntax::{scan, LexerState, SyntaxKind, SyntaxProfile};
+    use jc_languages::syntax::{scan, LexerState, SyntaxProfile};
     let mut lexer = LexerState::default();
     let mut found = false;
     let bom = usize::from(encoding == TextEncoding::Utf8 && bytes.starts_with(b"\xef\xbb\xbf")) * 3;
@@ -472,8 +473,7 @@ fn code_identifier(bytes: &[u8], encoding: TextEncoding, range: &std::ops::Range
         bom,
         true,
         |span| {
-            if span.source == *range && matches!(span.kind, SyntaxKind::Plain | SyntaxKind::Keyword)
-            {
+            if span.source == *range && span.kind.is_word() {
                 found = true;
             }
         },

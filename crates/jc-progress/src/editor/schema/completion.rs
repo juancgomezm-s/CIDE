@@ -191,6 +191,37 @@ impl CatalogSource for Provider {
                     output.push(TaskItem::Source(item))?;
                 }
             }
+            CatalogQuery::SemanticContext => {
+                let empty;
+                let catalog = if let Some(catalog) = catalog.as_deref() {
+                    catalog
+                } else {
+                    empty = self.empty_catalog();
+                    &empty
+                };
+                let cursor = snapshot.bytes().len();
+                let mut context = Context::new(snapshot.bytes(), snapshot.stamp.encoding);
+                let mut symbols = Symbols::default();
+                symbols.semantic = true;
+                let protected = Includes::new(&self.root, &self.source).scan(
+                    &mut context,
+                    &mut symbols,
+                    catalog,
+                    cancel,
+                )?;
+                if !protected && !context.overflow {
+                    if let Some((Target::Fields(names), _, prefix)) = context.target(cursor) {
+                        if let Some(names) = symbols.semantic_table(&names) {
+                            for item in catalog.semantic_fields(names, &fold(&prefix), cursor) {
+                                output.push(TaskItem::Source(item))?;
+                            }
+                        }
+                    }
+                    for item in symbols.semantic_items(cursor).take(24) {
+                        output.push(TaskItem::Source(item))?;
+                    }
+                }
+            }
             CatalogQuery::Xref { cursor } => {
                 if let Err(error) = crate::editor::xref::search(
                     &self.root,
@@ -307,6 +338,7 @@ impl Site {
                 .take(48)
                 .collect();
             SourceItem {
+                value_type: None,
                 range: reference,
                 label: format!("{label} · {name}"),
                 action: SourceAction::ProjectLocation {
@@ -318,6 +350,7 @@ impl Site {
             }
         } else {
             SourceItem {
+                value_type: None,
                 range: self.offset..self.offset,
                 label,
                 action: SourceAction::Navigate,
@@ -359,8 +392,7 @@ impl<'a> Context<'a> {
     }
 
     fn word(&self, token: &Token) -> Option<String> {
-        if !matches!(token.kind, SyntaxKind::Plain | SyntaxKind::Keyword) || token.range.len() > 128
-        {
+        if !token.kind.is_word() || token.range.len() > 128 {
             return None;
         }
         let decoded = decode_fragment(self.bytes(token), self.encoding, token.range.start);
@@ -761,6 +793,7 @@ impl Catalog {
         Ok(suggestions
             .into_iter()
             .map(|(label, text)| SourceItem {
+                value_type: None,
                 range: range.clone(),
                 label,
                 action: SourceAction::Replace(text),
@@ -801,6 +834,53 @@ impl Catalog {
             }
         }
         suggestions
+    }
+
+    fn semantic_fields(&self, names: &[String], prefix: &str, cursor: usize) -> Vec<SourceItem> {
+        let database = (names.len() == 2).then(|| self.logical_database(&names[0]));
+        let Some(table) = names.last() else {
+            return Vec::new();
+        };
+        let key = fold(table);
+        let mut matches = self.table_matches(database.as_deref(), &key, true);
+        let Some((db, table, _)) = matches.next() else {
+            return Vec::new();
+        };
+        if matches.next().is_some() {
+            return Vec::new();
+        }
+        self.records
+            .iter()
+            .filter_map(|record| {
+                let SchemaRecord::Field {
+                    database,
+                    table: field_table,
+                    name,
+                    data_type,
+                    ..
+                } = record
+                else {
+                    return None;
+                };
+                if database != db || field_table != table {
+                    return None;
+                }
+                let name = self.name(name)?;
+                if !fold(&name).starts_with(prefix) {
+                    return None;
+                }
+                Some(SourceItem {
+                    range: cursor..cursor,
+                    label: name.chars().take(96).collect(),
+                    value_type: None,
+                    action: SourceAction::SemanticSymbol(
+                        self.name(data_type)
+                            .map(|text| text.chars().take(110).collect()),
+                    ),
+                })
+            })
+            .take(12)
+            .collect()
     }
 
     fn members_where(
@@ -925,6 +1005,22 @@ mod tests {
                 format!("{}{text}", &source[..item.range.start])
             })
             .collect()
+    }
+
+    #[test]
+    fn block_semantic_fields_require_a_unique_table_and_return_types() {
+        let catalog = catalog();
+        assert!(catalog
+            .semantic_fields(&["cliente".into()], "", 18)
+            .is_empty());
+        let fields = catalog.semantic_fields(&["actual".into(), "cliente".into()], "nom", 18);
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].label, "Nombre");
+        assert_eq!(fields[0].range, 18..18);
+        assert_eq!(
+            fields[0].action,
+            SourceAction::SemanticSymbol(Some("character".into()))
+        );
     }
 
     #[test]

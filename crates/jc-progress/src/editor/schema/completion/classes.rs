@@ -939,6 +939,7 @@ pub(super) struct ClassSource {
 impl ClassSource {
     fn item(&self, range: Range<usize>, label: String, offset: usize) -> SourceItem {
         SourceItem {
+            value_type: None,
             range,
             label,
             action: SourceAction::ProjectLocation {

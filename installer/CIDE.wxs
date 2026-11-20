@@ -1,12 +1,17 @@
+<?ifndef AllowSameVersionUpgrade ?>
+<?define AllowSameVersionUpgrade = "no" ?>
+<?endif?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package Name="CIDE" Manufacturer="Juan Carlos Gómez Montiel" Version="$(var.MsiVersion)"
            Language="3082" Scope="perMachine" UpgradeCode="54C0AB97-10FC-42CD-AC23-872E554A7F21"
            Codepage="1252">
-    <MajorUpgrade DowngradeErrorMessage="Ya hay una versión más reciente de CIDE instalada." />
+    <MajorUpgrade AllowSameVersionUpgrades="$(var.AllowSameVersionUpgrade)"
+                  DowngradeErrorMessage="Ya hay una versión más reciente de CIDE instalada." />
     <MediaTemplate EmbedCab="yes" />
-    <Icon Id="CideIcon" SourceFile="$(var.Payload)\assets\branding\cide-gui.ico" />
-    <Property Id="ARPPRODUCTICON" Value="CideIcon" />
+    <Icon Id="CideGuiIcon.exe" SourceFile="$(var.ShortcutIcons)\CideGuiIcon.exe" />
+    <Icon Id="CideTuiIcon.exe" SourceFile="$(var.ShortcutIcons)\CideTuiIcon.exe" />
+    <Property Id="ARPPRODUCTICON" Value="CideGuiIcon.exe" />
     <ui:WixUI Id="WixUI_Minimal" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
 
@@ -37,14 +42,16 @@
       <Component Id="GuiLauncher">
         <File Source="$(var.Payload)\bin\cide-gui.exe" KeyPath="yes">
           <Shortcut Id="CideGuiShortcut" Name="CIDE" Directory="CideStartMenu"
-                    Advertise="yes" WorkingDirectory="INSTALLFOLDER" />
+                    Advertise="yes" WorkingDirectory="INSTALLFOLDER"
+                    Icon="CideGuiIcon.exe" IconIndex="0" />
         </File>
         <RemoveFolder Id="RemoveCideStartMenu" Directory="CideStartMenu" On="uninstall" />
       </Component>
       <Component Id="TuiLauncher">
         <File Source="$(var.Payload)\bin\cide-tui.exe" KeyPath="yes">
           <Shortcut Id="CideTuiShortcut" Name="CIDE Terminal" Directory="CideStartMenu"
-                    Advertise="yes" WorkingDirectory="INSTALLFOLDER" />
+                    Advertise="yes" WorkingDirectory="INSTALLFOLDER"
+                    Icon="CideTuiIcon.exe" IconIndex="0" />
         </File>
       </Component>
     </DirectoryRef>

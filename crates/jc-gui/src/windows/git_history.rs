@@ -14,7 +14,7 @@ impl State {
     }
 
     pub(super) fn request_git_history_parent(&mut self, commit: String, parent: usize) {
-        let Some(root) = self.project_root.clone() else {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
             return;
         };
         self.git_workspace.active = Column::Files;
@@ -119,8 +119,8 @@ impl State {
         Action::None
     }
     pub(super) fn prepare_git_history(&mut self, mut frame: Frame) -> Frame {
-        self.git_revision
-            .invalidate_context(self.project_root.as_deref());
+        let root = self.git_root().map(std::path::Path::to_owned);
+        self.git_revision.invalidate_context(root.as_deref());
         let l = Layout::new(self);
         let p = |v| self.dpi.pixels(v);
         frame.historical = true;

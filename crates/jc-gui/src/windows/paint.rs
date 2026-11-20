@@ -1,15 +1,11 @@
 //! Preparation owns only visible cells. Painting borrows that presentation and
 //! never accesses Workbench, document caches or a mutable editor widget.
-use super::{editor_scroll, ffi::*, wide, State};
+use super::{appearance::Theme, editor_scroll, ffi::*, wide, State};
 use jc_app::{PaneId, SyntaxKind, SyntaxProfile};
 use jc_text::TextPosition;
 use std::ptr::{null, null_mut};
 
 const BACKGROUND: u32 = super::shell::BACKGROUND;
-const FOREGROUND: u32 = super::shell::TEXT;
-const DIM: u32 = super::shell::MUTED;
-const SELECTED: u32 = super::shell::SELECTED;
-const ACCENT: u32 = super::shell::ACCENT;
 fn search_at(matches: &[jc_app::SearchMatch], source: std::ops::Range<usize>) -> bool {
     // S0 delivers source-ordered ranges. One binary lookup per visible cell;
     // diagnostic escape fragments retain their original scalar's byte start.
@@ -19,6 +15,7 @@ fn search_at(matches: &[jc_app::SearchMatch], source: std::ops::Range<usize>) ->
         .is_some_and(|hit| hit.range.start < source.end)
 }
 struct Cell {
+    theme: Theme,
     glyph: jc_app::Glyph,
     column: usize,
     width: usize,
@@ -30,19 +27,18 @@ struct Cell {
 impl Cell {
     fn foreground(&self) -> u32 {
         if self.selected || self.search {
-            return FOREGROUND;
+            return self.theme.text();
         }
         if self.marker {
-            return DIM;
+            return self.theme.muted();
         }
-        let color = jc_app::syntax_theme::foreground(self.kind);
-        u32::from(color.r) | (u32::from(color.g) << 8) | (u32::from(color.b) << 16)
+        self.theme.syntax(self.kind)
     }
     fn background(&self) -> u32 {
         if self.selected || self.search {
-            SELECTED
+            self.theme.selection()
         } else {
-            BACKGROUND
+            self.theme.background()
         }
     }
 }
@@ -119,6 +115,8 @@ pub(super) struct Frame {
     font: Handle,
     ui_font: Handle,
     ascii_runs: [bool; 128],
+    theme: Theme,
+    ghost_painted: Option<std::rc::Rc<std::cell::Cell<bool>>>,
     cell_width: i32,
     cell_height: i32,
     tabs: super::tab_bar::Bars,
@@ -144,6 +142,10 @@ pub(super) struct Frame {
     bottom: Option<super::bottom_panel::BottomFrame>,
 }
 impl Frame {
+    pub(super) fn chrome_layout(&self) -> super::chrome::Layout {
+        self.chrome.layout
+    }
+
     pub(super) fn git_code_hits(&self) -> Option<super::git_code::Hits> {
         self.git_code.as_ref().map(|frame| frame.hits.clone())
     }
@@ -212,6 +214,18 @@ impl Frame {
     pub(super) fn outline_hits(&self) -> Option<super::outline_panel::OutlineHits> {
         self.outline.as_ref().map(|frame| frame.hits())
     }
+    pub(super) fn publish_omnicore_completion(&self) {
+        if let Some(painted) = &self.ghost_painted {
+            painted.set(true);
+        }
+    }
+
+    pub(super) fn publish_selection_preview(&self) {
+        if let Some(comparison) = &self.comparison {
+            comparison.publish_selection_preview();
+        }
+    }
+
     pub(super) fn omnicore_hits(&self) -> Option<super::omnicore_panel::Hits> {
         self.omnicore.as_ref().map(|frame| frame.hits())
     }
@@ -512,6 +526,75 @@ pub(super) fn rectangle_pixel(
     ))
 }
 
+/// Project the insertion and shift only the displayed suffix. The document,
+/// caret, selection and hit-testing coordinates keep their source positions.
+fn project_ghost(row: &mut Row, start: usize, columns: usize, source: &str, theme: Theme) -> bool {
+    use jc_text::grapheme;
+    let at = row.cells.partition_point(|cell| cell.column < start);
+    if at > 0 && row.cells[at - 1].column + row.cells[at - 1].width > start {
+        return false;
+    }
+    let width = grapheme::graphemes(source)
+        .map(grapheme::width)
+        .sum::<usize>();
+    let clipped = width > columns.saturating_sub(start);
+    let limit = columns.saturating_sub(usize::from(clipped));
+    let mut end = start;
+    let mut ghost = Vec::new();
+    for cluster in grapheme::graphemes(source) {
+        let width = grapheme::width(cluster);
+        if end + width > limit {
+            break;
+        }
+        let mut chars = cluster.chars();
+        let first = chars.next().unwrap();
+        ghost.push(Cell {
+            theme,
+            glyph: if chars.next().is_none() {
+                jc_app::Glyph::Scalar(first)
+            } else {
+                jc_app::Glyph::Cluster(cluster.into())
+            },
+            column: end,
+            width,
+            selected: false,
+            search: false,
+            marker: true,
+            kind: SyntaxKind::Plain,
+        });
+        end += width;
+    }
+    if ghost.is_empty() {
+        return false;
+    }
+    if clipped {
+        ghost.push(Cell {
+            column: end,
+            width: 1,
+            glyph: jc_app::Glyph::Scalar('…'),
+            theme,
+            selected: false,
+            search: false,
+            marker: true,
+            kind: SyntaxKind::Plain,
+        });
+    }
+    let shift = if clipped {
+        columns - start
+    } else {
+        end - start
+    };
+    for cell in &mut row.cells[at..] {
+        cell.column += shift;
+    }
+    row.cells.truncate(
+        row.cells
+            .partition_point(|cell| cell.column + cell.width <= columns),
+    );
+    row.cells.splice(at..at, ghost);
+    true
+}
+
 pub(super) fn prepare(state: &mut State) -> Frame {
     state.syntax_pending = false;
     state.syntax_targets = [None, None];
@@ -536,6 +619,10 @@ pub(super) fn prepare(state: &mut State) -> Frame {
     let mut glyph_budget = jc_app::MAX_PRESENTATION_TEXT_BYTES;
     let mut syntax_limited = false;
     let mut syntax_plain = false;
+    let mut ghost_painted = None;
+    if let Some((_, painted)) = state.omnicore_completion_text() {
+        painted.set(false);
+    }
     for area in areas {
         let id = area.pane;
         let rect = area.geometry.text;
@@ -571,6 +658,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                     .into_iter()
                     .enumerate()
                     .map(|(column, cell)| Cell {
+                        theme: state.editor_theme,
                         glyph: jc_app::Glyph::Scalar(cell.ch),
                         column,
                         width: 1,
@@ -630,6 +718,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             let cells = visible
                 .into_iter()
                 .map(|atom| Cell {
+                    theme: state.editor_theme,
                     kind: if atom.source.is_empty() {
                         SyntaxKind::Plain
                     } else {
@@ -684,6 +773,17 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                     )
                 })
         });
+        if let Some((x, y)) = caret {
+            if let Some((text, painted)) = state.omnicore_completion_text() {
+                let row = ((y - text_y) / state.cell_height) as usize;
+                let column = ((x - text_x) / state.cell_width) as usize;
+                if prepared.get_mut(row).is_some_and(|row| {
+                    project_ghost(row, column, columns, text, state.editor_theme)
+                }) {
+                    ghost_painted = Some(painted);
+                }
+            }
+        }
         panes.push(Pane {
             id,
             first_line: first,
@@ -753,6 +853,8 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         state.wakeup.signal();
     }
     Frame {
+        theme: state.editor_theme,
+        ghost_painted,
         width: state.width.clamp(1, 8192),
         height: state.height.clamp(1, 8192),
         font: state.font,
@@ -952,6 +1054,9 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
     )?;
     super::tab_bar::draw(dc, &frame.tabs)?;
     for pane in &frame.panes {
+        if frame.theme != Theme::Current {
+            fill(dc, pane.rect, frame.theme.background())?;
+        }
         SelectObject(dc, frame.font);
         for (row, line) in pane.rows.iter().enumerate() {
             let y = pane.text_y + row as i32 * frame.cell_height;
@@ -970,8 +1075,8 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
                     bottom: y + frame.cell_height,
                 },
                 &line.number,
-                DIM,
-                BACKGROUND,
+                frame.theme.muted(),
+                frame.theme.background(),
             )?;
             let mut cell_index = 0;
             while cell_index < line.cells.len() {
@@ -1048,7 +1153,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
                     right: x + 2,
                     bottom: (y + frame.cell_height).min(pane.rect.bottom),
                 },
-                ACCENT,
+                frame.theme.accent(),
             )?;
         }
         pane.scroll.draw(dc)?;

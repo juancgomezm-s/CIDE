@@ -1,7 +1,7 @@
 //! Explicit own-HWND smoke measurement, never an idle/background benchmark.
 //! Both paths draw the same owned frame on memory DIBs; this does not measure
 //! input-to-physical-display latency or certify global process memory targets.
-use super::{back_buffer::Buffer, ffi::*, owner, paint};
+use super::{back_buffer::Buffer, chrome, ffi::*, native_menu, owner, paint};
 use std::{ptr::null_mut, time::Instant};
 
 #[link(name = "kernel32")]
@@ -110,6 +110,48 @@ fn percentiles(samples: &mut [u128]) -> (u128, u128) {
     )
 }
 
+fn verify_chrome_background(pixels: &[u32], layout: chrome::Layout) -> Result<u32, String> {
+    let height = layout.top();
+    if layout.height < height {
+        return Err("La prueba requiere la barra de título completa".into());
+    }
+    let color = jc_app::ui_theme::CHROME;
+    // The top-down DIB stores BGRA bytes, so a LE pixel reads as 0xAARRGGBB.
+    let rgb = u32::from_be_bytes([0, color.r, color.g, color.b]);
+    let title = std::iter::once(("Título", layout.title_rect()));
+    let regions = title.chain(
+        native_menu::definitions()
+            .into_iter()
+            .map(|menu| (menu.title, chrome::menu_rect(layout, menu.group))),
+    );
+    // The title and menu text is centered vertically. Use the lower inset to
+    // measure their background without sampling text or the row of tabs.
+    let inset = layout.dpi.pixels(2).max(1);
+    for (name, rect) in regions {
+        if rect.left < 0
+            || rect.right > layout.width
+            || rect.left >= rect.right
+            || rect.top < 0
+            || rect.bottom > height
+            || rect.bottom - rect.top < inset
+        {
+            return Err(format!("«{name}» debe estar dentro de la barra de título"));
+        }
+        let x = rect.left + (rect.right - rect.left) / 2;
+        let y = rect.bottom - inset;
+        let pixel = pixels
+            .get(y as usize * layout.width as usize + x as usize)
+            .ok_or("La muestra del marco quedó fuera de la superficie GDI")?
+            & 0x00ff_ffff;
+        if pixel != rgb {
+            return Err(format!(
+                "El fondo de «{name}» en ({x}, {y}) es #{pixel:06X}. Se esperaba #{rgb:06X}."
+            ));
+        }
+    }
+    Ok(rgb)
+}
+
 unsafe fn timed(dc: Hdc, frame: &paint::Frame, reference: bool) -> Result<u128, String> {
     if GdiFlush() == 0 {
         return Err("El probe GUI no pudo sincronizar el lote GDI previo".into());
@@ -137,6 +179,7 @@ pub(super) unsafe fn measure(hwnd: Hwnd, frame: &paint::Frame) -> Result<String,
     let mut current = [0u128; SAMPLES];
     let retained;
     let resized;
+    let chrome_rgb;
     {
         let surface = Surface::new(hwnd, frame.width, frame.height)?;
         for warmup in 0..3 {
@@ -170,17 +213,7 @@ pub(super) unsafe fn measure(hwnd: Hwnd, frame: &paint::Frame) -> Result<String,
             ));
         }
         drop(expected);
-        if frame.width < 700 || frame.height < super::chrome::TOP {
-            return Err("La prueba del marco requiere una superficie completa".into());
-        }
-        for y in [16usize, 46] {
-            let pixel = actual[y * frame.width as usize + frame.width as usize / 2] & 0x00ff_ffff;
-            if pixel != 0x002e_3440 {
-                return Err(format!(
-                    "El marco no comparte el fondo #2E3440 en y={y}: {pixel:x}"
-                ));
-            }
-        }
+        chrome_rgb = verify_chrome_background(actual, frame.chrome_layout())?;
         let mut buffer = Buffer::default();
         buffer.paint(surface.dc, frame.width, frame.height, |dc| {
             paint::draw(dc, frame)
@@ -213,7 +246,7 @@ pub(super) unsafe fn measure(hwnd: Hwnd, frame: &paint::Frame) -> Result<String,
         concat!(
             "{{\"samples_per_route\":21,\"warmup_pairs\":3,",
             "\"width\":{},\"height\":{},",
-            "\"source_cells\":{},\"source_runs\":{},\"exact_pixels_equal\":true,\"client_title_and_toolbar_rgb\":\"#2E3440\",",
+            "\"source_cells\":{},\"source_runs\":{},\"exact_pixels_equal\":true,\"client_title_and_menu_rgb\":\"#{:06X}\",",
             "\"reference_cell_ns\":{{\"p50\":{},\"p95\":{}}},",
             "\"current_run_ns\":{{\"p50\":{},\"p95\":{}}},",
             "\"retained\":{{\"allocations\":{},\"compositions\":{},\"blits\":{},\"pixel_bytes\":{}}},",
@@ -225,6 +258,7 @@ pub(super) unsafe fn measure(hwnd: Hwnd, frame: &paint::Frame) -> Result<String,
         frame.height,
         source_cells,
         source_runs,
+        chrome_rgb,
         reference_p50,
         reference_p95,
         current_p50,
@@ -249,5 +283,26 @@ mod tests {
     fn timing_percentiles_use_interleaved_sample_population() {
         let mut samples: Vec<_> = (1..=21u128).rev().collect();
         assert_eq!(percentiles(&mut samples), (11, 20));
+    }
+
+    #[test]
+    fn title_and_menu_background_excludes_tabs_at_each_dpi() {
+        for dpi in [96, 144, 192] {
+            let layout =
+                chrome::Layout::at_dpi(1500, 180, false, super::super::dpi::Dpi::from_raw(dpi));
+            let width = layout.width as usize;
+            let mut pixels = vec![0x008b_5541; width * layout.height as usize];
+            pixels[..width * layout.top() as usize].fill(0x002e_3440);
+            assert_eq!(verify_chrome_background(&pixels, layout), Ok(0x002e_3440));
+
+            let file = chrome::menu_rect(layout, native_menu::NativeMenuGroup::File);
+            for y in file.top..file.bottom {
+                let row = y as usize * width;
+                pixels[row + file.left as usize..row + file.right as usize].fill(0x008b_5541);
+            }
+            assert!(verify_chrome_background(&pixels, layout)
+                .unwrap_err()
+                .contains("Archivo"));
+        }
     }
 }

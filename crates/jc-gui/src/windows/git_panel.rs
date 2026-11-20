@@ -1,6 +1,6 @@
 //! Native intentions over existing read-only Git controllers. No Git command
 //! implementation, source ownership or filesystem navigation lives in this UI.
-use super::{project_panel::ProjectPresentation, Action, State};
+use super::{git_repositories::Pending, project_panel::ProjectPresentation, Action, State};
 use jc_app::{
     git_diff::{GitDiffOptions, GitDiffState},
     git_read::GitBlobSource,
@@ -37,6 +37,7 @@ impl State {
     pub(super) fn schedule_git_status(&mut self) {
         if self.project_root.is_some() {
             self.git_status_due = true;
+            self.schedule_git_discovery();
             self.bridge.signal();
         }
     }
@@ -45,11 +46,14 @@ impl State {
         if self.project_root.is_none() {
             return "Git: abre carpeta".into();
         }
+        if self.git_root().is_none() {
+            return "Git: elige repositorio".into();
+        }
         if self.git_status.is_not_repository() {
             return "Git: sin repositorio".into();
         }
         match self.git_status.state() {
-            S::Ready if self.git_status.root() == self.project_root.as_deref() => {
+            S::Ready if self.git_status.root() == self.git_root() => {
                 match self.git_status.result() {
                     Some(result) if result.status().entries().is_empty() => "Git: limpio".into(),
                     Some(result) => format!("Git: {} cambios", result.status().entries().len()),
@@ -62,6 +66,14 @@ impl State {
         }
     }
     pub(super) fn request_git(&mut self, intent: GitIntent) -> Action {
+        let Some(root) = self.git_root().map(std::path::Path::to_owned) else {
+            if !self.defer_git_until_discovered(Pending::Panel(intent)) {
+                self.status =
+                    "Selecciona un repositorio en Archivos o abre uno de sus archivos".into();
+            }
+            return Action::None;
+        };
+        self.validate_git_context();
         self.git_code.active = false;
         self.git_code.invalidate();
         self.git_workspace.graph = None;
@@ -74,10 +86,6 @@ impl State {
         self.git_workspace.local_kind = None;
         self.git_workspace.invalidate();
         self.git_workspace.commit = None;
-        let Some(root) = self.project_root.clone() else {
-            self.error("Abre primero la carpeta raíz del repositorio");
-            return Action::None;
-        };
         self.git_panel = Some(intent);
         self.git_context = Some(root.clone());
         match intent {
@@ -124,9 +132,10 @@ impl State {
         if self
             .git_context
             .as_ref()
-            .is_some_and(|root| self.project_root.as_ref() != Some(root))
+            .is_some_and(|root| self.git_root() != Some(root.as_path()))
         {
             self.clear_git();
+            self.schedule_git_status();
             return true;
         }
         self.git_diff
@@ -135,9 +144,12 @@ impl State {
     /// The sole F3 poll: dispatch Git-owned completions first, other typed rows
     /// to Workbench. Called only from TASKS_MESSAGE, never prepare/draw.
     pub(super) fn poll_git(&mut self) -> bool {
-        let mut changed =
-            self.validate_git_context() | self.validate_open_diff() | self.validate_source();
-        let revision_changed = self.git_revision.poll(self.project_root.as_deref());
+        let mut changed = self.poll_git_repositories()
+            | self.validate_git_context()
+            | self.validate_open_diff()
+            | self.validate_source();
+        let root = self.git_root().map(std::path::Path::to_owned);
+        let revision_changed = self.git_revision.poll(root.as_deref());
         if revision_changed {
             self.git_workspace.invalidate();
             self.status = self.git_revision.message().into();
@@ -161,7 +173,10 @@ impl State {
                 if self.open_diff_visible {
                     self.status = self.open_diff.message().into();
                 }
-            } else if self.accept_source(&mut completion) || self.accept_outline(&mut completion) {
+            } else if self.accept_source(&mut completion)
+                || self.accept_outline(&mut completion)
+                || self.accept_omnicore_semantic_context(&mut completion)
+            {
                 changed = true;
             } else {
                 changed |= self.workbench.accept_task_completion(&completion);
@@ -198,7 +213,7 @@ impl State {
             )
         {
             self.git_status_due = false;
-            if let Some(root) = self.project_root.clone() {
+            if let Some(root) = self.git_root().map(std::path::Path::to_owned) {
                 let options = GitStatusOptions {
                     root: root.clone(),
                     limits: Default::default(),
@@ -223,6 +238,7 @@ impl State {
             _ => {}
         }
         if status_changed {
+            self.remember_git_status();
             self.git_workspace.invalidate();
         }
         if diff_changed

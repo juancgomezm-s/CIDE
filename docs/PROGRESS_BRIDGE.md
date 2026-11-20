@@ -4,9 +4,16 @@ El puente evita implementar un compilador ABL propio. CIDE prepara una solicitud
 
 ## Configuración del proyecto
 
-Abre la carpeta del proyecto y crea `.cide/progress.local.ini` en UTF-8.
-El perfil es local e ignorado por Git. Usa el cliente por lotes de tu
-instalación y las páginas de códigos del proyecto. Por ejemplo:
+Abre la carpeta del proyecto y elige **Proyecto → Conexiones de datos →
+Asistente OpenEdge** en la GUI, o **Nueva conexión → OpenEdge** en la TUI.
+Selecciona el cliente por lotes de tu instalación y las páginas de códigos
+del proyecto. Puedes seleccionar un `.pf` existente. Para una copia cerrada,
+indica el archivo `.db` y su nombre lógico opcional. El asistente genera un
+`.pf` local con `-1 -RO` y publica `.cide/progress.local.ini` al guardar.
+Si solo quieres comprobar, compilar o ejecutar ABL sin una base, completa el
+ejecutable y las páginas de códigos.
+
+El perfil se guarda en UTF-8. Este es un ejemplo de su formato:
 
 ```ini
 executable=C:/Progressx86/OpenEdge/bin/_progres.exe
@@ -388,6 +395,17 @@ los nombres lógicos y aliases del ejemplo, guarda el archivo
 
 ```console
 cargo test -p jc-progress -p jc-gui -p jc-tui --features jc-progress/source-services --lib progress_real_schema --locked --offline -- --ignored
+```
+
+El asistente se validó por separado con OpenEdge 11.7. `procopy` creó una
+copia de Sports2000 en una carpeta temporal con espacios. El asistente
+generó el `.pf` y el INI, y **Actualizar esquema** publicó `Customer`.
+Para repetir esa comprobación, define `CIDE_TEST_PROGRESS_EXE` con la ruta
+del AVM y `CIDE_TEST_PROGRESS_SETUP_DB` con la ruta de una copia cerrada
+de `sports2000.db` y ejecuta:
+
+```console
+cargo test -p jc-progress --features source-services --lib connections_wizard_real_schema --locked --offline -- --ignored
 ```
 
 Pasaron los tres recorridos con esquema real, el caso sin aliases, las

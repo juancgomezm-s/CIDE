@@ -19,6 +19,18 @@ pub enum SyntaxKind {
     Emphasis,
     Code,
     Link,
+    Type,
+    Boolean,
+}
+impl SyntaxKind {
+    /// A word token can carry a presentation role without affecting consumers
+    /// that inspect its source spelling for navigation or completion.
+    pub fn is_word(self) -> bool {
+        matches!(
+            self,
+            Self::Plain | Self::Keyword | Self::Type | Self::Boolean
+        )
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenSpan {
@@ -181,6 +193,8 @@ impl LexerState {
                     number(word, profile != SyntaxProfile::Abl)
                 }) {
                 SyntaxKind::Number
+            } else if self.mode == Mode::Word && profile == SyntaxProfile::Abl {
+                abl_word(word)
             } else if self.mode == Mode::Word && keyword(profile, word) {
                 SyntaxKind::Keyword
             } else {
@@ -195,6 +209,24 @@ impl LexerState {
         self.length = 0;
         self.overflow = false;
     }
+}
+
+/// Color an independent source fragment using the same lexer as the editor.
+/// A clipped prefix can leave its final token unfinished.
+pub fn scan_snippet(
+    profile: SyntaxProfile,
+    bytes: &[u8],
+    complete: bool,
+    emit: impl FnMut(TokenSpan),
+) {
+    scan(
+        profile,
+        &mut LexerState::default(),
+        bytes,
+        0,
+        complete,
+        emit,
+    );
 }
 
 /// Feed contiguous bytes exactly once, with absolute offsets. `final_chunk`
@@ -1463,133 +1495,39 @@ fn keyword(profile: SyntaxProfile, bytes: &[u8]) -> bool {
                 | b"try"
         );
     }
-    if profile != SyntaxProfile::Abl {
-        return matches!(bytes, b"true" | b"false" | b"null");
+    matches!(bytes, b"true" | b"false" | b"null")
+}
+
+fn abl_word(bytes: &[u8]) -> SyntaxKind {
+    let mut uppercase = [0; 64];
+    let word = &mut uppercase[..bytes.len()];
+    word.copy_from_slice(bytes);
+    word.make_ascii_uppercase();
+    match &*word {
+        b"BLOB" | b"CHAR" | b"CHARACTER" | b"CLOB" | b"COM-HANDLE" | b"DATE" | b"DATETIME"
+        | b"DATETIME-TZ" | b"DEC" | b"DECIMAL" | b"HANDLE" | b"INT" | b"INT64" | b"INTEGER"
+        | b"LOGICAL" | b"LONGCHAR" | b"MEMPTR" | b"RAW" | b"RECID" | b"ROWID" => SyntaxKind::Type,
+        b"FALSE" | b"NO" | b"TRUE" | b"YES" => SyntaxKind::Boolean,
+        b"ABSOLUTE" | b"ACCUMULATE" | b"AND" | b"AS" | b"ASC" | b"ASSIGN" | b"AVAILABLE"
+        | b"BEFORE-TABLE" | b"BEGINS" | b"BLOCK-LEVEL" | b"BUFFER" | b"BY" | b"CASE" | b"CATCH"
+        | b"CLASS" | b"CREATE" | b"DATABASE" | b"DEFINE" | b"DELETE" | b"DISPLAY" | b"DO"
+        | b"DOWN" | b"DYNAMIC-FUNCTION" | b"EACH" | b"ELSE" | b"EMPTY" | b"END" | b"ENTRY"
+        | b"ERROR" | b"ERROR-STATUS" | b"EXPORT" | b"EXTENT" | b"FINALLY" | b"FIND" | b"FIRST"
+        | b"FOR" | b"FORM" | b"FORWARD" | b"FRAME" | b"FUNCTION" | b"GET" | b"GLOBAL" | b"IF"
+        | b"IMPORT" | b"IN" | b"INDEX" | b"INPUT" | b"INPUT-OUTPUT" | b"INTERNAL-ENTRIES"
+        | b"LEAVE" | b"LENGTH" | b"LIKE" | b"LIST-ENTRY" | b"LOCKED" | b"LOOKUP" | b"MESSAGE"
+        | b"METHOD" | b"NEW" | b"NEXT" | b"NO-ERROR" | b"NO-LOCK" | b"NO-UNDO" | b"NOT"
+        | b"NUM-ENTRIES" | b"OBJECT" | b"OF" | b"ON" | b"OR" | b"OTHERWISE" | b"OUTPUT"
+        | b"OVERRIDE" | b"PARAMETER" | b"PERSISTENT" | b"PRIVATE" | b"PROCEDURE" | b"PROPERTY"
+        | b"PROTECTED" | b"PUBLIC" | b"QUERY" | b"QUIT" | b"READ-ONLY" | b"RECORD" | b"REPEAT"
+        | b"REPLACE" | b"RETURN" | b"RETURNS" | b"RUN" | b"SESSION" | b"SET" | b"SHARED"
+        | b"STATIC" | b"STOP" | b"STREAM" | b"STRING" | b"SUBSTRING" | b"SUPER" | b"TABLE"
+        | b"TEMP-TABLE" | b"THEN" | b"THIS-OBJECT" | b"THROW" | b"TO" | b"TODAY"
+        | b"TRANSACTION" | b"TRUNCATE" | b"UNDO" | b"UPDATE" | b"USING" | b"VALID-HANDLE"
+        | b"VAR" | b"VARIABLE" | b"VIEW-AS" | b"WHEN" | b"WHERE" | b"WHILE" | b"WITH"
+        | b"YES-NO" => SyntaxKind::Keyword,
+        _ => SyntaxKind::Plain,
     }
-    const WORDS: &[&[u8]] = &[
-        b"ABSOLUTE",
-        b"ACCUMULATE",
-        b"AND",
-        b"AS",
-        b"ASC",
-        b"ASSIGN",
-        b"AVAILABLE",
-        b"BEFORE-TABLE",
-        b"BEGINS",
-        b"BLOCK-LEVEL",
-        b"BUFFER",
-        b"BY",
-        b"CATCH",
-        b"CHARACTER",
-        b"CLASS",
-        b"CREATE",
-        b"DATABASE",
-        b"DATE",
-        b"DATETIME",
-        b"DATETIME-TZ",
-        b"DECIMAL",
-        b"DEFINE",
-        b"DELETE",
-        b"DISPLAY",
-        b"DO",
-        b"EACH",
-        b"ELSE",
-        b"EMPTY",
-        b"END",
-        b"ENTRY",
-        b"ERROR",
-        b"ERROR-STATUS",
-        b"EXPORT",
-        b"EXTENT",
-        b"FALSE",
-        b"FIND",
-        b"FINALLY",
-        b"FIRST",
-        b"FOR",
-        b"FORM",
-        b"FRAME",
-        b"FUNCTION",
-        b"GET",
-        b"GLOBAL",
-        b"HANDLE",
-        b"IF",
-        b"IMPORT",
-        b"IN",
-        b"INDEX",
-        b"INPUT",
-        b"INPUT-OUTPUT",
-        b"INTEGER",
-        b"INT64",
-        b"INTERNAL-ENTRIES",
-        b"LEAVE",
-        b"LENGTH",
-        b"LIKE",
-        b"LOCKED",
-        b"LOGICAL",
-        b"LONGCHAR",
-        b"LOOKUP",
-        b"MESSAGE",
-        b"METHOD",
-        b"NEW",
-        b"NEXT",
-        b"NO-ERROR",
-        b"NO-LOCK",
-        b"NO-UNDO",
-        b"NOT",
-        b"OBJECT",
-        b"OF",
-        b"ON",
-        b"OR",
-        b"OUTPUT",
-        b"OVERRIDE",
-        b"PARAMETER",
-        b"PERSISTENT",
-        b"PRIVATE",
-        b"PROCEDURE",
-        b"PROPERTY",
-        b"PROTECTED",
-        b"PUBLIC",
-        b"QUERY",
-        b"QUIT",
-        b"RAW",
-        b"READ-ONLY",
-        b"RECORD",
-        b"REPEAT",
-        b"REPLACE",
-        b"RETURN",
-        b"RETURNS",
-        b"RUN",
-        b"SESSION",
-        b"SET",
-        b"SHARED",
-        b"STATIC",
-        b"STOP",
-        b"STREAM",
-        b"STRING",
-        b"SUBSTRING",
-        b"SUPER",
-        b"TABLE",
-        b"TEMP-TABLE",
-        b"THEN",
-        b"THIS-OBJECT",
-        b"THROW",
-        b"TODAY",
-        b"TRANSACTION",
-        b"TRUE",
-        b"TRUNCATE",
-        b"UNDO",
-        b"UPDATE",
-        b"USING",
-        b"VALID-HANDLE",
-        b"VARIABLE",
-        b"VIEW-AS",
-        b"WHEN",
-        b"WHERE",
-        b"WHILE",
-        b"WITH",
-        b"YES-NO",
-    ];
-    WORDS.iter().any(|word| bytes.eq_ignore_ascii_case(word))
 }
 
 #[cfg(test)]
@@ -1695,6 +1633,29 @@ mod tests {
             .iter()
             .all(|kind| *kind == SyntaxKind::Plain));
     }
+    #[test]
+    fn abl_palette_distinguishes_types_and_logical_literals_across_chunks() {
+        let source = b"CASE x: DEFINE VARIABLE nombre AS Character NO-UNDO. IF x = YES THEN RUN tarea('texto', 42). /* comentario */";
+        let result = kinds(SyntaxProfile::Abl, source, source.len());
+        for chunk in 1..=source.len() {
+            assert_eq!(kinds(SyntaxProfile::Abl, source, chunk), result);
+        }
+        for (word, kind) in [
+            (b"CASE".as_slice(), SyntaxKind::Keyword),
+            (b"nombre", SyntaxKind::Plain),
+            (b"Character", SyntaxKind::Type),
+            (b"NO-UNDO", SyntaxKind::Keyword),
+            (b"YES", SyntaxKind::Boolean),
+            (b"'texto'", SyntaxKind::String),
+            (b"42", SyntaxKind::Number),
+            (b"/* comentario */", SyntaxKind::Comment),
+        ] {
+            assert!(result[segment(source, word)]
+                .iter()
+                .all(|&found| found == kind));
+        }
+    }
+
     #[test]
     fn abl_numeric_period_terminates_statement_without_accepting_invalid_json_number() {
         let source = b"DISPLAY 42. 1.2.\r\n";

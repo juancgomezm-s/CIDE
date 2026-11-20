@@ -4,7 +4,11 @@ El MSI instala CIDE en `Archivos de programa\CIDE`, requiere permisos de adminis
 
 ## Construcción local
 
-Usar Python 3.11 o posterior, WiX 6.0.2 y `WixToolset.UI.wixext` 6.0.2. Los argumentos de WiX apuntan al ejecutable y a la DLL de la extensión ya disponibles. Ejecutar desde la raíz del proyecto con `work/packages` creado y rutas de salida nuevas.
+Usar Python 3.11 o posterior, WiX 6.0.2 y `WixToolset.UI.wixext` 6.0.2.
+Ejecutar desde la raíz del proyecto con `work/packages` creado y rutas de
+salida nuevas. Para el MSI, usar una consola de desarrollo x64 o pasar
+`--rc` y `--link` con las rutas al compilador de recursos del SDK de
+Windows y al enlazador de MSVC.
 
 ```powershell
 python -B scripts/build-cide-local.py --output target/installer-next/release
@@ -18,7 +22,58 @@ de salida que coincida con esa versión. Windows Installer compara los
 tres campos numéricos del MSI mediante el mismo código de actualización.
 La versión de transporte declarada por el ZIP se valida por separado.
 
+Para volver a emitir el mismo número de versión, pasa
+`--allow-same-version-upgrade` al construir el MSI. Este paquete podrá
+reemplazar una instalación anterior con el mismo número. Windows Installer
+compara las recompilaciones que usan ese número como versiones equivalentes.
+
 Para comprobar el contenido, usar `msiexec /a` con `TARGETDIR` apuntando a una carpeta de pruebas. Comparar la extracción con el manifiesto del ZIP, aplicando la selección de archivos de `build-cide-installer.py`. El MSI actual se construye sin firma digital.
+
+## OmniCore en la GUI
+
+Empaqueta el componente con `--omnicore-dir` en `package-cide.py`.
+El directorio indicado debe contener una compilación autónoma de OmniCore
+para `win-x64`, con `observe.changedFiles.v1` y `ask.stdin.v1`. Copia su
+licencia y avisos de terceros a `licenses/OmniCore-LICENSE.txt` y
+`licenses/OmniCore-THIRD-PARTY-NOTICES.md`. Copia los del runtime de .NET
+a `licenses/dotnet-LICENSE.txt` y `licenses/dotnet-THIRD-PARTY-NOTICES.txt`.
+El MSI instala esos archivos bajo `bin/omnicore`. CIDE encuentra ahí
+`omni.exe` al abrir el panel, y el runtime viaja con el componente.
+
+Valida la conexión desde un editor vacío con
+`python -B scripts/check-omnicore-panel.py --omnicore <ruta-a-omni.exe>`.
+La prueba usa únicamente una carpeta de prueba y un proveedor simulado
+en `127.0.0.1`.
+
+El MSI local 0.1.4 se generó en Windows x64 con WiX 6.0.2 y OmniCore
+autónomo con .NET 10.0.14. Pasaron la comprobación de formato, nueve pruebas
+dirigidas de la GUI, Clippy para `jc-gui` y la compilación optimizada local.
+`wix msi validate` terminó con código 0 y una advertencia ICE60 de idioma
+en metadatos de un archivo. `msiexec /a` extrajo 1.053 archivos y sus SHA-256
+coincidieron con el manifiesto, incluidos 387 de OmniCore. La prueba con
+`check-omnicore-panel.py --bundled` encontró el componente extraído sin
+una ruta configurada, envió una consulta desde un editor vacío y recibió
+la respuesta local. Queda pendiente instalar y probar el paquete en el
+segundo equipo.
+
+## Iconos del menú Inicio y aplicaciones instaladas
+
+Desde el MSI 0.1.3, **CIDE** usa el icono naranja y **CIDE Terminal** usa
+el icono original. El instalador publica cada icono desde su propio
+archivo PE de recursos. **Aplicaciones instaladas** también usa el icono
+naranja. Para comprobar el paquete, las filas `CideGuiShortcut` y
+`CideTuiShortcut` de la tabla `Shortcut` deben apuntar a
+`CideGuiIcon.exe` y `CideTuiIcon.exe` de la tabla `Icon`, respectivamente.
+
+Al ejecutar el MSI 0.1.3 sobre 0.1.2, Windows Installer reemplaza los
+accesos directos como parte de la actualización. Si había un acceso
+anclado que sigue mostrando el icono anterior, vuelve a anclarlo desde
+el menú Inicio después de actualizar.
+
+El MSI local `work/packages/CIDE-0.1.3-windows-x64.msi` pasó WiX ICE
+y la extracción administrativa de sus 666 archivos. Se verificaron
+las dos asociaciones de `Shortcut`, el icono de Aplicaciones instaladas
+y la carga de ambos iconos del MSI con la API del Explorador de Windows.
 
 ## Validación de v0.1.0-preview.1
 
