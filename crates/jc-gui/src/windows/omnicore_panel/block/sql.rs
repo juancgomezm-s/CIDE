@@ -272,11 +272,11 @@ pub(super) fn references(source: &str, cursor: usize) -> Vec<(Option<String>, St
         {
             continue;
         }
-        let Some(first) = tokens.get(index + 1).and_then(&identifier) else {
+        let Some(first) = tokens.get(index + 1).and_then(identifier) else {
             continue;
         };
         let relation = if tokens.get(index + 2).is_some_and(|token| token.is(".")) {
-            let Some(second) = tokens.get(index + 3).and_then(&identifier) else {
+            let Some(second) = tokens.get(index + 3).and_then(identifier) else {
                 continue;
             };
             (Some(first), second)

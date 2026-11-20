@@ -324,7 +324,7 @@ mod native_tests {
                 || state.omnicore.completion.is_none()
         })?;
         let review = gui.state.borrow().omnicore_selection_review_visible();
-        if !review && !(live && gui.state.borrow().omnicore_completion_text().is_some()) {
+        if !(review || live && gui.state.borrow().omnicore_completion_text().is_some()) {
             return Err(gui.state.borrow().status.clone());
         }
         let unchanged = || {
@@ -360,10 +360,11 @@ mod native_tests {
             .workbench
             .active_bytes()
             .ok_or("No hay datos SQL activos")?;
+        let original = source.as_bytes();
         let added = bytes
             .as_slice()
-            .strip_prefix(source[..cursor].as_bytes())
-            .and_then(|rest| rest.strip_suffix(source[cursor..].as_bytes()));
+            .strip_prefix(&original[..cursor])
+            .and_then(|rest| rest.strip_suffix(&original[cursor..]));
         let valid = added.is_some_and(|added| {
             if !live {
                 added == INSERTION.as_bytes()

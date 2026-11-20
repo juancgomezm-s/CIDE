@@ -1760,10 +1760,12 @@ impl State {
         if self.bottom.focused {
             return;
         }
-        match self.workbench.insert_text(ch.encode_utf8(&mut bytes)) {
+        let previous = self.painted_omnicore_completion_origin();
+        let typed = ch.encode_utf8(&mut bytes);
+        match self.workbench.insert_text(typed) {
             Ok(()) => {
-                self.note_omnicore_typing();
                 self.status = "Listo".into();
+                self.note_omnicore_typing(previous, typed);
             }
             Err(error) => self.error(error),
         }

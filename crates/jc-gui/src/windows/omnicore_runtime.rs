@@ -377,7 +377,7 @@ fn run_turn(
                 let edit_report =
                     edit && output.lines().any(|line| line.starts_with("[herramienta]"));
                 if !status.success() && !edit_report {
-                    return Err(query_failure(&output, model));
+                    return Err(query_failure(&output, model, status.code()));
                 }
                 let text = answer_from_console(&output);
                 if text == "ContextOverflow: el contexto no cabe en el presupuesto del modelo" {
@@ -401,7 +401,7 @@ fn run_turn(
     result
 }
 
-fn query_failure(output: &str, model: Option<&Model>) -> String {
+fn query_failure(output: &str, model: Option<&Model>, exit_code: Option<i32>) -> String {
     let failure = output.lines().find(|line| line.starts_with("Diagnóstico:"));
     if failure.is_some_and(|line| line.contains("ProviderUnavailable")) {
         return match model {
@@ -414,7 +414,10 @@ fn query_failure(output: &str, model: Option<&Model>) -> String {
     }
     let detail = answer_from_console(output);
     if detail.is_empty() {
-        "OmniCore no devolvió una respuesta. Revisa su configuración y vuelve a intentar.".into()
+        let status = exit_code.map_or_else(String::new, |code| format!(" (código {code})"));
+        format!(
+            "OmniCore no devolvió una respuesta{status}. Revisa su configuración y vuelve a intentar."
+        )
     } else {
         detail.chars().take(768).collect()
     }

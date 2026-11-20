@@ -94,6 +94,10 @@ impl Panel {
         self.ready && self.ask_supported
     }
 
+    fn completion_connecting(&self) -> bool {
+        self.monitoring && (!self.ready || self.catalog_request.is_some())
+    }
+
     fn querying_here(&self) -> bool {
         self.query
             .as_ref()
@@ -528,6 +532,7 @@ impl State {
             }
             self.omnicore.invalidate();
         }
+        changed |= self.poll_omnicore_idle();
         if !self.omnicore_accepts_open() {
             return changed;
         }
