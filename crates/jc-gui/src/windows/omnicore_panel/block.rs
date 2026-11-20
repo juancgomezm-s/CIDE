@@ -496,7 +496,7 @@ impl Block {
                 Kind::RustExpressionArm => "Preserve one Rust expression. Use an expression block for multiple statements if the arm is empty.",
                 Kind::AblStatementBranch => "Preserve exactly one ABL statement. It can span several lines. Reuse the period already present.",
                 Kind::SqlStatement => "Preserve one SQL statement. Leave the existing semicolon in place and do not add a separate statement.",
-                Kind::SqlCase => "Complete only this SQL CASE expression. Preserve existing WHEN, ELSE and END boundaries.",
+                Kind::SqlCase => "Complete only this SQL CASE expression, without an alias or label. Preserve existing WHEN, ELSE and END boundaries.",
                 _ => "Finish all nested blocks opened by the insertion.",
             };
             let mut fields = serde_json::json!({
@@ -580,7 +580,7 @@ impl Block {
 
         let sql = matches!(self.outline.kind, Kind::SqlStatement | Kind::SqlCase);
         if !(if sql {
-            sql::balanced(&text)
+            sql::balanced(&text, self.outline.kind == Kind::SqlCase)
         } else {
             balanced_body(&text, self.profile)
         }) {
@@ -996,7 +996,14 @@ mod tests {
         assert!(branch
             .prepare(answer("CAST(total\nAS DECIMAL(12,2))"), TextEncoding::Utf8)
             .is_ok());
-        for invalid in ["1; SELECT 2", "1 ELSE 2", "1 END", "1 --"] {
+        for invalid in [
+            "1; SELECT 2",
+            "1 ELSE 2",
+            "1 END",
+            "1 --",
+            "1, 2",
+            "\"amount\": CAST(total AS DECIMAL(12,2))",
+        ] {
             assert!(
                 branch.prepare(answer(invalid), TextEncoding::Utf8).is_err(),
                 "{invalid}"

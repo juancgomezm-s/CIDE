@@ -188,14 +188,29 @@ pub(super) fn outline(source: &str, cursor: usize) -> Option<Outline> {
     }
 }
 
-pub(super) fn balanced(text: &str) -> bool {
+pub(super) fn balanced(text: &str, case_expression: bool) -> bool {
     let Some(tokens) = tokenize(text, 0) else {
         return false;
     };
     let mut delimiters = Vec::new();
-    for token in tokens {
+    for (index, token) in tokens.iter().enumerate() {
         if token.is(";") {
             return false;
+        }
+        if case_expression && delimiters.is_empty() {
+            if token.is(",") {
+                return false;
+            }
+            if token.is(":")
+                && index
+                    .checked_sub(1)
+                    .is_some_and(|previous| tokens[previous].literal)
+                && !tokens
+                    .get(index + 1)
+                    .is_some_and(|next| next.is(":") && next.range.start == token.range.end)
+            {
+                return false;
+            }
         }
         if token.is("(") {
             delimiters.push(")");

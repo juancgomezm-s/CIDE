@@ -113,6 +113,7 @@ def main():
     parser.add_argument("--rust-analyzer", type=Path)
     parser.add_argument("--openedge", type=Path, help="OpenEdge root containing bin and sports2000.db")
     parser.add_argument("--sql-bitmap", type=Path, help="run the native SQL window check and save its diff bitmap")
+    parser.add_argument("--ollama-model", help="use an installed model on 127.0.0.1:11434 for the SQL window check")
     database = parser.add_mutually_exclusive_group()
     database.add_argument("--mysql-bin", type=Path, help="start disposable MySQL for the native SQL window check")
     database.add_argument("--postgres-port", type=int,
@@ -128,6 +129,8 @@ def main():
     if args.postgres_driver and not args.postgres_port:
         parser.error("--postgres-driver requiere --postgres-port")
     sql = bool(args.sql_bitmap or args.mysql_bin or args.postgres_port)
+    if args.ollama_model and not args.mysql_bin:
+        parser.error("--ollama-model requiere --mysql-bin para verificar el tipo con un catálogo real")
     executable = args.omnicore.resolve(strict=True)
     if args.bundled and (not executable.is_relative_to(ROOT) or executable.parts[-2:] != ("omnicore", "omni.exe")):
         parser.error("--bundled requiere el bin/omnicore/omni.exe de una extracción del MSI dentro del proyecto.")
@@ -180,16 +183,18 @@ def main():
             config = root / "config"
             config.mkdir()
             (root / "local-app-data").mkdir()
+            model_url = "http://127.0.0.1:11434/v1" if args.ollama_model else f"http://127.0.0.1:{model.server_port}/v1"
+            active_model = args.ollama_model or "cide-fixture"
             (config / "providers.yaml").write_text(
                 "providers:\n  cide-fixture:\n    family: OpenAiChatCompatible\n"
-                f"    baseUrl: http://127.0.0.1:{model.server_port}/v1\n"
+                f"    baseUrl: {model_url}\n"
                 "    auth: none\n    billingMode: Local\n"
                 "  cide-sin-servicio:\n    family: OpenAiChatCompatible\n"
                 f"    baseUrl: {offline_url}\n"
                 "    auth: none\n    billingMode: Local\n", encoding="utf-8",
             )
             (config / "models.yaml").write_text(
-                "models:\n  cide-fixture:\n    provider: cide-fixture\n"
+                f"models:\n  {json.dumps(active_model)}:\n    provider: cide-fixture\n"
                 "    context: 32768\n    maxOutput: 2048\n"
                 "  alternativo-local:\n    provider: cide-sin-servicio\n"
                 "    context: 8192\n    maxOutput: 2048\n", encoding="utf-8",
@@ -201,13 +206,16 @@ def main():
             env.update(
                 LOCALAPPDATA=str(root / "local-app-data"), CIDE_NO_SESSION="1",
                 CIDE_OMNICORE_EXE=str(executable), OMNICORE_CONFIG_DIR=str(config),
-                OMNICORE_DATA_DIR=str(root / "data"), OMNI_MODEL="cide-fixture",
+                OMNICORE_DATA_DIR=str(root / "data"), OMNI_MODEL=active_model,
                 OMNI_BASE_URL=offline_url,
                 CIDE_LSP_CONFIG=str(lsp_config), CIDE_OMNICORE_SEMANTIC_FIXTURE=str(fixture),
                 NO_PROXY="127.0.0.1",
             )
             env.setdefault("CARGO_TARGET_DIR", str(ROOT / "target/embedded-git-next"))
             env.pop("CIDE_OMNICORE_SQL_BITMAP", None)
+            env.pop("CIDE_OMNICORE_SQL_LIVE_MODEL", None)
+            if args.ollama_model:
+                env["CIDE_OMNICORE_SQL_LIVE_MODEL"] = "1"
             if sql:
                 env.pop("OMNI_BASE_URL", None)
             if args.sql_bitmap:
@@ -228,6 +236,10 @@ def main():
                 requests = ["\n".join(str(message.get("content", "")) for message in messages)
                             for messages in model.questions]
                 if sql:
+                    if args.ollama_model:
+                        assert not requests
+                        print(f"Generación local de {active_model}: CAST tipado, revisión Win32 y Ctrl+Z verificados.")
+                        return
                     request, = requests
                     context = json.loads(next(line for line in request.splitlines() if line.startswith("{")))
                     assert context["kind"] == "SQL CASE expression branch"

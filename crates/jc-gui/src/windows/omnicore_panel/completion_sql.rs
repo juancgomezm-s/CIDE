@@ -259,7 +259,15 @@ mod native_tests {
         let root = PathBuf::from(std::env::var_os("CIDE_OMNICORE_SEMANTIC_FIXTURE").unwrap());
         let fixture = root.join("window.txt");
         fs::write(&fixture, b"alpha\r\nbeta\r\n").unwrap();
-        fs::write(root.join("factura.sql"), SOURCE).unwrap();
+        let source = if std::env::var_os("CIDE_OMNICORE_SQL_LIVE_MODEL").is_some() {
+            SOURCE.replace(
+                "THEN \r\n",
+                "THEN /* Cast total using its exact catalog type. */\r\n    \r\n",
+            )
+        } else {
+            SOURCE.to_owned()
+        };
+        fs::write(root.join("factura.sql"), source).unwrap();
         let bitmap = std::env::var_os("CIDE_OMNICORE_SQL_BITMAP").map(PathBuf::from);
         let report = root.join("window.txt.report");
         run_with_smoke(
@@ -282,15 +290,14 @@ mod native_tests {
 
     unsafe fn exercise(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
         let gui = owner(hwnd).ok_or("No se creó la ventana nativa de CIDE")?;
-        let cursor = SOURCE.find(" \r\n").unwrap() + 1;
+        let file = options.fixture.with_file_name("factura.sql");
+        let source = fs::read_to_string(&file).map_err(|error| error.to_string())?;
+        let cursor = source.find(" \r\n").unwrap() + 1;
         {
             let mut state = gui.state.borrow_mut();
             state
                 .workbench
-                .open_file(
-                    options.fixture.with_file_name("factura.sql"),
-                    Some(jc_text::TextEncoding::Utf8),
-                )
+                .open_file(file, Some(jc_text::TextEncoding::Utf8))
                 .map_err(|err| err.to_string())?;
             // This owned HWND exercises the real transport as well as the editor.
             state.smoke = false;
@@ -310,13 +317,24 @@ mod native_tests {
                 .map_err(|err| err.to_string())?;
         }
         smoke::command(hwnd, CommandId::EditCompleteBlockWithAi)?;
+        let live = std::env::var_os("CIDE_OMNICORE_SQL_LIVE_MODEL").is_some();
         wait(hwnd, |state| {
-            state.omnicore_selection_review_visible() || state.omnicore.completion.is_none()
+            state.omnicore_selection_review_visible()
+                || (live && state.omnicore_completion_text().is_some())
+                || state.omnicore.completion.is_none()
         })?;
-        if !gui.state.borrow().omnicore_selection_review_visible() {
+        let review = gui.state.borrow().omnicore_selection_review_visible();
+        if !review && !(live && gui.state.borrow().omnicore_completion_text().is_some()) {
             return Err(gui.state.borrow().status.clone());
         }
-        smoke::expected(hwnd, SOURCE.as_bytes())?;
+        let unchanged = || {
+            if gui.state.borrow().workbench.active_bytes().as_deref() == Some(source.as_bytes()) {
+                Ok(())
+            } else {
+                Err("El archivo SQL cambió fuera de la aplicación del diff".to_owned())
+            }
+        };
+        unchanged()?;
         // The review gate publishes only an ordinary painted frame.
         ShowWindow(hwnd, 4); // SW_SHOWNOACTIVATE
         InvalidateRect(hwnd, std::ptr::null(), 0);
@@ -325,19 +343,47 @@ mod native_tests {
             || options.fixture.with_file_name("revision-sql.bmp"),
             PathBuf::from,
         );
-        let frame = paint::prepare(&mut gui.state.borrow_mut());
+        let frame = gui
+            .frame
+            .borrow()
+            .clone()
+            .ok_or("La ventana no pintó la propuesta SQL")?;
         paint::bitmap(hwnd, &frame, &bitmap)?;
-        smoke::key(hwnd, 0x0d, Modifiers::CTRL)?;
-        let mut expected = SOURCE.to_owned();
-        expected.insert_str(cursor, INSERTION);
-        if gui.state.borrow().workbench.active_bytes().as_deref() != Some(expected.as_bytes()) {
+        if review {
+            smoke::key(hwnd, 0x0d, Modifiers::CTRL)?;
+        } else {
+            smoke::key(hwnd, 0x09, Modifiers::NONE)?;
+        }
+        let bytes = gui
+            .state
+            .borrow()
+            .workbench
+            .active_bytes()
+            .ok_or("No hay datos SQL activos")?;
+        let added = bytes
+            .as_slice()
+            .strip_prefix(source[..cursor].as_bytes())
+            .and_then(|rest| rest.strip_suffix(source[cursor..].as_bytes()));
+        let valid = added.is_some_and(|added| {
+            if !live {
+                added == INSERTION.as_bytes()
+            } else {
+                added
+                    .iter()
+                    .filter(|b| !b.is_ascii_whitespace())
+                    .map(u8::to_ascii_lowercase)
+                    .eq(b"cast(totalasdecimal(12,2))".iter().copied())
+            }
+        });
+        if !valid {
             return Err(format!(
-                "El diff de SQL no aplicó la inserción exacta: {}",
-                gui.state.borrow().status
+                "No se aplicó el CAST exacto: {}. Inserción observada: {:?}",
+                gui.state.borrow().status,
+                added.map(String::from_utf8_lossy),
             ));
         }
         smoke::key(hwnd, b'Z' as usize, Modifiers::CTRL)?;
-        smoke::expected(hwnd, SOURCE.as_bytes())?;
+        unchanged()?;
         Ok(())
     }
 

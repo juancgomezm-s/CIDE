@@ -156,15 +156,17 @@ distinguieron `NULL` de una cadena vacía en dos páginas de registros.
 
 ### Completar SQL con OmniCore
 
-En la GUI, usa **Completar bloque con OmniCore** desde un archivo `.sql`. Coloca el
-cursor en una sentencia delimitada por punto y coma o dentro de una rama
-`CASE`. Con un único perfil SQL guardado para el proyecto, CIDE consulta por
+En la GUI, usa **Completar bloque con OmniCore** desde un archivo `.sql`. Coloca
+el cursor en una sentencia `SELECT`, `WITH`, `INSERT`, `UPDATE` o `DELETE`
+delimitada por punto y coma, o dentro de una de sus ramas `CASE`.
+Con un único perfil SQL guardado para el proyecto, CIDE consulta por
 ODBC los nombres y tipos de columnas de las tablas visibles que reconoce en
 la sentencia. El contexto del modelo usa esos metadatos y el fragmento activo.
 
-Revisa la inserción en la comparación antes de aplicarla. **Ctrl+Z** revierte
-el cambio en un solo paso. La propuesta modifica el documento y su ejecución
-queda a cargo del usuario.
+Las propuestas de varias líneas se revisan en el diff. Una propuesta de una
+línea aparece como texto fantasma y se acepta con **Tab**. **Ctrl+Z** revierte
+la inserción en un solo paso. La ejecución de la sentencia queda a cargo del
+usuario.
 
 ## Qué aprovechar del DataDigger personalizado
 
