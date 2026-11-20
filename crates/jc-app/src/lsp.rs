@@ -234,6 +234,7 @@ impl Server {
         document: OpenDocument,
         position: Position,
         cancel: &Cancellation,
+        starting: bool,
     ) -> Result<Value, String> {
         let (method, capability) = match query {
             Query::Definition => ("textDocument/definition", "definitionProvider"),
@@ -267,10 +268,24 @@ impl Server {
             }
             _ => (),
         }
-        self.transport
-            .request(method, params, cancel, |method, params| {
-                answer(method, params, &self.config.settings, &self.folders)
-            })
+        let mut request = || {
+            self.transport
+                .request(method, params.clone(), cancel, |method, params| {
+                    answer(method, params, &self.config.settings, &self.folders)
+                })
+        };
+        let mut response = request()?;
+        if starting && matches!(query, Query::SemanticContext) {
+            // rust-analyzer can return null while loading a newly opened workspace.
+            for _ in 0..6 {
+                if !response.is_null() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                response = request()?;
+            }
+        }
+        Ok(response)
     }
 
     fn sync_document(
@@ -432,19 +447,20 @@ impl Work {
             return Err("Se canceló la consulta LSP".into());
         }
         let mut existing = session.take();
-        let mut server = if existing.as_mut().is_some_and(|server| {
+        let reuse = existing.as_mut().is_some_and(|server| {
             server.root == root
                 && server.config == config
                 && server.transport.is_running()
                 && (!matches!(self.query, Query::Diagnostics)
                     || server.reusable_diagnostics(&document))
-        }) {
+        });
+        let mut server = if reuse {
             existing.expect("matching server")
         } else {
             drop(existing);
             Server::start(root.clone(), config, cancel)?
         };
-        let response = server.query(self.query, document, position, cancel)?;
+        let response = server.query(self.query, document, position, cancel, !reuse)?;
         *session = Some(server);
         drop(session);
         match self.query {

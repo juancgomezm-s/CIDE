@@ -79,7 +79,12 @@ impl Token<'_> {
     }
 }
 
-fn tokens(source: &str, profile: SyntaxProfile, cursor: usize) -> Option<Vec<Token<'_>>> {
+fn tokens(
+    source: &str,
+    profile: SyntaxProfile,
+    cursor: usize,
+    require_token_boundary: bool,
+) -> Option<Vec<Token<'_>>> {
     let mut hidden = vec![false; source.len()];
     let mut inside = false;
     scan_syntax_snippet(profile, source.as_bytes(), true, |span| {
@@ -109,7 +114,7 @@ fn tokens(source: &str, profile: SyntaxProfile, cursor: usize) -> Option<Vec<Tok
             }
         }
         let end = chars.peek().map_or(source.len(), |&(i, _)| i);
-        if start < cursor && cursor < end {
+        if require_token_boundary && start < cursor && cursor < end {
             return None;
         }
         result.push(Token {
@@ -265,7 +270,16 @@ fn abl_close(tokens: &[Token<'_>], opener: usize, kind: Kind) -> Result<Option<u
 }
 
 fn outline(source: &str, profile: SyntaxProfile, cursor: usize) -> Option<Outline> {
-    let tokens = tokens(source, profile, cursor)?;
+    outline_at(source, profile, cursor, true)
+}
+
+fn outline_at(
+    source: &str,
+    profile: SyntaxProfile,
+    cursor: usize,
+    require_token_boundary: bool,
+) -> Option<Outline> {
+    let tokens = tokens(source, profile, cursor, require_token_boundary)?;
     match control::at_cursor(&tokens, profile, cursor) {
         control::Target::Segment(outline) => return Some(outline),
         control::Target::Unbounded => return None,
@@ -354,7 +368,7 @@ fn balanced_body(text: &str, profile: SyntaxProfile) -> bool {
         return outline(&wrapped, profile, start.len())
             .is_some_and(|block| block.close == Some(start.len() + text.len() + 1));
     }
-    let Some(tokens) = tokens(text, profile, 0) else {
+    let Some(tokens) = tokens(text, profile, 0, true) else {
         return false;
     };
     let mut stack = Vec::new();
@@ -563,7 +577,8 @@ impl Block {
 
         let mut proposed = self.source.clone();
         proposed.insert_str(self.cursor, &text);
-        let structural = outline(&proposed, self.profile, self.cursor);
+        // A completion can extend the identifier immediately before the original cursor.
+        let structural = outline_at(&proposed, self.profile, self.cursor, false);
         if !structural.is_some_and(|candidate| {
             candidate.kind == self.outline.kind
                 && candidate.header == self.outline.header
@@ -909,6 +924,17 @@ mod tests {
             SyntaxProfile::Abl,
         );
         assert_eq!(member.outline.kind, Kind::AblStatementBranch);
+        let field = check(
+            "IF ready THEN DISPLAY negocio.customer.na| .\r\nELSE DISPLAY 0.",
+            SyntaxProfile::Abl,
+        );
+        assert_eq!(
+            field
+                .prepare(answer("me\n    WITH NO-LABELS"), TextEncoding::Utf8)
+                .unwrap()
+                .as_deref(),
+            Some("me\r\n    WITH NO-LABELS")
+        );
     }
 
     #[test]

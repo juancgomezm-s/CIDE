@@ -131,11 +131,12 @@ def main():
         if args.rust_analyzer:
             rust_binary = args.rust_analyzer.resolve(strict=True)
             lsp = {"command": str(rust_binary), "initializationOptions": {
-                "cargo": {"offline": True}, "checkOnSave": False,
+                "cargo": {"extraEnv": {"CARGO_NET_OFFLINE": "true"}, "sysroot": None},
+                "cachePriming": {"enable": False}, "checkOnSave": False,
             }}
             (fixture / "Cargo.toml").write_text(
                 '[package]\nname = "semantic_fixture"\nversion = "0.0.0"\nedition = "2021"\n'
-                '[lib]\npath = "semantic.rs"\n', encoding="utf-8",
+                '[lib]\npath = "semantic.rs"\n[workspace]\n', encoding="utf-8",
             )
             prepare_openedge(fixture, args.openedge.resolve(strict=True), env)
             env["CIDE_OMNICORE_REAL_SEMANTICS"] = "1"
