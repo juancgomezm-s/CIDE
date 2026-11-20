@@ -289,6 +289,7 @@ pub fn default_menu_model() -> MenuModel {
                 command(EditorOpenToSide),
                 command(NavigateBack),
                 command(NavigateForward),
+                command(NavigateLastEdit),
                 SEP,
                 command(GitDiffHead),
                 command(GitDiffIndex),

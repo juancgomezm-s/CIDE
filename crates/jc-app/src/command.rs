@@ -157,6 +157,7 @@ pub enum CommandId {
     EditorOpenToSide,
     NavigateBack,
     NavigateForward,
+    NavigateLastEdit,
 
     FocusNext,
     FocusPrevious,
@@ -241,6 +242,7 @@ pub struct CommandContext {
     pub reference_pinned: bool,
     pub nav_back_available: bool,
     pub nav_forward_available: bool,
+    pub last_edit_available: bool,
     pub can_open_to_side: bool,
 }
 
@@ -303,6 +305,7 @@ impl Default for CommandContext {
             reference_pinned: false,
             nav_back_available: false,
             nav_forward_available: false,
+            last_edit_available: false,
             can_open_to_side: false,
         }
     }
@@ -400,6 +403,9 @@ fn nav_back(ctx: &CommandContext) -> bool {
 }
 fn nav_forward(ctx: &CommandContext) -> bool {
     ctx.nav_forward_available
+}
+fn last_edit(ctx: &CommandContext) -> bool {
+    ctx.last_edit_available
 }
 fn open_to_side(ctx: &CommandContext) -> bool {
     ctx.can_open_to_side
@@ -1105,6 +1111,12 @@ pub fn default_registry() -> CommandRegistry {
         spec!(EditorOpenToSide, Navigation, "Abrir al lado", open_to_side),
         spec!(NavigateBack, Navigation, "Navegar atrás", nav_back),
         spec!(NavigateForward, Navigation, "Navegar adelante", nav_forward),
+        spec!(
+            NavigateLastEdit,
+            Navigation,
+            "Ir a la última línea modificada",
+            last_edit
+        ),
         spec!(FocusNext, Navigation, "Enfocar área siguiente", always),
         spec!(FocusPrevious, Navigation, "Enfocar área anterior", always),
         spec!(ProgressCheck, Build, "ABL: comprobar sintaxis", abl),

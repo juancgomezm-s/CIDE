@@ -31,6 +31,7 @@ pub struct SyntaxRow {
     pub line: usize,
     pub source: Range<usize>,
     pub spans: Vec<TokenSpan>,
+    run_links: Vec<(Range<usize>, Range<usize>)>,
 }
 #[derive(Debug, Default)]
 pub struct SyntaxRows {
@@ -51,6 +52,13 @@ impl SyntaxRows {
         let Some(row) = self.rows.get(row).filter(|row| row.source.contains(&byte)) else {
             return SyntaxKind::Plain;
         };
+        if row
+            .run_links
+            .iter()
+            .any(|(_, operand)| operand.contains(&byte))
+        {
+            return SyntaxKind::Link;
+        }
         let token = row.spans.partition_point(|token| token.source.end <= byte);
         row.spans
             .get(token)
@@ -321,10 +329,43 @@ impl SyntaxCache {
                     });
                 }
             }
+            let run_links = if profile == SyntaxProfile::Abl
+                && !spans.is_empty()
+                && source.len() <= CHUNK
+                && !doc.is_paged()
+            {
+                doc.read_range(source.clone()).map_or_else(
+                    |_| Vec::new(),
+                    |bytes| {
+                        spans
+                            .iter()
+                            .filter_map(|token| {
+                                let region = token.source.start - source.start
+                                    ..token.source.end - source.start;
+                                if !token.kind.is_word()
+                                    || !bytes[region.clone()].eq_ignore_ascii_case(b"RUN")
+                                {
+                                    return None;
+                                }
+                                let operand =
+                                    jc_languages::syntax::abl_run_operand(&bytes, region.end)?;
+                                Some((
+                                    token.source.clone(),
+                                    (source.start + operand.start)..(source.start + operand.end),
+                                ))
+                            })
+                            .take(32)
+                            .collect()
+                    },
+                )
+            } else {
+                Vec::new()
+            };
             result.rows.push(SyntaxRow {
                 line,
                 source,
                 spans,
+                run_links,
             });
         }
         result.stats.cache_bytes = self.memory_bytes();
@@ -334,6 +375,19 @@ impl SyntaxCache {
 }
 
 impl Workbench {
+    pub fn abl_run_link_at(&self, tab: TabId, byte: usize) -> bool {
+        if self.syntax_profile_for_tab(tab) != SyntaxProfile::Abl {
+            return false;
+        }
+        self.line_ordinal_for_byte(tab, byte).is_some_and(|line| {
+            self.syntax_rows(tab, line, 1).rows.iter().any(|row| {
+                row.run_links
+                    .iter()
+                    .any(|(keyword, operand)| (keyword.start..operand.end).contains(&byte))
+            })
+        })
+    }
+
     pub fn syntax_profile_for_tab(&self, tab: TabId) -> SyntaxProfile {
         self.document_by_tab(tab)
             .map_or(SyntaxProfile::Plain, |document| {

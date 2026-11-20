@@ -202,6 +202,7 @@ fn browser_folder_frame_navigates_selects_current_folder_and_cancel_restores_foc
     select(&mut app, child);
     key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     wait(&mut app, &wake);
+    select(&mut app, &file);
     key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
     assert_eq!(app.project_root.as_deref(), Some(child));
     assert_eq!(app.workbench.active_bytes().unwrap(), bytes);
@@ -224,6 +225,35 @@ fn browser_folder_frame_navigates_selects_current_folder_and_cancel_restores_foc
     assert_eq!(app.focus.primary(), PrimaryFocus::Sidebar);
     assert!(app.file_browser.catalog.nodes().is_empty());
     assert_eq!(fs::read(file).unwrap(), b"# fuente\r\n");
+}
+
+#[test]
+fn browser_folder_accepts_current_with_f9_or_plain_enter_on_a_file() {
+    let fixture = Fixture::new();
+    let file = fixture.put("proyecto/archivo.txt", b"no abrir");
+    let child = fixture.put("proyecto/subcarpeta/otro.txt", b"no entrar");
+    let project = file.parent().unwrap();
+    let (mut app, wake) = fixture.app();
+    for key_code in [KeyCode::F(9), KeyCode::Enter] {
+        app.set_explorer_root(fixture.root.clone()).unwrap();
+        app.open_prompt(PromptKind::OpenFolder);
+        wait(&mut app, &wake);
+        select(&mut app, project);
+        key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+        wait(&mut app, &wake);
+        select(
+            &mut app,
+            if key_code == KeyCode::F(9) {
+                child.parent().unwrap()
+            } else {
+                &file
+            },
+        );
+        key(&mut app, key_code, KeyModifiers::NONE);
+        assert_eq!(app.overlay, UiOverlay::None);
+        assert_eq!(app.project_root.as_deref(), Some(project));
+        assert!(app.workbench.active_document().is_none());
+    }
 }
 
 #[test]

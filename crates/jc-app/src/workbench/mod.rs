@@ -215,6 +215,7 @@ pub struct Workbench {
     panes: PaneManager,
     documents: Vec<EditorDocument>,
     closed_documents: Vec<ClosedDocument>,
+    last_edit: Option<NavLocation>,
     next_document: u64,
     pub(crate) search: SearchState,
     search_work: Option<search::SearchWork>,
@@ -241,6 +242,10 @@ impl Workbench {
 
     pub fn panes(&self) -> &PaneManager {
         &self.panes
+    }
+
+    pub(crate) fn record_link_origin(&mut self, origin: NavLocation) {
+        self.panes.record_link_origin(origin);
     }
 
     pub fn set_history_budget(
@@ -468,6 +473,32 @@ impl Workbench {
             .is_some_and(|location| self.activate_location_document(location))
     }
 
+    fn note_last_edit(&mut self, tab: TabId, change: &jc_core::ChangeSet) {
+        if let Some((edit, remaining)) = change.edits.split_first() {
+            let offset = remaining.iter().fold(edit.replaced.start, |offset, edit| {
+                if offset < edit.replaced.start {
+                    offset
+                } else {
+                    offset
+                        .saturating_sub(edit.replaced.len().min(offset - edit.replaced.start))
+                        .saturating_add(edit.inserted_len)
+                }
+            });
+            self.last_edit = Some(NavLocation::new(tab, offset));
+        }
+    }
+
+    pub fn navigate_last_edit(&mut self) -> bool {
+        let Some(location) = self.last_edit else {
+            return false;
+        };
+        let Some(line) = self.line_ordinal_for_byte(location.tab, location.byte_offset) else {
+            return false;
+        };
+        self.line_range_for_tab(location.tab, line)
+            .is_some_and(|(content, _)| self.jump_to_location(location.tab, content.start))
+    }
+
     pub fn jump_to_location(&mut self, tab: TabId, offset: usize) -> bool {
         let Some(document) = self.document_by_tab(tab) else {
             return false;
@@ -587,6 +618,7 @@ impl Workbench {
             document.syntax.get_mut().invalidate(change, revision);
         }
         if let Some(change) = change {
+            self.note_last_edit(tab, &change);
             self.panes.rebase(tab, &change, false);
         }
     }
@@ -913,6 +945,9 @@ impl Workbench {
                 .is_some_and(|pane| pane.is_pinned()),
             nav_back_available: self.panes.can_back(),
             nav_forward_available: self.panes.can_forward(),
+            last_edit_available: self
+                .last_edit
+                .is_some_and(|location| self.document_by_tab(location.tab).is_some()),
             can_open_to_side: active.is_some(),
             open_diff_available: self.can_compare_open(),
             ..CommandContext::default()
@@ -1135,6 +1170,7 @@ impl Workbench {
         }
         let dirty = document.session.document().is_modified();
         if let Some(change) = change {
+            self.note_last_edit(tab, &change);
             self.panes.rebase(tab, &change, true);
         }
         self.normalize_views(tab);

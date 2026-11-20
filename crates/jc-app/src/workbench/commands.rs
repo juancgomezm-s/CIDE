@@ -177,7 +177,8 @@ impl Workbench {
             | EditorToggleScrollLink
             | EditorOpenToSide
             | NavigateBack
-            | NavigateForward => {
+            | NavigateForward
+            | NavigateLastEdit => {
                 match command {
                     EditorSplitRight => {
                         self.split_editor_right();
@@ -205,6 +206,9 @@ impl Workbench {
                     }
                     NavigateForward => {
                         self.navigation_forward();
+                    }
+                    NavigateLastEdit => {
+                        self.navigate_last_edit();
                     }
                     _ => unreachable!(),
                 }

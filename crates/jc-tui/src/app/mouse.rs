@@ -9,7 +9,10 @@ use jc_app::{
     explorer::NodeId, BottomPanel, CommandId, MenuId, PaneId, PrimaryFocus, SidebarView, TabId,
     TaskStamp,
 };
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Rect {
@@ -269,6 +272,7 @@ pub(crate) struct MouseState {
     drag: Option<LinearDrag>,
     scroll_drag: Option<ScrollDrag>,
     explorer_drag: Option<ExplorerScrollDrag>,
+    run_click: Option<(TaskStamp, usize, u16, u16, Instant)>,
 }
 impl MouseState {
     pub(super) fn frame_changed(&mut self) {
@@ -940,6 +944,9 @@ impl TuiApp {
             .rev()
             .find(|hit| hit.area.contains(event.column, event.row))
             .map(|hit| hit.action);
+        if !matches!(action, Some(Action::Source(_))) {
+            self.mouse.run_click = None;
+        }
         match action {
             Some(Action::Menu(menu)) => {
                 self.open_menu(menu_command(menu));
@@ -1217,6 +1224,16 @@ impl TuiApp {
         let Some(head) = source.byte_at(self, event.column, event.row, false) else {
             return false;
         };
+        let previous = self.mouse.run_click.take();
+        let link = event.modifiers.is_empty()
+            && event.column >= source.text_x
+            && self.workbench.abl_run_link_at(source.tab, head);
+        let now = Instant::now();
+        let click = (source.context.stamp, head, event.column, event.row);
+        let double = link
+            && previous.is_some_and(|(stamp, byte, x, y, at)| {
+                (stamp, byte, x, y) == click && now.duration_since(at) <= Duration::from_millis(500)
+            });
         self.workbench.focus_editor_pane(source.context.pane);
         let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
         let Some(context) = SourceContext::capture(self, source.context.pane) else {
@@ -1249,6 +1266,12 @@ impl TuiApp {
         };
         match self.workbench.set_linear_selection_bytes(anchor, head) {
             Ok(()) => {
+                if double {
+                    return self.follow_run_at_cursor();
+                }
+                if link {
+                    self.mouse.run_click = Some((click.0, click.1, click.2, click.3, now));
+                }
                 if let Some(context) = SourceContext::capture(self, source.context.pane) {
                     self.mouse.drag = Some(LinearDrag {
                         source,
@@ -1256,7 +1279,12 @@ impl TuiApp {
                         anchor,
                     });
                 }
-                self.status = "Mayús+clic extiende · Arrastrar selecciona · Rueda desplaza".into();
+                self.status = if link {
+                    "Ctrl+Intro o doble clic abre el destino del RUN"
+                } else {
+                    "Mayús+clic extiende · Arrastrar selecciona · Rueda desplaza"
+                }
+                .into();
                 true
             }
             Err(error) => {
@@ -1278,6 +1306,9 @@ impl TuiApp {
             self.mouse.drag = Some(drag);
             return false;
         };
+        if head != drag.anchor {
+            self.mouse.run_click = None;
+        }
         match self.workbench.set_linear_selection_bytes(drag.anchor, head) {
             Ok(()) => {
                 drag.context = SourceContext::capture(self, drag.context.pane).unwrap();

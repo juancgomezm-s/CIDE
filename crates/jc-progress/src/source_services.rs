@@ -640,6 +640,76 @@ fn calls(
     emit_references(snapshot, cancel, output, Analysis::Calls)
 }
 
+fn follow_run(
+    snapshot: &TaskSnapshot,
+    cancel: &Cancellation,
+    cursor: usize,
+    output: &mut TaskOutput,
+) -> Result<(), TaskFailure> {
+    let bytes = snapshot.bytes();
+    let mut state = LexerState::default();
+    let mut operand = None;
+    for (index, chunk) in bytes.chunks(4096).enumerate() {
+        if cancel.is_cancelled() {
+            return Err(TaskFailure::Cancelled);
+        }
+        let start = index * 4096;
+        scan(
+            SyntaxProfile::Abl,
+            &mut state,
+            chunk,
+            start,
+            start + chunk.len() == bytes.len(),
+            |token| {
+                if token.source.start <= cursor
+                    && token.kind.is_word()
+                    && bytes[token.source.clone()].eq_ignore_ascii_case(b"RUN")
+                {
+                    if let Some(target) =
+                        jc_languages::syntax::abl_run_operand(bytes, token.source.end)
+                            .filter(|operand| cursor < operand.end)
+                    {
+                        operand = Some(target);
+                    }
+                }
+            },
+        );
+        if operand.is_some() || start > cursor {
+            break;
+        }
+    }
+    let Some((range, name)) =
+        operand.and_then(|range| text(snapshot, range.clone()).map(|name| (range, name)))
+    else {
+        return output.push(TaskItem::Message(
+            "Coloca el cursor sobre el destino de un RUN estático".into(),
+        ));
+    };
+    let (range, action) = if name.contains('.') {
+        (range, SourceAction::RelativeFile(name.clone()))
+    } else {
+        let key = name.to_ascii_lowercase();
+        let locations = parse(
+            snapshot,
+            cancel,
+            Analysis::LocalProcedures(&HashSet::from([key.clone()])),
+        )?
+        .local_procedures;
+        let Some(Some(target)) = locations.get(&key) else {
+            return output.push(TaskItem::Message(
+                "El procedimiento local no se encontró o es ambiguo".into(),
+            ));
+        };
+        (target.clone(), SourceAction::Navigate)
+    };
+    output.push(TaskItem::Source(SourceItem {
+        value_type: None,
+        label: label(name),
+        range,
+        action,
+    }))
+}
+
 fn callers(
     snapshot: &TaskSnapshot,
     cancel: &Cancellation,

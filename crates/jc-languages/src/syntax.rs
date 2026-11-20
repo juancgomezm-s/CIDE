@@ -1530,6 +1530,77 @@ fn abl_word(bytes: &[u8]) -> SyntaxKind {
     }
 }
 
+/// Locate a static, single-line ABL RUN operand after the RUN token.
+pub fn abl_run_operand(bytes: &[u8], after_run: usize) -> Option<std::ops::Range<usize>> {
+    let rest = bytes.get(after_run..)?;
+    let space = rest
+        .iter()
+        .take_while(|&&byte| matches!(byte, b' ' | b'\t'))
+        .count();
+    let rest = rest.get(space..)?;
+    let quote = matches!(rest.first(), Some(b'\'' | b'"'));
+    let start = usize::from(quote);
+    let tail = rest.get(start..)?;
+    let stop = tail
+        .iter()
+        .take(512)
+        .position(|&byte| {
+            if quote {
+                Some(&byte) == rest.first() || matches!(byte, b'\r' | b'\n')
+            } else {
+                byte.is_ascii_whitespace() || matches!(byte, b'(' | b')' | b';')
+            }
+        })
+        .unwrap_or(tail.len().min(512));
+    if stop == 512 || quote && tail.get(stop) != rest.first() {
+        return None;
+    }
+    let operand = &tail[..stop];
+    let operand = if quote {
+        operand
+    } else {
+        operand.strip_suffix(b".").unwrap_or(operand)
+    };
+    let file = operand
+        .iter()
+        .rposition(|&byte| byte == b'.')
+        .is_some_and(|dot| {
+            let extension = &operand[dot + 1..];
+            extension.eq_ignore_ascii_case(b"p") || extension.eq_ignore_ascii_case(b"w")
+        });
+    let local = !quote
+        && operand.first().is_some_and(u8::is_ascii_alphabetic)
+        && operand
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'));
+    if !(file || local)
+        || operand.eq_ignore_ascii_case(b"value")
+        || operand.iter().any(|&byte| {
+            byte.is_ascii_control() || matches!(byte, b'{' | b'}' | b'&' | b'~' | b'\'' | b'"')
+        })
+    {
+        return None;
+    }
+    let suffix = tail.get(stop + usize::from(quote)..)?;
+    let end = suffix
+        .iter()
+        .take(512)
+        .position(|&byte| matches!(byte, b'.' | b';' | b'(' | b'\r' | b'\n'))
+        .unwrap_or(suffix.len().min(512));
+    if suffix[..end]
+        .split(|byte| !byte.is_ascii_alphanumeric())
+        .any(|word| {
+            [b"IN".as_slice(), b"ON", b"ASYNCHRONOUS"]
+                .iter()
+                .any(|key| word.eq_ignore_ascii_case(key))
+        })
+    {
+        return None;
+    }
+    let first = after_run + space + start;
+    Some(first..first + operand.len())
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

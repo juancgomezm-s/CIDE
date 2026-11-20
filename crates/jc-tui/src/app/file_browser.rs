@@ -298,6 +298,10 @@ impl TuiApp {
             }
             return;
         }
+        if kind == PromptKind::OpenFolder && key.code == KeyCode::F(9) && key.modifiers.is_empty() {
+            self.accept_browser_folder();
+            return;
+        }
         if (key.code == KeyCode::Up && alt)
             || (key.code == KeyCode::Backspace && !self.file_browser.path_focused)
         {
@@ -462,8 +466,9 @@ impl TuiApp {
                 Err(error) => self.status = error,
             }
         } else {
-            self.status =
-                "Selecciona una carpeta; Intro entra y Ctrl+Intro elige la carpeta actual".into();
+            // Some terminals deliver Ctrl+Enter as plain Enter. A file row
+            // in the folder picker has no file-open action.
+            self.accept_browser_folder();
         }
     }
     fn accept_typed_browser_file(&mut self, path: PathBuf, side: bool) {

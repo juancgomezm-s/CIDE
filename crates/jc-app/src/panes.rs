@@ -338,6 +338,13 @@ impl PaneManager {
     pub fn can_back(&self) -> bool {
         self.view(self.active).unwrap().can_go_back()
     }
+    pub(crate) fn record_link_origin(&mut self, origin: NavLocation) {
+        let group = self.view_mut(self.active);
+        if group.location() != Some(origin) {
+            push_limited(&mut group.back, origin);
+            group.forward.clear();
+        }
+    }
     pub fn can_forward(&self) -> bool {
         self.view(self.active).unwrap().can_go_forward()
     }

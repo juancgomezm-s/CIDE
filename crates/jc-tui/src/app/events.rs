@@ -218,6 +218,13 @@ impl TuiApp {
         if history_context && (self.handle_git_patch_key(key) || self.handle_git_history_key(key)) {
             return;
         }
+        if self.focus.primary() == PrimaryFocus::Editor
+            && key.code == KeyCode::Enter
+            && key.modifiers == KeyModifiers::CONTROL
+            && self.follow_run_at_cursor()
+        {
+            return;
+        }
         if let Some(stroke) = to_stroke(key) {
             let scope = KeyScope::from_focus(self.focus.primary(), self.focus.active_overlay());
             let context = self.command_context();

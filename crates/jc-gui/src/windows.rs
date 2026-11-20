@@ -295,6 +295,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (160, CommandId::SearchGoToPosition, "Ir a &línea/columna..."),
     (161, CommandId::NavigateBack, "Navegar &atrás"),
     (162, CommandId::NavigateForward, "Navegar a&delante"),
+    (166, CommandId::NavigateLastEdit, "&Última línea modificada"),
     (163, CommandId::SearchHistoryPrevious, "Consulta &anterior"),
     (164, CommandId::SearchHistoryNext, "Consulta &siguiente"),
     (138, CommandId::SearchToggleCase, "Distinguir &mayúsculas"),
@@ -1135,7 +1136,7 @@ impl State {
                 self.execute_search_option(command);
                 return Action::None;
             }
-            CommandId::NavigateBack | CommandId::NavigateForward => {
+            CommandId::NavigateBack | CommandId::NavigateForward | CommandId::NavigateLastEdit => {
                 self.close_selector();
                 self.bottom.focused = false;
                 self.workbench.cancel_search_navigation();
@@ -1384,7 +1385,8 @@ impl State {
                 | CommandId::EditorToggleScrollLink
                 | CommandId::EditorOpenToSide
                 | CommandId::NavigateBack
-                | CommandId::NavigateForward,
+                | CommandId::NavigateForward
+                | CommandId::NavigateLastEdit,
             )) => self.status = "Listo · grupos de editor compartidos".into(),
             Ok(_) => {
                 self.status =
@@ -1620,7 +1622,12 @@ impl State {
             self.explorer_key(code, modifiers);
             return (true, Action::None);
         }
-        if self.omnicore_completion_key(code, modifiers) {
+        if code == 0x0d && modifiers == Modifiers::CTRL && self.follow_run_at_cursor() {
+            return (true, Action::None);
+        }
+        let history_forward =
+            code == 0x27 && modifiers == Modifiers::CTRL && self.workbench.panes().can_forward();
+        if !history_forward && self.omnicore_completion_key(code, modifiers) {
             return (true, Action::None);
         }
         if let Some(key) = key {
@@ -2313,20 +2320,25 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 } else if state.pointer_source_available()
                     && !state.bottom_click(x, y, message == WM_LBUTTONDBLCLK)
                     && !state.explorer_click(x, y, message == WM_LBUTTONDBLCLK)
-                    && message == WM_LBUTTONDOWN
                 {
                     let modifiers = state.modifiers();
-                    let started = if state.begin_editor_scroll(x, y) {
-                        true
-                    } else if modifiers.contains(Modifiers::ALT)
-                        && !modifiers.contains(Modifiers::CTRL)
-                    {
-                        state.begin_rectangle_drag(x, y)
+                    if message == WM_LBUTTONDBLCLK {
+                        if modifiers == Modifiers::NONE && state.follow_run_click(x, y) {
+                            state.cancel_pointer();
+                        }
                     } else {
-                        state.begin_linear_drag(x, y, modifiers.contains(Modifiers::SHIFT))
-                    };
-                    if started {
-                        action = Action::CapturePointer;
+                        let started = if state.begin_editor_scroll(x, y) {
+                            true
+                        } else if modifiers.contains(Modifiers::ALT)
+                            && !modifiers.contains(Modifiers::CTRL)
+                        {
+                            state.begin_rectangle_drag(x, y)
+                        } else {
+                            state.begin_linear_drag(x, y, modifiers.contains(Modifiers::SHIFT))
+                        };
+                        if started {
+                            action = Action::CapturePointer;
+                        }
                     }
                 }
             }

@@ -158,6 +158,10 @@ pub(super) fn relations(
     mode: SourceMode,
     output: &mut TaskOutput,
 ) -> Result<bool, TaskFailure> {
+    if mode == SourceMode::RunLink {
+        super::follow_run(snapshot, cancel, cursor, output)?;
+        return Ok(true);
+    }
     let bytes = snapshot.bytes();
     let mut origins = CallOrigins::default();
     let mut lexer = LexerState::default();

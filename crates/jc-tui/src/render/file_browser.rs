@@ -90,9 +90,9 @@ pub(super) fn draw(app: &TuiApp, screen: &mut Screen, kind: PromptKind, input: &
         CellStyle::Accent,
     );
     let help = if kind == PromptKind::OpenFolder && app.file_browser.path_focused {
-        "Ctrl+Intro elegir esta ruta · Ctrl+L ruta · F5 · Esc cancelar"
+        "Ctrl+Intro elegir esta ruta · F9 carpeta actual · Esc"
     } else if kind == PromptKind::OpenFolder {
-        "Ctrl+Intro elegir carpeta actual · Ctrl+L ruta · F5 · Esc"
+        "Ctrl+Intro/F9 elegir carpeta actual · Ctrl+L ruta · F5 · Esc"
     } else {
         "Ctrl+Intro abrir al lado · Ctrl+L ruta · F5 · Esc cancelar"
     };

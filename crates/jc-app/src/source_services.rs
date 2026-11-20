@@ -21,6 +21,7 @@ const SNAPSHOT: usize = 2 * 1024 * 1024;
 pub enum SourceMode {
     Symbols,
     References,
+    RunLink,
     Calls,
     Incoming,
     Dependencies,
@@ -41,6 +42,7 @@ impl SourceMode {
         match self {
             Self::Symbols => "Símbolos",
             Self::References => "Referencias",
+            Self::RunLink => "Seguir RUN",
             Self::Calls => "Llama a",
             Self::Incoming => "Llamado por",
             Self::Dependencies => "Dependencias",
@@ -224,6 +226,7 @@ impl SourceItem {
                     SourceAction::Navigate,
                     SourceMode::Symbols
                     | SourceMode::References
+                    | SourceMode::RunLink
                     | SourceMode::Calls
                     | SourceMode::Incoming
                     | SourceMode::Dependencies
@@ -235,7 +238,10 @@ impl SourceItem {
                 ) => true,
                 (
                     SourceAction::RelativeFile(path),
-                    SourceMode::References | SourceMode::Calls | SourceMode::Dependencies,
+                    SourceMode::References
+                    | SourceMode::RunLink
+                    | SourceMode::Calls
+                    | SourceMode::Dependencies,
                 ) => path.len() <= 4096 && !path.is_empty() && !path.chars().any(char::is_control),
                 (
                     SourceAction::Unresolved(reason),
@@ -760,6 +766,10 @@ impl SourceProviderDescriptor {
         match mode {
             SourceMode::Symbols => self.symbols,
             SourceMode::References => self.references,
+            SourceMode::RunLink if self.language == "abl" && self.routines.is_some() => {
+                self.references
+            }
+            SourceMode::RunLink => None,
             SourceMode::Calls => self.calls,
             SourceMode::Incoming => self.callers.or(self.dependencies.and(self.references)),
             SourceMode::Dependencies => self.dependencies,
@@ -1034,10 +1044,12 @@ enum SourceInput {
 impl Request {
     fn current(&self, app: &Workbench, root: Option<&Path>) -> bool {
         self.origin.current(app, root, self.mode)
-            && (!(matches!(self.mode, SourceMode::Calls | SourceMode::Incoming)
-                && self
-                    .provider
-                    .is_some_and(|provider| provider.routines.is_some()))
+            && (!(matches!(
+                self.mode,
+                SourceMode::Calls | SourceMode::Incoming | SourceMode::RunLink
+            ) && self
+                .provider
+                .is_some_and(|provider| provider.routines.is_some()))
                 || app
                     .active_editor()
                     .is_some_and(|editor| editor.cursor == self.origin.cursor))
@@ -1621,6 +1633,12 @@ impl SourceController {
             } else {
                 let provider = r.provider.expect("admitted source provider");
                 match r.mode {
+                    SourceMode::RunLink => SourceJob::Routine {
+                        provider: provider.routines.expect("ABL RUN provider"),
+                        mode,
+                        cursor: r.origin.cursor,
+                        fallback: None,
+                    },
                     SourceMode::Calls | SourceMode::Incoming => {
                         let fallback = if mode == SourceMode::Calls {
                             provider.calls.map(|calls| SourceJob::Calls {
@@ -1819,7 +1837,10 @@ impl SourceController {
                 }
             }
             if let TaskItem::Message(message) = &item {
-                if matches!(request.mode, SourceMode::Calls | SourceMode::Incoming) {
+                if matches!(
+                    request.mode,
+                    SourceMode::Calls | SourceMode::Incoming | SourceMode::RunLink
+                ) {
                     notice = Some(display_ui_label(message, 128));
                     continue;
                 }
@@ -1959,8 +1980,10 @@ impl SourceController {
                 message.push_str(&format!(" · {notice}"));
             }
             message
-        } else if matches!(request.mode, SourceMode::Calls | SourceMode::Incoming)
-            && notice.is_some()
+        } else if matches!(
+            request.mode,
+            SourceMode::Calls | SourceMode::Incoming | SourceMode::RunLink
+        ) && notice.is_some()
         {
             format!(
                 "{} · {} relaciones",
@@ -1999,6 +2022,24 @@ impl SourceController {
         let consumed = self.accept(app, root, task);
         if consumed && diagnostics && self.state == SourceState::Ready {
             app.replace_lsp_diagnostics(task);
+        }
+        if consumed
+            && self.mode == Some(SourceMode::RunLink)
+            && self.state == SourceState::Ready
+            && self.items.len() == 1
+        {
+            match self.activate(app, root, false) {
+                Ok(None) => {
+                    self.status(SourceState::Ready, "Destino de RUN abierto");
+                }
+                Ok(Some(_)) => {
+                    self.status(SourceState::Failed, "El destino de RUN es ambiguo");
+                }
+                Err(error) => {
+                    self.status(SourceState::Failed, error);
+                }
+            }
+            self.accepted = None;
         }
         if consumed && self.state == SourceState::Ready && self.accepted.as_ref().is_some_and(|request| {
             matches!(&request.input, SourceInput::Rename(input) if input.confirmed.is_some())
@@ -2294,8 +2335,18 @@ impl SourceController {
                 if paths.len() > 1 {
                     return Ok(Some(paths));
                 }
+                let source_pane = app.panes().active();
+                let origin = app
+                    .panes()
+                    .view(source_pane)
+                    .and_then(|view| view.location());
                 app.open_project_file(root, paths[0].clone(), None, to_side, SNAPSHOT)
                     .map_err(|e| e.to_string())?;
+                if request.mode == SourceMode::RunLink && app.panes().active() != source_pane {
+                    if let Some(origin) = origin {
+                        app.record_link_origin(origin);
+                    }
+                }
                 Ok(None)
             }
         }
@@ -2333,6 +2384,35 @@ impl SourceController {
         Ok(())
     }
 }
+
+fn navigation_root(
+    workspace: &Path,
+    source: &Path,
+    resolution: FileResolution,
+) -> Result<PathBuf, String> {
+    let workspace = workspace
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    if !matches!(resolution, FileResolution::OrderedProjectPath) {
+        return Ok(workspace);
+    }
+    let Some(parent) = source.parent().and_then(|path| path.canonicalize().ok()) else {
+        return Ok(workspace);
+    };
+    for folder in parent
+        .ancestors()
+        .take_while(|path| path.starts_with(&workspace))
+    {
+        if folder.join(".git").exists()
+            || folder.join(".cide/propath").is_file()
+            || folder.join("openedge-project.json").is_file()
+        {
+            return Ok(folder.to_owned());
+        }
+    }
+    Ok(workspace)
+}
+
 fn reference_root<'a>(root: Option<&'a Path>, request: &'a Request) -> Result<&'a Path, String> {
     root.or_else(|| {
         if request.provider.is_some_and(|provider| {
@@ -2340,9 +2420,14 @@ fn reference_root<'a>(root: Option<&'a Path>, request: &'a Request) -> Result<&'
                 provider.file_resolution,
                 FileResolution::DocumentRelative | FileResolution::RelativeModule
             )
-        }) && request.origin.path.is_absolute()
+        }) || request.mode == SourceMode::RunLink
         {
-            request.origin.path.parent()
+            request
+                .origin
+                .path
+                .is_absolute()
+                .then(|| request.origin.path.parent())
+                .flatten()
         } else {
             None
         }
@@ -2351,15 +2436,20 @@ fn reference_root<'a>(root: Option<&'a Path>, request: &'a Request) -> Result<&'
 }
 
 fn resolve_file(root: &Path, request: &Request, relative: &str) -> Result<Vec<PathBuf>, String> {
-    let root = root.canonicalize().map_err(|error| error.to_string())?;
+    let resolution = request
+        .provider
+        .ok_or("No hay proveedor de referencias léxicas")?
+        .file_resolution;
+    let root = if request.mode == SourceMode::RunLink {
+        navigation_root(root, &request.origin.path, resolution)?
+    } else {
+        root.canonicalize().map_err(|error| error.to_string())?
+    };
     resolve_from(
         &root,
         &request.origin.path,
         relative,
-        request
-            .provider
-            .ok_or("No hay proveedor de referencias léxicas")?
-            .file_resolution,
+        resolution,
         request.mode,
     )
 }

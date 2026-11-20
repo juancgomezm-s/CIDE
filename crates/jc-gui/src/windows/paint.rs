@@ -91,6 +91,7 @@ fn run_length(cells: &[Cell], start: usize, safe: &[bool; 128]) -> usize {
         .take_while(|(n, cell)| {
             cell.width == 1
                 && cell.column == first.column + n
+                && (cell.kind == SyntaxKind::Link) == (first.kind == SyntaxKind::Link)
                 && cell.foreground() == first.foreground()
                 && cell.background() == first.background()
                 && matches!(cell.glyph,jc_app::Glyph::Scalar(c) if c.is_ascii() && safe[c as usize])
@@ -1128,6 +1129,16 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
                     {
                         return Err(super::os_error("Dibujar tramo de código"));
                     }
+                    if cell.kind == SyntaxKind::Link {
+                        fill(
+                            dc,
+                            Rect {
+                                top: rect.bottom - 1,
+                                ..rect
+                            },
+                            cell.foreground(),
+                        )?;
+                    }
                     cell_index += count;
                     continue;
                 }
@@ -1140,18 +1151,23 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
                         cluster.as_slice()
                     }
                 };
-                text(
-                    dc,
-                    Rect {
-                        left: x,
-                        top: y,
-                        right: (x + cell.width as i32 * frame.cell_width).min(pane.rect.right),
-                        bottom: (y + frame.cell_height).min(pane.rect.bottom),
-                    },
-                    encoded,
-                    cell.foreground(),
-                    cell.background(),
-                )?;
+                let rect = Rect {
+                    left: x,
+                    top: y,
+                    right: (x + cell.width as i32 * frame.cell_width).min(pane.rect.right),
+                    bottom: (y + frame.cell_height).min(pane.rect.bottom),
+                };
+                text(dc, rect, encoded, cell.foreground(), cell.background())?;
+                if cell.kind == SyntaxKind::Link {
+                    fill(
+                        dc,
+                        Rect {
+                            top: rect.bottom - 1,
+                            ..rect
+                        },
+                        cell.foreground(),
+                    )?;
+                }
                 cell_index += 1;
             }
         }

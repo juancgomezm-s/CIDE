@@ -27,6 +27,7 @@ visual = load_module('browser_owned_visual', 'smoke-spanish-conpty.py')
 # Win32-input VT record: VK_RETURN / scan28 / CR / down/up / left Ctrl / repeat1.
 # This preserves the modifier through the owned Windows pseudo console.
 CONTROL_ENTER = '\x1b[13;28;13;1;8;1_\x1b[13;28;13;0;8;1_'
+F9 = '\x1b[20~'
 ESCAPE_KEY = '\x1b[27;1;27;1;0;1_\x1b[27;1;27;0;0;1_'
 
 
@@ -95,7 +96,7 @@ def main():
         stage = 'abrir_carpeta'
         session.menu('a', 'Abrir carpeta')
         session.wait(lambda: session.contains('Abrir carpeta — explorador') and session.contains('[+] subcarpeta') and session.contains('Metadatos del directorio listos'))
-        assert session.contains('Tab cambia ruta/lista') and session.contains('Ctrl+Intro elegir carpeta actual')
+        assert session.contains('Tab cambia ruta/lista') and session.contains('Ctrl+Intro/F9 elegir carpeta actual')
         visual.snapshot(session, output / 'browser-vt.png')
         checks.append('tui_folder_browser_visible_rows_spanish_help_and_theme')
         stage = 'navegar_subdirectorio_padre'
@@ -106,9 +107,18 @@ def main():
         session.wait(lambda: session.contains('[+] subcarpeta') and session.contains('Metadatos del directorio listos'))
         checks.append('tui_folder_browser_enter_child_and_parent_row')
         stage = 'elegir_carpeta'
-        session.send(CONTROL_ENTER)
-        session.wait(lambda: not session.contains('Abrir carpeta — explorador') and session.contains('Carpeta del proyecto seleccionada'))
-        checks.append('tui_folder_browser_control_enter_accepts_current_project_folder')
+        for index, (row, sequence, check) in enumerate([
+            ('inicio.md', CONTROL_ENTER, 'control_enter_with_file_selected'),
+            ('inicio.md', '\r', 'plain_enter_with_file_selected'),
+            ('[+] subcarpeta', F9, 'f9_with_subfolder_selected'),
+        ]):
+            if index:
+                session.menu('a', 'Abrir carpeta')
+                session.wait(lambda: session.contains('Abrir carpeta — explorador') and session.contains('Metadatos del directorio listos'))
+            select_row(session, row)
+            session.send(sequence)
+            session.wait(lambda: not session.contains('Abrir carpeta — explorador') and session.contains('Carpeta del proyecto seleccionada'))
+            checks.append('tui_folder_browser_' + check + '_accepts_current_project_folder')
         stage = 'abrir_archivo_unicode'
         session.menu('a', 'Abrir…')
         session.wait(lambda: session.contains('Abrir archivo — explorador') and session.contains('[+] subcarpeta') and session.contains('Metadatos del directorio listos'))

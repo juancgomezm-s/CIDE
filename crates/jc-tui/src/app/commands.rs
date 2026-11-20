@@ -251,7 +251,8 @@ impl TuiApp {
             | EditorToggleScrollLink
             | EditorOpenToSide
             | NavigateBack
-            | NavigateForward => {
+            | NavigateForward
+            | NavigateLastEdit => {
                 let _ = self.focus.focus(PrimaryFocus::Editor, &self.panels);
             }
             FileOpenFolder => self.open_prompt(PromptKind::OpenFolder),

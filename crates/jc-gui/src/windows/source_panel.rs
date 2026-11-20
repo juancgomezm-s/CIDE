@@ -212,7 +212,7 @@ impl State {
         self.explorer_focused = false;
         self.source_gui.candidates = None;
         self.source_gui.rename = None;
-        self.source_gui.visible = mode != SourceMode::LspDiagnostics;
+        self.source_gui.visible = !matches!(mode, SourceMode::LspDiagnostics | SourceMode::RunLink);
         if mode == SourceMode::LspDiagnostics {
             self.show_bottom(CommandId::ViewProblems);
         }
@@ -365,6 +365,18 @@ impl State {
             _ => {}
         }
         Action::None
+    }
+
+    pub(super) fn follow_run_at_cursor(&mut self) -> bool {
+        if self
+            .workbench
+            .active_editor()
+            .is_none_or(|editor| !self.workbench.abl_run_link_at(editor.tab_id, editor.cursor))
+        {
+            return false;
+        }
+        self.request_source(SourceMode::RunLink);
+        true
     }
     fn start_rename(&mut self) {
         let target = match SnippetTarget::capture(&self.workbench) {
@@ -596,9 +608,15 @@ impl State {
         );
         if consumed
             && (self.source_visible()
-                || self.source_gui.controller.mode() == Some(SourceMode::LspDiagnostics))
+                || matches!(
+                    self.source_gui.controller.mode(),
+                    Some(SourceMode::LspDiagnostics | SourceMode::RunLink)
+                ))
         {
             self.status = self.source_gui.controller.message().into();
+            if self.source_gui.controller.mode() == Some(SourceMode::RunLink) {
+                self.ensure_encoding_selector();
+            }
         }
         if consumed && self.source_gui.controller.take_project_rename_applied() {
             self.close_source_ui();

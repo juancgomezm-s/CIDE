@@ -1095,6 +1095,106 @@ fn source_tui_stale_completion_and_cancel_never_overwrite_new_caret_intent() {
     assert_eq!(a.workbench.active_bytes().unwrap(), before);
 }
 #[test]
+fn abl_run_history_and_last_edit_work_with_tui_keys_and_mouse() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    let root = std::env::temp_dir().join(format!("cide-run-tui-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    let source = root.join("origen.p");
+    let target = root.join("destino.p");
+    std::fs::write(
+        &source,
+        b"/* origen */\nRUN destino.p.\nRUN Local.\nPROCEDURE Local:\nEND PROCEDURE.\n",
+    )
+    .unwrap();
+    std::fs::write(&target, b"RETURN.\n").unwrap();
+    let mut app = TuiApp::new(LaunchOptions {
+        files: vec![source.clone()],
+        encoding: Some(TextEncoding::Utf8),
+    });
+    app.project_root = Some(root.canonicalize().unwrap());
+    app.workbench.insert_text(" ").unwrap();
+    let origin = app.workbench.active_document().unwrap().tab_id;
+    app.workbench
+        .go_to_position(TextPosition { line: 1, column: 4 })
+        .unwrap();
+    let original = app.workbench.active_editor().unwrap().cursor;
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    finish(&mut app);
+    assert_eq!(
+        app.workbench.active_path().unwrap().file_name(),
+        target.file_name(),
+        "{}",
+        app.status
+    );
+    key(&mut app, KeyCode::Left, KeyModifiers::CONTROL);
+    assert_eq!(app.workbench.active_document().unwrap().tab_id, origin);
+    assert_eq!(app.workbench.active_editor().unwrap().cursor, original);
+    key(&mut app, KeyCode::Right, KeyModifiers::CONTROL);
+    assert_eq!(
+        app.workbench.active_path().unwrap().file_name(),
+        target.file_name()
+    );
+    key(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL);
+    assert_eq!(app.workbench.active_document().unwrap().tab_id, origin);
+    assert_eq!(app.workbench.active_position().unwrap().line, 0);
+
+    let screen = render::render(&app.prepare_frame(120, 28));
+    let (column, row) = (0..screen.height())
+        .find_map(|row| {
+            let line = screen.row_text(row);
+            let start = line.find("RUN Local.")? + "RUN ".len();
+            Some((line[..start].chars().count() as u16, row))
+        })
+        .unwrap();
+    for _ in 0..2 {
+        app.prepare_frame(120, 28);
+        for kind in [
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Left),
+        ] {
+            app.handle_event(Event::Mouse(MouseEvent {
+                kind,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            }));
+        }
+    }
+    finish(&mut app);
+    assert_eq!(
+        app.workbench.active_position().unwrap().line,
+        3,
+        "{}",
+        app.status
+    );
+
+    assert!(app.workbench.split_editor_right());
+    assert_eq!(app.workbench.toggle_reference_pin(), Some(true));
+    app.workbench
+        .go_to_position(TextPosition { line: 1, column: 4 })
+        .unwrap();
+    key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+    finish(&mut app);
+    assert_eq!(app.workbench.panes().active(), jc_app::PaneId::Secondary);
+    assert_eq!(
+        app.workbench.active_path().unwrap().file_name(),
+        target.file_name()
+    );
+    key(&mut app, KeyCode::Left, KeyModifiers::CONTROL);
+    assert_eq!(app.workbench.active_document().unwrap().tab_id, origin);
+    assert_eq!(app.workbench.active_editor().unwrap().cursor, original);
+    key(&mut app, KeyCode::Right, KeyModifiers::CONTROL);
+    assert_eq!(
+        app.workbench.active_path().unwrap().file_name(),
+        target.file_name()
+    );
+    drop(app);
+    std::fs::remove_file(source).unwrap();
+    std::fs::remove_file(target).unwrap();
+    std::fs::remove_dir(root).unwrap();
+}
+
+#[test]
 fn source_tui_static_reference_ambiguity_requires_choice_before_confined_open() {
     let base = std::env::temp_dir().join(format!("cide-source-tui-{}", std::process::id()));
     std::fs::create_dir(&base).unwrap();

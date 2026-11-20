@@ -102,6 +102,22 @@ impl State {
         });
         self.linear_drag.is_some()
     }
+    pub(super) fn follow_run_click(&mut self, x: i32, y: i32) -> bool {
+        let Ok(Some((pane, byte))) = paint::linear_hit(self, x, y, None) else {
+            return false;
+        };
+        let Some(location) = self
+            .workbench
+            .panes()
+            .view(pane)
+            .and_then(|view| view.location())
+        else {
+            return false;
+        };
+        self.workbench.abl_run_link_at(location.tab, byte)
+            && self.begin_linear_drag(x, y, false)
+            && self.follow_run_at_cursor()
+    }
     pub(super) fn validate_linear_drag(&mut self) -> bool {
         if self.linear_drag.as_ref().is_some_and(|drag| {
             !self.pointer_source_available()
