@@ -89,6 +89,10 @@ class Model(BaseHTTPRequestHandler):
             answer = json.dumps({"insertion": "RETURN n + 1."})
         elif block_prompt:
             answer = json.dumps({"insertion": "let doubled = x * 2;\n    doubled"})
+        elif "Suggest the next related edit in this same file" in prompt:
+            answer = json.dumps({"line": 4, "before": "    old_name();", "replacement": "    new_name();"})
+        elif completion_prompt and "autoOmniFixture" in prompt:
+            answer = json.dumps({"insertion": "amount + "})
         elif completion_prompt:
             answer = json.dumps({"insertion": "valor "})
         elif selection_prompt:
@@ -261,7 +265,7 @@ def main():
                         print(f"{engine} ODBC: {symbol} ({data_type})")
                     print("Ventana Win32: diff SQL, rama vecina, aplicación y Ctrl+Z verificados.")
                     return
-                assert len(requests) == 14 and QUESTION in requests[0]
+                assert len(requests) == 18 and QUESTION in requests[0]
                 assert all(text in requests[1] for text in (
                     QUESTION, ANSWER, "Modo Plan", "ejemplo.p", "México", "contexto.",
                 ))
@@ -303,7 +307,17 @@ def main():
                     assert sibling not in request
                     assert "private_lsp_" not in request
                     print(f"{provider}: {symbol} ({type_name})")
-                print("La GUI verificó el contexto semántico, el diff y Ctrl+Z en segmentos con y sin bloque.")
+                assert "Suggest the next related edit in this same file" in requests[14]
+                assert "fn old_name() {}" in requests[14] and "fn new_name() {}" in requests[14]
+                assert '"line":4,"text":"    old_name();"' in requests[14]
+                for request, extension in zip(requests[15:], ("rs", "cs", "ts"), strict=True):
+                    assert "Complete the code exactly at the cursor" in request
+                    context = json.loads(next(line for line in request.splitlines() if line.startswith("{")))
+                    assert context["languageExtension"] == extension, context
+                    assert "autoOmniFixture" in context["prefix"]
+                    assert context["suffix"].startswith("2;")
+                print("La GUI verificó contexto semántico, siguiente edición, diff y Ctrl+Z.")
+                print("Ventana Win32: pausa automática, Ctrl+Derecha, Tab y Ctrl+Z en Rust, C# y TypeScript.")
             finally:
                 model.shutdown()
                 thread.join()

@@ -314,6 +314,7 @@ pub(super) unsafe fn create(
 }
 fn checked(command: CommandId, state: &State) -> bool {
     match command {
+        CommandId::EditToggleAutomaticAi => state.omnicore.automatic_completion,
         CommandId::ViewMarkdownPreview => {
             state.markdown_gui.is_some() && state.registry.is_enabled(command, &state.context())
         }

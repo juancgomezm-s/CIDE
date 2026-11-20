@@ -16,6 +16,7 @@ mod block;
 mod chat;
 pub(super) mod completion;
 mod composer;
+mod next_edit;
 pub(super) mod selection;
 mod sessions;
 use chat::{Attachment, Mode, Outgoing, Prompt};
@@ -58,6 +59,9 @@ pub(super) struct Panel {
     query: Option<PendingQuery>,
     selection_query: Option<selection::Pending>,
     completion: Option<completion::Completion>,
+    pub(super) automatic_completion: bool,
+    completion_idle: Option<completion::Idle>,
+    next_edit: next_edit::NextEdit,
     semantic_context: Option<jc_app::source_services::SourceController>,
     sql_context_busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
     model_catalog: Option<Result<Rc<Vec<Model>>, String>>,
@@ -343,6 +347,7 @@ impl State {
 
     pub(super) fn reset_omnicore_project(&mut self) {
         self.clear_omnicore_completion();
+        self.reset_omnicore_next_edit();
         self.omnicore.stop();
         self.omnicore.status = None;
         self.clear_omnicore_diff();
@@ -357,6 +362,7 @@ impl State {
             .finish_query(Err("La conexión con OmniCore cambió.".into()));
         let sessions = std::mem::take(&mut self.omnicore.sessions);
         self.clear_omnicore_completion();
+        self.clear_omnicore_next_edit();
         self.omnicore.stop();
         self.omnicore.sessions = sessions;
         self.omnicore.executable = Some(executable);
@@ -364,7 +370,10 @@ impl State {
     }
 
     pub(super) fn start_omnicore(&mut self) {
-        if !self.omnicore.visible || self.omnicore.monitoring || self.smoke {
+        if !(self.omnicore.visible || self.omnicore.automatic_completion)
+            || self.omnicore.monitoring
+            || self.smoke
+        {
             return;
         }
         let root = match omnicore_runtime::workspace(self.project_root.as_deref()) {
@@ -410,6 +419,7 @@ impl State {
 
     fn omnicore_accepts_open(&self) -> bool {
         self.omnicore.selection_query.is_none()
+            && !self.omnicore.next_edit.pending()
             && !self.omnicore_selection_review_visible()
             && self.pointer_overlays_clear()
             && self.menu_stamp.is_none()
@@ -430,6 +440,7 @@ impl State {
     pub(super) fn poll_omnicore(&mut self) -> bool {
         let mut changed = self.poll_omnicore_selection();
         changed |= self.poll_omnicore_completion();
+        changed |= self.poll_omnicore_next_edit();
         if let Some(models) = self
             .omnicore
             .catalog_request
@@ -652,11 +663,13 @@ impl State {
         if edit != approval.is_some() || (edit && self.edit_request().ok().flatten() != approval) {
             return;
         }
+        self.cancel_automatic_omnicore_completion();
         let panel = &self.omnicore;
         let question = panel.sessions.active.draft.trim();
         if question.is_empty()
             || panel.query.is_some()
             || panel.selection_query.is_some()
+            || panel.next_edit.pending()
             || panel
                 .completion
                 .as_ref()
@@ -1690,6 +1703,8 @@ pub(super) unsafe fn choose_model(hwnd: Hwnd) {
 
 impl State {
     fn set_omnicore_model(&mut self, model: Option<&Model>) {
+        self.clear_omnicore_completion();
+        self.clear_omnicore_next_edit();
         self.omnicore.model = model.cloned();
         self.omnicore.chat_notice = None;
         self.omnicore.focused = true;
@@ -2301,5 +2316,7 @@ mod tests {
         completion::tests::verify_provider_completion(&mut state);
         completion::tests::verify_provider_block(&mut state);
         completion::tests::verify_provider_segments(&mut state);
+        next_edit::tests::verify_provider_next_edit(&mut state);
+        completion::tests::verify_provider_automatic_completion();
     }
 }

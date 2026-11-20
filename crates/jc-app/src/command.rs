@@ -136,6 +136,8 @@ pub enum CommandId {
     EditSurroundWith,
     EditSelectionWithAi,
     EditCompleteWithAi,
+    EditToggleAutomaticAi,
+    EditSuggestNextWithAi,
     EditCompleteBlockWithAi,
     SnippetNext,
     SnippetPrevious,
@@ -945,6 +947,18 @@ pub fn default_registry() -> CommandRegistry {
             EditCompleteBlockWithAi,
             Edit,
             "Completar bloque con OmniCore",
+            ai_completion
+        ),
+        spec!(
+            EditToggleAutomaticAi,
+            Edit,
+            "Autocompletado automático de OmniCore",
+            ai_completion
+        ),
+        spec!(
+            EditSuggestNextWithAi,
+            Edit,
+            "Sugerir siguiente edición con OmniCore",
             ai_completion
         ),
         spec!(SnippetNext, Edit, "Plantilla: paso siguiente", snippet_next),

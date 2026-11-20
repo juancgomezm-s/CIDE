@@ -605,9 +605,20 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             .into_iter()
             .find(|area| area.pane == state.workbench.panes().active())
         {
+            // Leave room at the caret for the proposal, including after a
+            // partial acceptance at the right edge of the editor.
+            let suggestion_columns = state.omnicore_completion_text().map_or(0, |(text, _)| {
+                jc_text::grapheme::graphemes(text)
+                    .map(jc_text::grapheme::width)
+                    .sum::<usize>()
+                    .min(area.columns / 2)
+            });
+            let caret_columns = area
+                .columns
+                .saturating_sub(suggestion_columns.saturating_sub(1));
             state
                 .workbench
-                .reveal_active_pane(area.capacity_rows.max(1), area.columns.max(1));
+                .reveal_active_pane(area.capacity_rows.max(1), caret_columns.max(1));
         }
     }
     let areas = if covered {

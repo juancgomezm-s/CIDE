@@ -283,6 +283,8 @@ impl Workbench {
             | EditSelectionWithAi
             | EditCompleteWithAi
             | EditCompleteBlockWithAi
+            | EditToggleAutomaticAi
+            | EditSuggestNextWithAi
             | SnippetNext
             | SnippetPrevious
             | SnippetAccept

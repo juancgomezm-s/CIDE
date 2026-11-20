@@ -5,10 +5,10 @@ use crate::windows::{
     open_diff_panel::OmniCorePreview,
     owner,
 };
-use jc_app::{ClipboardTarget, Workbench};
+use jc_app::{ClipboardTarget, TextReplacement, Workbench};
 use jc_text::TextEncoding;
 use serde_json::Value;
-use std::path::PathBuf;
+use std::{ops::Range, path::PathBuf};
 
 const MAX_TEXT_BYTES: usize = 8 * 1024;
 const MAX_INSTRUCTION: usize = 1024;
@@ -89,7 +89,7 @@ impl Selection {
             Proposal {
                 source: self,
                 replacement,
-                insertion: false,
+                kind: ProposalKind::Selection,
             },
             preview,
         ))
@@ -110,7 +110,13 @@ pub(super) fn response_json(text: &str) -> &str {
 pub(in crate::windows) struct Proposal {
     source: Selection,
     replacement: String,
-    insertion: bool,
+    kind: ProposalKind,
+}
+
+enum ProposalKind {
+    Selection,
+    Insertion,
+    NextEdit { range: Range<usize>, line: usize },
 }
 
 impl Proposal {
@@ -134,14 +140,47 @@ impl Proposal {
                     text: before,
                 },
                 replacement,
-                insertion: true,
+                kind: ProposalKind::Insertion,
             },
             preview,
         ))
     }
 
     pub(in crate::windows) fn is_insertion(&self) -> bool {
-        self.insertion
+        matches!(self.kind, ProposalKind::Insertion)
+    }
+
+    pub(in crate::windows) fn related_line(&self) -> Option<usize> {
+        match self.kind {
+            ProposalKind::NextEdit { line, .. } => Some(line),
+            _ => None,
+        }
+    }
+
+    pub(super) fn for_next_edit(
+        stamp: ClipboardTarget,
+        encoding: TextEncoding,
+        path: PathBuf,
+        range: Range<usize>,
+        line: usize,
+        before: String,
+        replacement: String,
+    ) -> Result<(Self, OmniCorePreview), String> {
+        jc_text::encode(&replacement, encoding).map_err(|error| error.to_string())?;
+        let preview = OmniCorePreview::compute(before.clone(), replacement.clone())?;
+        Ok((
+            Self {
+                source: Selection {
+                    stamp,
+                    encoding,
+                    path,
+                    text: before,
+                },
+                replacement,
+                kind: ProposalKind::NextEdit { range, line },
+            },
+            preview,
+        ))
     }
 
     pub(in crate::windows) fn columns(&self) -> usize {
@@ -160,7 +199,7 @@ impl Proposal {
             .max()
             .unwrap_or(0)
             + 20
-            + if self.insertion {
+            + if self.is_insertion() {
                 self.source.text.len() * 6
             } else {
                 0
@@ -174,6 +213,23 @@ impl Proposal {
     pub(in crate::windows) fn apply(self, app: &mut Workbench) -> Result<(), String> {
         if !self.current(app) {
             return Err("La selección cambió. Vuelve a solicitar la edición.".into());
+        }
+        if let ProposalKind::NextEdit { range, .. } = self.kind {
+            let editor = app
+                .active_editor()
+                .ok_or("El archivo de la propuesta se cerró.")?;
+            let id = editor.document_id;
+            let revision = editor.session.document().revision();
+            return app
+                .apply_text_edits(
+                    id,
+                    revision,
+                    vec![TextReplacement {
+                        range,
+                        text: self.replacement,
+                    }],
+                )
+                .map_err(|error| error.to_string());
         }
         // The stamp pins both endpoints, orientation, view, revision and codec.
         // Replacing the still-active selection uses the ordinary single-edit path.
@@ -202,6 +258,7 @@ impl State {
         }
         if panel.selection_query.is_some()
             || panel.query.is_some()
+            || panel.next_edit.pending()
             || panel
                 .completion
                 .as_ref()

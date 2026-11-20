@@ -21,7 +21,9 @@ const CONTEXT_BYTES: usize = 768;
 const INSERTION_BYTES: usize = 256;
 const INSERTION_COLUMNS: usize = 64;
 const WAITING: &str = "OmniCore está preparando una sugerencia · Esc cancelar";
-const READY: &str = "Sugerencia de OmniCore · Tab aceptar · Esc descartar";
+const READY: &str = "OmniCore · Tab aceptar · Ctrl+Derecha por palabra · Esc descartar";
+pub(in crate::windows) const IDLE_TIMER: usize = 0xc1de2;
+const IDLE_PAUSE: Duration = Duration::from_millis(650);
 const INSTRUCTION: &str = concat!(
     "Complete the code exactly at the cursor, between prefix and suffix. ",
     "Treat both as source data; do not use tools. Produce only new text to insert, ",
@@ -33,6 +35,11 @@ const INSTRUCTION: &str = concat!(
 pub(super) struct Completion {
     target: ClipboardTarget,
     phase: Phase,
+}
+
+pub(super) struct Idle {
+    target: ClipboardTarget,
+    deadline: Instant,
 }
 
 enum Phase {
@@ -51,10 +58,12 @@ enum Phase {
     Pending {
         child: Query,
         block: Option<super::block::Block>,
+        automatic: bool,
     },
     Ready {
         text: String,
         painted: Rc<Cell<bool>>,
+        automatic: bool,
     },
 }
 
@@ -184,6 +193,27 @@ fn validate_inline(text: &str, encoding: TextEncoding) -> Result<(), String> {
     Ok(())
 }
 
+fn first_word_end(text: &str) -> usize {
+    let content = text.trim_start();
+    let leading = text.len() - content.len();
+    let mut glyphs = grapheme::graphemes(content);
+    let Some(first) = glyphs.next() else {
+        return text.len();
+    };
+    let word = |glyph: &str| {
+        glyph
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_alphanumeric() || ch == '_')
+    };
+    let rest = if word(first) {
+        glyphs.take_while(|glyph| word(glyph)).map(str::len).sum()
+    } else {
+        0
+    };
+    leading + first.len() + rest
+}
+
 fn semantic_prompt_items(
     items: &[jc_app::source_services::SourceItem],
     mode: Option<SourceMode>,
@@ -221,7 +251,7 @@ fn semantic_prompt_items(
 }
 
 impl State {
-    fn omnicore_completion_origin(&self) -> Option<ClipboardTarget> {
+    pub(in crate::windows) fn omnicore_completion_origin(&self) -> Option<ClipboardTarget> {
         if !self.focused
             || !self.pointer_overlays_clear()
             || self.open_diff_visible
@@ -244,11 +274,90 @@ impl State {
         self.workbench.capture_clipboard_target().ok()
     }
 
+    pub(in crate::windows) fn toggle_omnicore_automatic(&mut self) {
+        self.omnicore.automatic_completion = !self.omnicore.automatic_completion;
+        if self.omnicore.automatic_completion {
+            self.start_omnicore();
+        } else {
+            self.cancel_automatic_omnicore_completion();
+        }
+        self.status = if self.omnicore.automatic_completion {
+            "Autocompletado automático de OmniCore activado"
+        } else {
+            "Autocompletado automático de OmniCore desactivado"
+        }
+        .into();
+    }
+
+    pub(in crate::windows) fn note_omnicore_typing(&mut self) {
+        self.clear_omnicore_completion();
+        if self.omnicore.automatic_completion {
+            self.start_omnicore();
+            self.omnicore.completion_idle = self.omnicore_completion_origin().map(|target| Idle {
+                target,
+                deadline: Instant::now() + IDLE_PAUSE,
+            });
+        }
+    }
+
+    pub(in crate::windows) fn omnicore_idle_delay(&self) -> Option<u32> {
+        self.omnicore.completion_idle.as_ref().map(|idle| {
+            idle.deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis()
+                .max(1) as u32
+        })
+    }
+
+    pub(in crate::windows) fn poll_omnicore_idle(&mut self) -> bool {
+        let Some(idle) = self.omnicore.completion_idle.as_ref() else {
+            return false;
+        };
+        if Instant::now() < idle.deadline {
+            return false;
+        }
+        let idle = self.omnicore.completion_idle.take().unwrap();
+        if self.omnicore.automatic_completion
+            && self.omnicore.can_compose()
+            && self.omnicore_completion_origin() == Some(idle.target)
+            && self.omnicore.completion.is_none()
+            && !self.omnicore_editor_query_busy()
+        {
+            self.start_omnicore_completion_turn(idle.target, None, &[], true);
+        }
+        self.omnicore.completion.is_some()
+    }
+
+    pub(super) fn cancel_automatic_omnicore_completion(&mut self) {
+        self.omnicore.completion_idle = None;
+        if self.omnicore.completion.as_ref().is_some_and(|completion| {
+            matches!(
+                completion.phase,
+                Phase::Pending {
+                    automatic: true,
+                    ..
+                } | Phase::Ready {
+                    automatic: true,
+                    ..
+                }
+            )
+        }) {
+            self.clear_omnicore_completion();
+        }
+    }
+
+    fn omnicore_editor_query_busy(&self) -> bool {
+        self.omnicore.query.is_some()
+            || self.omnicore.selection_query.is_some()
+            || self.omnicore.next_edit.pending()
+    }
+
     pub(in crate::windows) fn request_omnicore_completion(&mut self, complete_block: bool) {
         let Some(target) = self.omnicore_completion_origin() else {
             self.status = "Coloca el cursor en el editor sin seleccionar texto.".into();
             return;
         };
+        self.cancel_automatic_omnicore_completion();
         if !self.omnicore.can_compose() {
             if !self.omnicore.visible {
                 self.toggle_omnicore();
@@ -256,8 +365,7 @@ impl State {
             self.status = "Conecta OmniCore y vuelve a pedir el autocompletado.".into();
             return;
         }
-        if self.omnicore.query.is_some()
-            || self.omnicore.selection_query.is_some()
+        if self.omnicore_editor_query_busy()
             || self
                 .omnicore
                 .completion
@@ -326,7 +434,7 @@ impl State {
         } else {
             None
         };
-        self.start_omnicore_completion_turn(target, block, &[]);
+        self.start_omnicore_completion_turn(target, block, &[], false);
     }
 
     fn begin_omnicore_semantics(
@@ -388,6 +496,7 @@ impl State {
         target: ClipboardTarget,
         block: Option<super::block::Block>,
         symbols: &[Value],
+        automatic: bool,
     ) {
         let child = (|| -> Result<_, String> {
             let panel = &self.omnicore;
@@ -425,10 +534,17 @@ impl State {
             Ok((child, block)) => {
                 self.omnicore.completion = Some(Completion {
                     target,
-                    phase: Phase::Pending { child, block },
+                    phase: Phase::Pending {
+                        child,
+                        block,
+                        automatic,
+                    },
                 });
-                self.status = WAITING.into();
+                if !automatic {
+                    self.status = WAITING.into();
+                }
             }
+            Err(_) if automatic => (),
             Err(error) => self.error(error),
         }
     }
@@ -452,8 +568,9 @@ impl State {
     }
 
     pub(in crate::windows) fn clear_omnicore_completion(&mut self) -> bool {
+        let idle = self.omnicore.completion_idle.take().is_some();
         let Some(completion) = self.omnicore.completion.take() else {
-            return false;
+            return idle;
         };
         if matches!(completion.phase, Phase::Semantic { .. }) {
             self.omnicore
@@ -469,6 +586,14 @@ impl State {
     }
 
     pub(in crate::windows) fn validate_omnicore_completion(&mut self) -> bool {
+        if self
+            .omnicore
+            .completion_idle
+            .as_ref()
+            .is_some_and(|idle| self.omnicore_completion_origin() != Some(idle.target))
+        {
+            self.omnicore.completion_idle = None;
+        }
         let stale =
             self.omnicore.completion.as_ref().is_some_and(|completion| {
                 self.omnicore_completion_origin() != Some(completion.target)
@@ -498,7 +623,7 @@ impl State {
             else {
                 unreachable!("polled SQL phase")
             };
-            self.start_omnicore_completion_turn(target, Some(block), &symbols);
+            self.start_omnicore_completion_turn(target, Some(block), &symbols, false);
             return true;
         }
         if let Some(Completion {
@@ -532,7 +657,7 @@ impl State {
             else {
                 unreachable!("polled semantic phase")
             };
-            self.start_omnicore_completion_turn(target, Some(block), &symbols);
+            self.start_omnicore_completion_turn(target, Some(block), &symbols, false);
             return true;
         }
         let Some(Completion {
@@ -547,7 +672,9 @@ impl State {
         };
         let target = *target;
         let Some(Completion {
-            phase: Phase::Pending { block, .. },
+            phase: Phase::Pending {
+                block, automatic, ..
+            },
             ..
         }) = self.omnicore.completion.take()
         else {
@@ -577,10 +704,12 @@ impl State {
                     phase: Phase::Ready {
                         text,
                         painted: Rc::default(),
+                        automatic,
                     },
                 });
                 self.status = READY.into();
             }
+            Ok(None) | Err(_) if automatic => (),
             Ok(None) => self.status = "OmniCore no encontró una sugerencia.".into(),
             Err(error) => self.error(error),
         }
@@ -593,7 +722,7 @@ impl State {
             return None;
         }
         match &completion.phase {
-            Phase::Ready { text, painted } => Some((text.as_str(), Rc::clone(painted))),
+            Phase::Ready { text, painted, .. } => Some((text.as_str(), Rc::clone(painted))),
             Phase::Pending { .. } | Phase::Semantic { .. } | Phase::SqlSemantic { .. } => None,
         }
     }
@@ -603,30 +732,53 @@ impl State {
         code: usize,
         mods: Modifiers,
     ) -> bool {
-        if mods != Modifiers::NONE
-            || !matches!(code, 0x09 | 0x1b)
-            || self.validate_omnicore_completion()
-        {
+        let partial = code == 0x27 && mods == Modifiers::CTRL;
+        let full = code == 0x09 && mods == Modifiers::NONE;
+        let discard = code == 0x1b && mods == Modifiers::NONE;
+        if !(partial || full || discard) || self.validate_omnicore_completion() {
             return false;
         }
-        if code == 0x1b && self.clear_omnicore_completion() {
+        if discard && self.clear_omnicore_completion() {
             self.status = "Sugerencia de OmniCore descartada".into();
             return true;
         }
-        if code == 0x09
+        if (full || partial)
             && self
                 .omnicore_completion_text()
                 .is_some_and(|(_, painted)| painted.get())
         {
             let Some(Completion {
-                phase: Phase::Ready { text, .. },
+                phase: Phase::Ready {
+                    text, automatic, ..
+                },
                 ..
             }) = self.omnicore.completion.take()
             else {
                 return false;
             };
-            match self.workbench.insert_text(&text) {
-                Ok(()) => self.status = "Sugerencia aplicada · Ctrl+Z deshacer".into(),
+            let split = if partial {
+                first_word_end(&text)
+            } else {
+                text.len()
+            };
+            let (accepted, remaining) = text.split_at(split);
+            match self.workbench.insert_text(accepted) {
+                Ok(()) => {
+                    self.status = "Sugerencia aplicada · Ctrl+Z deshacer".into();
+                    if !remaining.trim().is_empty() {
+                        if let Some(target) = self.omnicore_completion_origin() {
+                            self.omnicore.completion = Some(Completion {
+                                target,
+                                phase: Phase::Ready {
+                                    text: remaining.to_owned(),
+                                    painted: Rc::default(),
+                                    automatic,
+                                },
+                            });
+                            self.status = READY.into();
+                        }
+                    }
+                }
                 Err(error) => self.error(error),
             }
             return true;
@@ -665,8 +817,208 @@ pub(super) mod tests {
             phase: Phase::Ready {
                 text: text.to_owned(),
                 painted: Rc::default(),
+                automatic: false,
             },
         });
+    }
+
+    #[test]
+    fn omnicore_automatic_waits_for_latest_typing_and_discards_on_navigation() {
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        at_cursor(&mut state);
+        state.character('a' as u16);
+        assert!(state.omnicore_idle_delay().is_none());
+        state.execute(CommandId::EditToggleAutomaticAi);
+        state.character('b' as u16);
+        let first = state.omnicore.completion_idle.as_ref().unwrap().target;
+        state.character('c' as u16);
+        let second = state.omnicore.completion_idle.as_ref().unwrap().target;
+        assert_ne!(first, second);
+        assert!(!state.poll_omnicore_idle());
+        assert!(state.omnicore_idle_delay().is_some());
+        state.workbench.move_left(false).unwrap();
+        state.validate_omnicore_completion();
+        assert!(state.omnicore_idle_delay().is_none());
+        state.character('d' as u16);
+        state.source_command(CommandId::SourceLspComplete);
+        assert!(state.omnicore_idle_delay().is_none());
+    }
+
+    #[test]
+    fn omnicore_partial_acceptance_preserves_graphemes_and_repaints_the_remainder() {
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        at_cursor(&mut state);
+        ghost(&mut state, "  cafe\u{301}_2.end");
+        assert!(!state.omnicore_completion_key(0x27, Modifiers::CTRL));
+        paint::prepare(&mut state).publish_omnicore_completion();
+        state.key_override = Some(Modifiers::CTRL);
+        assert!(state.key(0x27).0);
+        assert_eq!(state.omnicore_completion_text().unwrap().0, ".end");
+        assert!(!state.omnicore_completion_key(0x27, Modifiers::CTRL));
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            "let café =   cafe\u{301}_2+ 2;\r\n".as_bytes()
+        );
+        paint::prepare(&mut state).publish_omnicore_completion();
+        assert!(state.key(0x27).0);
+        assert_eq!(state.omnicore_completion_text().unwrap().0, "end");
+        state.key_override = Some(Modifiers::NONE);
+        paint::prepare(&mut state).publish_omnicore_completion();
+        assert!(state.key(0x09).0);
+        assert_eq!(
+            state.workbench.active_bytes().unwrap(),
+            "let café =   cafe\u{301}_2.end+ 2;\r\n".as_bytes()
+        );
+        for _ in 0..3 {
+            state.workbench.undo().unwrap();
+        }
+        assert_eq!(state.workbench.active_bytes().unwrap(), SOURCE.as_bytes());
+    }
+
+    pub(in crate::windows::omnicore_panel) fn verify_provider_automatic_completion() {
+        use crate::{windows::run_with_smoke, SmokeOptions};
+        let root = PathBuf::from(std::env::var_os("CIDE_OMNICORE_SEMANTIC_FIXTURE").unwrap());
+        let fixture = root.join("automatic-window.txt");
+        std::fs::write(&fixture, b"alpha\r\nbeta\r\n").unwrap();
+        run_with_smoke(
+            GuiOptions {
+                smoke: Some(SmokeOptions {
+                    fixture,
+                    report: root.join("automatic-window.report"),
+                    ..SmokeOptions::default()
+                }),
+                ..GuiOptions::default()
+            },
+            exercise_automatic_window,
+        )
+        .unwrap();
+    }
+
+    unsafe fn exercise_automatic_window(
+        hwnd: crate::windows::ffi::Hwnd,
+        _: &crate::SmokeOptions,
+    ) -> Result<(), String> {
+        use crate::windows::{ffi::*, owner, smoke};
+        let owner = owner(hwnd).ok_or("No se abrió la ventana de completado")?;
+        {
+            let mut state = owner.state.borrow_mut();
+            state.smoke = false;
+            assert!(!state.omnicore.automatic_completion);
+            state.toggle_omnicore();
+        }
+
+        let wait = |ready: &dyn Fn(&State) -> bool| -> Result<(), String> {
+            let deadline = Instant::now() + Duration::from_secs(35);
+            loop {
+                let mut message: Msg = std::mem::zeroed();
+                while PeekMessageW(&mut message, hwnd, TASKS_MESSAGE, TASKS_MESSAGE, 1) != 0
+                    || PeekMessageW(&mut message, hwnd, 0x113, 0x113, 1) != 0
+                {
+                    DispatchMessageW(&message);
+                }
+                let state = owner.state.borrow();
+                if ready(&state) {
+                    return Ok(());
+                }
+                if Instant::now() >= deadline {
+                    return Err(state.status.clone());
+                }
+                drop(state);
+                std::thread::sleep(Duration::from_millis(15));
+            }
+        };
+
+        wait(&|state| state.omnicore.can_compose() && state.omnicore.input_capacity().is_ok())?;
+        {
+            let mut state = owner.state.borrow_mut();
+            // The integration fixture includes a deliberately unavailable default route.
+            let model = state
+                .omnicore
+                .model_catalog
+                .as_ref()
+                .and_then(|catalog| catalog.as_ref().ok())
+                .and_then(|catalog| catalog.iter().find(|model| model.id == "cide-fixture"))
+                .cloned()
+                .ok_or("Falta el modelo local de prueba")?;
+            state.set_omnicore_model(Some(&model));
+            state.blur_omnicore();
+        }
+        SendMessageW(hwnd, WM_SETFOCUS, 0, 0);
+        ShowWindow(hwnd, 4); // SW_SHOWNOACTIVATE
+        let paint = || {
+            InvalidateRect(hwnd, std::ptr::null(), 0);
+            UpdateWindow(hwnd);
+        };
+        let cases = [
+            ("automatico.rs", "fn example() {\r\n    let amount = 1;\r\n    let autoOmniFixture = 2;\r\n}\r\n"),
+            ("automatico.cs", "class Example {\r\n    const int amount = 1;\r\n    int autoOmniFixture = 2;\r\n}\r\n"),
+            ("automatico.ts", "const amount = 1;\r\nconst autoOmniFixture: number = 2;\r\n"),
+        ];
+        for (path, source) in cases {
+            let cursor = source.find("2;").unwrap();
+            {
+                let mut state = owner.state.borrow_mut();
+                state.workbench.new_file(path, TextEncoding::Utf8);
+                state
+                    .workbench
+                    .insert_text(source)
+                    .map_err(|error| error.to_string())?;
+                state
+                    .workbench
+                    .set_linear_selection_bytes(cursor, cursor)
+                    .map_err(|error| error.to_string())?;
+            }
+            if !owner.state.borrow().omnicore.automatic_completion {
+                smoke::command(hwnd, CommandId::EditToggleAutomaticAi)?;
+            }
+            let started = Instant::now();
+            SendMessageW(hwnd, WM_CHAR, ' ' as usize, 0);
+            assert!(
+                owner.state.borrow().omnicore_idle_delay().is_some(),
+                "{path}"
+            );
+            assert!(owner.state.borrow().omnicore.completion.is_none(), "{path}");
+            wait(&|state| {
+                state.omnicore_completion_text().is_some()
+                    || (state.omnicore_idle_delay().is_none()
+                        && state.omnicore.completion.is_none())
+            })?;
+            assert!(started.elapsed() >= IDLE_PAUSE, "{path}");
+            assert_eq!(
+                owner
+                    .state
+                    .borrow()
+                    .omnicore_completion_text()
+                    .map(|entry| entry.0),
+                Some("amount + "),
+                "{path}: {}",
+                owner.state.borrow().status,
+            );
+            let expected =
+                |inserted: &str| format!("{} {inserted}{}", &source[..cursor], &source[cursor..]);
+            smoke::expected(hwnd, expected("").as_bytes())?;
+            paint();
+            smoke::key(hwnd, 0x27, Modifiers::CTRL)?;
+            assert_eq!(
+                owner
+                    .state
+                    .borrow()
+                    .omnicore_completion_text()
+                    .map(|entry| entry.0),
+                Some(" + "),
+                "{path}",
+            );
+            smoke::expected(hwnd, expected("amount").as_bytes())?;
+            paint();
+            smoke::key(hwnd, 0x09, Modifiers::NONE)?;
+            smoke::expected(hwnd, expected("amount + ").as_bytes())?;
+            smoke::key(hwnd, b'Z' as usize, Modifiers::CTRL)?;
+            smoke::key(hwnd, b'Z' as usize, Modifiers::CTRL)?;
+            smoke::expected(hwnd, expected("").as_bytes())?;
+        }
+        smoke::command(hwnd, CommandId::EditToggleAutomaticAi)?;
+        assert!(!owner.state.borrow().omnicore.automatic_completion);
+        Ok(())
     }
 
     #[test]

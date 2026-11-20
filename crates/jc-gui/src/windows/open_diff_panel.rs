@@ -202,15 +202,19 @@ impl State {
         proposal: Proposal,
     ) {
         let insertion = proposal.is_insertion();
+        let related_line = proposal.related_line();
         self.open_omnicore_diff(path, preview);
         self.omnicore_diff.as_mut().unwrap().selection = Some(proposal);
         self.blur_omnicore();
-        self.status = if insertion {
-            "Revisa el diff del bloque · Ctrl+Intro aplicar · Esc descartar"
+        self.status = if let Some(line) = related_line {
+            format!(
+                "Revisa la siguiente edición en línea {line} · Ctrl+Intro aplicar · Esc descartar"
+            )
+        } else if insertion {
+            "Revisa el diff del bloque · Ctrl+Intro aplicar · Esc descartar".into()
         } else {
-            "Revisa el diff de la selección · Ctrl+Intro aplicar · Esc descartar"
-        }
-        .into();
+            "Revisa el diff de la selección · Ctrl+Intro aplicar · Esc descartar".into()
+        };
     }
 
     pub(super) fn omnicore_selection_review_visible(&self) -> bool {
@@ -237,14 +241,16 @@ impl State {
             .unwrap();
         self.clear_omnicore_diff();
         let insertion = proposal.is_insertion();
+        let related_line = proposal.related_line();
         match proposal.apply(&mut self.workbench) {
             Ok(()) => {
-                self.status = if insertion {
-                    "Bloque insertado · Ctrl+Z deshacer"
+                self.status = if let Some(line) = related_line {
+                    format!("Siguiente edición aplicada en línea {line} · Ctrl+Z deshacer")
+                } else if insertion {
+                    "Bloque insertado · Ctrl+Z deshacer".into()
                 } else {
-                    "Selección editada · Ctrl+Z deshacer"
-                }
-                .into()
+                    "Selección editada · Ctrl+Z deshacer".into()
+                };
             }
             Err(error) => self.error(error),
         }
@@ -531,16 +537,18 @@ impl State {
                     geometry.dual,
                 )
             };
+            let review_label = match diff.selection.as_ref() {
+                Some(proposal) if proposal.is_insertion() => "Bloque · ".into(),
+                Some(proposal) => proposal.related_line().map_or_else(
+                    || "Selección · ".into(),
+                    |line| format!("Siguiente edición (línea {line}) · "),
+                ),
+                None => String::new(),
+            };
             presentation.title = display_ui_label(
                 &format!(
                     "OmniCore · {}{}",
-                    if diff.selection.as_ref().is_some_and(Proposal::is_insertion) {
-                        "Bloque · "
-                    } else if diff.selection.is_some() {
-                        "Selección · "
-                    } else {
-                        ""
-                    },
+                    review_label,
                     diff.path
                         .file_name()
                         .and_then(|name| name.to_str())

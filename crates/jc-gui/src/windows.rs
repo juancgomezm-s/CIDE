@@ -213,6 +213,16 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
         "Completar bloque con OmniCore",
     ),
     (
+        274,
+        CommandId::EditToggleAutomaticAi,
+        "Autocompletado automático de OmniCore",
+    ),
+    (
+        275,
+        CommandId::EditSuggestNextWithAi,
+        "Sugerir siguiente edición con OmniCore",
+    ),
+    (
         270,
         CommandId::EditSelectionWithAi,
         "Editar selección con IA…",
@@ -1029,6 +1039,16 @@ impl State {
             self.close_selector();
             return Action::EditOmniCoreSelection;
         }
+        if command == CommandId::EditToggleAutomaticAi {
+            self.close_selector();
+            self.toggle_omnicore_automatic();
+            return Action::None;
+        }
+        if command == CommandId::EditSuggestNextWithAi {
+            self.close_selector();
+            self.request_omnicore_next_edit();
+            return Action::None;
+        }
         if command == CommandId::ViewMarkdownPreview {
             return self.toggle_markdown();
         }
@@ -1548,6 +1568,10 @@ impl State {
         if code == 0x1b && modifiers == Modifiers::NONE && self.cancel_omnicore_selection() {
             return (true, Action::None);
         }
+        if code == 0x1b && modifiers == Modifiers::NONE && self.clear_omnicore_next_edit() {
+            self.status = "Siguiente edición cancelada".into();
+            return (true, Action::None);
+        }
         if self.markdown_gui.is_some() {
             return (true, self.markdown_key(code, modifiers));
         }
@@ -1737,7 +1761,10 @@ impl State {
             return;
         }
         match self.workbench.insert_text(ch.encode_utf8(&mut bytes)) {
-            Ok(()) => self.status = "Listo".into(),
+            Ok(()) => {
+                self.note_omnicore_typing();
+                self.status = "Listo".into();
+            }
             Err(error) => self.error(error),
         }
     }
@@ -2064,6 +2091,13 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         let Ok(mut state) = owner.state.try_borrow_mut() else {
             return DefWindowProcW(hwnd, message, wparam, lparam);
         };
+        let editing_event = matches!(
+            message,
+            WM_CHAR | WM_UNICHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_COMMAND
+        ) || handled_ime;
+        let before_edit = editing_event
+            .then(|| state.capture_omnicore_before_edit())
+            .flatten();
         match message {
             WM_CREATE => {
                 if state.workbench.large_open_pending() {
@@ -2091,6 +2125,13 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             0x113 if wparam == recovery::TIMER_ID => {
                 redraw = state.poll_periodic_recovery();
+            }
+            0x113 if wparam == omnicore_panel::completion::IDLE_TIMER => {
+                recovery::KillTimer(hwnd, wparam);
+                redraw = state.poll_omnicore_idle();
+                if let Some(delay) = state.omnicore_idle_delay() {
+                    recovery::SetTimer(hwnd, wparam, delay, 0);
+                }
             }
             WM_SIZE => {
                 state.cancel_pointer();
@@ -2343,12 +2384,21 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         if state.exit_ready {
             action = Action::FinishExit;
         }
+        if editing_event {
+            state.remember_omnicore_edit(before_edit);
+        }
         state.schedule_search();
         redraw |= state.validate_project_search();
         redraw |= state.validate_git_context();
         redraw |= state.validate_open_diff();
         redraw |= state.validate_source();
         redraw |= state.validate_omnicore_completion();
+        redraw |= state.validate_omnicore_next_edit();
+        if matches!(message, WM_CHAR | WM_UNICHAR) {
+            if let Some(delay) = state.omnicore_idle_delay() {
+                recovery::SetTimer(hwnd, omnicore_panel::completion::IDLE_TIMER, delay, 0);
+            }
+        }
         state.schedule_outline();
         state.schedule_git_discovery();
         state.schedule_omnicore();
@@ -2366,12 +2416,22 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
     }
     release_idle_capture(hwnd);
     recovery::arm(hwnd);
+    let clipboard_edit = matches!(
+        action,
+        Action::Clipboard(CommandId::EditPaste | CommandId::EditCut)
+    );
+    let before_clipboard = clipboard_edit
+        .then(|| owner.state.borrow().capture_omnicore_before_edit())
+        .flatten();
     perform(hwnd, action);
     if message == TASKS_MESSAGE {
         redraw |= save_flow::poll_paged_save(hwnd);
     }
     if let Some(current) = self::owner(hwnd) {
         let mut state = current.state.borrow_mut();
+        if clipboard_edit {
+            state.remember_omnicore_edit(before_clipboard);
+        }
         if message != TASKS_MESSAGE && state.workbench.large_open_pending() {
             redraw |= state.poll_large_file();
         }

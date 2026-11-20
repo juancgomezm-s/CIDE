@@ -185,6 +185,8 @@ pub fn default_menu_model() -> MenuModel {
                 command(SourceSchemaComplete),
                 command(EditCompleteWithAi),
                 command(EditCompleteBlockWithAi),
+                command(EditToggleAutomaticAi),
+                command(EditSuggestNextWithAi),
                 command(SourceRename),
                 command(EditInsertSnippet),
                 command(EditSurroundWith),
