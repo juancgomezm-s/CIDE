@@ -363,8 +363,11 @@ impl TuiApp {
                 &mut completion,
             ) {
                 self.status = self.source.message().into();
-                if self.source.mode() == Some(jc_app::source_services::SourceMode::RunLink) {
+                if self.source.mode() == Some(jc_app::source_services::SourceMode::FollowLink) {
                     self.ensure_encoding_choice();
+                    if self.source.items().len() > 1 {
+                        self.source_popup = true;
+                    }
                 }
                 if self.source.take_project_rename_applied() {
                     self.source_popup = false;

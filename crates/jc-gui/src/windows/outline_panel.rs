@@ -13,15 +13,20 @@ mod tree;
 mod value_icon;
 use tree::{Item, Kind, Tree};
 
+const RELATION_MODES: [SourceMode; 2] = [SourceMode::Calls, SourceMode::Incoming];
+
 pub(super) struct Outline {
     pub visible: bool,
     pub left: bool,
     mode: SourceMode,
+    relations_view: bool,
     candidates: Option<Candidates>,
     controller: SourceController,
     dependencies: SourceController,
+    relationships: [SourceController; 2],
+    requested_relationships: [bool; 2],
     tree: Tree,
-    tree_inputs: Option<(bool, bool)>,
+    tree_inputs: Option<[bool; 4]>,
     pub focused: bool,
     pub hits: Option<OutlineHits>,
     first: usize,
@@ -34,15 +39,35 @@ impl Default for Outline {
             visible: true,
             left: false,
             mode: SourceMode::Symbols,
+            relations_view: false,
             candidates: None,
             controller: SourceController::outline(),
             dependencies: SourceController::outline_dependencies(),
+            relationships: RELATION_MODES.map(SourceController::outline_relationships),
+            requested_relationships: [false; 2],
             tree: Tree::default(),
             tree_inputs: None,
             focused: false,
             hits: None,
             first: 0,
             wheel: 0,
+        }
+    }
+}
+
+impl Outline {
+    fn controllers(&self) -> impl Iterator<Item = &SourceController> {
+        [&self.controller, &self.dependencies]
+            .into_iter()
+            .chain(&self.relationships)
+    }
+
+    fn controller_for(&mut self, item: Item) -> (&mut SourceController, usize) {
+        match item {
+            Item::Symbol(index) => (&mut self.controller, index),
+            Item::Dependency(index) => (&mut self.dependencies, index),
+            Item::Outgoing(index) => (&mut self.relationships[0], index),
+            Item::Incoming(index) => (&mut self.relationships[1], index),
         }
     }
 }
@@ -70,7 +95,7 @@ pub(super) struct OutlineHits {
 struct Candidates {
     paths: Vec<PathBuf>,
     selected: usize,
-    from_dependency: bool,
+    item: Item,
 }
 
 #[derive(Clone, Copy)]
@@ -202,11 +227,11 @@ pub(super) fn editor_horizontal(state: &State) -> (i32, i32) {
 }
 
 fn tools(rect: Rect, dpi: super::dpi::Dpi) -> Vec<(Rect, SourceMode)> {
-    [SourceMode::Symbols, SourceMode::Calls, SourceMode::Incoming]
+    [SourceMode::Symbols, SourceMode::Calls]
         .into_iter()
         .enumerate()
         .map(|(i, mode)| {
-            let width = (rect.right - rect.left - dpi.pixels(16)) / 3;
+            let width = (rect.right - rect.left - dpi.pixels(16)) / 2;
             let left = rect.left + dpi.pixels(8) + i as i32 * width;
             let top = rect.top + dpi.pixels(29);
             (
@@ -270,6 +295,9 @@ impl State {
         let outline = &mut self.outline;
         outline.controller.cancel(&mut self.jobs);
         outline.dependencies.cancel(&mut self.jobs);
+        for controller in &mut outline.relationships {
+            controller.cancel(&mut self.jobs);
+        }
         outline.tree_inputs = None;
         outline.candidates = None;
         outline.hits = None;
@@ -293,13 +321,16 @@ impl State {
         let wanted = region(self).is_some() && provider(self);
         if (wanted
             && if self.outline.mode == SourceMode::Symbols {
-                self.needs_outline(false) || self.needs_outline(true)
+                self.needs_outline(false)
+                    || self.needs_outline(true)
+                    || (0..2).any(|index| self.needs_tree_relationship(index))
             } else {
                 self.needs_outline_relationships()
             })
             || (!wanted
-                && [&self.outline.controller, &self.outline.dependencies]
-                    .into_iter()
+                && self
+                    .outline
+                    .controllers()
                     .any(|c| !matches!(c.state(), SourceState::Idle | SourceState::Cancelled)))
         {
             self.bridge.signal();
@@ -311,6 +342,17 @@ impl State {
         matches!(mode, SourceMode::Calls | SourceMode::Incoming)
             && self.outline_tool_enabled(mode)
             && self.outline.controller.needs_outline_refresh_for(
+                &self.workbench,
+                self.project_root.as_deref(),
+                mode,
+            )
+    }
+
+    fn needs_tree_relationship(&self, index: usize) -> bool {
+        let mode = RELATION_MODES[index];
+        self.outline.requested_relationships[index]
+            && self.outline_tool_enabled(mode)
+            && self.outline.relationships[index].needs_outline_refresh_for(
                 &self.workbench,
                 self.project_root.as_deref(),
                 mode,
@@ -343,8 +385,9 @@ impl State {
     pub(super) fn tick_outline(&mut self) -> bool {
         if region(self).is_none() || !provider(self) {
             self.exit_outline_if_focused();
-            if [&self.outline.controller, &self.outline.dependencies]
-                .into_iter()
+            if self
+                .outline
+                .controllers()
                 .all(|c| matches!(c.state(), SourceState::Idle | SourceState::Cancelled))
             {
                 return false;
@@ -361,6 +404,9 @@ impl State {
             self.outline
                 .dependencies
                 .validate_context(&self.workbench, root, &mut self.jobs);
+        for controller in &mut self.outline.relationships {
+            changed |= controller.validate_context(&self.workbench, root, &mut self.jobs);
+        }
         if self.outline.mode == SourceMode::Symbols {
             for (dependency, mode) in [
                 (false, SourceMode::Symbols),
@@ -372,6 +418,20 @@ impl State {
                     self.outline.candidates = None;
                     self.outline.first = 0;
                     let _ = self.request_outline(mode);
+                    changed = true;
+                }
+            }
+            for (index, mode) in RELATION_MODES.into_iter().enumerate() {
+                if self.needs_tree_relationship(index) {
+                    self.outline.tree_inputs = None;
+                    self.outline.candidates = None;
+                    let _ = self.outline.relationships[index].request(
+                        mode,
+                        self.source_gui.registry(),
+                        &self.workbench,
+                        self.project_root.as_deref(),
+                        &mut self.jobs,
+                    );
                     changed = true;
                 }
             }
@@ -387,6 +447,9 @@ impl State {
             .outline
             .controller
             .tick(&self.workbench, root, &mut self.jobs);
+        for controller in &mut self.outline.relationships {
+            changed |= controller.tick(&self.workbench, root, &mut self.jobs);
+        }
         changed |= self
             .outline
             .dependencies
@@ -407,9 +470,15 @@ impl State {
             || self
                 .outline
                 .dependencies
-                .accept(&self.workbench, root, completion);
+                .accept(&self.workbench, root, completion)
+            || self
+                .outline
+                .relationships
+                .iter_mut()
+                .any(|controller| controller.accept(&self.workbench, root, completion));
         if accepted {
             self.outline.hits = None;
+            self.outline.tree_inputs = None;
             self.update_outline_tree();
         }
         accepted
@@ -427,27 +496,63 @@ impl State {
         let root = self.project_root.as_deref();
         let symbols = outline.controller.ready(&self.workbench, root);
         let dependencies = outline.dependencies.ready(&self.workbench, root);
+        let available_results = outline
+            .relationships
+            .each_ref()
+            .map(|controller| controller.ready(&self.workbench, root));
+        let relationships = std::array::from_fn(|index| {
+            if !outline.relations_view {
+                return None;
+            }
+            let controller = &outline.relationships[index];
+            Some(tree::Relationships {
+                items: if available_results[index] {
+                    controller.items()
+                } else {
+                    &[]
+                },
+                notice: if running(controller) {
+                    Some("Buscando…")
+                } else if !available_results[index] {
+                    Some(controller.message())
+                } else if controller.items().is_empty() {
+                    Some("Sin resultados")
+                } else {
+                    None
+                },
+            })
+        });
         outline.tree.rebuild(
-            if symbols {
+            if symbols && !outline.relations_view {
                 outline.controller.items()
             } else {
                 &[]
             },
-            if dependencies {
+            if dependencies && !outline.relations_view {
                 outline.dependencies.items()
             } else {
                 &[]
             },
+            relationships,
         );
-        outline.tree_inputs = Some((symbols, dependencies));
+        outline.tree_inputs = Some([
+            symbols,
+            dependencies,
+            available_results[0],
+            available_results[1],
+        ]);
     }
 
     fn outline_tree_is_current(&self) -> bool {
         let outline = &self.outline;
         let root = self.project_root.as_deref();
-        outline.tree_inputs.is_some_and(|(symbols, dependencies)| {
-            (!symbols || outline.controller.ready(&self.workbench, root))
-                && (!dependencies || outline.dependencies.ready(&self.workbench, root))
+        outline.tree_inputs.is_some_and(|ready| {
+            outline
+                .controllers()
+                .zip(ready)
+                .all(|(controller, had_results)| {
+                    !had_results || controller.ready(&self.workbench, root)
+                })
         })
     }
 
@@ -592,7 +697,11 @@ impl State {
             active_symbol: message.is_empty().then_some(active_symbol).flatten(),
             message,
             focused: self.outline_focused(),
-            mode: outline.mode,
+            mode: if outline.relations_view {
+                SourceMode::Calls
+            } else {
+                SourceMode::Symbols
+            },
             tools: tools(rect, self.dpi)
                 .into_iter()
                 .map(|(r, mode)| (r, mode, self.outline_tool_enabled(mode)))
@@ -610,10 +719,11 @@ impl State {
         let outline = &self.outline;
         let root = self.project_root.as_deref();
         if let Some(candidates) = &outline.candidates {
-            let controller = if candidates.from_dependency {
-                &outline.dependencies
-            } else {
-                &outline.controller
+            let controller = match candidates.item {
+                Item::Dependency(_) => &outline.dependencies,
+                Item::Symbol(_) => &outline.controller,
+                Item::Outgoing(_) => &outline.relationships[0],
+                Item::Incoming(_) => &outline.relationships[1],
             };
             if controller.ready(&self.workbench, root) {
                 candidates.paths.len()
@@ -664,18 +774,14 @@ impl State {
             && match self.outline_target(self.outline_selected()) {
                 Target::Node(id) => {
                     let node = &self.outline.tree.nodes[id];
-                    node.item.is_some() && !node.unresolved
+                    node.item.is_some()
                 }
                 _ => true,
             }
     }
 
     fn activate_outline_item(&mut self, item: Item, side: bool) {
-        let dependency = matches!(item, Item::Dependency(_));
-        let (controller, index) = match item {
-            Item::Dependency(index) => (&mut self.outline.dependencies, index),
-            Item::Symbol(index) => (&mut self.outline.controller, index),
-        };
+        let (controller, index) = self.outline.controller_for(item);
         match controller.activate_at_index(
             &mut self.workbench,
             self.project_root.as_deref(),
@@ -688,7 +794,7 @@ impl State {
                 self.outline.candidates = Some(Candidates {
                     paths,
                     selected: 0,
-                    from_dependency: dependency,
+                    item,
                 });
                 self.outline.first = 0;
                 self.outline.hits = None;
@@ -711,15 +817,12 @@ impl State {
             Target::Candidate(index) => {
                 let outline = &mut self.outline;
                 let candidates = outline.candidates.as_ref().unwrap();
-                let controller = if candidates.from_dependency {
-                    &mut outline.dependencies
-                } else {
-                    &mut outline.controller
-                };
+                let (item, path) = (candidates.item, candidates.paths[index].clone());
+                let (controller, _) = outline.controller_for(item);
                 match controller.activate_candidate(
                     &mut self.workbench,
                     self.project_root.as_deref(),
-                    &candidates.paths[index],
+                    &path,
                     side,
                 ) {
                     Ok(()) => {
@@ -736,15 +839,26 @@ impl State {
                     self.activate_outline_item(item, side);
                 } else if !side {
                     let expanded = self.outline.tree.nodes[id].expanded;
-                    self.outline.tree.set_expanded(id, !expanded);
+                    self.expand_outline_node(id, !expanded);
                     self.reveal_outline_selection();
                 }
             }
         }
     }
 
+    fn expand_outline_node(&mut self, id: usize, expanded: bool) {
+        self.outline.tree.set_expanded(id, expanded);
+        if expanded {
+            if let Some(index) = self.outline.tree.relationship_group(id) {
+                self.outline.requested_relationships[index] = true;
+                self.schedule_outline();
+            }
+        }
+    }
+
     pub(super) fn refresh_outline(&mut self) {
         self.outline.mode = SourceMode::Symbols;
+        self.outline.relations_view = false;
         self.cancel_outline();
         self.schedule_outline();
     }
@@ -812,7 +926,7 @@ impl State {
                     if code == 0x25 && node.expanded
                         || code == 0x27 && !node.expanded && !node.children.is_empty()
                     {
-                        self.outline.tree.set_expanded(id, code == 0x27);
+                        self.expand_outline_node(id, code == 0x27);
                     } else if let Some(target) = if code == 0x25 {
                         node.parent
                     } else {
@@ -849,19 +963,20 @@ impl State {
             .into_iter()
             .find(|(r, _)| contains(*r, x, y))
         {
-            if self.outline_tool_enabled(mode)
-                && (self.outline.mode != mode
-                    || self.outline.candidates.is_some()
-                    || matches!(mode, SourceMode::Calls | SourceMode::Incoming))
-            {
-                self.outline.mode = mode;
+            if self.outline_tool_enabled(mode) {
+                self.outline.relations_view = mode != SourceMode::Symbols;
+                self.outline.mode = SourceMode::Symbols;
+                self.outline.requested_relationships = [self.outline.relations_view; 2];
                 self.outline.first = 0;
                 self.outline.hits = None;
                 self.outline.candidates = None;
                 self.outline.tree_inputs = None;
-                if let Err(error) = self.request_outline(mode) {
-                    self.error(error);
-                }
+                self.schedule_outline();
+                self.update_outline_tree();
+                self.explorer_focused = true;
+                self.outline.focused = true;
+                self.bottom.focused = false;
+                return true;
             }
             self.explorer_focused = true;
             self.outline.focused = true;
@@ -901,7 +1016,7 @@ impl State {
                     if toggle && !node.children.is_empty() {
                         // Windows sends both a click and a double-click message.
                         if !double {
-                            self.outline.tree.set_expanded(id, !node.expanded);
+                            self.expand_outline_node(id, !node.expanded);
                             self.reveal_outline_selection();
                         }
                     } else if double {
@@ -1010,7 +1125,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
             &wide(if *mode == SourceMode::Symbols {
                 "Contenido"
             } else {
-                mode.label()
+                "Relaciones"
             }),
             if active {
                 shell::ACCENT
@@ -1146,7 +1261,7 @@ mod tests {
     fn finish(state: &mut State) {
         state.poll_tasks();
         let deadline = Instant::now() + Duration::from_secs(5);
-        while running(&state.outline.controller) || running(&state.outline.dependencies) {
+        while state.outline.controllers().any(running) {
             state.poll_tasks();
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
@@ -1154,7 +1269,7 @@ mod tests {
     }
 
     #[test]
-    fn outline_call_tabs_paint_direction_and_unresolved_markers() {
+    fn outline_relationships_have_their_own_folders_and_navigate_both_directions() {
         let mut state = State::new(&GuiOptions::default()).unwrap();
         state.width = 1400;
         state.height = 800;
@@ -1165,29 +1280,42 @@ mod tests {
         state.workbench.insert_text(source).unwrap();
         let at = source.find("principal").unwrap();
         state.workbench.set_linear_selection_bytes(at, at).unwrap();
+        finish(&mut state);
+        assert!(state
+            .outline
+            .tree
+            .nodes
+            .iter()
+            .all(|node| !matches!(node.kind, Kind::CallIncoming | Kind::CallOutgoing)));
         let rect = region(&state).unwrap();
-        let click = |state: &mut State, mode| {
-            let (area, _) = tools(rect, state.dpi)
-                .into_iter()
-                .find(|(_, tool)| *tool == mode)
-                .unwrap();
-            assert!(state.outline_click(area.left + 1, area.top + 1, false));
-            finish(state);
-        };
-        click(&mut state, SourceMode::Calls);
-        let frame = state.outline_presentation().unwrap();
-        assert_eq!(frame.rows.len(), 2);
-        assert_eq!(frame.rows[0].kind, Kind::CallOutgoing);
-        assert_eq!(frame.rows[1].kind, Kind::CallUnresolved);
-        let at = source.find("fn destino").unwrap() + 3;
-        state.workbench.set_linear_selection_bytes(at, at).unwrap();
-        click(&mut state, SourceMode::Incoming);
-        let frame = state.outline_presentation().unwrap();
-        assert_eq!(frame.rows.len(), 1);
-        assert_eq!(frame.rows[0].label, "principal");
-        assert_eq!(frame.rows[0].kind, Kind::CallIncoming);
-        assert_ne!(Kind::CallIncoming.icon(), Kind::CallOutgoing.icon());
-        state.activate_outline(true);
+        let (area, _) = tools(rect, state.dpi)
+            .into_iter()
+            .find(|(_, mode)| *mode == SourceMode::Calls)
+            .unwrap();
+        state.outline_click(area.left + 1, area.top + 1, false);
+        finish(&mut state);
+        assert_eq!(state.outline.tree.rows.len(), 2);
+        let outgoing = state
+            .outline
+            .tree
+            .nodes
+            .iter()
+            .position(|node| node.name == "Llama a")
+            .unwrap();
+        state.expand_outline_node(outgoing, true);
+        select_tree_row(&mut state, |node| node.name == "destino");
+        click_tree_selection(&mut state, true);
+        finish(&mut state);
+        let incoming = state
+            .outline
+            .tree
+            .nodes
+            .iter()
+            .position(|node| node.name == "Llamado por")
+            .unwrap();
+        state.expand_outline_node(incoming, true);
+        select_tree_row(&mut state, |node| node.name == "principal");
+        click_tree_selection(&mut state, true);
         assert_eq!(
             state.workbench.active_editor().unwrap().cursor,
             source.find("destino()").unwrap()
@@ -1508,7 +1636,7 @@ mod tests {
                 "Inclusiones",
                 "Procedimientos",
                 "Prototipos de función",
-                "Variables y constantes"
+                "Variables y constantes",
             ]
         );
         let tree = &state.outline.tree;
@@ -1536,14 +1664,204 @@ mod tests {
             .unwrap();
         state.outline_click(calls.left + 2, calls.top + 2, false);
         finish(&mut state);
-        assert_eq!(state.outline.controller.mode(), Some(SourceMode::Calls));
-        assert_eq!(state.outline.controller.state(), SourceState::Ready);
-        assert_eq!(state.outline_count(), 1);
-        assert_eq!(
-            state.outline_presentation().unwrap().rows[0].label,
-            "RUN principal"
-        );
+        assert!(state.outline.relations_view);
+        assert_eq!(state.outline.relationships[0].state(), SourceState::Ready);
+        assert_eq!(state.outline.relationships[0].items().len(), 1);
         assert_eq!(state.workbench.active_bytes().unwrap(), source.as_bytes());
+    }
+
+    #[test]
+    fn outline_content_opens_an_include_and_a_project_caller_with_double_click() {
+        use std::fs;
+        let temp = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/test-temp");
+        fs::create_dir_all(&temp).unwrap();
+        let fixture = tempfile::tempdir_in(temp.canonicalize().unwrap()).unwrap();
+        let smoke_file = fixture.path().join("fixture.txt");
+        fs::write(&smoke_file, b"alpha\r\nbeta\r\n").unwrap();
+        let project = fixture.path().join("erp");
+        for folder in [".cide", "ventas", "incluidos"] {
+            fs::create_dir_all(project.join(folder)).unwrap();
+        }
+        fs::write(project.join(".cide/propath"), ".\n").unwrap();
+        let target = project.join("ventas/destino.p");
+        let include = project.join("incluidos/datos.i");
+        let caller = project.join("origen.p");
+        fs::write(
+            &target,
+            "/* destino */\n{incluidos/ausente.i}\n{incluidos/datos.i}\nRUN ventas/auxiliar.p.\n",
+        )
+        .unwrap();
+        fs::write(&include, "DEFINE VARIABLE dato AS INTEGER NO-UNDO.\n").unwrap();
+        fs::write(project.join("ventas/auxiliar.p"), "RETURN.\n").unwrap();
+        fs::write(
+            &caller,
+            "PROCEDURE Iniciar:\n  RUN ventas/destino.p.\nEND PROCEDURE.\n",
+        )
+        .unwrap();
+        crate::windows::run_with_smoke(
+            GuiOptions {
+                project_root: Some(fixture.path().to_owned()),
+                smoke: Some(crate::SmokeOptions {
+                    fixture: smoke_file,
+                    report: fixture.path().join("outline.json"),
+                    ..crate::SmokeOptions::default()
+                }),
+                ..GuiOptions::default()
+            },
+            exercise_outline_window,
+        )
+        .unwrap();
+    }
+
+    unsafe fn exercise_outline_window(
+        hwnd: crate::windows::ffi::Hwnd,
+        options: &crate::SmokeOptions,
+    ) -> Result<(), String> {
+        use crate::windows::{explorer_smoke::OwnSize, ffi::*, owner};
+        let gui = owner(hwnd).ok_or("No se creó la ventana de Esquema")?;
+        let dpi = gui.state.borrow().dpi;
+        let size = OwnSize::new(hwnd)?;
+        size.resize(dpi.pixels(1400), dpi.pixels(900))?;
+        gui.state.borrow_mut().set_outline_visible(true);
+        let target = options
+            .fixture
+            .with_file_name("erp")
+            .join("ventas/destino.p");
+        let prepare = |open: bool| -> Result<(), String> {
+            let mut state = gui.state.borrow_mut();
+            if open {
+                state
+                    .workbench
+                    .open_file(&target, Some(TextEncoding::Utf8))
+                    .map_err(|error| error.to_string())?;
+            }
+            finish(&mut state);
+            gui.frame_dirty.set(true);
+            Ok(())
+        };
+        let click = |label: &str, double: bool| -> Result<(), String> {
+            InvalidateRect(hwnd, std::ptr::null(), 0);
+            SendMessageW(hwnd, WM_PAINT, 0, 0);
+            let state = gui.state.borrow();
+            let frame = state.outline_presentation().ok_or("Esquema oculto")?;
+            let row = frame
+                .rows
+                .iter()
+                .position(|row| row.label.starts_with(label))
+                .ok_or_else(|| format!("No aparece {label} en Esquema"))?;
+            let x = frame.rect.left + state.dpi.pixels(50 + 12 * frame.rows[row].depth as i32);
+            let y =
+                frame.rect.top + state.dpi.pixels(HEAD) + row as i32 * state.dpi.pixels(ROW) + 2;
+            drop(state);
+            let coordinates = ((y as isize) << 16) | x as isize;
+            SendMessageW(hwnd, WM_LBUTTONDOWN, 1, coordinates);
+            SendMessageW(hwnd, WM_LBUTTONUP, 0, coordinates);
+            if double {
+                SendMessageW(hwnd, WM_LBUTTONDBLCLK, 1, coordinates);
+                SendMessageW(hwnd, WM_LBUTTONUP, 0, coordinates);
+            }
+            Ok(())
+        };
+        let at = |filename: &str, statement: Option<&str>| -> Result<(), String> {
+            let state = gui.state.borrow();
+            let active = state
+                .workbench
+                .active_editor()
+                .ok_or("Documento activo ausente")?;
+            let source = state
+                .workbench
+                .active_bytes()
+                .ok_or("Fuente activa ausente")?;
+            if active
+                .session
+                .path()
+                .file_name()
+                .is_none_or(|name| name != filename)
+                || statement
+                    .is_some_and(|code| !source[active.cursor..].starts_with(code.as_bytes()))
+            {
+                return Err(format!(
+                    "Esquema no abrió {filename} en el destino esperado: {}",
+                    state.status
+                ));
+            }
+            Ok(())
+        };
+        prepare(true)?;
+        click("Inclusiones", false)?;
+        click("incluidos", false)?;
+        click("ausente.i", true)?;
+        at("destino.p", Some("{incluidos/ausente.i}"))?;
+        prepare(false)?;
+        click("datos.i", true)?;
+        at("datos.i", None)?;
+        prepare(true)?;
+        let tab = |mode| -> Result<(), String> {
+            let state = gui.state.borrow();
+            let rect = region(&state).ok_or("Esquema oculto")?;
+            let (area, _) = tools(rect, state.dpi)
+                .into_iter()
+                .find(|(_, tool)| *tool == mode)
+                .ok_or("Pestaña de relaciones ausente")?;
+            let coordinates = (((area.top + 2) as isize) << 16) | (area.left + 2) as isize;
+            drop(state);
+            SendMessageW(hwnd, WM_LBUTTONDOWN, 1, coordinates);
+            SendMessageW(hwnd, WM_LBUTTONUP, 0, coordinates);
+            Ok(())
+        };
+        tab(SourceMode::Calls)?;
+        prepare(false)?;
+        click("Llama a", false)?;
+        click("ventas", false)?;
+        click("auxiliar.p", true)?;
+        at("auxiliar.p", None)?;
+        prepare(true)?;
+        tab(SourceMode::Calls)?;
+        prepare(false)?;
+        click("Llamado por", false)?;
+        click("Iniciar", true)?;
+        at("origen.p", Some("RUN ventas/destino.p"))?;
+
+        use crate::windows::smoke::{key, position};
+        let wait_source = || -> Result<(), String> {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let mut state = gui.state.borrow_mut();
+                state.poll_tasks();
+                if state.jobs.outstanding() == 0 {
+                    return Ok(());
+                }
+                if Instant::now() >= deadline {
+                    return Err(state.status.clone());
+                }
+                drop(state);
+                std::thread::yield_now();
+            }
+        };
+        position(hwnd, 1, 6)?;
+        key(hwnd, 0x0d, Modifiers::CTRL)?;
+        wait_source()?;
+        at("destino.p", None)?;
+        key(hwnd, 0x25, Modifiers::CTRL)?;
+        at("origen.p", Some("ventas/destino.p"))?;
+        key(hwnd, 0x27, Modifiers::CTRL)?;
+        at("destino.p", None)?;
+        position(hwnd, 3, 4)?;
+        let (x, y) = {
+            let state = gui.state.borrow();
+            paint::rectangle_pixel(&state, state.workbench.panes().active(), 3, 4)
+                .ok_or("No se encontró la línea RUN en la GUI")?
+        };
+        let coordinates = ((y as isize) << 16) | x as isize;
+        SendMessageW(hwnd, WM_LBUTTONDOWN, 1, coordinates);
+        SendMessageW(hwnd, WM_LBUTTONUP, 0, coordinates);
+        SendMessageW(hwnd, WM_LBUTTONDBLCLK, 1, coordinates);
+        wait_source()?;
+        at("auxiliar.p", None)?;
+        SendMessageW(hwnd, WM_CHAR, ' ' as usize, 0);
+        key(hwnd, 0x25, Modifiers::CTRL)?;
+        key(hwnd, usize::from(b'Q'), Modifiers::CTRL)?;
+        at("auxiliar.p", Some(" RETURN."))
     }
 
     #[test]
@@ -1578,9 +1896,10 @@ mod tests {
             assert!(!frame.rows[0].has_value_icon());
             state.outline_key(0x27, Modifiers::NONE);
             let frame = state.outline_presentation().unwrap();
-            assert!(frame.rows[1..].iter().all(Row::has_value_icon));
+            let variables = &frame.rows[1..7];
+            assert!(variables.iter().all(Row::has_value_icon));
             assert_eq!(
-                frame.rows[1..]
+                variables
                     .iter()
                     .map(|row| (row.label.as_str(), row.value_type))
                     .collect::<Vec<_>>(),

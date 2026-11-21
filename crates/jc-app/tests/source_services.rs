@@ -174,9 +174,32 @@ fn routine_relationships_follow_the_caret_in_each_code_provider() {
         assert_eq!(caller.label, "principal", "{name}");
         assert!(
             source[caller.range.clone()].eq_ignore_ascii_case("siguiente"),
-            "{name}"
+            "{name}: {:?}",
+            app.syntax_rows(app.active_document().unwrap().tab_id, 0, 1)
         );
         assert!(caller.range.start < definition);
+        let invocation = caller.range.start;
+        app.set_linear_selection_bytes(invocation, invocation)
+            .unwrap();
+        assert!(
+            app.code_link_at(app.active_document().unwrap().tab_id, invocation),
+            "{name}: {:?}",
+            app.syntax_rows(app.active_document().unwrap().tab_id, 0, 1)
+        );
+        controller
+            .request(SourceMode::FollowLink, &registry, &app, None, &mut jobs)
+            .unwrap();
+        finish(&mut controller, &app, &mut jobs);
+        assert_eq!(
+            controller.items().len(),
+            1,
+            "{name}: {}",
+            controller.message()
+        );
+        controller.activate(&mut app, None, false).unwrap();
+        assert_eq!(app.active_editor().unwrap().cursor, definition, "{name}");
+        assert!(app.navigation_back());
+        assert_eq!(app.active_editor().unwrap().cursor, invocation, "{name}");
     }
 }
 
@@ -206,6 +229,35 @@ function duplicado() {} function duplicado(x) {} function otra() { function priv
         .items()
         .iter()
         .all(|item| matches!(item.action, SourceAction::Unresolved(_))));
+}
+
+#[test]
+fn method_mentions_and_callbacks_follow_definitions_in_every_code_language() {
+    for (name, source) in [
+        ("callback.rs", "fn principal() { let handler = siguiente; } fn siguiente() {}"),
+        ("callback.cs", "class Demo { void principal() { Action handler = siguiente; } void siguiente() {} }"),
+        ("Callback.java", "class Demo { void principal() { Runnable handler = this::siguiente; } void siguiente() {} }"),
+        ("callback.php", "<?php class Demo { function principal() { $handler = self::siguiente(...); } function siguiente() {} }"),
+        ("callback.js", "function principal() { usar(siguiente); } function siguiente() {}"),
+        ("callback.ts", "function principal(): void { usar(siguiente); } function siguiente(): void {}"),
+    ] {
+        let mut app = Workbench::default();
+        app.new_file(name, TextEncoding::Utf8);
+        app.insert_text(source).unwrap();
+        let cursor = source.find("siguiente").unwrap() + 2;
+        let expected = source.rfind("siguiente").unwrap();
+        app.set_linear_selection_bytes(cursor, cursor).unwrap();
+        assert!(app.code_link_at(app.active_document().unwrap().tab_id, cursor), "{name}");
+        let mut controller = SourceController::default();
+        let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+        controller.request(SourceMode::FollowLink, &SourceRegistry::default(), &app, None, &mut jobs).unwrap();
+        finish(&mut controller, &app, &mut jobs);
+        assert_eq!(controller.items().len(), 1, "{name}: {}", controller.message());
+        controller.activate(&mut app, None, false).unwrap();
+        assert_eq!(app.active_editor().unwrap().cursor, expected, "{name}");
+        assert!(app.navigation_back());
+        assert_eq!(app.active_editor().unwrap().cursor, cursor, "{name}");
+    }
 }
 
 #[test]

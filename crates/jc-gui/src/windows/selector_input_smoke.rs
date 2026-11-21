@@ -157,6 +157,173 @@ unsafe fn file_query(hwnd: Hwnd, name: &str) -> Result<(), String> {
     paste(hwnd, name)?;
     complete(hwnd)
 }
+
+unsafe fn appearance_window_colors(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
+    use super::{appearance::Theme, menu_theme::Palette, shell};
+    let model = owner(hwnd).ok_or("Ventana de Preferencias ausente")?;
+    let menu = model
+        .menu_theme
+        .borrow()
+        .clone()
+        .ok_or("Falta el menú nativo")?;
+    let original = model.state.borrow().committed_appearance().theme;
+    open(hwnd, SelectorKind::Appearance)?;
+    paste(hwnd, "Claro suave")?;
+    {
+        let state = model.state.borrow();
+        super::native_menu::refresh(hwnd, &state)?;
+        if state.editor_theme != Theme::Light
+            || menu.palette() != Palette::for_theme(Theme::Light)
+            || shell::caption_color(hwnd).is_some_and(|color| color != Theme::Light.background())
+        {
+            return Err("El menú o el marco nativo no siguió la vista previa".into());
+        }
+    }
+    let (frame, sidebar_y) = {
+        let mut state = model.state.borrow_mut();
+        state.explorer_visible = true;
+        let sidebar =
+            super::explorer_panel::full_region(&state).ok_or("Falta el panel Archivos")?;
+        let frame = paint::prepare(&mut state);
+        state.explorer_visible = false;
+        (frame, sidebar.top + 6)
+    };
+    let path = options.report.with_file_name("vista-previa-tema-claro.bmp");
+    paint::bitmap(hwnd, &frame, &path)?;
+    let bmp = fs::read(path).map_err(|error| error.to_string())?;
+    let pixel = |x: i32, y: i32| {
+        let offset = 54 + (y as usize * frame.width as usize + x as usize) * 4;
+        u32::from(bmp[offset + 2])
+            | (u32::from(bmp[offset + 1]) << 8)
+            | (u32::from(bmp[offset]) << 16)
+    };
+    for (region, x, y, expected) in [
+        ("título", frame.width - 12, 4, Theme::Light.background()),
+        ("Archivos", 7, sidebar_y, Theme::Light.map_background()),
+        (
+            "editor",
+            frame.width / 2,
+            frame.height / 2,
+            Theme::Light.background(),
+        ),
+        (
+            "estado",
+            frame.width / 2,
+            frame.height - 2,
+            Theme::Light.background(),
+        ),
+    ] {
+        let actual = pixel(x, y);
+        if actual != expected {
+            return Err(format!(
+                "El tema no se pintó en {region} ({actual:#x} en lugar de {expected:#x})"
+            ));
+        }
+    }
+    key(hwnd, 0x1b, Modifiers::NONE)?;
+    if menu.palette() != Palette::for_theme(original)
+        || model.state.borrow().editor_theme != original
+        || shell::caption_color(hwnd).is_some_and(|color| color != original.background())
+    {
+        return Err("Esc no restauró el tema de la ventana y del menú".into());
+    }
+    Ok(())
+}
+
+unsafe fn appearance_preview(hwnd: Hwnd) -> Result<(), String> {
+    use super::appearance::{self, Choice, Theme};
+    let model = owner(hwnd).ok_or("Ventana de Preferencias ausente")?;
+    let original = model.state.borrow().committed_appearance();
+    let metadata = model.state.borrow().recovery_metadata()?;
+    let doc = snapshot(hwnd)?;
+    open(hwnd, SelectorKind::Appearance)?;
+    key(hwnd, 0x28, Modifiers::NONE)?;
+    if model.state.borrow().editor_theme != Theme::Neutral {
+        return Err("La flecha no actualizó el tema en el editor".into());
+    }
+    for size in [11, 12, 20] {
+        let editor_font = model.state.borrow().font;
+        key(hwnd, 0x41, Modifiers::CTRL)?;
+        paste(hwnd, &format!("Editor · {size}"))?;
+        let state = model.state.borrow();
+        if state.editor_text_size != size
+            || state.font == editor_font
+            || state.editor_theme != original.theme
+            || state.recovery_metadata()? != metadata
+        {
+            return Err(format!(
+                "La vista previa de {size} px no restauró el tema o se guardó sin confirmar"
+            ));
+        }
+    }
+    key(hwnd, 0x41, Modifiers::CTRL)?;
+    paste(hwnd, "Minimapa")?;
+    let (x, y) = {
+        let mut state = model.state.borrow_mut();
+        let layout = state
+            .selector_layout()
+            .ok_or("Falta el panel de Preferencias")?;
+        let presentation = state
+            .selector_presentation(layout.capacity())
+            .ok_or("Faltan las opciones de Preferencias")?;
+        let x = state.dpi.pixels(24);
+        let y = (0..state.height)
+            .find(|&y| layout.contains(x, y) && layout.hit_row(&presentation, y) == Some(1))
+            .ok_or("La segunda opción de minimapa no es visible")?;
+        (x, y)
+    };
+    SendMessageW(hwnd, WM_PAINT, 0, 0);
+    let position = ((y as isize) << 16) | x as isize;
+    SendMessageW(hwnd, WM_LBUTTONDOWN, 1, position);
+    SendMessageW(hwnd, WM_LBUTTONUP, 0, position);
+    if model.state.borrow().minimap_visible
+        || model.state.borrow().editor_text_size != original.editor
+    {
+        return Err(
+            "Cambiar de opción no previsualizó el minimapa y restauró la tipografía".into(),
+        );
+    }
+    key(hwnd, 0x41, Modifiers::CTRL)?;
+    paste(hwnd, "opción que no existe")?;
+    if model.state.borrow().minimap_visible != original.minimap {
+        return Err("Un filtro sin coincidencias dejó activo el ajuste provisional".into());
+    }
+    key(hwnd, 0x55, Modifiers::CTRL)?;
+    key(hwnd, 0x23, Modifiers::CTRL)?;
+    if !model.state.borrow().outline.left {
+        return Err("El esquema no se movió al previsualizar su posición".into());
+    }
+    key(hwnd, 0x1b, Modifiers::NONE)?;
+    if model.state.borrow().outline.left != original.outline_left
+        || model.state.borrow().recovery_metadata()? != metadata
+        || snapshot(hwnd)? != doc
+    {
+        return Err("Esc no restauró la apariencia o alteró el documento".into());
+    }
+    open(hwnd, SelectorKind::Appearance)?;
+    paste(hwnd, "Interfaz · 16")?;
+    if model.state.borrow().ui_text_size != 16 {
+        return Err("El filtro no previsualizó el tamaño de la interfaz".into());
+    }
+    key(hwnd, 0x0d, Modifiers::NONE)?;
+    if model.state.borrow().appearance_open()
+        || model.state.borrow().committed_appearance().ui != 16
+    {
+        return Err("Intro no confirmó el ajuste seleccionado".into());
+    }
+    appearance::apply(hwnd, Choice::Ui(original.ui));
+    for size in [11, 12] {
+        open(hwnd, SelectorKind::Appearance)?;
+        paste(hwnd, &format!("Editor · {size}"))?;
+        key(hwnd, 0x0d, Modifiers::NONE)?;
+        let state = model.state.borrow();
+        if state.appearance_open() || state.committed_appearance().editor != size {
+            return Err(format!("Intro no confirmó el tamaño de {size} px"));
+        }
+    }
+    appearance::apply(hwnd, Choice::Editor(original.editor));
+    Ok(())
+}
 #[link(name = "user32")]
 extern "system" {
     fn GetWindowRect(hwnd: Hwnd, rect: *mut Rect) -> i32;
@@ -250,6 +417,10 @@ pub(super) unsafe fn run(hwnd: Hwnd, options: &SmokeOptions) -> Result<Vec<&'sta
         (doc.can_undo(), doc.can_redo())
     };
     let mut checks = Vec::new();
+    appearance_window_colors(hwnd, options)?;
+    checks.push("appearance_preview_applies_theme_to_window_and_native_menu");
+    appearance_preview(hwnd)?;
+    checks.push("appearance_preview_reverts_and_commits_on_enter");
     for kind in [
         SelectorKind::Palette,
         SelectorKind::Files,

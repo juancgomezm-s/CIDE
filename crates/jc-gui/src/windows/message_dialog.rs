@@ -30,6 +30,17 @@ struct MonitorInfo {
 
 #[link(name = "user32")]
 extern "system" {
+    fn DrawIconEx(
+        dc: Hdc,
+        x: i32,
+        y: i32,
+        icon: Handle,
+        width: i32,
+        height: i32,
+        step: u32,
+        brush: Handle,
+        flags: u32,
+    ) -> i32;
     fn DialogBoxIndirectParamW(
         instance: Handle,
         template: *const u32,
@@ -65,7 +76,9 @@ struct Dialog<'a> {
     message: &'a str,
     accept: &'a str,
     scrollable: bool,
+    information: bool,
     ui_size: u8,
+    theme: super::appearance::Theme,
     font: Handle,
     brush: Handle,
     failed: Cell<bool>,
@@ -126,7 +139,9 @@ unsafe fn position(hwnd: Hwnd, owner: Hwnd, size: [i32; 2]) -> Option<(dpi::Dpi,
 }
 
 unsafe fn arrange(hwnd: Hwnd, dialog: &Dialog<'_>) -> bool {
-    let size = if dialog.scrollable {
+    let size = if dialog.information {
+        [500, 330]
+    } else if dialog.scrollable {
         [620, 350]
     } else {
         [420, 176]
@@ -162,6 +177,19 @@ unsafe fn arrange(hwnd: Hwnd, dialog: &Dialog<'_>) -> bool {
         if SetWindowPos(GetDlgItem(hwnd, id), std::ptr::null_mut(), x, y, w, h, 0x14) == 0 {
             return false;
         }
+    }
+    if dialog.information {
+        ShowWindow(GetDlgItem(hwnd, 2), 0);
+        ShowWindow(GetDlgItem(hwnd, 100), 0);
+        SetWindowPos(
+            GetDlgItem(hwnd, 1),
+            std::ptr::null_mut(),
+            width - margin - button,
+            bottom,
+            button,
+            button_height,
+            0x14,
+        );
     }
     true
 }
@@ -276,11 +304,11 @@ unsafe fn paint_button_label(
     let mode = SetBkMode(item.dc, 1);
     SetTextColor(
         item.dc,
-        if item.state & 4 != 0 {
+        paint::ui_ink(if item.state & 4 != 0 {
             shell::MUTED
         } else {
             shell::TEXT
-        },
+        }),
     );
     let label = wide(label);
     let mut rect = item.rect;
@@ -340,7 +368,11 @@ unsafe fn paint_frame(hwnd: Hwnd, dialog: &Dialog<'_>) {
                 &wide(dialog.title),
                 shell::TEXT,
                 shell::SELECTED,
-            )
+            )?;
+            if dialog.information {
+                paint_about(dc, client, dialog)?;
+            }
+            Ok(())
         });
         if result.is_err() {
             dialog.failed.set(true);
@@ -352,10 +384,119 @@ unsafe fn paint_frame(hwnd: Hwnd, dialog: &Dialog<'_>) {
     }
 }
 
+unsafe fn paint_about(dc: Hdc, bounds: Rect, dialog: &Dialog<'_>) -> Result<(), String> {
+    let scale = dpi::for_window(dialog.parent);
+    let px = |n| scale.pixels(n);
+    let icon = LoadIconW(GetModuleHandleW(std::ptr::null()), 101usize as *const u16);
+    if !icon.is_null() {
+        DrawIconEx(
+            dc,
+            px(28),
+            px(58),
+            icon,
+            px(48),
+            px(48),
+            0,
+            std::ptr::null_mut(),
+            3,
+        );
+    }
+    let heading = dpi::ui_font_size(scale, 28);
+    let previous = SelectObject(dc, heading);
+    paint::text(
+        dc,
+        Rect {
+            left: px(94),
+            top: px(52),
+            right: bounds.right - px(24),
+            bottom: px(91),
+        },
+        &wide("CIDE"),
+        shell::TEXT,
+        shell::RAISED,
+    )?;
+    SelectObject(dc, dialog.font);
+    paint::text(
+        dc,
+        Rect {
+            left: px(95),
+            top: px(94),
+            right: bounds.right - px(24),
+            bottom: px(115),
+        },
+        &wide(&format!("Versión {}", jc_app::about::VERSION)),
+        shell::ACCENT,
+        shell::RAISED,
+    )?;
+    paint::text(
+        dc,
+        Rect {
+            left: px(28),
+            top: px(140),
+            right: bounds.right - px(24),
+            bottom: px(163),
+        },
+        &wide(jc_app::about::OWNER),
+        shell::TEXT,
+        shell::RAISED,
+    )?;
+    paint::text(
+        dc,
+        Rect {
+            left: px(28),
+            top: px(165),
+            right: bounds.right - px(24),
+            bottom: px(185),
+        },
+        &wide("Autor y titular de CIDE"),
+        shell::MUTED,
+        shell::RAISED,
+    )?;
+    paint::fill(
+        dc,
+        Rect {
+            left: px(28),
+            top: px(203),
+            right: bounds.right - px(28),
+            bottom: px(204),
+        },
+        shell::SURFACE,
+    )?;
+    for (i, line) in [
+        format!("Compilación · {}", jc_app::about::REVISION),
+        format!(
+            "{} · {}  ·  Licencia MIT",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let top = px(216 + i as i32 * 23);
+        paint::text(
+            dc,
+            Rect {
+                left: px(28),
+                top,
+                right: bounds.right - px(28),
+                bottom: top + px(21),
+            },
+            &wide(line),
+            shell::MUTED,
+            shell::RAISED,
+        )?;
+    }
+    SelectObject(dc, previous);
+    DeleteObject(heading);
+    Ok(())
+}
+
 unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isize) -> isize {
     if message == 0x110 {
         SetWindowLongPtrW(hwnd, -21, lp);
         let dialog = &*(lp as *const Dialog<'_>);
+        shell::set_caption_theme(hwnd, dialog.theme);
         if !arrange(hwnd, dialog) {
             dialog.failed.set(true);
             EndDialog(hwnd, 0);
@@ -364,7 +505,10 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
         for id in [100, 1, 2] {
             SendMessageW(GetDlgItem(hwnd, id), 0x30, dialog.font as usize, 0);
         }
-        SetFocus(GetDlgItem(hwnd, 2));
+        SetFocus(GetDlgItem(hwnd, if dialog.information { 1 } else { 2 }));
+        if dialog.information {
+            SendMessageW(hwnd, 0x401, 1, 0);
+        }
         #[cfg(test)]
         {
             let default = SendMessageW(hwnd, 0x400, 0, 0) as usize & 0xffff;
@@ -398,6 +542,7 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
         return 0;
     }
     let dialog = &*(data as *const Dialog<'_>);
+    let _colors = paint::UiColors::enter(dialog.theme);
     match message {
         0x111 if matches!(wp & 0xffff, 1 | 2) => {
             EndDialog(hwnd, isize::from(wp & 0xffff == 1));
@@ -420,8 +565,8 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
         }
         0x401 => 1, // DM_SETDEFID must not replace the owner-drawn button style.
         0x136 | 0x138 => {
-            SetTextColor(wp as Hdc, shell::TEXT);
-            SetBkColor(wp as Hdc, shell::RAISED);
+            SetTextColor(wp as Hdc, paint::ui_ink(shell::TEXT));
+            SetBkColor(wp as Hdc, paint::ui_color(shell::RAISED));
             dialog.brush as isize
         }
         0x2b => {
@@ -467,6 +612,12 @@ pub(super) unsafe fn confirm(
     show(parent, &mut dialog)
 }
 
+pub(super) unsafe fn information(parent: Hwnd, message: &str) -> Result<bool, String> {
+    let mut dialog = create(parent, "Acerca de CIDE", message, "Cerrar")?;
+    dialog.information = true;
+    show(parent, &mut dialog)
+}
+
 pub(super) unsafe fn confirm_review(
     parent: Hwnd,
     title: &str,
@@ -487,7 +638,7 @@ impl Dialog<'_> {
         accept: &'a str,
     ) -> Result<Dialog<'a>, String> {
         // Modal HWND user data belongs to that dialog, not the editor window.
-        create_at_size(parent, title, message, accept, self.ui_size)
+        create_at_size(parent, title, message, accept, self.ui_size, self.theme)
     }
 }
 
@@ -497,7 +648,23 @@ unsafe fn create<'a>(
     message: &'a str,
     accept: &'a str,
 ) -> Result<Dialog<'a>, String> {
-    create_at_size(parent, title, message, accept, dpi::window_ui_size(parent))
+    let theme = super::owner(parent)
+        .and_then(|owner| {
+            owner
+                .state
+                .try_borrow()
+                .ok()
+                .map(|state| state.editor_theme)
+        })
+        .unwrap_or_default();
+    create_at_size(
+        parent,
+        title,
+        message,
+        accept,
+        dpi::window_ui_size(parent),
+        theme,
+    )
 }
 
 unsafe fn create_at_size<'a>(
@@ -506,9 +673,10 @@ unsafe fn create_at_size<'a>(
     message: &'a str,
     accept: &'a str,
     ui_size: u8,
+    theme: super::appearance::Theme,
 ) -> Result<Dialog<'a>, String> {
     let font = dpi::ui_font_size(dpi::for_window(parent), ui_size);
-    let brush = CreateSolidBrush(shell::RAISED);
+    let brush = CreateSolidBrush(theme.control_color(shell::RAISED));
     if font.is_null() || brush.is_null() {
         if !font.is_null() {
             DeleteObject(font);
@@ -524,7 +692,9 @@ unsafe fn create_at_size<'a>(
         message,
         accept,
         scrollable: false,
+        information: false,
         ui_size,
+        theme,
         font,
         brush,
         failed: Cell::new(false),

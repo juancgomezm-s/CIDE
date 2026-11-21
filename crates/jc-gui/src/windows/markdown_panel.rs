@@ -676,8 +676,8 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &MarkdownFrame) -> Result<(), String> 
                 let inline_code = span.kind == jc_app::SyntaxKind::Code
                     && !matches!(row.block, MarkdownBlock::Code { .. });
                 let ink = if inline_code { surface } else { row_bg };
-                SetTextColor(dc, color);
-                SetBkColor(dc, ink);
+                SetTextColor(dc, paint::ui_ink(color));
+                SetBkColor(dc, paint::ui_color(ink));
                 SetBkMode(dc, 2);
                 let mut target = area(x, y + p(3), right - p(4), box_rect.bottom - p(2));
                 if heading.is_some() {

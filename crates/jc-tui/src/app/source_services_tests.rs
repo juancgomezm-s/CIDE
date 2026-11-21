@@ -1195,6 +1195,85 @@ fn abl_run_history_and_last_edit_work_with_tui_keys_and_mouse() {
 }
 
 #[test]
+fn code_method_links_follow_and_return_through_tui_input_for_each_language() {
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+    for (name, source) in [
+        (
+            "metodos.rs",
+            "fn principal() { let f = destino; } fn destino() {}",
+        ),
+        (
+            "metodos.cs",
+            "class Demo { void principal() { destino(); } void destino() {} }",
+        ),
+        (
+            "Metodos.java",
+            "class Demo { void principal() { destino(); } void destino() {} }",
+        ),
+        (
+            "metodos.php",
+            "<?php function principal() { destino(); } function destino() {}",
+        ),
+        (
+            "metodos.js",
+            "function principal() { usar(destino); } function destino() {}",
+        ),
+        (
+            "metodos.ts",
+            "function principal(): void { usar(destino); } function destino(): void {}",
+        ),
+    ] {
+        let mut app = TuiApp::new(LaunchOptions::default());
+        app.workbench.new_file(name, TextEncoding::Utf8);
+        app.workbench.insert_text(source).unwrap();
+        let origin = source.find("destino").unwrap();
+        let target = source.rfind("destino").unwrap();
+        app.workbench
+            .go_to_position(TextPosition {
+                line: 0,
+                column: origin,
+            })
+            .unwrap();
+        app.prepare_frame(140, 28);
+        key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+        finish(&mut app);
+        assert_eq!(
+            app.workbench.active_editor().unwrap().cursor,
+            target,
+            "{name}: {}",
+            app.status
+        );
+        key(&mut app, KeyCode::Left, KeyModifiers::CONTROL);
+        assert_eq!(
+            app.workbench.active_editor().unwrap().cursor,
+            origin,
+            "{name}"
+        );
+        let screen = render::render(&app.prepare_frame(140, 28));
+        let (column, row) = (0..screen.height())
+            .find_map(|row| {
+                let line = screen.row_text(row);
+                let offset = line.find(source)?;
+                Some(((line[..offset].chars().count() + origin) as u16, row))
+            })
+            .unwrap();
+        app.handle_event(Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::CONTROL,
+        }));
+        finish(&mut app);
+        assert_eq!(
+            app.workbench.active_editor().unwrap().cursor,
+            target,
+            "{name}: {}",
+            app.status
+        );
+    }
+}
+
+#[test]
 fn source_tui_static_reference_ambiguity_requires_choice_before_confined_open() {
     let base = std::env::temp_dir().join(format!("cide-source-tui-{}", std::process::id()));
     std::fs::create_dir(&base).unwrap();

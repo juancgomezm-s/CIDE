@@ -86,12 +86,16 @@ pub(super) struct Palette {
 }
 impl Palette {
     pub(super) fn current() -> Self {
+        Self::for_theme(super::appearance::Theme::Current)
+    }
+
+    pub(super) fn for_theme(theme: super::appearance::Theme) -> Self {
         Self {
-            surface: shell::SURFACE,
-            popup: shell::SIDEBAR,
-            selected: shell::SELECTED,
-            text: shell::TEXT,
-            muted: shell::MUTED,
+            surface: theme.control_color(shell::SURFACE),
+            popup: theme.control_color(shell::SIDEBAR),
+            selected: theme.control_color(shell::SELECTED),
+            text: theme.control_color(shell::TEXT),
+            muted: theme.control_color(shell::MUTED),
         }
     }
 }

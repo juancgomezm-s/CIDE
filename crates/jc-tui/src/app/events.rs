@@ -221,7 +221,7 @@ impl TuiApp {
         if self.focus.primary() == PrimaryFocus::Editor
             && key.code == KeyCode::Enter
             && key.modifiers == KeyModifiers::CONTROL
-            && self.follow_run_at_cursor()
+            && self.follow_code_link_at_cursor()
         {
             return;
         }

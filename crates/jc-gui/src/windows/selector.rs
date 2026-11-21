@@ -154,8 +154,13 @@ impl Selector {
             title: "Preferencias de apariencia",
             query: self.input.clone(),
             input_selection: self.input_selection,
-            message: "Tamaños de texto, minimapa y posición de Esquema".into(),
-            footer: "↑↓ elegir · Intro aplicar · Esc volver",
+            message: if total == 0 {
+                "Sin opciones coincidentes"
+            } else {
+                "Vista previa en toda la ventana"
+            }
+            .into(),
+            footer: "↑↓ o clic · Intro aplicar · Esc cancelar",
             rows,
             total,
             selected: self.selected,
@@ -343,6 +348,9 @@ impl Selector {
     }
     pub fn first(&mut self) {
         self.selected = 0;
+    }
+    pub(super) fn select(&mut self, row: usize) {
+        self.selected = row;
     }
     pub fn last(&mut self) {
         self.selected = usize::MAX;

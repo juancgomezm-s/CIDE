@@ -5,7 +5,6 @@ use jc_app::{PaneId, SyntaxKind, SyntaxProfile};
 use jc_text::TextPosition;
 use std::ptr::{null, null_mut};
 
-const BACKGROUND: u32 = super::shell::BACKGROUND;
 fn search_at(matches: &[jc_app::SearchMatch], source: std::ops::Range<usize>) -> bool {
     // S0 delivers source-ordered ranges. One binary lookup per visible cell;
     // diagnostic escape fragments retain their original scalar's byte start.
@@ -126,7 +125,10 @@ pub(super) struct Frame {
     status_bar: super::status_bar::Frame,
     zoom: Option<super::zoom::Popup>,
     panes: Vec<Pane>,
-    selector: Option<super::selector::SelectorPresentation>,
+    selector: Option<(
+        super::selector::SelectorPresentation,
+        super::selector_paint::Layout,
+    )>,
     search: Option<super::search_panel::SearchPresentation>,
     navigation: Option<super::navigation_panel::NavigationPresentation>,
     project: Option<super::project_panel::ProjectPresentation>,
@@ -922,13 +924,40 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         },
         omnicore: state.omnicore_presentation(),
         bottom: state.bottom_presentation(),
-        selector: state.selector_presentation(super::selector_paint::list_capacity(
-            state.width,
-            (state.height, state.chrome_layout().top()),
-            state.cell_width,
-            state.cell_height,
-        )),
+        selector: state.selector_layout().and_then(|layout| {
+            state
+                .selector_presentation(layout.capacity())
+                .map(|presentation| (presentation, layout))
+        }),
     }
+}
+
+thread_local! {
+    static UI_THEME: std::cell::Cell<Theme> = const { std::cell::Cell::new(Theme::Current) };
+}
+
+/// The UI thread can paint a modal or a different frame reentrantly. Restore
+/// the outer palette when a draw finishes, including clipped or failed draws.
+pub(super) struct UiColors(Theme);
+
+impl UiColors {
+    pub(super) fn enter(theme: Theme) -> Self {
+        Self(UI_THEME.with(|active| active.replace(theme)))
+    }
+}
+
+impl Drop for UiColors {
+    fn drop(&mut self) {
+        UI_THEME.with(|active| active.set(self.0));
+    }
+}
+
+pub(super) fn ui_color(color: u32) -> u32 {
+    UI_THEME.with(|active| active.get().control_color(color))
+}
+
+pub(super) fn ui_ink(color: u32) -> u32 {
+    UI_THEME.with(|active| active.get().control_ink(color))
 }
 
 pub(super) unsafe fn fill(dc: Hdc, rect: Rect, color: u32) -> Result<(), String> {
@@ -938,7 +967,7 @@ pub(super) unsafe fn fill(dc: Hdc, rect: Rect, color: u32) -> Result<(), String>
     if RectVisible(dc, &rect) == 0 {
         return Ok(());
     }
-    let brush = CreateSolidBrush(color);
+    let brush = CreateSolidBrush(ui_color(color));
     if brush.is_null() {
         return Err(super::os_error("CreateSolidBrush"));
     }
@@ -1001,8 +1030,8 @@ pub(super) unsafe fn text(
     if rect.right <= rect.left || rect.bottom <= rect.top {
         return Ok(());
     }
-    SetTextColor(dc, foreground);
-    SetBkColor(dc, background);
+    SetTextColor(dc, ui_ink(foreground));
+    SetBkColor(dc, ui_color(background));
     let length = value
         .len()
         .saturating_sub(usize::from(value.last() == Some(&0)));
@@ -1041,6 +1070,8 @@ pub(super) unsafe fn draw_reference_cells(dc: Hdc, frame: &Frame) -> Result<(), 
     draw_internal(dc, frame, true)
 }
 unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), String> {
+    // Code cells already contain colors resolved by the syntax palette.
+    let _code_colors = UiColors::enter(Theme::Current);
     // BeginPaint clips to the update/visible region. Hidden windows and empty
     // invalidations may legitimately have no drawable pixels (NULLREGION=1).
     let mut clip = Rect::default();
@@ -1062,9 +1093,12 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             right: frame.width,
             bottom: frame.height,
         },
-        BACKGROUND,
+        frame.theme.background(),
     )?;
-    super::tab_bar::draw(dc, &frame.tabs)?;
+    {
+        let _colors = UiColors::enter(frame.theme);
+        super::tab_bar::draw(dc, &frame.tabs)?;
+    }
     for pane in &frame.panes {
         if frame.theme != Theme::Current {
             fill(dc, pane.rect, frame.theme.background())?;
@@ -1185,6 +1219,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
         }
         pane.scroll.draw(dc)?;
     }
+    let _colors = UiColors::enter(frame.theme);
     SelectObject(dc, frame.ui_font);
     if let Some(explorer) = &frame.explorer {
         super::explorer_paint::draw(dc, explorer, frame.cell_height)?;
@@ -1199,15 +1234,8 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
         super::bottom_paint::draw(dc, bottom, frame.cell_height)?;
     }
     super::status_bar::draw(dc, &frame.status_bar, &frame.status)?;
-    if let Some(presentation) = &frame.selector {
-        super::selector_paint::draw(
-            dc,
-            presentation,
-            frame.width,
-            (frame.height, frame.chrome.layout.top()),
-            frame.cell_width,
-            frame.cell_height,
-        )?;
+    if let Some((presentation, layout)) = &frame.selector {
+        super::selector_paint::draw(dc, presentation, *layout)?;
     }
     if let Some(presentation) = &frame.search {
         SelectObject(dc, frame.font);
@@ -1285,15 +1313,8 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             },
         )?;
     }
-    if let Some(p) = &frame.selector {
-        super::selector_paint::draw(
-            dc,
-            p,
-            frame.width,
-            (frame.height, frame.chrome.layout.top()),
-            frame.cell_width,
-            frame.cell_height,
-        )?;
+    if let Some((presentation, layout)) = &frame.selector {
+        super::selector_paint::draw(dc, presentation, *layout)?;
     }
     if let Some(zoom) = &frame.zoom {
         SelectObject(dc, frame.ui_font);

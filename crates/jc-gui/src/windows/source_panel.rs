@@ -212,7 +212,8 @@ impl State {
         self.explorer_focused = false;
         self.source_gui.candidates = None;
         self.source_gui.rename = None;
-        self.source_gui.visible = !matches!(mode, SourceMode::LspDiagnostics | SourceMode::RunLink);
+        self.source_gui.visible =
+            !matches!(mode, SourceMode::LspDiagnostics | SourceMode::FollowLink);
         if mode == SourceMode::LspDiagnostics {
             self.show_bottom(CommandId::ViewProblems);
         }
@@ -367,15 +368,15 @@ impl State {
         Action::None
     }
 
-    pub(super) fn follow_run_at_cursor(&mut self) -> bool {
+    pub(super) fn follow_code_link_at_cursor(&mut self) -> bool {
         if self
             .workbench
             .active_editor()
-            .is_none_or(|editor| !self.workbench.abl_run_link_at(editor.tab_id, editor.cursor))
+            .is_none_or(|editor| !self.workbench.code_link_at(editor.tab_id, editor.cursor))
         {
             return false;
         }
-        self.request_source(SourceMode::RunLink);
+        self.request_source(SourceMode::FollowLink);
         true
     }
     fn start_rename(&mut self) {
@@ -610,12 +611,15 @@ impl State {
             && (self.source_visible()
                 || matches!(
                     self.source_gui.controller.mode(),
-                    Some(SourceMode::LspDiagnostics | SourceMode::RunLink)
+                    Some(SourceMode::LspDiagnostics | SourceMode::FollowLink)
                 ))
         {
             self.status = self.source_gui.controller.message().into();
-            if self.source_gui.controller.mode() == Some(SourceMode::RunLink) {
+            if self.source_gui.controller.mode() == Some(SourceMode::FollowLink) {
                 self.ensure_encoding_selector();
+                if self.source_gui.controller.items().len() > 1 {
+                    self.source_gui.visible = true;
+                }
             }
         }
         if consumed && self.source_gui.controller.take_project_rename_applied() {
@@ -788,6 +792,66 @@ mod tests {
             state.poll_tasks();
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
+        }
+    }
+    #[test]
+    fn method_links_follow_and_return_with_gui_keys_for_each_language() {
+        for (name, source) in [
+            (
+                "metodos.rs",
+                "fn principal() { let f = destino; } fn destino() {}",
+            ),
+            (
+                "metodos.cs",
+                "class Demo { void principal() { destino(); } void destino() {} }",
+            ),
+            (
+                "Metodos.java",
+                "class Demo { void principal() { destino(); } void destino() {} }",
+            ),
+            (
+                "metodos.php",
+                "<?php function principal() { destino(); } function destino() {}",
+            ),
+            (
+                "metodos.js",
+                "function principal() { usar(destino); } function destino() {}",
+            ),
+            (
+                "metodos.ts",
+                "function principal(): void { usar(destino); } function destino(): void {}",
+            ),
+        ] {
+            let mut state = editor(name, source, TextEncoding::Utf8);
+            state.width = 1400;
+            state.height = 800;
+            let origin = source.find("destino").unwrap();
+            let target = source.rfind("destino").unwrap();
+            state
+                .workbench
+                .set_linear_selection_bytes(origin, origin)
+                .unwrap();
+            state.key_override = Some(Modifiers::CTRL);
+            assert!(state.key(0x0d).0, "{name}");
+            finish(&mut state);
+            assert_eq!(
+                state.workbench.active_editor().unwrap().cursor,
+                target,
+                "{name}: {}",
+                state.status
+            );
+            state.key(0x25);
+            assert_eq!(
+                state.workbench.active_editor().unwrap().cursor,
+                origin,
+                "{name}"
+            );
+            state.key(0x27);
+            assert_eq!(
+                state.workbench.active_editor().unwrap().cursor,
+                target,
+                "{name}"
+            );
         }
     }
     #[test]

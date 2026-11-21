@@ -235,15 +235,16 @@ impl State {
             jc_app::session::write_recovery_path(root, &mut metadata).map_err(|e| e.to_string())?;
         }
         metadata.extend_from_slice(&self.git_workspace.preference_bytes());
+        let appearance = self.committed_appearance();
         metadata.extend_from_slice(&[
-            self.ui_text_size,
-            self.editor_text_size,
-            self.editor_zoom,
-            u8::from(self.minimap_visible),
+            appearance.ui,
+            appearance.editor,
+            appearance.zoom,
+            u8::from(appearance.minimap),
         ]);
-        metadata.extend_from_slice(&self.minimap_width.to_le_bytes());
-        metadata.push(u8::from(self.outline.left));
-        metadata.push(self.editor_theme as u8);
+        metadata.extend_from_slice(&appearance.minimap_width.to_le_bytes());
+        metadata.push(u8::from(appearance.outline_left));
+        metadata.push(appearance.theme as u8);
         metadata.push(u8::from(self.omnicore.automatic_completion));
         Ok(metadata)
     }
@@ -617,7 +618,7 @@ mod tests {
         let prefs = [1, 2, 250, 0, 244, 1, 1];
         state.git_workspace.restore_preferences(&prefs).unwrap();
         state.ui_text_size = 16;
-        state.editor_text_size = 20;
+        state.editor_text_size = 11;
         state.editor_zoom = 125;
         state.minimap_visible = false;
         state.editor_theme = super::super::appearance::Theme::Light;
@@ -645,7 +646,7 @@ mod tests {
                 restored.editor_text_size,
                 restored.editor_zoom
             ),
-            (16, 20, 125)
+            (16, 11, 125)
         );
         assert!(!restored.minimap_visible);
         assert_eq!(

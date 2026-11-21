@@ -21,7 +21,7 @@ const SNAPSHOT: usize = 2 * 1024 * 1024;
 pub enum SourceMode {
     Symbols,
     References,
-    RunLink,
+    FollowLink,
     Calls,
     Incoming,
     Dependencies,
@@ -42,7 +42,7 @@ impl SourceMode {
         match self {
             Self::Symbols => "Símbolos",
             Self::References => "Referencias",
-            Self::RunLink => "Seguir RUN",
+            Self::FollowLink => "Seguir vínculo de código",
             Self::Calls => "Llama a",
             Self::Incoming => "Llamado por",
             Self::Dependencies => "Dependencias",
@@ -226,7 +226,7 @@ impl SourceItem {
                     SourceAction::Navigate,
                     SourceMode::Symbols
                     | SourceMode::References
-                    | SourceMode::RunLink
+                    | SourceMode::FollowLink
                     | SourceMode::Calls
                     | SourceMode::Incoming
                     | SourceMode::Dependencies
@@ -239,7 +239,7 @@ impl SourceItem {
                 (
                     SourceAction::RelativeFile(path),
                     SourceMode::References
-                    | SourceMode::RunLink
+                    | SourceMode::FollowLink
                     | SourceMode::Calls
                     | SourceMode::Dependencies,
                 ) => path.len() <= 4096 && !path.is_empty() && !path.chars().any(char::is_control),
@@ -269,6 +269,7 @@ impl SourceItem {
                 | (
                     SourceAction::ProjectLocation { path, .. },
                     SourceMode::Symbols
+                    | SourceMode::FollowLink
                     | SourceMode::Definition
                     | SourceMode::LspReferences
                     | SourceMode::CatalogDefinition
@@ -521,7 +522,7 @@ fn publish_calls(
     root: Option<&Path>,
     source: &Path,
 ) -> Result<(), TaskFailure> {
-    let root = root.and_then(|path| path.canonicalize().ok());
+    let root = root.and_then(|path| navigation_root(path, source, resolution).ok());
     let ordered = matches!(resolution, FileResolution::OrderedProjectPath);
     let propath = root.as_deref().filter(|_| ordered).map(load_propath);
     let mut targets = std::collections::HashSet::new();
@@ -573,6 +574,7 @@ impl SourceJob {
                 ..
             } => fallback.timeout(default),
             Self::Lsp(_) => crate::lsp::TIMEOUT,
+            Self::Incoming(_) => default.max(std::time::Duration::from_secs(8)),
             Self::Catalog(_, CatalogQuery::Xref { .. }) => {
                 default.max(std::time::Duration::from_secs(45))
             }
@@ -625,6 +627,10 @@ impl SourceJob {
                 }
                 if let Some(fallback) = fallback {
                     fallback.run(snapshot, cancel, output)
+                } else if *mode == SourceMode::FollowLink {
+                    output.push(TaskItem::Message(
+                        "No se encontró una declaración local. Configura el servidor LSP del lenguaje para resolver destinos externos".into(),
+                    ))
                 } else {
                     output.push(TaskItem::Message(
                         "Coloca el cursor dentro de una rutina".into(),
@@ -766,10 +772,8 @@ impl SourceProviderDescriptor {
         match mode {
             SourceMode::Symbols => self.symbols,
             SourceMode::References => self.references,
-            SourceMode::RunLink if self.language == "abl" && self.routines.is_some() => {
-                self.references
-            }
-            SourceMode::RunLink => None,
+            SourceMode::FollowLink if self.routines.is_some() => self.symbols,
+            SourceMode::FollowLink => None,
             SourceMode::Calls => self.calls,
             SourceMode::Incoming => self.callers.or(self.dependencies.and(self.references)),
             SourceMode::Dependencies => self.dependencies,
@@ -1046,7 +1050,7 @@ impl Request {
         self.origin.current(app, root, self.mode)
             && (!(matches!(
                 self.mode,
-                SourceMode::Calls | SourceMode::Incoming | SourceMode::RunLink
+                SourceMode::Calls | SourceMode::Incoming | SourceMode::FollowLink
             ) && self
                 .provider
                 .is_some_and(|provider| provider.routines.is_some()))
@@ -1153,6 +1157,17 @@ impl SourceController {
     pub fn outline_dependencies() -> Self {
         Self {
             outline_key: Some(OUTLINE_DEPENDENCIES_JOB_KEY),
+            ..Self::default()
+        }
+    }
+    pub fn outline_relationships(mode: SourceMode) -> Self {
+        let key = match mode {
+            SourceMode::Calls => 0x4a43_5352_4353_0005,
+            SourceMode::Incoming => 0x4a43_5352_4353_0006,
+            _ => unreachable!("relationship outline only"),
+        };
+        Self {
+            outline_key: Some(JobKey(key)),
             ..Self::default()
         }
     }
@@ -1633,11 +1648,30 @@ impl SourceController {
             } else {
                 let provider = r.provider.expect("admitted source provider");
                 match r.mode {
-                    SourceMode::RunLink => SourceJob::Routine {
-                        provider: provider.routines.expect("ABL RUN provider"),
+                    SourceMode::FollowLink => SourceJob::Routine {
+                        provider: provider.routines.expect("code navigation provider"),
                         mode,
                         cursor: r.origin.cursor,
-                        fallback: None,
+                        fallback: r
+                            .origin
+                            .root
+                            .clone()
+                            .filter(|_| {
+                                app.active_document()
+                                    .is_some_and(|doc| !doc.session.is_new())
+                                    && crate::lsp::language_id(&r.origin.language, &r.origin.path)
+                                        .is_some()
+                            })
+                            .map(|root| {
+                                Box::new(SourceJob::Lsp(crate::lsp::Work {
+                                    client: self.lsp.clone(),
+                                    root,
+                                    path: r.origin.path.clone(),
+                                    profile: r.origin.language.clone(),
+                                    cursor: r.origin.cursor,
+                                    query: crate::lsp::Query::Definition,
+                                }))
+                            }),
                     },
                     SourceMode::Calls | SourceMode::Incoming => {
                         let fallback = if mode == SourceMode::Calls {
@@ -1816,6 +1850,7 @@ impl SourceController {
         let mut notice = None;
         for item in task.output.take_items() {
             if is_lsp
+                || request.mode == SourceMode::FollowLink
                 || catalog_symbols
                 || matches!(
                     request.mode,
@@ -1839,7 +1874,7 @@ impl SourceController {
             if let TaskItem::Message(message) = &item {
                 if matches!(
                     request.mode,
-                    SourceMode::Calls | SourceMode::Incoming | SourceMode::RunLink
+                    SourceMode::Calls | SourceMode::Incoming | SourceMode::FollowLink
                 ) {
                     notice = Some(display_ui_label(message, 128));
                     continue;
@@ -1980,9 +2015,11 @@ impl SourceController {
                 message.push_str(&format!(" · {notice}"));
             }
             message
+        } else if request.mode == SourceMode::FollowLink && notice.is_some() {
+            notice.unwrap_or_default()
         } else if matches!(
             request.mode,
-            SourceMode::Calls | SourceMode::Incoming | SourceMode::RunLink
+            SourceMode::Calls | SourceMode::Incoming | SourceMode::FollowLink
         ) && notice.is_some()
         {
             format!(
@@ -2024,16 +2061,16 @@ impl SourceController {
             app.replace_lsp_diagnostics(task);
         }
         if consumed
-            && self.mode == Some(SourceMode::RunLink)
+            && self.mode == Some(SourceMode::FollowLink)
             && self.state == SourceState::Ready
             && self.items.len() == 1
         {
             match self.activate(app, root, false) {
                 Ok(None) => {
-                    self.status(SourceState::Ready, "Destino de RUN abierto");
+                    self.status(SourceState::Ready, "Destino de código abierto");
                 }
                 Ok(Some(_)) => {
-                    self.status(SourceState::Failed, "El destino de RUN es ambiguo");
+                    self.status(SourceState::Failed, "El destino del vínculo es ambiguo");
                 }
                 Err(error) => {
                     self.status(SourceState::Failed, error);
@@ -2217,7 +2254,8 @@ impl SourceController {
                 version,
             } => {
                 let root = root.ok_or("Abre una carpeta de proyecto")?;
-                let canonical_root = root.canonicalize().map_err(|error| error.to_string())?;
+                let resolution = request.provider.expect("incoming provider").file_resolution;
+                let canonical_root = navigation_root(root, &request.origin.path, resolution)?;
                 let target = request
                     .origin
                     .path
@@ -2227,7 +2265,7 @@ impl SourceController {
                     &canonical_root,
                     path,
                     relative,
-                    request.provider.expect("incoming provider").file_resolution,
+                    resolution,
                     SourceMode::Incoming,
                 )?;
                 if !paths
@@ -2276,27 +2314,18 @@ impl SourceController {
                 Ok(None)
             }
             SourceAction::Unresolved(reason) => {
-                Err(format!("Referencia léxica sin resolver: {reason}"))
+                if matches!(request.mode, SourceMode::Dependencies | SourceMode::Calls) {
+                    jump_to_source(app, request, item.range.start, to_side)?;
+                    Ok(None)
+                } else {
+                    Err(format!("Referencia léxica sin resolver: {reason}"))
+                }
             }
             SourceAction::IncomingReference { .. } => {
                 Err("Referencia de llamada sin procesar".into())
             }
             SourceAction::Navigate | SourceAction::ScopedSymbol { .. } => {
-                let tab = app
-                    .document_by_id(request.origin.stamp.document)
-                    .unwrap()
-                    .tab_id;
-                let pane = if to_side {
-                    if !app.open_active_to_side() {
-                        return Err("No se pudo abrir el símbolo al lado".into());
-                    }
-                    app.panes().active()
-                } else {
-                    request.origin.pane
-                };
-                if !app.jump_to_pane_location(pane, tab, item.range.start) {
-                    return Err("Destino de código inválido".into());
-                }
+                jump_to_source(app, request, item.range.start, to_side)?;
                 Ok(None)
             }
             SourceAction::SemanticSymbol(_) => {
@@ -2327,8 +2356,20 @@ impl SourceController {
                 Ok(None)
             }
             SourceAction::RelativeFile(relative) => {
-                let root = reference_root(root, request)?;
+                let can_jump = matches!(request.mode, SourceMode::Dependencies | SourceMode::Calls);
+                let root = match reference_root(root, request) {
+                    Ok(root) => root,
+                    Err(_) if can_jump => {
+                        jump_to_source(app, request, item.range.start, to_side)?;
+                        return Ok(None);
+                    }
+                    Err(error) => return Err(error),
+                };
                 let paths = resolve_file(root, request, relative)?;
+                if paths.is_empty() && can_jump {
+                    jump_to_source(app, request, item.range.start, to_side)?;
+                    return Ok(None);
+                }
                 if paths.is_empty() {
                     return Err("No hay candidato existente dentro de la raíz del proyecto".into());
                 }
@@ -2342,7 +2383,7 @@ impl SourceController {
                     .and_then(|view| view.location());
                 app.open_project_file(root, paths[0].clone(), None, to_side, SNAPSHOT)
                     .map_err(|e| e.to_string())?;
-                if request.mode == SourceMode::RunLink && app.panes().active() != source_pane {
+                if request.mode == SourceMode::FollowLink && app.panes().active() != source_pane {
                     if let Some(origin) = origin {
                         app.record_link_origin(origin);
                     }
@@ -2385,6 +2426,29 @@ impl SourceController {
     }
 }
 
+fn jump_to_source(
+    app: &mut Workbench,
+    request: &Request,
+    offset: usize,
+    to_side: bool,
+) -> Result<(), String> {
+    let tab = app
+        .document_by_id(request.origin.stamp.document)
+        .unwrap()
+        .tab_id;
+    let pane = if to_side {
+        if !app.open_active_to_side() {
+            return Err("No se pudo abrir el código al lado".into());
+        }
+        app.panes().active()
+    } else {
+        request.origin.pane
+    };
+    app.jump_to_pane_location(pane, tab, offset)
+        .then_some(())
+        .ok_or_else(|| "Destino de código inválido".into())
+}
+
 fn navigation_root(
     workspace: &Path,
     source: &Path,
@@ -2420,7 +2484,7 @@ fn reference_root<'a>(root: Option<&'a Path>, request: &'a Request) -> Result<&'
                 provider.file_resolution,
                 FileResolution::DocumentRelative | FileResolution::RelativeModule
             )
-        }) || request.mode == SourceMode::RunLink
+        }) || request.mode == SourceMode::FollowLink
         {
             request
                 .origin
@@ -2440,11 +2504,7 @@ fn resolve_file(root: &Path, request: &Request, relative: &str) -> Result<Vec<Pa
         .provider
         .ok_or("No hay proveedor de referencias léxicas")?
         .file_resolution;
-    let root = if request.mode == SourceMode::RunLink {
-        navigation_root(root, &request.origin.path, resolution)?
-    } else {
-        root.canonicalize().map_err(|error| error.to_string())?
-    };
+    let root = navigation_root(root, &request.origin.path, resolution)?;
     resolve_from(
         &root,
         &request.origin.path,

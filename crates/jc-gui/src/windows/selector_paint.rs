@@ -16,7 +16,7 @@ const DIM: u32 = 0x008d8b87;
 const ACCENT: u32 = 0x00a6d9e6;
 
 #[derive(Clone, Copy)]
-struct Layout {
+pub(super) struct Layout {
     popup: Rect,
     cell_width: i64,
     cell_height: i64,
@@ -30,7 +30,12 @@ struct Layout {
     count: usize,
 }
 impl Layout {
-    fn new(width: i32, height: (i32, i32), cell_width: i32, cell_height: i32) -> Option<Self> {
+    pub(super) fn new(
+        width: i32,
+        height: (i32, i32),
+        cell_width: i32,
+        cell_height: i32,
+    ) -> Option<Self> {
         let (height, chrome_top) = height;
         if width <= 0 || height <= chrome_top {
             return None;
@@ -76,6 +81,38 @@ impl Layout {
         })
     }
 
+    pub(super) fn appearance(
+        width: i32,
+        (height, top): (i32, i32),
+        dpi: super::dpi::Dpi,
+    ) -> Option<Self> {
+        let margin = dpi.pixels(12).min(width / 8);
+        let bottom = height - dpi.pixels(28);
+        let row = dpi.pixels(20);
+        let panel_width = dpi.pixels(376).min(width - 2 * margin);
+        let top = top.max(bottom - 14 * row);
+        let mut layout = Self::new(panel_width, (bottom, top), dpi.pixels(7), row)?;
+        layout.popup.left += margin;
+        layout.popup.right += margin;
+        Some(layout)
+    }
+
+    pub(super) fn capacity(self) -> usize {
+        self.count
+    }
+
+    pub(super) fn contains(self, x: i32, y: i32) -> bool {
+        let rect = self.popup;
+        (rect.left..rect.right).contains(&x) && (rect.top..rect.bottom).contains(&y)
+    }
+
+    pub(super) fn hit_row(self, presentation: &SelectorPresentation, y: i32) -> Option<usize> {
+        let slot = ((i64::from(y) - i64::from(self.popup.top)) / self.cell_height) as usize;
+        let slot = slot.checked_sub(self.first)?;
+        let window = row_window(presentation, self.count);
+        presentation.rows[window].get(slot).map(|row| row.ordinal)
+    }
+
     fn row(self, ordinal: usize) -> Rect {
         let top = (i64::from(self.popup.top) + ordinal as i64 * self.cell_height)
             .min(i64::from(self.popup.bottom));
@@ -101,12 +138,8 @@ impl Layout {
 /// The owner passes this capacity into Selector::prepare before drawing. The
 /// same layout removes title/query/message/footer exactly once, including tiny
 /// clients; normal geometry exposes at most sixteen candidate rows.
-pub(super) fn list_capacity(
-    width: i32,
-    height: (i32, i32),
-    cell_width: i32,
-    cell_height: i32,
-) -> usize {
+#[cfg(test)]
+fn list_capacity(width: i32, height: (i32, i32), cell_width: i32, cell_height: i32) -> usize {
     Layout::new(width, height, cell_width, cell_height).map_or(0, |layout| layout.count)
 }
 
@@ -171,14 +204,8 @@ fn row_window(p: &SelectorPresentation, capacity: usize) -> std::ops::Range<usiz
 pub(super) unsafe fn draw(
     dc: Hdc,
     presentation: &SelectorPresentation,
-    width: i32,
-    height: (i32, i32),
-    cell_width: i32,
-    cell_height: i32,
+    layout: Layout,
 ) -> Result<(), String> {
-    let Some(layout) = Layout::new(width, height, cell_width, cell_height) else {
-        return Ok(());
-    };
     paint::fill(dc, layout.popup, EDGE)?;
     let inset_left = (layout.popup.left + 1).min(layout.popup.right);
     let inset_top = (layout.popup.top + 1).min(layout.popup.bottom);

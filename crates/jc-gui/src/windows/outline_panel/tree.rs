@@ -137,6 +137,13 @@ fn relation_icon(mark: RelationMark) -> (&'static str, u32) {
 pub(super) enum Item {
     Symbol(usize),
     Dependency(usize),
+    Outgoing(usize),
+    Incoming(usize),
+}
+
+pub(super) struct Relationships<'a> {
+    pub items: &'a [SourceItem],
+    pub notice: Option<&'a str>,
 }
 
 pub(super) struct Node {
@@ -255,7 +262,12 @@ impl Tree {
         }
     }
 
-    pub fn rebuild(&mut self, symbols: &[SourceItem], dependencies: &[SourceItem]) {
+    pub fn rebuild(
+        &mut self,
+        symbols: &[SourceItem],
+        dependencies: &[SourceItem],
+        relationships: [Option<Relationships<'_>>; 2],
+    ) {
         let expanded: HashSet<_> = (0..self.nodes.len())
             .filter(|&id| self.nodes[id].expanded)
             .map(|id| self.ancestry(id))
@@ -334,13 +346,46 @@ impl Tree {
                 matches!(item.action, SourceAction::Unresolved(_)),
             );
         }
+        let declaration_groups = tree.roots.len();
+        for (incoming, group) in [false, true].into_iter().zip(relationships) {
+            let Some(group) = group else { continue };
+            let kind = if incoming {
+                Kind::CallIncoming
+            } else {
+                Kind::CallOutgoing
+            };
+            let category = tree.folder(None, kind.label(), kind);
+            for (index, item) in group.items.iter().enumerate() {
+                let unresolved = matches!(item.action, SourceAction::Unresolved(_));
+                let row_kind = if unresolved {
+                    Kind::CallUnresolved
+                } else {
+                    kind
+                };
+                let name = item.label.strip_prefix("RUN ").unwrap_or(&item.label);
+                let (parent, name) = if let SourceAction::RelativeFile(_) = &item.action {
+                    tree.directories(category, name, kind)
+                } else {
+                    (category, name)
+                };
+                let item = if incoming {
+                    Item::Incoming(index)
+                } else {
+                    Item::Outgoing(index)
+                };
+                tree.append(Some(parent), name, row_kind, Some(item), unresolved);
+            }
+            if let Some(notice) = group.notice {
+                tree.append(Some(category), notice, Kind::Other, None, false);
+            }
+        }
         let keys: Vec<_> = tree
             .nodes
             .iter()
             .map(|node| alphabetic(&node.name))
             .collect();
         let order = |ids: &mut [usize]| ids.sort_by(|a, b| keys[*a].cmp(&keys[*b]));
-        order(&mut tree.roots);
+        order(&mut tree.roots[..declaration_groups]);
         for id in 0..tree.nodes.len() {
             order(&mut tree.nodes[id].children);
             let path = tree.ancestry(id);
@@ -394,6 +439,18 @@ impl Tree {
     pub fn set_expanded(&mut self, id: usize, expanded: bool) {
         self.nodes[id].expanded = expanded && !self.nodes[id].children.is_empty();
         self.flatten();
+    }
+
+    pub fn relationship_group(&self, id: usize) -> Option<usize> {
+        let node = &self.nodes[id];
+        if node.parent.is_some() || node.item.is_some() {
+            return None;
+        }
+        match node.kind {
+            Kind::CallOutgoing => Some(0),
+            Kind::CallIncoming => Some(1),
+            _ => None,
+        }
     }
 }
 

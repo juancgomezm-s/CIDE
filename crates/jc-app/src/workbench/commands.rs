@@ -315,6 +315,7 @@ impl Workbench {
             | SearchReplaceProject
             | ExplorerRefresh
             | ExplorerCancel
+            | HelpAbout
             | ProjectDataConnections => Ok(CommandOutcome::View(command)),
         }
     }

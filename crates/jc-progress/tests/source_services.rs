@@ -62,6 +62,39 @@ fn abl_routine_relationships_group_local_callers_and_follow_the_active_procedure
 }
 
 #[test]
+fn abl_callers_keep_matches_if_a_project_file_exceeds_the_read_budget() {
+    use std::fs;
+    let fixture = std::env::temp_dir().join(format!("cide-nested-calls-{}", std::process::id()));
+    fs::create_dir(&fixture).unwrap();
+    let root = fixture.join("erp");
+    fs::create_dir_all(root.join(".cide")).unwrap();
+    fs::write(root.join(".cide/propath"), ".\n").unwrap();
+    let target = root.join("destino.p");
+    fs::write(&target, "/* destino */").unwrap();
+    fs::write(root.join("origen.p"), "RUN destino.p.").unwrap();
+    let large = fs::File::create(root.join("grande.p")).unwrap();
+    large.set_len(3 * 1024 * 1024).unwrap();
+    drop(large);
+    let mut app = Workbench::default();
+    app.open_file(&target, Some(TextEncoding::Utf8)).unwrap();
+    let incoming = scan(&app, Some(&fixture), SourceMode::Incoming);
+    assert_eq!(
+        incoming.state(),
+        SourceState::Ready,
+        "{}",
+        incoming.message()
+    );
+    assert!(incoming.message().starts_with("Búsqueda parcial"));
+    assert_eq!(incoming.items().len(), 1);
+    incoming
+        .activate_at_index(&mut app, Some(&fixture), 0, false)
+        .unwrap();
+    assert_eq!(app.active_path().unwrap().file_name().unwrap(), "origen.p");
+    drop(app);
+    fs::remove_dir_all(fixture).unwrap();
+}
+
+#[test]
 fn abl_calls_and_includes_are_separate_and_propath_selects_first_destination() {
     use std::fs;
     let root = std::env::temp_dir().join(format!("cide-source-propath-{}", std::process::id()));

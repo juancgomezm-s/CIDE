@@ -221,7 +221,7 @@ impl TuiApp {
         );
         if mode == SourceMode::LspDiagnostics {
             self.show_bottom(jc_app::BottomPanel::Problems);
-        } else if !self.source_popup && mode != SourceMode::RunLink {
+        } else if !self.source_popup && mode != SourceMode::FollowLink {
             self.panels.show_sidebar(SidebarView::Symbols);
             let _ = self.focus.focus(PrimaryFocus::Sidebar, &self.panels);
         }
@@ -250,15 +250,15 @@ impl TuiApp {
         };
     }
 
-    pub(super) fn follow_run_at_cursor(&mut self) -> bool {
+    pub(super) fn follow_code_link_at_cursor(&mut self) -> bool {
         if self
             .workbench
             .active_editor()
-            .is_none_or(|editor| !self.workbench.abl_run_link_at(editor.tab_id, editor.cursor))
+            .is_none_or(|editor| !self.workbench.code_link_at(editor.tab_id, editor.cursor))
         {
             return false;
         }
-        self.request_source(SourceMode::RunLink);
+        self.request_source(SourceMode::FollowLink);
         true
     }
     fn start_symbol_rename(&mut self) {

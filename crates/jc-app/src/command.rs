@@ -177,6 +177,7 @@ pub enum CommandId {
     MenuTools,
     MenuView,
     MenuHelp,
+    HelpAbout,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1143,6 +1144,7 @@ pub fn default_registry() -> CommandRegistry {
         spec!(MenuTools, Menu, "Menú Herramientas", always),
         spec!(MenuView, Menu, "Menú Ver", always),
         spec!(MenuHelp, Menu, "Menú Ayuda", always),
+        spec!(HelpAbout, Menu, "Acerca de CIDE", always),
     ];
     CommandRegistry::new(specs).expect("built-in command ids are unique")
 }

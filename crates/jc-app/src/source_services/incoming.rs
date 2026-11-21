@@ -1,6 +1,7 @@
 //! Bounded, cancelable reverse lookup of static file relationships on disk.
 use super::*;
 use std::collections::{HashSet, VecDeque};
+use std::time::{Duration, Instant};
 
 pub(crate) struct IncomingScan {
     pub root: PathBuf,
@@ -8,9 +9,9 @@ pub(crate) struct IncomingScan {
     pub provider: SourceProviderDescriptor,
 }
 
-const FILES: usize = 512;
-const DIRECTORIES: usize = 128;
-const TOTAL_BYTES: usize = 16 * 1024 * 1024;
+const FILES: usize = 4096;
+const DIRECTORIES: usize = 2048;
+const TOTAL_BYTES: usize = 128 * 1024 * 1024;
 
 impl IncomingScan {
     pub(crate) fn run(
@@ -19,7 +20,9 @@ impl IncomingScan {
         cancel: &Cancellation,
         output: &mut TaskOutput,
     ) -> Result<(), TaskFailure> {
-        let root = self.root.canonicalize().map_err(|_| TaskFailure::Failed)?;
+        let resolution = self.provider.file_resolution;
+        let root = navigation_root(&self.root, &self.target, resolution)
+            .map_err(|_| TaskFailure::Failed)?;
         let target = self
             .target
             .canonicalize()
@@ -49,24 +52,34 @@ impl IncomingScan {
             Vec::new()
         };
         let mut dirs = VecDeque::from([root.clone()]);
-        let mut directories = 1;
+        let mut enrolled = HashSet::from([root.clone()]);
+        if let Some(parent) = target.parent().filter(|parent| *parent != root) {
+            dirs.push_front(parent.to_owned());
+            enrolled.insert(parent.to_owned());
+        }
         let mut files = 0;
         let mut remaining = TOTAL_BYTES;
-        while let Some(directory) = dirs.pop_front() {
-            let mut listing =
-                jc_files::list_directory_in_root(&root, &directory, 2048, 512 * 1024, || {
-                    cancel.is_cancelled()
-                })
-                .map_err(|_| {
-                    if cancel.is_cancelled() {
-                        TaskFailure::Cancelled
-                    } else {
-                        TaskFailure::Failed
-                    }
-                })?;
-            if listing.limited {
-                return Err(TaskFailure::LimitExceeded);
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let mut partial = false;
+        'scan: while let Some(directory) = dirs.pop_front() {
+            if Instant::now() >= deadline {
+                partial = true;
+                break;
             }
+            let mut listing =
+                match jc_files::list_directory_in_root(&root, &directory, 2048, 512 * 1024, || {
+                    cancel.is_cancelled()
+                }) {
+                    Ok(listing) => listing,
+                    Err(_) => {
+                        if cancel.is_cancelled() {
+                            return Err(TaskFailure::Cancelled);
+                        }
+                        partial = true;
+                        continue;
+                    }
+                };
+            partial |= listing.limited;
             listing
                 .entries
                 .sort_unstable_by(|left, right| left.name.cmp(&right.name));
@@ -74,19 +87,23 @@ impl IncomingScan {
                 if cancel.is_cancelled() {
                     return Err(TaskFailure::Cancelled);
                 }
+                if Instant::now() >= deadline {
+                    partial = true;
+                    break 'scan;
+                }
                 let path = directory.join(entry.name);
                 if entry.is_dir {
                     if matches!(
                         path.file_name().and_then(|name| name.to_str()),
-                        Some("node_modules" | "target" | ".cide")
+                        Some("node_modules" | "target" | ".cide" | ".git")
                     ) {
                         continue;
                     }
-                    directories += 1;
-                    if directories > DIRECTORIES {
-                        return Err(TaskFailure::LimitExceeded);
+                    if enrolled.len() >= DIRECTORIES {
+                        partial = true;
+                    } else if enrolled.insert(path.clone()) {
+                        dirs.push_back(path);
                     }
-                    dirs.push_back(path);
                     continue;
                 }
                 let language = jc_languages::detect(&path.to_string_lossy()).id;
@@ -101,17 +118,28 @@ impl IncomingScan {
                 };
                 files += 1;
                 if files > FILES || remaining == 0 {
-                    return Err(TaskFailure::LimitExceeded);
+                    partial = true;
+                    break 'scan;
                 }
-                let (path, bytes) = jc_files::read_in_root(&root, &path, SNAPSHOT.min(remaining))
-                    .map_err(|_| TaskFailure::Failed)?;
+                let Ok((path, bytes)) =
+                    jc_files::read_in_root(&root, &path, SNAPSHOT.min(remaining))
+                else {
+                    partial = true;
+                    continue;
+                };
                 remaining -= bytes.len();
                 let encoding = jc_text::probe_encoding(&bytes, None)
                     .encoding
                     .unwrap_or(stamp.encoding);
                 let snapshot = TaskSnapshot::scan_source(TaskStamp { encoding, ..stamp }, bytes);
-                let mut found = TaskOutput::for_source_scan(&snapshot);
-                provider(&snapshot, cancel, &mut found)?;
+                let mut found = TaskOutput::for_caller_scan(&snapshot);
+                if let Err(failure) = provider(&snapshot, cancel, &mut found) {
+                    if failure == TaskFailure::Cancelled {
+                        return Err(failure);
+                    }
+                    partial = true;
+                    continue;
+                }
                 let mut version = None;
                 let mut callers = HashSet::new();
                 for item in found.take_items() {
@@ -127,6 +155,17 @@ impl IncomingScan {
                     };
                     let caller = routine.as_ref().map(|routine| routine.declaration);
                     if callers.contains(&caller) {
+                        continue;
+                    }
+                    if matches!(resolution, FileResolution::OrderedProjectPath)
+                        && !Path::new(&relative)
+                            .file_name()
+                            .zip(target.file_name())
+                            .is_some_and(|(name, target)| {
+                                name.to_string_lossy()
+                                    .eq_ignore_ascii_case(&target.to_string_lossy())
+                            })
+                    {
                         continue;
                     }
                     let paths = match self.provider.file_resolution {
@@ -145,6 +184,10 @@ impl IncomingScan {
                     };
                     if paths.len() != 1 || paths[0].canonicalize().ok().as_ref() != Some(&target) {
                         continue;
+                    }
+                    if output.remaining_items() <= 1 {
+                        partial = true;
+                        break 'scan;
                     }
                     callers.insert(caller);
                     let offset = item.range.start;
@@ -174,7 +217,14 @@ impl IncomingScan {
                 }
             }
         }
-        Ok(())
+        output.push(TaskItem::Message(
+            if partial {
+                "Búsqueda parcial del proyecto"
+            } else {
+                "Referencias en el proyecto"
+            }
+            .into(),
+        ))
     }
 }
 

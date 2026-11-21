@@ -43,6 +43,7 @@ pub enum UiOverlay {
     #[cfg(windows)]
     SqlRecords,
     None,
+    About,
     Prompt {
         kind: PromptKind,
         input: String,

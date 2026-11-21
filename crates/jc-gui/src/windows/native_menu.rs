@@ -343,7 +343,7 @@ pub(super) unsafe fn refresh(hwnd: Hwnd, state: &State) -> Result<(), String> {
     let theme = owner(hwnd)
         .and_then(|model| model.menu_theme.borrow().clone())
         .ok_or("No está disponible el tema del menú propio")?;
-    theme.apply_palette(super::menu_theme::Palette::current())?;
+    theme.apply_palette(super::menu_theme::Palette::for_theme(state.editor_theme))?;
     let bar = GetMenu(hwnd);
     if bar.is_null() || IsMenu(bar) == 0 {
         return Err("El menú nativo propio no está disponible".into());

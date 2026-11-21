@@ -184,6 +184,23 @@ impl TaskOutput {
             None,
         )
     }
+
+    pub(crate) fn for_caller_scan(snapshot: &TaskSnapshot) -> Self {
+        Self::new(
+            JobLimits {
+                result_items: 2048,
+                result_bytes: 1024 * 1024,
+                ..JobLimits::default()
+            },
+            snapshot.range.clone(),
+            snapshot.stamp,
+            0,
+            None,
+        )
+    }
+    pub(crate) fn remaining_items(&self) -> usize {
+        self.max_items.saturating_sub(self.items.len())
+    }
     fn new(
         limits: JobLimits,
         range: Range<usize>,

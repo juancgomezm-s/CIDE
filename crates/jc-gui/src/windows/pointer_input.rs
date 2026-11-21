@@ -102,7 +102,7 @@ impl State {
         });
         self.linear_drag.is_some()
     }
-    pub(super) fn follow_run_click(&mut self, x: i32, y: i32) -> bool {
+    pub(super) fn follow_code_link_click(&mut self, x: i32, y: i32) -> bool {
         let Ok(Some((pane, byte))) = paint::linear_hit(self, x, y, None) else {
             return false;
         };
@@ -114,9 +114,9 @@ impl State {
         else {
             return false;
         };
-        self.workbench.abl_run_link_at(location.tab, byte)
+        self.workbench.code_link_at(location.tab, byte)
             && self.begin_linear_drag(x, y, false)
-            && self.follow_run_at_cursor()
+            && self.follow_code_link_at_cursor()
     }
     pub(super) fn validate_linear_drag(&mut self) -> bool {
         if self.linear_drag.as_ref().is_some_and(|drag| {

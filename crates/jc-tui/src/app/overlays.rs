@@ -23,6 +23,11 @@ impl TuiApp {
         }
         let page_rows = self.overlay_page_rows();
         match self.overlay.clone() {
+            UiOverlay::About => {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Enter) {
+                    self.close_overlay();
+                }
+            }
             UiOverlay::DataConnections => self.handle_data_connections_key(key),
             UiOverlay::BrowseRecords => self.handle_browse_records_key(key),
             #[cfg(windows)]

@@ -15,6 +15,25 @@ pub fn draw(app: &TuiApp, screen: &mut Screen) {
             draw_project_preview(app, screen, *selected)
         }
         UiOverlay::None => {}
+        UiOverlay::About => {
+            let width = screen.width().saturating_sub(4).min(76);
+            let height = screen.height().saturating_sub(2).min(14);
+            let x = screen.width().saturating_sub(width) / 2;
+            let y = screen.height().saturating_sub(height) / 2;
+            panel(screen, x, y, width, height, "Acerca de CIDE");
+            for (index, line) in jc_app::about::text()
+                .lines()
+                .take(height.saturating_sub(3) as usize)
+                .enumerate()
+            {
+                screen.text_styled(
+                    x + 2,
+                    y + 1 + index as u16,
+                    &super::clip(line, width.saturating_sub(4)),
+                    CellStyle::Panel,
+                );
+            }
+        }
         UiOverlay::Prompt { kind, input } => draw_prompt(app, screen, *kind, input),
         UiOverlay::Find { input } => draw_find(app, screen, input),
         UiOverlay::Replace {

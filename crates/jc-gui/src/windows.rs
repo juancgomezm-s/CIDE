@@ -296,6 +296,7 @@ const COMMANDS: &[(usize, CommandId, &str)] = &[
     (161, CommandId::NavigateBack, "Navegar &atrás"),
     (162, CommandId::NavigateForward, "Navegar a&delante"),
     (166, CommandId::NavigateLastEdit, "&Última línea modificada"),
+    (167, CommandId::HelpAbout, "Acerca de CIDE"),
     (163, CommandId::SearchHistoryPrevious, "Consulta &anterior"),
     (164, CommandId::SearchHistoryNext, "Consulta &siguiente"),
     (138, CommandId::SearchToggleCase, "Distinguir &mayúsculas"),
@@ -471,6 +472,7 @@ pub(super) fn command_id(command: CommandId) -> usize {
 
 enum Action {
     None,
+    About,
     CapturePointer,
     NativeMenu(native_menu::NativeMenuGroup),
     Appearance(appearance::Choice),
@@ -544,6 +546,7 @@ struct State {
     smoke_wheel_lines: Option<u32>,
     smoke_menu_choices: std::collections::VecDeque<Option<usize>>,
     selector: Option<Selector>,
+    saved_appearance: Option<appearance::Settings>,
     selector_generation: u64,
     selector_explorer_focus: bool,
     selector_search_panel: Option<search_panel::SearchPanel>,
@@ -700,6 +703,7 @@ impl State {
             smoke_wheel_lines: None,
             smoke_menu_choices: Default::default(),
             selector: None,
+            saved_appearance: None,
             selector_generation: 0,
             selector_explorer_focus: false,
             selector_search_panel: None,
@@ -979,6 +983,9 @@ impl State {
         context
     }
     fn execute(&mut self, command: CommandId) -> Action {
+        if command == CommandId::HelpAbout {
+            return Action::About;
+        }
         self.cancel_pointer();
         if command == CommandId::ProjectDataConnections && self.project_root.is_none() {
             self.status = "Abre una carpeta de proyecto para configurar conexiones de datos".into();
@@ -1523,6 +1530,13 @@ impl State {
             0x70..=0x87 => Some(Key::Function((code - 0x70 + 1) as u8)),
             _ => None,
         };
+        if code == 0x27
+            && modifiers == Modifiers::CTRL
+            && !self.workbench.panes().can_forward()
+            && self.omnicore_completion_key(code, modifiers)
+        {
+            return (true, Action::None);
+        }
         if let Some(key) = key {
             let global = self.keymap.resolve(
                 KeyScope::Global,
@@ -1546,6 +1560,7 @@ impl State {
                 | CommandId::SearchGoToPosition
                 | CommandId::NavigateBack
                 | CommandId::NavigateForward
+                | CommandId::NavigateLastEdit
                 | CommandId::ViewMarkdownPreview
                 | CommandId::PaletteOpen),
             ) = global
@@ -1622,7 +1637,7 @@ impl State {
             self.explorer_key(code, modifiers);
             return (true, Action::None);
         }
-        if code == 0x0d && modifiers == Modifiers::CTRL && self.follow_run_at_cursor() {
+        if code == 0x0d && modifiers == Modifiers::CTRL && self.follow_code_link_at_cursor() {
             return (true, Action::None);
         }
         let history_forward =
@@ -2112,10 +2127,12 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 if state.workbench.large_open_pending() {
                     state.wakeup.signal();
                 }
-                shell::dark_caption(hwnd);
+                shell::set_caption_theme(hwnd, state.editor_theme);
                 state.icon = GetClassLongPtrW(hwnd, -14) as Handle;
                 if let Some(theme) = owner.menu_theme.borrow().clone() {
-                    if let Err(error) = theme.apply_palette(menu_theme::Palette::current()) {
+                    if let Err(error) =
+                        theme.apply_palette(menu_theme::Palette::for_theme(state.editor_theme))
+                    {
                         state.error(error);
                     }
                 }
@@ -2241,11 +2258,15 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
             }
             WM_MOUSEWHEEL => {
                 redraw = false;
-                if state.zoom.open {
-                    action = state.zoom_step(((wparam >> 16) as u16 as i16 as i32).signum());
+                let delta = ((wparam >> 16) as u16) as i16 as i32;
+                if state.appearance_open() {
+                    if wheel.is_some_and(|(point, _)| state.appearance_contains(point.x, point.y)) {
+                        redraw = state.appearance_step(delta);
+                    }
+                } else if state.zoom.open {
+                    action = state.zoom_step(delta.signum());
                 } else if let Some((point, lines)) = wheel {
                     let lines = state.smoke_wheel_lines.unwrap_or(lines);
-                    let delta = ((wparam >> 16) as u16) as i16 as i32;
                     redraw = state.omnicore_wheel(point.x, point.y, delta)
                         || state.omnicore_diff_wheel(point.x, point.y, delta)
                         || state.pointer_wheel(point.x, point.y, delta, lines, wparam & 0xffff);
@@ -2263,7 +2284,8 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 }
                 state.cancel_pointer();
                 let chrome_action = chrome::action_at(state.chrome_layout(), x, y);
-                let zoom_action = if chrome_action.is_none() {
+                let preferences = chrome_action.is_none() && state.appearance_open();
+                let zoom_action = if chrome_action.is_none() && !preferences {
                     state.zoom_down(x, y)
                 } else {
                     state.zoom.open = false;
@@ -2271,6 +2293,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 };
                 let tab_action = if message == WM_LBUTTONDOWN
                     && chrome_action.is_none()
+                    && !preferences
                     && zoom_action.is_none()
                     && (state.git_panel.is_none() || state.git_code.active)
                 {
@@ -2285,6 +2308,10 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                         chrome::Action::Exit => Action::Exit,
                         chrome::Action::Menu(group) => Action::NativeMenu(group),
                     };
+                } else if preferences {
+                    if message == WM_LBUTTONDOWN {
+                        state.appearance_click(x, y);
+                    }
                 } else if let Some(zoom_action) = zoom_action {
                     action = zoom_action;
                 } else if let Some(tab_action) = tab_action {
@@ -2323,9 +2350,11 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                 {
                     let modifiers = state.modifiers();
                     if message == WM_LBUTTONDBLCLK {
-                        if modifiers == Modifiers::NONE && state.follow_run_click(x, y) {
+                        if modifiers == Modifiers::NONE && state.follow_code_link_click(x, y) {
                             state.cancel_pointer();
                         }
+                    } else if modifiers == Modifiers::CTRL && state.follow_code_link_click(x, y) {
+                        state.cancel_pointer();
                     } else {
                         let started = if state.begin_editor_scroll(x, y) {
                             true
@@ -2438,6 +2467,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
         .then(|| owner.state.borrow().capture_omnicore_before_edit())
         .flatten();
     perform(hwnd, action);
+    redraw |= appearance::synchronize_preview(hwnd);
     if message == TASKS_MESSAGE {
         redraw |= save_flow::poll_paged_save(hwnd);
     }
@@ -2617,6 +2647,9 @@ unsafe fn perform(hwnd: Hwnd, action: Action) {
             }
         }
         Action::None => {}
+        Action::About => {
+            let _ = message_dialog::information(hwnd, &jc_app::about::text());
+        }
         Action::ExportGitPatch(comparison) => git_patch::choose_destination(hwnd, comparison),
         Action::OpenWeb(url) => {
             if let Err(error) = jc_platform::web_link::open(&url) {

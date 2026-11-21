@@ -2,7 +2,7 @@
 //! path accepts their results. Painting only prepares bounded visible rows.
 use super::{
     selector::{Selector, SelectorKind, SelectorPresentation},
-    supported, Action, State,
+    selector_paint, supported, Action, State,
 };
 use jc_app::Modifiers;
 use std::path::PathBuf;
@@ -71,7 +71,18 @@ impl State {
             self.error("Se agotó la generación del selector");
             return;
         }
-        self.selector = Some(Selector::new(kind));
+        let mut selector = Selector::new(kind);
+        if kind == SelectorKind::Appearance {
+            let saved = self.committed_appearance();
+            self.saved_appearance = Some(saved);
+            if let Some(row) = super::appearance::APPEARANCE
+                .iter()
+                .position(|(choice, _)| *choice == super::appearance::Choice::Theme(saved.theme))
+            {
+                selector.select(row);
+            }
+        }
+        self.selector = Some(selector);
         self.selector_explorer_focus = explorer_focus;
         self.selector_search_panel = search;
         self.selector_editor_input = kind == SelectorKind::Palette && editor_input;
@@ -200,16 +211,8 @@ impl State {
         changed
     }
     pub(super) fn selector_presentation(&mut self, rows: usize) -> Option<SelectorPresentation> {
-        use super::appearance::Choice;
         let context = self.context();
-        let current = [
-            Choice::Theme(self.editor_theme),
-            Choice::Ui(self.ui_text_size),
-            Choice::Editor(self.editor_text_size),
-            Choice::Minimap(self.minimap_visible),
-            Choice::MinimapWidth(self.minimap_width),
-            Choice::OutlineLeft(self.outline.left),
-        ];
+        let current = self.committed_appearance().checked();
         let selector = self.selector.as_mut()?;
         Some(match selector.kind() {
             SelectorKind::Palette => {
@@ -221,6 +224,52 @@ impl State {
             SelectorKind::Appearance => selector.prepare_appearance(&current, rows),
         })
     }
+
+    pub(super) fn appearance_open(&self) -> bool {
+        self.selector
+            .as_ref()
+            .is_some_and(|selector| selector.kind() == SelectorKind::Appearance)
+    }
+
+    pub(super) fn selector_layout(&self) -> Option<selector_paint::Layout> {
+        let selector = self.selector.as_ref()?;
+        let height = (self.height, self.chrome_layout().top());
+        if selector.kind() == SelectorKind::Appearance {
+            selector_paint::Layout::appearance(self.width, height, self.dpi)
+        } else {
+            selector_paint::Layout::new(self.width, height, self.cell_width, self.cell_height)
+        }
+    }
+
+    pub(super) fn appearance_contains(&self, x: i32, y: i32) -> bool {
+        self.selector_layout()
+            .is_some_and(|layout| layout.contains(x, y))
+    }
+
+    pub(super) fn appearance_click(&mut self, x: i32, y: i32) {
+        let Some(layout) = self
+            .selector_layout()
+            .filter(|layout| layout.contains(x, y))
+        else {
+            self.selector_key(0x1b, Modifiers::NONE);
+            return;
+        };
+        if let Some(row) = self
+            .selector_presentation(layout.capacity())
+            .and_then(|presentation| layout.hit_row(&presentation, y))
+        {
+            self.selector.as_mut().unwrap().select(row);
+        }
+    }
+
+    pub(super) fn appearance_step(&mut self, wheel: i32) -> bool {
+        if wheel == 0 {
+            return false;
+        }
+        self.selector_key(if wheel > 0 { 0x26 } else { 0x28 }, Modifiers::NONE);
+        true
+    }
+
     pub(super) fn selector_key(&mut self, code: usize, modifiers: Modifiers) -> Action {
         use jc_app::{CommandId, FieldEdit};
         if code == 0x1b {

@@ -38,7 +38,7 @@ pub(super) unsafe fn text(dc: Hdc, rect: Rect, label: &str, color: u32) -> Resul
         return Ok(());
     }
     let mode = SetBkMode(dc, 1);
-    SetTextColor(dc, color);
+    SetTextColor(dc, paint::ui_ink(color));
     let label = wide(label);
     let drawn = ExtTextOutW(
         dc,
@@ -61,7 +61,7 @@ pub(super) unsafe fn rounded(dc: Hdc, rect: Rect, radius: i32, color: u32) -> Re
     if rect.right <= rect.left || rect.bottom <= rect.top {
         return Ok(());
     }
-    let brush = CreateSolidBrush(color);
+    let brush = CreateSolidBrush(paint::ui_color(color));
     if brush.is_null() {
         return Err(super::super::os_error("Preparar el fondo de OmniCore"));
     }

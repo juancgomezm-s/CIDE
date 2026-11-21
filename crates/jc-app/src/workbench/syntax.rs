@@ -55,7 +55,7 @@ impl SyntaxRows {
         if row
             .run_links
             .iter()
-            .any(|(_, operand)| operand.contains(&byte))
+            .any(|(marker, operand)| !marker.is_empty() && operand.contains(&byte))
         {
             return SyntaxKind::Link;
         }
@@ -329,33 +329,82 @@ impl SyntaxCache {
                     });
                 }
             }
-            let run_links = if profile == SyntaxProfile::Abl
-                && !spans.is_empty()
+            let run_links = if !result.pending
+                && !result.limited
                 && source.len() <= CHUNK
                 && !doc.is_paged()
             {
                 doc.read_range(source.clone()).map_or_else(
                     |_| Vec::new(),
                     |bytes| {
-                        spans
-                            .iter()
-                            .filter_map(|token| {
-                                let region = token.source.start - source.start
-                                    ..token.source.end - source.start;
-                                if !token.kind.is_word()
-                                    || !bytes[region.clone()].eq_ignore_ascii_case(b"RUN")
-                                {
-                                    return None;
-                                }
-                                let operand =
-                                    jc_languages::syntax::abl_run_operand(&bytes, region.end)?;
-                                Some((
-                                    token.source.clone(),
-                                    (source.start + operand.start)..(source.start + operand.end),
-                                ))
-                            })
-                            .take(32)
-                            .collect()
+                        if profile == SyntaxProfile::Abl {
+                            return spans
+                                .iter()
+                                .filter_map(|token| {
+                                    let region = token.source.start - source.start
+                                        ..token.source.end - source.start;
+                                    if !token.kind.is_word()
+                                        || !bytes[region.clone()].eq_ignore_ascii_case(b"RUN")
+                                    {
+                                        return None;
+                                    }
+                                    let operand =
+                                        jc_languages::syntax::abl_run_operand(&bytes, region.end)?;
+                                    Some((
+                                        token.source.clone(),
+                                        source.start + operand.start..source.start + operand.end,
+                                    ))
+                                })
+                                .take(32)
+                                .collect();
+                        }
+                        if !matches!(
+                            profile,
+                            SyntaxProfile::CSharp
+                                | SyntaxProfile::Java
+                                | SyntaxProfile::Php
+                                | SyntaxProfile::Rust
+                                | SyntaxProfile::JavaScript
+                                | SyntaxProfile::TypeScript
+                        ) {
+                            return Vec::new();
+                        }
+                        let mut links = Vec::new();
+                        let mut at = 0;
+                        while at < bytes.len() && links.len() < 32 {
+                            if !(bytes[at].is_ascii_alphabetic()
+                                || bytes[at] == b'_'
+                                || bytes[at] >= 128)
+                            {
+                                at += 1;
+                                continue;
+                            }
+                            let start = at;
+                            at += 1;
+                            while at < bytes.len()
+                                && (bytes[at].is_ascii_alphanumeric()
+                                    || matches!(bytes[at], b'_' | b'$')
+                                    || bytes[at] >= 128)
+                            {
+                                at += 1;
+                            }
+                            let range = source.start + start..source.start + at;
+                            if spans.iter().any(|span| {
+                                span.source.start < range.end
+                                    && span.source.end > range.start
+                                    && !matches!(span.kind, SyntaxKind::Plain | SyntaxKind::Type)
+                            }) {
+                                continue;
+                            }
+                            let call = bytes[at..]
+                                .iter()
+                                .copied()
+                                .find(|b| !b.is_ascii_whitespace())
+                                == Some(b'(');
+                            let marker = range.start..if call { range.end } else { range.start };
+                            links.push((marker, range));
+                        }
+                        links
                     },
                 )
             } else {
@@ -375,10 +424,7 @@ impl SyntaxCache {
 }
 
 impl Workbench {
-    pub fn abl_run_link_at(&self, tab: TabId, byte: usize) -> bool {
-        if self.syntax_profile_for_tab(tab) != SyntaxProfile::Abl {
-            return false;
-        }
+    pub fn code_link_at(&self, tab: TabId, byte: usize) -> bool {
         self.line_ordinal_for_byte(tab, byte).is_some_and(|line| {
             self.syntax_rows(tab, line, 1).rows.iter().any(|row| {
                 row.run_links

@@ -207,6 +207,7 @@ enum Target {
     PickSession(u64),
     NewChat,
     Session,
+    ChatGptAccount,
     ChooseExecutable,
     ChooseModel,
     Retry,
@@ -979,6 +980,15 @@ impl State {
                 panel.invalidate();
             }
             Target::Session => self.open_omnicore_session(),
+            Target::ChatGptAccount => {
+                let panel = &mut self.omnicore;
+                if let (Some(executable), Some(root)) = (&panel.executable, &panel.root) {
+                    if let Err(error) = omnicore_runtime::open_chatgpt_account(executable, root) {
+                        panel.chat_notice = Some(error);
+                        panel.invalidate();
+                    }
+                }
+            }
             Target::ChooseExecutable => return Some(Action::ChooseOmniCore),
             Target::ChooseModel => {
                 if matches!(&self.omnicore.model_catalog, Some(Ok(_))) {
@@ -1328,6 +1338,12 @@ impl State {
             (conversation, Target::Conversation),
             (sessions, Target::Sessions),
         ];
+        let account_action = !panel.show_sessions
+            && panel.can_compose()
+            && panel.chat_notice.is_none()
+            && panel.sessions.active.chat.turns.back().is_some_and(|turn| {
+                matches!(&turn.answer, Some(Err(error)) if error == omnicore_runtime::CHATGPT_CATALOG_ERROR)
+            });
         let description = panel
             .chat_notice
             .as_deref()
@@ -1377,13 +1393,24 @@ impl State {
                     shell::SIDEBAR
                 },
             ),
-            (
-                inset(12, 60, 12, 80),
+        ];
+        let status_area = inset(12, 60, 12, 80);
+        if account_action {
+            labels.push((
+                status_area,
+                "Conectar cuenta ChatGPT…".into(),
+                shell::TEXT,
+                shell::RAISED,
+            ));
+            buttons.push((status_area, Target::ChatGptAccount));
+        } else if !description.is_empty() {
+            labels.push((
+                status_area,
                 safe_label(description),
                 shell::MUTED,
                 shell::SIDEBAR,
-            ),
-        ];
+            ));
+        }
         if !panel.show_sessions && panel.can_compose() {
             let model_button = inset(88, 4, 38, 28);
             let loading = panel.catalog_request.is_some();
@@ -1842,6 +1869,25 @@ mod tests {
             state.omnicore_click(area.left + 1, area.top + 1),
             Some(Action::None)
         ));
+    }
+
+    #[test]
+    fn omnicore_catalog_failure_offers_account_recovery_in_chat() {
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.width = 1000;
+        state.height = 650;
+        state.omnicore.visible = true;
+        state.omnicore.ready = true;
+        state.omnicore.ask_supported = true;
+        let chat = &mut state.omnicore.sessions.active.chat;
+        chat.sent("Explica este programa.".into(), None);
+        chat.finish(Err(omnicore_runtime::CHATGPT_CATALOG_ERROR.into()));
+        let frame = state.omnicore_presentation().unwrap();
+        assert!(frame
+            .hits
+            .buttons
+            .iter()
+            .any(|(_, target)| matches!(target, Target::ChatGptAccount)));
     }
 
     #[test]

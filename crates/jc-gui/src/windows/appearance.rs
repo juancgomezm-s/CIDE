@@ -1,5 +1,5 @@
 //! Compact defaults and independent editor zoom, in logical pixels and percent.
-use super::{dpi, ffi::*, owner};
+use super::{dpi, ffi::*, menu_theme::Palette, owner, shell, Owner, State};
 
 pub(super) const DEFAULT_UI: u8 = 12;
 pub(super) const DEFAULT_EDITOR: u8 = 15;
@@ -19,32 +19,93 @@ pub(super) enum Choice {
     OutlineLeft(bool),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) struct Settings {
+    pub theme: Theme,
+    pub ui: u8,
+    pub editor: u8,
+    pub zoom: u8,
+    pub minimap: bool,
+    pub minimap_width: u16,
+    pub outline_left: bool,
+}
+
+impl Settings {
+    fn read(state: &State) -> Self {
+        Self {
+            theme: state.editor_theme,
+            ui: state.ui_text_size,
+            editor: state.editor_text_size,
+            zoom: state.editor_zoom,
+            minimap: state.minimap_visible,
+            minimap_width: state.minimap_width,
+            outline_left: state.outline.left,
+        }
+    }
+
+    fn with(mut self, choice: Choice) -> Self {
+        match choice {
+            Choice::Theme(theme) => self.theme = theme,
+            Choice::Ui(ui) => self.ui = ui,
+            Choice::Editor(editor) => self.editor = editor,
+            Choice::Zoom(zoom) => self.zoom = zoom,
+            Choice::Minimap(minimap) => self.minimap = minimap,
+            Choice::MinimapWidth(width) => self.minimap_width = width,
+            Choice::OutlineLeft(left) => self.outline_left = left,
+        }
+        self
+    }
+
+    pub(super) fn checked(self) -> [Choice; 6] {
+        [
+            Choice::Theme(self.theme),
+            Choice::Ui(self.ui),
+            Choice::Editor(self.editor),
+            Choice::Minimap(self.minimap),
+            Choice::MinimapWidth(self.minimap_width),
+            Choice::OutlineLeft(self.outline_left),
+        ]
+    }
+}
+
+impl State {
+    pub(super) fn committed_appearance(&self) -> Settings {
+        self.saved_appearance
+            .unwrap_or_else(|| Settings::read(self))
+    }
+}
+
 pub(super) const APPEARANCE: &[(Choice, &str)] = &[
     (
         Choice::Theme(Theme::Current),
-        "Tema del editor · CIDE (predeterminado)",
+        "Tema de la ventana · CIDE (predeterminado)",
     ),
     (
         Choice::Theme(Theme::Neutral),
-        "Tema del editor · Oscuro neutro",
+        "Tema de la ventana · Oscuro neutro",
     ),
     (
         Choice::Theme(Theme::Warm),
-        "Tema del editor · Oscuro cálido",
+        "Tema de la ventana · Oscuro cálido",
     ),
     (
         Choice::Theme(Theme::Blue),
-        "Tema del editor · Azul profundo",
+        "Tema de la ventana · Azul profundo",
     ),
-    (Choice::Theme(Theme::Light), "Tema del editor · Claro suave"),
+    (
+        Choice::Theme(Theme::Light),
+        "Tema de la ventana · Claro suave",
+    ),
     (
         Choice::Theme(Theme::Contrast),
-        "Tema del editor · Alto contraste",
+        "Tema de la ventana · Alto contraste",
     ),
     (Choice::Ui(11), "Interfaz · 11 px"),
     (Choice::Ui(12), "Interfaz · 12 px (compacta)"),
     (Choice::Ui(14), "Interfaz · 14 px"),
     (Choice::Ui(16), "Interfaz · 16 px"),
+    (Choice::Editor(11), "Editor · 11 px"),
+    (Choice::Editor(12), "Editor · 12 px"),
     (Choice::Editor(13), "Editor · 13 px"),
     (Choice::Editor(15), "Editor · 15 px (compacto)"),
     (Choice::Editor(17), "Editor · 17 px"),
@@ -83,57 +144,106 @@ pub(super) fn valid(ui: u8, editor: u8, zoom: u8, visible: u8, width: u16) -> bo
         && visible <= 1
 }
 
-pub(super) unsafe fn apply(hwnd: Hwnd, choice: Choice) {
-    let Some(model) = owner(hwnd) else {
-        return;
-    };
-    let mut state = model.state.borrow_mut();
-    let (mut ui, mut editor, mut zoom) = (
-        state.ui_text_size,
-        state.editor_text_size,
-        state.editor_zoom,
-    );
-    match choice {
-        Choice::Theme(theme) => state.editor_theme = theme,
-        Choice::Ui(value) => ui = value,
-        Choice::Editor(value) => editor = value,
-        Choice::Zoom(value) => zoom = value,
-        Choice::Minimap(visible) => state.minimap_visible = visible,
-        Choice::MinimapWidth(width) => state.minimap_width = width,
-        Choice::OutlineLeft(left) => {
-            state.outline.left = left;
-            state.schedule_outline();
+unsafe fn set(
+    hwnd: Hwnd,
+    model: &Owner,
+    state: &mut State,
+    next: Settings,
+) -> Result<bool, String> {
+    let old = Settings::read(state);
+    if old == next {
+        return Ok(false);
+    }
+    let current_dpi = state.dpi;
+    let menu = model.menu_theme.borrow();
+    if let Some(theme) = menu.as_ref().filter(|_| old.ui != next.ui) {
+        theme.set_text_scale(current_dpi, next.ui)?;
+    }
+    if let Some(theme) = menu.as_ref().filter(|_| old.theme != next.theme) {
+        if let Err(error) = theme.apply_palette(Palette::for_theme(next.theme)) {
+            theme.set_text_scale(current_dpi, old.ui)?;
+            return Err(error);
         }
     }
-    model.frame.borrow_mut().take();
-    model.frame_dirty.set(true);
-    let old = (
-        state.ui_text_size,
-        state.editor_text_size,
-        state.editor_zoom,
-    );
-    let current_dpi = state.dpi;
-    if old != (ui, editor, zoom) {
-        state.ui_text_size = ui;
-        state.editor_text_size = editor;
-        state.editor_zoom = zoom;
+    if (old.ui, old.editor, old.zoom) != (next.ui, next.editor, next.zoom) {
+        (
+            state.ui_text_size,
+            state.editor_text_size,
+            state.editor_zoom,
+        ) = (next.ui, next.editor, next.zoom);
         if let Err(error) = state.refresh_dpi(hwnd, current_dpi) {
             (
                 state.ui_text_size,
                 state.editor_text_size,
                 state.editor_zoom,
-            ) = old;
-            state.error(error);
-            return;
-        }
-        if let Some(theme) = model.menu_theme.borrow().as_ref() {
-            if let Err(error) = theme.set_text_scale(current_dpi, ui) {
-                state.error(error);
-                return;
+            ) = (old.ui, old.editor, old.zoom);
+            if let Some(theme) = menu.as_ref().filter(|_| old.ui != next.ui) {
+                theme.set_text_scale(current_dpi, old.ui)?;
             }
+            if let Some(theme) = menu.as_ref().filter(|_| old.theme != next.theme) {
+                theme.apply_palette(Palette::for_theme(old.theme))?;
+            }
+            return Err(error);
         }
     } else {
         state.invalidate_appearance();
+    }
+    state.editor_theme = next.theme;
+    if old.theme != next.theme {
+        shell::set_caption_theme(hwnd, next.theme);
+    }
+    state.minimap_visible = next.minimap;
+    state.minimap_width = next.minimap_width;
+    state.outline.left = next.outline_left;
+    if old.outline_left != next.outline_left {
+        state.schedule_outline();
+    }
+    model.frame.borrow_mut().take();
+    model.frame_dirty.set(true);
+    Ok(true)
+}
+
+pub(super) unsafe fn synchronize_preview(hwnd: Hwnd) -> bool {
+    let Some(model) = owner(hwnd) else {
+        return false;
+    };
+    let mut state = model.state.borrow_mut();
+    let Some(saved) = state.saved_appearance else {
+        return false;
+    };
+    let next = state
+        .selector
+        .as_ref()
+        .filter(|_| state.appearance_open())
+        .and_then(|selector| selector.appearance_target())
+        .map_or(saved, |choice| saved.with(choice));
+    match set(hwnd, model, &mut state, next) {
+        Ok(changed) => {
+            if !state.appearance_open() {
+                state.saved_appearance = None;
+            }
+            changed
+        }
+        Err(error) => {
+            state.error(error);
+            true
+        }
+    }
+}
+
+pub(super) unsafe fn apply(hwnd: Hwnd, choice: Choice) {
+    let Some(model) = owner(hwnd) else {
+        return;
+    };
+    let mut state = model.state.borrow_mut();
+    let next = state.committed_appearance().with(choice);
+    if let Err(error) = set(hwnd, model, &mut state, next) {
+        state.error(error);
+        return;
+    }
+    state.saved_appearance = None;
+    if state.appearance_open() {
+        state.close_selector();
     }
     state.status = match choice {
         Choice::Theme(_) => APPEARANCE
@@ -247,6 +357,40 @@ impl Theme {
     pub(super) fn map_viewport(self) -> u32 {
         self.role(6, super::shell::RAISED)
     }
+
+    /// Resolve the existing UI palette at the native drawing boundary. Editor
+    /// syntax and source-diff cells already carry their own resolved colors.
+    pub(super) fn control_color(self, color: u32) -> u32 {
+        if self == Self::Current {
+            return color;
+        }
+        match color {
+            // Chrome, tabs and status use the main surface. Side panels and
+            // overlay headers use their own levels of elevation.
+            shell::BACKGROUND => self.background(),
+            shell::SIDEBAR | 0x003c312b => self.map_background(),
+            shell::RAISED | 0x004a3d35 | 0x003b3632 => self.map_viewport(),
+            shell::SELECTED | 0x00624e41 => self.selection(),
+            shell::TEXT | 0x00d5d7d8 => self.text(),
+            shell::MUTED | 0x008d8b87 | 0x00af9d92 => self.muted(),
+            shell::ACCENT | 0x00a6d9e6 | 0x00d0c088 => self.accent(),
+            shell::BORDER | 0x00594b42 | 0x00625b53 => blend(self.map_viewport(), self.muted(), 48),
+            0x00333130 => blend(self.map_background(), self.muted(), 12),
+            // Git and standalone comparisons retain a distinct red/green signal.
+            0x003f4830 | 0x00314423 | 0x00364635 => blend(self.background(), 0x0080bd83, 27),
+            0x003e354a | 0x00312b50 | 0x00313549 => blend(self.background(), 0x00848ddf, 27),
+            _ => color,
+        }
+    }
+
+    pub(super) fn control_ink(self, color: u32) -> u32 {
+        let resolved = self.control_color(color);
+        if self == Self::Light && resolved == color {
+            blend(color, self.text(), 66)
+        } else {
+            resolved
+        }
+    }
     pub(super) fn syntax(self, kind: jc_app::SyntaxKind) -> u32 {
         use jc_app::SyntaxKind::*;
         if self == Self::Current {
@@ -262,4 +406,12 @@ impl Theme {
             Boolean | Number | Code => self.role(11, 0),
         }
     }
+}
+
+fn blend(base: u32, accent: u32, percent: u32) -> u32 {
+    [0, 8, 16].into_iter().fold(0, |color, shift| {
+        let base_channel = (base >> shift) & 0xff;
+        let accent_channel = (accent >> shift) & 0xff;
+        color | (((base_channel * (100 - percent) + accent_channel * percent) / 100) << shift)
+    })
 }

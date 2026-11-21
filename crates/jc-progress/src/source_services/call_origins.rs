@@ -158,7 +158,7 @@ pub(super) fn relations(
     mode: SourceMode,
     output: &mut TaskOutput,
 ) -> Result<bool, TaskFailure> {
-    if mode == SourceMode::RunLink {
+    if mode == SourceMode::FollowLink {
         super::follow_run(snapshot, cancel, cursor, output)?;
         return Ok(true);
     }

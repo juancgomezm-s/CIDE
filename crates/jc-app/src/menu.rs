@@ -263,6 +263,8 @@ pub fn default_menu_model() -> MenuModel {
                 command(SourceUpdatePrototype),
                 command(SourceGenerateConstructors),
                 command(SourceGenerateOverrides),
+                SEP,
+                command(HelpAbout),
             ],
         ),
         menu(

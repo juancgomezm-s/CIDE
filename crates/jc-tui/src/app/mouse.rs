@@ -1215,19 +1215,19 @@ impl TuiApp {
         changed
     }
     fn begin_mouse_source(&mut self, source: SourceArea, event: MouseEvent) -> bool {
-        if event
-            .modifiers
-            .intersects(KeyModifiers::ALT | KeyModifiers::CONTROL)
-        {
+        if event.modifiers.intersects(KeyModifiers::ALT) {
             return false;
         }
         let Some(head) = source.byte_at(self, event.column, event.row, false) else {
             return false;
         };
         let previous = self.mouse.run_click.take();
-        let link = event.modifiers.is_empty()
+        let link = matches!(event.modifiers, KeyModifiers::NONE | KeyModifiers::CONTROL)
             && event.column >= source.text_x
-            && self.workbench.abl_run_link_at(source.tab, head);
+            && self.workbench.code_link_at(source.tab, head);
+        if event.modifiers.contains(KeyModifiers::CONTROL) && !link {
+            return false;
+        }
         let now = Instant::now();
         let click = (source.context.stamp, head, event.column, event.row);
         let double = link
@@ -1266,8 +1266,8 @@ impl TuiApp {
         };
         match self.workbench.set_linear_selection_bytes(anchor, head) {
             Ok(()) => {
-                if double {
-                    return self.follow_run_at_cursor();
+                if double || link && event.modifiers == KeyModifiers::CONTROL {
+                    return self.follow_code_link_at_cursor();
                 }
                 if link {
                     self.mouse.run_click = Some((click.0, click.1, click.2, click.3, now));
@@ -1280,7 +1280,7 @@ impl TuiApp {
                     });
                 }
                 self.status = if link {
-                    "Ctrl+Intro o doble clic abre el destino del RUN"
+                    "Ctrl+Intro o doble clic abre el destino del código"
                 } else {
                     "Mayús+clic extiende · Arrastrar selecciona · Rueda desplaza"
                 }

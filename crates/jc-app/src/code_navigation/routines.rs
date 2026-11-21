@@ -322,14 +322,15 @@ pub(crate) fn analyze<const LANGUAGE: u8>(
         closes: &closes,
     };
     let routines = file.routines(cancel)?;
-    let Some((selected, routine)) = routines
+    let selection = routines
         .iter()
         .enumerate()
         .filter(|(_, routine)| routine.extent.contains(&cursor))
-        .max_by_key(|(_, routine)| routine.extent.start)
-    else {
+        .max_by_key(|(_, routine)| routine.extent.start);
+    if selection.is_none() && mode != SourceMode::FollowLink {
         return Ok(false);
-    };
+    }
+    let selected = selection.map(|(id, _)| id);
     let mut names: HashMap<Scope, HashMap<String, Option<usize>>> = HashMap::new();
     let mut declarations = HashSet::new();
     let mut enclosing: Vec<usize> = Vec::new();
@@ -393,12 +394,15 @@ pub(crate) fn analyze<const LANGUAGE: u8>(
             next += 1;
         }
         let caller = callers.last().copied();
-        if mode == SourceMode::Calls && caller != Some(selected) {
+        if mode == SourceMode::Calls && caller != selected {
             continue;
         }
         let token = &tokens[at];
+        if mode == SourceMode::FollowLink && !token.range.contains(&cursor) {
+            continue;
+        }
         if token.kind != Kind::Word
-            || file.kind(at + 1) != Kind::Punct(b'(')
+            || mode != SourceMode::FollowLink && file.kind(at + 1) != Kind::Punct(b'(')
             || declarations.contains(&token.range.start)
             || control_word(&file, at)
             || at.checked_sub(1).is_some_and(|previous| {
@@ -435,8 +439,20 @@ pub(crate) fn analyze<const LANGUAGE: u8>(
                 .or_else(|| scope_name(Scope::Document))
         }
         .flatten();
+        if mode == SourceMode::FollowLink {
+            let Some(target) = target.map(|id| &routines[id]) else {
+                return Ok(false);
+            };
+            output.push(TaskItem::Source(SourceItem {
+                label: display_ui_label(&target.name, 110),
+                range: target.anchor.clone(),
+                action: SourceAction::Navigate,
+                value_type: None,
+            }))?;
+            return Ok(true);
+        }
         let (label, range, action) = if mode == SourceMode::Incoming {
-            if target != Some(selected) || !seen_callers.insert(caller) {
+            if target != selected || !seen_callers.insert(caller) {
                 continue;
             }
             let label = caller.map_or("Bloque principal", |id| routines[id].name.as_str());
@@ -475,6 +491,12 @@ pub(crate) fn analyze<const LANGUAGE: u8>(
             value_type: None,
         }))?;
     }
-    output.push(TaskItem::Message(display_ui_label(&routine.name, 56)))?;
+    if mode == SourceMode::FollowLink {
+        return Ok(false);
+    }
+    output.push(TaskItem::Message(display_ui_label(
+        &selection.unwrap().1.name,
+        56,
+    )))?;
     Ok(true)
 }

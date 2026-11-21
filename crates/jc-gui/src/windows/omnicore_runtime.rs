@@ -146,6 +146,18 @@ pub(super) fn open_session(executable: &Path, root: &Path) -> Result<(), String>
         .map_err(|error| format!("No se pudo abrir la sesión de OmniCore: {error}"))
 }
 
+pub(super) fn open_chatgpt_account(executable: &Path, root: &Path) -> Result<(), String> {
+    command(executable, root)
+        .args(["login", "chatgpt"])
+        .creation_flags(NEW_CONSOLE)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("No se pudo abrir el acceso a ChatGPT: {error}"))
+}
+
+pub(super) const CHATGPT_CATALOG_ERROR: &str =
+    "OmniCore recibió el mensaje, pero ChatGPT no pudo verificar el catálogo de tu cuenta. Conecta la cuenta o elige otro modelo y vuelve a enviar.";
+
 pub(super) struct Answer {
     pub text: String,
     pub complete: bool,
@@ -402,6 +414,12 @@ fn run_turn(
 }
 
 fn query_failure(output: &str, model: Option<&Model>, exit_code: Option<i32>) -> String {
+    if output.contains("cli.runtime.model.catalog_failed")
+        || output.contains("Could not fetch the ChatGPT catalog")
+        || output.contains("No se pudo consultar el catálogo ChatGPT")
+    {
+        return CHATGPT_CATALOG_ERROR.into();
+    }
     let failure = output.lines().find(|line| line.starts_with("Diagnóstico:"));
     if failure.is_some_and(|line| line.contains("ProviderUnavailable")) {
         return match model {

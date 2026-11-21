@@ -394,11 +394,11 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         SetBkMode(dc, 1);
         SetTextColor(
             dc,
-            if frame.focused {
+            paint::ui_ink(if frame.focused {
                 shell::TEXT
             } else {
                 shell::MUTED
-            },
+            }),
         );
         if !frame.icon.is_null()
             && frame.layout.width > px(180)
@@ -428,7 +428,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         {
             return Err("No se pudo dibujar el título de CIDE".into());
         }
-        let pen = CreatePen(0, px(1).max(1), shell::TEXT);
+        let pen = CreatePen(0, px(1).max(1), paint::ui_ink(shell::TEXT));
         if pen.is_null() {
             return Err("No se pudieron preparar los controles del marco".into());
         }
@@ -481,7 +481,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         SelectObject(dc, previous);
         DeleteObject(pen);
         controls?;
-        SetTextColor(dc, shell::TEXT);
+        SetTextColor(dc, paint::ui_ink(shell::TEXT));
         for menu in &frame.menus {
             if menu.rect.right <= menu.rect.left {
                 continue;

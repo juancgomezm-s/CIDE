@@ -27,7 +27,7 @@ unsafe fn aligned_label(
     if rect.right <= rect.left || rect.bottom <= rect.top {
         return Ok(());
     }
-    SetTextColor(dc, shell::TEXT);
+    SetTextColor(dc, paint::ui_ink(shell::TEXT));
     let previous = SetBkMode(dc, 1);
     let result = DrawTextW(
         dc,

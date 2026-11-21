@@ -272,6 +272,7 @@ impl Browser<'_> {
                 bottom: height - p(98),
             },
             self.dialog.font,
+            self.dialog.theme,
             p(154),
             &self.table.columns,
         );
@@ -960,9 +961,11 @@ unsafe extern "system" fn grid_procedure(
     wp: usize,
     lp: isize,
     id: usize,
-    _: usize,
+    theme: usize,
 ) -> isize {
     if message == WM_DRAWITEM {
+        let theme = crate::windows::appearance::Theme::from_id(theme as u8).unwrap_or_default();
+        let _colors = paint::UiColors::enter(theme);
         let item = &*(lp as *const DrawItem);
         if item.control_type == 100 {
             let mut title = [0u16; 256];
@@ -991,7 +994,7 @@ unsafe extern "system" fn grid_procedure(
                 bounds.right -= dpi::for_window(hwnd).pixels(4);
                 let previous = SelectObject(item.dc, SendMessageW(hwnd, 0x31, 0, 0) as Handle);
                 let mode = SetBkMode(item.dc, 1);
-                SetTextColor(item.dc, shell::TEXT);
+                SetTextColor(item.dc, paint::ui_ink(shell::TEXT));
                 DrawTextW(item.dc, title.as_ptr(), -1, &mut bounds, 0x8824);
                 SetBkMode(item.dc, mode);
                 SelectObject(item.dc, previous);
@@ -1009,6 +1012,7 @@ pub(super) unsafe fn create_grid(
     parent: Hwnd,
     bounds: Rect,
     font: Handle,
+    theme: crate::windows::appearance::Theme,
     column_width: i32,
     names: &[String],
 ) -> Option<Hwnd> {
@@ -1027,13 +1031,19 @@ pub(super) unsafe fn create_grid(
         GetModuleHandleW(std::ptr::null()),
         null_mut(),
     );
-    if grid.is_null() || SetWindowSubclass(grid, grid_procedure, 1, 0) == 0 {
+    if grid.is_null() || SetWindowSubclass(grid, grid_procedure, 1, theme as usize) == 0 {
         return None;
     }
     SendMessageW(grid, WM_SETFONT, font as usize, 0);
-    SendMessageW(grid, LVM_SETBKCOLOR, 0, shell::BACKGROUND as isize);
-    SendMessageW(grid, LVM_SETTEXTBKCOLOR, 0, shell::BACKGROUND as isize);
-    SendMessageW(grid, LVM_SETTEXTCOLOR, 0, shell::TEXT as isize);
+    let background = theme.control_color(shell::BACKGROUND) as isize;
+    SendMessageW(grid, LVM_SETBKCOLOR, 0, background);
+    SendMessageW(grid, LVM_SETTEXTBKCOLOR, 0, background);
+    SendMessageW(
+        grid,
+        LVM_SETTEXTCOLOR,
+        0,
+        theme.control_color(shell::TEXT) as isize,
+    );
     // Full-row selection keeps the value aligned with its record.
     SendMessageW(grid, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, 0x20);
     let heading = SendMessageW(grid, LVM_GETHEADER, 0, 0) as Hwnd;
@@ -1134,6 +1144,7 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
     if message == WM_INITDIALOG {
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, lp);
         let browser = &*(lp as *const Browser<'_>);
+        shell::set_caption_theme(hwnd, browser.dialog.theme);
         if !browser.arrange(hwnd) {
             browser.dialog.failed.set(true);
             EndDialog(hwnd, 0);
@@ -1148,6 +1159,7 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
         return 0;
     }
     let browser = &*(data as *const Browser<'_>);
+    let _colors = paint::UiColors::enter(browser.dialog.theme);
     match message {
         WM_COMMAND => match (wp as u16, (wp >> 16) as u16) {
             (CLOSE, 0) => {
@@ -1219,8 +1231,8 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
         }
         DM_SETDEFID => 1,
         WM_CTLCOLORDLG | WM_CTLCOLORSTATIC | WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX => {
-            SetTextColor(wp as Hdc, shell::TEXT);
-            SetBkColor(wp as Hdc, shell::RAISED);
+            SetTextColor(wp as Hdc, paint::ui_ink(shell::TEXT));
+            SetBkColor(wp as Hdc, paint::ui_color(shell::RAISED));
             browser.dialog.brush as isize
         }
         WM_DRAWITEM => {
@@ -1523,6 +1535,7 @@ mod tests {
                     ..Rect::default()
                 },
                 dialog.font,
+                dialog.theme,
                 154,
                 &page.columns,
             )

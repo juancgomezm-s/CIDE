@@ -50,6 +50,7 @@ struct Model {
 enum ReferenceKey {
     Local(String),
     File(PathBuf, Option<usize>),
+    Dynamic(String),
 }
 const MAX_SYMBOLS: usize = 64;
 const MAX_REFERENCES: usize = 64;
@@ -99,7 +100,14 @@ fn push_reference(
                 routine.map(|routine| routine.declaration),
             )),
             _ if analysis == Analysis::Callers => return,
-            _ => local_call(&item).map(|name| ReferenceKey::Local(name.to_ascii_lowercase())),
+            _ => local_call(&item)
+                .map(|name| ReferenceKey::Local(name.to_ascii_lowercase()))
+                .or_else(|| {
+                    item.label.strip_prefix("RUN VALUE(").and_then(|name| {
+                        name.strip_suffix(')')
+                            .map(|name| ReferenceKey::Dynamic(name.to_ascii_lowercase()))
+                    })
+                }),
         };
         if key.is_some_and(|key| !model.grouped_references.insert(key)) {
             return;
@@ -114,7 +122,12 @@ fn push_reference(
             };
         }
     }
-    if model.references.len() == MAX_REFERENCES {
+    let limit = if analysis == Analysis::Callers {
+        2048
+    } else {
+        MAX_REFERENCES
+    };
+    if model.references.len() == limit {
         model.limited = true;
     } else {
         model.references.push(item);
@@ -292,6 +305,7 @@ fn reference(snapshot: &TaskSnapshot, trigger: Range<usize>, include: bool) -> S
     }
     let raw = &bytes[first..end];
     let target = text(snapshot, first..end).unwrap_or_default();
+    let dynamic_value = !include && target.eq_ignore_ascii_case("value");
     let suffix_start = (at + usize::from(quoted.is_some())).min(bytes.len());
     let suffix = &bytes[suffix_start..(suffix_start + 512).min(bytes.len())];
     let suffix_end = suffix
@@ -312,7 +326,7 @@ fn reference(snapshot: &TaskSnapshot, trigger: Range<usize>, include: bool) -> S
         || raw.iter().any(|b| matches!(b, b'{' | b'}' | b'&' | b'~'))
         || quoted.is_some_and(|quote| bytes.get(at) != Some(&quote))
         || include && raw.iter().all(u8::is_ascii_digit)
-        || (!include && target.eq_ignore_ascii_case("value"));
+        || dynamic_value;
     let action = if unsafe_syntax {
         SourceAction::Unresolved("Referencia dinámica, con escapes o sin soporte léxico".into())
     } else if include
@@ -324,16 +338,37 @@ fn reference(snapshot: &TaskSnapshot, trigger: Range<usize>, include: bool) -> S
     } else {
         SourceAction::Unresolved(format!("{LOCAL_CALL}{target}"))
     };
+    let label_target = if dynamic_value {
+        let call = &bytes[at..bytes.len().min(at.saturating_add(128))];
+        let expression = call
+            .strip_prefix(b"(")
+            .and_then(|body| {
+                body.iter()
+                    .position(|&byte| byte == b')')
+                    .map(|end| &body[..end])
+            })
+            .and_then(|raw| std::str::from_utf8(raw).ok())
+            .map(str::trim)
+            .filter(|name| {
+                !name.is_empty()
+                    && name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            });
+        expression.map_or_else(|| target.clone(), |name| format!("VALUE({name})"))
+    } else {
+        target
+    };
     SourceItem {
         value_type: None,
         range: trigger,
         label: label(format!(
             "{} {}",
             if include { "Inclusión" } else { "RUN" },
-            if target.is_empty() {
+            if label_target.is_empty() {
                 "<dinámica>"
             } else {
-                &target
+                &label_target
             }
         )),
         action,

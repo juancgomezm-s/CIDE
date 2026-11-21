@@ -12,6 +12,7 @@ pub(super) const SURFACE: u32 = color(jc_app::ui_theme::CHROME);
 pub(super) const SIDEBAR: u32 = color(jc_app::ui_theme::PANEL);
 pub(super) const RAISED: u32 = color(jc_app::ui_theme::RAISED);
 pub(super) const SELECTED: u32 = color(jc_app::ui_theme::SELECTED);
+pub(super) const BORDER: u32 = color(jc_app::ui_theme::BORDER);
 pub(super) const ACCENT: u32 = 0x0050b4e6;
 pub(super) const TEXT: u32 = 0x00e0dedb;
 pub(super) const MUTED: u32 = 0x009e9a94;
@@ -57,7 +58,7 @@ pub(super) unsafe fn rounded_tab(dc: Hdc, rect: Rect, color: u32) -> Result<(), 
     let curve = (radius * 55 + 50) / 100;
     // One closed contour avoids the bottom-edge seam from overlapping a
     // rounded rectangle with a second rectangular fill.
-    let brush = CreateSolidBrush(color);
+    let brush = CreateSolidBrush(paint::ui_color(color));
     if brush.is_null() {
         return Err("No se pudo preparar la pestaña gráfica".into());
     }
@@ -230,12 +231,12 @@ extern "system" {
     fn DwmSetWindowAttribute(hwnd: Hwnd, attribute: u32, value: *const i32, size: u32) -> i32;
     fn DwmGetWindowAttribute(hwnd: Hwnd, attribute: u32, value: *mut u32, size: u32) -> i32;
 }
-pub(super) unsafe fn dark_caption(hwnd: Hwnd) {
-    let enabled = 1;
+pub(super) unsafe fn set_caption_theme(hwnd: Hwnd, theme: super::appearance::Theme) {
+    let enabled = i32::from(theme != super::appearance::Theme::Light);
     let _ = DwmSetWindowAttribute(hwnd, 20, &enabled, 4);
-    let caption = SURFACE as i32;
-    let text = TEXT as i32;
-    let border = SIDEBAR as i32;
+    let caption = theme.control_color(SURFACE) as i32;
+    let text = theme.control_color(TEXT) as i32;
+    let border = theme.control_color(SIDEBAR) as i32;
     // Official per-window attributes; unsupported Windows versions keep the
     // immersive-dark fallback. No system-wide color or registry changes.
     let _ = DwmSetWindowAttribute(hwnd, 35, &caption, 4);

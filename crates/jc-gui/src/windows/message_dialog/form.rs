@@ -406,6 +406,7 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
     if message == WM_INITDIALOG {
         SetWindowLongPtrW(hwnd, -21, lp);
         let form = &*(lp as *const Form<'_>);
+        shell::set_caption_theme(hwnd, form.dialog.theme);
         if !form.arrange(hwnd) {
             form.dialog.failed.set(true);
             EndDialog(hwnd, 0);
@@ -425,6 +426,7 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
     }
     let form = &*(data as *const Form<'_>);
     let dialog = &form.dialog;
+    let _colors = paint::UiColors::enter(dialog.theme);
     match message {
         WM_COMMAND => match (wp as u16, (wp >> 16) as u16) {
             (TEST, 0) => {
@@ -474,8 +476,8 @@ unsafe extern "system" fn procedure(hwnd: Hwnd, message: u32, wp: usize, lp: isi
         }
         DM_SETDEFID => 1,
         WM_CTLCOLORDLG | WM_CTLCOLORSTATIC | WM_CTLCOLOREDIT | WM_CTLCOLORLISTBOX => {
-            SetTextColor(wp as Hdc, shell::TEXT);
-            SetBkColor(wp as Hdc, shell::RAISED);
+            SetTextColor(wp as Hdc, paint::ui_ink(shell::TEXT));
+            SetBkColor(wp as Hdc, paint::ui_color(shell::RAISED));
             dialog.brush as isize
         }
         WM_DRAWITEM => {

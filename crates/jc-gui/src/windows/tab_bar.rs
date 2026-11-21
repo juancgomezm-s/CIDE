@@ -421,11 +421,11 @@ pub(super) unsafe fn draw(dc: Hdc, bars: &Bars) -> Result<(), String> {
             }
             SetTextColor(
                 dc,
-                if button.dirty {
+                paint::ui_ink(if button.dirty {
                     super::shell::ACCENT
                 } else {
                     super::shell::TEXT
-                },
+                }),
             );
             let old_mode = SetBkMode(dc, 1);
             let result = DrawTextW(

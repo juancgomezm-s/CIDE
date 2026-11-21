@@ -700,7 +700,16 @@ impl Workbench {
         to_side: bool,
         max_bytes: usize,
     ) -> Result<TabId, WorkbenchError> {
-        self.open_file_with_scope(path, encoding, to_side, Some((root, max_bytes, None)))
+        let pane = self.panes.active();
+        let origin = self.panes.view(pane).and_then(|view| view.location());
+        let result =
+            self.open_file_with_scope(path, encoding, to_side, Some((root, max_bytes, None)));
+        if result.is_ok() && self.panes.active() != pane {
+            if let Some(origin) = origin {
+                self.record_link_origin(origin);
+            }
+        }
+        result
     }
     pub fn open_project_file_at_version(
         &mut self,
@@ -711,12 +720,20 @@ impl Workbench {
         max_bytes: usize,
         expected: jc_files::ContentFingerprint,
     ) -> Result<TabId, WorkbenchError> {
-        self.open_file_with_scope(
+        let pane = self.panes.active();
+        let origin = self.panes.view(pane).and_then(|view| view.location());
+        let result = self.open_file_with_scope(
             path,
             encoding,
             to_side,
             Some((root, max_bytes, Some(expected))),
-        )
+        );
+        if result.is_ok() && self.panes.active() != pane {
+            if let Some(origin) = origin {
+                self.record_link_origin(origin);
+            }
+        }
+        result
     }
 
     fn open_file_with_scope(

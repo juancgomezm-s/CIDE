@@ -69,7 +69,7 @@ impl Icon {
                 right: b.x,
                 bottom: b.y,
             },
-            color,
+            paint::ui_ink(color),
         )
     }
 
@@ -82,7 +82,7 @@ impl Icon {
 
     unsafe fn switch(&self, color: u32, background: u32) -> Result<bool, String> {
         let track = self.rounded(1, 3, 21, 12, 9);
-        let brush = CreateSolidBrush(color);
+        let brush = CreateSolidBrush(paint::ui_ink(color));
         if !valid(brush) {
             return Err(os_error("Preparar relleno del interruptor"));
         }
@@ -93,7 +93,7 @@ impl Icon {
         }
         DeleteObject(brush);
 
-        let pen = CreatePen(0, self.dpi.pixels(1).max(1), background);
+        let pen = CreatePen(0, self.dpi.pixels(1).max(1), paint::ui_color(background));
         if !valid(pen) {
             return Err(os_error("Preparar marca del interruptor"));
         }
@@ -126,7 +126,7 @@ pub(super) unsafe fn draw(
         Some(Boolean | Binary) => GREEN,
         None => shell::MUTED,
     };
-    let pen = CreatePen(0, dpi.pixels(1).max(1), color);
+    let pen = CreatePen(0, dpi.pixels(1).max(1), paint::ui_ink(color));
     if !valid(pen) {
         return Err(os_error("Preparar icono de tipo"));
     }

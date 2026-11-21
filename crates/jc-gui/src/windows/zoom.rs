@@ -149,7 +149,7 @@ extern "system" {
 
 unsafe fn circle(dc: Hdc, x: i32, y: i32, radius: i32, color: u32) -> Result<(), String> {
     let region = CreateEllipticRgn(x - radius, y - radius, x + radius + 1, y + radius + 1);
-    let brush = CreateSolidBrush(color);
+    let brush = CreateSolidBrush(paint::ui_color(color));
     let ok = !region.is_null() && !brush.is_null() && FillRgn(dc, region, brush) != 0;
     for object in [region, brush] {
         if !object.is_null() {
