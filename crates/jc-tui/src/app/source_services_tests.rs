@@ -1195,6 +1195,134 @@ fn abl_run_history_and_last_edit_work_with_tui_keys_and_mouse() {
 }
 
 #[test]
+fn project_class_include_and_library_links_follow_and_return_in_tui() {
+    let root = std::env::temp_dir().join(format!("cide-links-tui-{}", std::process::id()));
+    std::fs::create_dir(&root).unwrap();
+    std::fs::create_dir(root.join("paquete")).unwrap();
+    std::fs::create_dir(root.join("includes")).unwrap();
+    for (name, text) in [
+        ("paquete/Raiz.cls", "CLASS paquete.Raiz:\nEND CLASS.\n"),
+        ("includes/uno.i", "DEFINE VARIABLE uno AS INTEGER."),
+        ("uno.js", "export default 1;"),
+        ("uno.ts", "export default 2;"),
+        ("uno.php", "<?php function uno() {}"),
+        ("uno.rs", "fn uno() {}"),
+        ("paquete/Uno.java", "package paquete; public class Uno {}"),
+        ("paquete/Uno.cs", "namespace paquete { class Uno {} }"),
+    ] {
+        std::fs::write(root.join(name), text).unwrap();
+    }
+    for (name, source, needle, destination) in [
+        (
+            "Importa.java",
+            "import paquete.Uno;\n",
+            "paquete.Uno",
+            "paquete/Uno.java",
+        ),
+        (
+            "Importa.cs",
+            "using Uno = paquete.Uno;\n",
+            "paquete.Uno",
+            "paquete/Uno.cs",
+        ),
+        (
+            "consumidor.cls",
+            "DEFINE PUBLIC PROPERTY Hijo AS CLASS paquete.Raiz NO-UNDO GET. SET.\n",
+            "paquete.Raiz",
+            "paquete/Raiz.cls",
+        ),
+        (
+            "retorno.cls",
+            "METHOD PUBLIC paquete.Raiz Obtener():\n",
+            "paquete.Raiz",
+            "paquete/Raiz.cls",
+        ),
+        (
+            "nuevo.p",
+            "objeto = NEW paquete.Raiz().\n",
+            "paquete.Raiz",
+            "paquete/Raiz.cls",
+        ),
+        (
+            "inclusion.p",
+            "{includes/uno.i}\n",
+            "includes/uno.i",
+            "includes/uno.i",
+        ),
+        (
+            "modulo.js",
+            "import x from './uno.js';\n",
+            "./uno.js",
+            "uno.js",
+        ),
+        (
+            "modulo.ts",
+            "import x from './uno.js';\n",
+            "./uno.js",
+            "uno.ts",
+        ),
+        (
+            "fuente.php",
+            "<?php require_once('uno.php');\n",
+            "uno.php",
+            "uno.php",
+        ),
+        ("fuente.rs", "include!(\"uno.rs\");\n", "uno.rs", "uno.rs"),
+        ("mod.rs", "pub mod uno;\n", "uno;", "uno.rs"),
+    ] {
+        let path = root.join(name);
+        std::fs::write(&path, source).unwrap();
+        let mut app = TuiApp::new(LaunchOptions {
+            files: vec![path.clone()],
+            encoding: Some(TextEncoding::Utf8),
+        });
+        app.project_root = Some(root.canonicalize().unwrap());
+        let origin = source.find(needle).unwrap() + 2;
+        app.workbench
+            .set_linear_selection_bytes(origin, origin)
+            .unwrap();
+        app.prepare_frame(140, 28);
+        key(&mut app, KeyCode::Enter, KeyModifiers::CONTROL);
+        finish(&mut app);
+        assert_eq!(
+            app.workbench.active_path().unwrap(),
+            root.join(destination).canonicalize().unwrap(),
+            "{name}: {}",
+            app.status
+        );
+        key(&mut app, KeyCode::Left, KeyModifiers::CONTROL);
+        assert_eq!(
+            app.workbench.active_path().unwrap().canonicalize().unwrap(),
+            path.canonicalize().unwrap(),
+            "{name}: {}",
+            app.status
+        );
+        assert_eq!(
+            app.workbench.active_editor().unwrap().cursor,
+            origin,
+            "{name}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
+        drop(app);
+        std::fs::remove_file(path).unwrap();
+    }
+    for name in [
+        "paquete/Raiz.cls",
+        "paquete/Uno.java",
+        "paquete/Uno.cs",
+        "includes/uno.i",
+        "uno.js",
+        "uno.ts",
+        "uno.php",
+        "uno.rs",
+    ] {
+        std::fs::remove_file(root.join(name)).unwrap();
+    }
+    std::fs::remove_dir(root.join("paquete")).unwrap();
+    std::fs::remove_dir(root.join("includes")).unwrap();
+    std::fs::remove_dir(root).unwrap();
+}
+#[test]
 fn code_method_links_follow_and_return_through_tui_input_for_each_language() {
     use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
     for (name, source) in [

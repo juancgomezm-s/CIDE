@@ -20,6 +20,133 @@ const MAX_TOKENS: usize = 1536;
 const MAX_VISIBLE_BYTES: usize = 256 * 1024;
 const MAX_PATH: usize = 4096;
 
+fn abl_type_links(bytes: &[u8], spans: &[TokenSpan], origin: usize) -> Vec<Range<usize>> {
+    // The presentation cache deliberately omits Plain tokens. Recover only
+    // lightweight word boundaries, respecting the retained protected spans.
+    let mut words = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() && words.len() < 1024 {
+        if bytes[at].is_ascii_whitespace() {
+            at += 1;
+            continue;
+        }
+        if let Some(span) = spans.iter().find(|s| {
+            s.source.contains(&(origin + at))
+                && matches!(
+                    s.kind,
+                    SyntaxKind::Comment | SyntaxKind::String | SyntaxKind::Preprocessor
+                )
+        }) {
+            words.push(TokenSpan {
+                source: origin + at..span.source.end,
+                kind: span.kind,
+            });
+            at = span.source.end - origin;
+            continue;
+        }
+        let start = at;
+        at += 1;
+        if bytes[start].is_ascii_alphabetic() || bytes[start] == b'_' {
+            while at < bytes.len()
+                && (bytes[at].is_ascii_alphanumeric() || matches!(bytes[at], b'_' | b'-'))
+            {
+                at += 1;
+            }
+        }
+        let range = origin + start..origin + at;
+        let kind = spans
+            .iter()
+            .find(|s| s.source.contains(&range.start))
+            .map_or(SyntaxKind::Plain, |s| s.kind);
+        words.push(TokenSpan {
+            source: range,
+            kind,
+        });
+    }
+    let raw = |n: usize| &bytes[words[n].source.start - origin..words[n].source.end - origin];
+    let is = |n: usize, word: &[u8]| raw(n).eq_ignore_ascii_case(word);
+    let modifier = |word: &[u8]| {
+        [
+            b"PUBLIC".as_slice(),
+            b"PRIVATE",
+            b"PROTECTED",
+            b"STATIC",
+            b"OVERRIDE",
+            b"FINAL",
+            b"ABSTRACT",
+        ]
+        .iter()
+        .any(|w| word.eq_ignore_ascii_case(w))
+    };
+    let mut links: Vec<Range<usize>> = Vec::new();
+    for (n, span) in words.iter().enumerate().take(1024) {
+        if !matches!(span.kind, SyntaxKind::Plain) || n == 0 {
+            continue;
+        }
+        let start = span.source.start - origin;
+        if links.last().is_some_and(|r| r.end > span.source.start)
+            || !bytes[start].is_ascii_alphabetic() && bytes[start] != b'_'
+        {
+            continue;
+        }
+        let typed = [
+            b"AS".as_slice(),
+            b"NEW",
+            b"USING",
+            b"INHERITS",
+            b"IMPLEMENTS",
+            b"RETURNS",
+        ]
+        .iter()
+        .any(|word| is(n - 1, word))
+            || n >= 2 && is(n - 1, b"CLASS") && is(n - 2, b"AS")
+            || is(0, b"METHOD")
+                && words[1..n]
+                    .iter()
+                    .all(|s| modifier(&bytes[s.source.start - origin..s.source.end - origin]));
+        if !typed {
+            continue;
+        }
+        let mut end = start;
+        while end < bytes.len()
+            && (bytes[end].is_ascii_alphanumeric()
+                || bytes[end] == b'_'
+                || bytes[end] == b'.'
+                    && bytes
+                        .get(end + 1)
+                        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_'))
+        {
+            end += 1;
+        }
+        let range = origin + start..origin + end;
+        let name = &bytes[start..end];
+        let system = [b"System.".as_slice(), b"Microsoft.", b"Progress.Lang."]
+            .iter()
+            .any(|prefix| name.starts_with(prefix));
+        let assembly = bytes[end..]
+            .windows(13)
+            .any(|suffix| suffix.eq_ignore_ascii_case(b"FROM ASSEMBLY"));
+        if end > start
+            && !system
+            && !assembly
+            && !spans.iter().any(|s| {
+                s.source.start < range.end
+                    && s.source.end > range.start
+                    && matches!(
+                        s.kind,
+                        SyntaxKind::Comment | SyntaxKind::String | SyntaxKind::Preprocessor
+                    )
+            })
+        {
+            links.push(range);
+            if links.len() == 32 {
+                break;
+            }
+        }
+    }
+    links
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SyntaxStats {
     pub processed_bytes: usize,
@@ -338,7 +465,7 @@ impl SyntaxCache {
                     |_| Vec::new(),
                     |bytes| {
                         if profile == SyntaxProfile::Abl {
-                            return spans
+                            let mut links: Vec<_> = spans
                                 .iter()
                                 .filter_map(|token| {
                                     let region = token.source.start - source.start
@@ -357,6 +484,24 @@ impl SyntaxCache {
                                 })
                                 .take(32)
                                 .collect();
+                            links.extend(
+                                jc_languages::source_links::file_links(
+                                    profile,
+                                    &bytes,
+                                    &spans,
+                                    source.start,
+                                )
+                                .into_iter()
+                                .map(|link| (link.range.clone(), link.range)),
+                            );
+                            links.truncate(32);
+                            links.extend(
+                                abl_type_links(&bytes, &spans, source.start)
+                                    .into_iter()
+                                    .take(32usize.saturating_sub(links.len()))
+                                    .map(|range| (range.clone(), range)),
+                            );
+                            return links;
                         }
                         if !matches!(
                             profile,
@@ -369,7 +514,15 @@ impl SyntaxCache {
                         ) {
                             return Vec::new();
                         }
-                        let mut links = Vec::new();
+                        let mut links: Vec<_> = jc_languages::source_links::file_links(
+                            profile,
+                            &bytes,
+                            &spans,
+                            source.start,
+                        )
+                        .into_iter()
+                        .map(|link| (link.range.clone(), link.range))
+                        .collect();
                         let mut at = 0;
                         while at < bytes.len() && links.len() < 32 {
                             if !(bytes[at].is_ascii_alphabetic()
@@ -424,6 +577,18 @@ impl SyntaxCache {
 }
 
 impl Workbench {
+    pub fn abl_type_link_at(&self, tab: TabId, byte: usize) -> bool {
+        self.syntax_profile_for_tab(tab) == SyntaxProfile::Abl
+            && self.line_ordinal_for_byte(tab, byte).is_some_and(|line| {
+                self.syntax_rows(tab, line, 1).rows.iter().any(|row| {
+                    row.run_links.iter().any(|(marker, operand)| {
+                        marker == operand
+                            && operand.contains(&byte)
+                            && !row.spans.iter().any(|s| s.kind == SyntaxKind::Preprocessor)
+                    })
+                })
+            })
+    }
     pub fn code_link_at(&self, tab: TabId, byte: usize) -> bool {
         self.line_ordinal_for_byte(tab, byte).is_some_and(|line| {
             self.syntax_rows(tab, line, 1).rows.iter().any(|row| {
@@ -516,6 +681,39 @@ mod tests {
             Some(TextEncoding::Utf8),
             vec![(0, source)],
         )
+    }
+    #[test]
+    fn abl_class_and_include_operands_are_links_but_builtins_and_comments_are_not() {
+        let mut app = Workbench::default();
+        let tab = app.new_file("consumidor.cls", TextEncoding::Utf8);
+        let text = "DEFINE PUBLIC PROPERTY Hijo AS CLASS paquete.Raiz NO-UNDO GET. SET.\nMETHOD PUBLIC paquete.Raiz Obtener():\nobjeto = NEW paquete.Raiz().\n{includes/uno.i}\nDEFINE VARIABLE x AS CHARACTER.\n/* NEW paquete.Oculta() */\nDEFINE VARIABLE sistema AS CLASS System.String.\nUSING System.Text FROM ASSEMBLY.\n";
+        app.insert_text(text).unwrap();
+        for (needle, class) in [("paquete.Raiz", true), ("includes/uno.i", false)] {
+            for (start, _) in text.match_indices(needle) {
+                for byte in [start, start + needle.len() - 1] {
+                    assert!(
+                        app.code_link_at(tab, byte),
+                        "{needle} {byte}: {:?}",
+                        app.syntax_rows(tab, 0, 1)
+                    );
+                    assert_eq!(app.abl_type_link_at(tab, byte), class, "{needle}");
+                    let row =
+                        app.syntax_rows(tab, app.line_ordinal_for_byte(tab, byte).unwrap(), 1);
+                    assert_eq!(row.kind_at(byte), SyntaxKind::Link);
+                }
+            }
+        }
+        for needle in [
+            "CHARACTER",
+            "paquete.Oculta",
+            "System.String",
+            "System.Text",
+        ] {
+            assert!(
+                !app.code_link_at(tab, text.find(needle).unwrap()),
+                "{needle}"
+            );
+        }
     }
     #[test]
     fn deep_context_advances_cooperatively_without_false_colors_or_global_rescan() {

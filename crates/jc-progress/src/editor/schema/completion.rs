@@ -1138,6 +1138,16 @@ mod tests {
             definition("USING paquete.Elemento.\nDEFINE VARIABLE objeto AS CLASS Elemento.").unwrap().action,
             SourceAction::ProjectLocation { path, .. } if path.ends_with("paquete/Elemento.cls")
         ));
+        for source in [
+            "DEFINE PUBLIC PROPERTY Hijo AS CLASS paquete.Elemento NO-UNDO GET. SET.",
+            "METHOD PUBLIC paquete.Elemento Obtener():",
+            "objeto = NEW paquete.Elemento().",
+        ] {
+            assert!(
+                matches!(definition(source).unwrap_or_else(||panic!("{source}")).action,
+                SourceAction::ProjectLocation { path, .. } if path.ends_with("paquete/Elemento.cls"))
+            );
+        }
         assert!(definition("USING paquete.*.\nDISPLAY Elemento.").is_none());
         assert!(definition("USING paquete.Elemento FROM ASSEMBLY.\nUSING paquete.* FROM PROPATH.\nobjeto = NEW Elemento().").is_none());
         assert!(definition("USING paquete.Elemento FROM ASSEMBLY.").is_none());

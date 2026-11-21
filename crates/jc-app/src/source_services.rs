@@ -493,6 +493,7 @@ pub(crate) enum SourceJob {
     RustSymbols(TaskProvider),
     Routine {
         provider: RoutineProvider,
+        profile: jc_languages::syntax::SyntaxProfile,
         mode: SourceMode,
         cursor: usize,
         fallback: Option<Box<SourceJob>>,
@@ -512,6 +513,62 @@ pub(crate) enum SourceJob {
         name: String,
         project: Option<ProjectRenameJob>,
     },
+}
+
+fn source_file_link(
+    profile: jc_languages::syntax::SyntaxProfile,
+    snapshot: &TaskSnapshot,
+    cursor: usize,
+    cancel: &Cancellation,
+) -> Result<Option<SourceItem>, TaskFailure> {
+    use jc_languages::syntax::{scan, LexerState};
+    let bytes = snapshot.bytes();
+    let cursor = cursor.min(bytes.len());
+    let start = bytes[..cursor]
+        .iter()
+        .rposition(|b| *b == b'\n')
+        .map_or(0, |n| n + 1);
+    let end = bytes[cursor..]
+        .iter()
+        .position(|b| *b == b'\n')
+        .map_or(bytes.len(), |n| cursor + n);
+    if end - start > 4096 {
+        return Ok(None);
+    }
+    let mut spans = Vec::new();
+    let mut state = LexerState::default();
+    for (i, chunk) in bytes[..end].chunks(4096).enumerate() {
+        if cancel.is_cancelled() {
+            return Err(TaskFailure::Cancelled);
+        }
+        let at = i * 4096;
+        scan(
+            profile,
+            &mut state,
+            chunk,
+            at,
+            at + chunk.len() == end,
+            |span| {
+                if span.source.start >= start && spans.len() < 1536 {
+                    spans.push(span);
+                }
+            },
+        );
+        if state.limited() {
+            return Err(TaskFailure::LimitExceeded);
+        }
+    }
+    Ok(
+        jc_languages::source_links::file_links(profile, &bytes[start..end], &spans, start)
+            .into_iter()
+            .find(|link| link.range.contains(&cursor))
+            .map(|link| SourceItem {
+                value_type: None,
+                range: link.range,
+                label: format!("Archivo fuente: {}", link.path),
+                action: SourceAction::RelativeFile(link.path),
+            }),
+    )
 }
 
 fn publish_calls(
@@ -600,10 +657,16 @@ impl SourceJob {
             }
             Self::Routine {
                 provider,
+                profile,
                 mode,
                 cursor,
                 fallback,
             } => {
+                if *mode == SourceMode::FollowLink {
+                    if let Some(link) = source_file_link(*profile, snapshot, *cursor, cancel)? {
+                        return output.push(TaskItem::Source(link));
+                    }
+                }
                 if let Some(Self::Calls {
                     resolution,
                     root,
@@ -1464,7 +1527,7 @@ impl SourceController {
         root: Option<&Path>,
         jobs: &mut JobSystem,
     ) -> Result<(), String> {
-        if mode != SourceMode::Symbols && !mode.is_catalog() {
+        if !matches!(mode, SourceMode::Symbols | SourceMode::FollowLink) && !mode.is_catalog() {
             return Err("Capacidad de catálogo no disponible".into());
         }
         self.request_named(
@@ -1628,7 +1691,9 @@ impl SourceController {
                 let cursor = r.origin.cursor;
                 let query = match mode {
                     SourceMode::Symbols => CatalogQuery::Symbols,
-                    SourceMode::CatalogDefinition => CatalogQuery::Definition { cursor },
+                    SourceMode::CatalogDefinition | SourceMode::FollowLink => {
+                        CatalogQuery::Definition { cursor }
+                    }
                     SourceMode::CatalogReferences => CatalogQuery::References { cursor },
                     SourceMode::CatalogXref => CatalogQuery::Xref { cursor },
                     SourceMode::ReviewEdit(action) => CatalogQuery::ReviewEdit { action, cursor },
@@ -1650,6 +1715,8 @@ impl SourceController {
                 match r.mode {
                     SourceMode::FollowLink => SourceJob::Routine {
                         provider: provider.routines.expect("code navigation provider"),
+                        profile: jc_languages::detect(&r.origin.path.to_string_lossy())
+                            .syntax_profile(),
                         mode,
                         cursor: r.origin.cursor,
                         fallback: r
@@ -1701,6 +1768,8 @@ impl SourceController {
                         if let Some(routines) = provider.routines {
                             SourceJob::Routine {
                                 provider: routines,
+                                profile: jc_languages::detect(&r.origin.path.to_string_lossy())
+                                    .syntax_profile(),
                                 mode,
                                 cursor: r.origin.cursor,
                                 fallback: fallback.map(Box::new),
@@ -2276,18 +2345,23 @@ impl SourceController {
                         "Cambió la resolución de la referencia; actualiza la búsqueda".into(),
                     );
                 }
-                let tab = app
-                    .open_project_file_at_version(
-                        &canonical_root,
-                        path.clone(),
-                        Some(*encoding),
-                        to_side,
-                        SNAPSHOT,
-                        *version,
-                    )
+                let origin = app
+                    .panes()
+                    .view(app.panes().active())
+                    .and_then(|view| view.location());
+                app.open_project_file_at_version(
+                    &canonical_root,
+                    path.clone(),
+                    Some(*encoding),
+                    to_side,
+                    SNAPSHOT,
+                    *version,
+                )
+                .map_err(|error| error.to_string())?;
+                app.set_linear_selection_bytes(*offset, *offset)
                     .map_err(|error| error.to_string())?;
-                if !app.jump_to_pane_location(app.panes().active(), tab, *offset) {
-                    return Err("El destino de la referencia no es una posición válida".into());
+                if let Some(origin) = origin {
+                    app.record_link_origin(origin);
                 }
                 Ok(None)
             }
@@ -2298,18 +2372,23 @@ impl SourceController {
                 version,
             } => {
                 let root = root.ok_or("Abre una carpeta de proyecto")?;
-                let tab = app
-                    .open_project_file_at_version(
-                        root,
-                        path.clone(),
-                        Some(*encoding),
-                        to_side,
-                        SNAPSHOT,
-                        *version,
-                    )
+                let origin = app
+                    .panes()
+                    .view(app.panes().active())
+                    .and_then(|view| view.location());
+                app.open_project_file_at_version(
+                    root,
+                    path.clone(),
+                    Some(*encoding),
+                    to_side,
+                    SNAPSHOT,
+                    *version,
+                )
+                .map_err(|error| error.to_string())?;
+                app.set_linear_selection_bytes(*offset, *offset)
                     .map_err(|error| error.to_string())?;
-                if !app.jump_to_pane_location(app.panes().active(), tab, *offset) {
-                    return Err("El destino de código no es una posición válida".into());
+                if let Some(origin) = origin {
+                    app.record_link_origin(origin);
                 }
                 Ok(None)
             }

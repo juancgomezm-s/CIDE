@@ -189,7 +189,13 @@ impl State {
         } else if matches!(mode, SourceMode::Symbols | SourceMode::CatalogXref) {
             self.progress_schema
                 .outline(&self.workbench, self.project_root.as_deref())
-        } else if mode.is_catalog() {
+        } else if mode.is_catalog()
+            || mode == SourceMode::FollowLink
+                && self.workbench.active_editor().is_some_and(|editor| {
+                    self.workbench
+                        .abl_type_link_at(editor.tab_id, editor.cursor)
+                })
+        {
             let Some(provider) = self.progress_schema.source(
                 &self.workbench,
                 self.project_root.as_deref(),
@@ -793,6 +799,146 @@ mod tests {
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
         }
+    }
+    #[test]
+    fn project_class_include_and_library_links_follow_and_return_in_gui() {
+        let root = std::env::temp_dir().join(format!("cide-links-gui-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(root.join("paquete")).unwrap();
+        std::fs::create_dir(root.join("includes")).unwrap();
+        for (name, text) in [
+            ("paquete/Raiz.cls", "CLASS paquete.Raiz:\nEND CLASS.\n"),
+            ("includes/uno.i", "DEFINE VARIABLE uno AS INTEGER."),
+            ("uno.js", "export default 1;"),
+            ("uno.ts", "export default 2;"),
+            ("uno.php", "<?php function uno() {}"),
+            ("uno.rs", "fn uno() {}"),
+            ("paquete/Uno.java", "package paquete; public class Uno {}"),
+            ("paquete/Uno.cs", "namespace paquete { class Uno {} }"),
+        ] {
+            std::fs::write(root.join(name), text).unwrap();
+        }
+        for (name, source, needle, destination) in [
+            (
+                "Importa.java",
+                "import paquete.Uno;\n",
+                "paquete.Uno",
+                "paquete/Uno.java",
+            ),
+            (
+                "Importa.cs",
+                "using Uno = paquete.Uno;\n",
+                "paquete.Uno",
+                "paquete/Uno.cs",
+            ),
+            (
+                "consumidor.cls",
+                "DEFINE PUBLIC PROPERTY Hijo AS CLASS paquete.Raiz NO-UNDO GET. SET.\n",
+                "paquete.Raiz",
+                "paquete/Raiz.cls",
+            ),
+            (
+                "retorno.cls",
+                "METHOD PUBLIC paquete.Raiz Obtener():\n",
+                "paquete.Raiz",
+                "paquete/Raiz.cls",
+            ),
+            (
+                "nuevo.p",
+                "objeto = NEW paquete.Raiz().\n",
+                "paquete.Raiz",
+                "paquete/Raiz.cls",
+            ),
+            (
+                "inclusion.p",
+                "{includes/uno.i}\n",
+                "includes/uno.i",
+                "includes/uno.i",
+            ),
+            (
+                "modulo.js",
+                "import x from './uno.js';\n",
+                "./uno.js",
+                "uno.js",
+            ),
+            (
+                "modulo.ts",
+                "import x from './uno.js';\n",
+                "./uno.js",
+                "uno.ts",
+            ),
+            (
+                "fuente.php",
+                "<?php require_once('uno.php');\n",
+                "uno.php",
+                "uno.php",
+            ),
+            ("fuente.rs", "include!(\"uno.rs\");\n", "uno.rs", "uno.rs"),
+            ("mod.rs", "pub mod uno;\n", "uno;", "uno.rs"),
+        ] {
+            let mut state = State::new(&GuiOptions {
+                project_root: Some(root.canonicalize().unwrap()),
+                ..GuiOptions::default()
+            })
+            .unwrap();
+            state.width = 1400;
+            state.height = 800;
+            let path = root.join(name);
+            std::fs::write(&path, source).unwrap();
+            state
+                .workbench
+                .open_file(&path, Some(TextEncoding::Utf8))
+                .unwrap();
+            let origin = source.find(needle).unwrap() + 2;
+            state
+                .workbench
+                .set_linear_selection_bytes(origin, origin)
+                .unwrap();
+            state.key_override = Some(Modifiers::CTRL);
+            assert!(state.key(0x0d).0, "{name}");
+            finish(&mut state);
+            assert_eq!(
+                state.workbench.active_path().unwrap(),
+                root.join(destination).canonicalize().unwrap(),
+                "{name}: {}",
+                state.status
+            );
+            state.key(0x25);
+            assert_eq!(
+                state
+                    .workbench
+                    .active_path()
+                    .unwrap()
+                    .canonicalize()
+                    .unwrap(),
+                path.canonicalize().unwrap(),
+                "{name}: {}",
+                state.status
+            );
+            assert_eq!(
+                state.workbench.active_editor().unwrap().cursor,
+                origin,
+                "{name}"
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
+            drop(state);
+            std::fs::remove_file(path).unwrap();
+        }
+        for name in [
+            "paquete/Raiz.cls",
+            "paquete/Uno.java",
+            "paquete/Uno.cs",
+            "includes/uno.i",
+            "uno.js",
+            "uno.ts",
+            "uno.php",
+            "uno.rs",
+        ] {
+            std::fs::remove_file(root.join(name)).unwrap();
+        }
+        std::fs::remove_dir(root.join("paquete")).unwrap();
+        std::fs::remove_dir(root.join("includes")).unwrap();
+        std::fs::remove_dir(root).unwrap();
     }
     #[test]
     fn method_links_follow_and_return_with_gui_keys_for_each_language() {

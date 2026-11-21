@@ -1009,6 +1009,22 @@ pub(super) fn type_use(
                 .bytes(previous.last()?)
                 .eq_ignore_ascii_case(b"CLASS")
             && type_word(context.bytes(&previous[previous.len() - 2]))
+        || previous
+            .first()
+            .is_some_and(|token| context.bytes(token).eq_ignore_ascii_case(b"METHOD"))
+            && previous[1..].iter().all(|token| {
+                [
+                    b"PUBLIC".as_slice(),
+                    b"PRIVATE",
+                    b"PROTECTED",
+                    b"STATIC",
+                    b"OVERRIDE",
+                    b"FINAL",
+                    b"ABSTRACT",
+                ]
+                .iter()
+                .any(|word| context.bytes(token).eq_ignore_ascii_case(word))
+            })
         || type_argument(context, previous)
         || previous
             .last()

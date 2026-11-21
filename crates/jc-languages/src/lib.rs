@@ -1,4 +1,5 @@
 //! Language identification without reading or recoding a document.
+pub mod source_links;
 pub mod syntax;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

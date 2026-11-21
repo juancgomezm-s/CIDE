@@ -189,7 +189,13 @@ impl TuiApp {
         } else if matches!(mode, SourceMode::Symbols | SourceMode::CatalogXref) {
             self.progress_schema
                 .outline(&self.workbench, self.project_root.as_deref())
-        } else if mode.is_catalog() {
+        } else if mode.is_catalog()
+            || mode == SourceMode::FollowLink
+                && self.workbench.active_editor().is_some_and(|editor| {
+                    self.workbench
+                        .abl_type_link_at(editor.tab_id, editor.cursor)
+                })
+        {
             let Some(provider) = self.progress_schema.source(
                 &self.workbench,
                 self.project_root.as_deref(),
