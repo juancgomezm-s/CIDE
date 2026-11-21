@@ -102,3 +102,6 @@ TUI 198 aprobadas y 14 omitidas bajo sandbox; el fixture de junction bloqueado
 por permisos se repitió fuera del sandbox y pasó. Esto suma 211 casos GUI y
 199 TUI distintos, sin presentar las omisiones como aprobadas.
 Clippy de ambos frontends, todos los targets, pasó sin advertencias.
+
+La suite de biblioteca de jc-app pasó otros 157 casos con 4 omisiones.
+La entrega de producto se identifica como 0.1.11.
