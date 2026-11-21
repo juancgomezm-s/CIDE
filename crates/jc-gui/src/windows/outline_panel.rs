@@ -9,6 +9,7 @@ use jc_app::{
 };
 use std::path::PathBuf;
 
+mod symbol_icon;
 mod tree;
 mod value_icon;
 use tree::{Item, Kind, Tree};
@@ -115,6 +116,7 @@ struct Row {
     value_type: Option<ValueType>,
     branch: Option<bool>,
     folder: bool,
+    directory: bool,
     unresolved: bool,
 }
 
@@ -127,7 +129,7 @@ impl Row {
         if self.has_value_icon() {
             41
         } else {
-            32
+            37
         }
     }
 }
@@ -639,6 +641,7 @@ impl State {
                 value_type: None,
                 branch: None,
                 folder: false,
+                directory: false,
                 unresolved: false,
             };
             match target {
@@ -652,6 +655,7 @@ impl State {
                     row.value_type = node.value_type;
                     row.branch = (!node.children.is_empty()).then_some(node.expanded);
                     row.folder = node.item.is_none();
+                    row.directory = node.directory;
                     row.unresolved = node.unresolved;
                     let space = (rect.right
                         - rect.left
@@ -1203,8 +1207,8 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
         if let Some(expanded) = row.branch {
             shell::chevron(dc, x, top + px(7), expanded, shell::MUTED)?;
         }
-        let (icon, color) = row.kind.icon();
-        if row.folder {
+        let (_, color) = row.kind.icon();
+        if row.directory {
             shell::file_icon(dc, x + px(12), top + px(4), true, color, px(16))?;
         } else if row.has_value_icon() {
             let icon = Rect {
@@ -1217,18 +1221,15 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
                 value_icon::draw(dc, icon, frame.dpi, row.value_type, background)?;
             }
         } else {
-            paint::text(
-                dc,
-                Rect {
-                    left: x + px(13),
-                    right: x + px(29),
-                    top: top + px(2),
-                    bottom,
-                },
-                &wide(icon),
-                if row.unresolved { shell::MUTED } else { color },
-                background,
-            )?;
+            let bounds = Rect {
+                left: x + px(12),
+                right: x + px(32),
+                top: top + px(1),
+                bottom: top + px(19),
+            };
+            if bounds.right <= area.right {
+                symbol_icon::draw(dc, bounds, frame.dpi, row.kind, background, row.unresolved)?;
+            }
         }
         paint::text(
             dc,

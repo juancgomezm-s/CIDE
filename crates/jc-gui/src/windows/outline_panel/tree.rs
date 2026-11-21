@@ -157,6 +157,7 @@ pub(super) struct Node {
     pub expanded: bool,
     pub depth: usize,
     pub unresolved: bool,
+    pub directory: bool,
 }
 
 #[derive(Default)]
@@ -232,6 +233,7 @@ impl Tree {
             expanded: false,
             depth,
             unresolved,
+            directory: false,
         });
         if let Some(parent) = parent {
             self.nodes[parent].children.push(id);
@@ -418,6 +420,10 @@ impl Tree {
                 return (parent, part);
             }
             parent = self.folder(Some(parent), part, kind);
+            self.nodes[parent].directory = !namespaced;
+            if namespaced {
+                self.nodes[parent].kind = Kind::Namespace;
+            }
         }
         (parent, name)
     }
@@ -471,5 +477,25 @@ fn same_file(left: &SourceAction, right: &SourceAction) -> bool {
             false
         }
         _ => true,
+    }
+}
+
+#[cfg(test)]
+mod semantic_icon_tests {
+    use super::*;
+    #[test]
+    fn code_categories_and_namespace_groups_are_not_filesystem_directories() {
+        let mut tree = Tree::default();
+        let category = tree.folder(None, "Inclusiones", Kind::Include);
+        let (path, leaf) = tree.directories(category, "carpeta/interno/archivo.i", Kind::Include);
+        assert_eq!(leaf, "archivo.i");
+        assert!(tree.nodes[path].directory);
+        assert!(!tree.nodes[category].directory);
+        let variables = tree.folder(None, "Variables y constantes", Kind::Variable);
+        let methods = tree.folder(None, "Métodos", Kind::Method);
+        assert!(!tree.nodes[variables].directory && !tree.nodes[methods].directory);
+        let imports = tree.folder(None, "Importaciones", Kind::Import);
+        let (namespace, _) = tree.directories(imports, "MiProyecto.Modelo.Clase", Kind::Import);
+        assert!(!tree.nodes[namespace].directory);
     }
 }
