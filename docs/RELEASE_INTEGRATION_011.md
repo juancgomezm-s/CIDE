@@ -105,3 +105,34 @@ Clippy de ambos frontends, todos los targets, pasó sin advertencias.
 
 La suite de biblioteca de jc-app pasó otros 157 casos con 4 omisiones.
 La entrega de producto se identifica como 0.1.11.
+
+## Comprobación visible posterior al desbloqueo y MSI
+
+Se completó directamente en la GUI el doble clic y Ctrl+Intro en ABL,
+Rust, C#, Java, PHP, JavaScript y TypeScript. En cada ejemplo se observó
+el cursor en la declaración y el regreso a la llamada mediante
+Ctrl+Izquierda. ABL abrió destino.p desde origen.p y regresó a línea 2,
+columna 13. Son pruebas sobre archivos sintéticos dentro de work, no una
+prueba semántica entre proyectos con todos los servidores LSP.
+
+Ctrl+clic está integrado, pero su comprobación física se mantiene
+pendiente: la API de control no permite un modificador de ratón y se
+rechazó controlar Teclado en pantalla por falta de autorización. Se pidió
+esa autorización expresamente, sin modificar las opciones del sistema.
+
+La entrega optimizada 0.1.11 se construyó desde 907944a1fa57.
+La GUI extraída del MSI arrancó en pantalla, recuperó la sesión y mostró
+en Acerca de CIDE versión 0.1.11, Juan Carlos Gómez Montiel y esa revisión.
+La instancia de desarrollo se cerró normalmente antes de abrirla.
+
+WiX validó el MSI con la advertencia ICE60 de metadatos de idioma ya
+conocida. La extracción administrativa verificó los 1.057 archivos del
+payload por tamaño y SHA-256. Los ejecutables extraídos pasaron 15
+comprobaciones de navegación y 17 del shell GUI sobre ventanas propias
+ocultas, y 7 del explorador TUI mediante ConPTY. Estas comprobaciones no
+se cuentan como pruebas físicas del escritorio. No se repitió el ciclo
+completo de instalación y desinstalación sobre el equipo personal.
+
+El MSI se distribuye sin firma Authenticode.
+
+MSI: 66587592 bytes; SHA-256 `0239b10b12e53475837654a388a6aacd035abae8b893707beab26a0b0d656d6f`.
