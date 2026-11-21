@@ -4,6 +4,8 @@
 
 El instalador incluye la GUI, la terminal, la CLI y OmniCore. Consulta los requisitos y el procedimiento de actualización en la [guía del instalador](installer/README.md).
 
+[Novedades y validación local de CIDE 0.1.12](docs/RELEASE_012.md).
+
 [Memoria y rendimiento del proceso completo](docs/M2_EDITOR_PROCESS_PERFORMANCE.md).
 [Medición con servicios simultáneos](docs/M2_EDITOR_SERVICES_PERFORMANCE.md).
 [Pintado de ventanas grandes](docs/M2_GUI_EXTREME_GEOMETRY.md).
