@@ -103,6 +103,9 @@ impl State {
         })
     }
     pub(super) fn edit_selector_input(&mut self, edit: FieldEdit<'_>, selecting: bool) {
+        if super::appearance_panel::Frame::prepare(self).is_some() {
+            return;
+        }
         let result = self
             .selector
             .as_mut()

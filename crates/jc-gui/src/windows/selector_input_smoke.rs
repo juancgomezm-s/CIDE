@@ -158,6 +158,34 @@ unsafe fn file_query(hwnd: Hwnd, name: &str) -> Result<(), String> {
     complete(hwnd)
 }
 
+unsafe fn appearance_select(hwnd: Hwnd, choice: super::appearance::Choice) -> Result<(), String> {
+    appearance_control(
+        hwnd,
+        |target| matches!(target, super::appearance_panel::Target::Choice(value) if value == choice),
+    )
+}
+unsafe fn appearance_control(
+    hwnd: Hwnd,
+    matches: impl Fn(super::appearance_panel::Target) -> bool,
+) -> Result<(), String> {
+    let model = owner(hwnd).ok_or("Ventana de Preferencias ausente")?;
+    let rect = super::appearance_panel::Frame::prepare(&model.state.borrow())
+        .and_then(|frame| {
+            frame
+                .controls
+                .into_iter()
+                .find(|(_, target)| matches(*target))
+                .map(|(r, _)| r)
+        })
+        .ok_or("No se encuentra el control de Preferencias")?;
+    SendMessageW(hwnd, WM_PAINT, 0, 0);
+    let position =
+        ((((rect.top + rect.bottom) / 2) as isize) << 16) | ((rect.left + rect.right) / 2) as isize;
+    SendMessageW(hwnd, WM_LBUTTONDOWN, 1, position);
+    SendMessageW(hwnd, WM_LBUTTONUP, 0, position);
+    Ok(())
+}
+
 unsafe fn appearance_window_colors(hwnd: Hwnd, options: &SmokeOptions) -> Result<(), String> {
     use super::{appearance::Theme, menu_theme::Palette, shell};
     let model = owner(hwnd).ok_or("Ventana de Preferencias ausente")?;
@@ -168,7 +196,13 @@ unsafe fn appearance_window_colors(hwnd: Hwnd, options: &SmokeOptions) -> Result
         .ok_or("Falta el menú nativo")?;
     let original = model.state.borrow().committed_appearance().theme;
     open(hwnd, SelectorKind::Appearance)?;
-    paste(hwnd, "Claro suave")?;
+    let frame = paint::prepare(&mut model.state.borrow_mut());
+    paint::bitmap(
+        hwnd,
+        &frame,
+        &options.report.with_file_name("preferencias-nativas.bmp"),
+    )?;
+    appearance_select(hwnd, super::appearance::Choice::Theme(Theme::Light))?;
     {
         let state = model.state.borrow();
         super::native_menu::refresh(hwnd, &state)?;
@@ -203,7 +237,7 @@ unsafe fn appearance_window_colors(hwnd: Hwnd, options: &SmokeOptions) -> Result
         (
             "editor",
             frame.width / 2,
-            frame.height / 2,
+            frame.height - 44,
             Theme::Light.background(),
         ),
         (
@@ -239,89 +273,70 @@ unsafe fn appearance_preview(hwnd: Hwnd) -> Result<(), String> {
     open(hwnd, SelectorKind::Appearance)?;
     key(hwnd, 0x28, Modifiers::NONE)?;
     if model.state.borrow().editor_theme != Theme::Neutral {
-        return Err("La flecha no actualizó el tema en el editor".into());
+        return Err("La flecha no actualizó el tema de la ventana".into());
     }
     for size in [11, 12, 20] {
-        let editor_font = model.state.borrow().font;
-        key(hwnd, 0x41, Modifiers::CTRL)?;
-        paste(hwnd, &format!("Editor · {size}"))?;
+        let font = model.state.borrow().font;
+        appearance_select(hwnd, Choice::Editor(size))?;
         let state = model.state.borrow();
         if state.editor_text_size != size
-            || state.font == editor_font
-            || state.editor_theme != original.theme
+            || state.font == font
+            || state.editor_theme != Theme::Neutral
             || state.recovery_metadata()? != metadata
         {
-            return Err(format!(
-                "La vista previa de {size} px no restauró el tema o se guardó sin confirmar"
-            ));
+            return Err(
+                "La vista previa no conserva los ajustes o se guardó antes de Aplicar".into(),
+            );
         }
     }
-    key(hwnd, 0x41, Modifiers::CTRL)?;
-    paste(hwnd, "Minimapa")?;
-    let (x, y) = {
-        let mut state = model.state.borrow_mut();
-        let layout = state
-            .selector_layout()
-            .ok_or("Falta el panel de Preferencias")?;
-        let presentation = state
-            .selector_presentation(layout.capacity())
-            .ok_or("Faltan las opciones de Preferencias")?;
-        let x = state.dpi.pixels(24);
-        let y = (0..state.height)
-            .find(|&y| layout.contains(x, y) && layout.hit_row(&presentation, y) == Some(1))
-            .ok_or("La segunda opción de minimapa no es visible")?;
-        (x, y)
-    };
-    SendMessageW(hwnd, WM_PAINT, 0, 0);
-    let position = ((y as isize) << 16) | x as isize;
-    SendMessageW(hwnd, WM_LBUTTONDOWN, 1, position);
-    SendMessageW(hwnd, WM_LBUTTONUP, 0, position);
-    if model.state.borrow().minimap_visible
-        || model.state.borrow().editor_text_size != original.editor
+    appearance_select(hwnd, Choice::Minimap(false))?;
+    appearance_select(hwnd, Choice::OutlineLeft(!original.outline_left))?;
     {
-        return Err(
-            "Cambiar de opción no previsualizó el minimapa y restauró la tipografía".into(),
-        );
+        let state = model.state.borrow();
+        if state.minimap_visible
+            || state.editor_text_size != 20
+            || state.outline.left == original.outline_left
+        {
+            return Err("No se pueden combinar los ajustes de apariencia".into());
+        }
     }
-    key(hwnd, 0x41, Modifiers::CTRL)?;
-    paste(hwnd, "opción que no existe")?;
-    if model.state.borrow().minimap_visible != original.minimap {
-        return Err("Un filtro sin coincidencias dejó activo el ajuste provisional".into());
-    }
-    key(hwnd, 0x55, Modifiers::CTRL)?;
-    key(hwnd, 0x23, Modifiers::CTRL)?;
-    if !model.state.borrow().outline.left {
-        return Err("El esquema no se movió al previsualizar su posición".into());
-    }
-    key(hwnd, 0x1b, Modifiers::NONE)?;
-    if model.state.borrow().outline.left != original.outline_left
-        || model.state.borrow().recovery_metadata()? != metadata
-        || snapshot(hwnd)? != doc
+    appearance_control(hwnd, |t| {
+        matches!(t, super::appearance_panel::Target::Cancel)
+    })?;
     {
-        return Err("Esc no restauró la apariencia o alteró el documento".into());
+        let state = model.state.borrow();
+        if state.committed_appearance() != original
+            || state.recovery_metadata()? != metadata
+            || state.appearance_open()
+            || snapshot(hwnd)? != doc
+        {
+            return Err("Cancelar no restituyó toda la apariencia o alteró el documento".into());
+        }
     }
-    open(hwnd, SelectorKind::Appearance)?;
-    paste(hwnd, "Interfaz · 16")?;
-    if model.state.borrow().ui_text_size != 16 {
-        return Err("El filtro no previsualizó el tamaño de la interfaz".into());
-    }
-    key(hwnd, 0x0d, Modifiers::NONE)?;
-    if model.state.borrow().appearance_open()
-        || model.state.borrow().committed_appearance().ui != 16
-    {
-        return Err("Intro no confirmó el ajuste seleccionado".into());
-    }
-    appearance::apply(hwnd, Choice::Ui(original.ui));
     for size in [11, 12] {
         open(hwnd, SelectorKind::Appearance)?;
-        paste(hwnd, &format!("Editor · {size}"))?;
-        key(hwnd, 0x0d, Modifiers::NONE)?;
+        appearance_select(hwnd, Choice::Editor(size))?;
+        appearance_select(hwnd, Choice::Ui(16))?;
+        if size == 11 {
+            key(hwnd, 0x0d, Modifiers::NONE)?;
+        } else {
+            appearance_control(hwnd, |t| {
+                matches!(t, super::appearance_panel::Target::Apply)
+            })?;
+        }
         let state = model.state.borrow();
-        if state.appearance_open() || state.committed_appearance().editor != size {
-            return Err(format!("Intro no confirmó el tamaño de {size} px"));
+        if state.appearance_open()
+            || state.committed_appearance().editor != size
+            || state.committed_appearance().ui != 16
+        {
+            return Err("Aplicar o Intro no confirmó todos los ajustes".into());
         }
     }
+    appearance::apply(hwnd, Choice::Ui(original.ui));
     appearance::apply(hwnd, Choice::Editor(original.editor));
+    if snapshot(hwnd)? != doc {
+        return Err("Preferencias cambió el documento".into());
+    }
     Ok(())
 }
 #[link(name = "user32")]

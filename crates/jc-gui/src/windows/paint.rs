@@ -124,6 +124,7 @@ pub(super) struct Frame {
     status: Vec<u16>,
     status_bar: super::status_bar::Frame,
     zoom: Option<super::zoom::Popup>,
+    appearance: Option<super::appearance_panel::Frame>,
     panes: Vec<Pane>,
     selector: Option<(
         super::selector::SelectorPresentation,
@@ -924,6 +925,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
         },
         omnicore: state.omnicore_presentation(),
         bottom: state.bottom_presentation(),
+        appearance: super::appearance_panel::Frame::prepare(state),
         selector: state.selector_layout().and_then(|layout| {
             state
                 .selector_presentation(layout.capacity())
@@ -1234,8 +1236,10 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
         super::bottom_paint::draw(dc, bottom, frame.cell_height)?;
     }
     super::status_bar::draw(dc, &frame.status_bar, &frame.status)?;
-    if let Some((presentation, layout)) = &frame.selector {
-        super::selector_paint::draw(dc, presentation, *layout)?;
+    if frame.appearance.is_none() {
+        if let Some((presentation, layout)) = &frame.selector {
+            super::selector_paint::draw(dc, presentation, *layout)?;
+        }
     }
     if let Some(presentation) = &frame.search {
         SelectObject(dc, frame.font);
@@ -1313,7 +1317,10 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
             },
         )?;
     }
-    if let Some((presentation, layout)) = &frame.selector {
+    if let Some(appearance) = &frame.appearance {
+        SelectObject(dc, frame.ui_font);
+        super::appearance_panel::draw(dc, appearance)?;
+    } else if let Some((presentation, layout)) = &frame.selector {
         super::selector_paint::draw(dc, presentation, *layout)?;
     }
     if let Some(zoom) = &frame.zoom {

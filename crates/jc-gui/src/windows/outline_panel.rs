@@ -1205,7 +1205,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
         }
         let (icon, color) = row.kind.icon();
         if row.folder {
-            shell::file_icon(dc, x + px(12), top + px(4), true, color)?;
+            shell::file_icon(dc, x + px(12), top + px(4), true, color, px(16))?;
         } else if row.has_value_icon() {
             let icon = Rect {
                 left: x + px(12),

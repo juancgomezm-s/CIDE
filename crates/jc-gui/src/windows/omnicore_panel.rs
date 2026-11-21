@@ -1812,8 +1812,9 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                 dc,
                 area.left + px(21),
                 area.top + px(8),
-                frame.folder_open,
+                true,
                 shell::ACCENT,
+                px(16),
             )?;
             42
         } else {

@@ -1,4 +1,5 @@
 mod appearance;
+mod appearance_panel;
 mod back_buffer;
 mod bottom_paint;
 mod bottom_panel;
@@ -547,6 +548,7 @@ struct State {
     smoke_menu_choices: std::collections::VecDeque<Option<usize>>,
     selector: Option<Selector>,
     saved_appearance: Option<appearance::Settings>,
+    appearance_draft: Option<appearance::Settings>,
     selector_generation: u64,
     selector_explorer_focus: bool,
     selector_search_panel: Option<search_panel::SearchPanel>,
@@ -704,6 +706,7 @@ impl State {
             smoke_menu_choices: Default::default(),
             selector: None,
             saved_appearance: None,
+            appearance_draft: None,
             selector_generation: 0,
             selector_explorer_focus: false,
             selector_search_panel: None,
@@ -2310,7 +2313,7 @@ unsafe fn procedure(hwnd: Hwnd, message: u32, wparam: usize, lparam: isize) -> i
                     };
                 } else if preferences {
                     if message == WM_LBUTTONDOWN {
-                        state.appearance_click(x, y);
+                        action = state.appearance_click(x, y);
                     }
                 } else if let Some(zoom_action) = zoom_action {
                     action = zoom_action;

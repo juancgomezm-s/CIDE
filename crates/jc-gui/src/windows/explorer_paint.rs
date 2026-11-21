@@ -55,8 +55,9 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &ExplorerFrame, _ch: i32) -> Result<()
             } else if row.is_dir {
                 shell::ACCENT
             } else {
-                shell::MUTED
+                shell::file_color(&row.label)
             },
+            px(16),
         )?;
         let name = git.and_then(|git| git.label.as_deref()).map_or_else(
             || row.label.clone(),

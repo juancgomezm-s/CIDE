@@ -1,6 +1,6 @@
 # CIDE
 
-**[Descargar CIDE 0.1.11 para Windows x64](https://github.com/juancgomezm-s/CIDE/releases/download/v0.1.11/CIDE-0.1.11-windows-x64.msi)**
+**[Descargar CIDE 0.1.12 para Windows x64](https://github.com/juancgomezm-s/CIDE/releases/download/v0.1.12/CIDE-0.1.12-windows-x64.msi)**
 
 El instalador incluye la GUI, la terminal, la CLI y OmniCore. Consulta los requisitos y el procedimiento de actualización en la [guía del instalador](installer/README.md).
 

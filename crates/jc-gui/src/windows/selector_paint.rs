@@ -181,7 +181,7 @@ fn query_line(
         .filter(|r| !r.is_empty())
         .collect();
     (
-        units("> ".chars().chain(text.chars()), columns),
+        units("  ".chars().chain(text.chars()), columns),
         selected,
         (field.field.cursor_column + 2).min(columns.saturating_sub(1)),
     )
@@ -206,10 +206,10 @@ pub(super) unsafe fn draw(
     presentation: &SelectorPresentation,
     layout: Layout,
 ) -> Result<(), String> {
-    paint::fill(dc, layout.popup, EDGE)?;
+    super::shell::rounded(dc, layout.popup, 9, EDGE)?;
     let inset_left = (layout.popup.left + 1).min(layout.popup.right);
     let inset_top = (layout.popup.top + 1).min(layout.popup.bottom);
-    paint::fill(
+    super::shell::rounded(
         dc,
         Rect {
             left: inset_left,
@@ -217,10 +217,11 @@ pub(super) unsafe fn draw(
             right: (layout.popup.right - 1).max(inset_left),
             bottom: (layout.popup.bottom - 1).max(inset_top),
         },
+        8,
         PANEL,
     )?;
     if let Some(row) = layout.title {
-        paint::fill(dc, layout.row(row), HEADER)?;
+        super::shell::rounded(dc, layout.row(row), 6, HEADER)?;
         let current = if presentation.total == 0 {
             0
         } else {
@@ -257,10 +258,11 @@ pub(super) unsafe fn draw(
         )?;
     }
     if let Some(row) = layout.query {
-        paint::fill(dc, layout.row(row), QUERY)?;
+        super::shell::rounded(dc, layout.row(row), 5, QUERY)?;
         let (text, selected, cursor) = query_line(presentation, layout.columns);
         let content = layout.content(row);
         paint::text(dc, content, &text, TEXT, QUERY)?;
+        super::shell::label(dc, content, "⌕", DIM)?;
         for range in selected {
             let left = (i64::from(content.left) + range.start as i64 * layout.cell_width)
                 .min(i64::from(content.right)) as i32;
@@ -326,8 +328,22 @@ pub(super) unsafe fn draw(
         } else {
             PANEL
         };
-        paint::fill(dc, layout.row(line), background)?;
-        let marker = if row.selected { "> " } else { "  " };
+        super::shell::rounded(dc, layout.row(line), 5, background)?;
+        if row.selected {
+            let r = layout.row(line);
+            super::shell::rounded(
+                dc,
+                Rect {
+                    left: r.left + 2,
+                    right: r.left + 4,
+                    top: r.top + 3,
+                    bottom: r.bottom - 3,
+                },
+                1,
+                ACCENT,
+            )?;
+        }
+        let marker = "  ";
         let disabled = if row.enabled { "" } else { "[deshabilitado] " };
         let label = units(
             marker
@@ -419,7 +435,7 @@ mod tests {
         };
         let (text, ranges, caret) = query_line(&p, 96);
         let text = String::from_utf16(&text[..text.len() - 1]).unwrap();
-        assert_eq!(text, "> a\\u{E9}z");
+        assert_eq!(text, "  a\\u{E9}z");
         assert_eq!(ranges, vec![3..9]);
         assert_eq!(caret, 9);
         let before = p.query.clone();

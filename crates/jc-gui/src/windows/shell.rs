@@ -49,6 +49,66 @@ extern "system" {
     fn MoveToEx(dc: Hdc, x: i32, y: i32, old: *mut Point) -> i32;
     fn LineTo(dc: Hdc, x: i32, y: i32) -> i32;
     fn PolyBezierTo(dc: Hdc, points: *const Point, count: u32) -> i32;
+    fn RoundRect(dc: Hdc, l: i32, t: i32, r: i32, b: i32, w: i32, h: i32) -> i32;
+    fn SetBkMode(dc: Hdc, mode: i32) -> i32;
+}
+pub(super) unsafe fn rounded(dc: Hdc, rect: Rect, radius: i32, color: u32) -> Result<(), String> {
+    if rect.right <= rect.left || rect.bottom <= rect.top {
+        return Ok(());
+    }
+    let brush = CreateSolidBrush(paint::ui_color(color));
+    if brush.is_null() {
+        return Err(super::os_error("Preparar superficie"));
+    }
+    let old_brush = SelectObject(dc, brush);
+    let old_pen = SelectObject(dc, GetStockObject(8));
+    let result = RoundRect(
+        dc,
+        rect.left,
+        rect.top,
+        rect.right,
+        rect.bottom,
+        radius * 2,
+        radius * 2,
+    );
+    SelectObject(dc, old_pen);
+    SelectObject(dc, old_brush);
+    DeleteObject(brush);
+    if result == 0 {
+        Err(super::os_error("Dibujar superficie"))
+    } else {
+        Ok(())
+    }
+}
+pub(super) unsafe fn label(dc: Hdc, rect: Rect, label: &str, color: u32) -> Result<(), String> {
+    if rect.right <= rect.left || rect.bottom <= rect.top {
+        return Ok(());
+    }
+    let old = SetBkMode(dc, 1);
+    SetTextColor(dc, paint::ui_ink(color));
+    let text = super::wide(label);
+    let result = ExtTextOutW(
+        dc,
+        rect.left,
+        rect.top,
+        4,
+        &rect,
+        text.as_ptr(),
+        text.len().saturating_sub(1) as u32,
+        std::ptr::null(),
+    );
+    SetBkMode(dc, old);
+    if result == 0 {
+        Err(super::os_error("Dibujar etiqueta"))
+    } else {
+        Ok(())
+    }
+}
+pub(super) fn blend(a: u32, b: u32, percent: u32) -> u32 {
+    let t = percent.min(100);
+    [0, 8, 16].into_iter().fold(0, |color, shift| {
+        color | (((((a >> shift) & 255) * (100 - t) + ((b >> shift) & 255) * t) / 100) << shift)
+    })
 }
 pub(super) unsafe fn rounded_tab(dc: Hdc, rect: Rect, color: u32) -> Result<(), String> {
     let top = rect.top + 2;
@@ -158,73 +218,62 @@ pub(super) unsafe fn file_icon(
     y: i32,
     folder: bool,
     color: u32,
+    size: i32,
 ) -> Result<(), String> {
+    let size = size.clamp(8, 64);
+    let px = |v: i32| (v * size + 8) / 16;
+    let rect = |l, t, r, b| Rect {
+        left: x + px(l),
+        top: y + px(t),
+        right: x + px(r),
+        bottom: y + px(b),
+    };
+    let dark = blend(color, 0, 48);
+    let light = blend(color, 0x00ffffff, 36);
     if folder {
-        paint::fill(
-            dc,
-            Rect {
-                left: x,
-                top: y + 3,
-                right: x + 14,
-                bottom: y + 12,
-            },
-            color,
-        )?;
-        paint::fill(
-            dc,
-            Rect {
-                left: x + 1,
-                top: y + 1,
-                right: x + 7,
-                bottom: y + 4,
-            },
-            color,
-        )?;
-        paint::fill(
-            dc,
-            Rect {
-                left: x + 1,
-                top: y + 5,
-                right: x + 13,
-                bottom: y + 11,
-            },
-            SIDEBAR,
-        )?;
+        // Back cover, tab, paper edge, raised front and a lower shadow.
+        rounded(dc, rect(0, 4, 16, 15), px(2).max(1), blend(dark, 0, 25))?;
+        rounded(dc, rect(1, 1, 8, 6), px(2).max(1), light)?;
+        rounded(dc, rect(0, 3, 15, 13), px(2).max(1), dark)?;
+        paint::fill(dc, rect(2, 4, 13, 7), blend(light, 0x00ffffff, 26))?;
+        rounded(dc, rect(0, 6, 16, 14), px(2).max(1), color)?;
+        paint::fill(dc, rect(2, 6, 14, 7), light)?;
+        paint::fill(dc, rect(2, 12, 14, 13), blend(color, 0, 18))?;
     } else {
-        paint::fill(
+        // Folded sheet with a tinted spine and distinct content strokes.
+        rounded(dc, rect(3, 1, 15, 16), px(2).max(1), dark)?;
+        rounded(
             dc,
-            Rect {
-                left: x + 2,
-                top: y,
-                right: x + 12,
-                bottom: y + 14,
-            },
-            color,
+            rect(2, 0, 14, 15),
+            px(2).max(1),
+            blend(color, 0x00ffffff, 70),
         )?;
-        paint::fill(
-            dc,
-            Rect {
-                left: x + 3,
-                top: y + 1,
-                right: x + 11,
-                bottom: y + 13,
-            },
-            SIDEBAR,
-        )?;
-        for n in 0..3 {
-            paint::fill(
-                dc,
-                Rect {
-                    left: x + 5,
-                    top: y + 4 + n * 3,
-                    right: x + 9,
-                    bottom: y + 5 + n * 3,
-                },
-                color,
-            )?;
+        paint::fill(dc, rect(2, 2, 4, 13), color)?;
+        paint::fill(dc, rect(10, 0, 14, 4), dark)?;
+        paint::fill(dc, rect(10, 0, 12, 2), light)?;
+        for (line, end) in [(6, 12), (9, 11), (12, 12)] {
+            paint::fill(dc, rect(6, line, end, line + 1), dark)?;
         }
     }
     Ok(())
+}
+pub(super) fn file_color(name: &str) -> u32 {
+    match name
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "rs" => 0x006da5e8,
+        "cs" | "php" => 0x00e0a29d,
+        "java" => 0x0052adef,
+        "js" | "jsx" => 0x0065d8ec,
+        "ts" | "tsx" => 0x00e5b25c,
+        "p" | "w" | "i" | "cls" => 0x00d5ccb0,
+        "md" | "json" | "toml" | "xml" => 0x00b8c490,
+        _ => 0x00b8a99b,
+    }
 }
 #[link(name = "dwmapi")]
 extern "system" {

@@ -31,7 +31,7 @@ pub(super) struct Settings {
 }
 
 impl Settings {
-    fn read(state: &State) -> Self {
+    pub(super) fn read(state: &State) -> Self {
         Self {
             theme: state.editor_theme,
             ui: state.ui_text_size,
@@ -211,16 +211,23 @@ pub(super) unsafe fn synchronize_preview(hwnd: Hwnd) -> bool {
     let Some(saved) = state.saved_appearance else {
         return false;
     };
-    let next = state
-        .selector
-        .as_ref()
-        .filter(|_| state.appearance_open())
-        .and_then(|selector| selector.appearance_target())
-        .map_or(saved, |choice| saved.with(choice));
+    let next = if state.appearance_open() {
+        let draft = state.appearance_draft.unwrap_or(saved);
+        state
+            .selector
+            .as_ref()
+            .and_then(|selector| selector.appearance_target())
+            .map_or(draft, |choice| draft.with(choice))
+    } else {
+        saved
+    };
     match set(hwnd, model, &mut state, next) {
         Ok(changed) => {
-            if !state.appearance_open() {
+            if state.appearance_open() {
+                state.appearance_draft = Some(next);
+            } else {
                 state.saved_appearance = None;
+                state.appearance_draft = None;
             }
             changed
         }
@@ -236,12 +243,17 @@ pub(super) unsafe fn apply(hwnd: Hwnd, choice: Choice) {
         return;
     };
     let mut state = model.state.borrow_mut();
-    let next = state.committed_appearance().with(choice);
+    let next = state
+        .appearance_draft
+        .filter(|_| state.appearance_open())
+        .unwrap_or_else(|| state.committed_appearance())
+        .with(choice);
     if let Err(error) = set(hwnd, model, &mut state, next) {
         state.error(error);
         return;
     }
     state.saved_appearance = None;
+    state.appearance_draft = None;
     if state.appearance_open() {
         state.close_selector();
     }

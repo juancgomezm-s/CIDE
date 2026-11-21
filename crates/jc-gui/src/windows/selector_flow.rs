@@ -75,6 +75,7 @@ impl State {
         if kind == SelectorKind::Appearance {
             let saved = self.committed_appearance();
             self.saved_appearance = Some(saved);
+            self.appearance_draft = Some(saved);
             if let Some(row) = super::appearance::APPEARANCE
                 .iter()
                 .position(|(choice, _)| *choice == super::appearance::Choice::Theme(saved.theme))
@@ -242,17 +243,38 @@ impl State {
     }
 
     pub(super) fn appearance_contains(&self, x: i32, y: i32) -> bool {
+        if let Some(frame) = super::appearance_panel::Frame::prepare(self) {
+            return frame.contains(x, y);
+        }
         self.selector_layout()
             .is_some_and(|layout| layout.contains(x, y))
     }
 
-    pub(super) fn appearance_click(&mut self, x: i32, y: i32) {
+    pub(super) fn appearance_click(&mut self, x: i32, y: i32) -> Action {
+        if let Some(frame) = super::appearance_panel::Frame::prepare(self) {
+            use super::appearance_panel::Target;
+            match frame.hit(x, y) {
+                Some(Target::Choice(choice)) => {
+                    if let Some(row) = super::appearance::APPEARANCE
+                        .iter()
+                        .position(|(c, _)| *c == choice)
+                    {
+                        self.selector.as_mut().unwrap().select(row);
+                    }
+                }
+                Some(Target::Apply) => return self.accept_selector(false),
+                Some(Target::Cancel) => return self.selector_key(0x1b, Modifiers::NONE),
+                None if !frame.contains(x, y) => return self.selector_key(0x1b, Modifiers::NONE),
+                None => {}
+            }
+            return Action::None;
+        }
         let Some(layout) = self
             .selector_layout()
             .filter(|layout| layout.contains(x, y))
         else {
             self.selector_key(0x1b, Modifiers::NONE);
-            return;
+            return Action::None;
         };
         if let Some(row) = self
             .selector_presentation(layout.capacity())
@@ -260,6 +282,7 @@ impl State {
         {
             self.selector.as_mut().unwrap().select(row);
         }
+        Action::None
     }
 
     pub(super) fn appearance_step(&mut self, wheel: i32) -> bool {
