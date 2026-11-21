@@ -30,7 +30,7 @@ Fmt, Clippy GUI all-targets y compilación debug aprobaron.
 
 La galería work/semantic-outline-icons/iconos-nativos-final.png procede del
 mismo dibujante nativo utilizado en el panel. Es una composición GDI en memoria,
-no una captura física de escritorio. No se utilizó el escritorio en este bloque.
+no una captura física de escritorio. La revisión posterior en el escritorio confirmó los cubos, engranajes y el grupo de variables en la GUI de desarrollo.
 
 Este cambio es posterior al MSI 0.1.12 publicado. La entrega local de desarrollo
 se identifica como 0.1.13-dev; no se ha publicado un nuevo MSI en este bloque.

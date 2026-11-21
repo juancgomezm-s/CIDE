@@ -3,6 +3,9 @@ using System.Text;
 using OmniCore.Client;
 using OmniCore.Host;
 
+if (args is ["config"])
+    return ConfigurationSnapshot.Print();
+
 // The sibling runtime provides the effective workspace, model and permissions.
 // The human request arrives over a private pipe rather than the process arguments.
 if (args is not [("ask" or "edit"), var capacity] || !Console.IsInputRedirected
@@ -34,14 +37,13 @@ if (string.IsNullOrWhiteSpace(request))
 
 using var cancellation = new CancellationTokenSource();
 _ = Task.Run(() => WatchCancellation(input, cancellation));
-using var runtime = OmniCliRuntime.Create(Directory.GetCurrentDirectory());
-var localization = new Localization("es");
-runtime.UiLocale = "es";
-if (edit)
-    runtime.Localize = localization.Resolve;
-runtime.UseConsoleInput = false;
 try
 {
+    using var runtime = OmniCliRuntime.Create(Directory.GetCurrentDirectory());
+    var localization = new Localization("es");
+    runtime.UiLocale = "es";
+    if (edit) runtime.Localize = localization.Resolve;
+    runtime.UseConsoleInput = false;
     return edit
         ? await runtime.ActAsync(request, Console.WriteLine, cancellation.Token)
         // Localize known protocol messages after the host emits the full line.
@@ -52,6 +54,12 @@ catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
 {
     Console.WriteLine(edit ? "OmniCore canceló la edición." : "OmniCore canceló la consulta.");
     return 130;
+}
+
+catch (UnauthorizedAccessException)
+{
+    Console.WriteLine("OmniCore no pudo acceder a su configuración o almacén de credenciales. Inicia CIDE con el acceso normal de tu usuario.");
+    return 73;
 }
 
 static async Task WatchCancellation(Stream input, CancellationTokenSource cancellation)

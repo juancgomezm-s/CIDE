@@ -414,6 +414,9 @@ fn run_turn(
 }
 
 fn query_failure(output: &str, model: Option<&Model>, exit_code: Option<i32>) -> String {
+    if exit_code == Some(73) {
+        return "OmniCore no pudo acceder a su configuración o credenciales. Inicia CIDE con el acceso normal de tu usuario.".into();
+    }
     if output.contains("cli.runtime.model.catalog_failed")
         || output.contains("Could not fetch the ChatGPT catalog")
         || output.contains("No se pudo consultar el catálogo ChatGPT")

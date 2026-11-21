@@ -16,6 +16,7 @@ mod block;
 mod chat;
 pub(super) mod completion;
 mod composer;
+mod configuration;
 mod next_edit;
 pub(super) mod selection;
 mod sessions;
@@ -51,6 +52,10 @@ pub(super) struct Panel {
     first: usize,
     sessions_first: usize,
     show_sessions: bool,
+    show_configuration: bool,
+    configuration: Option<Result<configuration::Snapshot, String>>,
+    configuration_request: Option<configuration::Request>,
+    configuration_first: usize,
     collapse_folder: bool,
     show_changes: bool,
     focused: bool,
@@ -192,6 +197,10 @@ impl Panel {
         self.chat_notice = None;
         self.sessions = Sessions::default();
         self.show_sessions = false;
+        self.show_configuration = false;
+        self.configuration = None;
+        self.configuration_request = None;
+        self.configuration_first = 0;
         self.collapse_folder = false;
         self.show_changes = false;
         self.sessions_first = 0;
@@ -202,6 +211,8 @@ impl Panel {
 #[derive(Clone)]
 enum Target {
     Hide,
+    Configuration,
+    RefreshConfiguration,
     Sessions,
     ToggleFolder,
     PickSession(u64),
@@ -229,6 +240,7 @@ pub(super) struct Hits {
     rect: Rect,
     buttons: Vec<(Rect, Target)>,
     draft: Vec<composer::HitRow>,
+    configuration_maximum: usize,
 }
 
 pub(super) struct Frame {
@@ -236,6 +248,7 @@ pub(super) struct Frame {
     labels: Vec<(Rect, String, u32, u32)>,
     dpi: super::dpi::Dpi,
     composer_card: Option<Rect>,
+    cards: Vec<Rect>,
     draft: Option<composer::Layout>,
     folder_open: bool,
 }
@@ -444,6 +457,7 @@ impl State {
 
     pub(super) fn poll_omnicore(&mut self) -> bool {
         let mut changed = self.poll_omnicore_selection();
+        changed |= self.poll_omnicore_configuration();
         changed |= self.poll_omnicore_completion();
         changed |= self.poll_omnicore_next_edit();
         if let Some(models) = self
@@ -641,6 +655,7 @@ impl State {
         let conversation = &panel.sessions.active;
         if !panel.visible
             || panel.show_sessions
+            || panel.show_configuration
             || !panel.can_compose()
             || !panel.edit_supported
             || conversation.chat.mode != Mode::Edit
@@ -825,6 +840,7 @@ impl State {
         })();
         let panel = &mut self.omnicore;
         panel.show_sessions = false;
+        panel.show_configuration = false;
         panel.focused = true;
         match attachment {
             Ok(attachment) => {
@@ -841,6 +857,7 @@ impl State {
     fn omnicore_field_focused(&self) -> bool {
         self.omnicore.focused
             && !self.omnicore.show_sessions
+            && !self.omnicore.show_configuration
             && self.omnicore.can_compose()
             && self.omnicore_region().is_some()
             && self.pointer_overlays_clear()
@@ -881,11 +898,12 @@ impl State {
     pub(super) fn omnicore_key(&mut self, code: usize, modifiers: Modifiers) -> Option<Action> {
         if code == 0x1b
             && modifiers == Modifiers::NONE
-            && self.omnicore.show_sessions
+            && (self.omnicore.show_sessions || self.omnicore.show_configuration)
             && self.pointer_overlays_clear()
             && self.omnicore_region().is_some()
         {
             self.omnicore.show_sessions = false;
+            self.omnicore.show_configuration = false;
             self.omnicore.invalidate();
             return Some(Action::None);
         }
@@ -949,9 +967,23 @@ impl State {
         };
         match target {
             Target::Hide => self.toggle_omnicore(),
+            Target::Configuration => {
+                self.omnicore.show_configuration = true;
+                self.omnicore.show_sessions = false;
+                self.omnicore.focused = false;
+                if self.omnicore.configuration.is_none() {
+                    self.refresh_omnicore_configuration();
+                }
+                self.omnicore.invalidate();
+            }
+            Target::RefreshConfiguration => {
+                self.refresh_omnicore_configuration();
+                self.refresh_omnicore_models();
+            }
             Target::Sessions => {
                 let panel = &mut self.omnicore;
                 panel.show_sessions = true;
+                panel.show_configuration = false;
                 panel.show_changes = false;
                 panel.invalidate();
             }
@@ -1002,6 +1034,7 @@ impl State {
             }
             Target::ChooseWorkspace => return Some(Action::ChooseFolder),
             Target::Conversation => {
+                self.omnicore.show_configuration = false;
                 self.omnicore.show_sessions = false;
                 self.omnicore.focused = true;
                 self.omnicore.invalidate();
@@ -1069,7 +1102,18 @@ impl State {
                 return false;
             }
             let movement = -(delta.signum() as isize) * 3;
-            if self.omnicore.show_sessions && self.omnicore.show_changes {
+            if self.omnicore.show_configuration {
+                self.omnicore.configuration_first = self
+                    .omnicore
+                    .configuration_first
+                    .saturating_add_signed(movement)
+                    .min(
+                        self.omnicore
+                            .hits
+                            .as_ref()
+                            .map_or(0, |h| h.configuration_maximum),
+                    );
+            } else if self.omnicore.show_sessions && self.omnicore.show_changes {
                 self.omnicore.first = self
                     .omnicore
                     .first
@@ -1324,19 +1368,25 @@ impl State {
         };
         let panel = &self.omnicore;
         let tabs = inset(12, 33, 12, 59);
-        let middle = tabs.left + (tabs.right - tabs.left) / 2;
+        let middle = tabs.left + (tabs.right - tabs.left) / 3;
         let conversation = Rect {
             right: middle - dpi.pixels(3),
             ..tabs
         };
         let sessions = Rect {
             left: middle + dpi.pixels(3),
+            right: middle + (tabs.right - tabs.left) / 3 - dpi.pixels(3),
+            ..tabs
+        };
+        let configuration = Rect {
+            left: sessions.right + dpi.pixels(6),
             ..tabs
         };
         let mut buttons = vec![
             (hide, Target::Hide),
             (conversation, Target::Conversation),
             (sessions, Target::Sessions),
+            (configuration, Target::Configuration),
         ];
         let account_action = !panel.show_sessions
             && panel.can_compose()
@@ -1377,7 +1427,7 @@ impl State {
                 conversation,
                 "Chat".into(),
                 shell::TEXT,
-                if panel.show_sessions {
+                if panel.show_sessions || panel.show_configuration {
                     shell::SIDEBAR
                 } else {
                     shell::SELECTED
@@ -1394,6 +1444,19 @@ impl State {
                 },
             ),
         ];
+        labels.push((
+            configuration,
+            "Ajustes".into(),
+            shell::TEXT,
+            if panel.show_configuration {
+                shell::SELECTED
+            } else {
+                shell::SIDEBAR
+            },
+        ));
+        if panel.show_configuration {
+            return Some(self.omnicore_configuration_presentation(rect, buttons, labels));
+        }
         let status_area = inset(12, 60, 12, 80);
         if account_action {
             labels.push((
@@ -1620,6 +1683,7 @@ impl State {
                 stamp: self.omnicore.stamp.clone(),
                 rect,
                 buttons,
+                configuration_maximum: 0,
                 draft: draft_layout
                     .as_ref()
                     .map_or_else(Vec::new, composer::Layout::hits),
@@ -1627,6 +1691,7 @@ impl State {
             labels,
             dpi,
             composer_card,
+            cards: Vec::new(),
             draft: draft_layout,
             folder_open: !panel.collapse_folder,
         })
@@ -1787,6 +1852,9 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         },
         shell::SURFACE,
     )?;
+    for card in &frame.cards {
+        composer::rounded(dc, *card, px(9), shell::SURFACE)?;
+    }
     if let Some(card) = frame.composer_card {
         composer::rounded(dc, card, px(12), shell::BACKGROUND)?;
     }
@@ -1870,6 +1938,55 @@ mod tests {
             state.omnicore_click(area.left + 1, area.top + 1),
             Some(Action::None)
         ));
+    }
+
+    #[test]
+    fn omnicore_configuration_preserves_chat_and_draft_and_routes_model_action() {
+        let mut state = State::new(&crate::GuiOptions::default()).unwrap();
+        state.width = 1000;
+        state.height = 650;
+        state.omnicore.visible = true;
+        state.omnicore.ready = true;
+        state.omnicore.ask_supported = true;
+        context_model(&mut state, 4096);
+        state.omnicore.configuration = Some(Err("Sin configuración de prueba".into()));
+        state.omnicore.sessions.active.draft = "Borrador conservado".into();
+        state
+            .omnicore
+            .sessions
+            .active
+            .chat
+            .sent("Pregunta anterior".into(), None);
+        click(&mut state, |t| matches!(t, Target::Configuration));
+        assert!(state.omnicore.show_configuration);
+        let frame = state.omnicore_presentation().unwrap();
+        assert!(!frame.cards.is_empty());
+        assert!(frame.draft.is_none());
+        assert!(frame
+            .hits
+            .buttons
+            .iter()
+            .all(|(_, t)| !matches!(t, Target::Ask | Target::Draft)));
+        assert!(!state.omnicore_character('x'));
+        let area = frame
+            .hits
+            .buttons
+            .iter()
+            .find(|(_, t)| matches!(t, Target::ChooseModel))
+            .unwrap()
+            .0;
+        state.omnicore.hits = Some(frame.hits());
+        assert!(matches!(
+            state.omnicore_click(area.left + 1, area.top + 1),
+            Some(Action::ChooseOmniCoreModel)
+        ));
+        click(&mut state, |t| matches!(t, Target::Conversation));
+        assert!(!state.omnicore.show_configuration);
+        assert_eq!(state.omnicore.sessions.active.draft, "Borrador conservado");
+        assert_eq!(state.omnicore.sessions.active.chat.turns.len(), 1);
+        click(&mut state, |t| matches!(t, Target::Configuration));
+        state.omnicore_key(0x1b, Modifiers::NONE);
+        assert!(!state.omnicore.show_configuration);
     }
 
     #[test]

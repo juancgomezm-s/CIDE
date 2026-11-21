@@ -75,7 +75,7 @@ impl Drop for Catalog {
     }
 }
 
-fn user_config_dir() -> Result<PathBuf, String> {
+pub(super) fn user_config_dir() -> Result<PathBuf, String> {
     let configured = |name| {
         env::var_os(name)
             .filter(|path| !path.is_empty())
