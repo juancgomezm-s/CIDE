@@ -323,6 +323,74 @@ struct RenderedLine {
     indent_columns: usize,
     continuation_indent: usize,
 }
+/// Bounded inert Markdown for assistant messages. Reuses document formatting and
+/// grapheme wrapping, without admitting another document or loading any target.
+pub fn render_message(text: &str, columns: usize) -> MarkdownPresentation {
+    let columns = columns.clamp(12, 256);
+    let mut result = MarkdownPresentation::default();
+    let mut work = 0usize;
+    let mut fence: Option<(u8, usize)> = None;
+    for (line, original) in text.lines().enumerate() {
+        work = work.saturating_add(original.len());
+        if work > 64 * 1024 || result.rows.len() >= 2048 {
+            result.limited = true;
+            break;
+        }
+        let original = original.trim_end_matches('\r');
+        let trimmed = original.trim_start();
+        let marker = trimmed.as_bytes().first().copied().unwrap_or(0);
+        let count = trimmed.bytes().take_while(|b| *b == marker).count();
+        let is_fence = matches!(marker, b'`' | b'~') && count >= 3;
+        let closing = fence
+            .is_some_and(|(m, n)| marker == m && count >= n && trimmed[count..].trim().is_empty());
+        if closing {
+            fence = None;
+            continue;
+        }
+        let code = fence.is_some() || is_fence;
+        if fence.is_none() && is_fence {
+            fence = Some((marker, count));
+        }
+        let block = block_kind(original, code, columns);
+        let indent_columns = indentation(original).min(64);
+        let continuation_indent = match block {
+            MarkdownBlock::List { .. } | MarkdownBlock::Quote => (indent_columns + 2).min(64),
+            _ => indent_columns,
+        };
+        let spans = if original.len() > LINE_BYTES {
+            result.limited = true;
+            vec![MarkdownSpan {
+                text: "[Línea extensa: presentación abreviada]".into(),
+                kind: SyntaxKind::Comment,
+                style: MarkdownInlineStyle::Plain,
+                target: None,
+            }]
+        } else if code {
+            code_line(original)
+        } else {
+            format_line(original, columns)
+        };
+        for (wrapped, spans) in wrap_indented(spans, columns, continuation_indent)
+            .into_iter()
+            .enumerate()
+        {
+            if result.rows.len() >= 2048 {
+                result.limited = true;
+                break;
+            }
+            result.rows.push(MarkdownRow {
+                source_line: line,
+                block,
+                continuation: wrapped > 0,
+                indent_columns,
+                continuation_indent,
+                spans,
+            });
+        }
+    }
+    result
+}
+
 fn line_spans(
     doc: &crate::EditorDocument,
     content: std::ops::Range<usize>,
@@ -1612,5 +1680,30 @@ mod tests {
             assert_eq!(scan.step(&app), MarkdownAnchorProgress::Pending);
         }
         assert_eq!(scan.step(&app), MarkdownAnchorProgress::Limited);
+    }
+}
+
+#[cfg(test)]
+mod message_tests {
+    use super::*;
+    #[test]
+    fn assistant_message_reuses_formatting_and_keeps_code_literal() {
+        let result = render_message(
+            "# Título\n**Importante** y `valor`.\n```rust\nlet texto = \"**literal**\";\n```",
+            40,
+        );
+        let text = result
+            .rows
+            .iter()
+            .flat_map(|r| r.spans.iter())
+            .map(|s| s.text.as_str())
+            .collect::<String>();
+        assert!(text.contains("Título"));
+        assert!(text.contains("Importante"));
+        assert!(!text.contains("**Importante**"));
+        assert!(text.contains("**literal**"));
+        assert!(!result.limited);
+        let large = render_message(&"a".repeat(65537), 40);
+        assert!(large.limited);
     }
 }

@@ -235,7 +235,11 @@ fn template(dialog: &Dialog<'_>) -> Vec<u32> {
             100,
             [12, 32, 296, 60],
             0x81,
-            dialog.message,
+            &dialog
+                .message
+                .replace("\r\n", "\n")
+                .replace('\r', "\n")
+                .replace('\n', "\r\n"),
             0xa1_2804,
         );
     } else {

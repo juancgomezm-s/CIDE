@@ -120,6 +120,49 @@ enum ProposalKind {
 }
 
 impl Proposal {
+    pub(super) fn from_chat(
+        app: &Workbench,
+        replacement: String,
+    ) -> Result<(Self, OmniCorePreview, PathBuf), String> {
+        let editor = app
+            .active_editor()
+            .ok_or("Abre un archivo para insertar el código.")?;
+        let encoding = editor
+            .session
+            .encoding()
+            .ok_or("Confirma la codificación del archivo.")?;
+        jc_text::encode(&replacement, encoding).map_err(|error| error.to_string())?;
+        let path = editor.session.path().to_owned();
+        if let Some(export) = app
+            .export_selection(64 * 1024)
+            .map_err(|error| error.to_string())?
+        {
+            let preview = OmniCorePreview::compute(export.text.clone(), replacement.clone())?;
+            let proposal = Self {
+                source: Selection {
+                    stamp: export.target,
+                    encoding,
+                    path: path.clone(),
+                    text: export.text,
+                },
+                replacement,
+                kind: ProposalKind::Selection,
+            };
+            return Ok((proposal, preview, path));
+        }
+        let stamp = app
+            .capture_clipboard_target()
+            .map_err(|error| error.to_string())?;
+        let prefix = super::completion::prefix(&editor, 256)
+            .ok_or("No se pudo leer el punto de inserción.")?;
+        let suffix = super::context_text(&editor, editor.cursor, 256)
+            .ok_or("No se pudo leer el punto de inserción.")?
+            .0;
+        let (proposal, preview) =
+            Self::for_insertion(stamp, encoding, path.clone(), &prefix, &suffix, replacement)?;
+        Ok((proposal, preview, path))
+    }
+
     pub(super) fn for_insertion(
         stamp: ClipboardTarget,
         encoding: TextEncoding,
@@ -412,6 +455,7 @@ pub(super) mod tests {
         let path = source.path.clone();
         let (proposal, preview) = source
             .review(Answer {
+                activity: Vec::new(),
                 text: answer.into(),
                 complete: true,
             })
@@ -459,6 +503,26 @@ pub(super) mod tests {
         assert_eq!(bytes(state), "inicio té fin".as_bytes());
         state.execute(CommandId::EditUndo);
         assert_eq!(bytes(state), original.as_bytes());
+    }
+
+    #[test]
+    fn omnicore_chat_proposals_replace_or_insert_with_one_undo_and_reject_stale_targets() {
+        let (mut state, original) = editor();
+        let (proposal, _, _) = Proposal::from_chat(&state.workbench, "té".into()).unwrap();
+        proposal.apply(&mut state.workbench).unwrap();
+        assert!(String::from_utf8(bytes(&state)).unwrap().contains("té"));
+        state.execute(CommandId::EditUndo);
+        assert_eq!(bytes(&state), original.as_bytes());
+        state.workbench.set_linear_selection_bytes(0, 0).unwrap();
+        let (proposal, _, _) = Proposal::from_chat(&state.workbench, "// inicio\n".into()).unwrap();
+        proposal.apply(&mut state.workbench).unwrap();
+        state.execute(CommandId::EditUndo);
+        assert_eq!(bytes(&state), original.as_bytes());
+        let (stale, _, _) = Proposal::from_chat(&state.workbench, "otro".into()).unwrap();
+        state.workbench.insert_text("cambio local").unwrap();
+        let changed = bytes(&state);
+        assert!(stale.apply(&mut state.workbench).is_err());
+        assert_eq!(bytes(&state), changed);
     }
 
     #[test]
@@ -549,6 +613,7 @@ pub(super) mod tests {
             assert!(Selection::capture(&state.workbench)
                 .unwrap()
                 .review(Answer {
+                    activity: Vec::new(),
                     text: text.into(),
                     complete
                 })
@@ -557,6 +622,7 @@ pub(super) mod tests {
         let (proposal, _) = Selection::capture(&state.workbench)
             .unwrap()
             .review(Answer {
+                activity: Vec::new(),
                 text: "```json\r\n{\"replacement\":\" x\\r\\ny \"}\r\n```".into(),
                 complete: true,
             })

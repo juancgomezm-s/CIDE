@@ -17,6 +17,7 @@ mod chat;
 pub(super) mod completion;
 mod composer;
 mod configuration;
+mod conversation;
 mod next_edit;
 pub(super) mod selection;
 mod sessions;
@@ -27,7 +28,7 @@ use sessions::Sessions;
 const ROW: i32 = 26;
 const HEADER: i32 = 83;
 const CHAT_FOOTER: i32 = 136;
-const CHAT_ROW: i32 = 18;
+const CHAT_ROW: i32 = 20;
 const SESSIONS_TOP: i32 = HEADER + 36;
 const SESSIONS_FOOTER: i32 = 39;
 const MAX_PENDING: usize = 8;
@@ -53,6 +54,7 @@ pub(super) struct Panel {
     sessions_first: usize,
     show_sessions: bool,
     show_configuration: bool,
+    pub(super) show_activity: bool,
     configuration: Option<Result<configuration::Snapshot, String>>,
     configuration_request: Option<configuration::Request>,
     configuration_first: usize,
@@ -213,6 +215,7 @@ enum Target {
     Hide,
     Configuration,
     RefreshConfiguration,
+    ToggleActivity,
     Sessions,
     ToggleFolder,
     PickSession(u64),
@@ -232,6 +235,8 @@ enum Target {
     RemoveAttachment,
     Ask,
     Effect(String),
+    InsertCode(usize, usize),
+    NewCode(usize, usize),
 }
 
 #[derive(Clone)]
@@ -249,6 +254,7 @@ pub(super) struct Frame {
     dpi: super::dpi::Dpi,
     composer_card: Option<Rect>,
     cards: Vec<Rect>,
+    conversation: Vec<conversation::Placed>,
     draft: Option<composer::Layout>,
     folder_open: bool,
 }
@@ -341,7 +347,7 @@ impl State {
             return None;
         }
         let right = self.width.clamp(1, 8192);
-        let width = self.dpi.pixels(348).min(right / 2);
+        let width = self.dpi.pixels(400).min(right / 2);
         Some(Rect {
             left: right - width,
             right,
@@ -742,6 +748,9 @@ impl State {
                     .active
                     .chat
                     .sent(question.to_owned(), outgoing.attachment_title);
+                if let Some(turn) = panel.sessions.active.chat.turns.back_mut() {
+                    turn.model = panel.model.as_ref().map(|model| model.id.clone());
+                }
                 panel.sessions.active.draft.clear();
                 panel.sessions.active.selection = FieldSelection::default();
                 panel.sessions.active.first = None;
@@ -976,6 +985,10 @@ impl State {
                 }
                 self.omnicore.invalidate();
             }
+            Target::ToggleActivity => {
+                self.omnicore.show_activity = !self.omnicore.show_activity;
+                self.omnicore.invalidate();
+            }
             Target::RefreshConfiguration => {
                 self.refresh_omnicore_configuration();
                 self.refresh_omnicore_models();
@@ -1087,6 +1100,8 @@ impl State {
                     return Some(self.submit_omnicore());
                 }
             }
+            Target::InsertCode(turn, block) => self.review_omnicore_chat_code(turn, block, false),
+            Target::NewCode(turn, block) => self.review_omnicore_chat_code(turn, block, true),
             Target::Effect(id) => {
                 if let Err(error) = self.omnicore.transport.request_open(&id) {
                     self.omnicore.status = Some(error);
@@ -1146,31 +1161,15 @@ impl State {
         }
     }
 
-    fn omnicore_answer_rows(&self, rect: Rect) -> impl Iterator<Item = String> + '_ {
-        let columns = ((rect.right - rect.left - self.dpi.pixels(24)) / self.dpi.pixels(8).max(1))
-            .max(1) as usize;
-        let chat = &self.omnicore.sessions.active.chat;
-        chat.turns.iter().flat_map(move |turn| {
-            let (answer, tail) = match &turn.answer {
-                Some(Ok(answer)) => (
-                    answer.text.as_str(),
-                    (!answer.complete).then_some("Respuesta incompleta."),
-                ),
-                Some(Err(error)) => (error.as_str(), None),
-                None => ("Esperando respuesta…", None),
-            };
-            std::iter::once(format!("Tú · {}", turn.mode.label()))
-                .chain(
-                    turn.attachment
-                        .as_ref()
-                        .map(|title| format!("Adjunto · {title}")),
-                )
-                .chain(display_lines(&turn.question, columns))
-                .chain(std::iter::once("OmniCore".into()))
-                .chain(display_lines(answer, columns))
-                .chain(tail.map(str::to_owned))
-                .chain(std::iter::once(String::new()))
-        })
+    fn omnicore_answer_rows(&self, rect: Rect) -> std::vec::IntoIter<conversation::Row> {
+        let columns = ((rect.right - rect.left - self.dpi.pixels(56)) / self.dpi.pixels(8).max(1))
+            .max(12) as usize;
+        conversation::rows(
+            &self.omnicore.sessions.active.chat,
+            columns,
+            self.omnicore.show_activity,
+        )
+        .into_iter()
     }
 
     fn omnicore_chat_capacity(&self, rect: Rect) -> usize {
@@ -1499,6 +1498,7 @@ impl State {
         let top = rect.top + dpi.pixels(HEADER);
         let mut composer_card = None;
         let mut draft_layout = None;
+        let mut conversation_rows = Vec::new();
         if !panel.show_sessions && panel.can_compose() {
             let line_height = dpi.pixels(CHAT_ROW).max(1);
             let composer = Rect {
@@ -1573,30 +1573,46 @@ impl State {
             ));
             buttons.push((field, Target::Draft));
             let rows = self.omnicore_chat_capacity(rect);
-            let max = self.omnicore_answer_rows(rect).count().saturating_sub(rows);
-            let first = self.omnicore.sessions.active.first.unwrap_or(max).min(max);
-            for (index, line) in self
-                .omnicore_answer_rows(rect)
-                .skip(first)
-                .take(rows)
-                .enumerate()
-            {
-                let top = top + index as i32 * line_height;
-                let text_color = if line.starts_with("Tú · ") || line == "OmniCore" {
-                    shell::ACCENT
-                } else {
-                    shell::TEXT
+            let messages: Vec<_> = self.omnicore_answer_rows(rect).collect();
+            let max = messages.len().saturating_sub(rows);
+            let first = panel.sessions.active.first.unwrap_or(max).min(max);
+            for (index, row) in messages.into_iter().skip(first).take(rows).enumerate() {
+                let y = top + index as i32 * line_height;
+                let area = Rect {
+                    left: rect.left + dpi.pixels(12),
+                    right: rect.right - dpi.pixels(20),
+                    top: y,
+                    bottom: y + line_height,
                 };
-                labels.push((
-                    Rect {
-                        top,
-                        bottom: top + line_height,
-                        ..composer
+                if let Some((turn, block)) = row.action {
+                    let insert = Rect {
+                        left: area.right - dpi.pixels(132),
+                        right: area.right - dpi.pixels(64),
+                        ..area
+                    };
+                    let new_file = Rect {
+                        left: area.right - dpi.pixels(60),
+                        ..area
+                    };
+                    buttons.extend([
+                        (insert, Target::InsertCode(turn, block)),
+                        (new_file, Target::NewCode(turn, block)),
+                    ]);
+                    labels.extend([
+                        (insert, "Insertar…".into(), shell::TEXT, shell::RAISED),
+                        (new_file, "Nuevo".into(), shell::TEXT, shell::RAISED),
+                    ]);
+                }
+                conversation_rows.push(conversation::Placed {
+                    area,
+                    row,
+                    accent: self.editor_theme.accent(),
+                    brand: if self.editor_theme == super::appearance::Theme::Current {
+                        0x00d0d467
+                    } else {
+                        self.editor_theme.accent()
                     },
-                    line,
-                    text_color,
-                    shell::SIDEBAR,
-                ));
+                });
             }
             let modes: &[Mode] = if panel.edit_supported {
                 &[Mode::Ask, Mode::Plan, Mode::Edit]
@@ -1692,6 +1708,7 @@ impl State {
             dpi,
             composer_card,
             cards: Vec::new(),
+            conversation: conversation_rows,
             draft: draft_layout,
             folder_open: !panel.collapse_folder,
         })
@@ -1723,7 +1740,7 @@ pub(super) unsafe fn confirm_edit(hwnd: Hwnd) {
         .as_ref()
         .map_or_else(String::new, |title| format!("\nContexto adjunto: {title}"));
     let message = format!(
-        "OmniCore podrá crear o modificar archivos de esta carpeta según su política.\n\nCarpeta: {}\nModelo: {}{context}\n\n{}",
+        "OmniCore podrá crear y editar archivos de esta carpeta en una sesión de CIDE acotada al proyecto. No se cambian tus permisos globales; se conservan los límites del modelo. No se habilitan borrados ni ejecución general.\n\nCarpeta: {}\nModelo: {}{context}\n\n{}",
         request.root.display(),
         safe_label(model),
         request.draft,
@@ -1855,6 +1872,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
     for card in &frame.cards {
         composer::rounded(dc, *card, px(9), shell::SURFACE)?;
     }
+    conversation::draw(dc, &frame.conversation, frame.dpi)?;
     if let Some(card) = frame.composer_card {
         composer::rounded(dc, card, px(12), shell::BACKGROUND)?;
     }

@@ -2,7 +2,7 @@ use super::State;
 use jc_app::{session::EditorRecovery, Workbench};
 use std::io::{Cursor, Read};
 pub(super) const TIMER_ID: usize = 0xc1de1;
-const GUI_METADATA_VERSION: u8 = 9;
+const GUI_METADATA_VERSION: u8 = 10;
 const APPEARANCE_BYTES: usize = 6;
 const OUTLINE_POSITION_BYTES: usize = 1;
 #[link(name = "user32")]
@@ -171,12 +171,24 @@ impl State {
             } else {
                 false
             };
+            let show_activity = if header[0] >= 10 {
+                let mut enabled = [0];
+                reader.read_exact(&mut enabled).map_err(|e| e.to_string())?;
+                match enabled[0] {
+                    0 => false,
+                    1 => true,
+                    _ => return Err("Preferencia de actividad de OmniCore inválida".into()),
+                }
+            } else {
+                false
+            };
             if reader.position() != metadata.len() as u64 {
                 return Err("Metadatos de ventana incompletos".into());
             }
             self.workbench = workbench;
             self.editor_theme = editor_theme;
             self.omnicore.automatic_completion = automatic_completion;
+            self.omnicore.show_activity = show_activity;
             self.outline.visible = code_visible;
             self.outline.left = outline_left;
             if let Some(root) = root {
@@ -246,6 +258,7 @@ impl State {
         metadata.push(u8::from(appearance.outline_left));
         metadata.push(appearance.theme as u8);
         metadata.push(u8::from(self.omnicore.automatic_completion));
+        metadata.push(u8::from(self.omnicore.show_activity));
         Ok(metadata)
     }
     #[cfg(test)]
@@ -556,7 +569,7 @@ mod tests {
         let fixture = Fixture::new();
         let state = State::new(&GuiOptions::default()).unwrap();
         let mut legacy = state.recovery_metadata().unwrap();
-        legacy.truncate(legacy.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 2);
+        legacy.truncate(legacy.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 3);
         legacy[0] = 1;
         legacy.remove(20);
         let mut recovery = fixture.recovery();
@@ -575,7 +588,7 @@ mod tests {
         let state = State::new(&GuiOptions::default()).unwrap();
         let mut legacy = state.recovery_metadata().unwrap();
         assert_eq!(legacy[0], GUI_METADATA_VERSION);
-        legacy.truncate(legacy.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 2);
+        legacy.truncate(legacy.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 3);
         legacy[0] = 3;
         legacy.push(1);
         let path = fixture.root.join("obsolete-git.exe");
@@ -596,7 +609,7 @@ mod tests {
         drop(restored);
         let other = Fixture::new();
         let mut v2 = state.recovery_metadata().unwrap();
-        v2.truncate(v2.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 2);
+        v2.truncate(v2.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 3);
         v2[0] = 2;
         let mut depot = other.recovery();
         state
@@ -623,6 +636,7 @@ mod tests {
         state.minimap_visible = false;
         state.editor_theme = super::super::appearance::Theme::Light;
         state.omnicore.automatic_completion = true;
+        state.omnicore.show_activity = true;
         state.minimap_width = 200;
         state.outline.left = true;
         state.clear_git();
@@ -656,11 +670,12 @@ mod tests {
         assert_eq!(restored.minimap_width, 200);
         assert!(restored.outline.left);
         assert!(restored.omnicore.automatic_completion);
+        assert!(restored.omnicore.show_activity);
         drop(restored);
         let legacy = Fixture::new();
         let defaults = State::new(&GuiOptions::default()).unwrap();
         let mut metadata = defaults.recovery_metadata().unwrap();
-        metadata.truncate(metadata.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 2);
+        metadata.truncate(metadata.len() - 7 - APPEARANCE_BYTES - OUTLINE_POSITION_BYTES - 3);
         metadata[0] = 4;
         let mut depot = legacy.recovery();
         defaults
@@ -686,7 +701,7 @@ mod tests {
         state.minimap_width = 76;
         state.outline.left = true;
         let mut v6 = state.recovery_metadata().unwrap();
-        v6.truncate(v6.len() - OUTLINE_POSITION_BYTES - 2);
+        v6.truncate(v6.len() - OUTLINE_POSITION_BYTES - 3);
         v6[0] = 6;
         let mut recovery = fixture.recovery();
         state

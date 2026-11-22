@@ -93,7 +93,7 @@ fn semantic_timer(wakeup: jc_app::Wakeup) -> Option<(Instant, mpsc::Sender<()>)>
     Some((deadline, timer))
 }
 
-fn prefix(editor: &EditorRead<'_>, budget: usize) -> Option<String> {
+pub(super) fn prefix(editor: &EditorRead<'_>, budget: usize) -> Option<String> {
     let mut start = editor.cursor.saturating_sub(CONTEXT_BYTES + 3);
     let bytes = editor
         .session
@@ -1250,6 +1250,7 @@ pub(super) mod tests {
         assert_eq!(envelope["languageExtension"], "rs");
         assert!(prompt(&editor, 16).is_err());
         let answer = |text: &str| Answer {
+            activity: Vec::new(),
             text: text.into(),
             complete: true,
         };

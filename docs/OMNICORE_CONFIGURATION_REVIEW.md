@@ -52,9 +52,11 @@ sobrescribirlo. La entrega usada aquí contiene 391 archivos de OmniCore.
   archivo Iconos-clases.cls activo. La respuesta visible identificó Demo,
   Nombre/CHARACTER, contador/INTEGER y principal() → destino(). No se usó una
   consulta lanzada fuera de la GUI como sustituto de esta observación.
-- La revisión física de la pestaña Ajustes está pendiente: la nueva instancia
-  devolvió captura negra y GetCursorPos Acceso denegado tras selección nueva.
-  No se declara aprobada ni se envió entrada sobre coordenadas de una captura negra.
+- Se cerró la revisión física de Ajustes en el bloque posterior: se cargaron
+  proveedores, se cambió de modelo, se enviaron dos consultas reales y se
+  actualizó el catálogo conservando la conversación. Véase
+  [OMNICORE_EDITOR_INTEGRATION.md](OMNICORE_EDITOR_INTEGRATION.md) para el nuevo
+  alcance y las verificaciones físicas todavía pendientes de edición y diseño.
 
 La primera entrega de iconos estaba incompleta y se corrigió agregando el
 runtime. Su primera consulta también reprodujo una denegación del almacén de

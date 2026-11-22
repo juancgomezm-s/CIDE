@@ -683,6 +683,7 @@ mod tests {
 
     fn answer(text: &str) -> Answer {
         Answer {
+            activity: Vec::new(),
             text: serde_json::json!({"insertion": text}).to_string(),
             complete: true,
         }

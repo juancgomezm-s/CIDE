@@ -425,6 +425,7 @@ pub(super) mod tests {
 
     fn reply(line: usize, before: &str, replacement: &str) -> Answer {
         Answer {
+            activity: Vec::new(),
             text: json!({"line":line, "before":before, "replacement":replacement}).to_string(),
             complete: true,
         }

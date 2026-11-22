@@ -57,6 +57,25 @@ pub(super) unsafe fn text(dc: Hdc, rect: Rect, label: &str, color: u32) -> Resul
     Ok(())
 }
 
+pub(super) unsafe fn text_width(dc: Hdc, label: &str) -> i32 {
+    let label = wide(label);
+    let mut size = TextSize::default();
+    if GetTextExtentExPointW(
+        dc,
+        label.as_ptr(),
+        label.len().saturating_sub(1) as i32,
+        i32::MAX,
+        std::ptr::null_mut(),
+        std::ptr::null_mut(),
+        &mut size,
+    ) == 0
+    {
+        0
+    } else {
+        size.x
+    }
+}
+
 pub(super) unsafe fn rounded(dc: Hdc, rect: Rect, radius: i32, color: u32) -> Result<(), String> {
     if rect.right <= rect.left || rect.bottom <= rect.top {
         return Ok(());

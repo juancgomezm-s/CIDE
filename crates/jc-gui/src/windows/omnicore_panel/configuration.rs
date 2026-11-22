@@ -218,9 +218,25 @@ impl State {
         let viewport = Rect {
             left: rect.left + px(12),
             right: rect.right - px(12),
-            top: rect.top + px(84),
+            top: rect.top + px(121),
             bottom: rect.bottom - px(49),
         };
+        let activity = Rect {
+            left: rect.left + px(12),
+            right: rect.right - px(12),
+            top: rect.top + px(86),
+            bottom: rect.top + px(114),
+        };
+        labels.push((
+            activity,
+            format!(
+                "{} Mostrar herramientas y razonamiento",
+                if panel.show_activity { "☑" } else { "☐" }
+            ),
+            shell::TEXT,
+            shell::SURFACE,
+        ));
+        buttons.push((activity, Target::ToggleActivity));
         let mut cards = Vec::new();
         let mut sections: Vec<(String, Vec<String>)> = Vec::new();
         let selected = panel.model.as_ref().map_or("Automático", |m| m.id.as_str());
@@ -380,6 +396,7 @@ impl State {
             dpi,
             composer_card: None,
             cards,
+            conversation: Vec::new(),
             draft: None,
             folder_open: false,
         }

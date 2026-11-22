@@ -21,6 +21,7 @@ use std::{
 
 pub(super) const LEGACY_INPUT_BYTES: usize = 8192;
 const ANSWER_BYTES: usize = 64 * 1024;
+const WIRE_BYTES: usize = 512 * 1024;
 const NO_WINDOW: u32 = 0x0800_0000;
 const NEW_CONSOLE: u32 = 0x0000_0010;
 
@@ -161,6 +162,7 @@ pub(super) const CHATGPT_CATALOG_ERROR: &str =
 pub(super) struct Answer {
     pub text: String,
     pub complete: bool,
+    pub activity: Vec<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -297,7 +299,13 @@ fn run_turn(
             .env_remove("OMNI_BASE_URL")
             .env_remove("OMNI_QWEN_KEY");
     }
+    if edit {
+        process.env("CIDE_OMNICORE_EDIT_CONSENT", "scope_v1");
+    } else {
+        process.env_remove("CIDE_OMNICORE_EDIT_CONSENT");
+    }
     let mut child = process
+        .env("CIDE_OMNICORE_WIRE", "1")
         .creation_flags(NO_WINDOW)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -320,10 +328,10 @@ fn run_turn(
                 let mut bytes = Vec::new();
                 let mut output = output;
                 let result = (&mut output)
-                    .take((ANSWER_BYTES + 1) as u64)
+                    .take((WIRE_BYTES + 1) as u64)
                     .read_to_end(&mut bytes)
                     .and_then(|size| {
-                        if size > ANSWER_BYTES {
+                        if size > WIRE_BYTES {
                             std::io::copy(&mut output, &mut std::io::sink())?;
                         }
                         Ok(bytes)
@@ -379,15 +387,17 @@ fn run_turn(
             }
             let bytes = output.as_ref().unwrap();
             if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-                if isolated && (bytes.len() > ANSWER_BYTES || std::str::from_utf8(bytes).is_err()) {
+                if isolated && (bytes.len() > WIRE_BYTES || std::str::from_utf8(bytes).is_err()) {
                     return Err(
                         "La propuesta de OmniCore está incompleta o contiene texto inválido."
                             .into(),
                     );
                 }
-                let output = String::from_utf8_lossy(&bytes[..bytes.len().min(ANSWER_BYTES)]);
-                let edit_report =
-                    edit && output.lines().any(|line| line.starts_with("[herramienta]"));
+                let wire = String::from_utf8_lossy(&bytes[..bytes.len().min(WIRE_BYTES)]);
+                let (output, activity) = decode_turn_output(&wire)?;
+                let edit_report = edit
+                    && (!activity.is_empty()
+                        || output.lines().any(|line| line.starts_with("[herramienta]")));
                 if !status.success() && !edit_report {
                     return Err(query_failure(&output, model, status.code()));
                 }
@@ -398,9 +408,16 @@ fn run_turn(
                 if text.is_empty() {
                     return Err("OmniCore no devolvió una respuesta. Abre su sesión para revisar la configuración.".into());
                 }
+                let complete =
+                    status.success() && bytes.len() <= WIRE_BYTES && text.len() <= ANSWER_BYTES;
+                let mut end = text.len().min(ANSWER_BYTES);
+                while !text.is_char_boundary(end) {
+                    end -= 1;
+                }
                 return Ok(Answer {
-                    text: text.to_owned(),
-                    complete: status.success() && bytes.len() <= ANSWER_BYTES,
+                    text: text[..end].to_owned(),
+                    complete,
+                    activity,
                 });
             }
             thread::sleep(Duration::from_millis(20));
@@ -411,6 +428,51 @@ fn run_turn(
         let _ = child.wait();
     }
     result
+}
+
+fn decode_turn_output(wire: &str) -> Result<(String, Vec<String>), String> {
+    let mut messages = Vec::new();
+    let mut activity = Vec::new();
+    let mut activity_bytes = 0usize;
+    let mut framed = false;
+    let mut legacy = false;
+    for line in wire.lines() {
+        let value = serde_json::from_str::<serde_json::Value>(line).ok();
+        if let Some(value) = value.filter(|v| v["cideTurn"] == 1) {
+            if legacy {
+                return Err("Respuesta de OmniCore mezclada con salida sin formato.".into());
+            }
+            framed = true;
+            let text = value["text"]
+                .as_str()
+                .ok_or("Respuesta de OmniCore inválida.")?;
+            match value["channel"].as_str() {
+                Some("message") => messages.push(text.to_owned()),
+                Some("tool" | "reasoning" | "status") => {
+                    if activity_bytes.saturating_add(text.len()) <= ANSWER_BYTES {
+                        activity_bytes += text.len();
+                        activity.push(text.to_owned());
+                    }
+                }
+                _ => return Err("Canal de OmniCore no admitido.".into()),
+            }
+        } else if !line.trim().is_empty() {
+            // Older companions emit plain text. Never reinterpret mixed framed
+            // and unframed records as a successful structured response.
+            if framed {
+                return Err("Respuesta de OmniCore incompleta.".into());
+            }
+            legacy = true;
+            messages.push(line.to_owned());
+        }
+    }
+    let text = messages.join("\n");
+    let text = if framed && text.trim().is_empty() {
+        "OmniCore no devolvió una respuesta final. La operación no se completó.".into()
+    } else {
+        text
+    };
+    Ok((text, activity))
 }
 
 fn query_failure(output: &str, model: Option<&Model>, exit_code: Option<i32>) -> String {
@@ -473,5 +535,19 @@ fn answer_from_console(output: &str) -> &str {
         body.trim_end()
     } else {
         answer
+    }
+}
+
+#[cfg(test)]
+mod turn_wire_tests {
+    use super::*;
+    #[test]
+    fn omnicore_tool_callbacks_keep_multiline_activity_out_of_the_answer() {
+        let wire = [serde_json::json!({"cideTurn":1,"channel":"tool","text":"[herramienta] ejemplo\ncontenido técnico"}),serde_json::json!({"cideTurn":1,"channel":"reasoning","text":"[razonamiento] compartido"}),serde_json::json!({"cideTurn":1,"channel":"message","text":"Respuesta útil\n```rust\nfn hola() {}\n```"})].iter().map(|v|v.to_string()).collect::<Vec<_>>().join("\n");
+        let (answer, activity) = decode_turn_output(&wire).unwrap();
+        assert_eq!(activity.len(), 2);
+        assert!(!answer.contains("técnico"));
+        assert!(answer.contains("fn hola"));
+        assert!(decode_turn_output(&format!("sin formato\n{wire}")).is_err());
     }
 }

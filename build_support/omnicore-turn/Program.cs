@@ -44,21 +44,25 @@ try
     runtime.UiLocale = "es";
     if (edit) runtime.Localize = localization.Resolve;
     runtime.UseConsoleInput = false;
+    Action<string> output = line => TurnOutput.Write(line, localization);
+    if (edit) request = "CIDE editor integration: EDIT mode is an explicit request to change the current workspace, not merely show an example. Follow only the latest user request; prior questions are history. Discover only the filesystem tools needed, using tool.search maxResults at most 8. Read before patching; create a requested new file using the filesystem tool. Do not load unrelated skills or use desktop tools for a source edit. Respect effective permissions and approval requirements. Never claim a file was changed without a successful write.\n\n" + request;
     return edit
-        ? await runtime.ActAsync(request, Console.WriteLine, cancellation.Token)
+        ? Environment.GetEnvironmentVariable("CIDE_OMNICORE_EDIT_CONSENT") == "scope_v1"
+            ? await EditorTurn.Run(runtime, request, output, cancellation.Token)
+            : await runtime.ActAsync(request, output, cancellation.Token)
         // Localize known protocol messages after the host emits the full line.
         // The host's resolver can split arbitrary assistant text at a parenthesis.
-        : await runtime.AskAsync(request, line => Console.WriteLine(localization.ResolveWire(line)), cancellation.Token);
+        : await runtime.AskAsync(request, output, cancellation.Token);
 }
 catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
 {
-    Console.WriteLine(edit ? "OmniCore canceló la edición." : "OmniCore canceló la consulta.");
+    TurnOutput.Write(edit ? "OmniCore canceló la edición." : "OmniCore canceló la consulta.", new Localization("es"));
     return 130;
 }
 
 catch (UnauthorizedAccessException)
 {
-    Console.WriteLine("OmniCore no pudo acceder a su configuración o almacén de credenciales. Inicia CIDE con el acceso normal de tu usuario.");
+    TurnOutput.Write("OmniCore no pudo acceder a su configuración o almacén de credenciales. Inicia CIDE con el acceso normal de tu usuario.", new Localization("es"));
     return 73;
 }
 

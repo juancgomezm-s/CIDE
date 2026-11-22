@@ -31,6 +31,7 @@ pub(super) struct Attachment {
 pub(super) struct Turn {
     pub mode: Mode,
     pub question: String,
+    pub model: Option<String>,
     pub attachment: Option<String>,
     pub answer: Option<Result<Answer, String>>,
 }
@@ -151,6 +152,7 @@ impl Chat {
         self.turns.push_back(Turn {
             mode: self.mode,
             question,
+            model: None,
             attachment: self
                 .attachment
                 .take()
@@ -184,6 +186,7 @@ mod tests {
         );
         chat.sent("Primera pregunta".into(), None);
         chat.finish(Ok(Answer {
+            activity: Vec::new(),
             text: "Una explicación anterior.".into(),
             complete: true,
         }));
