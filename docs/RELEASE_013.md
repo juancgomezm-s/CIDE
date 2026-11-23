@@ -52,7 +52,8 @@ workspace. Estas pruebas se distinguen de las consultas reales desde la GUI.
 - Archivo local: `work/packages/cide-013-final/CIDE-0.1.13-windows-x64.msi`.
 - Tamaño: 66.726.856 bytes.
 - SHA-256: `2c60659c55381d060a3607d76eab2797fe75f6cc0a4a48362931e7db0455cf8e`.
-- Sin firma Authenticode; entrega local, no publicada en GitHub.
+- Sin firma Authenticode.
+- [Entrega en GitHub y descarga del MSI](https://github.com/juancgomezm-s/CIDE/releases/tag/v0.1.13).
 
 WiX validó el MSI con el acceso normal del usuario. Conservó ICE60 de idioma y
 ICE61 porque se habilitó expresamente la actualización desde el candidato con

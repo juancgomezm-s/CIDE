@@ -1,10 +1,10 @@
 # CIDE
 
-**[Descargar CIDE 0.1.12 para Windows x64](https://github.com/juancgomezm-s/CIDE/releases/download/v0.1.12/CIDE-0.1.12-windows-x64.msi)**
+**[Descargar CIDE 0.1.13 para Windows x64](https://github.com/juancgomezm-s/CIDE/releases/download/v0.1.13/CIDE-0.1.13-windows-x64.msi)**
 
 El instalador incluye la GUI, la terminal, la CLI y OmniCore. Consulta los requisitos y el procedimiento de actualización en la [guía del instalador](installer/README.md).
 
-[Novedades y validación local de CIDE 0.1.12](docs/RELEASE_012.md).
+[Novedades y validación local de CIDE 0.1.13](docs/RELEASE_013.md): aplicar código del chat con vista previa, crear y editar archivos desde OmniCore con diff automático, y actividad técnica opcional oculta por defecto.
 
 [Memoria y rendimiento del proceso completo](docs/M2_EDITOR_PROCESS_PERFORMANCE.md).
 [Medición con servicios simultáneos](docs/M2_EDITOR_SERVICES_PERFORMANCE.md).
