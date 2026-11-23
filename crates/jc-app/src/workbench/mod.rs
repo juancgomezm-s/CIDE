@@ -12,6 +12,7 @@ mod large_open;
 pub use large_document::{
     LargeViewport, LargeViewportLookup, LargeViewportRow, PreparedLargeDocument,
 };
+mod external_refresh;
 mod line_commands;
 mod line_index;
 mod progressive_lines;

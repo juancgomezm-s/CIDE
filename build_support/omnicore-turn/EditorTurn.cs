@@ -52,6 +52,7 @@ internal static class EditorTurn
         if (Send(new { cmd = "session.security.set", sessionId = session,
                 expectedRevision = revision, category = "ScopedCoder" }).Status != "ok")
         { output("OmniCore rechazó el alcance de edición confirmado. No se inició la consulta."); return null; }
+        if (!EditorModel.Bind(client, session!, Send, output, token)) return null;
         if (Send(new { cmd = "session.input", text = request, mode = "act", expectedPolicyRevision = revision + 1, expectedDefaultRevision = (string?)null }).Status != "ok")
         { output("No se pudo registrar la solicitud de edición."); return null; }
         return (client, session!);

@@ -582,6 +582,14 @@ impl State {
         {
             return;
         }
+        if effect.kind == ChangeKind::Modified {
+            if let Err(error) =
+                self.workbench
+                    .refresh_clean_project_file(&root, &effect.path, 2 * 1024 * 1024)
+            {
+                self.omnicore.chat_notice = Some(error.to_string());
+            }
+        }
         match self.workbench.request_file_open_in_root(
             &root,
             effect.path.clone(),
