@@ -15,6 +15,150 @@ fn app(text: &str) -> Workbench {
 }
 
 #[test]
+fn complete_incoming_visits_every_file_past_browser_page_limits_and_keeps_versions() {
+    use std::fs;
+    let root = std::env::temp_dir().join(format!(
+        "cide-complete-incoming-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir(&root).unwrap();
+    let target = root.join("target.js");
+    fs::write(&target, "export const valor=1;").unwrap();
+    for index in 0..2100 {
+        fs::write(
+            root.join(format!("caller{index:04}.js")),
+            "import './target.js';\n",
+        )
+        .unwrap();
+    }
+    let mut a = Workbench::default();
+    a.open_file(&target, Some(TextEncoding::Utf8)).unwrap();
+    let mut c = SourceController::outline_relationships(SourceMode::Incoming);
+    let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+    c.request(
+        SourceMode::Incoming,
+        &SourceRegistry::default(),
+        &a,
+        Some(&root),
+        &mut jobs,
+    )
+    .unwrap();
+    assert!(c.progress().is_some());
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while jobs.outstanding() > 0 {
+        for mut task in jobs.poll(&a, 4) {
+            c.accept(&a, Some(&root), &mut task);
+        }
+        c.tick(&a, Some(&root), &mut jobs);
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    }
+    assert_eq!(c.state(), SourceState::Ready, "{}", c.message());
+    assert_eq!(c.items().len(), 2100, "{}", c.message());
+    assert!(c.message().contains("Nivel 1 completo"));
+    assert!(c.progress().is_none());
+    assert_eq!(c.items()[2099].label, "caller2099.js:1");
+    fs::write(root.join("caller2099.js"), "// cambiado\n").unwrap();
+    assert!(c
+        .activate_at_index(&mut a, Some(&root), 2099, true)
+        .is_err());
+    drop(a);
+    drop(jobs);
+    for entry in fs::read_dir(&root).unwrap() {
+        fs::remove_file(entry.unwrap().path()).unwrap();
+    }
+    fs::remove_dir(root).unwrap();
+}
+
+#[test]
+fn complete_outline_reads_past_two_mib_and_still_rejects_stale_generations() {
+    let mut a = Workbench::default();
+    a.new_file("grande.rs", TextEncoding::Utf8);
+    a.insert_text(&format!(
+        "/*{}*/\nfn final_visible() {{}}",
+        "x".repeat(3 * 1024 * 1024)
+    ))
+    .unwrap();
+    let mut c = SourceController::outline();
+    let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+    c.request(
+        SourceMode::Symbols,
+        &SourceRegistry::default(),
+        &a,
+        None,
+        &mut jobs,
+    )
+    .unwrap();
+    assert!(jobs.snapshot_bytes() > 2 * 1024 * 1024);
+    finish(&mut c, &a, &mut jobs);
+    assert_eq!(c.state(), SourceState::Ready, "{}", c.message());
+    assert_eq!(c.items()[0].label, "final_visible · Función");
+    c.request(
+        SourceMode::Symbols,
+        &SourceRegistry::default(),
+        &a,
+        None,
+        &mut jobs,
+    )
+    .unwrap();
+    a.insert_text(" ").unwrap();
+    assert!(c.validate_context(&a, None, &mut jobs));
+    finish(&mut c, &a, &mut jobs);
+    assert_eq!(c.state(), SourceState::Stale);
+    assert!(c.items().is_empty());
+}
+
+#[test]
+fn outgoing_tree_has_three_levels_in_each_code_language_and_keeps_navigation() {
+    for (name, source) in [
+        ("niveles.rs", "fn uno(){dos();} fn dos(){tres();} fn tres(){cuatro();} fn cuatro(){cinco();} fn cinco(){}"),
+        ("niveles.js", "function uno(){dos();} function dos(){tres();} function tres(){cuatro();} function cuatro(){cinco();} function cinco(){}"),
+        ("niveles.ts", "function uno(){dos();} function dos(){tres();} function tres(){cuatro();} function cuatro(){cinco();} function cinco(){}"),
+        ("niveles.php", "<?php function uno(){dos();} function dos(){tres();} function tres(){cuatro();} function cuatro(){cinco();} function cinco(){}"),
+        ("Niveles.java", "class Demo { void uno(){dos();} void dos(){tres();} void tres(){cuatro();} void cuatro(){cinco();} void cinco(){} }"),
+        ("Niveles.cs", "class Demo { void uno(){dos();} void dos(){tres();} void tres(){cuatro();} void cuatro(){cinco();} void cinco(){} }"),
+    ] {
+        let mut a=Workbench::default(); a.new_file(name, TextEncoding::Utf8);a.insert_text(source).unwrap();
+        let origin=source.find("uno").unwrap();a.set_linear_selection_bytes(origin,origin).unwrap();
+        let mut c=SourceController::outline_relationships(SourceMode::Calls);let mut jobs=JobSystem::new(Default::default(),Wakeup::default()).unwrap();
+        c.request(SourceMode::Calls,&SourceRegistry::default(),&a,None,&mut jobs).unwrap(); finish(&mut c,&a,&mut jobs);
+        assert_eq!(c.state(),SourceState::Ready,"{name}: {}",c.message());
+        assert_eq!(c.items().iter().map(|i|i.label.as_str()).collect::<Vec<_>>(),["dos","tres","cuatro"],"{name}");
+        assert_eq!(c.relation_parents(),[None,Some(0),Some(1)]);
+        assert!(c.present(10,80).rows[2].label.starts_with("    cuatro"));
+        c.activate_at_index(&mut a,None,2,false).unwrap();assert_eq!(&source[a.active_editor().unwrap().cursor..][..6],"cuatro");
+        assert!(a.navigation_back());assert_eq!(a.active_editor().unwrap().cursor,origin);
+    }
+}
+
+#[test]
+fn outgoing_recursion_is_visible_and_stops_without_looping() {
+    let mut a = Workbench::default();
+    a.new_file("recursivo.rs", TextEncoding::Utf8);
+    let source = "fn uno(){dos();} fn dos(){uno();}";
+    a.insert_text(source).unwrap();
+    a.set_linear_selection_bytes(3, 3).unwrap();
+    let mut c = SourceController::default();
+    let mut jobs = JobSystem::new(Default::default(), Wakeup::default()).unwrap();
+    c.request(
+        SourceMode::Calls,
+        &SourceRegistry::default(),
+        &a,
+        None,
+        &mut jobs,
+    )
+    .unwrap();
+    finish(&mut c, &a, &mut jobs);
+    assert_eq!(c.items().len(), 2);
+    assert!(c.items()[1].label.ends_with("recursiva"));
+    assert_eq!(c.relation_parents(), [None, Some(0)]);
+}
+
+#[test]
 fn rust_outline_tracks_members_and_skips_non_code_in_an_unfinished_document() {
     let mut a = Workbench::default();
     a.new_file("esquema.rs", TextEncoding::Utf8);
@@ -391,7 +535,7 @@ fn javascript_incoming_opens_static_import_at_its_line_in_other_group() {
     .unwrap();
     finish_in_project(&mut c, &a, &mut jobs, Some(&root));
     assert_eq!(c.state(), SourceState::Ready, "{}", c.message());
-    assert_eq!(c.items().len(), 1);
+    assert_eq!(c.items().len(), 1, "{}", c.message());
     assert_eq!(c.items()[0].label, "caller.js:2");
     fs::write(&source, "import './other.js';").unwrap();
     assert!(c.activate(&mut a, Some(&root), true).is_err());

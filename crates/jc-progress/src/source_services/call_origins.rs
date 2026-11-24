@@ -177,6 +177,7 @@ pub(super) fn relations(
             return Err(TaskFailure::Cancelled);
         }
         let offset = chunk_index * 4096;
+        cancel.report_source_progress(offset, bytes.len());
         scan(
             SyntaxProfile::Abl,
             &mut lexer,
@@ -242,7 +243,7 @@ pub(super) fn relations(
                 word_before = (!preceded_by_qualifier && !after_run && token.kind.is_word())
                     .then_some(token.source);
                 after_run = raw.eq_ignore_ascii_case(b"RUN");
-                limited = routines.len() > 512 || calls.len() > 8192;
+                limited = !cancel.complete_source() && (routines.len() > 512 || calls.len() > 8192);
             },
         );
         if limited || lexer.limited() {

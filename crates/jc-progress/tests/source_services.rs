@@ -62,6 +62,54 @@ fn abl_routine_relationships_group_local_callers_and_follow_the_active_procedure
 }
 
 #[test]
+fn abl_outgoing_tree_pins_three_external_files_and_rejects_changed_destinations() {
+    use std::fs;
+    let root = std::env::temp_dir().join(format!(
+        "cide-tree-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir(&root).unwrap();
+    for (name, code) in [
+        ("a.p", "RUN b.p."),
+        ("b.p", "RUN c.p."),
+        ("c.p", "RUN d.p."),
+        ("d.p", "RUN e.p."),
+        ("e.p", "RETURN."),
+    ] {
+        fs::write(root.join(name), code).unwrap();
+    }
+    let long_source = format!("/*{}*/\nRUN e.p.", "x".repeat(3 * 1024 * 1024));
+    fs::write(root.join("d.p"), &long_source).unwrap();
+    let mut app = Workbench::default();
+    app.open_file(root.join("a.p"), Some(TextEncoding::Utf8))
+        .unwrap();
+    let c = scan(&app, Some(&root), SourceMode::Calls);
+    assert_eq!(c.state(), SourceState::Ready, "{}", c.message());
+    assert_eq!(c.items().len(), 3);
+    assert_eq!(c.relation_parents(), [None, Some(0), Some(1)]);
+    assert!(c
+        .items()
+        .iter()
+        .all(|i| matches!(i.action, SourceAction::ProjectLocation { .. })));
+    fs::write(root.join("d.p"), "/* modificado */").unwrap();
+    assert!(c.activate_at_index(&mut app, Some(&root), 2, true).is_err());
+    assert_eq!(app.active_path().unwrap().file_name().unwrap(), "a.p");
+    fs::write(root.join("d.p"), &long_source).unwrap();
+    c.activate_at_index(&mut app, Some(&root), 2, true).unwrap();
+    assert_eq!(app.active_path().unwrap().file_name().unwrap(), "d.p");
+    assert_eq!(app.active_bytes().unwrap(), long_source.as_bytes());
+    drop(app);
+    for entry in fs::read_dir(&root).unwrap() {
+        fs::remove_file(entry.unwrap().path()).unwrap();
+    }
+    fs::remove_dir(root).unwrap();
+}
+
+#[test]
 fn abl_callers_keep_matches_if_a_project_file_exceeds_the_read_budget() {
     use std::fs;
     let fixture = std::env::temp_dir().join(format!("cide-nested-calls-{}", std::process::id()));
@@ -73,18 +121,18 @@ fn abl_callers_keep_matches_if_a_project_file_exceeds_the_read_budget() {
     fs::write(&target, "/* destino */").unwrap();
     fs::write(root.join("origen.p"), "RUN destino.p.").unwrap();
     let large = fs::File::create(root.join("grande.p")).unwrap();
-    large.set_len(3 * 1024 * 1024).unwrap();
+    large.set_len(64 * 1024 * 1024 + 1).unwrap();
     drop(large);
     let mut app = Workbench::default();
     app.open_file(&target, Some(TextEncoding::Utf8)).unwrap();
     let incoming = scan(&app, Some(&fixture), SourceMode::Incoming);
     assert_eq!(
         incoming.state(),
-        SourceState::Ready,
+        SourceState::Incomplete,
         "{}",
         incoming.message()
     );
-    assert!(incoming.message().starts_with("Búsqueda parcial"));
+    assert!(incoming.message().starts_with("Análisis incompleto"));
     assert_eq!(incoming.items().len(), 1);
     incoming
         .activate_at_index(&mut app, Some(&fixture), 0, false)
@@ -335,8 +383,8 @@ fn abl_source_chunk_boundaries_nested_comments_and_result_limits_are_explicit() 
         write!(&mut many, "PROCEDURE p{i}:\nEND PROCEDURE.\n").unwrap();
     }
     let (_, c) = run(&many, TextEncoding::Utf8, SourceMode::Symbols);
-    assert_eq!(c.state(), SourceState::Limited);
-    assert!(c.items().is_empty());
+    assert_eq!(c.state(), SourceState::Ready);
+    assert_eq!(c.items().len(), 65);
 }
 #[test]
 fn static_reference_candidates_are_confined_ambiguous_and_not_a_propath_emulator() {

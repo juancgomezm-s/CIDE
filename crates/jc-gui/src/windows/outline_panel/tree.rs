@@ -143,6 +143,7 @@ pub(super) enum Item {
 
 pub(super) struct Relationships<'a> {
     pub items: &'a [SourceItem],
+    pub parents: &'a [Option<usize>],
     pub notice: Option<&'a str>,
 }
 
@@ -281,6 +282,7 @@ impl Tree {
         let selected = self.selected.map(|id| self.ancestry(id));
         let mut tree = Self::default();
         let mut locations = vec![None; symbols.len()];
+        let mut containers: Vec<usize> = Vec::new();
         let inclusion_targets: HashSet<_> = dependencies
             .iter()
             .map(|item| (item.range.start, include_key(entry(item, Kind::Import).1)))
@@ -296,32 +298,29 @@ impl Tree {
             let table = matches!(kind, Kind::Field | Kind::Index)
                 .then(|| name.rsplit_once('.'))
                 .flatten();
-            let parent = symbols[..i]
-                .iter()
-                .enumerate()
-                .rev()
-                .find_map(|(index, container)| {
-                    let id = locations[index]?;
-                    let (outer_kind, outer_name) = entry(container, Kind::Other);
-                    match (&container.action, &item.action) {
-                        (SourceAction::ScopedSymbol { extent }, action)
-                            if !matches!(action, SourceAction::ProjectLocation { .. })
-                                && extent.contains(&item.range.start) =>
-                        {
-                            Some(id)
-                        }
-                        (left, right)
-                            if matches!(outer_kind, Kind::Table | Kind::WorkTable)
-                                && table.is_some_and(|(owner, _)| {
-                                    owner.eq_ignore_ascii_case(outer_name)
-                                })
-                                && same_file(left, right) =>
-                        {
-                            Some(id)
-                        }
-                        _ => None,
+            let parent = containers.iter().rev().find_map(|&index| {
+                let container = &symbols[index];
+                let id = locations[index]?;
+                let (outer_kind, outer_name) = entry(container, Kind::Other);
+                match (&container.action, &item.action) {
+                    (SourceAction::ScopedSymbol { extent }, action)
+                        if !matches!(action, SourceAction::ProjectLocation { .. })
+                            && extent.contains(&item.range.start) =>
+                    {
+                        Some(id)
                     }
-                });
+                    (left, right)
+                        if matches!(outer_kind, Kind::Table | Kind::WorkTable)
+                            && table.is_some_and(|(owner, _)| {
+                                owner.eq_ignore_ascii_case(outer_name)
+                            })
+                            && same_file(left, right) =>
+                    {
+                        Some(id)
+                    }
+                    _ => None,
+                }
+            });
             if let Some((_, member)) = table.filter(|_| parent.is_some()) {
                 name = member;
             }
@@ -340,6 +339,11 @@ impl Tree {
                     .map(|name| name.to_string_lossy().into_owned());
             }
             locations[i] = Some(id);
+            if matches!(item.action, SourceAction::ScopedSymbol { .. })
+                || matches!(kind, Kind::Table | Kind::WorkTable)
+            {
+                containers.push(i);
+            }
         }
         for (i, item) in dependencies.iter().enumerate() {
             let (kind, name) = entry(item, Kind::Import);
@@ -362,6 +366,7 @@ impl Tree {
                 Kind::CallOutgoing
             };
             let category = tree.folder(None, kind.label(), kind);
+            let mut locations = Vec::new();
             for (index, item) in group.items.iter().enumerate() {
                 let unresolved = matches!(item.action, SourceAction::Unresolved(_));
                 let row_kind = if unresolved {
@@ -370,17 +375,21 @@ impl Tree {
                     kind
                 };
                 let name = item.label.strip_prefix("RUN ").unwrap_or(&item.label);
-                let (parent, name) = if let SourceAction::RelativeFile(_) = &item.action {
-                    tree.directories(category, name, kind)
-                } else {
-                    (category, name)
-                };
+                let parent = group
+                    .parents
+                    .get(index)
+                    .copied()
+                    .flatten()
+                    .and_then(|p| locations.get(p))
+                    .copied()
+                    .unwrap_or(category);
                 let item = if incoming {
                     Item::Incoming(index)
                 } else {
                     Item::Outgoing(index)
                 };
-                tree.append(Some(parent), name, row_kind, Some(item), unresolved);
+                let id = tree.append(Some(parent), name, row_kind, Some(item), unresolved);
+                locations.push(id);
             }
             if let Some(notice) = group.notice {
                 tree.append(Some(category), notice, Kind::Other, None, false);

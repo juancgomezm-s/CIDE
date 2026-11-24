@@ -2,6 +2,7 @@
 use super::*;
 use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
+mod complete;
 
 pub(crate) struct IncomingScan {
     pub root: PathBuf,
@@ -20,6 +21,9 @@ impl IncomingScan {
         cancel: &Cancellation,
         output: &mut TaskOutput,
     ) -> Result<(), TaskFailure> {
+        if cancel.complete_source() {
+            return complete::run(self, stamp, cancel, output);
+        }
         let resolution = self.provider.file_resolution;
         let root = navigation_root(&self.root, &self.target, resolution)
             .map_err(|_| TaskFailure::Failed)?;

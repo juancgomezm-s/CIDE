@@ -58,11 +58,19 @@ impl<'a> Includes<'a> {
 
     pub(super) fn with_locations(mut self) -> Self {
         self.capture_locations = true;
+        self.byte_limit = 64 * 1024 * 1024;
         self
     }
 
     fn read(&mut self, target: &str) -> Result<Option<(PathBuf, Vec<u8>)>, TaskFailure> {
-        if self.stack.len() == MAX_DEPTH || self.files == MAX_INCLUDES {
+        if self.stack.len()
+            == if self.capture_locations {
+                256
+            } else {
+                MAX_DEPTH
+            }
+            || !self.capture_locations && self.files == MAX_INCLUDES
+        {
             return Err(TaskFailure::LimitExceeded);
         }
         self.files += 1;
@@ -81,7 +89,12 @@ impl<'a> Includes<'a> {
         }
         let (root, dirs) = self.paths.as_ref().expect("initialized PROPATH");
         for dir in dirs {
-            let limit = MAX_FILE_BYTES.min(self.byte_limit - self.bytes);
+            let limit = if self.capture_locations {
+                64 * 1024 * 1024
+            } else {
+                MAX_FILE_BYTES
+            }
+            .min(self.byte_limit.saturating_sub(self.bytes));
             match jc_files::read_in_root(root, &dir.join(target), limit) {
                 Ok((path, bytes)) => {
                     self.bytes += bytes.len();
@@ -107,7 +120,10 @@ impl<'a> Includes<'a> {
     ) -> Result<(), TaskFailure> {
         let (path, bytes) = match self.read(target) {
             Ok(Some(result)) => result,
-            Ok(None) => return Ok(()),
+            Ok(None) => {
+                symbols.skip_outline_include();
+                return Ok(());
+            }
             Err(_) if symbols.skip_outline_include() => return Ok(()),
             Err(error) => return Err(error),
         };
@@ -180,6 +196,9 @@ impl<'a> Includes<'a> {
                 return Err(TaskFailure::Cancelled);
             }
             let offset = bom + chunk * 4096;
+            if context.file.is_none() {
+                cancel.report_source_progress(offset, bytes.len());
+            }
             scan(
                 SyntaxProfile::Abl,
                 &mut lexer,

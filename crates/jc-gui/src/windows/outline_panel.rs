@@ -74,6 +74,7 @@ impl Outline {
 }
 
 pub(super) struct OutlineFrame {
+    progress: Option<jc_app::source_services::AnalysisStatus>,
     rect: Rect,
     dpi: super::dpi::Dpi,
     rows: Vec<Row>,
@@ -508,12 +509,15 @@ impl State {
             }
             let controller = &outline.relationships[index];
             Some(tree::Relationships {
+                parents: controller.relation_parents(),
                 items: if available_results[index] {
                     controller.items()
                 } else {
                     &[]
                 },
-                notice: if running(controller) {
+                notice: if controller.message().contains("incompleto") {
+                    Some(controller.message())
+                } else if running(controller) {
                     Some("Buscando…")
                 } else if !available_results[index] {
                     Some(controller.message())
@@ -575,6 +579,25 @@ impl State {
             "Elige la codificación del documento"
         } else if outline.candidates.is_some() {
             "Elige el archivo de destino"
+        } else if outline.relations_view
+            && outline.relationships.iter().any(|c| {
+                matches!(
+                    c.state(),
+                    SourceState::Incomplete | SourceState::Failed | SourceState::Limited
+                )
+            })
+        {
+            outline
+                .relationships
+                .iter()
+                .find(|c| {
+                    matches!(
+                        c.state(),
+                        SourceState::Incomplete | SourceState::Failed | SourceState::Limited
+                    )
+                })
+                .unwrap()
+                .message()
         } else if outline.mode != SourceMode::Symbols {
             outline.controller.message()
         } else if running(&outline.controller)
@@ -704,6 +727,7 @@ impl State {
         }
         let message = display_ui_label(self.outline_message(), columns);
         Some(OutlineFrame {
+            progress: outline.controllers().find_map(SourceController::progress),
             rect,
             dpi: self.dpi,
             rows,
@@ -1162,12 +1186,22 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
             )?;
         }
     }
-    if let Some(text) = frame
-        .breadcrumb
-        .as_deref()
-        .filter(|_| frame.message.is_empty())
-        .or_else(|| (!frame.message.is_empty()).then_some(frame.message.as_str()))
-    {
+    let progress_label = frame.progress.map(|p| {
+        format!(
+            "Analizando · {} % · {}/{} {}",
+            p.percent(),
+            p.done,
+            p.total,
+            if p.files { "archivos" } else { "bytes" }
+        )
+    });
+    if let Some(text) = progress_label.as_deref().or_else(|| {
+        frame
+            .breadcrumb
+            .as_deref()
+            .filter(|_| frame.message.is_empty())
+            .or_else(|| (!frame.message.is_empty()).then_some(frame.message.as_str()))
+    }) {
         paint::text(
             dc,
             label(56, HEAD),
@@ -1178,6 +1212,23 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &OutlineFrame) -> Result<(), String> {
                 shell::MUTED
             },
             shell::SIDEBAR,
+        )?;
+    }
+    if let Some(progress) = frame.progress {
+        let bar = Rect {
+            left: rect.left + px(12),
+            right: rect.right - px(12),
+            top: rect.top + px(HEAD - 3),
+            bottom: rect.top + px(HEAD - 1),
+        };
+        paint::fill(dc, bar, shell::RAISED)?;
+        paint::fill(
+            dc,
+            Rect {
+                right: bar.left + (bar.right - bar.left) * progress.percent().max(3) as i32 / 100,
+                ..bar
+            },
+            shell::ACCENT,
         )?;
     }
     for (i, row) in frame.rows.iter().enumerate() {
@@ -1276,6 +1327,72 @@ mod tests {
             assert!(Instant::now() < deadline);
             std::thread::yield_now();
         }
+    }
+
+    #[test]
+    fn outline_reads_more_than_thirty_two_includes_without_a_row_cutoff() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
+        std::fs::create_dir(root.join(".cide")).unwrap();
+        std::fs::write(root.join(".cide/propath"), ".\n").unwrap();
+        let mut text = String::new();
+        for i in 0..40 {
+            text.push_str(&format!("{{datos{i:02}.i}}\n"));
+            std::fs::write(
+                root.join(format!("datos{i:02}.i")),
+                format!("DEFINE VARIABLE incluido{i:02} AS INTEGER NO-UNDO.\n"),
+            )
+            .unwrap();
+        }
+        let mut state = State::new(&GuiOptions {
+            project_root: Some(root.to_owned()),
+            ..GuiOptions::default()
+        })
+        .unwrap();
+        state.width = 1400;
+        state.height = 900;
+        state
+            .workbench
+            .new_file(root.join("principal.p"), TextEncoding::Utf8);
+        state.workbench.insert_text(&text).unwrap();
+        finish(&mut state);
+        assert_eq!(
+            state.outline.controller.state(),
+            SourceState::Ready,
+            "{}",
+            state.outline.controller.message()
+        );
+        assert_eq!(state.outline.controller.items().len(), 80);
+        assert!(state
+            .outline
+            .tree
+            .nodes
+            .iter()
+            .any(|n| n.name == "incluido39"));
+        assert!(!state.outline.controller.message().contains("omitidas"));
+    }
+
+    #[test]
+    fn outline_keeps_all_abl_declarations_and_tail_navigation() {
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.width = 1400;
+        state.height = 900;
+        state.workbench.new_file("completo.p", TextEncoding::Utf8);
+        let text = (0..1500)
+            .map(|i| format!("DEFINE VARIABLE valor{i:04} AS INTEGER NO-UNDO.\n"))
+            .collect::<String>();
+        state.workbench.insert_text(&text).unwrap();
+        finish(&mut state);
+        assert_eq!(state.outline.controller.state(), SourceState::Ready);
+        assert_eq!(state.outline.controller.items().len(), 1500);
+        assert!(!state.outline_message().contains("primeros"));
+        select_tree_row(&mut state, |row| row.name == "valor1499");
+        click_tree_selection(&mut state, true);
+        assert_eq!(
+            state.workbench.active_editor().unwrap().cursor,
+            text.find("valor1499").unwrap()
+        );
+        assert_eq!(state.workbench.active_bytes().unwrap(), text.as_bytes());
     }
 
     #[test]
@@ -1807,6 +1924,33 @@ mod tests {
             Ok(())
         };
         prepare(true)?;
+        {
+            let mut state = gui.state.borrow_mut();
+            state.request_outline(SourceMode::Symbols)?;
+            let outline = state.outline_presentation().ok_or("Falta Esquema")?;
+            if outline.progress.is_none() {
+                return Err("No se muestra progreso durante el análisis".into());
+            }
+            let bar = Rect {
+                left: outline.rect.left + state.dpi.pixels(12),
+                right: outline.rect.right - state.dpi.pixels(12),
+                top: outline.rect.top + state.dpi.pixels(HEAD - 3),
+                bottom: outline.rect.top + state.dpi.pixels(HEAD - 1),
+            };
+            let frame = paint::prepare(&mut state);
+            drop(state);
+            let path = options.report.with_file_name("progreso-esquema.bmp");
+            paint::bitmap(hwnd, &frame, &path)?;
+            let bmp = std::fs::read(path).map_err(|e| e.to_string())?;
+            let offset = 54 + ((bar.top as usize * frame.width as usize) + bar.left as usize) * 4;
+            let pixel = u32::from(bmp[offset + 2])
+                | (u32::from(bmp[offset + 1]) << 8)
+                | (u32::from(bmp[offset]) << 16);
+            if pixel != shell::ACCENT {
+                return Err("La barra de progreso no se dibujó".into());
+            }
+        }
+        prepare(false)?;
         click("Inclusiones", false)?;
         click("{incluidos/ausente.i}", true)?;
         at("destino.p", Some("{incluidos/ausente.i}"))?;
@@ -1830,8 +1974,7 @@ mod tests {
         tab(SourceMode::Calls)?;
         prepare(false)?;
         click("Llama a", false)?;
-        click("ventas", false)?;
-        click("auxiliar.p", true)?;
+        click("ventas/auxiliar.p", true)?;
         at("auxiliar.p", None)?;
         prepare(true)?;
         tab(SourceMode::Calls)?;

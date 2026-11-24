@@ -86,6 +86,13 @@ pub struct TaskSnapshot {
     bytes: Arc<Vec<u8>>,
 }
 impl TaskSnapshot {
+    pub(crate) fn shared_source(stamp: TaskStamp, bytes: Arc<Vec<u8>>) -> Self {
+        Self {
+            stamp,
+            range: 0..bytes.len(),
+            bytes,
+        }
+    }
     pub(crate) fn scan_source(stamp: TaskStamp, bytes: Vec<u8>) -> Self {
         Self {
             stamp,
@@ -105,12 +112,16 @@ impl TaskSnapshot {
 pub struct Cancellation {
     flag: Arc<AtomicBool>,
     deadline: Instant,
+    analysis: Option<Arc<crate::source_services::analysis::AnalysisProgress>>,
+    complete: bool,
 }
 impl Cancellation {
     pub fn new(timeout: Duration) -> Self {
         Self {
             flag: Arc::new(AtomicBool::new(false)),
             deadline: Instant::now() + timeout,
+            analysis: None,
+            complete: false,
         }
     }
     pub fn cancel(&self) {
@@ -118,6 +129,35 @@ impl Cancellation {
     }
     pub fn is_cancelled(&self) -> bool {
         self.flag.load(Ordering::Acquire) || Instant::now() >= self.deadline
+    }
+    pub fn complete_source(&self) -> bool {
+        self.complete
+    }
+    pub fn report_source_progress(&self, done: usize, total: usize) {
+        if let Some(progress) = &self.analysis {
+            progress.report(done, total, false);
+        }
+    }
+    pub(crate) fn report_source_files(&self, done: usize, total: usize) {
+        if let Some(progress) = &self.analysis {
+            progress.report(done, total, true);
+        }
+    }
+    pub(crate) fn with_analysis(
+        &self,
+        analysis: Arc<crate::source_services::analysis::AnalysisProgress>,
+    ) -> Self {
+        Self {
+            analysis: Some(analysis),
+            complete: true,
+            ..self.clone()
+        }
+    }
+    pub(crate) fn without_source_progress(&self) -> Self {
+        Self {
+            analysis: None,
+            ..self.clone()
+        }
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -173,11 +213,17 @@ pub struct TaskOutput {
     git_diff: Option<crate::git_diff::GitDiffReply>,
     open_diff: Option<crate::open_diff::OpenDiffReply>,
     second_stamp: Option<TaskStamp>,
+    source_parents: Vec<Option<usize>>,
+    source_incomplete: bool,
 }
 impl TaskOutput {
     pub(crate) fn for_source_scan(snapshot: &TaskSnapshot) -> Self {
         Self::new(
-            JobLimits::default(),
+            JobLimits {
+                result_items: usize::MAX,
+                result_bytes: 64 * 1024 * 1024,
+                ..JobLimits::default()
+            },
             snapshot.range.clone(),
             snapshot.stamp,
             0,
@@ -220,6 +266,8 @@ impl TaskOutput {
             git_diff: None,
             open_diff: None,
             second_stamp,
+            source_parents: Vec::new(),
+            source_incomplete: false,
         }
     }
     pub fn items(&self) -> &[TaskItem] {
@@ -227,6 +275,34 @@ impl TaskOutput {
     }
     pub(crate) fn take_items(&mut self) -> Vec<TaskItem> {
         std::mem::take(&mut self.items)
+    }
+    pub(crate) fn push_source_child(
+        &mut self,
+        item: crate::source_services::SourceItem,
+        parent: Option<usize>,
+    ) -> Result<(), TaskFailure> {
+        if parent.is_some_and(|p| p >= self.source_parents.len()) {
+            return Err(TaskFailure::InvalidRange);
+        }
+        let extra = std::mem::size_of::<Option<usize>>();
+        if item.allocation().saturating_add(extra) > self.max_bytes.saturating_sub(self.bytes)
+            || self.source_parents.try_reserve(1).is_err()
+        {
+            return Err(TaskFailure::LimitExceeded);
+        }
+        self.push(TaskItem::Source(item))?;
+        self.bytes += extra;
+        self.source_parents.push(parent);
+        Ok(())
+    }
+    pub(crate) fn take_source_parents(&mut self) -> Vec<Option<usize>> {
+        std::mem::take(&mut self.source_parents)
+    }
+    pub fn mark_source_incomplete(&mut self) {
+        self.source_incomplete = true;
+    }
+    pub(crate) fn source_incomplete(&self) -> bool {
+        self.source_incomplete
     }
     pub fn set_git_diff(
         &mut self,
@@ -282,6 +358,8 @@ impl TaskOutput {
     }
     fn clear(&mut self) {
         self.items.clear();
+        self.source_parents.clear();
+        self.source_incomplete = false;
         self.git_diff = None;
         self.open_diff = None;
         self.bytes = 0;
@@ -305,7 +383,7 @@ impl TaskOutput {
             self.failure = Some(error);
             return Err(error);
         }
-        if self.items.try_reserve_exact(1).is_err() {
+        if self.items.try_reserve(1).is_err() {
             self.failure = Some(TaskFailure::LimitExceeded);
             return Err(TaskFailure::LimitExceeded);
         }
@@ -692,7 +770,10 @@ impl JobSystem {
             expected,
             second,
         } = capture;
-        let limits = self.shared.limits;
+        let limits = match &provider {
+            Provider::Source(work) => work.capture_limits(self.shared.limits),
+            _ => self.shared.limits,
+        };
         if self.records.len() >= limits.outstanding {
             return Err(SubmitError::Busy);
         }
@@ -819,6 +900,8 @@ impl JobSystem {
         let next = self.next.checked_add(1).ok_or(SubmitError::IdExhausted)?;
         let id = JobId(self.next);
         let cancel = Cancellation {
+            analysis: None,
+            complete: false,
             flag: Arc::new(AtomicBool::new(false)),
             deadline: Instant::now() + timeout,
         };
@@ -872,7 +955,7 @@ impl JobSystem {
         len: usize,
         work: crate::source_services::SourceJob,
     ) -> Result<JobId, SubmitError> {
-        let limits = self.shared.limits;
+        let limits = work.capture_limits(self.shared.limits);
         if len > limits.snapshot_bytes || len > limits.total_snapshot_bytes {
             return Err(SubmitError::SnapshotLimit);
         }
@@ -897,6 +980,9 @@ impl JobSystem {
                 second: None,
             },
         )
+    }
+    pub(crate) fn source_wakeup(&self) -> Wakeup {
+        self.shared.wakeup.clone()
     }
     pub fn cancel_stale(&mut self, app: &Workbench) {
         for record in self.records.values() {

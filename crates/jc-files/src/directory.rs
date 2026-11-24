@@ -59,7 +59,15 @@ impl DirectoryListing {
             return false;
         }
         if self.entries.len() == self.entries.capacity() {
-            self.entries.reserve_exact(1);
+            let reserved = if max_entries == usize::MAX {
+                self.entries.try_reserve(1)
+            } else {
+                self.entries.try_reserve_exact(1)
+            };
+            if reserved.is_err() {
+                self.limited = true;
+                return false;
+            }
         }
         let charge = self
             .entries
@@ -87,12 +95,31 @@ pub fn list_directory_in_root(
     path: &Path,
     max_entries: usize,
     max_bytes: usize,
+    cancelled: impl FnMut() -> bool,
+) -> io::Result<DirectoryListing> {
+    if !(1..=2048).contains(&max_entries) || !(1..=512 * 1024).contains(&max_bytes) {
+        return Err(io::Error::other("El límite del directorio no es válido"));
+    }
+    list_directory(root, path, max_entries, max_bytes, cancelled)
+}
+/// Background enumeration with no row count cutoff. Handle and reparse checks
+/// are shared with the interactive browser; memory exhaustion stays explicit.
+pub fn list_directory_complete_in_root(
+    root: &Path,
+    path: &Path,
+    cancelled: impl FnMut() -> bool,
+) -> io::Result<DirectoryListing> {
+    list_directory(root, path, usize::MAX, 64 * 1024 * 1024, cancelled)
+}
+fn list_directory(
+    root: &Path,
+    path: &Path,
+    max_entries: usize,
+    max_bytes: usize,
     mut cancelled: impl FnMut() -> bool,
 ) -> io::Result<DirectoryListing> {
     if !root.is_absolute()
         || !path.is_absolute()
-        || !(1..=2048).contains(&max_entries)
-        || !(1..=512 * 1024).contains(&max_bytes)
         || root.as_os_str().len() > 4096
         || path.as_os_str().len() > 4096
     {
@@ -240,7 +267,7 @@ fn platform_list(
                 ));
             }
             listing.examined += 1;
-            if listing.examined > 50_000 {
+            if max_entries != usize::MAX && listing.examined > 50_000 {
                 listing.limited = true;
                 break 'enumerate;
             }
@@ -300,7 +327,7 @@ fn platform_list(
             return Err(interrupted());
         }
         listing.examined += 1;
-        if listing.examined > 50_000 {
+        if max_entries != usize::MAX && listing.examined > 50_000 {
             listing.limited = true;
             break;
         }

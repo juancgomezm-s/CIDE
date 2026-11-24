@@ -76,11 +76,10 @@ struct Routine {
     outline_scope: Option<usize>,
 }
 
-const MAX_OUTLINE_ROWS: usize = 63;
-
 #[derive(Default)]
 struct Outline {
     rows: Vec<OutlineRow>,
+    positions: BTreeMap<(Option<std::path::PathBuf>, usize), usize>,
     container: Option<usize>,
     truncated: bool,
     skipped_include: bool,
@@ -98,14 +97,11 @@ impl Outline {
         if self.truncated {
             return None;
         }
-        if let Some(existing) = self
-            .rows
-            .iter()
-            .position(|row| row.site.offset == site.offset && row.site.file == site.file)
-        {
+        let key = (site.file.as_ref().map(|f| f.path.clone()), site.offset);
+        if let Some(&existing) = self.positions.get(&key) {
             return Some(existing);
         }
-        if self.rows.len() == MAX_OUTLINE_ROWS {
+        if self.rows.try_reserve(1).is_err() {
             self.truncated = true;
             return None;
         }
@@ -115,6 +111,7 @@ impl Outline {
             .take(64)
             .collect();
         let index = self.rows.len();
+        self.positions.insert(key, index);
         self.rows.push(OutlineRow {
             site,
             label: format!("{name} · {kind}"),
@@ -179,6 +176,9 @@ impl Symbols {
 
     pub(super) fn publish_outline(self, output: &mut TaskOutput) -> Result<(), TaskFailure> {
         let outline = self.outline.expect("active outline");
+        if outline.truncated || outline.skipped_include {
+            output.mark_source_incomplete();
+        }
         for row in outline.rows {
             let mut item = row.site.item(row.label, 0..0);
             item.value_type = row.value_type;
@@ -188,10 +188,7 @@ impl Symbols {
             output.push(TaskItem::Source(item))?;
         }
         let notice = match (outline.truncated, outline.skipped_include) {
-            (true, true) => Some(format!(
-                "Primeros {MAX_OUTLINE_ROWS} · inclusiones omitidas"
-            )),
-            (true, false) => Some(format!("Se muestran los primeros {MAX_OUTLINE_ROWS}")),
+            (true, _) => Some("Análisis incompleto: falta memoria para las declaraciones".into()),
             (false, true) => Some("Hay inclusiones que no se pudieron leer".into()),
             (false, false) => None,
         };

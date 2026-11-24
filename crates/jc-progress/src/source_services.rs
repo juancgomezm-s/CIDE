@@ -40,6 +40,7 @@ struct Symbol {
     value_type: Option<ValueType>,
 }
 struct Model {
+    complete: bool,
     symbols: Vec<Symbol>,
     references: Vec<SourceItem>,
     grouped_references: HashSet<ReferenceKey>,
@@ -77,7 +78,7 @@ impl Analysis<'_> {
 }
 
 fn push_symbol(model: &mut Model, symbol: Symbol) {
-    if model.symbols.len() == MAX_SYMBOLS {
+    if !model.complete && model.symbols.len() == MAX_SYMBOLS {
         model.limited = true;
     } else {
         model.symbols.push(symbol);
@@ -122,7 +123,9 @@ fn push_reference(
             };
         }
     }
-    let limit = if analysis == Analysis::Callers {
+    let limit = if model.complete {
+        usize::MAX
+    } else if analysis == Analysis::Callers {
         2048
     } else {
         MAX_REFERENCES
@@ -380,6 +383,7 @@ fn parse(
     analysis: Analysis<'_>,
 ) -> Result<Model, TaskFailure> {
     let mut model = Model {
+        complete: cancel.complete_source(),
         symbols: Vec::new(),
         references: Vec::new(),
         grouped_references: HashSet::new(),
@@ -397,6 +401,7 @@ fn parse(
             return Err(TaskFailure::Cancelled);
         }
         let start = chunk * 4096;
+        cancel.report_source_progress(start, snapshot.bytes().len());
         scan(
             SyntaxProfile::Abl,
             &mut state,

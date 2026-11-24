@@ -213,7 +213,7 @@ impl File<'_> {
                         if let Some((start, open)) = self.routine_body(at, owner) {
                             let range = self.tokens[at].range.clone();
                             if let Some(name) = self.source.text(range.clone()) {
-                                if declarations.len() == MAX_ROUTINES {
+                                if !cancel.complete_source() && declarations.len() == MAX_ROUTINES {
                                     return Err(TaskFailure::LimitExceeded);
                                 }
                                 let close = self.closes[open].unwrap_or(self.tokens.len());

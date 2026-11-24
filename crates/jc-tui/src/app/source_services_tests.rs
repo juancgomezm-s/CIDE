@@ -26,6 +26,39 @@ fn editor(text: &str, path: &str) -> TuiApp {
 }
 
 #[test]
+fn tui_complete_outline_reaches_the_last_declaration_and_calls_show_three_levels() {
+    let text = (0..1500)
+        .map(|i| format!("DEFINE VARIABLE valor{i:04} AS INTEGER NO-UNDO.\n"))
+        .collect::<String>();
+    let mut app = editor(&text, "completo.p");
+    app.dispatch(CommandId::ViewSymbols);
+    finish(&mut app);
+    assert_eq!(
+        app.source.state(),
+        SourceState::Ready,
+        "{}",
+        app.source.message()
+    );
+    assert_eq!(app.source.items().len(), 1500);
+    key(&mut app, KeyCode::End, KeyModifiers::NONE);
+    key(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    assert_eq!(
+        app.workbench.active_editor().unwrap().cursor,
+        text.find("valor1499").unwrap()
+    );
+    let code="fn uno(){dos();} fn dos(){tres();} fn tres(){cuatro();} fn cuatro(){cinco();} fn cinco(){}";
+    let mut app = editor(code, "niveles.rs");
+    app.workbench.set_linear_selection_bytes(3, 3).unwrap();
+    app.dispatch(CommandId::SourceCalls);
+    finish(&mut app);
+    assert_eq!(app.source.items().len(), 3);
+    assert_eq!(app.source.relation_parents(), [None, Some(0), Some(1)]);
+    assert!(app.source.present(10, 100).rows[2]
+        .label
+        .starts_with("    cuatro"));
+}
+
+#[test]
 fn tui_routine_relationships_show_both_direction_icons() {
     use crate::screen::{CellStyle, Screen};
     use jc_app::source_services::RelationMark;

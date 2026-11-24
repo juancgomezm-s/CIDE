@@ -18,7 +18,9 @@ mod scoped_read;
 pub use jc_fs::{capture_in_root, Capture, FileToken, MissingToken};
 pub use scoped_read::{read_in_root, verify_file_in_root};
 mod directory;
-pub use directory::{list_directory_in_root, DirectoryEntry, DirectoryListing};
+pub use directory::{
+    list_directory_complete_in_root, list_directory_in_root, DirectoryEntry, DirectoryListing,
+};
 mod fingerprint;
 pub use fingerprint::ContentFingerprint;
 use fingerprint::{fingerprint_file, FingerprintingWriter};

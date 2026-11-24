@@ -11,12 +11,25 @@ use std::{
 };
 
 pub const SOURCE_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0001);
+pub(crate) mod analysis;
+mod call_tree;
 mod incoming;
+pub use analysis::AnalysisStatus;
 pub(crate) use incoming::IncomingScan;
 const SEMANTIC_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0004);
 const OUTLINE_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0002);
 const OUTLINE_DEPENDENCIES_JOB_KEY: JobKey = JobKey(0x4a43_5352_4353_0003);
 const SNAPSHOT: usize = 2 * 1024 * 1024;
+fn navigation_bytes(mode: SourceMode) -> usize {
+    if matches!(
+        mode,
+        SourceMode::Symbols | SourceMode::Calls | SourceMode::Incoming | SourceMode::Dependencies
+    ) {
+        64 * 1024 * 1024
+    } else {
+        SNAPSHOT
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceMode {
     Symbols,
@@ -269,6 +282,7 @@ impl SourceItem {
                 | (
                     SourceAction::ProjectLocation { path, .. },
                     SourceMode::Symbols
+                    | SourceMode::Calls
                     | SourceMode::FollowLink
                     | SourceMode::Definition
                     | SourceMode::LspReferences
@@ -489,6 +503,17 @@ pub fn publish_review(
 }
 
 pub(crate) enum SourceJob {
+    CallTree {
+        work: Box<SourceJob>,
+        provider: SourceProviderDescriptor,
+        root: Option<PathBuf>,
+        source: PathBuf,
+        cursor: usize,
+    },
+    Complete {
+        work: Box<SourceJob>,
+        progress: Arc<analysis::AnalysisProgress>,
+    },
     Plain(TaskProvider),
     RustSymbols(TaskProvider),
     Routine {
@@ -614,7 +639,24 @@ fn publish_calls(
 }
 
 impl SourceJob {
+    pub(crate) fn capture_limits(&self, mut limits: crate::JobLimits) -> crate::JobLimits {
+        if matches!(self, Self::Complete { .. })
+            && limits.snapshot_bytes == crate::JobLimits::default().snapshot_bytes
+            && limits.total_snapshot_bytes == crate::JobLimits::default().total_snapshot_bytes
+        {
+            limits.snapshot_bytes = limits.snapshot_bytes.max(64 * 1024 * 1024);
+            limits.total_snapshot_bytes = limits.total_snapshot_bytes.max(128 * 1024 * 1024);
+        }
+        limits
+    }
     pub(crate) fn output_limits(&self, mut limits: crate::JobLimits) -> crate::JobLimits {
+        if matches!(self, Self::Complete { .. })
+            && limits.result_items == crate::JobLimits::default().result_items
+            && limits.result_bytes == crate::JobLimits::default().result_bytes
+        {
+            limits.result_items = usize::MAX;
+            limits.result_bytes = 64 * 1024 * 1024;
+        }
         if matches!(self, Self::RustSymbols(_)) {
             // Ordinary .rs files can contain hundreds of fields and associated items.
             // Only this provider opts in to a larger, still bounded result set.
@@ -626,6 +668,8 @@ impl SourceJob {
 
     pub(crate) fn timeout(&self, default: std::time::Duration) -> std::time::Duration {
         match self {
+            Self::Complete { .. } => std::time::Duration::from_secs(30 * 60),
+            Self::CallTree { .. } => std::time::Duration::from_secs(30 * 60),
             Self::Routine {
                 fallback: Some(fallback),
                 ..
@@ -652,6 +696,30 @@ impl SourceJob {
         output: &mut TaskOutput,
     ) -> Result<(), TaskFailure> {
         match self {
+            Self::CallTree {
+                work,
+                provider,
+                root,
+                source,
+                cursor,
+            } => call_tree::run(
+                work,
+                *provider,
+                root.as_deref(),
+                (source, *cursor),
+                snapshot,
+                cancel,
+                output,
+            ),
+            Self::Complete { work, progress } => {
+                let cancel = cancel.with_analysis(progress.clone());
+                cancel.report_source_progress(0, snapshot.bytes().len());
+                let result = work.run(snapshot, &cancel, output);
+                if result.is_ok() {
+                    cancel.report_source_progress(snapshot.bytes().len(), snapshot.bytes().len());
+                }
+                result
+            }
             Self::Plain(provider) | Self::RustSymbols(provider) => {
                 provider(snapshot, cancel, output)
             }
@@ -1011,6 +1079,7 @@ pub enum SourceState {
     Queued,
     Running,
     Ready,
+    Incomplete,
     Stale,
     Cancelled,
     Limited,
@@ -1023,6 +1092,7 @@ impl SourceState {
             Self::Queued => "En cola",
             Self::Running => "En curso",
             Self::Ready => "Listo",
+            Self::Incomplete => "Incompleto",
             Self::Stale => "Obsoleto",
             Self::Cancelled => "Cancelado",
             Self::Limited => "Limitado",
@@ -1133,6 +1203,9 @@ struct Flight {
 }
 #[derive(Default)]
 pub struct SourceController {
+    progress: Option<Arc<analysis::AnalysisProgress>>,
+    last_progress: Option<AnalysisStatus>,
+    relation_parents: Vec<Option<usize>>,
     generation: u64,
     flight: Option<Flight>,
     pending: Option<Request>,
@@ -1283,6 +1356,11 @@ impl SourceController {
     pub fn state(&self) -> SourceState {
         self.state
     }
+    pub fn progress(&self) -> Option<AnalysisStatus> {
+        matches!(self.state, SourceState::Queued | SourceState::Running)
+            .then(|| self.progress.as_ref().map(|p| p.read()))
+            .flatten()
+    }
     pub fn mode(&self) -> Option<SourceMode> {
         self.mode
     }
@@ -1291,6 +1369,9 @@ impl SourceController {
     }
     pub fn items(&self) -> &[SourceItem] {
         &self.items
+    }
+    pub fn relation_parents(&self) -> &[Option<usize>] {
+        &self.relation_parents
     }
     pub fn selected(&self) -> usize {
         self.selected
@@ -1326,7 +1407,7 @@ impl SourceController {
         self.symbol_path(app, root).next_back()
     }
     pub fn ready(&self, app: &Workbench, root: Option<&Path>) -> bool {
-        self.state == SourceState::Ready
+        matches!(self.state, SourceState::Ready | SourceState::Incomplete)
             && !self.items.is_empty()
             && self.accepted.as_ref().is_some_and(|r| r.current(app, root))
     }
@@ -1371,10 +1452,17 @@ impl SourceController {
                 .take(count)
                 .map(|(index, item)| {
                     let relation = self.mode.and_then(|mode| item.relation_mark(mode));
+                    let mut depth = 0;
+                    let mut parent = self.relation_parents.get(index).copied().flatten();
+                    while let Some(p) = parent.filter(|_| depth < 3) {
+                        depth += 1;
+                        parent = self.relation_parents.get(p).copied().flatten();
+                    }
+                    let label = format!("{}{}", "  ".repeat(depth), item.label);
                     SourceRow {
                         index,
                         label: display_ui_label(
-                            &item.label,
+                            &label,
                             columns.saturating_sub(2 * usize::from(relation.is_some())),
                         ),
                         selected: index == self.selected,
@@ -1654,6 +1742,23 @@ impl SourceController {
     pub fn tick(&mut self, app: &Workbench, root: Option<&Path>, jobs: &mut JobSystem) -> bool {
         let mut changed = self.validate_context(app, root, jobs);
         if self.flight.is_some() {
+            let progress = self.progress();
+            if progress != self.last_progress {
+                self.last_progress = progress;
+                if let Some(p) = progress {
+                    let n = p.percent() / 10;
+                    self.message = format!(
+                        "Analizando [{}{}] {} % · {}/{} {}",
+                        "=".repeat(n),
+                        " ".repeat(10 - n),
+                        p.percent(),
+                        p.done,
+                        p.total,
+                        if p.files { "archivos" } else { "bytes" }
+                    );
+                }
+                return true;
+            }
             return changed;
         }
         let Some(r) = self.pending.as_ref() else {
@@ -1673,11 +1778,22 @@ impl SourceController {
             app.document_by_id(r.origin.stamp.document)
                 .map_or(0, |d| d.session.document().len())
         };
-        if len > SNAPSHOT {
+        let complete = (r.provider.is_none()
+            || r.provider.is_some_and(|p| {
+                p.id.starts_with("core.") || p.id == "progress.abl" || p.id == "markdown.links"
+            }))
+            && matches!(
+                r.mode,
+                SourceMode::Symbols
+                    | SourceMode::Dependencies
+                    | SourceMode::Calls
+                    | SourceMode::Incoming
+            );
+        if len > if complete { 64 * 1024 * 1024 } else { SNAPSHOT } {
             self.pending = None;
             return self.status(
                 SourceState::Limited,
-                "La captura del servicio de código excede2MiB",
+                "No se pudo analizar el archivo completo: supera la memoria de captura disponible",
             );
         }
         let mode = r.mode;
@@ -1803,6 +1919,27 @@ impl SourceController {
                     mode => SourceJob::Plain(provider.provider(mode).unwrap()),
                 }
             };
+        let work = if complete && mode == SourceMode::Calls {
+            SourceJob::CallTree {
+                work: Box::new(work),
+                provider: r.provider.expect("relationship provider"),
+                root: reference_root(root, r).ok().map(Path::to_owned),
+                source: r.origin.path.clone(),
+                cursor: r.origin.cursor,
+            }
+        } else {
+            work
+        };
+        let work = if complete {
+            let progress = Arc::new(analysis::AnalysisProgress::new(jobs.source_wakeup()));
+            self.progress = Some(progress.clone());
+            SourceJob::Complete {
+                work: Box::new(work),
+                progress,
+            }
+        } else {
+            work
+        };
         match jobs.submit_source(app, self.job_key(), r.origin.stamp, len, work) {
             Ok(id) => {
                 let request = self.pending.take().unwrap();
@@ -1912,6 +2049,8 @@ impl SourceController {
         let document = app.document_by_id(request.origin.stamp.document).unwrap();
         let tab = document.tab_id;
         let source_len = document.session.document().len();
+        let parents = task.output.take_source_parents();
+        let incomplete = task.output.source_incomplete();
         let mut items = Vec::new();
         let is_lsp = request.mode.lsp_query().is_some();
         let catalog_symbols = request.mode == SourceMode::Symbols
@@ -2017,6 +2156,17 @@ impl SourceController {
         } else {
             0
         };
+        if !parents.is_empty()
+            && (parents.len() != items.len()
+                || parents
+                    .iter()
+                    .enumerate()
+                    .any(|(i, p)| p.is_some_and(|p| p >= i)))
+        {
+            self.status(SourceState::Failed, "Jerarquía de relaciones inválida");
+            return true;
+        }
+        self.relation_parents = parents;
         self.items = items;
         let message = if catalog_symbols {
             let mut message = format!(
@@ -2110,7 +2260,14 @@ impl SourceController {
             message
         };
         self.accepted = Some(request);
-        self.status(SourceState::Ready, message);
+        self.status(
+            if incomplete {
+                SourceState::Incomplete
+            } else {
+                SourceState::Ready
+            },
+            message,
+        );
         true
     }
     pub fn accept_editor(
@@ -2354,7 +2511,7 @@ impl SourceController {
                     path.clone(),
                     Some(*encoding),
                     to_side,
-                    SNAPSHOT,
+                    navigation_bytes(request.mode),
                     *version,
                 )
                 .map_err(|error| error.to_string())?;
@@ -2381,7 +2538,7 @@ impl SourceController {
                     path.clone(),
                     Some(*encoding),
                     to_side,
-                    SNAPSHOT,
+                    navigation_bytes(request.mode),
                     *version,
                 )
                 .map_err(|error| error.to_string())?;
@@ -2460,8 +2617,14 @@ impl SourceController {
                     .panes()
                     .view(source_pane)
                     .and_then(|view| view.location());
-                app.open_project_file(root, paths[0].clone(), None, to_side, SNAPSHOT)
-                    .map_err(|e| e.to_string())?;
+                app.open_project_file(
+                    root,
+                    paths[0].clone(),
+                    None,
+                    to_side,
+                    navigation_bytes(request.mode),
+                )
+                .map_err(|e| e.to_string())?;
                 if request.mode == SourceMode::FollowLink && app.panes().active() != source_pane {
                     if let Some(origin) = origin {
                         app.record_link_origin(origin);
@@ -2499,8 +2662,14 @@ impl SourceController {
         {
             return Err("Cambió el candidato de referencia".into());
         }
-        app.open_project_file(root, candidate.to_owned(), None, to_side, SNAPSHOT)
-            .map_err(|e| e.to_string())?;
+        app.open_project_file(
+            root,
+            candidate.to_owned(),
+            None,
+            to_side,
+            navigation_bytes(request.mode),
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 }

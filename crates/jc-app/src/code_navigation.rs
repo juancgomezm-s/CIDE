@@ -92,6 +92,7 @@ fn tokens(
             return Err(TaskFailure::Cancelled);
         }
         let offset = start + index * CHUNK;
+        cancel.report_source_progress(offset, source.len());
         scan(
             profile,
             &mut state,
@@ -130,7 +131,7 @@ fn tokens(
                         return;
                     }
                 }
-                if tokens.len() == MAX_TOKENS {
+                if !cancel.complete_source() && tokens.len() == MAX_TOKENS {
                     limited = true;
                 } else {
                     tokens.push(Token {
