@@ -64,3 +64,24 @@ con su manifiesto y los 391 componentes verificados del runtime OmniCore.
 
 No se generó MSI ni se publicó en GitHub para este bloque. Los paquetes 0.1.13
 anteriores conservan su contenido; estos cambios requieren una nueva entrega.
+
+## Eclipse oscuro
+
+Por la referencia visual de Juan se añade Eclipse oscuro: fondo carbón #282828,
+palabras clave azules, tipos turquesa, cadenas anaranjadas y comentarios verdes.
+Los números usan violeta #C7A0F9, distinto del texto y de los lógicos verdes;
+las inclusiones siguen en magenta. Es una paleta propia guiada por la captura,
+sin recursos extraídos de Eclipse. Su identificador se agrega al final para
+conservar las preferencias anteriores.
+
+Las diez paletas se distribuyen en cuatro columnas sin aumentar la altura de
+Preferencias. Las pruebas de geometría cubren DPI 96/144/192 y los anchos mínimos.
+La paleta nueva pasa contraste 4.5:1 sobre fondo normal y selección, junto con la
+comprobación de colores numéricos distintos. Registros: work/eclipse-theme.
+La comprobación nativa recorre Eclipse oscuro, valida menú y marco, dibuja la
+escena GDI y comprueba que Cancelar restaura el tema anterior, sin tomar el
+escritorio. Esta evidencia es distinta de una nueva revisión visual física.
+Pasaron los cuatro casos dirigidos de apariencia, Clippy GUI con todos sus
+targets, la compilación debug offline y las 16 comprobaciones nativas de
+selector-input. Entrega completa: target/eclipse-theme-next/debug, con
+manifiesto y runtime OmniCore verificado. No se generó otro MSI.

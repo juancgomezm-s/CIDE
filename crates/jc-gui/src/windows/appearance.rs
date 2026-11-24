@@ -116,6 +116,10 @@ pub(super) const APPEARANCE: &[(Choice, &str)] = &[
         Choice::Theme(Theme::ExtraDark),
         "Tema de la ventana · Grafito profundo",
     ),
+    (
+        Choice::Theme(Theme::Eclipse),
+        "Tema de la ventana · Eclipse oscuro",
+    ),
     (Choice::FontPicker, "Fuente del editor · Elegir tipografía…"),
     (Choice::Ui(11), "Interfaz · 11 px"),
     (Choice::Ui(12), "Interfaz · 12 px (compacta)"),
@@ -335,14 +339,16 @@ pub(super) enum Theme {
     LightDay,
     LightPaper,
     ExtraDark,
+    Eclipse,
 }
 
 impl Theme {
-    pub(super) const ALL: [Self; 9] = [
+    pub(super) const ALL: [Self; 10] = [
         Self::Current,
         Self::Neutral,
         Self::Warm,
         Self::Blue,
+        Self::Eclipse,
         Self::ExtraDark,
         Self::Contrast,
         Self::Light,
@@ -363,6 +369,7 @@ impl Theme {
             Self::LightDay,
             Self::LightPaper,
             Self::ExtraDark,
+            Self::Eclipse,
         ]
         .get(usize::from(id))
         .copied()
@@ -401,6 +408,10 @@ impl Theme {
             Self::ExtraDark => [
                 0x0d1017, 0xdae2ef, 0x9da8bd, 0x293851, 0x89c7ff, 0x090c12, 0x1c2432, 0x89b4fa,
                 0x65d4cf, 0xf6b993, 0x91b899, 0xce9bff,
+            ],
+            Self::Eclipse => [
+                0x282828, 0xdcdcdc, 0xa8aaa9, 0x353b45, 0x75bcf5, 0x222222, 0x33383e, 0x56b6f2,
+                0x40d7cb, 0xe9a06f, 0x9fbd91, 0xc7a0f9,
             ],
             Self::Contrast => [
                 0x080808, 0xffffff, 0xd5d5d5, 0x293d64, 0xffec74, 0x000000, 0x202837, 0x92d5ff,
@@ -494,6 +505,7 @@ impl Theme {
             }
             String | Emphasis => self.role(9, 0),
             Comment => self.role(10, 0),
+            Boolean if self == Self::Eclipse => 0x0091ce9f,
             Boolean | Number | Code => self.role(11, 0),
         }
     }
@@ -532,6 +544,7 @@ mod tests {
             Theme::LightDay,
             Theme::LightPaper,
             Theme::ExtraDark,
+            Theme::Eclipse,
         ] {
             assert_eq!(Theme::from_id(theme as u8), Some(theme));
             for bg in [theme.background(), theme.selection()] {
@@ -554,6 +567,14 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn eclipse_numbers_are_distinct_from_text_keywords_strings_and_booleans() {
+        use jc_app::SyntaxKind::*;
+        for kind in [Plain, Keyword, Type, String, Comment, Boolean, Preprocessor] {
+            assert_ne!(Theme::Eclipse.syntax(Number), Theme::Eclipse.syntax(kind));
         }
     }
 }

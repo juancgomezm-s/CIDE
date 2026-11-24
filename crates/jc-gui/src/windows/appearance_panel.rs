@@ -46,14 +46,14 @@ impl Frame {
             dpi: state.dpi,
             settings: Settings::read(state),
             focused: state.selector.as_ref().and_then(|s| s.appearance_target()),
-            controls: Vec::with_capacity(28),
+            controls: Vec::with_capacity(32),
         };
         let inner = width - px(48);
         let gap = px(10);
-        let tile = (inner - 2 * gap) / 3;
+        let tile = (inner - 3 * gap) / 4;
         for (n, theme) in Theme::ALL.into_iter().enumerate() {
-            let x = px(24) + n as i32 % 3 * (tile + gap);
-            let y = px(96) + n as i32 / 3 * px(58);
+            let x = px(24) + n as i32 % 4 * (tile + gap);
+            let y = px(96) + n as i32 / 4 * px(58);
             frame.add(x, y, tile, px(52), Target::Choice(Choice::Theme(theme)));
         }
         for (n, size) in [11, 12, 14, 16].into_iter().enumerate() {
@@ -168,6 +168,7 @@ fn name(theme: Theme) -> &'static str {
         Theme::LightDay => "Claro nítido",
         Theme::LightPaper => "Papel cálido",
         Theme::ExtraDark => "Grafito profundo",
+        Theme::Eclipse => "Eclipse oscuro",
     }
 }
 
@@ -330,7 +331,7 @@ mod tests {
                 state.width = state.dpi.pixels(width);
                 state.height = state.chrome_layout().top() + state.dpi.pixels(610);
                 let f = Frame::prepare(&state).unwrap();
-                assert_eq!(f.controls.len(), 31);
+                assert_eq!(f.controls.len(), 32);
                 for (i, (r, _)) in f.controls.iter().enumerate() {
                     assert!(
                         r.left >= f.rect.left

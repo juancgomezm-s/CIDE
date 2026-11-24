@@ -261,6 +261,26 @@ unsafe fn appearance_window_colors(hwnd: Hwnd, options: &SmokeOptions) -> Result
     {
         return Err("Esc no restauró el tema de la ventana y del menú".into());
     }
+    open(hwnd, SelectorKind::Appearance)?;
+    appearance_select(hwnd, super::appearance::Choice::Theme(Theme::Eclipse))?;
+    let frame = paint::prepare(&mut model.state.borrow_mut());
+    paint::bitmap(
+        hwnd,
+        &frame,
+        &options.report.with_file_name("tema-eclipse.bmp"),
+    )?;
+    if menu.palette() != Palette::for_theme(Theme::Eclipse)
+        || model.state.borrow().editor_theme != Theme::Eclipse
+        || shell::caption_color(hwnd).is_some_and(|color| color != Theme::Eclipse.background())
+    {
+        return Err("Eclipse oscuro no se aplicó a la ventana y al menú".into());
+    }
+    key(hwnd, 0x1b, Modifiers::NONE)?;
+    if model.state.borrow().editor_theme != original
+        || menu.palette() != Palette::for_theme(original)
+    {
+        return Err("Cancelar Eclipse oscuro no restituyó el tema previo".into());
+    }
     Ok(())
 }
 
