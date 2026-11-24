@@ -264,6 +264,9 @@ impl State {
                 }
                 Some(Target::Apply) => return self.accept_selector(false),
                 Some(Target::Cancel) => return self.selector_key(0x1b, Modifiers::NONE),
+                Some(Target::Font) => {
+                    return Action::Appearance(super::appearance::Choice::FontPicker)
+                }
                 None if !frame.contains(x, y) => return self.selector_key(0x1b, Modifiers::NONE),
                 None => {}
             }

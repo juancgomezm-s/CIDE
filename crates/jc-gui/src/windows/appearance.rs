@@ -17,6 +17,7 @@ pub(super) enum Choice {
     Minimap(bool),
     MinimapWidth(u16),
     OutlineLeft(bool),
+    FontPicker,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -28,6 +29,7 @@ pub(super) struct Settings {
     pub minimap: bool,
     pub minimap_width: u16,
     pub outline_left: bool,
+    pub face: super::editor_fonts::Face,
 }
 
 impl Settings {
@@ -40,6 +42,7 @@ impl Settings {
             minimap: state.minimap_visible,
             minimap_width: state.minimap_width,
             outline_left: state.outline.left,
+            face: state.editor_face,
         }
     }
 
@@ -52,6 +55,7 @@ impl Settings {
             Choice::Minimap(minimap) => self.minimap = minimap,
             Choice::MinimapWidth(width) => self.minimap_width = width,
             Choice::OutlineLeft(left) => self.outline_left = left,
+            Choice::FontPicker => {}
         }
         self
     }
@@ -100,6 +104,19 @@ pub(super) const APPEARANCE: &[(Choice, &str)] = &[
         Choice::Theme(Theme::Contrast),
         "Tema de la ventana · Alto contraste",
     ),
+    (
+        Choice::Theme(Theme::LightDay),
+        "Tema de la ventana · Claro nítido",
+    ),
+    (
+        Choice::Theme(Theme::LightPaper),
+        "Tema de la ventana · Papel cálido",
+    ),
+    (
+        Choice::Theme(Theme::ExtraDark),
+        "Tema de la ventana · Grafito profundo",
+    ),
+    (Choice::FontPicker, "Fuente del editor · Elegir tipografía…"),
     (Choice::Ui(11), "Interfaz · 11 px"),
     (Choice::Ui(12), "Interfaz · 12 px (compacta)"),
     (Choice::Ui(14), "Interfaz · 14 px"),
@@ -165,18 +182,20 @@ unsafe fn set(
             return Err(error);
         }
     }
-    if (old.ui, old.editor, old.zoom) != (next.ui, next.editor, next.zoom) {
+    if (old.ui, old.editor, old.zoom, old.face) != (next.ui, next.editor, next.zoom, next.face) {
         (
             state.ui_text_size,
             state.editor_text_size,
             state.editor_zoom,
         ) = (next.ui, next.editor, next.zoom);
+        state.editor_face = next.face;
         if let Err(error) = state.refresh_dpi(hwnd, current_dpi) {
             (
                 state.ui_text_size,
                 state.editor_text_size,
                 state.editor_zoom,
             ) = (old.ui, old.editor, old.zoom);
+            state.editor_face = old.face;
             if let Some(theme) = menu.as_ref().filter(|_| old.ui != next.ui) {
                 theme.set_text_scale(current_dpi, old.ui)?;
             }
@@ -224,7 +243,7 @@ pub(super) unsafe fn synchronize_preview(hwnd: Hwnd) -> bool {
     match set(hwnd, model, &mut state, next) {
         Ok(changed) => {
             if state.appearance_open() {
-                state.appearance_draft = Some(next);
+                state.appearance_draft = Some(Settings::read(&state));
             } else {
                 state.saved_appearance = None;
                 state.appearance_draft = None;
@@ -239,6 +258,10 @@ pub(super) unsafe fn synchronize_preview(hwnd: Hwnd) -> bool {
 }
 
 pub(super) unsafe fn apply(hwnd: Hwnd, choice: Choice) {
+    if choice == Choice::FontPicker {
+        super::editor_fonts::choose(hwnd);
+        return;
+    }
     let Some(model) = owner(hwnd) else {
         return;
     };
@@ -271,6 +294,7 @@ pub(super) unsafe fn apply(hwnd: Hwnd, choice: Choice) {
         Choice::MinimapWidth(width) => format!("Ancho del minimapa · {width} px"),
         Choice::OutlineLeft(true) => "Esquema a la izquierda".into(),
         Choice::OutlineLeft(false) => "Esquema a la derecha".into(),
+        Choice::FontPicker => unreachable!(),
     };
     drop(state);
     InvalidateRect(hwnd, std::ptr::null(), 0);
@@ -283,6 +307,21 @@ pub(super) fn editor_pixels(dpi: dpi::Dpi, size: u8, zoom: u8) -> i32 {
     ((size + 50) / 100).max(1)
 }
 
+pub(super) unsafe fn preview_font(
+    hwnd: Hwnd,
+    model: &Owner,
+    state: &mut State,
+    face: super::editor_fonts::Face,
+) -> Result<(), String> {
+    let next = Settings {
+        face,
+        ..Settings::read(state)
+    };
+    set(hwnd, model, state, next)?;
+    state.appearance_draft = Some(Settings::read(state));
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub(super) enum Theme {
@@ -293,9 +332,26 @@ pub(super) enum Theme {
     Blue,
     Light,
     Contrast,
+    LightDay,
+    LightPaper,
+    ExtraDark,
 }
 
 impl Theme {
+    pub(super) const ALL: [Self; 9] = [
+        Self::Current,
+        Self::Neutral,
+        Self::Warm,
+        Self::Blue,
+        Self::ExtraDark,
+        Self::Contrast,
+        Self::Light,
+        Self::LightDay,
+        Self::LightPaper,
+    ];
+    pub(super) fn is_light(self) -> bool {
+        matches!(self, Self::Light | Self::LightDay | Self::LightPaper)
+    }
     pub(super) fn from_id(id: u8) -> Option<Self> {
         [
             Self::Current,
@@ -304,6 +360,9 @@ impl Theme {
             Self::Blue,
             Self::Light,
             Self::Contrast,
+            Self::LightDay,
+            Self::LightPaper,
+            Self::ExtraDark,
         ]
         .get(usize::from(id))
         .copied()
@@ -328,8 +387,20 @@ impl Theme {
                 0x8be1df, 0xffc6a2, 0xa1c5a5, 0xd9c1ff,
             ],
             Self::Light => [
-                0xf5f2eb, 0x26313a, 0x515e69, 0xcbdcef, 0x174675, 0xe9e5db, 0xd8e1eb, 0x204d8b,
-                0x126457, 0x8a381c, 0x4b6643, 0x6c3784,
+                0xf5f2eb, 0x26313a, 0x515e69, 0xe1eafa, 0x165bc5, 0xe9e5db, 0xd8e1eb, 0x165bc5,
+                0x006e78, 0xa64018, 0x486d4b, 0x8c35aa,
+            ],
+            Self::LightDay => [
+                0xffffff, 0x252b36, 0x556273, 0xe4eeff, 0x175bce, 0xf0f3f8, 0xdce5f2, 0x175bce,
+                0x007077, 0xb04412, 0x4f7251, 0x9236b5,
+            ],
+            Self::LightPaper => [
+                0xfff8ec, 0x38322b, 0x655f55, 0xf4e5d0, 0x345ac6, 0xf5eddc, 0xe8ddc7, 0x345ac6,
+                0x006e65, 0xa0470d, 0x576b3d, 0x8b409d,
+            ],
+            Self::ExtraDark => [
+                0x0d1017, 0xdae2ef, 0x9da8bd, 0x293851, 0x89c7ff, 0x090c12, 0x1c2432, 0x89b4fa,
+                0x65d4cf, 0xf6b993, 0x91b899, 0xce9bff,
             ],
             Self::Contrast => [
                 0x080808, 0xffffff, 0xd5d5d5, 0x293d64, 0xffec74, 0x000000, 0x202837, 0x92d5ff,
@@ -397,7 +468,7 @@ impl Theme {
 
     pub(super) fn control_ink(self, color: u32) -> u32 {
         let resolved = self.control_color(color);
-        if self == Self::Light && resolved == color {
+        if self.is_light() && resolved == color {
             blend(color, self.text(), 66)
         } else {
             resolved
@@ -412,7 +483,15 @@ impl Theme {
         match kind {
             Plain | Operator => self.text(),
             Keyword | Link => self.role(7, 0),
-            Type | Preprocessor | Heading => self.role(8, 0),
+            Type | Heading => self.role(8, 0),
+            Preprocessor => {
+                let rgb = match self {
+                    Self::Light | Self::LightDay => 0xa31b80,
+                    Self::LightPaper => 0x9f207d,
+                    _ => 0xef94d5,
+                };
+                ((rgb & 0xff) << 16) | (rgb & 0xff00) | (rgb >> 16)
+            }
             String | Emphasis => self.role(9, 0),
             Comment => self.role(10, 0),
             Boolean | Number | Code => self.role(11, 0),
@@ -426,4 +505,55 @@ fn blend(base: u32, accent: u32, percent: u32) -> u32 {
         let accent_channel = (accent >> shift) & 0xff;
         color | (((base_channel * (100 - percent) + accent_channel * percent) / 100) << shift)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn luminance(bgr: u32) -> f64 {
+        [0, 8, 16]
+            .into_iter()
+            .zip([0.2126, 0.7152, 0.0722])
+            .map(|(shift, w)| {
+                let n = f64::from((bgr >> shift) & 255) / 255.;
+                w * if n <= 0.04045 {
+                    n / 12.92
+                } else {
+                    ((n + 0.055) / 1.055).powf(2.4)
+                }
+            })
+            .sum()
+    }
+    #[test]
+    fn syntax_is_readable_on_light_and_extra_dark_base_and_selection() {
+        use jc_app::SyntaxKind::*;
+        for theme in [
+            Theme::Light,
+            Theme::LightDay,
+            Theme::LightPaper,
+            Theme::ExtraDark,
+        ] {
+            assert_eq!(Theme::from_id(theme as u8), Some(theme));
+            for bg in [theme.background(), theme.selection()] {
+                for kind in [
+                    Plain,
+                    Keyword,
+                    Type,
+                    String,
+                    Comment,
+                    Boolean,
+                    Number,
+                    Operator,
+                    Link,
+                    Preprocessor,
+                ] {
+                    let (a, b) = (luminance(bg), luminance(theme.syntax(kind)));
+                    assert!(
+                        (a.max(b) + 0.05) / (a.min(b) + 0.05) >= 4.5,
+                        "{theme:?} {kind:?}"
+                    );
+                }
+            }
+        }
+    }
 }

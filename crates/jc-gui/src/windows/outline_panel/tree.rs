@@ -223,7 +223,11 @@ impl Tree {
         let id = self.nodes.len();
         let depth = parent.map_or(0, |id| self.nodes[id].depth + 1);
         self.nodes.push(Node {
-            name: name.into(),
+            name: if kind == Kind::Include && item.is_some() && !name.starts_with('{') {
+                format!("{{{name}}}")
+            } else {
+                name.into()
+            },
             origin: None,
             kind,
             value_type: None,
@@ -321,6 +325,7 @@ impl Tree {
             if let Some((_, member)) = table.filter(|_| parent.is_some()) {
                 name = member;
             }
+            let parent = if kind == Kind::Include { None } else { parent };
             let category = tree.folder(parent, kind.label(), kind);
             let (parent, name) = if kind == Kind::Include {
                 tree.directories(category, name, kind)
@@ -388,8 +393,23 @@ impl Tree {
             .collect();
         let order = |ids: &mut [usize]| ids.sort_by(|a, b| keys[*a].cmp(&keys[*b]));
         order(&mut tree.roots[..declaration_groups]);
+        let positions: Vec<_> = tree
+            .nodes
+            .iter()
+            .map(|node| match node.item {
+                Some(Item::Symbol(index)) => symbols[index].range.start,
+                Some(Item::Dependency(index)) => dependencies[index].range.start,
+                _ => usize::MAX,
+            })
+            .collect();
         for id in 0..tree.nodes.len() {
-            order(&mut tree.nodes[id].children);
+            if tree.nodes[id].kind == Kind::Include && tree.nodes[id].item.is_none() {
+                tree.nodes[id]
+                    .children
+                    .sort_by_key(|child| positions[*child]);
+            } else {
+                order(&mut tree.nodes[id].children);
+            }
             let path = tree.ancestry(id);
             tree.nodes[id].expanded = expanded.contains(&path);
             if Some(&path) == selected.as_ref() {
@@ -406,6 +426,9 @@ impl Tree {
         name: &'a str,
         kind: Kind,
     ) -> (usize, &'a str) {
+        if kind == Kind::Include {
+            return (parent, name);
+        }
         let name = name.strip_prefix("./").unwrap_or(name);
         let namespaced = kind == Kind::Import && !name.contains(['/', '\\']);
         let mut parts = name
@@ -484,12 +507,55 @@ fn same_file(left: &SourceAction, right: &SourceAction) -> bool {
 mod semantic_icon_tests {
     use super::*;
     #[test]
+    fn includes_are_full_declarations_in_source_order_with_original_targets() {
+        let item = |at, label: &str, action| SourceItem {
+            range: at..at + 1,
+            label: label.into(),
+            action,
+            value_type: None,
+        };
+        let symbols = [item(40, "Inclusión &IDPROG", SourceAction::Navigate)];
+        let deps = [
+            item(
+                20,
+                "Inclusión ruta/profunda/z.i",
+                SourceAction::RelativeFile("ruta/profunda/z.i".into()),
+            ),
+            item(
+                60,
+                "Inclusión otro/a.i",
+                SourceAction::RelativeFile("otro/a.i".into()),
+            ),
+        ];
+        let mut tree = Tree::default();
+        tree.rebuild(&symbols, &deps, [None, None]);
+        let root = tree.roots[0];
+        assert_eq!(tree.roots.len(), 1);
+        let children = &tree.nodes[root].children;
+        assert_eq!(
+            children
+                .iter()
+                .map(|&id| tree.nodes[id].name.as_str())
+                .collect::<Vec<_>>(),
+            ["{ruta/profunda/z.i}", "{&IDPROG}", "{otro/a.i}"]
+        );
+        assert_eq!(tree.nodes[children[0]].item, Some(Item::Dependency(0)));
+        assert_eq!(tree.nodes[children[1]].item, Some(Item::Symbol(0)));
+        assert_eq!(tree.nodes[children[2]].item, Some(Item::Dependency(1)));
+        assert!(children
+            .iter()
+            .all(|&id| tree.nodes[id].parent == Some(root)
+                && tree.nodes[id].children.is_empty()
+                && !tree.nodes[id].directory));
+    }
+    #[test]
     fn code_categories_and_namespace_groups_are_not_filesystem_directories() {
         let mut tree = Tree::default();
         let category = tree.folder(None, "Inclusiones", Kind::Include);
         let (path, leaf) = tree.directories(category, "carpeta/interno/archivo.i", Kind::Include);
-        assert_eq!(leaf, "archivo.i");
-        assert!(tree.nodes[path].directory);
+        assert_eq!(leaf, "carpeta/interno/archivo.i");
+        assert_eq!(path, category);
+        assert!(!tree.nodes[path].directory);
         assert!(!tree.nodes[category].directory);
         let variables = tree.folder(None, "Variables y constantes", Kind::Variable);
         let methods = tree.folder(None, "Métodos", Kind::Method);

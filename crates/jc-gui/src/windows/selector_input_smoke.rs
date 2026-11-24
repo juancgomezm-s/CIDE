@@ -289,6 +289,18 @@ unsafe fn appearance_preview(hwnd: Hwnd) -> Result<(), String> {
             );
         }
     }
+    {
+        let mut state = model.state.borrow_mut();
+        let face = super::editor_fonts::Face::from_name("Courier New").unwrap();
+        let previous = state.font;
+        appearance::preview_font(hwnd, model, &mut state, face)?;
+        if state.editor_face != face
+            || state.font == previous
+            || state.recovery_metadata()? != metadata
+        {
+            return Err("La fuente no se previsualizó o se guardó antes de Aplicar".into());
+        }
+    }
     appearance_select(hwnd, Choice::Minimap(false))?;
     appearance_select(hwnd, Choice::OutlineLeft(!original.outline_left))?;
     {

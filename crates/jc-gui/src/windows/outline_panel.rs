@@ -603,8 +603,8 @@ impl State {
 
     pub(super) fn outline_presentation(&self) -> Option<OutlineFrame> {
         let rect = region(self)?;
-        let columns = ((rect.right - rect.left - self.dpi.pixels(30)) / self.cell_width.max(1))
-            .max(1) as usize;
+        let ui_cell = (self.dpi.pixels(i32::from(self.ui_text_size)) / 2).max(1);
+        let columns = ((rect.right - rect.left - self.dpi.pixels(30)) / ui_cell).max(1) as usize;
         let root = self.project_root.as_deref();
         let outline = &self.outline;
         let mut path = outline.controller.symbol_path(&self.workbench, root);
@@ -662,8 +662,17 @@ impl State {
                         - self
                             .dpi
                             .pixels(14 + row.name_offset() + row.depth as i32 * 12))
-                        / self.cell_width.max(1);
-                    row.label = display_ui_label(&node.name, space.max(1) as usize);
+                        / ui_cell;
+                    // Keep a complete declaration independent of the editor's
+                    // font. Native clipping uses the UI font and this row's rect.
+                    row.label = display_ui_label(
+                        &node.name,
+                        if node.kind == Kind::Include && node.item.is_some() {
+                            512
+                        } else {
+                            space.max(1) as usize
+                        },
+                    );
                     if let Some(origin) = &node.origin {
                         let label = format!("{} · {origin}", row.label);
                         row.label = display_ui_label(&label, space.max(1) as usize);
@@ -1644,7 +1653,7 @@ mod tests {
         let folder = tree
             .nodes
             .iter()
-            .find(|node| node.name == "modulos")
+            .find(|node| node.name == "Inclusiones")
             .unwrap();
         assert_eq!(
             folder
@@ -1652,12 +1661,21 @@ mod tests {
                 .iter()
                 .map(|&id| tree.nodes[id].name.as_str())
                 .collect::<Vec<_>>(),
-            ["Alfa.i", "Zeta.i"]
+            ["{modulos/Zeta.i}", "{modulos/Alfa.i}"]
         );
         assert!(folder
             .children
             .iter()
             .all(|&id| matches!(tree.nodes[id].item, Some(Item::Dependency(_)))));
+
+        select_tree_row(&mut state, |row| row.name == "Inclusiones");
+        state.outline_key(0x27, Modifiers::NONE);
+        // Sidebar declaration labels must not inherit the editor font width.
+        state.cell_width = 40;
+        let labels = state.outline_presentation().unwrap();
+        for name in ["{modulos/Zeta.i}", "{modulos/Alfa.i}"] {
+            assert!(labels.rows.iter().any(|row| row.label == name));
+        }
 
         let (calls, _) = tools(frame.rect, state.dpi)
             .into_iter()
@@ -1790,11 +1808,10 @@ mod tests {
         };
         prepare(true)?;
         click("Inclusiones", false)?;
-        click("incluidos", false)?;
-        click("ausente.i", true)?;
+        click("{incluidos/ausente.i}", true)?;
         at("destino.p", Some("{incluidos/ausente.i}"))?;
         prepare(false)?;
-        click("datos.i", true)?;
+        click("{incluidos/datos.i}", true)?;
         at("datos.i", None)?;
         prepare(true)?;
         let tab = |mode| -> Result<(), String> {

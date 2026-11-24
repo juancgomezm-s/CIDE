@@ -11,6 +11,7 @@ pub(super) enum Target {
     Choice(Choice),
     Apply,
     Cancel,
+    Font,
 }
 
 pub(super) struct Frame {
@@ -28,11 +29,11 @@ impl Frame {
         }
         let px = |n| state.dpi.pixels(n);
         let top = state.chrome_layout().top();
-        if state.width < px(660) || state.height - top < px(530) {
+        if state.width < px(660) || state.height - top < px(594) {
             return None;
         }
         let width = px(740).min(state.width - px(32));
-        let height = px(512);
+        let height = px(576);
         let left = (state.width - width) / 2;
         let y = top + (state.height - top - px(24) - height).max(0) / 2;
         let mut frame = Self {
@@ -50,25 +51,15 @@ impl Frame {
         let inner = width - px(48);
         let gap = px(10);
         let tile = (inner - 2 * gap) / 3;
-        for (n, theme) in [
-            Theme::Current,
-            Theme::Neutral,
-            Theme::Warm,
-            Theme::Blue,
-            Theme::Light,
-            Theme::Contrast,
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (n, theme) in Theme::ALL.into_iter().enumerate() {
             let x = px(24) + n as i32 % 3 * (tile + gap);
-            let y = px(96) + n as i32 / 3 * px(68);
-            frame.add(x, y, tile, px(58), Target::Choice(Choice::Theme(theme)));
+            let y = px(96) + n as i32 / 3 * px(58);
+            frame.add(x, y, tile, px(52), Target::Choice(Choice::Theme(theme)));
         }
         for (n, size) in [11, 12, 14, 16].into_iter().enumerate() {
             frame.add(
                 px(136) + n as i32 * px(60),
-                px(274),
+                px(306),
                 px(50),
                 px(30),
                 Target::Choice(Choice::Ui(size)),
@@ -77,7 +68,7 @@ impl Frame {
         for (n, size) in [11, 12, 13, 15, 17, 20].into_iter().enumerate() {
             frame.add(
                 px(136) + n as i32 * px(60),
-                px(314),
+                px(344),
                 px(50),
                 px(30),
                 Target::Choice(Choice::Editor(size)),
@@ -86,7 +77,7 @@ impl Frame {
         for (n, visible) in [true, false].into_iter().enumerate() {
             frame.add(
                 px(136) + n as i32 * px(80),
-                px(386),
+                px(451),
                 px(72),
                 px(30),
                 Target::Choice(Choice::Minimap(visible)),
@@ -95,19 +86,20 @@ impl Frame {
         for (n, width) in [60, 96, 128, 160, 200].into_iter().enumerate() {
             frame.add(
                 px(136) + n as i32 * px(60),
-                px(426),
+                px(489),
                 px(50),
                 px(30),
                 Target::Choice(Choice::MinimapWidth(width)),
             );
         }
+        frame.add(px(136), px(382), width - px(160), px(30), Target::Font);
         let right = frame.rect.right - px(24);
         frame.controls.push((
             Rect {
                 left: right - px(94),
                 right,
-                top: y + px(470),
-                bottom: y + px(500),
+                top: y + px(535),
+                bottom: y + px(565),
             },
             Target::Apply,
         ));
@@ -115,8 +107,8 @@ impl Frame {
             Rect {
                 left: right - px(196),
                 right: right - px(102),
-                top: y + px(470),
-                bottom: y + px(500),
+                top: y + px(535),
+                bottom: y + px(565),
             },
             Target::Cancel,
         ));
@@ -124,7 +116,7 @@ impl Frame {
         for (n, left) in [false, true].into_iter().enumerate() {
             frame.add(
                 width - px(200),
-                px(386) + n as i32 * px(40),
+                px(451) + n as i32 * px(38),
                 px(176),
                 px(30),
                 Target::Choice(Choice::OutlineLeft(left)),
@@ -173,6 +165,9 @@ fn name(theme: Theme) -> &'static str {
         Theme::Blue => "Azul profundo",
         Theme::Light => "Claro suave",
         Theme::Contrast => "Alto contraste",
+        Theme::LightDay => "Claro nítido",
+        Theme::LightPaper => "Papel cálido",
+        Theme::ExtraDark => "Grafito profundo",
     }
 }
 
@@ -214,13 +209,14 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
         shell::MUTED,
     )?;
     label(24, 74, 500, "TEMA Y COLORES", shell::ACCENT)?;
-    label(24, 246, 500, "TIPOGRAFÍA", shell::ACCENT)?;
-    label(24, 280, 100, "Interfaz", shell::TEXT)?;
-    label(24, 320, 100, "Código", shell::TEXT)?;
-    label(24, 358, 500, "DISTRIBUCIÓN", shell::ACCENT)?;
-    label(24, 392, 100, "Minimapa", shell::TEXT)?;
-    label(24, 432, 100, "Ancho (px)", shell::TEXT)?;
-    label(24, 476, 240, "Esc · descartar cambios", shell::MUTED)?;
+    label(24, 278, 500, "TIPOGRAFÍA", shell::ACCENT)?;
+    label(24, 311, 100, "Interfaz", shell::TEXT)?;
+    label(24, 349, 100, "Código", shell::TEXT)?;
+    label(24, 387, 100, "Fuente", shell::TEXT)?;
+    label(24, 423, 500, "DISTRIBUCIÓN", shell::ACCENT)?;
+    label(24, 456, 100, "Minimapa", shell::TEXT)?;
+    label(24, 494, 100, "Ancho (px)", shell::TEXT)?;
+    label(24, 541, 240, "Esc · descartar cambios", shell::MUTED)?;
     for (rect, target) in &frame.controls {
         let (text, selected, focus) = match *target {
             Target::Choice(c) => (
@@ -233,12 +229,14 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                     Choice::OutlineLeft(false) => "Esquema · derecha".into(),
                     Choice::OutlineLeft(true) => "Esquema · izquierda".into(),
                     Choice::Zoom(n) => format!("{n}%"),
+                    Choice::FontPicker => "Elegir fuente…".into(),
                 },
                 frame.settings.checked().contains(&c),
                 frame.focused == Some(c),
             ),
             Target::Apply => ("Aplicar".into(), true, false),
             Target::Cancel => ("Cancelar".into(), false, false),
+            Target::Font => (format!("{}    ▾", frame.settings.face.name()), false, false),
         };
         let is_apply = matches!(target, Target::Apply);
         let border = if selected || focus {
@@ -260,7 +258,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                 left: rect.left + px(8),
                 right: rect.right - px(8),
                 top: rect.top + px(6),
-                bottom: rect.top + px(31),
+                bottom: rect.top + px(25),
             };
             paint::fill_marks(dc, std::iter::once(preview), theme.background())?;
             let line = |x, y, w| Rect {
@@ -278,7 +276,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                 dc,
                 Rect {
                     left: rect.left + px(9),
-                    top: rect.top + px(36),
+                    top: rect.top + px(30),
                     right: rect.right - px(8),
                     bottom: rect.bottom - px(3),
                 },
@@ -290,7 +288,7 @@ pub(super) unsafe fn draw(dc: Hdc, frame: &Frame) -> Result<(), String> {
                     dc,
                     Rect {
                         left: rect.right - px(22),
-                        top: rect.top + px(35),
+                        top: rect.top + px(29),
                         right: rect.right - px(5),
                         bottom: rect.bottom,
                     },
@@ -330,9 +328,9 @@ mod tests {
             state.dpi = Dpi::from_raw(scale);
             for width in [660, 740, 1000] {
                 state.width = state.dpi.pixels(width);
-                state.height = state.chrome_layout().top() + state.dpi.pixels(550);
+                state.height = state.chrome_layout().top() + state.dpi.pixels(610);
                 let f = Frame::prepare(&state).unwrap();
-                assert_eq!(f.controls.len(), 27);
+                assert_eq!(f.controls.len(), 31);
                 for (i, (r, _)) in f.controls.iter().enumerate() {
                     assert!(
                         r.left >= f.rect.left

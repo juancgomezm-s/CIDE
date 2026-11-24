@@ -40,7 +40,12 @@ pub(super) unsafe fn window_ui_size(hwnd: Hwnd) -> u8 {
         .unwrap_or(appearance::DEFAULT_UI)
 }
 
-pub(super) unsafe fn editor_font(dpi: Dpi, size: u8, zoom: u8) -> Handle {
+pub(super) unsafe fn editor_font(
+    dpi: Dpi,
+    size: u8,
+    zoom: u8,
+    face: super::editor_fonts::Face,
+) -> Handle {
     let height = appearance::editor_pixels(dpi, size, zoom);
     CreateFontW(
         -height,
@@ -56,7 +61,7 @@ pub(super) unsafe fn editor_font(dpi: Dpi, size: u8, zoom: u8) -> Handle {
         0,
         5,
         0x31,
-        wide("Consolas").as_ptr(),
+        face.0.as_ptr(),
     )
 }
 
@@ -168,7 +173,12 @@ impl State {
     }
 
     pub(super) unsafe fn refresh_dpi(&mut self, hwnd: Hwnd, dpi: Dpi) -> Result<(), String> {
-        let editor = editor_font(dpi, self.editor_text_size, self.editor_zoom);
+        let editor = editor_font(
+            dpi,
+            self.editor_text_size,
+            self.editor_zoom,
+            self.editor_face,
+        );
         let ui = ui_font_size(dpi, self.ui_text_size);
         let dc = GetDC(hwnd);
         let result = if !editor.is_null() && !ui.is_null() && !dc.is_null() {
@@ -177,7 +187,12 @@ impl State {
             let result = if !old.is_null() && GetTextMetricsW(dc, &mut metrics) != 0 {
                 let width = metrics.average.saturating_add(dpi.pixels(1)).max(4);
                 let height = (metrics.height + metrics.external).max(8);
-                Some((width, height, shell::safe_ascii_runs(dc, width)))
+                Some((
+                    width,
+                    height,
+                    shell::safe_ascii_runs(dc, width),
+                    super::editor_fonts::selected_face(dc),
+                ))
             } else {
                 None
             };
@@ -191,7 +206,7 @@ impl State {
         if !dc.is_null() {
             ReleaseDC(hwnd, dc);
         }
-        let Some((width, height, runs)) = result else {
+        let Some((width, height, runs, face)) = result else {
             for created in [editor, ui] {
                 if !created.is_null() {
                     DeleteObject(created);
@@ -212,6 +227,9 @@ impl State {
         self.cell_width = width;
         self.cell_height = height;
         self.ascii_runs = runs;
+        if let Some(face) = face {
+            self.editor_face = face;
+        }
         self.dpi = dpi;
         self.invalidate_appearance();
         Ok(())

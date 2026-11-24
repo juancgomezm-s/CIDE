@@ -281,7 +281,7 @@ extern "system" {
     fn DwmGetWindowAttribute(hwnd: Hwnd, attribute: u32, value: *mut u32, size: u32) -> i32;
 }
 pub(super) unsafe fn set_caption_theme(hwnd: Hwnd, theme: super::appearance::Theme) {
-    let enabled = i32::from(theme != super::appearance::Theme::Light);
+    let enabled = i32::from(!theme.is_light());
     let _ = DwmSetWindowAttribute(hwnd, 20, &enabled, 4);
     let caption = theme.control_color(SURFACE) as i32;
     let text = theme.control_color(TEXT) as i32;

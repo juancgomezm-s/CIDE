@@ -10,6 +10,7 @@ mod clipboard_flow;
 mod close_flow;
 mod data_connections;
 mod dpi;
+mod editor_fonts;
 mod editor_scroll;
 mod explorer_paint;
 mod explorer_panel;
@@ -599,6 +600,7 @@ struct State {
     minimap_visible: bool,
     minimap_width: u16,
     editor_theme: appearance::Theme,
+    editor_face: editor_fonts::Face,
     pub font: Handle,
     pub ui_font: Handle,
     ascii_runs: [bool; 128],
@@ -648,6 +650,7 @@ impl State {
                 dpi::Dpi::BASE,
                 appearance::DEFAULT_EDITOR,
                 appearance::DEFAULT_ZOOM,
+                editor_fonts::Face::default(),
             )
         };
         let font = if created.is_null() {
@@ -758,6 +761,7 @@ impl State {
             minimap_visible: true,
             minimap_width: appearance::DEFAULT_MINIMAP,
             editor_theme: appearance::Theme::Current,
+            editor_face: editor_fonts::Face::default(),
             font,
             ui_font,
             ascii_runs: [false; 128],
