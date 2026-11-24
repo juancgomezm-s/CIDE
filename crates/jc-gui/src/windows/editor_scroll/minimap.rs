@@ -8,6 +8,8 @@ use jc_app::SyntaxKind;
 use std::sync::Arc;
 
 const MAX_PIXELS: usize = 2 * 1024 * 1024;
+mod glyphs;
+pub(super) use glyphs::FontSpec;
 
 // Three rows of two coverage samples. At 96 DPI the two samples are averaged
 // into one column, preserving the source column count and indentation.
@@ -36,11 +38,7 @@ fn glyph_mask(glyph: u8) -> [u8; 3] {
 }
 
 fn color(kind: SyntaxKind, theme: Theme) -> u32 {
-    if kind == SyntaxKind::Plain {
-        theme.muted()
-    } else {
-        theme.syntax(kind)
-    }
+    theme.syntax(kind)
 }
 
 fn dib(color: u32) -> u32 {
@@ -67,7 +65,9 @@ pub(super) struct Frame {
 
 #[derive(Default)]
 pub(super) struct Cache {
-    previous: Option<(Dpi, Theme, Frame)>,
+    previous: Option<(Dpi, Theme, Option<FontSpec>, Frame)>,
+    font: Option<FontSpec>,
+    atlas: Option<Arc<glyphs::Atlas>>,
 }
 
 impl Cache {
@@ -78,22 +78,31 @@ impl Cache {
         samples: Arc<[MapRow]>,
         dpi: Dpi,
         theme: Theme,
+        font: Option<FontSpec>,
     ) -> Frame {
+        if self.font != font {
+            self.atlas = font.and_then(|font| unsafe { glyphs::build(font) });
+            self.font = font;
+        }
         let thumb = track.thumb_rect();
         let raster = self
             .previous
             .as_ref()
-            .filter(|(old_dpi, old_theme, old)| {
+            .filter(|(old_dpi, old_theme, old_font, old)| {
                 *old_dpi == dpi
                     && *old_theme == theme
+                    && *old_font == font
                     && Arc::ptr_eq(&old.samples, &samples)
                     && bounds(old.channel) == bounds(channel)
                     && bounds(old.track.rect) == bounds(track.rect)
                     && bounds(old.track.thumb_rect()) == bounds(thumb)
             })
             .map_or_else(
-                || rasterize(channel, track, &samples, dpi, theme).map(Arc::from),
-                |(_, _, old)| old.raster.clone(),
+                || {
+                    rasterize(channel, track, &samples, dpi, theme, self.atlas.as_deref())
+                        .map(Arc::from)
+                },
+                |(_, _, _, old)| old.raster.clone(),
             );
         let frame = Frame {
             channel,
@@ -101,7 +110,7 @@ impl Cache {
             samples,
             raster,
         };
-        self.previous = Some((dpi, theme, frame.clone()));
+        self.previous = Some((dpi, theme, font, frame.clone()));
         frame
     }
 }
@@ -145,6 +154,7 @@ fn rasterize(
     samples: &[MapRow],
     dpi: Dpi,
     theme: Theme,
+    atlas: Option<&glyphs::Atlas>,
 ) -> Option<Vec<u32>> {
     let width = usize::try_from(channel.right - channel.left).ok()?;
     let height = usize::try_from(channel.bottom - channel.top).ok()?;
@@ -196,6 +206,31 @@ fn rasterize(
                         background
                     };
                     for px in x..end.min(rect.right) {
+                        if let Some(atlas) = atlas {
+                            let subrow = ((y - rect.top) * 3 / draw_height).min(2) as usize;
+                            let alpha = if draw_width == 1 {
+                                (atlas.coverage(row.glyphs[usize::from(col)], 0, subrow)
+                                    + atlas.coverage(row.glyphs[usize::from(col)], 1, subrow))
+                                    / 2
+                            } else {
+                                atlas.coverage(
+                                    row.glyphs[usize::from(col)],
+                                    ((px - x) * 2 / draw_width).min(1) as usize,
+                                    subrow,
+                                )
+                            };
+                            let mut pixel = 0;
+                            for shift in [0, 8, 16] {
+                                pixel |= ((((bg >> shift) & 255) * (255 - alpha)
+                                    + ((fg >> shift) & 255) * alpha
+                                    + 127)
+                                    / 255)
+                                    << shift;
+                            }
+                            pixels[(y - channel.top) as usize * width
+                                + (px - channel.left) as usize] = pixel;
+                            continue;
+                        }
                         let coverage = if draw_width == 1 {
                             pattern.count_ones()
                         } else {
@@ -341,8 +376,8 @@ mod tests {
         };
         let theme = Theme::Current;
         let mut cache = Cache::default();
-        let micro = cache.prepare(channel, track, Arc::clone(&samples), dpi, theme);
-        let same = cache.prepare(channel, track, Arc::clone(&samples), dpi, theme);
+        let micro = cache.prepare(channel, track, Arc::clone(&samples), dpi, theme, None);
+        let same = cache.prepare(channel, track, Arc::clone(&samples), dpi, theme, None);
         assert!(Arc::ptr_eq(
             micro.raster.as_ref().unwrap(),
             same.raster.as_ref().unwrap()

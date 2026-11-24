@@ -171,6 +171,24 @@ pub struct SyntaxRows {
     pub encoding: Option<TextEncoding>,
 }
 impl SyntaxRows {
+    /// Syntax color and navigation affordance are independent layers.
+    pub fn base_kind_at(&self, byte: usize) -> SyntaxKind {
+        if self.pending || self.limited || byte == usize::MAX {
+            return SyntaxKind::Plain;
+        }
+        let row = self.rows.partition_point(|row| row.source.end <= byte);
+        let Some(row) = self.rows.get(row).filter(|row| row.source.contains(&byte)) else {
+            return SyntaxKind::Plain;
+        };
+        let token = row.spans.partition_point(|token| token.source.end <= byte);
+        row.spans
+            .get(token)
+            .filter(|token| token.source.contains(&byte))
+            .map_or(SyntaxKind::Plain, |token| token.kind)
+    }
+    pub fn link_at(&self, byte: usize) -> bool {
+        self.kind_at(byte) == SyntaxKind::Link
+    }
     pub fn kind_at(&self, byte: usize) -> SyntaxKind {
         if self.pending || self.limited || byte == usize::MAX {
             return SyntaxKind::Plain;
@@ -700,6 +718,15 @@ mod tests {
                     let row =
                         app.syntax_rows(tab, app.line_ordinal_for_byte(tab, byte).unwrap(), 1);
                     assert_eq!(row.kind_at(byte), SyntaxKind::Link);
+                    assert!(row.link_at(byte));
+                    assert_eq!(
+                        row.base_kind_at(byte),
+                        if class {
+                            SyntaxKind::Plain
+                        } else {
+                            SyntaxKind::Preprocessor
+                        }
+                    );
                 }
             }
         }

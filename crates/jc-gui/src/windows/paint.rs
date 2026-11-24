@@ -14,6 +14,7 @@ fn search_at(matches: &[jc_app::SearchMatch], source: std::ops::Range<usize>) ->
         .is_some_and(|hit| hit.range.start < source.end)
 }
 struct Cell {
+    link: bool,
     theme: Theme,
     glyph: jc_app::Glyph,
     column: usize,
@@ -45,6 +46,7 @@ impl Cell {
 pub(super) struct SyntaxCell {
     pub ch: char,
     pub kind: SyntaxKind,
+    pub link: bool,
     pub selected: bool,
     pub search: bool,
     pub marker: bool,
@@ -64,6 +66,7 @@ impl From<&Cell> for SyntaxCell {
         Self {
             ch: cell.glyph.first(),
             kind: cell.kind,
+            link: cell.link,
             selected: cell.selected,
             search: cell.search,
             marker: cell.marker,
@@ -90,7 +93,7 @@ fn run_length(cells: &[Cell], start: usize, safe: &[bool; 128]) -> usize {
         .take_while(|(n, cell)| {
             cell.width == 1
                 && cell.column == first.column + n
-                && (cell.kind == SyntaxKind::Link) == (first.kind == SyntaxKind::Link)
+                && cell.link == first.link
                 && cell.foreground() == first.foreground()
                 && cell.background() == first.background()
                 && matches!(cell.glyph,jc_app::Glyph::Scalar(c) if c.is_ascii() && safe[c as usize])
@@ -553,6 +556,7 @@ fn project_ghost(row: &mut Row, start: usize, columns: usize, source: &str, them
         let mut chars = cluster.chars();
         let first = chars.next().unwrap();
         ghost.push(Cell {
+            link: false,
             theme,
             glyph: if chars.next().is_none() {
                 jc_app::Glyph::Scalar(first)
@@ -573,6 +577,7 @@ fn project_ghost(row: &mut Row, start: usize, columns: usize, source: &str, them
     }
     if clipped {
         ghost.push(Cell {
+            link: false,
             column: end,
             width: 1,
             glyph: jc_app::Glyph::Scalar('…'),
@@ -673,6 +678,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                     .into_iter()
                     .enumerate()
                     .map(|(column, cell)| Cell {
+                        link: !cell.source.is_empty() && syntax.link_at(cell.source.start),
                         theme: state.editor_theme,
                         glyph: jc_app::Glyph::Scalar(cell.ch),
                         column,
@@ -681,7 +687,7 @@ pub(super) fn prepare(state: &mut State) -> Frame {
                         kind: if cell.source.is_empty() {
                             SyntaxKind::Plain
                         } else {
-                            syntax.kind_at(cell.source.start)
+                            syntax.base_kind_at(cell.source.start)
                         },
                         search: !cell.source.is_empty() && search_at(matches, cell.source.clone()),
                         selected: !cell.source.is_empty()
@@ -733,11 +739,12 @@ pub(super) fn prepare(state: &mut State) -> Frame {
             let cells = visible
                 .into_iter()
                 .map(|atom| Cell {
+                    link: !atom.source.is_empty() && syntax.link_at(atom.source.start),
                     theme: state.editor_theme,
                     kind: if atom.source.is_empty() {
                         SyntaxKind::Plain
                     } else {
-                        syntax.kind_at(atom.source.start)
+                        syntax.base_kind_at(atom.source.start)
                     },
                     search: !atom.source.is_empty() && search_at(matches, atom.source.clone()),
                     selected: !atom.source.is_empty()
@@ -1165,7 +1172,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
                     {
                         return Err(super::os_error("Dibujar tramo de código"));
                     }
-                    if cell.kind == SyntaxKind::Link {
+                    if cell.link {
                         fill(
                             dc,
                             Rect {
@@ -1194,7 +1201,7 @@ unsafe fn draw_internal(dc: Hdc, frame: &Frame, reference: bool) -> Result<(), S
                     bottom: (y + frame.cell_height).min(pane.rect.bottom),
                 };
                 text(dc, rect, encoded, cell.foreground(), cell.background())?;
-                if cell.kind == SyntaxKind::Link {
+                if cell.link {
                     fill(
                         dc,
                         Rect {

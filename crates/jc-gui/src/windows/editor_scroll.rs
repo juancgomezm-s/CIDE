@@ -18,7 +18,7 @@ mod minimap;
 const RAIL: i32 = 10;
 const MAX_SAMPLES: usize = 512;
 const PREFIX_BYTES: usize = 192;
-const MAX_MARKS_PER_ROW: usize = 48;
+const MAX_MARKS_PER_ROW: usize = PREFIX_BYTES;
 const RESIDENT_SAMPLE_BATCH: usize = 32;
 const PAGED_SAMPLE_BYTES: usize = 512;
 const PAGED_SAMPLE_BATCH: usize = 16;
@@ -197,6 +197,14 @@ fn row_marks(
         });
     }
     let encoding = encoding.unwrap_or(TextEncoding::Iso8859_1);
+    row_with_colors(bytes, encoding, &colors)
+}
+
+fn row_with_colors(
+    bytes: &[u8],
+    encoding: TextEncoding,
+    colors: &[SyntaxKind; PREFIX_BYTES],
+) -> MapRow {
     // The file-level BOM has already been handled by the caller.
     let scalars = DecodedScalars::new(bytes, encoding, 1);
     let mut column = 0u8;
@@ -247,6 +255,26 @@ pub(super) struct MapCache {
     prepared: usize,
     paged: PagedMap,
     raster: minimap::Cache,
+    raw: Vec<RawRow>,
+    lexer: jc_app::SyntaxLexerState,
+    scanned_to: usize,
+}
+#[derive(Clone)]
+struct RawRow {
+    offset: usize,
+    bytes: Vec<u8>,
+    colors: [SyntaxKind; PREFIX_BYTES],
+    dirty: bool,
+}
+impl Default for RawRow {
+    fn default() -> Self {
+        Self {
+            offset: 0,
+            bytes: Vec::new(),
+            colors: [SyntaxKind::Plain; PREFIX_BYTES],
+            dirty: false,
+        }
+    }
 }
 impl MapCache {
     fn prepare(&mut self, app: &Workbench, tab: TabId, lines: usize, pixels: i32) -> bool {
@@ -268,8 +296,23 @@ impl MapCache {
             self.prepared = 0;
             self.samples = vec![MapRow::default(); count].into();
             self.key = Some(key);
+            self.raw = vec![RawRow::default(); count];
+            self.lexer = jc_app::SyntaxLexerState::default();
+            self.scanned_to = usize::from(
+                key.encoding == Some(TextEncoding::Utf8)
+                    && source
+                        .read_range(0..3.min(source.len()))
+                        .is_ok_and(|b| b == b"\xef\xbb\xbf"),
+            ) * 3;
         }
-        if self.prepared == count {
+        let target = self
+            .raw
+            .last()
+            .map_or(0, |row| row.offset + row.bytes.len());
+        if self.prepared == count
+            && self.scanned_to >= target
+            && !self.raw.iter().any(|row| row.dirty)
+        {
             return false;
         }
         let end = (self.prepared + RESIDENT_SAMPLE_BATCH).min(count);
@@ -283,11 +326,87 @@ impl MapCache {
             let Ok(bytes) = source.read_range(range.start..end) else {
                 continue;
             };
-            let bytes = sample_without_bom(&bytes, range.start == 0, key.encoding);
-            *sample = row_marks(bytes, end == range.end, key.profile, key.encoding);
+            let skipped =
+                bytes.len() - sample_without_bom(&bytes, range.start == 0, key.encoding).len();
+            let bytes = &bytes[skipped..];
+            let offset = range.start + skipped;
+            self.raw[index] = RawRow {
+                offset,
+                bytes: bytes.to_vec(),
+                ..RawRow::default()
+            };
+            *sample = row_with_colors(
+                bytes,
+                key.encoding.unwrap_or(TextEncoding::Iso8859_1),
+                &self.raw[index].colors,
+            );
         }
         self.prepared = end;
-        end < count
+        if end < count {
+            return true;
+        }
+        let target = self
+            .raw
+            .last()
+            .map_or(0, |row| row.offset + row.bytes.len());
+        if key.encoding.is_none() || key.profile == SyntaxProfile::Plain {
+            self.scanned_to = target;
+            return false;
+        }
+        let end = (self.scanned_to + 64 * 1024).min(target);
+        if self.scanned_to < end {
+            let Ok(bytes) = source.read_range(self.scanned_to..end) else {
+                return false;
+            };
+            jc_app::scan_syntax(
+                key.profile,
+                &mut self.lexer,
+                &bytes,
+                self.scanned_to,
+                end == source.len(),
+                |span| {
+                    let first = self
+                        .raw
+                        .partition_point(|row| row.offset + row.bytes.len() <= span.source.start);
+                    for row in self.raw[first..]
+                        .iter_mut()
+                        .take_while(|row| row.offset < span.source.end)
+                    {
+                        let start = span.source.start.max(row.offset) - row.offset;
+                        let end = span.source.end.min(row.offset + row.bytes.len()) - row.offset;
+                        if start < end {
+                            row.colors[start..end].fill(span.kind);
+                            row.dirty = true;
+                        }
+                    }
+                },
+            );
+            self.scanned_to = end;
+            if self.lexer.limited() {
+                // Match the editor's conservative fallback instead of leaving
+                // plausible but incomplete colors after a lexical limit.
+                for row in &mut self.raw {
+                    row.colors.fill(SyntaxKind::Plain);
+                    row.dirty = true;
+                }
+                self.scanned_to = target;
+            }
+        }
+        for (i, row) in self
+            .raw
+            .iter_mut()
+            .enumerate()
+            .filter(|(_, r)| r.dirty)
+            .take(RESIDENT_SAMPLE_BATCH)
+        {
+            samples[i] = row_with_colors(
+                &row.bytes,
+                key.encoding.unwrap_or(TextEncoding::Iso8859_1),
+                &row.colors,
+            );
+            row.dirty = false;
+        }
+        self.scanned_to < target || self.raw.iter().any(|row| row.dirty)
     }
 }
 
@@ -568,6 +687,7 @@ impl Frame {
             minimum_thumb: state.dpi.pixels(12),
         };
         let mut overview_pending = false;
+        let font = minimap::FontSpec::from_state(state);
         let overview = geometry.map.map(|rect| {
             let cache = &mut state.editor_maps[usize::from(area.pane == PaneId::Secondary)];
             if paged {
@@ -584,6 +704,7 @@ impl Frame {
                     samples,
                     state.dpi,
                     state.editor_theme,
+                    font,
                 );
             }
             let mini_line = state.dpi.pixels(3).max(1);
@@ -605,6 +726,7 @@ impl Frame {
                 Arc::clone(&cache.samples),
                 state.dpi,
                 state.editor_theme,
+                font,
             )
         });
         Self {
@@ -1076,6 +1198,130 @@ mod tests {
             .iter()
             .any(|mark| mark.kind == SyntaxKind::Number && mark.start > 80));
         assert_eq!(state.editor_maps[0].prepared, rows.len());
+    }
+
+    #[test]
+    fn minimap_split_panes_keep_their_source_and_live_theme() {
+        let mut state = State::new(&GuiOptions::default()).unwrap();
+        state.width = 1800;
+        state.height = 700;
+        state.explorer_visible = false;
+        state.workbench.new_file("principal.p", TextEncoding::Utf8);
+        state
+            .workbench
+            .insert_text("{includes/conexion.i}\nDISPLAY 123.\n")
+            .unwrap();
+        assert!(state.workbench.split_editor_right());
+        assert!(state.workbench.focus_editor_pane(PaneId::Secondary));
+        state.workbench.new_file("calculos.i", TextEncoding::Utf8);
+        state
+            .workbench
+            .insert_text("/* Include de cálculos */\nDEFINE VARIABLE dTotal AS DECIMAL NO-UNDO.\n")
+            .unwrap();
+        for _ in 0..8 {
+            paint::prepare(&mut state);
+        }
+        let left = &state.editor_maps[0].samples;
+        let right = &state.editor_maps[1].samples;
+        assert_eq!(left[0].glyphs, b"{includes/conexion.i}");
+        assert_eq!(
+            right[1].glyphs,
+            b"DEFINE VARIABLE dTotal AS DECIMAL NO-UNDO."
+        );
+        assert!(left[0]
+            .marks
+            .iter()
+            .all(|m| m.kind == SyntaxKind::Preprocessor));
+        let old_left = Arc::clone(left);
+        let old_right = Arc::clone(right);
+        for theme in [appearance::Theme::Eclipse, appearance::Theme::Light] {
+            state.editor_theme = theme;
+            let frame = paint::prepare(&mut state);
+            let include = frame.syntax_cell_at(PaneId::Primary, 0, 1).unwrap();
+            assert!(include.link);
+            assert_eq!(include.kind, SyntaxKind::Preprocessor);
+            assert_eq!(include.foreground, theme.syntax(SyntaxKind::Preprocessor));
+            let declaration = frame.syntax_cell_at(PaneId::Secondary, 1, 0).unwrap();
+            assert_eq!(declaration.kind, SyntaxKind::Keyword);
+            assert_eq!(declaration.foreground, theme.syntax(SyntaxKind::Keyword));
+            assert!(Arc::ptr_eq(&old_left, &state.editor_maps[0].samples));
+            assert!(Arc::ptr_eq(&old_right, &state.editor_maps[1].samples));
+        }
+    }
+
+    #[test]
+    fn minimap_retains_multiline_context_and_isolates_documents_and_revisions() {
+        let mut app = Workbench::default();
+        let abl = app.new_file("principal.p", TextEncoding::Utf8);
+        let source =
+            "/*\nDEFINE VARIABLE hidden AS CHARACTER.\n*/\n{includes/conexion.i}\nDISPLAY 123.\n";
+        app.insert_text(source).unwrap();
+        let rust = app.new_file("other.rs", TextEncoding::Utf8);
+        app.insert_text("let value = r#\"\nfn inside_string() {}\n\"#;\nfn visible() {}\n")
+            .unwrap();
+        let mut map = MapCache::default();
+        let settle = |map: &mut MapCache, app: &Workbench, tab, lines| {
+            for _ in 0..64 {
+                if !map.prepare(app, tab, lines, 640) {
+                    return;
+                }
+            }
+            panic!("minimap did not settle");
+        };
+        settle(&mut map, &app, abl, 6);
+        assert!(map.samples[1]
+            .marks
+            .iter()
+            .all(|m| m.kind == SyntaxKind::Comment));
+        assert!(map.samples[3]
+            .marks
+            .iter()
+            .all(|m| m.kind == SyntaxKind::Preprocessor));
+        assert!(map.samples[4]
+            .marks
+            .iter()
+            .any(|m| m.kind == SyntaxKind::Number));
+        for (line, row) in map.samples.iter().enumerate() {
+            let syntax = app.syntax_rows(abl, line, 1);
+            for mark in &row.marks {
+                // This fixture uses one ASCII byte per editor column.
+                assert_eq!(
+                    mark.kind,
+                    syntax.base_kind_at(map.raw[line].offset + usize::from(mark.start))
+                );
+            }
+        }
+        let cached = Arc::clone(&map.samples);
+        assert!(!map.prepare(&app, abl, 6, 640));
+        assert!(Arc::ptr_eq(&cached, &map.samples));
+        settle(&mut map, &app, rust, 5);
+        assert!(map.samples[1]
+            .marks
+            .iter()
+            .all(|m| m.kind == SyntaxKind::String));
+        assert!(map.samples[3]
+            .marks
+            .iter()
+            .any(|m| m.kind == SyntaxKind::Keyword));
+        // Editing the active Rust document invalidates its samples, then going
+        // back restores only principal.p, never the other pane's content.
+        app.insert_text("\n// final comment").unwrap();
+        settle(&mut map, &app, rust, 6);
+        assert!(map.samples[5]
+            .marks
+            .iter()
+            .all(|m| m.kind == SyntaxKind::Comment));
+        settle(&mut map, &app, abl, 6);
+        assert_eq!(map.samples[3].glyphs, b"{includes/conexion.i}");
+        assert_eq!(
+            app.document_by_tab(abl)
+                .unwrap()
+                .session
+                .document()
+                .read_range(0..source.len())
+                .unwrap(),
+            source.as_bytes()
+        );
     }
 
     #[test]
